@@ -1,2 +1,2 @@
 # fraise
-Go web framework
+AI gateway for agents.
