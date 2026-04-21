@@ -1,2 +1,2 @@
 # fraise
-AI gateway for agents.
+In-memory context database for AI agents.
