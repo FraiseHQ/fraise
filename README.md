@@ -1,4 +1,4 @@
-# fraise
+# Fraise
 
 <p align="center">
   <img height="300px" style="height:300px;" src="art/logo.png">
