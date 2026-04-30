@@ -22,6 +22,19 @@
 
 package version
 
+import "fmt"
+
 var (
-	Version = "0.1.0"
+	// Major is the current major version of main branch.
+	Major = 0
+	// Minor is the current minor version of main branch.
+	Minor = 0
+	// Patch is the current patched version of the main branch.
+	Patch = 1
 )
+
+// Full version of the main branch
+var FullVersion = fmt.Sprintf("%d.%d.%d", Major, Minor, Patch)
+
+// Short version of the main branch
+var ShortVersion = fmt.Sprintf("%d.%d", Major, Minor)
