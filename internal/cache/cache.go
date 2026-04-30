@@ -27,9 +27,9 @@ type Cache[T any] interface {
 
 	SetCapacity(size int)
 
-	Set(key string, value []byte) bool
+	Set(key string, value T) bool
 
-	Get(key string) []byte
+	Get(key string) T
 
 	Delete(key string) bool
 }
