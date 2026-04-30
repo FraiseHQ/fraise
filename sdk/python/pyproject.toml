@@ -1,0 +1,20 @@
+[project]
+name = "sdk"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Rene Jean Corneille", email = "14303619+RonsenbergVI@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.33.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.13,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
