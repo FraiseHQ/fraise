@@ -20,7 +20,21 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package query
+package cache
 
-type QueryResult struct {
+type Cache[T any] interface {
+	Capacity()
+
+	SetCapacity(size int)
+
+	Set(key string, value []byte) bool
+
+	Get(key string) []byte
+
+	Delete(key string) bool
+}
+
+type Entry[T any] struct {
+	Key   string
+	Value T
 }

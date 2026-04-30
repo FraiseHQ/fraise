@@ -21,3 +21,6 @@
 // SOFTWARE.
 
 package query
+
+type Query struct {
+}

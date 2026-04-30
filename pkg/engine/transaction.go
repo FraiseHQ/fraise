@@ -21,3 +21,9 @@
 // SOFTWARE.
 
 package engine
+
+// data structure representing a transaction.
+// A transaction is the language for the engine to the worker
+//
+type Transaction struct {
+}

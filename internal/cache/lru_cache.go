@@ -20,7 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package query
+package cache
 
-type QueryResult struct {
+type LRUCache[T any] struct {
+	Cache map[string][]Entry[T]
 }

@@ -22,7 +22,7 @@
 
 package interpreter
 
-import "github.com/RonsengerVI/fraise/internal/query/parser"
+import "github.com/RonsenbergVI/fraise/internal/query/parser"
 
 // Interpretor errors which are different than database errors, are returned by the evaluation
 // and execution planning of a query.

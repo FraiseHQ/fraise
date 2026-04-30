@@ -21,3 +21,6 @@
 // SOFTWARE.
 
 package server
+
+type Handler interface {
+}

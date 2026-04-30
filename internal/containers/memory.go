@@ -21,13 +21,3 @@
 // SOFTWARE.
 
 package containers
-
-type Entry[T any] struct {
-	Key   string
-	Value T
-}
-
-type LRUCache[T any] struct {
-	MaxSize int
-	Cache   map[string][]Entry[T]
-}

@@ -21,3 +21,6 @@
 // SOFTWARE.
 
 package index
+
+type HNSWIndex struct {
+}

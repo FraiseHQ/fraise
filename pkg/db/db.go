@@ -22,5 +22,15 @@
 
 package db
 
-type DB interface {
+import (
+	"sync"
+
+	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/index"
+)
+
+type DB struct {
+	mu      sync.RWMutex
+	config  config.ConfigSet
+	indexes map[string]index.Index
 }

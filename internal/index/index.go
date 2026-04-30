@@ -20,7 +20,29 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package query
+package index
 
-type QueryResult struct {
+import (
+	"github.com/RonsenbergVI/fraise/internal/query"
+)
+
+type Index interface {
+	Put(q query.Query) (query.QueryResult, error)
+	Get(q query.Query) (query.QueryResult, error)
+	Del(q query.Query) (query.QueryResult, error)
+	Size() int
+}
+
+type Iterator interface {
+	First() bool
+	Last() bool
+	Seek() bool
+	Next() bool
+	Previous() bool
+	Valid() bool
+	Error() bool
+
+	ID() []byte
+	Fact() []byte
+	Topics() [][]byte
 }

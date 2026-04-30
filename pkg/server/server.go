@@ -21,3 +21,9 @@
 // SOFTWARE.
 
 package server
+
+import "github.com/RonsenbergVI/fraise/internal/config"
+
+type Server struct {
+	config config.ConfigSet
+}

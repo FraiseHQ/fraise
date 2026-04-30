@@ -20,7 +20,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package query
+package worker
 
-type QueryResult struct {
+import (
+	"github.com/RonsenbergVI/fraise/pkg/engine"
+	"github.com/RonsenbergVI/fraise/pkg/scheduler"
+)
+
+type Worker struct {
+	Id     int
+	Queue  <-chan scheduler.Task
+	Engine *engine.Engine
 }

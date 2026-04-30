@@ -21,3 +21,9 @@
 // SOFTWARE.
 
 package engine
+
+import "sync"
+
+type Engine struct {
+	mu sync.RWMutex
+}

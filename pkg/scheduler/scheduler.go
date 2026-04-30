@@ -21,3 +21,17 @@
 // SOFTWARE.
 
 package scheduler
+
+type Scheduler struct {
+}
+
+type Task struct {
+	Command string
+	Args    string
+	Result  chan TaskResult
+}
+
+type TaskResult struct {
+	Value []byte
+	Err   error
+}
