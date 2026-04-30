@@ -1,7 +1,7 @@
 # Fraise
 
 <p align="center">
-  <img height="300px" style="height:300px;" src="art/logo.png">
+  <img height="300px" style="height:300px;" src="assets/logo.png">
 </p>
 
 Fraise is a hybrid, in-memory database designed to be used a memory store for AI agents.
