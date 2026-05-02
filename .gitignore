@@ -34,3 +34,7 @@ go.work.sum
 # TypeScript SDK
 node_modules/
 sdk/typescript/dist/
+
+
+# python
+.venv
