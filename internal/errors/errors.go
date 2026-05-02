@@ -21,3 +21,9 @@
 // SOFTWARE.
 
 package errors
+
+import "fmt"
+
+var (
+	ErrQueryParsingError = fmt.Errorf("Failed to parse query.")
+)
