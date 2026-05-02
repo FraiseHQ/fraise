@@ -23,10 +23,10 @@ agentic AI libraries.
 
 To learn more about fraise, you can consult the following resources:
 
-* [Roadmap]()
-* [Database design]()
-* [Query language specs]()
-* [Issues]()
+* [Roadmap](https://github.com/users/RonsenbergVI/projects/2)
+* [Database design](./docs/design.md)
+* [Query language specs](./docs/query-spec.md)
+* [Issues](https://github.com/RonsenbergVI/fraise/issues)
 
 ## Contributing
 
