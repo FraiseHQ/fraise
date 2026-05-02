@@ -22,8 +22,6 @@
 
 package lexer
 
-import "fmt"
-
 type Position struct {
 	Column int
 }
@@ -40,13 +38,8 @@ type Lexer struct {
 func New(input string) *Lexer {
 	l := Lexer{
 		Input: []rune(input),
-		CurrentPos: Position{
-			Column: 0,
-		},
-		NextPos: Position{
-			Column: 1,
-		},
 	}
+	l.readCharacter()
 	return &l
 }
 
@@ -62,7 +55,6 @@ func (l *Lexer) readCharacter() {
 	} else {
 		l.Character = l.Input[l.CurrentPos.Column]
 	}
-	fmt.Println(string(l.Input[l.CurrentPos.Column]))
 	l.CurrentPos = l.NextPos
 	l.NextPos.Column++
 }
@@ -119,10 +111,8 @@ func (l *Lexer) scanString() string {
 f:
 	for {
 		switch l.peek() {
-		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'):
+		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune(0):
 			break f
-		case rune(0):
-			return ""
 		default:
 			res = append(res, l.peek())
 		}

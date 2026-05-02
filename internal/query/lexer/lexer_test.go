@@ -23,7 +23,6 @@
 package lexer_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
@@ -37,13 +36,24 @@ func Test_newLexer(t *testing.T) {
 }
 
 func Test_Next(t *testing.T) {
+	l := lexer.New("remember anna 'I work at Google' topic:job")
+	token1 := l.Next()
+	token2 := l.Next()
+	if !(token1.Literal == "remember" && token1.Type == lexer.REMEMBER) {
+		t.Error("Wrong Value")
+	}
+	if !(token2.Literal == "anna" && token2.Type == lexer.WORD) {
+		t.Error("Wrong Value")
+	}
+}
+
+func Test_NextUntilEol(t *testing.T) {
 	l := lexer.New("recall anna topic:job")
-	fmt.Println(l.Next())
-	fmt.Println(l.Next())
-	fmt.Println(l.Next())
-	fmt.Println(l.Next())
-	fmt.Println(l.Next())
-	if !(l.Next().Literal == "recall" && l.Next().Type == lexer.RECALL) {
+	for i := 0; i < 5; i++ {
+		_ = l.Next()
+	}
+	token := l.Next()
+	if !(token.Literal == "" && token.Type == lexer.EOL) {
 		t.Error("Wrong Value")
 	}
 }
