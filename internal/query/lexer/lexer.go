@@ -22,59 +22,111 @@
 
 package lexer
 
+import "fmt"
+
 type Position struct {
 	Column int
 }
 
 type Lexer struct {
-	Input     []rune
-	Offset    int
-	Character rune
-	Current   Position
-	Next      Position
+	Input      []rune
+	Offset     int
+	Character  rune
+	CurrentPos Position
+	NextPos    Position
 }
 
 // Returns a new Lexer pointer from a string
 func New(input string) *Lexer {
 	l := Lexer{
 		Input: []rune(input),
+		CurrentPos: Position{
+			Column: 0,
+		},
+		NextPos: Position{
+			Column: 1,
+		},
 	}
-	l.readCharacter()
 	return &l
 }
 
-// func (l *Lexer) NextToken() Token {
-// 	var tok Token
-
-// }
-
-func (l *Lexer) skipWhitespace() {
-	for isWhitespace(l.Character) {
+func (l *Lexer) skipBlank() {
+	for isBlank(l.peek()) {
 		l.readCharacter()
 	}
 }
 
 func (l *Lexer) readCharacter() {
-	if l.Current.Column >= len(l.Input) {
+	if l.CurrentPos.Column >= len(l.Input) {
 		l.Character = rune(0)
 	} else {
-		l.Character = l.Input[l.Current.Column]
+		l.Character = l.Input[l.CurrentPos.Column]
 	}
-	l.Current = l.Next
-	l.Next.Column++
+	fmt.Println(string(l.Input[l.CurrentPos.Column]))
+	l.CurrentPos = l.NextPos
+	l.NextPos.Column++
 }
 
 // checks if rune is white space
-func isWhitespace(ch rune) bool {
+func isBlank(ch rune) bool {
 	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r')
 }
 
-// checks if rune is new line
-func isNewline(ch rune) bool {
-	return ch == rune('\n')
+func (l *Lexer) Next() Token {
+	var tok Token
+
+	l.skipBlank()
+
+	switch l.peek() {
+	case rune(':'):
+		l.readCharacter()
+		tok = Token{Type: COLON, Literal: string(l.Character)}
+	case rune('\''):
+		l.readCharacter()
+		tok = Token{Type: COMMA, Literal: string(l.Character)}
+	case rune('('):
+		l.readCharacter()
+		tok = Token{Type: LPAREN, Literal: string(l.Character)}
+	case rune(')'):
+		l.readCharacter()
+		tok = Token{Type: RPAREN, Literal: string(l.Character)}
+	case rune('$'):
+		l.readCharacter()
+		tok = Token{Type: DOLLAR, Literal: string(l.Character)}
+	case rune(0):
+		tok = Token{Type: EOL}
+	default:
+		tokLiteral := l.scanString()
+		tokType, err := KeywordsMap[tokLiteral]
+		if !err {
+			tokType = WORD
+		}
+		tok = Token{Type: tokType, Literal: tokLiteral}
+	}
+	return tok
 }
 
-// checks if rune is digit
-func isDigit(ch rune) bool {
-	return rune('0') <= ch && ch <= rune('9')
+// peeks current character
+func (l *Lexer) peek() rune {
+	if l.CurrentPos.Column >= len(l.Input) {
+		return rune(0)
+	}
+	return l.Input[l.CurrentPos.Column]
+}
+
+func (l *Lexer) scanString() string {
+	var res []rune
+f:
+	for {
+		switch l.peek() {
+		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'):
+			break f
+		case rune(0):
+			return ""
+		default:
+			res = append(res, l.peek())
+		}
+		l.readCharacter()
+	}
+	return string(res)
 }

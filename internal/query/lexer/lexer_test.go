@@ -23,6 +23,7 @@
 package lexer_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
@@ -32,5 +33,17 @@ func Test_newLexer(t *testing.T) {
 	l := lexer.New("recall anna topic:job")
 	if !(l.Character == rune('r')) {
 		t.Error("Character should be:", rune('r'), "but got:", l.Character)
+	}
+}
+
+func Test_Next(t *testing.T) {
+	l := lexer.New("recall anna topic:job")
+	fmt.Println(l.Next())
+	fmt.Println(l.Next())
+	fmt.Println(l.Next())
+	fmt.Println(l.Next())
+	fmt.Println(l.Next())
+	if !(l.Next().Literal == "recall" && l.Next().Type == lexer.RECALL) {
+		t.Error("Wrong Value")
 	}
 }
