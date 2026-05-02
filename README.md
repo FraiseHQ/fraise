@@ -15,9 +15,9 @@ agentic AI libraries.
 
 ### Install with Docker
 
-### Integrate with pydantic AI and pydantic Graph
+### Integrate with Claude Agents
 
-### Integrate with Langchain
+### Integrate with OpenAI Agents
 
 ## References
 
