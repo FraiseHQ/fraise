@@ -9,8 +9,7 @@ This query language is designed to be minimalist, with a simple syntax. Here are
 
 * the query language is exclusively written in lower case (except for string literals). Upper case detected are flagged as a warning and the expression converted to lowercase before execution.
 * the query language only allows to run one command at a time. Multiple commands in a single instructions leads to a runtime error.
-* the query language only allows for single line instructions. Multi-line instructions
-are converted to a single line and executed if valid.
+* the query language only allows for single line instructions. New line characters are processed as whitespace and the query is executed if valid.
 
 ## Representation
 
@@ -65,3 +64,11 @@ recall_body     = term_list field_clause*
 ```
 
 ## Design decisions
+
+## Glossary
+
+* **command**: task to perform by the engine: recall, remember, forget, update
+* **field**: additional information provided to the search in order to find the right facts
+* **fact**: a memory atomic element.
+* **memory graph**: a collection of organised facts related to topics and indexed for hybrid search (full text, semantic and graph)
+* **instruction**: a full query sent to the database engine with a command, search keywords and fields.
