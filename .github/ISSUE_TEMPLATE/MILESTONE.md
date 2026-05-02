@@ -31,14 +31,6 @@ How will we measure that this milestone achieved its goals?
 - Target Completion: [date]
 - Key Checkpoints: [dates]
 
-## Dependencies
-
-What must be in place before we can start? What external factors could block us?
-
-## Stakeholders
-
-Who needs to be informed/consulted? Who approves completion?
-
 ## Out of Scope
 
 What are we explicitly NOT doing in this milestone?
