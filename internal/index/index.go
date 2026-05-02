@@ -46,3 +46,9 @@ type Iterator interface {
 	Fact() []byte
 	Topics() [][]byte
 }
+
+type TextIndex interface {
+}
+
+type VectorIndex interface {
+}

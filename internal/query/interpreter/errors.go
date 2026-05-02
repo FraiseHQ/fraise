@@ -22,47 +22,49 @@
 
 package interpreter
 
-import "github.com/RonsenbergVI/fraise/internal/query/parser"
+import (
+	"github.com/RonsenbergVI/fraise/internal/query/lexer"
+)
 
 // Interpretor errors which are different than database errors, are returned by the evaluation
 // and execution planning of a query.
 type InterpretorError interface {
 	error
-	Position() parser.Position
+	Position() lexer.Position
 }
 
 type NameError struct {
 	Message string
-	Pos     parser.Position
+	Pos     lexer.Position
 }
 
-func (e NameError) Position() parser.Position {
+func (e NameError) Position() lexer.Position {
 	return e.Pos
 }
 
 type ValueError struct {
 	Message string
-	Pos     parser.Position
+	Pos     lexer.Position
 }
 
-func (e ValueError) Position() parser.Position {
+func (e ValueError) Position() lexer.Position {
 	return e.Pos
 }
 
 type TypeError struct {
 	Message string
-	Pos     parser.Position
+	Pos     lexer.Position
 }
 
-func (e TypeError) Position() parser.Position {
+func (e TypeError) Position() lexer.Position {
 	return e.Pos
 }
 
 type SyntaxError struct {
 	Message string
-	Pos     parser.Position
+	Pos     lexer.Position
 }
 
-func (e SyntaxError) Position() parser.Position {
+func (e SyntaxError) Position() lexer.Position {
 	return e.Pos
 }

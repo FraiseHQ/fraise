@@ -27,3 +27,23 @@ import "sync"
 type Engine struct {
 	mu sync.RWMutex
 }
+
+func (e *Engine) Init() {
+
+}
+
+func (e *Engine) Search() {
+
+}
+
+func (e *Engine) Size() {
+
+}
+
+func (e *Engine) Dimension() {
+
+}
+
+func (e *Engine) Count() {
+
+}

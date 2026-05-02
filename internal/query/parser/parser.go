@@ -22,9 +22,11 @@
 
 package parser
 
+import "github.com/RonsenbergVI/fraise/internal/query/lexer"
+
 type Parser struct {
-	Tokenizer *Tokenizer
-	Pos       Position
-	Tok       Token
-	Val       string
+	Lexer *lexer.Lexer
+	Pos   lexer.Position
+	Tok   lexer.Token
+	Val   string
 }

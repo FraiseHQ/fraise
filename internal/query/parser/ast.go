@@ -22,30 +22,32 @@
 
 package parser
 
+import "github.com/RonsenbergVI/fraise/internal/query/lexer"
+
 type Node interface {
-	Pos() Position
-	End() Position
+	Pos() lexer.Position
+	End() lexer.Position
 }
 
 type BinaryOp struct {
-	Tok Token
-	Pos Position
+	Tok lexer.Token
+	Pos lexer.Position
 	LHS Node
 	RHS Node
 }
 
 type UnaryOp struct {
-	Tok Token
-	Pos Position
+	Tok lexer.Token
+	Pos lexer.Position
 	LHS Node
 }
 
 type Field struct {
-	Tok Token
-	Pos Position
+	Tok lexer.Token
+	Pos lexer.Position
 }
 
 type Literal struct {
-	Tok Token
-	Pos Position
+	Tok lexer.Token
+	Pos lexer.Position
 }

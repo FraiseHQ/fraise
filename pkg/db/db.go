@@ -26,11 +26,33 @@ import (
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/graph"
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
-type DB struct {
-	mu      sync.RWMutex
-	config  config.ConfigSet
-	indexes map[string]index.Index
+type DB[N uint32] struct {
+	mu sync.RWMutex
+
+	Config config.ConfigSet
+	Graphs []graph.Graph
+}
+
+func (d *DB[N]) Init() error {
+
+}
+
+func (d *DB[N]) Start() error {
+
+}
+
+func (d *DB[N]) Stop() error {
+
+}
+
+func (d *DB[N]) CreateIndex(name string, index index.Index) error {
+
+}
+
+func (d *DB[N]) DropIndex(name string) error {
+
 }
