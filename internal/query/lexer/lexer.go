@@ -106,6 +106,7 @@ func (l *Lexer) peek() rune {
 	return l.Input[l.CurrentPos.Column]
 }
 
+// scans a string
 func (l *Lexer) scanString() string {
 	var res []rune
 f:
