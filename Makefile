@@ -1,0 +1,236 @@
+# MIT License
+
+# Copyright (c) 2026 René-Jean Corneille
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+BUILD          ?= $(shell git rev-parse --short HEAD)
+BUILD_CODENAME ?= dgraph
+BUILD_DATE     ?= $(shell git log -1 --format=%ci)
+BUILD_BRANCH   ?= $(shell git rev-parse --abbrev-ref HEAD)
+BUILD_VERSION  ?= $(shell git describe --always --tags)
+
+GOPATH         ?= $(shell go env GOPATH)
+
+# Tool commands
+GO_CMD         := go
+GO_BUILD       := $(GO_CMD) build
+GO_TEST        := $(GO_CMD) test
+GO_CLEAN       := $(GO_CMD) clean
+GO_FMT         := $(GO_CMD) fmt
+GO_VET         := $(GO_CMD) vet
+
+# Directories
+BIN_DIR        := bin
+CMD_DIR        := ./cmd/server
+TS_DIR         := sdk/typescript
+PY_DIR         := sdk/python
+
+# Binary name
+BINARY_NAME    := fraise
+
+# Package manager commands
+NPM_CMD        := pnpm
+UV_CMD         := uv
+
+# Color output
+CYAN           := \033[0;36m
+GREEN          := \033[0;32m
+YELLOW         := \033[0;33m
+RESET          := \033[0m
+
+# Build flags
+LDFLAGS        := -X 'main.Version=$(BUILD_VERSION)' \
+                  -X 'main.Build=$(BUILD)' \
+                  -X 'main.BuildDate=$(BUILD_DATE)' \
+                  -X 'main.Branch=$(BUILD_BRANCH)'
+
+.PHONY: help build test clean install dev fmt lint check all
+.DEFAULT_GOAL := help
+
+##@ General
+
+help: ## Display this help message
+	@echo "$(CYAN)Fraise Build System$(RESET)"
+	@echo "$(GREEN)Version: $(BUILD_VERSION) | Branch: $(BUILD_BRANCH)$(RESET)"
+	@awk 'BEGIN {FS = ":.*##"; printf "\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(CYAN)%-25s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ Build
+
+build: build-go ## Build all components (currently Go only)
+
+build-all: build-go build-ts build-py ## Build Go server and all SDKs
+
+build-go: ## Build Go server binary
+	@echo "$(CYAN)Building Go server ($(BUILD_VERSION))...$(RESET)"
+	@mkdir -p $(BIN_DIR)
+	$(GO_BUILD) -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	@echo "$(GREEN)✓ Binary created: $(BIN_DIR)/$(BINARY_NAME)$(RESET)"
+
+build-ts: ## Build TypeScript SDK
+	@echo "$(CYAN)Building TypeScript SDK...$(RESET)"
+	@cd $(TS_DIR) && $(NPM_CMD) run build
+	@echo "$(GREEN)✓ TypeScript SDK built$(RESET)"
+
+build-py: ## Build Python SDK
+	@echo "$(CYAN)Building Python SDK...$(RESET)"
+	@cd $(PY_DIR) && $(UV_CMD) build
+	@echo "$(GREEN)✓ Python SDK built$(RESET)"
+
+##@ Testing
+
+test: test-go ## Run all Go tests
+
+test-all: test-go test-ts test-py ## Run tests for Go and all SDKs
+
+test-go: ## Run Go tests with verbose output
+	@echo "$(CYAN)Running Go tests...$(RESET)"
+	$(GO_TEST) -v ./...
+
+test-go-coverage: ## Run Go tests with coverage report
+	@echo "$(CYAN)Running Go tests with coverage...$(RESET)"
+	$(GO_TEST) -v -race -coverprofile=coverage.out -covermode=atomic ./...
+	$(GO_CMD) tool cover -html=coverage.out -o coverage.html
+	@echo "$(GREEN)✓ Coverage report: coverage.html$(RESET)"
+
+test-go-short: ## Run Go tests in short mode
+	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
+	$(GO_TEST) -short ./...
+
+test-go-bench: ## Run Go benchmarks
+	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
+	$(GO_TEST) -bench=. -benchmem ./...
+
+test-ts: ## Run TypeScript tests
+	@echo "$(CYAN)Running TypeScript tests...$(RESET)"
+	@cd $(TS_DIR) && $(NPM_CMD) test || echo "$(YELLOW)⚠ No TypeScript tests configured$(RESET)"
+
+test-py: ## Run Python tests with pytest
+	@echo "$(CYAN)Running Python tests...$(RESET)"
+	@cd $(PY_DIR) && $(UV_CMD) run pytest || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
+
+test-watch: ## Run Go tests in watch mode (requires reflex)
+	@echo "$(CYAN)Running Go tests in watch mode...$(RESET)"
+	@which reflex > /dev/null || (echo "$(YELLOW)Installing reflex...$(RESET)" && $(GO_CMD) install github.com/cespare/reflex@latest)
+	reflex -r '\.go$$' -s -- $(GO_TEST) -v ./...
+
+##@ Development
+
+dev: ## Run development server
+	@echo "$(CYAN)Starting development server...$(RESET)"
+	$(GO_CMD) run $(CMD_DIR)/main.go
+
+dev-ts: ## Run TypeScript in watch mode
+	@echo "$(CYAN)Starting TypeScript watch mode...$(RESET)"
+	@cd $(TS_DIR) && $(NPM_CMD) run dev
+
+install: ## Install all dependencies
+	@echo "$(CYAN)Installing Go dependencies...$(RESET)"
+	$(GO_CMD) mod download
+	@echo "$(CYAN)Installing TypeScript dependencies...$(RESET)"
+	@cd $(TS_DIR) && $(NPM_CMD) install
+	@echo "$(CYAN)Installing Python dependencies...$(RESET)"
+	@cd $(PY_DIR) && $(UV_CMD) sync
+	@echo "$(GREEN)✓ All dependencies installed$(RESET)"
+
+install-tools: ## Install development tools
+	@echo "$(CYAN)Installing development tools...$(RESET)"
+	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && $(GO_CMD) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	@which reflex > /dev/null || (echo "Installing reflex..." && $(GO_CMD) install github.com/cespare/reflex@latest)
+	@echo "$(GREEN)✓ Development tools installed$(RESET)"
+
+##@ Code Quality
+
+fmt: fmt-go fmt-ts fmt-py ## Format all code
+
+fmt-go: ## Format Go code
+	@echo "$(CYAN)Formatting Go code...$(RESET)"
+	$(GO_FMT) ./...
+	@echo "$(GREEN)✓ Go code formatted$(RESET)"
+
+fmt-ts: ## Format TypeScript code
+	@echo "$(CYAN)Formatting TypeScript code...$(RESET)"
+	@cd $(TS_DIR) && $(NPM_CMD) run format 2>/dev/null || echo "$(YELLOW)⚠ No TypeScript formatter configured$(RESET)"
+
+fmt-py: ## Format Python code with ruff
+	@echo "$(CYAN)Formatting Python code...$(RESET)"
+	@cd $(PY_DIR) && $(UV_CMD) run ruff format 2>/dev/null || echo "$(YELLOW)⚠ Ruff not configured$(RESET)"
+
+lint: lint-go lint-ts lint-py ## Lint all code
+
+lint-go: ## Lint Go code with vet and golangci-lint
+	@echo "$(CYAN)Linting Go code...$(RESET)"
+	$(GO_VET) ./...
+	@which golangci-lint > /dev/null && golangci-lint run || echo "$(YELLOW)⚠ golangci-lint not installed, run 'make install-tools'$(RESET)"
+
+lint-ts: ## Lint TypeScript code
+	@echo "$(CYAN)Linting TypeScript code...$(RESET)"
+	@cd $(TS_DIR) && $(NPM_CMD) run lint 2>/dev/null || echo "$(YELLOW)⚠ No TypeScript linter configured$(RESET)"
+
+lint-py: ## Lint Python code with ruff
+	@echo "$(CYAN)Linting Python code...$(RESET)"
+	@cd $(PY_DIR) && $(UV_CMD) run ruff check 2>/dev/null || echo "$(YELLOW)⚠ Ruff not configured$(RESET)"
+
+check: fmt lint test ## Format, lint, and test Go code
+	@echo "$(GREEN)✓ All checks passed$(RESET)"
+
+check-all: fmt lint test-all ## Format, lint, and test everything
+	@echo "$(GREEN)✓ All checks passed$(RESET)"
+
+##@ Cleanup
+
+clean: clean-go clean-ts clean-py ## Clean all build artifacts
+
+clean-go: ## Clean Go build artifacts
+	@echo "$(CYAN)Cleaning Go artifacts...$(RESET)"
+	$(GO_CLEAN)
+	rm -rf $(BIN_DIR)/
+	rm -f coverage.out coverage.html
+	@echo "$(GREEN)✓ Go artifacts cleaned$(RESET)"
+
+clean-ts: ## Clean TypeScript build artifacts
+	@echo "$(CYAN)Cleaning TypeScript artifacts...$(RESET)"
+	@cd $(TS_DIR) && ($(NPM_CMD) run clean 2>/dev/null || rm -rf dist/)
+	@echo "$(GREEN)✓ TypeScript artifacts cleaned$(RESET)"
+
+clean-py: ## Clean Python build artifacts
+	@echo "$(CYAN)Cleaning Python artifacts...$(RESET)"
+	@cd $(PY_DIR) && rm -rf dist/ .pytest_cache/ __pycache__/
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@echo "$(GREEN)✓ Python artifacts cleaned$(RESET)"
+
+clean-all: clean ## Alias for clean
+
+##@ Workflows
+
+all: clean install build-all test-all ## Full rebuild: clean, install, build, and test everything
+	@echo "$(GREEN)✓ Full build completed$(RESET)"
+
+quick: build-go test-go-short ## Quick development cycle: build and test Go (short mode)
+	@echo "$(GREEN)✓ Quick build completed$(RESET)"
+
+ci: install lint test ## CI pipeline: install, lint, and test
+	@echo "$(GREEN)✓ CI pipeline completed$(RESET)"
+
+release: clean build-go test-go lint-go ## Prepare release build
+	@echo "$(GREEN)✓ Release build ready: $(BIN_DIR)/$(BINARY_NAME)$(RESET)"
+	@echo "$(GREEN)Version: $(BUILD_VERSION)$(RESET)"
+	@echo "$(GREEN)Build: $(BUILD)$(RESET)"
+	@echo "$(GREEN)Date: $(BUILD_DATE)$(RESET)"
