@@ -61,7 +61,7 @@ func (l *Lexer) readCharacter() {
 
 // checks if rune is white space
 func isBlank(ch rune) bool {
-	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r')
+	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r') || ch == rune('\n')
 }
 
 func (l *Lexer) Next() Token {
@@ -112,7 +112,7 @@ func (l *Lexer) scanString() string {
 f:
 	for {
 		switch l.peek() {
-		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune(0):
+		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune('\n'), rune(0):
 			break f
 		default:
 			res = append(res, l.peek())

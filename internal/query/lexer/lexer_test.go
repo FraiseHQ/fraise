@@ -645,3 +645,151 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 		})
 	}
 }
+
+func Test_MultiLineQueries(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []lexer.Token
+	}{
+		{
+			name:  "query with single newline",
+			input: "recall anna\ntopic:job",
+			expected: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
+			name:  "query with multiple newlines",
+			input: "recall\n$vec\n(anna or bob)\nand topic:job",
+			expected: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.DOLLAR, Literal: "$"},
+				{Type: lexer.VEC, Literal: "vec"},
+				{Type: lexer.LPAREN, Literal: "("},
+				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.OR, Literal: "or"},
+				{Type: lexer.WORD, Literal: "bob"},
+				{Type: lexer.RPAREN, Literal: ")"},
+				{Type: lexer.AND, Literal: "and"},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
+			name: "long multi-line query",
+			input: `recall $vec
+(anna or bob or charlie)
+and not (topic:personal or topic:draft)
+since:2024-01-01
+until:2024-12-31
+top:10 depth:5`,
+			expected: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.DOLLAR, Literal: "$"},
+				{Type: lexer.VEC, Literal: "vec"},
+				{Type: lexer.LPAREN, Literal: "("},
+				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.OR, Literal: "or"},
+				{Type: lexer.WORD, Literal: "bob"},
+				{Type: lexer.OR, Literal: "or"},
+				{Type: lexer.WORD, Literal: "charlie"},
+				{Type: lexer.RPAREN, Literal: ")"},
+				{Type: lexer.AND, Literal: "and"},
+				{Type: lexer.NOT, Literal: "not"},
+				{Type: lexer.LPAREN, Literal: "("},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "personal"},
+				{Type: lexer.OR, Literal: "or"},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "draft"},
+				{Type: lexer.RPAREN, Literal: ")"},
+				{Type: lexer.SINCE, Literal: "since"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "2024-01-01"},
+				{Type: lexer.UNTIL, Literal: "until"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "2024-12-31"},
+				{Type: lexer.TOP, Literal: "top"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "10"},
+				{Type: lexer.DEPTH, Literal: "depth"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "5"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
+			name:  "consecutive newlines treated as whitespace",
+			input: "recall\n\n\nanna",
+			expected: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
+			name:  "mixed newlines and spaces",
+			input: "recall  \n  anna  \n  topic:job",
+			expected: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
+			name:  "newlines with tabs",
+			input: "recall\n\tanna\n\t\ttopic:job",
+			expected: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
+			name:  "newlines in complex boolean expression",
+			input: "recall (\n  anna\n  or\n  bob\n) and\ntopic:job",
+			expected: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.LPAREN, Literal: "("},
+				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.OR, Literal: "or"},
+				{Type: lexer.WORD, Literal: "bob"},
+				{Type: lexer.RPAREN, Literal: ")"},
+				{Type: lexer.AND, Literal: "and"},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			for i, expected := range tt.expected {
+				token := l.Next()
+				if token.Type != expected.Type || token.Literal != expected.Literal {
+					t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
+						i, expected.Type, expected.Literal, token.Type, token.Literal)
+				}
+			}
+		})
+	}
+}

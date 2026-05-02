@@ -54,6 +54,7 @@ const (
 	LPAREN
 	RPAREN
 	DOLLAR
+	NEWLINE
 
 	// fields
 	TOPIC
@@ -79,6 +80,7 @@ var TokenMap = map[TokenType]string{
 	RPAREN:   ")",
 	DOLLAR:   "$",
 	COMMA:    "'",
+	NEWLINE:  "\n",
 	TOPIC:    "topic",
 	SINCE:    "since",
 	UNTIL:    "until",

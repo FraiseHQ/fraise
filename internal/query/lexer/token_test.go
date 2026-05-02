@@ -45,6 +45,7 @@ func TestTokenTypeString(t *testing.T) {
 		{"OR", lexer.OR, "or"},
 		{"NOT", lexer.NOT, "not"},
 		{"COLON", lexer.COLON, ":"},
+		{"NEWLINE", lexer.NEWLINE, "\n"},
 		{"COMMA", lexer.COMMA, "'"},
 		{"LPAREN", lexer.LPAREN, "("},
 		{"RPAREN", lexer.RPAREN, ")"},
