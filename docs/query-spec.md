@@ -80,9 +80,9 @@ simple_field    = topic_field
                 | top_field
                 | v_field ;
 
-(* Boolean grouping is permitted only over topic_field in v0.1. *)
+(* Boolean grouping is permitted over topic_field in v0.1. *)
 group_field     = '(' topic_field (bool_op topic_field)+ ')' ;
-bool_op         = 'OR' | 'AND' ;
+bool_op         = 'OR' | 'AND';
 
 topic_field     = 'topic' ':' topic_value ;
 topic_value     = identifier | quoted_identifier ;
@@ -115,14 +115,12 @@ iso_date          = ?\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z?)?? ;
 param_ref         = '$' identifier ;
 ```
 
-## Design decisions
-
 ## Glossary
 
 * **fact**: a memory atomic element.
 * **memory graph**: a collection of organised facts related to topics and indexed for hybrid search (full text, semantic and graph)
-* * **field**: additional information provided to the search in order to find the right facts.
+* **field**: additional information provided to the search in order to find the right facts.
 * **field value**: value of a field used to find a fact
 * **term**: a word or sequence of words used to find a fact.
-* * **command**: task to perform by the engine: recall, remember, forget, update
+* **command**: task to perform by the engine: recall, remember, forget, update
 * **instruction**: a full query sent to the database engine with a command, search terms and fields.

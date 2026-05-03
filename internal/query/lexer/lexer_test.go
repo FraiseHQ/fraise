@@ -42,7 +42,7 @@ func Test_Next(t *testing.T) {
 	if !(token1.Literal == "remember" && token1.Type == lexer.REMEMBER) {
 		t.Error("Wrong Value")
 	}
-	if !(token2.Literal == "anna" && token2.Type == lexer.WORD) {
+	if !(token2.Literal == "anna" && token2.Type == lexer.LITERAL) {
 		t.Error("Wrong Value")
 	}
 }
@@ -70,7 +70,7 @@ func Test_SpecialCharacters(t *testing.T) {
 			expected: []lexer.Token{
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -79,7 +79,7 @@ func Test_SpecialCharacters(t *testing.T) {
 			input: "(anna)",
 			expected: []lexer.Token{
 				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.RPAREN, Literal: ")"},
 				{Type: lexer.EOL, Literal: ""},
 			},
@@ -98,7 +98,7 @@ func Test_SpecialCharacters(t *testing.T) {
 			input: "'hello'",
 			expected: []lexer.Token{
 				{Type: lexer.COMMA, Literal: "'"},
-				{Type: lexer.WORD, Literal: "hello"},
+				{Type: lexer.LITERAL, Literal: "hello"},
 				{Type: lexer.COMMA, Literal: "'"},
 				{Type: lexer.EOL, Literal: ""},
 			},
@@ -140,7 +140,7 @@ func Test_SpecialCharacters(t *testing.T) {
 	}
 }
 
-func Test_AllKeywords(t *testing.T) {
+func Test_AllKeyLITERALs(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected lexer.TokenType
@@ -151,7 +151,6 @@ func Test_AllKeywords(t *testing.T) {
 		{"update", lexer.UPDATE},
 		{"and", lexer.AND},
 		{"or", lexer.OR},
-		{"not", lexer.NOT},
 		{"topic", lexer.TOPIC},
 		{"since", lexer.SINCE},
 		{"until", lexer.UNTIL},
@@ -174,15 +173,15 @@ func Test_AllKeywords(t *testing.T) {
 	}
 }
 
-func Test_KeywordCaseSensitivity(t *testing.T) {
+func Test_KeyLITERALCaseSensitivity(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected lexer.TokenType
 	}{
-		{"RECALL", lexer.WORD},
-		{"ReCaLl", lexer.WORD},
-		{"Forget", lexer.WORD},
-		{"AND", lexer.WORD},
+		{"RECALL", lexer.LITERAL},
+		{"ReCaLl", lexer.LITERAL},
+		{"Forget", lexer.LITERAL},
+		{"AND", lexer.LITERAL},
 	}
 
 	for _, tt := range tests {
@@ -196,7 +195,7 @@ func Test_KeywordCaseSensitivity(t *testing.T) {
 	}
 }
 
-func Test_KeywordsAsSubstrings(t *testing.T) {
+func Test_KeyLITERALsAsSubstrings(t *testing.T) {
 	tests := []struct {
 		input string
 	}{
@@ -211,8 +210,8 @@ func Test_KeywordsAsSubstrings(t *testing.T) {
 		t.Run(tt.input, func(t *testing.T) {
 			l := lexer.New(tt.input)
 			token := l.Next()
-			if token.Type != lexer.WORD {
-				t.Errorf("Expected %q to be tokenized as WORD, got %v", tt.input, token.Type)
+			if token.Type != lexer.LITERAL {
+				t.Errorf("Expected %q to be tokenized as LITERAL, got %v", tt.input, token.Type)
 			}
 		})
 	}
@@ -229,7 +228,7 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "recall    anna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -238,7 +237,7 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "recall\t\tanna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -247,7 +246,7 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "recall \t \r anna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -256,7 +255,7 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "   recall anna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -265,7 +264,7 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "recall anna   ",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -309,7 +308,7 @@ func Test_BoundaryConditions(t *testing.T) {
 			name:  "single character",
 			input: "a",
 			expected: []lexer.Token{
-				{Type: lexer.WORD, Literal: "a"},
+				{Type: lexer.LITERAL, Literal: "a"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -373,10 +372,10 @@ func Test_ComplexQueries(t *testing.T) {
 			input: "recall anna topic:job",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -386,27 +385,14 @@ func Test_ComplexQueries(t *testing.T) {
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.OR, Literal: "or"},
-				{Type: lexer.WORD, Literal: "bob"},
+				{Type: lexer.LITERAL, Literal: "bob"},
 				{Type: lexer.RPAREN, Literal: ")"},
 				{Type: lexer.AND, Literal: "and"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
-				{Type: lexer.EOL, Literal: ""},
-			},
-		},
-		{
-			name:  "not operation",
-			input: "recall anna not topic:personal",
-			expected: []lexer.Token{
-				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
-				{Type: lexer.NOT, Literal: "not"},
-				{Type: lexer.TOPIC, Literal: "topic"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "personal"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -419,10 +405,10 @@ func Test_ComplexQueries(t *testing.T) {
 				{Type: lexer.VEC, Literal: "vec"},
 				{Type: lexer.TOP, Literal: "top"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "5"},
+				{Type: lexer.LITERAL, Literal: "5"},
 				{Type: lexer.DEPTH, Literal: "depth"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "3"},
+				{Type: lexer.LITERAL, Literal: "3"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -431,13 +417,13 @@ func Test_ComplexQueries(t *testing.T) {
 			input: "recall anna since:2024-01-01 until:2024-12-31",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.SINCE, Literal: "since"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "2024-01-01"},
+				{Type: lexer.LITERAL, Literal: "2024-01-01"},
 				{Type: lexer.UNTIL, Literal: "until"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "2024-12-31"},
+				{Type: lexer.LITERAL, Literal: "2024-12-31"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -470,25 +456,25 @@ func Test_StringScanningEdgeCases(t *testing.T) {
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
 		{
-			name:  "word ending with special char",
-			input: "word:",
+			name:  "LITERAL ending with special char",
+			input: "LITERAL:",
 			expected: []lexer.Token{
-				{Type: lexer.WORD, Literal: "word"},
+				{Type: lexer.LITERAL, Literal: "LITERAL"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
 		{
 			name:  "special char at start",
-			input: ":word",
+			input: ":LITERAL",
 			expected: []lexer.Token{
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "word"},
+				{Type: lexer.LITERAL, Literal: "LITERAL"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -523,42 +509,41 @@ func Test_PositionTracking(t *testing.T) {
 }
 
 func Test_VeryLongQuery(t *testing.T) {
-	input := "recall $vec (anna or bob or charlie) and not (topic:personal or topic:draft) since:2024-01-01 until:2024-12-31 top:10 depth:5"
+	input := "recall $vec (anna or bob or charlie) and (topic:personal or topic:draft) since:2024-01-01 until:2024-12-31 top:10 depth:5"
 
 	expected := []lexer.Token{
 		{Type: lexer.RECALL, Literal: "recall"},
 		{Type: lexer.DOLLAR, Literal: "$"},
 		{Type: lexer.VEC, Literal: "vec"},
 		{Type: lexer.LPAREN, Literal: "("},
-		{Type: lexer.WORD, Literal: "anna"},
+		{Type: lexer.LITERAL, Literal: "anna"},
 		{Type: lexer.OR, Literal: "or"},
-		{Type: lexer.WORD, Literal: "bob"},
+		{Type: lexer.LITERAL, Literal: "bob"},
 		{Type: lexer.OR, Literal: "or"},
-		{Type: lexer.WORD, Literal: "charlie"},
+		{Type: lexer.LITERAL, Literal: "charlie"},
 		{Type: lexer.RPAREN, Literal: ")"},
 		{Type: lexer.AND, Literal: "and"},
-		{Type: lexer.NOT, Literal: "not"},
 		{Type: lexer.LPAREN, Literal: "("},
 		{Type: lexer.TOPIC, Literal: "topic"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.WORD, Literal: "personal"},
+		{Type: lexer.LITERAL, Literal: "personal"},
 		{Type: lexer.OR, Literal: "or"},
 		{Type: lexer.TOPIC, Literal: "topic"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.WORD, Literal: "draft"},
+		{Type: lexer.LITERAL, Literal: "draft"},
 		{Type: lexer.RPAREN, Literal: ")"},
 		{Type: lexer.SINCE, Literal: "since"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.WORD, Literal: "2024-01-01"},
+		{Type: lexer.LITERAL, Literal: "2024-01-01"},
 		{Type: lexer.UNTIL, Literal: "until"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.WORD, Literal: "2024-12-31"},
+		{Type: lexer.LITERAL, Literal: "2024-12-31"},
 		{Type: lexer.TOP, Literal: "top"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.WORD, Literal: "10"},
+		{Type: lexer.LITERAL, Literal: "10"},
 		{Type: lexer.DEPTH, Literal: "depth"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.WORD, Literal: "5"},
+		{Type: lexer.LITERAL, Literal: "5"},
 		{Type: lexer.EOL, Literal: ""},
 	}
 
@@ -583,19 +568,19 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 			input: "remember anna 'worked at Google from 2020 to 2023' topic:job",
 			expected: []lexer.Token{
 				{Type: lexer.REMEMBER, Literal: "remember"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.COMMA, Literal: "'"},
-				{Type: lexer.WORD, Literal: "worked"},
-				{Type: lexer.WORD, Literal: "at"},
-				{Type: lexer.WORD, Literal: "Google"},
-				{Type: lexer.WORD, Literal: "from"},
-				{Type: lexer.WORD, Literal: "2020"},
-				{Type: lexer.WORD, Literal: "to"},
-				{Type: lexer.WORD, Literal: "2023"},
+				{Type: lexer.LITERAL, Literal: "worked"},
+				{Type: lexer.LITERAL, Literal: "at"},
+				{Type: lexer.LITERAL, Literal: "Google"},
+				{Type: lexer.LITERAL, Literal: "from"},
+				{Type: lexer.LITERAL, Literal: "2020"},
+				{Type: lexer.LITERAL, Literal: "to"},
+				{Type: lexer.LITERAL, Literal: "2023"},
 				{Type: lexer.COMMA, Literal: "'"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -604,13 +589,13 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 			input: "forget anna topic:draft since:2023-01-01",
 			expected: []lexer.Token{
 				{Type: lexer.FORGET, Literal: "forget"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "draft"},
+				{Type: lexer.LITERAL, Literal: "draft"},
 				{Type: lexer.SINCE, Literal: "since"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "2023-01-01"},
+				{Type: lexer.LITERAL, Literal: "2023-01-01"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -619,14 +604,14 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 			input: "update anna 'new information' topic:job",
 			expected: []lexer.Token{
 				{Type: lexer.UPDATE, Literal: "update"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.COMMA, Literal: "'"},
-				{Type: lexer.WORD, Literal: "new"},
-				{Type: lexer.WORD, Literal: "information"},
+				{Type: lexer.LITERAL, Literal: "new"},
+				{Type: lexer.LITERAL, Literal: "information"},
 				{Type: lexer.COMMA, Literal: "'"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -657,10 +642,10 @@ func Test_MultiLineQueries(t *testing.T) {
 			input: "recall anna\ntopic:job",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -672,14 +657,14 @@ func Test_MultiLineQueries(t *testing.T) {
 				{Type: lexer.DOLLAR, Literal: "$"},
 				{Type: lexer.VEC, Literal: "vec"},
 				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.OR, Literal: "or"},
-				{Type: lexer.WORD, Literal: "bob"},
+				{Type: lexer.LITERAL, Literal: "bob"},
 				{Type: lexer.RPAREN, Literal: ")"},
 				{Type: lexer.AND, Literal: "and"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -687,7 +672,7 @@ func Test_MultiLineQueries(t *testing.T) {
 			name: "long multi-line query",
 			input: `recall $vec
 (anna or bob or charlie)
-and not (topic:personal or topic:draft)
+and (topic:personal or topic:draft)
 since:2024-01-01
 until:2024-12-31
 top:10 depth:5`,
@@ -696,35 +681,34 @@ top:10 depth:5`,
 				{Type: lexer.DOLLAR, Literal: "$"},
 				{Type: lexer.VEC, Literal: "vec"},
 				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.OR, Literal: "or"},
-				{Type: lexer.WORD, Literal: "bob"},
+				{Type: lexer.LITERAL, Literal: "bob"},
 				{Type: lexer.OR, Literal: "or"},
-				{Type: lexer.WORD, Literal: "charlie"},
+				{Type: lexer.LITERAL, Literal: "charlie"},
 				{Type: lexer.RPAREN, Literal: ")"},
 				{Type: lexer.AND, Literal: "and"},
-				{Type: lexer.NOT, Literal: "not"},
 				{Type: lexer.LPAREN, Literal: "("},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "personal"},
+				{Type: lexer.LITERAL, Literal: "personal"},
 				{Type: lexer.OR, Literal: "or"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "draft"},
+				{Type: lexer.LITERAL, Literal: "draft"},
 				{Type: lexer.RPAREN, Literal: ")"},
 				{Type: lexer.SINCE, Literal: "since"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "2024-01-01"},
+				{Type: lexer.LITERAL, Literal: "2024-01-01"},
 				{Type: lexer.UNTIL, Literal: "until"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "2024-12-31"},
+				{Type: lexer.LITERAL, Literal: "2024-12-31"},
 				{Type: lexer.TOP, Literal: "top"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "10"},
+				{Type: lexer.LITERAL, Literal: "10"},
 				{Type: lexer.DEPTH, Literal: "depth"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "5"},
+				{Type: lexer.LITERAL, Literal: "5"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -733,7 +717,7 @@ top:10 depth:5`,
 			input: "recall\n\n\nanna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -742,10 +726,10 @@ top:10 depth:5`,
 			input: "recall  \n  anna  \n  topic:job",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -754,10 +738,10 @@ top:10 depth:5`,
 			input: "recall\n\tanna\n\t\ttopic:job",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -767,14 +751,14 @@ top:10 depth:5`,
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.WORD, Literal: "anna"},
+				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.OR, Literal: "or"},
-				{Type: lexer.WORD, Literal: "bob"},
+				{Type: lexer.LITERAL, Literal: "bob"},
 				{Type: lexer.RPAREN, Literal: ")"},
 				{Type: lexer.AND, Literal: "and"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.WORD, Literal: "job"},
+				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},

@@ -91,7 +91,7 @@ func (l *Lexer) Next() Token {
 		tokLiteral := l.scanString()
 		tokType, err := KeywordsMap[tokLiteral]
 		if !err {
-			tokType = WORD
+			tokType = LITERAL
 		}
 		tok = Token{Type: tokType, Literal: tokLiteral}
 	}

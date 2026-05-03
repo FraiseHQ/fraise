@@ -34,8 +34,8 @@ const (
 	ILLEGAL TokenType = iota
 	EOL
 
-	// word
-	WORD
+	// literal
+	LITERAL
 
 	// commands
 	RECALL
@@ -46,7 +46,6 @@ const (
 	// boolean operations
 	AND
 	OR
-	NOT
 
 	// punctuation
 	COLON
@@ -74,7 +73,6 @@ var TokenMap = map[TokenType]string{
 	UPDATE:   "update",
 	OR:       "or",
 	AND:      "and",
-	NOT:      "not",
 	COLON:    ":",
 	LPAREN:   "(",
 	RPAREN:   ")",
@@ -86,7 +84,7 @@ var TokenMap = map[TokenType]string{
 	UNTIL:    "until",
 	TOP:      "top",
 	DEPTH:    "depth",
-	WORD:     "word",
+	LITERAL:  "literal",
 	VEC:      "vec",
 	EOL:      "eol",
 }
@@ -98,7 +96,6 @@ var KeywordsMap = map[string]TokenType{
 	"update":   UPDATE,
 	"or":       OR,
 	"and":      AND,
-	"not":      NOT,
 	"topic":    TOPIC,
 	"since":    SINCE,
 	"until":    UNTIL,

@@ -36,14 +36,13 @@ func TestTokenTypeString(t *testing.T) {
 	}{
 		{"ILLEGAL", lexer.ILLEGAL, ""},
 		{"EOL", lexer.EOL, "eol"},
-		{"WORD", lexer.WORD, "word"},
+		{"LITERAL", lexer.LITERAL, "literal"},
 		{"RECALL", lexer.RECALL, "recall"},
 		{"REMEMBER", lexer.REMEMBER, "remember"},
 		{"FORGET", lexer.FORGET, "forget"},
 		{"UPDATE", lexer.UPDATE, "update"},
 		{"AND", lexer.AND, "and"},
 		{"OR", lexer.OR, "or"},
-		{"NOT", lexer.NOT, "not"},
 		{"COLON", lexer.COLON, ":"},
 		{"NEWLINE", lexer.NEWLINE, "\n"},
 		{"COMMA", lexer.COMMA, "'"},
@@ -70,9 +69,9 @@ func TestTokenTypeString(t *testing.T) {
 
 func TestTokenMapCompleteness(t *testing.T) {
 	allTokenTypes := []lexer.TokenType{
-		lexer.ILLEGAL, lexer.EOL, lexer.WORD,
+		lexer.ILLEGAL, lexer.EOL, lexer.LITERAL,
 		lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE,
-		lexer.AND, lexer.OR, lexer.NOT,
+		lexer.AND, lexer.OR,
 		lexer.COLON, lexer.COMMA, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
 		lexer.TOPIC, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
 		lexer.VEC,
@@ -101,11 +100,11 @@ func TestTokenMapNoDuplicates(t *testing.T) {
 	}
 }
 
-func TestKeywordsMapLookup(t *testing.T) {
+func TestKeyLITERALsMapLookup(t *testing.T) {
 	tests := []struct {
-		keyword  string
-		expected lexer.TokenType
-		found    bool
+		keyLITERAL string
+		expected   lexer.TokenType
+		found      bool
 	}{
 		{"recall", lexer.RECALL, true},
 		{"remember", lexer.REMEMBER, true},
@@ -113,7 +112,6 @@ func TestKeywordsMapLookup(t *testing.T) {
 		{"update", lexer.UPDATE, true},
 		{"or", lexer.OR, true},
 		{"and", lexer.AND, true},
-		{"not", lexer.NOT, true},
 		{"topic", lexer.TOPIC, true},
 		{"since", lexer.SINCE, true},
 		{"until", lexer.UNTIL, true},
@@ -126,26 +124,26 @@ func TestKeywordsMapLookup(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.keyword, func(t *testing.T) {
-			result, found := lexer.KeywordsMap[tt.keyword]
+		t.Run(tt.keyLITERAL, func(t *testing.T) {
+			result, found := lexer.KeywordsMap[tt.keyLITERAL]
 			if found != tt.found {
-				t.Errorf("KeywordsMap[%q] found = %v, want %v", tt.keyword, found, tt.found)
+				t.Errorf("KeyLITERALsMap[%q] found = %v, want %v", tt.keyLITERAL, found, tt.found)
 			}
 			if found && result != tt.expected {
-				t.Errorf("KeywordsMap[%q] = %v, want %v", tt.keyword, result, tt.expected)
+				t.Errorf("KeyLITERALsMap[%q] = %v, want %v", tt.keyLITERAL, result, tt.expected)
 			}
 		})
 	}
 }
 
-func TestKeywordsMapCaseSensitivity(t *testing.T) {
-	caseSensitiveTests := []string{"RECALL", "Recall", "ReCaLl", "AND", "Or", "NOT"}
+func TestKeyLITERALsMapCaseSensitivity(t *testing.T) {
+	caseSensitiveTests := []string{"RECALL", "Recall", "ReCaLl", "AND", "Or"}
 
-	for _, keyword := range caseSensitiveTests {
-		t.Run(keyword, func(t *testing.T) {
-			_, found := lexer.KeywordsMap[keyword]
+	for _, keyLITERAL := range caseSensitiveTests {
+		t.Run(keyLITERAL, func(t *testing.T) {
+			_, found := lexer.KeywordsMap[keyLITERAL]
 			if found {
-				t.Errorf("KeywordsMap should be case-sensitive, but found %q", keyword)
+				t.Errorf("KeyLITERALsMap should be case-sensitive, but found %q", keyLITERAL)
 			}
 		})
 	}
@@ -158,9 +156,9 @@ func TestTokenCreation(t *testing.T) {
 		literal   string
 	}{
 		{"Command token", lexer.RECALL, "recall"},
-		{"Word token", lexer.WORD, "example"},
-		{"Empty literal", lexer.WORD, ""},
-		{"Special chars", lexer.WORD, "hello-world_123"},
+		{"LITERAL token", lexer.LITERAL, "example"},
+		{"Empty literal", lexer.LITERAL, ""},
+		{"Special chars", lexer.LITERAL, "hello-world_123"},
 		{"Punctuation", lexer.COLON, ":"},
 		{"Boolean op", lexer.AND, "and"},
 	}
@@ -205,31 +203,31 @@ func TestTokenTypeOutOfRange(t *testing.T) {
 	}
 }
 
-func TestKeywordsMapAndTokenMapConsistency(t *testing.T) {
-	for keyword, tokenType := range lexer.KeywordsMap {
-		t.Run(keyword, func(t *testing.T) {
+func TestKeyLITERALsMapAndTokenMapConsistency(t *testing.T) {
+	for keyLITERAL, tokenType := range lexer.KeywordsMap {
+		t.Run(keyLITERAL, func(t *testing.T) {
 			mappedLiteral, exists := lexer.TokenMap[tokenType]
 			if !exists {
-				t.Errorf("KeywordsMap[%q] = %v, but TokenMap has no entry for %v", keyword, tokenType, tokenType)
+				t.Errorf("KeyLITERALsMap[%q] = %v, but TokenMap has no entry for %v", keyLITERAL, tokenType, tokenType)
 				return
 			}
-			if mappedLiteral != keyword {
-				t.Errorf("Inconsistency: KeywordsMap[%q] = %v, but TokenMap[%v] = %q",
-					keyword, tokenType, tokenType, mappedLiteral)
+			if mappedLiteral != keyLITERAL {
+				t.Errorf("Inconsistency: KeyLITERALsMap[%q] = %v, but TokenMap[%v] = %q",
+					keyLITERAL, tokenType, tokenType, mappedLiteral)
 			}
 		})
 	}
 }
 
-func TestRoundTripTokenTypeToStringToKeyword(t *testing.T) {
-	keywordTokens := []lexer.TokenType{
+func TestRoundTripTokenTypeToStringToKeyLITERAL(t *testing.T) {
+	keyLITERALTokens := []lexer.TokenType{
 		lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE,
-		lexer.AND, lexer.OR, lexer.NOT,
+		lexer.AND, lexer.OR,
 		lexer.TOPIC, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
 		lexer.VEC,
 	}
 
-	for _, original := range keywordTokens {
+	for _, original := range keyLITERALTokens {
 		t.Run(original.String(), func(t *testing.T) {
 			literal := original.String()
 			if literal == "" {
@@ -238,7 +236,7 @@ func TestRoundTripTokenTypeToStringToKeyword(t *testing.T) {
 
 			lookedUp, found := lexer.KeywordsMap[literal]
 			if !found {
-				t.Errorf("Round trip failed: %v → %q, but %q not in KeywordsMap",
+				t.Errorf("Round trip failed: %v → %q, but %q not in KeyLITERALsMap",
 					original, literal, literal)
 				return
 			}
