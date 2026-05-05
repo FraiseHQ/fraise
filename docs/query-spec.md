@@ -123,4 +123,4 @@ param_ref         = '$' identifier ;
 * **field value**: value of a field used to find a fact
 * **term**: a word or sequence of words used to find a fact.
 * **command**: task to perform by the engine: recall, remember, forget, update
-* **instruction**: a full query sent to the database engine with a command, search terms and fields.
+* **instruction**: a full query sent to the database engine with a command, search terms and fields (can be used interchangeably with the term query).
