@@ -57,6 +57,7 @@ const (
 
 	// fields
 	TOPIC
+	ENTITY
 	SINCE
 	UNTIL
 	TOP
@@ -80,6 +81,7 @@ var TokenMap = map[TokenType]string{
 	COMMA:    "'",
 	NEWLINE:  "\n",
 	TOPIC:    "topic",
+	ENTITY:   "entity",
 	SINCE:    "since",
 	UNTIL:    "until",
 	TOP:      "top",
@@ -97,6 +99,7 @@ var KeywordsMap = map[string]TokenType{
 	"or":       OR,
 	"and":      AND,
 	"topic":    TOPIC,
+	"entity":   ENTITY,
 	"since":    SINCE,
 	"until":    UNTIL,
 	"top":      TOP,
