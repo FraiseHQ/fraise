@@ -35,7 +35,7 @@ type Index[K comparable, V string | []float32 | []float64, P float32 | float64] 
 	Del(key K) error
 
 	// search value in index
-	Search(value V) (K, error)
+	Search(value V) ([]K, error)
 
 	Size() int    // Index size in MiB
 	Count() int   // size of element in index
