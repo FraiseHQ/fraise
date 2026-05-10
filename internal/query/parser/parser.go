@@ -26,7 +26,10 @@ import "github.com/RonsenbergVI/fraise/internal/query/lexer"
 
 type Parser struct {
 	Lexer *lexer.Lexer
-	Pos   lexer.Position
-	Tok   lexer.Token
-	Val   string
+
+	PreviousToken lexer.Token
+
+	CurrentToken lexer.Token
+
+	errors []error
 }

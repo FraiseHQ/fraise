@@ -20,10 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package graph
+package bkdtree
 
-type Node interface {
-}
-
-type Edge interface {
+type BKDTreeIndex[K comparable, P float32 | float64] struct {
 }

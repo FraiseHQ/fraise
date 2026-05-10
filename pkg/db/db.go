@@ -27,32 +27,46 @@ import (
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/graph"
-	"github.com/RonsenbergVI/fraise/internal/index"
+	"github.com/RonsenbergVI/fraise/pkg/engine"
 )
 
-type DB[N uint32] struct {
+type DB[K comparable, P float32 | float64] struct {
 	mu sync.RWMutex
 
+	buf    []byte
 	Config config.ConfigSet
-	Graphs []graph.Graph
+	Graphs []graph.Graph[K, P]
+
+	engine *engine.Engine[K, P]
 }
 
-func (d *DB[N]) Init() error {
-
+type Stats struct {
 }
 
-func (d *DB[N]) Start() error {
-
-}
-
-func (d *DB[N]) Stop() error {
+func (d *DB[K, P]) Init() error {
 
 }
 
-func (d *DB[N]) CreateIndex(name string, index index.Index) error {
+func (d *DB[K, P]) Start() error {
 
 }
 
-func (d *DB[N]) DropIndex(name string) error {
+func (d *DB[K, P]) Stop() error {
+}
 
+// selects with graph to use
+func (d *DB[K, P]) Select(index int) error {
+
+}
+
+// Executes Query
+func (d *DB[K, P]) Executes(query string) error {
+
+	d.engine.Lock()
+
+	transaction, err := d.engine.Init(query)
+
+	result, err := d.engine.Run(transaction)
+
+	d.engine.Release()
 }

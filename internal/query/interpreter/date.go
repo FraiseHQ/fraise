@@ -20,34 +20,4 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package engine
-
-import (
-	"sync"
-
-	"github.com/RonsenbergVI/fraise/internal/query"
-)
-
-type Engine[K comparable, P float32 | float64] struct {
-	mu sync.RWMutex
-}
-
-func (e *Engine[K, P]) Init() {
-
-}
-
-func (e *Engine[K, P]) Run(transaction *Transaction) error {
-	return nil
-}
-
-func (e *Engine[K, P]) Query(q *query.Query[P]) *query.QueryResult[K, P] {
-	return nil
-}
-
-func (e *Engine[K, P]) Lock() error {
-
-}
-
-func (e *Engine[K, P]) Release() error {
-
-}
+package interpreter

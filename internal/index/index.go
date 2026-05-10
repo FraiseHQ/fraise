@@ -23,21 +23,29 @@
 package index
 
 // An index is used to search over a collection of values V indexed by their key K
-type Index[K comparable, V string | []float32 | []float64, P float32 | float64] interface {
+type Index[K comparable, V string | float32 | float64, P float32 | float64] interface {
 
 	// Insert into index
-	Put(key K, value V) error
+	Set(key K, value V) error
 
 	// Retrieve element from index
 	Get(key K) (V, error)
+
+	// Update index entry
+	Put(key K, value V) error
 
 	// Remove element
 	Del(key K) error
 
 	// search value in index
-	Search(value V) ([]K, error)
+	Search(value []V) ([]K, error)
 
-	Size() int    // Index size in MiB
-	Count() int   // size of element in index
-	Flush() error // flush all elements in the index
+	// Index size in MiB
+	Size() int
+
+	// size of element in index
+	Count() int
+
+	// flush all elements in the index
+	Flush() error
 }

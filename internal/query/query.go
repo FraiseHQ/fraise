@@ -20,4 +20,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package index
+package query
+
+type Query[P float32 | float64] struct {
+	Keywords []string
+	Vector   []P
+	Entities []string
+	Topics   []string
+
+	parameters QueryParameters
+}
+
+type QueryParameters struct {
+	Top   int
+	Depth int
+	Since string
+	Until string
+}
+
+type QueryResult[K comparable, P float32 | float64] struct {
+	Count int
+	Hits  []Hit[K, P]
+}
+
+type Hit[K comparable, P float32 | float64] struct {
+	ID    K
+	Score P
+}

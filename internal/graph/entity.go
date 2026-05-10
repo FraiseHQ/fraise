@@ -20,34 +20,52 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package engine
+package graph
 
-import (
-	"sync"
+import "time"
 
-	"github.com/RonsenbergVI/fraise/internal/query"
-)
-
-type Engine[K comparable, P float32 | float64] struct {
-	mu sync.RWMutex
+type Entity[K comparable] interface {
+	GetID() K
+	GetValue() string
+	GetTimestamp() time.Time
+	Properties() EntityProperties
 }
 
-func (e *Engine[K, P]) Init() {
-
+type EntityAttributes struct {
+	Value     string
+	Timestamp time.Time
 }
 
-func (e *Engine[K, P]) Run(transaction *Transaction) error {
-	return nil
+type EntityProperties struct {
+	Attributes map[string]string
 }
 
-func (e *Engine[K, P]) Query(q *query.Query[P]) *query.QueryResult[K, P] {
-	return nil
+type Fact[K comparable] struct {
+	ID K
+	EntityAttributes
+	Properties EntityProperties
 }
 
-func (e *Engine[K, P]) Lock() error {
-
+func (f Fact[K]) GetValue() string {
+	return f.Value
 }
 
-func (e *Engine[K, P]) Release() error {
+type NamedEntity[K comparable] struct {
+	ID K
+	EntityAttributes
+	Properties EntityProperties
+}
 
+func (n NamedEntity[K]) GetValue() string {
+	return n.Value
+}
+
+type Topic[K comparable] struct {
+	ID K
+	EntityAttributes
+	Properties EntityProperties
+}
+
+func (t Topic[K]) GetValue() string {
+	return t.Value
 }

@@ -22,8 +22,24 @@
 
 package engine
 
+import "github.com/RonsenbergVI/fraise/internal/query"
+
 // data structure representing a transaction.
 // A transaction is the language for the engine to the worker
-//
-type Transaction struct {
+// Transactions can be read-only or read and write.
+type Transaction[P float32 | float64] struct {
+	Query   query.Query[P]
+	Write   bool
+	Context *WriteContext
+}
+
+type WriteContext struct {
+}
+
+func (tx *Transaction[P]) Commit(ctx *WriteContext) {
+
+}
+
+func FromQuery(query string) *Transaction[P] {
+
 }

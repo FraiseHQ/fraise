@@ -20,34 +20,21 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package engine
+package graph
 
-import (
-	"sync"
+import "time"
 
-	"github.com/RonsenbergVI/fraise/internal/query"
-)
-
-type Engine[K comparable, P float32 | float64] struct {
-	mu sync.RWMutex
+type Relationship[K comparable] interface {
+	GetSource() Entity[K]
+	GetTarget() Entity[K]
+	GetTimestamp() time.Time
+	GetProperties() RelationshipProperties
 }
 
-func (e *Engine[K, P]) Init() {
-
+type RelationshipAttributes struct {
+	Timestamp time.Time
 }
 
-func (e *Engine[K, P]) Run(transaction *Transaction) error {
-	return nil
-}
-
-func (e *Engine[K, P]) Query(q *query.Query[P]) *query.QueryResult[K, P] {
-	return nil
-}
-
-func (e *Engine[K, P]) Lock() error {
-
-}
-
-func (e *Engine[K, P]) Release() error {
-
+type RelationshipProperties struct {
+	Attributes map[string]string
 }

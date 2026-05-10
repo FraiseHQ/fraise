@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package engine
+package hnsw
 
-type Query interface {
+type HNSWIndex[K comparable, P float32 | float64] struct {
 }

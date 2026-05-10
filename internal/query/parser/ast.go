@@ -22,32 +22,14 @@
 
 package parser
 
-import "github.com/RonsenbergVI/fraise/internal/query/lexer"
+type Instruction interface {
+}
 
 type Node interface {
-	Pos() lexer.Position
-	End() lexer.Position
+	Eval() error
+	
 }
 
-type BinaryOp struct {
-	Tok lexer.Token
-	Pos lexer.Position
-	LHS Node
-	RHS Node
-}
-
-type UnaryOp struct {
-	Tok lexer.Token
-	Pos lexer.Position
-	LHS Node
-}
-
-type Field struct {
-	Tok lexer.Token
-	Pos lexer.Position
-}
-
-type Literal struct {
-	Tok lexer.Token
-	Pos lexer.Position
+// Node representing a command
+type CommandNode struct {
 }

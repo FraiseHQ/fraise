@@ -22,5 +22,9 @@
 
 package server
 
-type Handler interface {
+import "github.com/RonsenbergVI/fraise/pkg/db"
+
+// Handlers encapsulates all API route handlers
+type Handlers[K comparable, P float32 | float64] struct {
+	db *db.DB[K, P]
 }

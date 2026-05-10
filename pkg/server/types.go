@@ -21,3 +21,16 @@
 // SOFTWARE.
 
 package server
+
+type Request struct {
+}
+
+type Error struct {
+	Status  int    `json:"status"`
+	Message string `json:"message"`
+	Error   string `json:"error,omitempty"`
+}
+
+type Response struct {
+	errors []Error
+}
