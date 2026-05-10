@@ -22,33 +22,22 @@
 
 package index
 
-import (
-	"github.com/RonsenbergVI/fraise/internal/query"
-)
+// An index is used to search over a collection of values V indexed by their key K
+type Index[K comparable, V string | []float32 | []float64, P float32 | float64] interface {
 
-type Index interface {
-	Put(q query.Query) (query.QueryResult, error)
-	Get(q query.Query) (query.QueryResult, error)
-	Del(q query.Query) (query.QueryResult, error)
-	Size() int
-}
+	// Insert into index
+	Put(key K, value V) error
 
-type Iterator interface {
-	First() bool
-	Last() bool
-	Seek() bool
-	Next() bool
-	Previous() bool
-	Valid() bool
-	Error() bool
+	// Retrieve element from index
+	Get(key K) (V, error)
 
-	ID() []byte
-	Fact() []byte
-	Topics() [][]byte
-}
+	// Remove element
+	Del(key K) error
 
-type TextIndex interface {
-}
+	// search value in index
+	Search(value V) (K, error)
 
-type VectorIndex interface {
+	Size() int    // Index size in MiB
+	Count() int   // size of element in index
+	Flush() error // flush all elements in the index
 }
