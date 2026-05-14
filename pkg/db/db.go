@@ -27,46 +27,54 @@ import (
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/graph"
-	"github.com/RonsenbergVI/fraise/pkg/engine"
 )
 
-type DB[K comparable, P float32 | float64] struct {
+// the db hols the logic of translating low level calls to the memory Graphs
+// from and to the transaction object (that the server directly serialises to the client)
+type DB[K comparable, V any, P float32 | float64] struct {
 	mu sync.RWMutex
 
 	buf    []byte
 	Config config.ConfigSet
-	Graphs []graph.Graph[K, P]
+	Graphs []*graph.Graph[K, P]
 
-	engine *engine.Engine[K, P]
+	currentGraph *graph.Graph[K, P]
+	stats        Stats
 }
 
 type Stats struct {
 }
 
-func (d *DB[K, P]) Init() error {
-
+func (d *DB[K, V, P]) Start() error {
+	return nil
 }
 
-func (d *DB[K, P]) Start() error {
-
+func (d *DB[K, V, P]) Stop() error {
+	return nil
 }
 
-func (d *DB[K, P]) Stop() error {
+func (d *DB[K, V, P]) Stats() error {
+	return nil
 }
 
 // selects with graph to use
-func (d *DB[K, P]) Select(index int) error {
-
+func (d *DB[K, V, P]) Select(index int) error {
+	return nil
 }
 
-// Executes Query
-func (d *DB[K, P]) Executes(query string) error {
+func (d *DB[K, V, P]) Get(key K) K {
+	return d.currentGraph.Get(key)
+}
 
-	d.engine.Lock()
+func (d *DB[K, V, P]) Set(key K, value V) {
+	d.currentGraph.Set(key, value)
+}
 
-	transaction, err := d.engine.Init(query)
+func (d *DB[K, V, P]) Put(key K, value V) {
+	d.currentGraph.Put(key, value)
+}
 
-	result, err := d.engine.Run(transaction)
+func (d *DB[K, V, P]) Search(keywords []string, vector []P, topics []string, entities []string) {
+	results := d.currentGraph.Search(keywords, vector, topics, entities)
 
-	d.engine.Release()
 }

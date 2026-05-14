@@ -22,41 +22,13 @@
 
 package engine
 
-import (
-	"sync"
+import "github.com/RonsenbergVI/fraise/internal/containers"
 
-	"github.com/RonsenbergVI/fraise/internal/query"
-	"github.com/RonsenbergVI/fraise/pkg/db"
-)
-
-type Engine[K comparable, P float32 | float64] struct {
-	mu sync.RWMutex
-
-	scheduler *Scheduler[K, P]
-	DB        *db.DB[K, P]
+type Scheduler[K comparable, P float32 | float64] struct {
+	writeInFlight bool
+	Queue         containers.Queue[*Transaction[K, P]]
 }
 
-func (e *Engine[K, P]) Start() {
+func (s *Scheduler[K, P]) Next() {
 
-}
-
-func (e *Engine[K, P]) Stop() {
-
-}
-
-func (e *Engine[K, P]) Plan(query *query.Query[P]) (*Transaction[K, P], error) {
-
-	return nil, nil
-}
-
-func (e *Engine[K, P]) Apply(transaction *Transaction[K, P]) error {
-	return nil
-}
-
-func (e *Engine[K, P]) Lock() error {
-	return nil
-}
-
-func (e *Engine[K, P]) Release() error {
-	return nil
 }
