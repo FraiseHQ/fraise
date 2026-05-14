@@ -26,7 +26,6 @@ import (
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/index"
-	"github.com/RonsenbergVI/fraise/internal/query"
 )
 
 type GraphStats struct {
@@ -47,7 +46,7 @@ type Graph[K comparable, P float32 | float64] interface {
 
 	AddRelationship(relationship Relationship[K], options ...func(*RelationshipProperties)) error
 
-	Search(query query.Query[P]) query.QueryResult[K, P]
+	GetNeighbours(e []*Entity[K], keywords []string, depth int, top int) []*Entity[K]
 
 	Index(fact Fact[K]) error
 }
@@ -78,14 +77,15 @@ func (g *InMemoryGraph[K, P]) Set(key K, value map[string]any) error {
 	return nil
 }
 
-func (g *InMemoryGraph[K, P]) Get(key K) (map[string]any, error) {
-	return nil, nil
-}
-
-func (g *InMemoryGraph[K, P]) Put(key K, value map[string]any) error {
+func (g *InMemoryGraph[K, P]) Get(key K) *Entity[K] {
 	return nil
 }
 
-func (g *InMemoryGraph[K, P]) Search(query query.Query[P]) query.QueryResult[K, P] {
+func (g *InMemoryGraph[K, P]) Put(key K, entity Entity[K]) error {
+	return nil
+}
+
+// find neighbours of an entity
+func (g *InMemoryGraph[K, P]) GetNeighbours(e []*Entity[K], keywords []string, depth int, top int) []*Entity[K] {
 	return nil
 }

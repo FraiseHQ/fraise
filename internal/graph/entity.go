@@ -29,11 +29,13 @@ type Entity[K comparable] interface {
 	GetValue() string
 	GetTimestamp() time.Time
 	Properties() EntityProperties
+	Hash() uint32
 }
 
-type EntityAttributes struct {
-	Value     string
-	Timestamp time.Time
+type EntityAttributes[K comparable] struct {
+	Value         string
+	Relationships []*Relationship[K]
+	Timestamp     time.Time
 }
 
 type EntityProperties struct {
@@ -42,7 +44,7 @@ type EntityProperties struct {
 
 type Fact[K comparable] struct {
 	ID K
-	EntityAttributes
+	EntityAttributes[K]
 	Properties EntityProperties
 }
 
@@ -52,7 +54,7 @@ func (f Fact[K]) GetValue() string {
 
 type NamedEntity[K comparable] struct {
 	ID K
-	EntityAttributes
+	EntityAttributes[K]
 	Properties EntityProperties
 }
 
@@ -62,7 +64,7 @@ func (n NamedEntity[K]) GetValue() string {
 
 type Topic[K comparable] struct {
 	ID K
-	EntityAttributes
+	EntityAttributes[K]
 	Properties EntityProperties
 }
 

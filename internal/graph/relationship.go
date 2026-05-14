@@ -25,10 +25,11 @@ package graph
 import "time"
 
 type Relationship[K comparable] interface {
-	GetSource() Entity[K]
-	GetTarget() Entity[K]
+	Source() *Entity[K]
+	Target() *Entity[K]
 	GetTimestamp() time.Time
 	GetProperties() RelationshipProperties
+	Hash() uint32
 }
 
 type RelationshipAttributes struct {
@@ -37,4 +38,16 @@ type RelationshipAttributes struct {
 
 type RelationshipProperties struct {
 	Attributes map[string]string
+}
+
+type Mentions[K comparable] struct {
+	Fact        *Fact[K]
+	NamedEntity *NamedEntity[K]
+	RelationshipProperties
+}
+
+type IsAbout[K comparable] struct {
+	Fact  *Fact[K]
+	Topic *Topic[K]
+	RelationshipProperties
 }
