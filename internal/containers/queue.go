@@ -21,3 +21,21 @@
 // SOFTWARE.
 
 package containers
+
+type Queue[T any] struct {
+	Offset  int
+	Current T
+	Data    []T
+}
+
+func New[T any](capacity int) *Queue[T] {
+	return &Queue[T]{Data: make([]T, 0, capacity)}
+}
+
+func NewFrom[T any](values ...T) *Queue[T] {
+	return &Queue[T]{Data: values}
+}
+
+func (q *Queue[T]) Capacity() int {
+	return len(q.Data)
+}

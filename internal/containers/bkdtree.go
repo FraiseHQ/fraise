@@ -21,10 +21,3 @@
 // SOFTWARE.
 
 package containers
-
-import "github.com/RonsenbergVI/fraise/internal/hash"
-
-type Heap[K comparable, V any] struct {
-	Data    []*hash.Element[K, V]
-	Mapping map[K]*hash.Element[K, V]
-}
