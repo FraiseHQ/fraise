@@ -21,3 +21,13 @@
 // SOFTWARE.
 
 package hash
+
+type MurmurHash[K comparable] struct {
+	Offset int
+	Size   int
+	Seed   int
+}
+
+func (m MurmurHash[K]) Hash(data []K) {
+
+}
