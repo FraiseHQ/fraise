@@ -30,6 +30,8 @@ deemed more relevant than older ones.
 
 ## Query Engine
 
+Fraise query language is an extension of Lucene
+
 ## Temporality
 
 ## References

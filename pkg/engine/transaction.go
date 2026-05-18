@@ -40,26 +40,26 @@ type Transaction[K comparable, V any, P float32 | float64] struct {
 type WriteContext struct {
 }
 
-func (tx *Transaction[K, P]) Commit(ctx *WriteContext) error {
+func (tx *Transaction[K, V, P]) Commit(ctx *WriteContext) error {
 	return nil
 }
 
-func (tx *Transaction[K, P]) Rollback() error {
+func (tx *Transaction[K, V, P]) Rollback() error {
 	return nil
 }
 
-func (tx *Transaction[K, P]) Get(key K) []K {
+func (tx *Transaction[K, V, P]) Get(key K) K {
 	return tx.DB.Get(key)
 }
 
-func (tx *Transaction[K, P]) Set(key K, ctx *WriteContext) {
+func (tx *Transaction[K, V, P]) Set(key K, ctx *WriteContext) {
 
 }
 
-func (tx *Transaction[K, P]) Put(key K, ctx *WriteContext) {
+func (tx *Transaction[K, V, P]) Put(key K, ctx *WriteContext) {
 
 }
 
-func (tx *Transaction[K, P]) Search(key K, ctx *WriteContext) {
+func (tx *Transaction[K, V, P]) Search(key K, ctx *WriteContext) {
 
 }

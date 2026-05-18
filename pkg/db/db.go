@@ -63,7 +63,8 @@ func (d *DB[K, V, P]) Select(index int) error {
 }
 
 func (d *DB[K, V, P]) Get(key K) K {
-	return d.currentGraph.Get(key)
+	entity := (*(d.currentGraph)).Get(key)
+	return (*entity).GetID()
 }
 
 func (d *DB[K, V, P]) Set(key K, value V) {

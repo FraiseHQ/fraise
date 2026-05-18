@@ -29,34 +29,34 @@ import (
 	"github.com/RonsenbergVI/fraise/pkg/db"
 )
 
-type Engine[K comparable, P float32 | float64] struct {
+type Engine[K comparable, V any, P float32 | float64] struct {
 	mu sync.RWMutex
 
-	scheduler *Scheduler[K, P]
-	DB        *db.DB[K, P]
+	scheduler *Scheduler[K, V, P]
+	DB        *db.DB[K, V, P]
 }
 
-func (e *Engine[K, P]) Start() {
-
-}
-
-func (e *Engine[K, P]) Stop() {
+func (e *Engine[K, V, P]) Start() {
 
 }
 
-func (e *Engine[K, P]) Plan(query *query.Query[P]) (*Transaction[K, P], error) {
+func (e *Engine[K, V, P]) Stop() {
+
+}
+
+func (e *Engine[K, V, P]) Plan(query *query.Query[P]) (*Transaction[K, V, P], error) {
 
 	return nil, nil
 }
 
-func (e *Engine[K, P]) Apply(transaction *Transaction[K, P]) error {
+func (e *Engine[K, V, P]) Apply(transaction *Transaction[K, V, P]) error {
 	return nil
 }
 
-func (e *Engine[K, P]) Lock() error {
+func (e *Engine[K, V, P]) Lock() error {
 	return nil
 }
 
-func (e *Engine[K, P]) Release() error {
+func (e *Engine[K, V, P]) Release() error {
 	return nil
 }

@@ -25,11 +25,7 @@ package graph
 import "time"
 
 type Entity[K comparable] interface {
-	GetID() K
-	GetValue() string
-	GetTimestamp() time.Time
-	Properties() EntityProperties
-	Hash() uint32
+	GetProperties() EntityProperties
 }
 
 type EntityAttributes[K comparable] struct {
@@ -48,8 +44,16 @@ type Fact[K comparable] struct {
 	Properties EntityProperties
 }
 
+func (f Fact[K]) GetID() K {
+	return f.ID
+}
+
 func (f Fact[K]) GetValue() string {
 	return f.Value
+}
+
+func (f Fact[K]) GetTimestamp() time.Time {
+	return f.Timestamp
 }
 
 type NamedEntity[K comparable] struct {
@@ -58,8 +62,16 @@ type NamedEntity[K comparable] struct {
 	Properties EntityProperties
 }
 
+func (n NamedEntity[K]) GetID() K {
+	return n.ID
+}
+
 func (n NamedEntity[K]) GetValue() string {
 	return n.Value
+}
+
+func (n NamedEntity[K]) GetTimestamp() time.Time {
+	return n.Timestamp
 }
 
 type Topic[K comparable] struct {
@@ -68,6 +80,14 @@ type Topic[K comparable] struct {
 	Properties EntityProperties
 }
 
+func (t Topic[K]) GetID() K {
+	return t.ID
+}
+
 func (t Topic[K]) GetValue() string {
 	return t.Value
+}
+
+func (t Topic[K]) GetTimestamp() time.Time {
+	return t.Timestamp
 }

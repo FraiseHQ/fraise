@@ -26,16 +26,16 @@ package index
 type Index[K comparable, V string | float32 | float64, P float32 | float64] interface {
 
 	// Insert into index
-	Set(key K, value V) error
+	Insert(key K, value V) error
 
 	// Retrieve element from index
-	Get(key K) (V, error)
+	Retrieve(key K) (V, error)
 
 	// Update index entry
-	Put(key K, value V) error
+	Update(key K, value V) error
 
 	// Remove element
-	Del(key K) error
+	Delete(key K) error
 
 	// search value in index
 	Search(value []V) ([]K, error)

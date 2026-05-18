@@ -24,11 +24,11 @@ package engine
 
 import "github.com/RonsenbergVI/fraise/internal/containers"
 
-type Scheduler[K comparable, P float32 | float64] struct {
+type Scheduler[K comparable, V any, P float32 | float64] struct {
 	writeInFlight bool
-	Queue         containers.Queue[*Transaction[K, P]]
+	Queue         containers.Queue[*Transaction[K, V, P]]
 }
 
-func (s *Scheduler[K, P]) Next() {
+func (s *Scheduler[K, V, P]) Next() {
 
 }

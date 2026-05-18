@@ -20,31 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package graph
+package search
 
-import "time"
-
-type Relationship[K comparable] interface {
-	Source() *Entity[K]
-	Target() *Entity[K]
-}
-
-type RelationshipAttributes struct {
-	Timestamp time.Time
-}
-
-type RelationshipProperties struct {
-	Attributes map[string]string
-}
-
-type Mentions[K comparable] struct {
-	Fact        *Fact[K]
-	NamedEntity *NamedEntity[K]
-	RelationshipProperties
-}
-
-type IsAbout[K comparable] struct {
-	Fact  *Fact[K]
-	Topic *Topic[K]
-	RelationshipProperties
+type Search struct {
 }

@@ -23,8 +23,6 @@
 package graph
 
 import (
-	"sync"
-
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
@@ -46,19 +44,16 @@ type Graph[K comparable, P float32 | float64] interface {
 
 	AddRelationship(relationship Relationship[K], options ...func(*RelationshipProperties)) error
 
-	GetNeighbours(e []*Entity[K], keywords []string, depth int, top int) []*Entity[K]
+	Get(key K) *Node[K]
 
-	Index(fact Fact[K]) error
+	Set(entity *Entity[K])
+
+	Put(key K, entity *Entity[K])
+
+	GetNeighbours(e []*Entity[K], keywords []string, depth int, top int) []*Entity[K]
 }
 
 type InMemoryGraph[K comparable, P float32 | float64] struct {
-	Entities      map[K]*Entity[K]
-	Relationships map[K]*Relationship[K]
-
-	Vector *index.Index[K, float32, P]
-	Text   *index.Index[K, string, P]
-
-	mu sync.RWMutex
 }
 
 func (g *InMemoryGraph[K, P]) GetVectorIndex() *index.Index[K, float32, P] {
