@@ -22,7 +22,10 @@
 
 package scheduler
 
+import "github.com/RonsenbergVI/fraise/internal/config"
+
 type Scheduler struct {
+	Config *config.ConfigSet
 }
 
 type Task struct {

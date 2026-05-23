@@ -20,4 +20,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package helpers
+package logger
+
+import "github.com/RonsenbergVI/fraise/internal/config"
+
+type Logger struct {
+	config *config.ConfigSet
+}

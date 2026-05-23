@@ -25,6 +25,7 @@ package engine
 import (
 	"sync"
 
+	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/pkg/db"
 )
@@ -32,8 +33,9 @@ import (
 type Engine[K comparable, V any, P float32 | float64] struct {
 	mu sync.RWMutex
 
-	scheduler *Scheduler[K, V, P]
+	Scheduler *Scheduler[K, V, P]
 	DB        *db.DB[K, V, P]
+	Config    *config.ConfigSet
 }
 
 func (e *Engine[K, V, P]) Start() {

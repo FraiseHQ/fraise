@@ -52,14 +52,14 @@ func (tx *Transaction[K, V, P]) Get(key K) K {
 	return tx.DB.Get(key)
 }
 
-func (tx *Transaction[K, V, P]) Set(key K, ctx *WriteContext) {
-
+func (tx *Transaction[K, V, P]) Set(key K, value V, ctx *WriteContext) error {
+	return nil
 }
 
-func (tx *Transaction[K, V, P]) Put(key K, ctx *WriteContext) {
-
+func (tx *Transaction[K, V, P]) Put(key K, value V, ctx *WriteContext) error {
+	return nil
 }
 
-func (tx *Transaction[K, V, P]) Search(key K, ctx *WriteContext) {
-
+func (tx *Transaction[K, V, P]) Search(query []V, ctx *WriteContext) []K {
+	return nil
 }

@@ -23,6 +23,7 @@
 package db
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
@@ -35,7 +36,7 @@ type DB[K comparable, V any, P float32 | float64] struct {
 	mu sync.RWMutex
 
 	buf    []byte
-	Config config.ConfigSet
+	Config *config.ConfigSet
 	Graphs []*graph.Graph[K, P]
 
 	currentGraph *graph.Graph[K, P]
@@ -62,16 +63,24 @@ func (d *DB[K, V, P]) Select(index int) error {
 	return nil
 }
 
-func (d *DB[K, V, P]) Get(key K) K {
+func (d *DB[K, V, P]) Get(key K) *K {
 	entity := (*(d.currentGraph)).Get(key)
-	return (*entity).GetID()
+	if entity != nil {
+		return nil
+	}
+	result := (*entity).GetID()
+	return &result
 }
 
-func (d *DB[K, V, P]) Set(key K, value V) {
-	d.currentGraph.Set(key, value)
+func (d *DB[K, V, P]) Set(key K, value V) error {
+	err := d.currentGraph.Set(key, value)
+	if err != nil {
+		return err, 
+	}
+	return errors
 }
 
-func (d *DB[K, V, P]) Put(key K, value V) {
+func (d *DB[K, V, P]) Put(key K, value V) error {
 	d.currentGraph.Put(key, value)
 }
 
