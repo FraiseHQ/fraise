@@ -61,16 +61,16 @@ type KnowledgeGraph[K comparable, V string | ~float32 | ~int | ~bool, P float32 
 	Locked() bool
 
 	// Entities
-	Entities() []*Entity[K]
+	Entities() []*Entity[K, V]
 
 	// Relationships
-	Relationships() []*Relationship[K]
+	Relationships() []*Relationship[K, V]
 
 	// Adjacency map
-	AdjacencyMap() map[K]map[K]*Relationship[K]
+	AdjacencyMap() map[K]map[K]*Relationship[K, V]
 
 	// Predecessor map
-	PredecessorMap() map[K]map[K]*Relationship[K]
+	PredecessorMap() map[K]map[K]*Relationship[K, V]
 
 	// Number of Entities in the graph
 	Order() (int error)

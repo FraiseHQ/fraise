@@ -24,6 +24,6 @@ package graph
 
 type InMemoryKnowledgeGraph[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
 	idToNodes     map[K]Node[K, V]
-	nodeToSources map[K]map[K]Relationship[K]
-	nodeToTargets map[K]map[K]Relationship[K]
+	nodeToSources map[K]map[K]Relationship[K, V]
+	nodeToTargets map[K]map[K]Relationship[K, V]
 }
