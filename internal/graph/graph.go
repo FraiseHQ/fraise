@@ -27,60 +27,57 @@ import (
 )
 
 type GraphStats struct {
+	Order int
+	Size  int
+	Nodes int
 }
 
-// Hashing fuinction that takes as input an entity (or vertex)
-// and returns a hash.
-type Hash[K comparable] func(Entity[K]) K
+// Hashing fuinction that takes as input a node and returns a hash.
+type Hash[K comparable, V string | ~float32 | ~int | ~bool] func(*Node[K, V]) K
 
-type Graph[K comparable, P float32 | float64] interface {
-	Stats() GraphStats
-	Locked() bool
+// A knowledge graph is the storage atomic component of the database server.
+// A la Redis, every single database server has multiple in memory graphs (default 13)
+type KnowledgeGraph[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] interface {
+	// Generic Graph methods
+	// Retrieves Node
+	Get(key K) *Node[K, V]
 
+	// Sets Node
+	Set(node *Node[K, V]) error
+
+	// Updates node
+	Put(key K, node *Node[K, V], options ...func(*Properties[V])) error
+
+	// Delete node
+	Delete(node *Node[K, V]) error
+
+	// Returns the graph vector index
 	GetVectorIndex() index.Index[K, float32, P]
+
+	// Returns the graph full text search index
 	GetTextIndex() index.Index[K, string, P]
 
-	AddEntity(e Entity[K], options ...func(*EntityProperties)) error
+	// Checks if graph is locked
+	Locked() bool
 
-	AddRelationship(relationship Relationship[K], options ...func(*RelationshipProperties)) error
+	// Entities
+	Entities() []*Entity[K]
 
-	Get(key K) *Node[K]
+	// Relationships
+	Relationships() []*Relationship[K]
 
-	Set(entity *Entity[K])
+	// Adjacency map
+	AdjacencyMap() map[K]map[K]*Relationship[K]
 
-	Put(key K, entity *Entity[K])
+	// Predecessor map
+	PredecessorMap() map[K]map[K]*Relationship[K]
 
-	GetNeighbours(e []*Entity[K], keywords []string, depth int, top int) []*Entity[K]
-}
+	// Number of Entities in the graph
+	Order() (int error)
 
-type InMemoryGraph[K comparable, P float32 | float64] struct {
-}
+	// Number of Relationships in the graph
+	Size() (int error)
 
-func (g *InMemoryGraph[K, P]) GetVectorIndex() *index.Index[K, float32, P] {
-	return nil
-}
-
-func (g *InMemoryGraph[K, P]) GetTextIndex() *index.Index[K, string, P] {
-	return nil
-}
-
-func (g *InMemoryGraph[K, P]) Index(fact Fact[K]) error {
-	return nil
-}
-
-func (g *InMemoryGraph[K, P]) Set(key K, value map[string]any) error {
-	return nil
-}
-
-func (g *InMemoryGraph[K, P]) Get(key K) *Entity[K] {
-	return nil
-}
-
-func (g *InMemoryGraph[K, P]) Put(key K, entity Entity[K]) error {
-	return nil
-}
-
-// find neighbours of an entity
-func (g *InMemoryGraph[K, P]) GetNeighbours(e []*Entity[K], keywords []string, depth int, top int) []*Entity[K] {
-	return nil
+	// Returns statistics about the graph
+	Stats() GraphStats
 }

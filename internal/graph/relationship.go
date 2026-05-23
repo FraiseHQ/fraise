@@ -22,29 +22,16 @@
 
 package graph
 
-import "time"
-
-type Relationship[K comparable] interface {
-	Source() *Entity[K]
-	Target() *Entity[K]
-}
-
-type RelationshipAttributes struct {
-	Timestamp time.Time
-}
-
-type RelationshipProperties struct {
-	Attributes map[string]string
-}
-
-type Mentions[K comparable] struct {
+// Fact mentions NamedEntity relationship
+type Mentions[K comparable, V string | ~float32 | ~int | ~bool] struct {
 	Fact        *Fact[K]
 	NamedEntity *NamedEntity[K]
-	RelationshipProperties
+	RelationshipProperties[V]
 }
 
-type IsAbout[K comparable] struct {
+// Fact is about Topic relationship
+type IsAbout[K comparable, V string | ~float32 | ~int | ~bool] struct {
 	Fact  *Fact[K]
 	Topic *Topic[K]
-	RelationshipProperties
+	RelationshipProperties[V]
 }

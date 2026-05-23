@@ -22,19 +22,8 @@
 
 package graph
 
-type Property[V string | ~float32 | ~int | ~bool] struct {
-	Key   string
-	Value V
-}
-
-type Properties[V string | ~float32 | ~int | ~bool] interface {
-	Schema() map[string]*Property[V]
-
-	Set(key string, value V)
-
-	Get(key string) V
-
-	Put(key string, value V)
-
-	Remove(key string, value V)
+type InMemoryKnowledgeGraph[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
+	idToNodes     map[K]Node[K, V]
+	nodeToSources map[K]map[K]Relationship[K]
+	nodeToTargets map[K]map[K]Relationship[K]
 }

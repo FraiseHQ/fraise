@@ -24,20 +24,6 @@ package graph
 
 import "time"
 
-type Entity[K comparable] interface {
-	GetProperties() EntityProperties
-}
-
-type EntityAttributes[K comparable] struct {
-	Value         string
-	Relationships []*Relationship[K]
-	Timestamp     time.Time
-}
-
-type EntityProperties struct {
-	Attributes map[string]string
-}
-
 type Fact[K comparable] struct {
 	ID K
 	EntityAttributes[K]

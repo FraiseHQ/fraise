@@ -22,19 +22,7 @@
 
 package graph
 
-type Property[V string | ~float32 | ~int | ~bool] struct {
-	Key   string
-	Value V
-}
-
-type Properties[V string | ~float32 | ~int | ~bool] interface {
-	Schema() map[string]*Property[V]
-
-	Set(key string, value V)
-
-	Get(key string) V
-
-	Put(key string, value V)
-
-	Remove(key string, value V)
+type Edge[K comparable, V string | ~float32 | ~int | ~bool] interface {
+	Source() *Node[K, V]
+	Target() *Node[K, V]
 }
