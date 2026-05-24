@@ -34,3 +34,9 @@ type Error struct {
 type Response struct {
 	errors []Error
 }
+
+type SearchRequest struct {
+}
+
+type SearchResponse struct {
+}

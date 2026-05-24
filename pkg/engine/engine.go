@@ -28,14 +28,15 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/pkg/db"
+	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 )
 
-type Engine[K comparable, V any, P float32 | float64] struct {
+type Engine[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
 	mu sync.RWMutex
 
-	Scheduler *Scheduler[K, V, P]
-	DB        *db.DB[K, V, P]
 	Config    *config.ConfigSet
+	DB        *db.DB[K, V, P]
+	Scheduler *scheduler.Scheduler[K, V, P]
 }
 
 func (e *Engine[K, V, P]) Start() {
@@ -46,12 +47,12 @@ func (e *Engine[K, V, P]) Stop() {
 
 }
 
-func (e *Engine[K, V, P]) Plan(query *query.Query[P]) (*Transaction[K, V, P], error) {
+func (e *Engine[K, V, P]) Plan(query *query.Query[P]) error {
 
-	return nil, nil
+	return nil
 }
 
-func (e *Engine[K, V, P]) Apply(transaction *Transaction[K, V, P]) error {
+func (e *Engine[K, V, P]) Apply(query *query.Query[P]) error {
 	return nil
 }
 

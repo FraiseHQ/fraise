@@ -23,7 +23,6 @@
 package db
 
 import (
-	"errors"
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
@@ -32,18 +31,18 @@ import (
 
 // the db hols the logic of translating low level calls to the memory Graphs
 // from and to the transaction object (that the server directly serialises to the client)
-type DB[K comparable, V any, P float32 | float64] struct {
+type DB[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
 	mu sync.RWMutex
 
-	buf    []byte
 	Config *config.ConfigSet
-	Graphs []*graph.Graph[K, P]
+	Graphs []*graph.KnowledgeGraph[K, V, P]
 
-	currentGraph *graph.Graph[K, P]
+	currentGraph *graph.KnowledgeGraph[K, V, P]
 	stats        Stats
 }
 
 type Stats struct {
+	Memory int
 }
 
 func (d *DB[K, V, P]) Start() error {
@@ -58,33 +57,54 @@ func (d *DB[K, V, P]) Stats() error {
 	return nil
 }
 
+func (d *DB[K, V, P]) CurrentGraph() *graph.KnowledgeGraph[K, V, P] {
+	return d.currentGraph
+}
+
 // selects with graph to use
 func (d *DB[K, V, P]) Select(index int) error {
 	return nil
 }
 
-func (d *DB[K, V, P]) Get(key K) *K {
+func (d *DB[K, V, P]) Get(key K) *graph.Node[K, V] {
 	entity := (*(d.currentGraph)).Get(key)
 	if entity != nil {
 		return nil
 	}
-	result := (*entity).GetID()
-	return &result
+	return entity
 }
 
-func (d *DB[K, V, P]) Set(key K, value V) error {
-	err := d.currentGraph.Set(key, value)
-	if err != nil {
-		return err, 
-	}
-	return errors
+func (d *DB[K, V, P]) Set(node *graph.Node[K, V]) error {
+	// err := d.currentGraph.Set(key, value)
+	// if err != nil {
+	// 	return err,
+	// }
+	// return errors
+	return nil
 }
 
-func (d *DB[K, V, P]) Put(key K, value V) error {
-	d.currentGraph.Put(key, value)
+func (d *DB[K, V, P]) Put(key K, node *graph.Node[K, V]) error {
+
+	return nil
 }
 
-func (d *DB[K, V, P]) Search(keywords []string, vector []P, topics []string, entities []string) {
-	results := d.currentGraph.Search(keywords, vector, topics, entities)
+func (d *DB[K, V, P]) Search(keywords []string, vector []P, topics []string, entities []string, depth int, top int) []*graph.Node[K, V] {
+	// A. Search starts with gathering seeds for the graph search.
+	// Seeds are found from
+	// 1. Vector search (top K - default = 10)
+	// 2. Entities and Topics
+	seeds := (*(d.currentGraph)).gatherSeeds(vector, topics, entities)
 
+	// B. Walking the graph from all searchs and uinioning the found facts
+	neighbors := (*(d.currentGraph)).FindNeighbours(seeds, depth)
+
+	// C. Results from graph search are subject to score by keywords
+	scored := (*(d.currentGraph)).GetTextIndex().Score(neighbors, keywords)
+
+	// D. Time filtered (since or until)
+
+	filtered := (*(d.currentGraph)).TimeFilter(scored, since, until)
+	decayed := (*(d.currentGraph)).decay(filtered, a.HalfLife, a.Now())
+
+	return []*graph.Node[K, V]{}
 }

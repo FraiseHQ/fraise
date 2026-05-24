@@ -22,9 +22,16 @@
 
 package server
 
-import "github.com/RonsenbergVI/fraise/pkg/db"
+import "github.com/gin-gonic/gin"
 
-// Handlers encapsulates all API route handlers
-type Handlers[K comparable, V any, P float32 | float64] struct {
-	db *db.DB[K, V, P]
+func (s *Server[K, V, P]) handleHealthCheck() gin.HandlerFunc {
+	return nil
+}
+
+func (s *Server[K, V, P]) handleQuery() gin.HandlerFunc {
+	return nil
+}
+
+func (s *Server[K, V, P]) handleQueryWithParameters() gin.HandlerFunc {
+	return nil
 }

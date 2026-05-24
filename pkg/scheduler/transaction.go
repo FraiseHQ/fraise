@@ -20,46 +20,44 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package engine
+package scheduler
 
 import (
+	"github.com/RonsenbergVI/fraise/internal/graph"
 	"github.com/RonsenbergVI/fraise/internal/query"
-	"github.com/RonsenbergVI/fraise/pkg/db"
 )
 
 // data structure representing a transaction.
 // A transaction is the language for the engine to the worker
 // Transactions can be read-only or read and write.
-type Transaction[K comparable, V any, P float32 | float64] struct {
-	DB      *db.DB[K, V, P]
+type Transaction[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
 	Write   bool
-	Context *WriteContext
-	Result  *query.QueryResult[K, P]
+	Context *WriteContext[K, V, P]
+	Query   *query.Query[P]
+	Result  *query.QueryResult[K, V, P]
 }
 
-type WriteContext struct {
+type WriteContext[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
+	Nodes []*graph.Node[K, V]
 }
 
-func (tx *Transaction[K, V, P]) Commit(ctx *WriteContext) error {
+func (tx *Transaction[K, V, P]) Commit(ctx *WriteContext[K, V, P]) error {
 	return nil
 }
 
-func (tx *Transaction[K, V, P]) Rollback() error {
+func (tx *Transaction[K, V, P]) Rollback(ctx *WriteContext[K, V, P]) error {
 	return nil
 }
 
-func (tx *Transaction[K, V, P]) Get(key K) K {
-	return tx.DB.Get(key)
-}
+func (tx *Transaction[K, V, P]) Remember(ctx *WriteContext[K, V, P]) error {
 
-func (tx *Transaction[K, V, P]) Set(key K, value V, ctx *WriteContext) error {
+	// Remember is a write transaction
+	// The Graph is copied before being commited.
+
 	return nil
 }
 
-func (tx *Transaction[K, V, P]) Put(key K, value V, ctx *WriteContext) error {
-	return nil
-}
+func (tx *Transaction[K, V, P]) Recall(ctx *WriteContext[K, V, P]) error {
 
-func (tx *Transaction[K, V, P]) Search(query []V, ctx *WriteContext) []K {
 	return nil
 }

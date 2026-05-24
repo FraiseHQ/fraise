@@ -22,11 +22,11 @@
 
 package scheduler
 
-import "github.com/RonsenbergVI/fraise/internal/config"
-
-type Scheduler struct {
-	Config *config.ConfigSet
-}
+import (
+	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/RonsenbergVI/fraise/internal/graph"
+)
 
 type Task struct {
 	Command string
@@ -37,4 +37,34 @@ type Task struct {
 type TaskResult struct {
 	Value []byte
 	Err   error
+}
+
+// The scheduler decides when to run a transaction.
+// one concurrent write transaction is supported at a time
+// The scheduler decides when to wait for a write operation to finish
+type Scheduler[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
+	Graph         *graph.KnowledgeGraph[K, V, P]
+	Config        *config.ConfigSet
+	writeInFlight bool
+	Queue         containers.Queue[*Transaction[K, V, P]]
+}
+
+func (s *Scheduler[K, V, P]) Start() error {
+	return nil
+}
+
+func (s *Scheduler[K, V, P]) Stop() error {
+	return nil
+}
+
+func (s *Scheduler[K, V, P]) Next() *Transaction[K, V, P] {
+	return &Transaction[K, V, P]{}
+}
+
+func (s *Scheduler[K, V, P]) Submit(tx *Transaction[K, V, P]) error {
+	return nil
+}
+
+func (s *Scheduler[K, V, P]) Execute(tx *Transaction[K, V, P]) error {
+	return nil
 }

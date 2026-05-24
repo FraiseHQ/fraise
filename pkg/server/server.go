@@ -22,8 +22,31 @@
 
 package server
 
-import "github.com/RonsenbergVI/fraise/internal/config"
+import (
+	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/pkg/db"
+	"github.com/RonsenbergVI/fraise/pkg/engine"
+	"github.com/gin-gonic/gin"
+)
 
-type Server struct {
+type Server[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
 	Config *config.ConfigSet
+	DB     *db.DB[K, V, P]
+	Engine *engine.Engine[K, V, P]
+	Router *gin.Engine
+}
+
+func New[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64](db *db.DB[K, V, P]) *Server[K, V, P] {
+	s := &Server[K, V, P]{
+		DB:     db,
+		Router: gin.Default(),
+	}
+	s.setupRoutes()
+	return s
+}
+
+func (s *Server[K, V, P]) setupRoutes() {
+	s.Router.GET("/", s.handleHealthCheck())
+	s.Router.GET("/q", s.handleQuery())
+	s.Router.GET("/qp", s.handleQueryWithParameters())
 }
