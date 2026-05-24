@@ -21,3 +21,28 @@
 // SOFTWARE.
 
 package query
+
+import "time"
+
+type TimeValue interface {
+	Resolve(now time.Time) time.Time
+}
+
+type RelativeTime struct{ Dur time.Duration }
+type AbsoluteTime struct{ T time.Time }
+
+func (r RelativeTime) Resolve(now time.Time) time.Time { return now.Add(-r.Dur) }
+func (a AbsoluteTime) Resolve(_ time.Time) time.Time   { return a.T }
+
+type TimeFilter struct {
+	Dur   time.Duration
+	Abs   time.Time
+	IsAbs bool
+}
+
+func (tf TimeFilter) Resolve(now time.Time) time.Time {
+	if tf.IsAbs {
+		return tf.Abs
+	}
+	return now.Add(-tf.Dur)
+}

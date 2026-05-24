@@ -22,6 +22,19 @@
 
 package query
 
+import (
+	"time"
+
+	"github.com/RonsenbergVI/fraise/internal/graph"
+)
+
+type QueryParameters struct {
+	Top   int
+	Depth int
+	Since TimeValue
+	Until TimeValue
+}
+
 type Query[P float32 | float64] struct {
 	Keywords []string
 	Vector   []P
@@ -31,19 +44,20 @@ type Query[P float32 | float64] struct {
 	parameters QueryParameters
 }
 
-type QueryParameters struct {
-	Top   int
-	Depth int
-	Since string
-	Until string
+func (q Query[P]) Since(now time.Time) time.Time {
+	return q.parameters.Since.Resolve(now)
 }
 
-type QueryResult[K comparable, P float32 | float64] struct {
+func (q Query[P]) Until(now time.Time) time.Time {
+	return q.parameters.Until.Resolve(now)
+}
+
+type QueryResult[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
 	Count int
-	Hits  []Hit[K, P]
+	Hits  []Hit[K, V, P]
 }
 
-type Hit[K comparable, P float32 | float64] struct {
-	ID    K
+type Hit[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
+	Node  *graph.Node[K, V]
 	Score P
 }
