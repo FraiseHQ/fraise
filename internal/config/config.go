@@ -29,11 +29,40 @@ import (
 const DefaultConfigFile = "fraise.config.toml"
 
 const (
-	HTTPSPort = "HTTPSPort"
+	HTTPSPort             = "HTTPSPort"
+	AllowUnanchoredRecall = "AllowUnanchoredRecall"
 )
 
+// Config
 type ConfigSet struct {
-	*flag.FlagSet
+	*flag.FlagSet `json:"-"`
+
+	Server ServerConfig `toml:"server"`
+	Log    LogConfig    `toml:"log"`
+	Engine EngineConfig `toml:"engine"`
+	DB     DBConfig     `toml:"db"`
+}
+
+type ServerConfig struct {
+	HTTPSPort int `toml:"port"`
+}
+
+type LogConfig struct {
+	// LOG LEVEL: DEBUG, INFO, WARN, ERROR (default = INFO)
+	Level string `toml:"level"`
+
+	// LOG FORMAT: console, json or text (default = console)
+	Format string `toml:"format"`
+
+	// Disable log timestamp
+	DisableTimestamp bool `toml:"disable-timestamp"`
+}
+
+type EngineConfig struct {
+	AllowUnanchoredRecall bool `toml:"allow-unanchored-recall"`
+}
+
+type DBConfig struct {
 }
 
 func Parse() {}
