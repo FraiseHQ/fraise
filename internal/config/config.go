@@ -24,27 +24,33 @@ package config
 
 import (
 	"flag"
+	"time"
+
+	"github.com/BurntSushi/toml"
 )
 
-const DefaultConfigFile = "fraise.config.toml"
-
 const (
-	HTTPSPort             = "HTTPSPort"
-	AllowUnanchoredRecall = "AllowUnanchoredRecall"
+	defaultConfigFile = "fraise.config.toml"
+
+	defaultPort = 9489
 )
 
 // Config
 type ConfigSet struct {
 	*flag.FlagSet `json:"-"`
 
-	Server ServerConfig `toml:"server"`
-	Log    LogConfig    `toml:"log"`
-	Engine EngineConfig `toml:"engine"`
-	DB     DBConfig     `toml:"db"`
+	Scheduler SchedulerConfig `toml:"scheduler"`
+	Server    ServerConfig    `toml:"server"`
+	Log       LogConfig       `toml:"log"`
+	Engine    EngineConfig    `toml:"engine"`
+	DB        DBConfig        `toml:"db"`
+}
+
+type SchedulerConfig struct {
 }
 
 type ServerConfig struct {
-	HTTPSPort int `toml:"port"`
+	Port int `toml:"port"`
 }
 
 type LogConfig struct {
@@ -59,10 +65,62 @@ type LogConfig struct {
 }
 
 type EngineConfig struct {
+	// Allow unanchored recalls: queries of type "recall since:7d"
 	AllowUnanchoredRecall bool `toml:"allow-unanchored-recall"`
+
+	// Half life for time decay (used to score facts)
+	Halflife time.Duration `toml:"half-life"`
+
+	// How many seeds to pull from each source (keywords and vector)
+	SeedSize int `toml:"seed-size"`
+
+	// Score attenuation for graph walk
+	HopAttenuation float64 `toml:"hop-attenuation"`
 }
 
 type DBConfig struct {
+	DefaultTop int `toml:"default-top"`
+
+	DefaultDepth int `toml:"default-depth"`
 }
 
-func Parse() {}
+// Instanciates new configset
+func New() *ConfigSet {
+	config := &ConfigSet{}
+
+	config.FlagSet = flag.NewFlagSet("flags", flag.PanicOnError)
+
+	flagSet := config.FlagSet
+
+	flagSet.IntVar(&config.Server.Port, "port", defaultPort, "Server port")
+
+	return config
+}
+
+// Clones config set
+func (c *ConfigSet) Clone() *ConfigSet {
+	config := &ConfigSet{}
+	*config = *c
+	return config
+}
+
+// Returns config as string (useful for debugging)
+func (c *ConfigSet) String() string {
+	var result string
+
+	return result
+}
+
+// Validates config
+func (c *ConfigSet) Validate() error {
+	return nil
+}
+
+// / Parses flag definition from argument list.
+func (c *ConfigSet) Parse(arguments []string) error {
+	return nil
+}
+
+func (c *ConfigSet) FromFile(path string) (*toml.MetaData, error) {
+	return nil, nil
+}
