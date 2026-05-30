@@ -30,7 +30,7 @@ deemed more relevant than older ones.
 
 ## Query Engine
 
-Fraise query language is an extension of Lucene
+Fraise query language is inspired from the simplicity of Redis and borrows some syntax elements from Lucene.
 
 ## Temporality
 
