@@ -23,6 +23,7 @@
 package graph
 
 import (
+	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
@@ -33,44 +34,47 @@ type GraphStats struct {
 }
 
 // Hashing fuinction that takes as input a node and returns a hash.
-type Hash[K comparable, V string | ~float32 | ~int | ~bool] func(*Node[K, V]) K
+type Hash[K comparable] func(*Node[K]) K
 
 // A knowledge graph is the storage atomic component of the database server.
 // A la Redis, every single database server has multiple in memory graphs (default 13)
-type KnowledgeGraph[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] interface {
+type KnowledgeGraph[K comparable, P float32 | float64] interface {
 	// Generic Graph methods
 	// Retrieves Node
-	Get(key K) *Node[K, V]
+	Get(key K) *Node[K]
 
 	// Sets Node
-	Set(node *Node[K, V]) error
+	Set(node *Node[K]) error
 
 	// Updates node
-	Put(key K, node *Node[K, V], options ...func(*Properties[V])) error
+	Put(key K, node *Node[K]) error
 
 	// Delete node
-	Delete(node *Node[K, V]) error
+	Delete(node *Node[K]) error
 
 	// Returns the graph vector index
-	GetVectorIndex() index.Index[K, float32, P]
+	GetVectorIndex() *index.Index[K, containers.Vector[P], P]
 
 	// Returns the graph full text search index
-	GetTextIndex() index.Index[K, string, P]
+	GetTextIndex() *index.Index[K, string, P]
 
 	// Checks if graph is locked
 	Locked() bool
 
 	// Entities
-	Entities() []*Entity[K, V]
+	Entities() []*Entity[K]
 
 	// Relationships
-	Relationships() []*Relationship[K, V]
+	Relationships() []*Relationship[K]
 
 	// Adjacency map
-	AdjacencyMap() map[K]map[K]*Relationship[K, V]
+	AdjacencyMap() map[K]map[K]*Relationship[K]
 
 	// Predecessor map
-	PredecessorMap() map[K]map[K]*Relationship[K, V]
+	PredecessorMap() map[K]map[K]*Relationship[K]
+
+	// Returns a deep copy of the graph
+	Copy() KnowledgeGraph[K, P]
 
 	// Number of Entities in the graph
 	Order() (int error)
@@ -80,4 +84,12 @@ type KnowledgeGraph[K comparable, V string | ~float32 | ~int | ~bool, P float32 
 
 	// Returns statistics about the graph
 	Stats() GraphStats
+
+	// Search methods
+
+	// Gather graph walk seeds
+	GatherSeeds(keywords []string, vector []P) ([]*Node[K], []P)
+
+	// Graph walk to find neighbours of seeds
+	FindNeighbours(seeds []*Node[K], topics []string, entities []string, depth int) ([]*Node[K], []P)
 }

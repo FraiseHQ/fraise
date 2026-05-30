@@ -23,15 +23,15 @@
 package graph
 
 // Fact mentions NamedEntity relationship
-type Mentions[K comparable, V string | ~float32 | ~int | ~bool] struct {
-	Fact        *Fact[K, V]
-	NamedEntity *NamedEntity[K, V]
-	NodeAttributes[V]
+type Mentions[K comparable] struct {
+	Fact        *Fact[K]
+	NamedEntity *NamedEntity[K]
+	NodeAttributes
 }
 
 // Fact is about Topic relationship
-type IsAbout[K comparable, V string | ~float32 | ~int | ~bool] struct {
-	Fact  *Fact[K, V]
-	Topic *Topic[K, V]
-	NodeAttributes[V]
+type IsAbout[K comparable] struct {
+	Fact  *Fact[K]
+	Topic *Topic[K]
+	NodeAttributes
 }

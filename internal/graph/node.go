@@ -24,25 +24,24 @@ package graph
 
 import "time"
 
-type NodeAttributes[V string | ~float32 | ~int | ~bool] struct {
-	Value      string
-	Timestamp  time.Time
-	Attributes []Property[V]
+type NodeAttributes struct {
+	Value     string
+	Timestamp time.Time
 }
 
-type Node[K comparable, V string | ~float32 | ~int | ~bool] interface {
+type Node[K comparable] interface {
 	GetID() K
 	GetValue() string
 	GetTimestamp() time.Time
-	GetAttributes() *NodeAttributes[V]
+	GetAttributes() *NodeAttributes
 }
 
-type Entity[K comparable, V string | ~float32 | ~int | ~bool] interface {
-	GetAttributes() NodeAttributes[V]
+type Entity[K comparable] interface {
+	GetAttributes() NodeAttributes
 }
 
-type Relationship[K comparable, V string | ~float32 | ~int | ~bool] interface {
-	Source() *Entity[K, V]
-	Target() *Entity[K, V]
-	GetAttributes() NodeAttributes[V]
+type Relationship[K comparable] interface {
+	Source() *Entity[K]
+	Target() *Entity[K]
+	GetAttributes() NodeAttributes
 }

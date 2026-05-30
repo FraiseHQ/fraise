@@ -24,53 +24,53 @@ package graph
 
 import "time"
 
-type Fact[K comparable, V string | ~float32 | ~int | ~bool] struct {
+type Fact[K comparable] struct {
 	ID K
-	NodeAttributes[V]
+	NodeAttributes
 }
 
-func (f Fact[K, V]) GetID() K {
+func (f Fact[K]) GetID() K {
 	return f.ID
 }
 
-func (f Fact[K, V]) GetValue() string {
+func (f Fact[K]) GetValue() string {
 	return f.Value
 }
 
-func (f Fact[K, V]) GetTimestamp() time.Time {
+func (f Fact[K]) GetTimestamp() time.Time {
 	return f.Timestamp
 }
 
-type NamedEntity[K comparable, V string | ~float32 | ~int | ~bool] struct {
+type NamedEntity[K comparable] struct {
 	ID K
-	NodeAttributes[V]
+	NodeAttributes
 }
 
-func (n NamedEntity[K, V]) GetID() K {
+func (n NamedEntity[K]) GetID() K {
 	return n.ID
 }
 
-func (n NamedEntity[K, V]) GetValue() string {
+func (n NamedEntity[K]) GetValue() string {
 	return n.Value
 }
 
-func (n NamedEntity[K, V]) GetTimestamp() time.Time {
+func (n NamedEntity[K]) GetTimestamp() time.Time {
 	return n.Timestamp
 }
 
-type Topic[K comparable, V string | ~float32 | ~int | ~bool] struct {
+type Topic[K comparable] struct {
 	ID K
-	NodeAttributes[V]
+	NodeAttributes
 }
 
-func (t Topic[K, V]) GetID() K {
+func (t Topic[K]) GetID() K {
 	return t.ID
 }
 
-func (t Topic[K, V]) GetValue() string {
+func (t Topic[K]) GetValue() string {
 	return t.Value
 }
 
-func (t Topic[K, V]) GetTimestamp() time.Time {
+func (t Topic[K]) GetTimestamp() time.Time {
 	return t.Timestamp
 }
