@@ -24,14 +24,31 @@ This is done via sending `streams` to the database. A stream contains a single u
 and a memory retrieval system. Facts, entites and relationships are also indexed for fast retrieval via graph, semantic and text representation. Those representations are gathered in indices for fast query. A federated query engine manages retrieval and ranking. The memory graph is refered to as temporal because short term memories are by default
 deemed more relevant than older ones.
 
-## Architecture
+## Memory Graphs
+
+## Temporality
 
 ## Indices
 
-## Query Engine
+Each temporal memory graph indexes all data ingested into a full-text seaerch and a vector index (when embeddings are provided).
+
+## Architecture
+
+The database application is made up of the following components:
+
+* database
+* server
+* engine
+* scheduler
+
+### Engine
 
 Fraise query language is inspired from the simplicity of Redis and borrows some syntax elements from Lucene.
 
-## Temporality
+### Database
+
+### Server
+
+### Scheduler
 
 ## References
