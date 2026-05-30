@@ -22,8 +22,10 @@
 
 package index
 
+import "github.com/RonsenbergVI/fraise/internal/containers"
+
 // An index is used to search over a collection of values V indexed by their key K
-type Index[K comparable, V string | float32 | float64, P float32 | float64] interface {
+type Index[K comparable, V string | containers.Vector[P], P float32 | float64] interface {
 
 	// Insert into index
 	Insert(key K, value V) error
@@ -38,7 +40,7 @@ type Index[K comparable, V string | float32 | float64, P float32 | float64] inte
 	Delete(key K) error
 
 	// search value in index
-	Search(value []V) ([]K, error)
+	Search(value V) ([]K, error)
 
 	// Index size in MiB
 	Size() int

@@ -26,27 +26,78 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/pkg/db"
 	"github.com/RonsenbergVI/fraise/pkg/engine"
+	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 	"github.com/gin-gonic/gin"
 )
 
-type Server[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
-	Config *config.ConfigSet
-	DB     *db.DB[K, V, P]
-	Engine *engine.Engine[K, V, P]
-	Router *gin.Engine
+type Server[K comparable, P float32 | float64] struct {
+	Config    *config.ConfigSet
+	DB        *db.DB[K, P]
+	Engine    *engine.Engine[K, P]
+	Scheduler *scheduler.Scheduler[K, P]
+
+	router *gin.Engine
 }
 
-func New[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64](db *db.DB[K, V, P]) *Server[K, V, P] {
-	s := &Server[K, V, P]{
-		DB:     db,
-		Router: gin.Default(),
+func New[K comparable, P float32 | float64](config *config.ConfigSet) *Server[K, P] {
+
+	db, err := db.NewDB[K, P](config)
+	if err != nil {
+
+	}
+	engine, err := engine.NewEngine[K, P](config)
+	if err != nil {
+
+	}
+	scheduler, err := scheduler.NewScheduler[K, P](config)
+	if err != nil {
+
+	}
+
+	s := &Server[K, P]{
+		DB:        db,
+		Engine:    engine,
+		Scheduler: scheduler,
+		router:    gin.Default(),
 	}
 	s.setupRoutes()
 	return s
 }
 
-func (s *Server[K, V, P]) setupRoutes() {
-	s.Router.GET("/", s.handleHealthCheck())
-	s.Router.GET("/q", s.handleQuery())
-	s.Router.GET("/qp", s.handleQueryWithParameters())
+func (s *Server[K, P]) setupRoutes() {
+	s.router.GET("/", s.handleHealthCheck())
+	s.router.GET("/q", s.handleQuery())
+	s.router.GET("/qp", s.handleQueryWithParameters())
+}
+
+func (s *Server[K, P]) Start() error {
+	err := s.DB.Start()
+	if err != nil {
+		return ErrUnableToStartDatabase
+	}
+	s.Scheduler.Start()
+	if err != nil {
+		return ErrUnableToStartScheduler
+	}
+	s.Engine.Start()
+	if err != nil {
+		return ErrUnableToStartEngine
+	}
+	return nil
+}
+
+func (s *Server[K, P]) Stop() error {
+	err := s.DB.Stop()
+	if err != nil {
+		return ErrUnableToStopDatabase
+	}
+	s.Scheduler.Stop()
+	if err != nil {
+		return ErrUnableToStopScheduler
+	}
+	s.Engine.Stop()
+	if err != nil {
+		return ErrUnableToStopEngine
+	}
+	return nil
 }

@@ -23,6 +23,8 @@
 package scheduler
 
 import (
+	"fmt"
+
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
@@ -42,29 +44,38 @@ type TaskResult struct {
 // The scheduler decides when to run a transaction.
 // one concurrent write transaction is supported at a time
 // The scheduler decides when to wait for a write operation to finish
-type Scheduler[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
-	Graph         *graph.KnowledgeGraph[K, V, P]
+type Scheduler[K comparable, P float32 | float64] struct {
+	Graph         *graph.KnowledgeGraph[K, P]
 	Config        *config.ConfigSet
 	writeInFlight bool
-	Queue         containers.Queue[*Transaction[K, V, P]]
+	Queue         containers.Queue[*Transaction[K, P]]
 }
 
-func (s *Scheduler[K, V, P]) Start() error {
+func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) (*Scheduler[K, P], error) {
+	return nil, nil
+}
+
+func (s *Scheduler[K, P]) Start() error {
 	return nil
 }
 
-func (s *Scheduler[K, V, P]) Stop() error {
+func (s *Scheduler[K, P]) Stop() error {
 	return nil
 }
 
-func (s *Scheduler[K, V, P]) Next() *Transaction[K, V, P] {
-	return &Transaction[K, V, P]{}
+func (s *Scheduler[K, P]) Next() *Transaction[K, P] {
+	return &Transaction[K, P]{}
 }
 
-func (s *Scheduler[K, V, P]) Submit(tx *Transaction[K, V, P]) error {
+func (s *Scheduler[K, P]) Submit(tx *Transaction[K, P]) error {
+	err := s.Queue.Push(tx)
+
+	if err != nil {
+		return fmt.Errorf("")
+	}
 	return nil
 }
 
-func (s *Scheduler[K, V, P]) Execute(tx *Transaction[K, V, P]) error {
+func (s *Scheduler[K, P]) Execute(tx *Transaction[K, P]) error {
 	return nil
 }

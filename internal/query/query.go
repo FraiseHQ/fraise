@@ -25,6 +25,7 @@ package query
 import (
 	"time"
 
+	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
 )
 
@@ -37,27 +38,27 @@ type QueryParameters struct {
 
 type Query[P float32 | float64] struct {
 	Keywords []string
-	Vector   []P
+	Vector   containers.Vector[P]
 	Entities []string
 	Topics   []string
 
-	parameters QueryParameters
+	Parameters QueryParameters
 }
 
 func (q Query[P]) Since(now time.Time) time.Time {
-	return q.parameters.Since.Resolve(now)
+	return q.Parameters.Since.Resolve(now)
 }
 
 func (q Query[P]) Until(now time.Time) time.Time {
-	return q.parameters.Until.Resolve(now)
+	return q.Parameters.Until.Resolve(now)
 }
 
-type QueryResult[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
+type QueryResult[K comparable, P float32 | float64] struct {
 	Count int
-	Hits  []Hit[K, V, P]
+	Hits  []Hit[K, P]
 }
 
-type Hit[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
-	Node  *graph.Node[K, V]
+type Hit[K comparable, P float32 | float64] struct {
+	Node  *graph.Node[K]
 	Score P
 }

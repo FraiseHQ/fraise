@@ -24,14 +24,14 @@ package server
 
 import "github.com/gin-gonic/gin"
 
-func (s *Server[K, V, P]) handleHealthCheck() gin.HandlerFunc {
+func (s *Server[K, P]) handleHealthCheck() gin.HandlerFunc {
 	return nil
 }
 
-func (s *Server[K, V, P]) handleQuery() gin.HandlerFunc {
+func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 	return nil
 }
 
-func (s *Server[K, V, P]) handleQueryWithParameters() gin.HandlerFunc {
+func (s *Server[K, P]) handleQueryWithParameters() gin.HandlerFunc {
 	return nil
 }

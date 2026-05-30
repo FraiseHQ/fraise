@@ -23,21 +23,24 @@
 package db
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/RonsenbergVI/fraise/internal/query"
 )
 
 // the db hols the logic of translating low level calls to the memory Graphs
 // from and to the transaction object (that the server directly serialises to the client)
-type DB[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
+type DB[K comparable, P float32 | float64] struct {
 	mu sync.RWMutex
 
 	Config *config.ConfigSet
-	Graphs []*graph.KnowledgeGraph[K, V, P]
+	Graphs []*graph.KnowledgeGraph[K, P]
 
-	currentGraph *graph.KnowledgeGraph[K, V, P]
+	currentGraph *graph.KnowledgeGraph[K, P]
 	stats        Stats
 }
 
@@ -45,28 +48,32 @@ type Stats struct {
 	Memory int
 }
 
-func (d *DB[K, V, P]) Start() error {
+func NewDB[K comparable, P float32 | float64](config *config.ConfigSet) (*DB[K, P], error) {
+	return nil, nil
+}
+
+func (d *DB[K, P]) Start() error {
 	return nil
 }
 
-func (d *DB[K, V, P]) Stop() error {
+func (d *DB[K, P]) Stop() error {
 	return nil
 }
 
-func (d *DB[K, V, P]) Stats() error {
+func (d *DB[K, P]) Stats() error {
 	return nil
 }
 
-func (d *DB[K, V, P]) CurrentGraph() *graph.KnowledgeGraph[K, V, P] {
+func (d *DB[K, P]) CurrentGraph() *graph.KnowledgeGraph[K, P] {
 	return d.currentGraph
 }
 
 // selects with graph to use
-func (d *DB[K, V, P]) Select(index int) error {
+func (d *DB[K, P]) Select(index int) error {
 	return nil
 }
 
-func (d *DB[K, V, P]) Get(key K) *graph.Node[K, V] {
+func (d *DB[K, P]) Get(key K) *graph.Node[K] {
 	entity := (*(d.currentGraph)).Get(key)
 	if entity != nil {
 		return nil
@@ -74,7 +81,7 @@ func (d *DB[K, V, P]) Get(key K) *graph.Node[K, V] {
 	return entity
 }
 
-func (d *DB[K, V, P]) Set(node *graph.Node[K, V]) error {
+func (d *DB[K, P]) Set(node *graph.Node[K]) error {
 	// err := d.currentGraph.Set(key, value)
 	// if err != nil {
 	// 	return err,
@@ -83,28 +90,46 @@ func (d *DB[K, V, P]) Set(node *graph.Node[K, V]) error {
 	return nil
 }
 
-func (d *DB[K, V, P]) Put(key K, node *graph.Node[K, V]) error {
+func (d *DB[K, P]) Put(key K, node *graph.Node[K]) error {
 
 	return nil
 }
 
-func (d *DB[K, V, P]) Search(keywords []string, vector []P, topics []string, entities []string, depth int, top int) []*graph.Node[K, V] {
+func (d *DB[K, P]) Search(query query.Query[P]) []query.Hit[K, P] {
 	// A. Search starts with gathering seeds for the graph search.
 	// Seeds are found from
 	// 1. Vector search (top K - default = 10)
-	// 2. Entities and Topics
-	seeds := (*(d.currentGraph)).gatherSeeds(vector, topics, entities)
+	// 2. Matching keywords
+	seeds := d.gatherSeeds(query.Keywords, query.Vector)
 
 	// B. Walking the graph from all searchs and uinioning the found facts
-	neighbors := (*(d.currentGraph)).FindNeighbours(seeds, depth)
+	neighbors := d.findNeighbours(seeds, query.Topics, query.Entities, query.Parameters.Depth)
 
-	// C. Results from graph search are subject to score by keywords
-	scored := (*(d.currentGraph)).GetTextIndex().Score(neighbors, keywords)
+	// C. Time filtered (since or until)
 
-	// D. Time filtered (since or until)
+	filtered := d.timeFilter(neighbors, query.Parameters.Since, query.Parameters.Until)
 
-	filtered := (*(d.currentGraph)).TimeFilter(scored, since, until)
-	decayed := (*(d.currentGraph)).decay(filtered, a.HalfLife, a.Now())
+	// D. Truncate search results
 
-	return []*graph.Node[K, V]{}
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Score > filtered[j].Score
+	})
+	limit := query.Parameters.Top
+	if limit > len(filtered) {
+		limit = len(filtered)
+	}
+
+	return filtered[:limit]
+}
+
+func (d *DB[K, P]) gatherSeeds(keywords []string, vector containers.Vector[P]) []query.Hit[K, P] {
+	return []query.Hit[K, P]{}
+}
+
+func (d *DB[K, P]) findNeighbours(seeds []query.Hit[K, P], topics []string, entities []string, depth int) []query.Hit[K, P] {
+	return []query.Hit[K, P]{}
+}
+
+func (d *DB[K, P]) timeFilter(nodes []query.Hit[K, P], since query.TimeValue, until query.TimeValue) []query.Hit[K, P] {
+	return []query.Hit[K, P]{}
 }

@@ -30,26 +30,26 @@ import (
 // data structure representing a transaction.
 // A transaction is the language for the engine to the worker
 // Transactions can be read-only or read and write.
-type Transaction[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
+type Transaction[K comparable, P float32 | float64] struct {
 	Write   bool
-	Context *WriteContext[K, V, P]
+	Context *WriteContext[K, P]
 	Query   *query.Query[P]
-	Result  *query.QueryResult[K, V, P]
+	Result  *query.QueryResult[K, P]
 }
 
-type WriteContext[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
-	Nodes []*graph.Node[K, V]
+type WriteContext[K comparable, P float32 | float64] struct {
+	Nodes []*graph.Node[K]
 }
 
-func (tx *Transaction[K, V, P]) Commit(ctx *WriteContext[K, V, P]) error {
+func (tx *Transaction[K, P]) Commit(ctx *WriteContext[K, P]) error {
 	return nil
 }
 
-func (tx *Transaction[K, V, P]) Rollback(ctx *WriteContext[K, V, P]) error {
+func (tx *Transaction[K, P]) Rollback(ctx *WriteContext[K, P]) error {
 	return nil
 }
 
-func (tx *Transaction[K, V, P]) Remember(ctx *WriteContext[K, V, P]) error {
+func (tx *Transaction[K, P]) Remember(ctx *WriteContext[K, P]) error {
 
 	// Remember is a write transaction
 	// The Graph is copied before being commited.
@@ -57,7 +57,7 @@ func (tx *Transaction[K, V, P]) Remember(ctx *WriteContext[K, V, P]) error {
 	return nil
 }
 
-func (tx *Transaction[K, V, P]) Recall(ctx *WriteContext[K, V, P]) error {
+func (tx *Transaction[K, P]) Recall(ctx *WriteContext[K, P]) error {
 
 	return nil
 }

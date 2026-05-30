@@ -22,10 +22,10 @@
 
 package hash
 
-type Element[K comparable, V any] struct {
+type Element[K comparable, T any] struct {
 	Index int
 	Key   K
-	Value V
+	Value T
 }
 
 type Hasher[K comparable] interface {

@@ -31,35 +31,39 @@ import (
 	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 )
 
-type Engine[K comparable, V string | ~float32 | ~int | ~bool, P float32 | float64] struct {
+type Engine[K comparable, P float32 | float64] struct {
 	mu sync.RWMutex
 
 	Config    *config.ConfigSet
-	DB        *db.DB[K, V, P]
-	Scheduler *scheduler.Scheduler[K, V, P]
+	DB        *db.DB[K, P]
+	Scheduler *scheduler.Scheduler[K, P]
 }
 
-func (e *Engine[K, V, P]) Start() {
-
+func NewEngine[K comparable, P float32 | float64](config *config.ConfigSet) (*Engine[K, P], error) {
+	return nil, nil
 }
 
-func (e *Engine[K, V, P]) Stop() {
-
+func (e *Engine[K, P]) Start() error {
+	return nil
 }
 
-func (e *Engine[K, V, P]) Plan(query *query.Query[P]) error {
+func (e *Engine[K, P]) Stop() error {
+	return nil
+}
+
+func (e *Engine[K, P]) Plan(query *query.Query[P]) error {
 
 	return nil
 }
 
-func (e *Engine[K, V, P]) Apply(query *query.Query[P]) error {
+func (e *Engine[K, P]) Apply(query *query.Query[P]) error {
 	return nil
 }
 
-func (e *Engine[K, V, P]) Lock() error {
+func (e *Engine[K, P]) Lock() error {
 	return nil
 }
 
-func (e *Engine[K, V, P]) Release() error {
+func (e *Engine[K, P]) Release() error {
 	return nil
 }
