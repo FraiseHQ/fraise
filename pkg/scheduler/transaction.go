@@ -27,10 +27,10 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/query"
 )
 
-// data structure representing a transaction.
-// A transaction is the language for the engine to the worker
-// Transactions can be read-only or read and write.
-type Transaction[K comparable, P float32 | float64] struct {
+// data structure representing a stream.
+// A stream is the language for the engine to the worker
+// Streams can be read-only or read and write.
+type Stream[K comparable, P float32 | float64] struct {
 	Write   bool
 	Context *WriteContext[K, P]
 	Query   *query.Query[P]
@@ -41,23 +41,23 @@ type WriteContext[K comparable, P float32 | float64] struct {
 	Nodes []*graph.Node[K]
 }
 
-func (tx *Transaction[K, P]) Commit(ctx *WriteContext[K, P]) error {
+func (tx *Stream[K, P]) Commit(ctx *WriteContext[K, P]) error {
 	return nil
 }
 
-func (tx *Transaction[K, P]) Rollback(ctx *WriteContext[K, P]) error {
+func (tx *Stream[K, P]) Rollback(ctx *WriteContext[K, P]) error {
 	return nil
 }
 
-func (tx *Transaction[K, P]) Remember(ctx *WriteContext[K, P]) error {
+func (tx *Stream[K, P]) Remember(ctx *WriteContext[K, P]) error {
 
-	// Remember is a write transaction
+	// Remember is a write stream
 	// The Graph is copied before being commited.
 
 	return nil
 }
 
-func (tx *Transaction[K, P]) Recall(ctx *WriteContext[K, P]) error {
+func (tx *Stream[K, P]) Recall(ctx *WriteContext[K, P]) error {
 
 	return nil
 }

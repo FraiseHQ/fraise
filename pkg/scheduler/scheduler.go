@@ -41,14 +41,14 @@ type TaskResult struct {
 	Err   error
 }
 
-// The scheduler decides when to run a transaction.
-// one concurrent write transaction is supported at a time
+// The scheduler decides when to run a stream.
+// one concurrent write stream is supported at a time
 // The scheduler decides when to wait for a write operation to finish
 type Scheduler[K comparable, P float32 | float64] struct {
 	Graph         *graph.KnowledgeGraph[K, P]
 	Config        *config.ConfigSet
 	writeInFlight bool
-	Queue         containers.Queue[*Transaction[K, P]]
+	Queue         containers.Queue[*Stream[K, P]]
 }
 
 func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) (*Scheduler[K, P], error) {
@@ -63,11 +63,11 @@ func (s *Scheduler[K, P]) Stop() error {
 	return nil
 }
 
-func (s *Scheduler[K, P]) Next() *Transaction[K, P] {
-	return &Transaction[K, P]{}
+func (s *Scheduler[K, P]) Next() *Stream[K, P] {
+	return &Stream[K, P]{}
 }
 
-func (s *Scheduler[K, P]) Submit(tx *Transaction[K, P]) error {
+func (s *Scheduler[K, P]) Submit(tx *Stream[K, P]) error {
 	err := s.Queue.Push(tx)
 
 	if err != nil {
@@ -76,6 +76,6 @@ func (s *Scheduler[K, P]) Submit(tx *Transaction[K, P]) error {
 	return nil
 }
 
-func (s *Scheduler[K, P]) Execute(tx *Transaction[K, P]) error {
+func (s *Scheduler[K, P]) Execute(tx *Stream[K, P]) error {
 	return nil
 }
