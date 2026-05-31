@@ -14,6 +14,10 @@ Fraise is an in-memory memory store for AI agents. A real database your agent qu
 - **In-memory.** Real-time reads and writes, mid-step, while the user waits.
 - **Open source, MIT.**
 
+## How it works
+
+Fraise stores knowledge as a **temporal memory graph** of facts, entities, and relationships. Updates arrive as **streams** (one update per stream). Each fact is indexed for full-text and vector search; a federated query engine handles retrieval and ranking. A database holds multiple memory graphs (default: 11).
+
 ## Get Started
 
 This section is a short tutorial on how to run fraise locally or with a docker container and integrate with popular
