@@ -1,0 +1,16 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  disable:
+    - contextcheck
+    - exhaustruct
+    - errcheck
+  enable:
+    - govet
+    - bodyclose
+    - dupl
+    - gocritic
+    - gocyclo
