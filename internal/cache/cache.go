@@ -32,6 +32,8 @@ type Cache[T any] interface {
 	Get(key string) T
 
 	Delete(key string) bool
+
+	Size() int
 }
 
 type Entry[T any] struct {
