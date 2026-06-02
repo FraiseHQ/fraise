@@ -38,9 +38,9 @@ type DB[K comparable, P float32 | float64] struct {
 	mu sync.RWMutex
 
 	Config *config.ConfigSet
-	Graphs []*graph.KnowledgeGraph[K, P]
+	Graphs []*graph.InMemoryGraph[K, P]
 
-	currentGraph *graph.KnowledgeGraph[K, P]
+	currentGraph *graph.InMemoryGraph[K, P]
 	stats        Stats
 }
 
@@ -64,7 +64,7 @@ func (d *DB[K, P]) Stats() error {
 	return nil
 }
 
-func (d *DB[K, P]) CurrentGraph() *graph.KnowledgeGraph[K, P] {
+func (d *DB[K, P]) CurrentGraph() *graph.InMemoryGraph[K, P] {
 	return d.currentGraph
 }
 

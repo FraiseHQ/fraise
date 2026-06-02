@@ -23,8 +23,6 @@
 package scheduler
 
 import (
-	"fmt"
-
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
@@ -45,7 +43,7 @@ type TaskResult struct {
 // one concurrent write stream is supported at a time
 // The scheduler decides when to wait for a write operation to finish
 type Scheduler[K comparable, P float32 | float64] struct {
-	Graph         *graph.KnowledgeGraph[K, P]
+	Graph         *graph.InMemoryGraph[K, P]
 	Config        *config.ConfigSet
 	writeInFlight bool
 	Queue         containers.Queue[*Stream[K, P]]
@@ -64,14 +62,17 @@ func (s *Scheduler[K, P]) Stop() error {
 }
 
 func (s *Scheduler[K, P]) Next() *Stream[K, P] {
-	return &Stream[K, P]{}
+	stream := s.Queue.Pop()
+	// check that, if there is a current write operation
+	// if yes, this operation must wait till the write is over
+	// so maybe pop another until we get a read?
+	return stream
 }
 
-func (s *Scheduler[K, P]) Submit(tx *Stream[K, P]) error {
-	err := s.Queue.Push(tx)
-
+func (s *Scheduler[K, P]) Submit(stream *Stream[K, P]) error {
+	err := s.Queue.Push(stream)
 	if err != nil {
-		return fmt.Errorf("")
+		return ErrEnqueueStream
 	}
 	return nil
 }

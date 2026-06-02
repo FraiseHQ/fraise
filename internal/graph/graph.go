@@ -38,7 +38,7 @@ type Hash[K comparable] func(*Node[K]) K
 
 // A knowledge graph is the storage atomic component of the database server.
 // A la Redis, every single database server has multiple in memory graphs (default 13)
-type KnowledgeGraph[K comparable, P float32 | float64] interface {
+type Graph[K comparable, P float32 | float64] interface {
 	// Generic Graph methods
 	// Retrieves Node
 	Get(key K) *Node[K]
@@ -74,7 +74,7 @@ type KnowledgeGraph[K comparable, P float32 | float64] interface {
 	PredecessorMap() map[K]map[K]*Relationship[K]
 
 	// Returns a deep copy of the graph
-	Copy() KnowledgeGraph[K, P]
+	Copy() Graph[K, P]
 
 	// Number of Entities in the graph
 	Order() (int error)
