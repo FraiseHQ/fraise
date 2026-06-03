@@ -22,8 +22,104 @@
 
 package logger
 
-import "github.com/RonsenbergVI/fraise/internal/config"
+import (
+	"context"
+	"os"
+
+	"github.com/RonsenbergVI/fraise/internal/config"
+	"golang.org/x/exp/slog"
+)
 
 type Logger struct {
 	config *config.ConfigSet
+	logger *slog.Logger
+}
+
+var defaultLogger *Logger
+
+func NewLogger(config *config.ConfigSet) *Logger {
+
+	var handler slog.Handler
+	var level slog.Level
+
+	// set logging level
+	switch config.Log.Level {
+	case "DEBUG":
+		level = slog.LevelDebug
+	case "INFO":
+		level = slog.LevelInfo
+	case "WARN":
+		level = slog.LevelWarn
+	case "ERROR":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	// set logging handler
+	switch config.Log.Format {
+	case "console":
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: level,
+		})
+	case "json":
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: level,
+		})
+	default:
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: level,
+		})
+	}
+
+	l := &Logger{
+		config: config,
+		logger: slog.New(handler),
+	}
+
+	return l
+}
+
+func Default() *Logger {
+	return defaultLogger
+}
+
+func SetDefault(l *Logger) {
+	defaultLogger = l
+}
+
+func (l *Logger) log(level slog.Level, msg string, attrs ...any) {
+	l.logger.Log(context.Background(), level, msg, attrs...)
+}
+
+func (l *Logger) Debug(msg string, attrs ...any) {
+	l.log(slog.LevelDebug, msg, attrs)
+}
+
+func (l *Logger) Info(msg string, attrs ...any) {
+	l.log(slog.LevelInfo, msg, attrs)
+}
+
+func (l *Logger) Warn(msg string, attrs ...any) {
+	l.log(slog.LevelWarn, msg, attrs)
+}
+
+func (l *Logger) Error(msg string, attrs ...any) {
+	l.log(slog.LevelError, msg, attrs)
+}
+
+func Debug(msg string, attrs ...any) {
+	defaultLogger.Debug(msg, attrs...)
+}
+
+func Info(msg string, attrs ...any) {
+	defaultLogger.Info(msg, attrs...)
+}
+
+func Warn(msg string, attrs ...any) {
+	defaultLogger.Warn(msg, attrs...)
+}
+
+func Error(msg string, attrs ...any) {
+	defaultLogger.Error(msg, attrs...)
 }
