@@ -47,6 +47,8 @@ type ConfigSet struct {
 }
 
 type SchedulerConfig struct {
+	Workers   int `toml:"workers"`
+	QueueSize int `toml:"queue-size"`
 }
 
 type ServerConfig struct {
@@ -57,7 +59,8 @@ type LogConfig struct {
 	// LOG LEVEL: DEBUG, INFO, WARN, ERROR (default = INFO)
 	Level string `toml:"level"`
 
-	// LOG FORMAT: console, json or text (default = console)
+	// LOG FORMAT: text or json (default = text)
+	// Note: all logs are printed in console. File logging not supported (yet)
 	Format string `toml:"format"`
 
 	// Disable log timestamp
