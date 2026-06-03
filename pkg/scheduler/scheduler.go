@@ -23,60 +23,70 @@
 package scheduler
 
 import (
+	"sync"
+
 	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
-
-type Task struct {
-	Command string
-	Args    string
-	Result  chan TaskResult
-}
-
-type TaskResult struct {
-	Value []byte
-	Err   error
-}
 
 // The scheduler decides when to run a stream.
 // one concurrent write stream is supported at a time
 // The scheduler decides when to wait for a write operation to finish
 type Scheduler[K comparable, P float32 | float64] struct {
-	Graph         *graph.InMemoryGraph[K, P]
-	Config        *config.ConfigSet
+	Config *config.ConfigSet
+	Queue  chan *Stream[K, P]
+
 	writeInFlight bool
-	Queue         containers.Queue[*Stream[K, P]]
+	wg            sync.WaitGroup
 }
 
-func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) (*Scheduler[K, P], error) {
-	return nil, nil
+func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
+	s := &Scheduler[K, P]{
+		Config: config,
+	}
+	return s
 }
 
+// Starts scheduler: allocates memory for queue and initializes workers
 func (s *Scheduler[K, P]) Start() error {
-	return nil
-}
-
-func (s *Scheduler[K, P]) Stop() error {
-	return nil
-}
-
-func (s *Scheduler[K, P]) Next() *Stream[K, P] {
-	stream := s.Queue.Pop()
-	// check that, if there is a current write operation
-	// if yes, this operation must wait till the write is over
-	// so maybe pop another until we get a read?
-	return stream
-}
-
-func (s *Scheduler[K, P]) Submit(stream *Stream[K, P]) error {
-	err := s.Queue.Push(stream)
-	if err != nil {
-		return ErrEnqueueStream
+	s.Queue = make(chan *Stream[K, P], s.Config.Scheduler.QueueSize)
+	for i := 0; i < s.Config.Scheduler.Workers; i++ {
+		s.wg.Add(1)
+		go s.worker()
 	}
 	return nil
 }
 
-func (s *Scheduler[K, P]) Execute(tx *Stream[K, P]) error {
+// Stops scheduler: frees resources and stops coroutines
+func (s *Scheduler[K, P]) Stop() {
+	if s.Queue != nil {
+		close(s.Queue)
+		s.wg.Wait()
+		s.Queue = nil
+	}
+}
+
+func (s *Scheduler[K, P]) worker() {
+	defer s.wg.Done()
+	for stream := range s.Queue {
+		err := s.Execute(stream)
+		if err != nil {
+			logger.Error("Failed to execute stream", "error:", err)
+		}
+	}
+
+}
+
+func (s *Scheduler[K, P]) Submit(stream *Stream[K, P]) {
+	s.Queue <- stream
+}
+
+func (s *Scheduler[K, P]) Execute(stream *Stream[K, P]) error {
+	err := stream.Stage()
+	if err != nil {
+		stream.Rollback()
+		return ErrStreamExecution
+	}
+	stream.Commit()
 	return nil
 }
