@@ -61,3 +61,8 @@ func (tx *Stream[K, P]) Recall(ctx *WriteContext[K, P]) error {
 
 	return nil
 }
+
+func (tx *Stream[K, P]) Select(ctx *WriteContext[K, P]) error {
+
+	return nil
+}
