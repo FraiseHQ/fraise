@@ -20,22 +20,26 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package containers
+package query
 
-type Queue[T any] struct {
-	Offset  int
-	Current T
-	Data    []T
+// data structure representing a stream: language of the scheduler
+// A stream is the language for the engine to the worker
+// Streams can be read-only or read and write.
+type Stream[K comparable, P float32 | float64] struct {
+	Write bool
+
+	Query  *Query[K, P]
+	Result *QueryResult[K, P]
 }
 
-func New[T any](capacity int) *Queue[T] {
-	return &Queue[T]{Data: make([]T, 0, capacity)}
+func (s *Stream[K, P]) Commit() error {
+	return nil
 }
 
-func NewFrom[T any](values ...T) *Queue[T] {
-	return &Queue[T]{Data: values}
+func (s *Stream[K, P]) Rollback() error {
+	return nil
 }
 
-func (q *Queue[T]) Capacity() int {
-	return len(q.Data)
+func (s *Stream[K, P]) Stage() error {
+	return nil
 }

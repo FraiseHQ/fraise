@@ -20,17 +20,4 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package index
-
-import "errors"
-
-// Error returned by a search call when the index is empty
-// This is error is introduced to differentiate between
-// "nothing has been indexed yet" and "indexed but no match"
-var (
-	ErrEmptyIndex          = errors.New("Index is empty")
-	ErrIndexNotFound       = errors.New("Index not found")
-	ErrInvalidDimension    = errors.New("Invalid vector dimension")
-	ErrFailedToCreateIndex = errors.New("Failed to create index")
-	ErrFailedToLoadIndex   = errors.New("Failed to load index")
-)
+package graph

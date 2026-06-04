@@ -88,7 +88,7 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Search methods
 
 	// Gather graph walk seeds
-	GatherSeeds(keywords []string, vector []P) ([]*Node[K], []P)
+	GatherSeeds(keywords []string, vector containers.Vector[P]) ([]*Node[K], []P)
 
 	// Graph walk to find neighbours of seeds
 	FindNeighbours(seeds []*Node[K], topics []string, entities []string, depth int) ([]*Node[K], []P)
