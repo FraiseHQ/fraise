@@ -24,14 +24,17 @@ package server
 
 import (
 	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/pkg/db"
+	"github.com/RonsenbergVI/fraise/internal/db"
+
 	"github.com/RonsenbergVI/fraise/pkg/engine"
 	"github.com/RonsenbergVI/fraise/pkg/scheduler"
+
 	"github.com/gin-gonic/gin"
 )
 
 type Server[K comparable, P float32 | float64] struct {
-	Config    *config.ConfigSet
+	Config *config.ConfigSet
+
 	DB        *db.DB[K, P]
 	Engine    *engine.Engine[K, P]
 	Scheduler *scheduler.Scheduler[K, P]
@@ -45,11 +48,9 @@ func New[K comparable, P float32 | float64](config *config.ConfigSet) *Server[K,
 	if err != nil {
 
 	}
-	engine, err := engine.NewEngine[K, P](config)
-	if err != nil {
+	scheduler := scheduler.NewScheduler[K, P](config)
 
-	}
-	scheduler, err := scheduler.NewScheduler[K, P](config)
+	engine, err := engine.NewEngine[K, P](config)
 	if err != nil {
 
 	}
@@ -92,10 +93,7 @@ func (s *Server[K, P]) Stop() error {
 		return ErrUnableToStopDatabase
 	}
 	s.Scheduler.Stop()
-	if err != nil {
-		return ErrUnableToStopScheduler
-	}
-	s.Engine.Stop()
+	err = s.Engine.Stop()
 	if err != nil {
 		return ErrUnableToStopEngine
 	}

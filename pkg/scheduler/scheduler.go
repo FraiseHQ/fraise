@@ -26,6 +26,8 @@ import (
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/query"
+
 	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
@@ -34,7 +36,7 @@ import (
 // The scheduler decides when to wait for a write operation to finish
 type Scheduler[K comparable, P float32 | float64] struct {
 	Config *config.ConfigSet
-	Queue  chan *Stream[K, P]
+	Queue  chan *query.Stream[K, P]
 
 	writeInFlight bool
 	wg            sync.WaitGroup
@@ -49,7 +51,7 @@ func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) *
 
 // Starts scheduler: allocates memory for queue and initializes workers
 func (s *Scheduler[K, P]) Start() error {
-	s.Queue = make(chan *Stream[K, P], s.Config.Scheduler.QueueSize)
+	s.Queue = make(chan *query.Stream[K, P], s.Config.Scheduler.QueueSize)
 	for i := 0; i < s.Config.Scheduler.Workers; i++ {
 		s.wg.Add(1)
 		go s.worker()
@@ -77,11 +79,11 @@ func (s *Scheduler[K, P]) worker() {
 
 }
 
-func (s *Scheduler[K, P]) Submit(stream *Stream[K, P]) {
+func (s *Scheduler[K, P]) Submit(stream *query.Stream[K, P]) {
 	s.Queue <- stream
 }
 
-func (s *Scheduler[K, P]) Execute(stream *Stream[K, P]) error {
+func (s *Scheduler[K, P]) Execute(stream *query.Stream[K, P]) error {
 	err := stream.Stage()
 	if err != nil {
 		stream.Rollback()

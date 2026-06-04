@@ -25,11 +25,11 @@ package db
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
-	"github.com/RonsenbergVI/fraise/internal/query"
 )
 
 // the db hols the logic of translating low level calls to the memory Graphs
@@ -38,9 +38,9 @@ type DB[K comparable, P float32 | float64] struct {
 	mu sync.RWMutex
 
 	Config *config.ConfigSet
-	Graphs []*graph.InMemoryGraph[K, P]
+	Graphs []*graph.Graph[K, P]
 
-	currentGraph *graph.InMemoryGraph[K, P]
+	currentGraph *graph.Graph[K, P]
 	stats        Stats
 }
 
@@ -64,7 +64,7 @@ func (d *DB[K, P]) Stats() error {
 	return nil
 }
 
-func (d *DB[K, P]) CurrentGraph() *graph.InMemoryGraph[K, P] {
+func (d *DB[K, P]) CurrentGraph() *graph.Graph[K, P] {
 	return d.currentGraph
 }
 
@@ -95,26 +95,26 @@ func (d *DB[K, P]) Put(key K, node *graph.Node[K]) error {
 	return nil
 }
 
-func (d *DB[K, P]) Search(query query.Query[P]) []query.Hit[K, P] {
+func (d *DB[K, P]) Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, since time.Time, until time.Time, top int) ([]*graph.Node[K], []P) {
 	// A. Search starts with gathering seeds for the graph search.
 	// Seeds are found from
 	// 1. Vector search (top K - default = 10)
 	// 2. Matching keywords
-	seeds := d.gatherSeeds(query.Keywords, query.Vector)
+	seeds, scores := d.gatherSeeds(keywords, vector)
 
 	// B. Walking the graph from all searchs and uinioning the found facts
-	neighbors := d.findNeighbours(seeds, query.Topics, query.Entities, query.Parameters.Depth)
+	neighbors, scores := d.findNeighbours(seeds, topics, entities, depth)
 
 	// C. Time filtered (since or until)
 
-	filtered := d.timeFilter(neighbors, query.Parameters.Since, query.Parameters.Until)
+	filtered, scores := d.timeFilter(neighbors, since, until)
 
 	// D. Truncate search results
 
 	sort.Slice(filtered, func(i, j int) bool {
 		return filtered[i].Score > filtered[j].Score
 	})
-	limit := query.Parameters.Top
+	limit := top
 	if limit > len(filtered) {
 		limit = len(filtered)
 	}
@@ -122,14 +122,14 @@ func (d *DB[K, P]) Search(query query.Query[P]) []query.Hit[K, P] {
 	return filtered[:limit]
 }
 
-func (d *DB[K, P]) gatherSeeds(keywords []string, vector containers.Vector[P]) []query.Hit[K, P] {
-	return []query.Hit[K, P]{}
+func (d *DB[K, P]) gatherSeeds(keywords []string, vector containers.Vector[P]) ([]*graph.Node[K], []P) {
+	return nil, []P{}
 }
 
-func (d *DB[K, P]) findNeighbours(seeds []query.Hit[K, P], topics []string, entities []string, depth int) []query.Hit[K, P] {
-	return []query.Hit[K, P]{}
+func (d *DB[K, P]) findNeighbours(seeds []*graph.Node[K], topics []string, entities []string, depth int) ([]*graph.Node[K], []P) {
+	return nil, []P{}
 }
 
-func (d *DB[K, P]) timeFilter(nodes []query.Hit[K, P], since query.TimeValue, until query.TimeValue) []query.Hit[K, P] {
-	return []query.Hit[K, P]{}
+func (d *DB[K, P]) timeFilter(nodes []*graph.Node[K], since time.Time, until time.Time) ([]*graph.Node[K], []P) {
+	return nil, []P{}
 }

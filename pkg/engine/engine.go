@@ -25,18 +25,19 @@ package engine
 import (
 	"sync"
 
+	"github.com/RonsenbergVI/fraise/internal/cache"
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/query"
+
 	"github.com/RonsenbergVI/fraise/pkg/db"
-	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 )
 
 type Engine[K comparable, P float32 | float64] struct {
 	mu sync.RWMutex
 
-	Config    *config.ConfigSet
-	DB        *db.DB[K, P]
-	Scheduler *scheduler.Scheduler[K, P]
+	Config *config.ConfigSet
+	DB     *db.DB[K, P]
+	Cache  cache.LRUCache[query.Stream[K, P]]
 }
 
 func NewEngine[K comparable, P float32 | float64](config *config.ConfigSet) (*Engine[K, P], error) {
@@ -51,13 +52,12 @@ func (e *Engine[K, P]) Stop() error {
 	return nil
 }
 
-func (e *Engine[K, P]) Plan(query *query.Query[P]) error {
-
-	return nil
-}
-
-func (e *Engine[K, P]) Apply(query *query.Query[P]) error {
-	return nil
+func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
+	stream, err := q.Plan(e.Config)
+	if err != nil {
+		return nil, ErrQueryPlan
+	}
+	return stream, nil
 }
 
 func (e *Engine[K, P]) Lock() error {
