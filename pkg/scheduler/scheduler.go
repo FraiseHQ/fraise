@@ -28,6 +28,7 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/query"
 
+	"github.com/RonsenbergVI/fraise/pkg/db"
 	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
@@ -35,9 +36,9 @@ import (
 // one concurrent write stream is supported at a time
 // The scheduler decides when to wait for a write operation to finish
 type Scheduler[K comparable, P float32 | float64] struct {
-	Config *config.ConfigSet
-	Queue  chan *query.Stream[K, P]
-
+	Config        *config.ConfigSet
+	Queue         chan *query.Stream[K, P]
+	DB            *db.DB[K, P]
 	writeInFlight bool
 	wg            sync.WaitGroup
 }

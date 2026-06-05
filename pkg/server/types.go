@@ -31,12 +31,6 @@ type Error struct {
 	Error   string `json:"error,omitempty"`
 }
 
-type Response struct {
-	errors []Error
-}
-
-type SearchRequest struct {
-}
-
-type SearchResponse struct {
+type HandleQueryRequest struct {
+	Query string `json:"name"`
 }

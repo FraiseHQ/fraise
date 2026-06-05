@@ -37,7 +37,7 @@ type QueryParameters struct {
 }
 
 type Query[K comparable, P float32 | float64] interface {
-	Plan(config *config.ConfigSet) *Stream[K, P]
+	Plan(config *config.ConfigSet) (*Stream[K, P], error)
 }
 
 type Remember[K comparable, P float32 | float64] struct {
@@ -67,14 +67,18 @@ func (q Remember[K, P]) Until(now time.Time) time.Time {
 	return q.Parameters.Until.Resolve(now)
 }
 
-func (q Remember[K, P]) Plan(config *config.ConfigSet) *Stream[K, P] {
-	return nil
+func (q Remember[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
+	return nil, nil
 }
 
-func (q Recall[K, P]) Plan(config *config.ConfigSet) *Stream[K, P] {
-	return nil
+func (q Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
+	return nil, nil
 }
 
-func (q Select[K, P]) Plan(config *config.ConfigSet) *Stream[K, P] {
-	return nil
+func (q Select[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
+	return nil, nil
+}
+
+func Parse[K comparable, P float32 | float64](q string) Query[K, P] {
+
 }

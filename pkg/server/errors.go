@@ -21,3 +21,13 @@
 // SOFTWARE.
 
 package server
+
+import "errors"
+
+var (
+	ErrUnableToStartDatabase  = errors.New("Error while attempting to start database.")
+	ErrUnableToStartEngine    = errors.New("Error while attempting to start engine.")
+	ErrUnableToStopDatabase   = errors.New("Error while attempting to stop database.")
+	ErrUnableToStopEngine     = errors.New("Error while attempting to stop engine.")
+	ErrUnableToStartScheduler = errors.New("Error while attempting to start scheduler")
+)

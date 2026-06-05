@@ -21,3 +21,9 @@
 // SOFTWARE.
 
 package engine
+
+import "errors"
+
+var (
+	ErrQueryPlan = errors.New("Query plan failed.")
+)

@@ -22,24 +22,25 @@
 
 package query
 
+import "github.com/RonsenbergVI/fraise/internal/graph"
+
 // data structure representing a stream: language of the scheduler
 // A stream is the language for the engine to the worker
 // Streams can be read-only or read and write.
 type Stream[K comparable, P float32 | float64] struct {
-	Write bool
-
 	Query  *Query[K, P]
 	Result *QueryResult[K, P]
+	Err    error
 }
 
-func (s *Stream[K, P]) Commit() error {
+func (s *Stream[K, P]) Commit(graph *graph.Graph[K, P]) error {
 	return nil
 }
 
-func (s *Stream[K, P]) Rollback() error {
+func (s *Stream[K, P]) Rollback(graph *graph.Graph[K, P]) error {
 	return nil
 }
 
-func (s *Stream[K, P]) Stage() error {
+func (s *Stream[K, P]) Stage(graph *graph.Graph[K, P]) error {
 	return nil
 }

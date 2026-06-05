@@ -24,4 +24,8 @@ package scheduler
 
 import "errors"
 
-var ErrShutdown = errors.New("Scheduler: shut down")
+var (
+	ErrShutdown        = errors.New("Scheduler: shut down")
+	ErrEnqueueStream   = errors.New("Could not add stream to queue")
+	ErrStreamExecution = errors.New("Error while executing stream.")
+)

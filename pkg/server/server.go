@@ -24,10 +24,10 @@ package server
 
 import (
 	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/db"
 
+	"github.com/RonsenbergVI/fraise/pkg/db"
 	"github.com/RonsenbergVI/fraise/pkg/engine"
-	"github.com/RonsenbergVI/fraise/pkg/scheduler"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,9 +35,8 @@ import (
 type Server[K comparable, P float32 | float64] struct {
 	Config *config.ConfigSet
 
-	DB        *db.DB[K, P]
-	Engine    *engine.Engine[K, P]
-	Scheduler *scheduler.Scheduler[K, P]
+	DB     *db.DB[K, P]
+	Engine *engine.Engine[K, P]
 
 	router *gin.Engine
 }
@@ -48,7 +47,6 @@ func New[K comparable, P float32 | float64](config *config.ConfigSet) *Server[K,
 	if err != nil {
 
 	}
-	scheduler := scheduler.NewScheduler[K, P](config)
 
 	engine, err := engine.NewEngine[K, P](config)
 	if err != nil {
@@ -56,10 +54,9 @@ func New[K comparable, P float32 | float64](config *config.ConfigSet) *Server[K,
 	}
 
 	s := &Server[K, P]{
-		DB:        db,
-		Engine:    engine,
-		Scheduler: scheduler,
-		router:    gin.Default(),
+		DB:     db,
+		Engine: engine,
+		router: gin.Default(),
 	}
 	s.setupRoutes()
 	return s
@@ -72,29 +69,33 @@ func (s *Server[K, P]) setupRoutes() {
 }
 
 func (s *Server[K, P]) Start() error {
+	logger.Info("Starting database")
 	err := s.DB.Start()
 	if err != nil {
+		logger.Info("Failed to start database!")
 		return ErrUnableToStartDatabase
 	}
-	s.Scheduler.Start()
-	if err != nil {
-		return ErrUnableToStartScheduler
-	}
+	logger.Info("Starting Engine")
 	s.Engine.Start()
 	if err != nil {
+		logger.Info("Failed to start engine!")
 		return ErrUnableToStartEngine
 	}
 	return nil
 }
 
 func (s *Server[K, P]) Stop() error {
+	logger.Info("Stopping database")
 	err := s.DB.Stop()
 	if err != nil {
+		logger.Info("Failed to stop database!")
 		return ErrUnableToStopDatabase
 	}
-	s.Scheduler.Stop()
+
+	logger.Info("Stopping engine")
 	err = s.Engine.Stop()
 	if err != nil {
+		logger.Info("Failed to stop engine!")
 		return ErrUnableToStopEngine
 	}
 	return nil

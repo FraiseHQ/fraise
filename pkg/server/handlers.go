@@ -22,14 +22,50 @@
 
 package server
 
-import "github.com/gin-gonic/gin"
+import (
+	"net/http"
+
+	"github.com/RonsenbergVI/fraise/internal/query"
+	"github.com/gin-gonic/gin"
+)
 
 func (s *Server[K, P]) handleHealthCheck() gin.HandlerFunc {
 	return nil
 }
 
 func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
-	return nil
+	return func(c *gin.Context) {
+		var req HandleQueryRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error", err.Error()})
+			return
+		}
+
+		q := query.Parse[K, P](req.Query)
+
+		stream, err := s.Engine.Plan(q)
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error", err.Error()})
+			return
+		}
+
+		s.Engine.Apply(stream)
+
+		select {
+		case <-stream.Done():
+			if stream.Err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error", stream.Err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"results": stream.Result,
+			})
+		case <-stream.Done():
+			return
+		}
+
+	}
 }
 
 func (s *Server[K, P]) handleQueryWithParameters() gin.HandlerFunc {
