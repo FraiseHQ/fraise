@@ -23,11 +23,13 @@
 package query
 
 import (
-	"time"
-
 	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/RonsenbergVI/fraise/internal/graph"
 )
+
+type Query[K comparable, P float32 | float64] interface {
+	Plan(config *config.ConfigSet) (*Stream[K, P], error)
+}
 
 type QueryParameters struct {
 	Top   int
@@ -36,47 +38,14 @@ type QueryParameters struct {
 	Until TimeValue
 }
 
-type Query[K comparable, P float32 | float64] interface {
-	Plan(config *config.ConfigSet) (*Stream[K, P], error)
+type QueryResult[K comparable, P float32 | float64] struct {
+	Count int
+	Hits  []Hit[K, P]
 }
 
-type Remember[K comparable, P float32 | float64] struct {
-	Keywords []string
-	Vector   containers.Vector[P]
-	Entities []string
-	Topics   []string
-
-	Parameters QueryParameters
-}
-
-type Recall[K comparable, P float32 | float64] struct {
-	Value    string
-	Entities []string
-	Topics   []string
-}
-
-type Select[K comparable, P float32 | float64] struct {
-	Index int
-}
-
-func (q Remember[K, P]) Since(now time.Time) time.Time {
-	return q.Parameters.Since.Resolve(now)
-}
-
-func (q Remember[K, P]) Until(now time.Time) time.Time {
-	return q.Parameters.Until.Resolve(now)
-}
-
-func (q Remember[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
-	return nil, nil
-}
-
-func (q Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
-	return nil, nil
-}
-
-func (q Select[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
-	return nil, nil
+type Hit[K comparable, P float32 | float64] struct {
+	Node  *graph.Node[K]
+	Score P
 }
 
 func Parse[K comparable, P float32 | float64](q string) Query[K, P] {

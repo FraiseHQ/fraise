@@ -22,14 +22,14 @@
 
 package query
 
-import "github.com/RonsenbergVI/fraise/internal/graph"
+import (
+	"github.com/RonsenbergVI/fraise/internal/config"
+)
 
-type QueryResult[K comparable, P float32 | float64] struct {
-	Count int
-	Hits  []Hit[K, P]
+type Select[K comparable, P float32 | float64] struct {
+	Index int
 }
 
-type Hit[K comparable, P float32 | float64] struct {
-	Node  *graph.Node[K]
-	Score P
+func (q Select[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
+	return nil, nil
 }
