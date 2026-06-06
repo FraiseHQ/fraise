@@ -48,7 +48,6 @@ func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) *
 	s := &Scheduler[K, P]{
 		Config:        config,
 		writeInFlight: false,
-		wg:            sync.WaitGroup{},
 	}
 	return s
 }
