@@ -36,23 +36,26 @@ import (
 // one concurrent write stream is supported at a time
 // The scheduler decides when to wait for a write operation to finish
 type Scheduler[K comparable, P float32 | float64] struct {
-	Config        *config.ConfigSet
-	Queue         chan *query.Stream[K, P]
-	DB            *db.DB[K, P]
+	Config *config.ConfigSet
+	Queue  chan *query.Stream[K, P]
+	DB     *db.DB[K, P]
+
 	writeInFlight bool
 	wg            sync.WaitGroup
 }
 
 func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
 	s := &Scheduler[K, P]{
-		Config: config,
+		Config:        config,
+		writeInFlight: false,
+		wg:            sync.WaitGroup{},
 	}
 	return s
 }
 
 // Starts scheduler: allocates memory for queue and initializes workers
 func (s *Scheduler[K, P]) Start() error {
-	s.Queue = make(chan *query.Stream[K, P], s.Config.Scheduler.QueueSize)
+	s.Queue = make(chan *query.Stream[K, P], s.Config.Scheduler.BufferSize)
 	for i := 0; i < s.Config.Scheduler.Workers; i++ {
 		s.wg.Add(1)
 		go s.worker()
@@ -85,7 +88,7 @@ func (s *Scheduler[K, P]) Submit(stream *query.Stream[K, P]) {
 }
 
 func (s *Scheduler[K, P]) Execute(stream *query.Stream[K, P]) error {
-	g, err := s.DB.Select(int((*stream.Query).GetGraphID()))
+	g, err := s.DB.Select((*stream.Query).GetGraphID())
 	if err != nil {
 		return err
 	}

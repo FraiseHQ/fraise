@@ -29,12 +29,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const (
-	defaultConfigFile = "fraise.config.toml"
-
-	defaultPort = 9489
-)
-
 // Config
 type ConfigSet struct {
 	*flag.FlagSet `json:"-"`
@@ -47,8 +41,11 @@ type ConfigSet struct {
 }
 
 type SchedulerConfig struct {
-	Workers   int `toml:"workers"`
-	QueueSize int `toml:"queue-size"`
+	// Number of workers scheduler has to execute read and writes
+	Workers int `toml:"workers"`
+
+	// Buffer size is the scheduler channel buffer size.
+	BufferSize int `toml:"buffer-size"`
 }
 
 type ServerConfig struct {
