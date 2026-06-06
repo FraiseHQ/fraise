@@ -36,6 +36,8 @@ type Remember[K comparable, P float32 | float64] struct {
 	Topics   []string
 
 	Parameters QueryParameters
+
+	context QueryContext
 }
 
 func (q Remember[K, P]) Since(now time.Time) time.Time {

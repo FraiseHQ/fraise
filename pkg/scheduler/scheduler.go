@@ -85,11 +85,15 @@ func (s *Scheduler[K, P]) Submit(stream *query.Stream[K, P]) {
 }
 
 func (s *Scheduler[K, P]) Execute(stream *query.Stream[K, P]) error {
-	err := stream.Stage()
+	g, err := s.DB.Select(int((*stream.Query).GetGraphID()))
 	if err != nil {
-		stream.Rollback()
+		return err
+	}
+	err = stream.Stage(g)
+	if err != nil {
+		stream.Rollback(g)
 		return ErrStreamExecution
 	}
-	stream.Commit()
+	stream.Commit(g)
 	return nil
 }

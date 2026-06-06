@@ -30,8 +30,14 @@ type Recall[K comparable, P float32 | float64] struct {
 	Value    string
 	Entities []string
 	Topics   []string
+
+	context QueryContext
 }
 
 func (q Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
 	return nil, nil
+}
+
+func (r Recall[K, P]) GraphID() uint8 {
+	return r.context.GraphID
 }

@@ -29,6 +29,8 @@ import (
 
 type Query[K comparable, P float32 | float64] interface {
 	Plan(config *config.ConfigSet) (*Stream[K, P], error)
+	GetGraphID() uint8
+	SetGraphID(id uint8)
 }
 
 type QueryParameters struct {
@@ -36,6 +38,10 @@ type QueryParameters struct {
 	Depth int
 	Since TimeValue
 	Until TimeValue
+}
+
+type QueryContext struct {
+	GraphID uint8
 }
 
 type QueryResult[K comparable, P float32 | float64] struct {
@@ -49,5 +55,6 @@ type Hit[K comparable, P float32 | float64] struct {
 }
 
 func Parse[K comparable, P float32 | float64](q string) Query[K, P] {
+	u := Recall[string, float32]{}
 
 }
