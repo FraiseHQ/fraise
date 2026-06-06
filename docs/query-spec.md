@@ -60,7 +60,9 @@ Keywords are specific query instructions. They are reserved keywords.
 query           = recall_query | remember_query ;
 
 
-recall_query    = 'recall' recall_body ;
+recall_query    = 'recall' graph_selector? recall_body ;
+
+graph_selector  = '@' integer ;
 
 (* A recall must contain at least one term OR one field clause. *)
 recall_body     = term_list field_clause*
@@ -99,7 +101,7 @@ vec_field        = 'vec' ':' param_ref ;   (* nearest-neighbor (semantic) *)
 (* REMEMBER                                                     *)
 (* ============================================================ *)
 
-remember_query  = 'remember' phrase topic_field+ ;
+remember_query  = 'remember' graph_selector? phrase topic_field+ ;
 
 
 (* ============================================================ *)

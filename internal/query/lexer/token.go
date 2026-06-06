@@ -48,6 +48,7 @@ const (
 	OR
 
 	// punctuation
+	AT
 	COLON
 	COMMA
 	LPAREN
@@ -89,6 +90,7 @@ var TokenMap = map[TokenType]string{
 	LITERAL:  "literal",
 	VEC:      "vec",
 	EOL:      "eol",
+	AT:       "@",
 }
 
 var KeywordsMap = map[string]TokenType{

@@ -509,7 +509,7 @@ func Test_PositionTracking(t *testing.T) {
 }
 
 func Test_VeryLongQuery(t *testing.T) {
-	input := "recall $vec (anna or bob or charlie) and (topic:personal or topic:draft) since:2024-01-01 until:2024-12-31 top:10 depth:5"
+	input := "recall@1 $vec (anna or bob or charlie) and (topic:personal or topic:draft) since:2024-01-01 until:2024-12-31 top:10 depth:5"
 
 	expected := []lexer.Token{
 		{Type: lexer.RECALL, Literal: "recall"},
