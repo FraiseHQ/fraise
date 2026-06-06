@@ -30,14 +30,17 @@ import (
 )
 
 func (s *Server[K, P]) handleHealthCheck() gin.HandlerFunc {
-	return nil
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	}
 }
 
+// handle query with parameters
 func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req HandleQueryRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error", err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
@@ -45,8 +48,8 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 
 		stream, err := s.Engine.Plan(q)
 
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error", err.Error()})
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
@@ -55,7 +58,7 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		select {
 		case <-stream.Done():
 			if stream.Err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error", stream.Err.Error()})
+				c.JSON(http.StatusInternalServerError, gin.H{"error": stream.Err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, gin.H{
@@ -64,7 +67,6 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		case <-stream.Done():
 			return
 		}
-
 	}
 }
 
