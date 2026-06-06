@@ -36,16 +36,23 @@ type DB[K comparable, P float32 | float64] struct {
 	mu sync.RWMutex
 
 	Config *config.ConfigSet
-	Graphs []*graph.Graph[K, P]
-	stats  Stats
+	Graphs []graph.Graph[K, P]
+	stats  *Stats
 }
 
 type Stats struct {
 	Memory int
 }
 
-func NewDB[K comparable, P float32 | float64](config *config.ConfigSet) (*DB[K, P], error) {
-	return nil, nil
+func NewDB[K comparable, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P], error) {
+	d := &DB[K, P]{
+		Config: cfg,
+		Graphs: make([]graph.Graph[K, P], config.DefaultNumGraph),
+	}
+	for i := range d.Graphs {
+		d.Graphs[i] = graph.NewGraph[K, P]()
+	}
+	return d, nil
 }
 
 func (d *DB[K, P]) Start() error {
@@ -60,7 +67,7 @@ func (d *DB[K, P]) Stats() error {
 	return nil
 }
 
-func (d *DB[K, P]) Select(index uint8) (*graph.Graph[K, P], error) {
+func (d *DB[K, P]) Select(index uint8) (graph.Graph[K, P], error) {
 	if index < 0 || int(index) >= len(d.Graphs) {
 		return nil, fmt.Errorf("index %d out of bounds for slice of length %d", index, len(d.Graphs))
 	}
