@@ -16,7 +16,7 @@ Fraise is an in-memory memory store for AI agents. A real database your agent qu
 
 ## How it works
 
-Fraise stores knowledge as a **temporal memory graph** of facts, entities, and relationships. Updates arrive as **streams** (one update per stream). Each fact is indexed for full-text and vector search; a hybrid query engine handles retrieval and ranking. A database holds multiple memory graphs (default: 11).
+Fraise stores knowledge as a **temporal memory graph** of facts, entities, and relationships. Updates arrive as **streams** (one update per stream). Each fact is indexed for full-text and vector search; a hybrid query engine handles retrieval and ranking. A database holds multiple memory graphs (default: 8).
 
 ## Get Started
 
