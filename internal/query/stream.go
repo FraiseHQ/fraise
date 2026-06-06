@@ -22,7 +22,11 @@
 
 package query
 
-import "github.com/RonsenbergVI/fraise/internal/graph"
+import (
+	"sync"
+
+	"github.com/RonsenbergVI/fraise/internal/graph"
+)
 
 // data structure representing a stream: language of the scheduler
 // A stream is the language for the engine to the worker
@@ -31,6 +35,9 @@ type Stream[K comparable, P float32 | float64] struct {
 	Query  *Query[K, P]
 	Result *QueryResult[K, P]
 	Err    error
+
+	done chan struct{}
+	once sync.Once
 }
 
 func (s *Stream[K, P]) Commit(graph *graph.Graph[K, P]) error {
@@ -43,4 +50,16 @@ func (s *Stream[K, P]) Rollback(graph *graph.Graph[K, P]) error {
 
 func (s *Stream[K, P]) Stage(graph *graph.Graph[K, P]) error {
 	return nil
+}
+
+func (s *Stream[K, P]) GraphID() uint8 {
+	return (*s.Query).GetGraphID()
+}
+
+func (s *Stream[K, P]) Done() <-chan struct{} {
+	return s.done
+}
+
+func (s *Stream[K, P]) finish() {
+	s.once.Do(func() { close(s.done) })
 }
