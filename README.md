@@ -9,14 +9,14 @@ Fraise is an in-memory memory store for AI agents. A real database your agent qu
 ## Why Fraise
 
 - **Agent-native query language (FQL).** Two verbs: `remember` and `recall` designed for token economy and zero ambiguity. Less surface area for an LLM to get wrong.
-- **Hybrid retrieval.** Every fact is indexed for full-text, semantic, and graph search. A federated engine ranks across all three.
+- **Hybrid retrieval.** Every fact is indexed for full-text, semantic, and graph search. A hybrid engine ranks across all three.
 - **Temporal by default.** Recent memories outrank older ones, so recall is recency-aware out of the box.
 - **In-memory.** Real-time reads and writes, mid-step, while the user waits.
 - **Open source, MIT.**
 
 ## How it works
 
-Fraise stores knowledge as a **temporal memory graph** of facts, entities, and relationships. Updates arrive as **streams** (one update per stream). Each fact is indexed for full-text and vector search; a federated query engine handles retrieval and ranking. A database holds multiple memory graphs (default: 11).
+Fraise stores knowledge as a **temporal memory graph** of facts, entities, and relationships. Updates arrive as **streams** (one update per stream). Each fact is indexed for full-text and vector search; a hybrid query engine handles retrieval and ranking. A database holds multiple memory graphs (default: 11).
 
 ## Get Started
 
