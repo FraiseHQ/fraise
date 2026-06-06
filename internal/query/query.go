@@ -25,12 +25,15 @@ package query
 import (
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/RonsenbergVI/fraise/internal/query/parser"
 )
 
 type Query[K comparable, P float32 | float64] interface {
 	Plan(config *config.ConfigSet) (*Stream[K, P], error)
 	GetGraphID() uint8
 	SetGraphID(id uint8)
+	hash.Hashable[K]
 }
 
 type QueryParameters struct {
@@ -55,6 +58,7 @@ type Hit[K comparable, P float32 | float64] struct {
 }
 
 func Parse[K comparable, P float32 | float64](q string) Query[K, P] {
-	u := Recall[string, float32]{}
+	p := parser.Parser{}
 
+	p.Parse(q)
 }

@@ -38,6 +38,14 @@ func (q Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
 	return nil, nil
 }
 
-func (r Recall[K, P]) GraphID() uint8 {
+func (r Recall[K, P]) GetGraphID() uint8 {
 	return r.context.GraphID
+}
+
+func (r Recall[K, P]) SetGraphID(id uint8) {
+	r.context.GraphID = id
+}
+
+func (r Recall[K, P]) Hash() K {
+	return
 }

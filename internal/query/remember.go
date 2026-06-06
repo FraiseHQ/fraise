@@ -51,3 +51,15 @@ func (q Remember[K, P]) Until(now time.Time) time.Time {
 func (q Remember[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
 	return nil, nil
 }
+
+func (r Remember[K, P]) GetGraphID() uint8 {
+	return r.context.GraphID
+}
+
+func (r Remember[K, P]) SetGraphID(id uint8) {
+	r.context.GraphID = id
+}
+
+func (r Remember[K, P]) Hash() K {
+	return
+}
