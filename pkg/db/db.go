@@ -62,7 +62,7 @@ func (d *DB[K, P]) Stats() error {
 
 func (d *DB[K, P]) Select(index uint8) (*graph.Graph[K, P], error) {
 	if index < 0 || int(index) >= len(d.Graphs) {
-		return nil, fmt.Errorf("index %d out of bounds for slice of length %d", index, len(s))
+		return nil, fmt.Errorf("index %d out of bounds for slice of length %d", index, len(d.Graphs))
 	}
 	return d.Graphs[index], nil
 }
