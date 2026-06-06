@@ -28,9 +28,9 @@ var (
 	// Major is the current major version of main branch.
 	Major = 0
 	// Minor is the current minor version of main branch.
-	Minor = 0
+	Minor = 1
 	// Patch is the current patched version of the main branch.
-	Patch = 1
+	Patch = 0
 )
 
 // Full version of the main branch
