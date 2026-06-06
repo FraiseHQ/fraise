@@ -22,6 +22,6 @@
 
 package cache
 
-type LRUCache[T any] struct {
-	Cache map[string][]Entry[T]
+type LRUCache[K comparable, T any] struct {
+	Cache map[string][]Entry[K, T]
 }

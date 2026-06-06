@@ -22,21 +22,21 @@
 
 package cache
 
-type Cache[T any] interface {
+type Cache[K comparable, T any] interface {
 	Capacity()
 
 	SetCapacity(size int)
 
-	Set(key string, value T) bool
+	Set(key K, value T) bool
 
-	Get(key string) T
+	Get(key K) (T, bool)
 
 	Delete(key string) bool
 
 	Size() int
 }
 
-type Entry[T any] struct {
-	Key   string
+type Entry[K comparable, T any] struct {
+	Key   K
 	Value T
 }
