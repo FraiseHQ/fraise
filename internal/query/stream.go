@@ -52,22 +52,24 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) {
 		return
 	}
 
+	recall := s.Query.(Recall[K, P])
 	nodes, scores := g.Search(
-		s.Query.(Recall[K, P]).Keywords,
-		s.Query.(Recall[K, P]).Vector,
-		s.Query.(Recall[K, P]).Topics,
-		s.Query.(Recall[K, P]).Entities,
-		s.Query.(Recall[K, P]).Parameters.Depth,
-		s.Query.(Recall[K, P]).Parameters.Top,
-		s.Query.(Recall[K, P]).Since(time.Now()),
-		s.Query.(Recall[K, P]).Until(time.Now()),
+		recall.Keywords,
+		recall.Vector,
+		recall.Topics,
+		recall.Entities,
+		recall.Parameters.Depth,
+		recall.Parameters.Top,
+		recall.Since(time.Now()),
+		recall.Until(time.Now()),
 	)
 
+	n := len(nodes)
 	r := QueryResult[K, P]{
-		Count: len(nodes),
-		Hits:  make([]Hit[K, P], len(scores)),
+		Count: n,
+		Hits:  make([]Hit[K, P], n),
 	}
-	for i := 0; i < len(nodes); i++ {
+	for i := 0; i < n; i++ {
 		r.Hits[i].Node = nodes[i]
 		r.Hits[i].Score = scores[i]
 	}
