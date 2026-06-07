@@ -47,11 +47,7 @@ func New[K comparable, P float32 | float64](config *config.ConfigSet) *Server[K,
 	if err != nil {
 
 	}
-
-	engine, err := engine.NewEngine[K, P](config)
-	if err != nil {
-
-	}
+	engine := engine.NewEngine[K, P](config)
 
 	s := &Server[K, P]{
 		DB:     db,
@@ -60,12 +56,6 @@ func New[K comparable, P float32 | float64](config *config.ConfigSet) *Server[K,
 	}
 	s.setupRoutes()
 	return s
-}
-
-func (s *Server[K, P]) setupRoutes() {
-	s.router.GET("/", s.handleHealthCheck())
-	s.router.GET("/q", s.handleQuery())
-	s.router.GET("/qp", s.handleQueryWithParameters())
 }
 
 func (s *Server[K, P]) Start() error {
@@ -93,10 +83,12 @@ func (s *Server[K, P]) Stop() error {
 	}
 
 	logger.Info("Stopping engine")
-	err = s.Engine.Stop()
-	if err != nil {
-		logger.Info("Failed to stop engine!")
-		return ErrUnableToStopEngine
-	}
+	s.Engine.Stop()
 	return nil
+}
+
+func (s *Server[K, P]) setupRoutes() {
+	s.router.GET("/", s.handleHealthCheck())
+	s.router.GET("/v1/q", s.handleQuery())
+	s.router.GET("/v1/qp", s.handleQueryWithParameters())
 }
