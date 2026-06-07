@@ -24,6 +24,7 @@ package query
 
 import (
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 )
 
 type Remember[K comparable, P float32 | float64] struct {
@@ -42,14 +43,14 @@ func (r Remember[K, P]) GetGraphID() uint8 {
 	return r.context.GraphID
 }
 
-func (r Remember[K, P]) SetGraphID(id uint8) {
+func (r *Remember[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
 
-func (r Remember[K, P]) Hash() K {
-	return
+func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
+	return h.Hash(r.Value)
 }
 
 func (r Remember[K, P]) IsWrite() bool {
-	return false
+	return true
 }

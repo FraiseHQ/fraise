@@ -23,10 +23,12 @@
 package query
 
 import (
+	"strings"
 	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 )
 
 type Recall[K comparable, P float32 | float64] struct {
@@ -52,12 +54,12 @@ func (r Recall[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
 
-func (r Recall[K, P]) Hash() K {
-	return
+func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
+	return h.Hash(strings.Join(r.Keywords, "") + strings.Join(r.Entities, "") + strings.Join(r.Topics, ""))
 }
 
 func (r Recall[K, P]) IsWrite() bool {
-	return true
+	return false
 }
 
 func (r Recall[K, P]) Since(now time.Time) time.Time {

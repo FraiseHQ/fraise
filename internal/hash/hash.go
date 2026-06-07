@@ -26,6 +26,6 @@ type Hasher[K comparable, T any] interface {
 	Hash(T) K
 }
 
-type Hashable[K comparable] interface {
-	Hash() K
+type Hashable[K comparable, T any] interface {
+	Hash(h Hasher[K, T]) K
 }

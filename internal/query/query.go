@@ -26,6 +26,7 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/graph"
 	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/RonsenbergVI/fraise/internal/query/interpreter"
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 )
 
@@ -33,7 +34,8 @@ type Query[K comparable, P float32 | float64] interface {
 	Plan(config *config.ConfigSet) (*Stream[K, P], error)
 	GetGraphID() uint8
 	SetGraphID(id uint8)
-	hash.Hashable[K]
+	hash.Hashable[K, string]
+	IsWrite() bool
 }
 
 type QueryParameters struct {
@@ -59,6 +61,9 @@ type Hit[K comparable, P float32 | float64] struct {
 
 func Parse[K comparable, P float32 | float64](q string) Query[K, P] {
 	p := parser.Parser{}
+	i := interpreter.Interpreter{}
 
-	p.Parse(q)
+	ns := p.Parse(q)
+	qo := i.Interpret(ns)
+
 }
