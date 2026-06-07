@@ -91,11 +91,11 @@ func (s *Scheduler[K, P]) Execute(stream *query.Stream[K, P]) error {
 	if err != nil {
 		return err
 	}
-	err = stream.Stage(g)
+	err = stream.Stage(&g)
 	if err != nil {
-		stream.Rollback(g)
+		stream.Rollback(&g)
 		return ErrStreamExecution
 	}
-	stream.Commit(g)
+	stream.Commit(&g)
 	return nil
 }
