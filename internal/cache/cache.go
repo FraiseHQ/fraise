@@ -25,15 +25,17 @@ package cache
 type Cache[K comparable, T any] interface {
 	Capacity()
 
-	SetCapacity(size int)
+	Resize(capacity int)
 
-	Set(key K, value T) bool
+	Put(key K, value T)
 
 	Get(key K) (T, bool)
 
-	Delete(key string) bool
+	Delete(key K) bool
 
-	Size() int
+	Len() int
+
+	Clear()
 }
 
 type Entry[K comparable, T any] struct {
