@@ -143,12 +143,18 @@ func (c *LRUCache[K, T]) Resize(capacity int) int {
 	defer c.mu.Unlock()
 
 	switch {
+	// allocate new map (increase size)
+	// NOTE: this step could have been skipped
+	// as this is a pre-allocation hint for go
+	// but it also avoid resizing the map during
+	// subsequent puts
 	case c.capacity < capacity:
 		n := make(map[K]*list.Element, capacity)
 		for k, v := range c.items {
 			n[k] = v
 		}
 		c.items = n
+	// evict entries (reduce size)
 	case c.capacity > capacity:
 		for c.order.Len() > c.capacity {
 			oldest := c.order.Back()
@@ -160,7 +166,6 @@ func (c *LRUCache[K, T]) Resize(capacity int) int {
 			entries++
 		}
 	}
-	// evict entries
 
 	c.capacity = capacity
 	return entries
