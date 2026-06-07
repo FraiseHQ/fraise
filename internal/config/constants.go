@@ -27,5 +27,5 @@ const (
 
 	defaultPort = 9489
 
-	defaultGraphNum uint8 = 8
+	DefaultNumGraph uint8 = 8
 )
