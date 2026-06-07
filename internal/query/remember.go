@@ -23,29 +23,15 @@
 package query
 
 import (
-	"time"
-
 	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/containers"
 )
 
 type Remember[K comparable, P float32 | float64] struct {
-	Keywords []string
-	Vector   containers.Vector[P]
+	Value    string
 	Entities []string
 	Topics   []string
 
-	Parameters QueryParameters
-
 	context QueryContext
-}
-
-func (q Remember[K, P]) Since(now time.Time) time.Time {
-	return q.Parameters.Since.Resolve(now)
-}
-
-func (q Remember[K, P]) Until(now time.Time) time.Time {
-	return q.Parameters.Until.Resolve(now)
 }
 
 func (q Remember[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
@@ -62,4 +48,8 @@ func (r Remember[K, P]) SetGraphID(id uint8) {
 
 func (r Remember[K, P]) Hash() K {
 	return
+}
+
+func (r Remember[K, P]) IsWrite() bool {
+	return false
 }

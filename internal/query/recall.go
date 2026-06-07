@@ -23,13 +23,19 @@
 package query
 
 import (
+	"time"
+
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/containers"
 )
 
 type Recall[K comparable, P float32 | float64] struct {
-	Value    string
+	Keywords []string
+	Vector   containers.Vector[P]
 	Entities []string
 	Topics   []string
+
+	Parameters QueryParameters
 
 	context QueryContext
 }
@@ -48,4 +54,16 @@ func (r Recall[K, P]) SetGraphID(id uint8) {
 
 func (r Recall[K, P]) Hash() K {
 	return
+}
+
+func (r Recall[K, P]) IsWrite() bool {
+	return true
+}
+
+func (r Recall[K, P]) Since(now time.Time) time.Time {
+	return r.Parameters.Since.Resolve(now)
+}
+
+func (r Recall[K, P]) Until(now time.Time) time.Time {
+	return r.Parameters.Until.Resolve(now)
 }

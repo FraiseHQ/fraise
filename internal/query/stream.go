@@ -24,6 +24,7 @@ package query
 
 import (
 	"sync"
+	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/graph"
 )
@@ -36,14 +37,42 @@ type Stream[K comparable, P float32 | float64] struct {
 	Result *QueryResult[K, P]
 	Err    error
 
-	done chan struct{}
-	once sync.Once
+	staging graph.Graph[K, P]
+	done    chan struct{}
+	once    sync.Once
 }
 
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) {
 	defer s.finish()
 	defer s.release(g)
 
+	if s.Query.IsWrite() {
+		g.MergeFrom(s.staging)
+		s.staging = nil
+		return
+	}
+
+	nodes, scores := g.Search(
+		s.Query.(Recall[K, P]).Keywords,
+		s.Query.(Recall[K, P]).Vector,
+		s.Query.(Recall[K, P]).Topics,
+		s.Query.(Recall[K, P]).Entities,
+		s.Query.(Recall[K, P]).Parameters.Depth,
+		s.Query.(Recall[K, P]).Parameters.Top,
+		s.Query.(Recall[K, P]).Since(time.Now()),
+		s.Query.(Recall[K, P]).Until(time.Now()),
+	)
+
+	r := QueryResult[K, P]{
+		Count: len(nodes),
+		Hits:  make([]Hit[K, P], len(scores)),
+	}
+	for i := 0; i < len(nodes); i++ {
+		r.Hits[i].Node = nodes[i]
+		r.Hits[i].Score = scores[i]
+	}
+
+	s.Result = &r
 }
 
 func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) {
@@ -51,11 +80,19 @@ func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) {
 	defer s.finish()
 	defer s.release(g)
 
+	if s.Query.IsWrite() {
+		s.staging = nil
+	}
 }
 
-func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) {
+func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) error {
 	s.acquire(g)
 
+	s.staging = g.Copy()
+	if s.Query.IsWrite() {
+		// remember logic
+	}
+	return nil
 }
 
 func (s *Stream[K, P]) GraphID() uint8 {
