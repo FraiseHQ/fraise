@@ -48,12 +48,24 @@ func NewGraph[K comparable, P float32 | float64]() *InMemoryGraph[K, P] {
 	return g
 }
 
+// write lock
 func (g *InMemoryGraph[K, P]) Lock() {
 	g.mu.Lock()
 }
 
+// read lock
 func (g *InMemoryGraph[K, P]) RLock() {
-	g.mu.Lock()
+	g.mu.RLock()
+}
+
+// write unlock
+func (g *InMemoryGraph[K, P]) Unlock() {
+	g.mu.Unlock()
+}
+
+// read unlock
+func (g *InMemoryGraph[K, P]) RUnlock() {
+	g.mu.RUnlock()
 }
 
 func (g *InMemoryGraph[K, P]) Get(key K) *Node[K] {

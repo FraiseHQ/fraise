@@ -32,7 +32,7 @@ import (
 // A stream is the language for the engine to the worker
 // Streams can be read-only or read and write.
 type Stream[K comparable, P float32 | float64] struct {
-	Query  *Query[K, P]
+	Query  Query[K, P]
 	Result *QueryResult[K, P]
 	Err    error
 
@@ -40,20 +40,26 @@ type Stream[K comparable, P float32 | float64] struct {
 	once sync.Once
 }
 
-func (s *Stream[K, P]) Commit(graph *graph.Graph[K, P]) error {
-	return nil
+func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) {
+	defer s.finish()
+	defer s.release(g)
+
 }
 
-func (s *Stream[K, P]) Rollback(graph *graph.Graph[K, P]) error {
-	return nil
+func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) {
+
+	defer s.finish()
+	defer s.release(g)
+
 }
 
-func (s *Stream[K, P]) Stage(graph *graph.Graph[K, P]) error {
-	return nil
+func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) {
+	s.acquire(g)
+
 }
 
 func (s *Stream[K, P]) GraphID() uint8 {
-	return (*s.Query).GetGraphID()
+	return s.Query.GetGraphID()
 }
 
 func (s *Stream[K, P]) Done() <-chan struct{} {
@@ -62,4 +68,20 @@ func (s *Stream[K, P]) Done() <-chan struct{} {
 
 func (s *Stream[K, P]) finish() {
 	s.once.Do(func() { close(s.done) })
+}
+
+func (s *Stream[K, P]) acquire(g graph.Graph[K, P]) {
+	if s.Query.IsWrite() {
+		g.Lock()
+	} else {
+		g.RLock()
+	}
+}
+
+func (s *Stream[K, P]) release(g graph.Graph[K, P]) {
+	if s.Query.IsWrite() {
+		g.Unlock()
+	} else {
+		g.RUnlock()
+	}
 }
