@@ -76,6 +76,9 @@ type EngineConfig struct {
 
 	// Score attenuation for graph walk
 	HopAttenuation float64 `toml:"hop-attenuation"`
+
+	// Query cache size
+	CacheCapacity int `toml:"cache-capacity"`
 }
 
 type DBConfig struct {
