@@ -35,30 +35,42 @@ import (
 
 type Engine[K comparable, P float32 | float64] struct {
 	Config        *config.ConfigSet
-	Cache         *cache.Cache[query.Query[K, P]]
+	Cache         cache.Cache[K, query.Query[K, P]]
 	Scheduler     *scheduler.Scheduler[K, P]
 	Optimisations *optimisation.Pipeline[K, P]
 
 	mu sync.RWMutex
 }
 
-func NewEngine[K comparable, P float32 | float64](config *config.ConfigSet) (*Engine[K, P], error) {
-	return nil, nil
+func NewEngine[K comparable, P float32 | float64](c *config.ConfigSet) *Engine[K, P] {
+	e := &Engine[K, P]{
+		Config:        c,
+		Optimisations: optimisation.NewPipeline[K, P](),
+		Scheduler:     scheduler.NewScheduler[K, P](c),
+	}
+	return e
 }
 
-func (e *Engine[K, P]) Start() error {
-	return nil
+func (e *Engine[K, P]) Start() {
+	// allocate cache memory
+	e.Cache = cache.NewLRUCache[K, query.Query[K, P]](e.Config.Engine.CacheCapacity)
 }
 
-func (e *Engine[K, P]) Stop() error {
-	return nil
+func (e *Engine[K, P]) Stop() {
+	// release cache memory
+	e.Cache.Clear()
 }
 
 func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
-	e.mu.RLock()
-	if cached, ok := (*e.Cache).Get(q.Hash()); ok {
+	if cached, ok := e.Cache.Get(q.Hash()); ok {
 		q = cached
+	} else {
+		// NOTE: run optimisaitons on query and cache optimised query
+		// only optimised queries are cached
+		optimised := e.Optimisations.Optimise(q)
+		e.Cache.Put(q.Hash(), optimised)
+		q = optimised
 	}
 
 	stream, err := q.Plan(e.Config)
@@ -70,13 +82,4 @@ func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
 func (e *Engine[K, P]) Apply(s *query.Stream[K, P]) {
 	e.Scheduler.Submit(s)
-
-}
-
-func (e *Engine[K, P]) Lock() error {
-	return nil
-}
-
-func (e *Engine[K, P]) Release() error {
-	return nil
 }
