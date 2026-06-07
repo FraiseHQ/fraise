@@ -71,10 +71,11 @@ func (s *Scheduler[K, P]) Stop() {
 	}
 }
 
+// worker executes stream (read or write in database)
 func (s *Scheduler[K, P]) worker() {
 	defer s.wg.Done()
 	for stream := range s.Queue {
-		err := s.Execute(stream)
+		err := s.execute(stream)
 		if err != nil {
 			logger.Error("Failed to execute stream", "error:", err)
 		}
@@ -82,11 +83,13 @@ func (s *Scheduler[K, P]) worker() {
 
 }
 
+// Submits new stream in queue to be executed
 func (s *Scheduler[K, P]) Submit(stream *query.Stream[K, P]) {
 	s.Queue <- stream
 }
 
-func (s *Scheduler[K, P]) Execute(stream *query.Stream[K, P]) error {
+// Executes stream
+func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 	g, err := s.DB.Select(stream.Query.GetGraphID())
 	if err != nil {
 		return err
@@ -96,6 +99,9 @@ func (s *Scheduler[K, P]) Execute(stream *query.Stream[K, P]) error {
 		stream.Rollback(g)
 		return ErrStreamExecution
 	}
-	stream.Commit(g)
+	if err := stream.Commit(g); err != nil {
+		stream.Rollback(g)
+		return ErrStreamCommit
+	}
 	return nil
 }

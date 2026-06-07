@@ -42,16 +42,22 @@ type Stream[K comparable, P float32 | float64] struct {
 	once    sync.Once
 }
 
-func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) {
+func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	defer s.finish()
 	defer s.release(g)
 
+	if s.staging == nil {
+		return ErrStreamClosed
+	}
+
+	// Write stream
 	if s.Query.IsWrite() {
 		g.MergeFrom(s.staging)
 		s.staging = nil
-		return
+		return nil
 	}
 
+	// Read stream
 	recall := s.Query.(Recall[K, P])
 	nodes, scores := g.Search(
 		recall.Keywords,
@@ -64,6 +70,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) {
 		recall.Until(time.Now()),
 	)
 
+	// copy results to Hit object
 	n := len(nodes)
 	r := QueryResult[K, P]{
 		Count: n,
@@ -74,17 +81,26 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) {
 		r.Hits[i].Score = scores[i]
 	}
 
+	s.staging = nil
 	s.Result = &r
+	return nil
 }
 
-func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) {
+func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) error {
 
 	defer s.finish()
 	defer s.release(g)
 
+	if s.staging == nil {
+		return ErrStreamClosed
+	}
+
 	if s.Query.IsWrite() {
 		s.staging = nil
 	}
+
+	s.staging = nil
+	return nil
 }
 
 func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) error {

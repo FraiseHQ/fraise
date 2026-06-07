@@ -28,4 +28,5 @@ var (
 	ErrShutdown        = errors.New("Scheduler: shut down")
 	ErrEnqueueStream   = errors.New("Could not add stream to queue")
 	ErrStreamExecution = errors.New("Error while executing stream.")
+	ErrStreamCommit    = errors.New("Error while comitting stream.")
 )
