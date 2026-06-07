@@ -23,9 +23,9 @@
 package cache
 
 type Cache[K comparable, T any] interface {
-	Capacity()
+	Capacity() int
 
-	Resize(capacity int)
+	Resize(capacity int) int
 
 	Put(key K, value T)
 
