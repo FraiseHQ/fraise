@@ -23,8 +23,6 @@
 package engine
 
 import (
-	"sync"
-
 	"github.com/RonsenbergVI/fraise/internal/cache"
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/query"
@@ -38,8 +36,6 @@ type Engine[K comparable, P float32 | float64] struct {
 	Cache         cache.Cache[K, query.Query[K, P]]
 	Scheduler     *scheduler.Scheduler[K, P]
 	Optimisations *optimisation.Pipeline[K, P]
-
-	mu sync.RWMutex
 }
 
 func NewEngine[K comparable, P float32 | float64](c *config.ConfigSet) *Engine[K, P] {

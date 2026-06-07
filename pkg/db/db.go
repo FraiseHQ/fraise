@@ -24,7 +24,6 @@ package db
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/graph"
@@ -33,11 +32,10 @@ import (
 // the db hols the logic of translating low level calls to the memory Graphs
 // from and to the transaction object (that the server directly serialises to the client)
 type DB[K comparable, P float32 | float64] struct {
-	mu sync.RWMutex
-
 	Config *config.ConfigSet
 	Graphs []graph.Graph[K, P]
-	stats  *Stats
+
+	stats *Stats
 }
 
 type Stats struct {
