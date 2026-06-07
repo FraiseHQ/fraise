@@ -23,6 +23,8 @@
 package graph
 
 import (
+	"time"
+
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
@@ -58,8 +60,8 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Returns the graph full text search index
 	GetTextIndex() *index.Index[K, string, P]
 
-	// Checks if graph is locked
-	Locked() bool
+	// Merge graphs
+	MergeFrom(g Graph[K, P])
 
 	// Entities
 	Entities() []*Entity[K]
@@ -77,19 +79,24 @@ type Graph[K comparable, P float32 | float64] interface {
 	Copy() Graph[K, P]
 
 	// Number of Entities in the graph
-	Order() (int error)
+	Order() int
 
 	// Number of Relationships in the graph
-	Size() (int error)
+	Size() int
 
 	// Returns statistics about the graph
 	Stats() GraphStats
 
-	// Search methods
+	// Search method
+	Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P)
 
-	// Gather graph walk seeds
-	GatherSeeds(keywords []string, vector containers.Vector[P]) ([]*Node[K], []P)
+	// Mutex public methods
 
-	// Graph walk to find neighbours of seeds
-	FindNeighbours(seeds []*Node[K], topics []string, entities []string, depth int) ([]*Node[K], []P)
+	RLock()
+
+	Lock()
+
+	RUnlock()
+
+	Unlock()
 }

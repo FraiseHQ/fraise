@@ -132,7 +132,7 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() *index.Index[K, string, P] {
 
 }
 
-func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, since time.Time, until time.Time, top int) ([]*Node[K], []P) {
+func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P) {
 	// A. Search starts with gathering seeds for the graph search.
 	// Seeds are found from
 	// 1. Vector search (top K - default = 10)
@@ -169,4 +169,8 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []*Node[K], topics []string, 
 
 func (g *InMemoryGraph[K, P]) timeFilter(nodes []*Node[K], since time.Time, until time.Time) ([]*Node[K], []P) {
 	return nil, []P{}
+}
+
+func (g *InMemoryGraph[K, P]) MergeFrom(in Graph[K, P]) {
+
 }
