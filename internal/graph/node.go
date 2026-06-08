@@ -22,7 +22,11 @@
 
 package graph
 
-import "time"
+import (
+	"time"
+
+	"github.com/RonsenbergVI/fraise/internal/hash"
+)
 
 type NodeAttributes struct {
 	Value     string
@@ -31,17 +35,16 @@ type NodeAttributes struct {
 
 type Node[K comparable] interface {
 	GetID() K
-	GetValue() string
 	GetTimestamp() time.Time
 	GetAttributes() *NodeAttributes
+	hash.Hashable[K, string]
 }
 
 type Entity[K comparable] interface {
-	GetAttributes() NodeAttributes
+	GetValue() string
 }
 
 type Relationship[K comparable] interface {
 	Source() *Entity[K]
 	Target() *Entity[K]
-	GetAttributes() NodeAttributes
 }
