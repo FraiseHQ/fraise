@@ -85,6 +85,9 @@ type DBConfig struct {
 	DefaultTop int `toml:"default-top"`
 
 	DefaultDepth int `toml:"default-depth"`
+
+	// database hashing function (xxhash, murmur3, t1ha)
+	HashingFunction string `toml:"hashing-function"`
 }
 
 // Instanciates new configset
