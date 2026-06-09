@@ -22,14 +22,46 @@
 
 package parser
 
+import "github.com/RonsenbergVI/fraise/internal/query/lexer"
+
 type Instruction interface {
 }
 
 type Node interface {
-	Eval() error
-	
+	// Text returns the original text of the element.
+	String() string
+
+	Tokens() []lexer.Token
+}
+
+type SelectorNode interface {
+	Node
+
+	ID() uint8
+}
+
+type TermNode interface {
+	Node
 }
 
 // Node representing a command
-type CommandNode struct {
+type CommandNode interface {
+	Node
+	Selector() SelectorNode
+}
+
+type FieldNode[T any] interface {
+	Node
+	Value() ValueNode[T]
+}
+
+type ValueNode[T any] interface {
+	Node
+	Value() T
+}
+
+type OpNode[T any] interface {
+	Node
+	Left() FieldNode[T]
+	Right() FieldNode[T]
 }
