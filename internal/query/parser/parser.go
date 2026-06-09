@@ -25,11 +25,8 @@ package parser
 import "github.com/RonsenbergVI/fraise/internal/query/lexer"
 
 type Parser struct {
-	Lexer *lexer.Lexer
-
-	PreviousToken lexer.Token
-
-	CurrentToken lexer.Token
-
-	errors []error
+	l             *lexer.Lexer
+	previousToken lexer.Token
+	currentToken  lexer.Token
+	errors        []error
 }
