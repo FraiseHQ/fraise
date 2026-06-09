@@ -31,7 +31,8 @@ type Node interface {
 	// Text returns the original text of the element.
 	String() string
 
-	Tokens() []lexer.Token
+	Pos() lexer.Position
+	End() lexer.Position
 }
 
 type SelectorNode interface {
@@ -65,3 +66,19 @@ type OpNode[T any] interface {
 	Left() FieldNode[T]
 	Right() FieldNode[T]
 }
+
+type TopicField struct {
+	token lexer.Token
+	value
+}
+
+func (t TopicField) Tokens() []lexer.Token {
+	return t.tokens
+}
+
+func (t TopicField) String() string {
+	return s.tok
+}
+
+func (t TopicField) Value() string {
+)
