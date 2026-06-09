@@ -20,51 +20,24 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package interpreter
+package query
 
 import (
-	"github.com/RonsenbergVI/fraise/internal/query/lexer"
+	"time"
+
+	"github.com/RonsenbergVI/fraise/internal/query/parser"
 )
 
-// Interpretor errors which are different than database errors, are returned by the evaluation
-// and execution planning of a query.
-type InterpretorError interface {
-	error
-	Position() lexer.Position
+type Interpreter struct {
 }
 
-type NameError struct {
-	Message string
-	Pos     lexer.Position
+func (i *Interpreter) Evaluate(r parser.RememberCommandNode) QueryParameters {
 }
 
-func (e NameError) Position() lexer.Position {
-	return e.Pos
+func (i *Interpreter) once(name string) error {
+
 }
 
-type ValueError struct {
-	Message string
-	Pos     lexer.Position
-}
+func (i *Interpreter) resolveTime(name string) (time.Time, error) {
 
-func (e ValueError) Position() lexer.Position {
-	return e.Pos
-}
-
-type TypeError struct {
-	Message string
-	Pos     lexer.Position
-}
-
-func (e TypeError) Position() lexer.Position {
-	return e.Pos
-}
-
-type SyntaxError struct {
-	Message string
-	Pos     lexer.Position
-}
-
-func (e SyntaxError) Position() lexer.Position {
-	return e.Pos
 }
