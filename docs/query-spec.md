@@ -84,7 +84,7 @@ simple_field    = topic_field
 
 (* Boolean grouping is permitted over topic_field in v0.1. *)
 group_field     = '(' topic_field (bool_op topic_field)+ ')' ;
-bool_op         = 'OR' | 'AND';
+bool_op         = 'or' | 'and';
 
 topic_field     = 'topic' ':' topic_value ;
 topic_value     = identifier | quoted_identifier ;
