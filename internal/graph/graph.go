@@ -29,74 +29,109 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
+// GraphStats is a point-in-time snapshot of a graph's shape.
 type GraphStats struct {
-	Order int
-	Size  int
-	Nodes int
+	Order int // number of entities (vertices)
+	Size  int // number of relationships (edges)
+	Nodes int // total stored nodes
 }
 
-// Hashing fuinction that takes as input a node and returns a hash.
-type Hash[K comparable] func(*Node[K]) K
-
-// A knowledge graph is the storage atomic component of the database server.
-// A la Redis, every single database server has multiple in memory graphs (default 13)
+// Graph is a temporal memory graph: the storage atomic component of the
+// database server. A la Redis, every database server holds multiple
+// in-memory graphs addressed by index (see the '@n' graph selector in FQL).
+//
+// K is the node key type; P is the floating-point precision used for
+// embedding vectors and ranking scores.
+//
+// Implementations are guarded by the embedded read-write lock methods;
+// callers are responsible for acquiring the appropriate lock around the
+// operations they compose (see the locking section below).
 type Graph[K comparable, P float32 | float64] interface {
-	// Generic Graph methods
-	// Retrieves Node
+
+	// Get returns the node stored under key, or nil if absent.
 	Get(key K) *Node[K]
 
-	// Sets Node
+	// Set inserts a new node, deriving its key via the graph's hash
+	// function.
 	Set(node *Node[K]) error
 
-	// Updates node
+	// Put replaces the node stored under key with the given node.
 	Put(key K, node *Node[K]) error
 
-	// Delete node
+	// Delete removes the node (and, by extension, its index entries and
+	// incident relationships).
 	Delete(node *Node[K]) error
 
-	// Returns the graph vector index
+	// GetVectorIndex returns the graph's vector (semantic) index, keyed
+	// by node key and storing embedding vectors of precision P.
 	GetVectorIndex() *index.Index[K, containers.Vector[P], P]
 
-	// Returns the graph full text search index
+	// GetTextIndex returns the graph's full-text search index.
 	GetTextIndex() *index.Index[K, string, P]
 
-	// Merge graphs
+	// MergeFrom merges the contents of g into this graph: nodes,
+	// relationships and index entries. Nodes with colliding keys are
+	// resolved by the implementation.
 	MergeFrom(g Graph[K, P])
 
-	// Entities
-	Entities() []*Entity[K]
-
-	// Relationships
-	Relationships() []*Relationship[K]
-
-	// Adjacency map
-	AdjacencyMap() map[K]map[K]*Relationship[K]
-
-	// Predecessor map
-	PredecessorMap() map[K]map[K]*Relationship[K]
-
-	// Returns a deep copy of the graph
+	// Copy returns a deep copy of the graph, independent of the
+	// original: mutating one never affects the other.
 	Copy() Graph[K, P]
 
-	// Number of Entities in the graph
+	// Entities returns every entity (vertex) currently in the graph.
+	Entities() []*Entity[K]
+
+	// Relationships returns every relationship (edge) currently in the
+	// graph.
+	Relationships() []*Relationship[K]
+
+	// AdjacencyMap returns the outgoing-edge view of the graph:
+	// AdjacencyMap()[from][to] is the relationship from -> to.
+	AdjacencyMap() map[K]map[K]*Relationship[K]
+
+	// PredecessorMap returns the incoming-edge view of the graph:
+	// PredecessorMap()[to][from] is the relationship from -> to. It is
+	// the transpose of AdjacencyMap and serves reverse traversal.
+	PredecessorMap() map[K]map[K]*Relationship[K]
+
+	// Order returns the number of entities (vertices) in the graph.
 	Order() int
 
-	// Number of Relationships in the graph
+	// Size returns the number of relationships (edges) in the graph.
 	Size() int
 
-	// Returns statistics about the graph
+	// Stats returns a point-in-time snapshot of the graph's shape.
 	Stats() GraphStats
 
-	// Search method
+	// Search runs a hybrid query over the graph and returns matching
+	// nodes alongside their ranking scores (parallel slices, ordered
+	// best-first, at most top entries).
+	//
+	// All criteria are optional and combine to narrow the result:
+	//   - keywords: full-text terms matched against the text index
+	//   - vector:   query embedding for nearest-neighbor search; nil
+	//               (or empty) skips the vector index
+	//   - topics:   restrict results to facts tagged with these topics
+	//   - entities: restrict results to facts involving these entities
+	//   - depth:    maximum graph-hop distance explored from direct hits
+	//   - top:      maximum number of results returned
+	//   - since:    inclusive lower time bound; zero value = unbounded
+	//   - until:    exclusive upper time bound; zero value = unbounded
 	Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P)
 
-	// Mutex public methods
+	// Graphs expose their read-write lock so callers can hold a single
+	// lock across a sequence of calls (e.g. Get-then-Put) instead of
+	// locking per call. The usual sync.RWMutex contract applies.
 
+	// RLock acquires the lock for reading.
 	RLock()
 
+	// Lock acquires the lock for writing.
 	Lock()
 
+	// RUnlock releases a read lock.
 	RUnlock()
 
+	// Unlock releases a write lock.
 	Unlock()
 }
