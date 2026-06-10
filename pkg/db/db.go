@@ -61,8 +61,8 @@ func (d *DB[K, P]) Stop() error {
 	return nil
 }
 
-func (d *DB[K, P]) Stats() error {
-	return nil
+func (d *DB[K, P]) Stats() Stats {
+	return *d.stats
 }
 
 func (d *DB[K, P]) Select(index uint8) (graph.Graph[K, P], error) {
