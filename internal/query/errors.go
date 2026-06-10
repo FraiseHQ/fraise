@@ -27,5 +27,6 @@ import "errors"
 var (
 	// ErrStreamClosed is returned when committing or rolling back a stream
 	// that has already been committed or rolled back.
-	ErrStreamClosed = errors.New("Stream closed")
+	ErrStreamClosed  = errors.New("Stream closed")
+	ErrParsingFailed = errors.New("Query Parsing Error")
 )
