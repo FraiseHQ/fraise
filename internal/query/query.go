@@ -26,7 +26,6 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/graph"
 	"github.com/RonsenbergVI/fraise/internal/hash"
-	"github.com/RonsenbergVI/fraise/internal/query/interpreter"
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 )
 
@@ -59,11 +58,21 @@ type Hit[K comparable, P float32 | float64] struct {
 	Score P
 }
 
-func Parse[K comparable, P float32 | float64](q string) Query[K, P] {
-	p := parser.Parser{}
-	i := interpreter.Interpreter{}
+func Parse[K comparable, P float32 | float64](q string) (*Query[K, P], error) {
 
-	ns := p.Parse(q)
-	qo := i.Interpret(ns)
+	qo := &Query[K, P]{}
+	i := Interpreter{}
 
+	cmd, warns, err := parser.Parse(q)
+	if err != nil {
+		return nil, ErrParsingFailed
+	}
+	qp := i.Evaluate(cmd)
+
+	// remember
+	qo.QueryParameters = qp
+
+	// recall
+
+	return qo, nil
 }
