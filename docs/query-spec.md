@@ -40,6 +40,7 @@ Keywords are specific query instructions. They are reserved keywords.
 | AND                   | bool_op                   | Op        |
 | NOT                   | bool_op                   | Op        |
 | TOPIC                 | topic_field               | Field     |
+| ENTITY                | entity_field              | Field     |
 | SINCE                 | since_field               | Field     |
 | UNTIL                 | until_field               | Field     |
 | TOP                   | top_field                 | Field     |
@@ -76,18 +77,22 @@ phrase          = '"' ?[^"]*? '"' ;
 field_clause    = simple_field | group_field ;
 
 simple_field    = topic_field
+                | entity_field
                 | since_field
                 | until_field
                 | depth_field
                 | top_field
                 | v_field ;
 
-(* Boolean grouping is permitted over topic_field in v0.1. *)
-group_field     = '(' topic_field (bool_op topic_field)+ ')' ;
-bool_op         = 'or' | 'and';
-
 topic_field     = 'topic' ':' topic_value ;
-topic_value     = identifier | quoted_identifier ;
+topic_value     = identifier ;
+entity_field    = 'entity' ':' entity_value ;
+topic_value     = entity_value ;
+search_field    = topic_field | entity_field ;
+
+(* Boolean grouping is permitted over topic_field in v0.1. *)
+group_field     = '(' search_field (bool_op search_field)+ ')' ;
+bool_op         = 'or' | 'and';
 
 since_field     = 'since' ':' time_value ;
 until_field     = 'until' ':' time_value ;
