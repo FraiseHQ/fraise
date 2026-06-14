@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package parser
+package containers
 
 import "time"
 
@@ -30,6 +30,14 @@ type TimeValue interface {
 
 type RelativeTime struct{ Dur time.Duration }
 type AbsoluteTime struct{ T time.Time }
+
+func (r RelativeTime) String() string {
+	return r.String()
+}
+
+func (a AbsoluteTime) String() string {
+	return a.T.Format(time.RFC822)
+}
 
 func (r RelativeTime) Resolve(now time.Time) time.Time { return now.Add(-r.Dur) }
 func (a AbsoluteTime) Resolve(_ time.Time) time.Time   { return a.T }
