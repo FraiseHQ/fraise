@@ -68,7 +68,8 @@ query           = recall_query | remember_query ;
 (* RECALL                                                       *)
 (* ------------------------------------------------------------ *)
 
-recall_query    = 'recall' graph_selector? recall_body ;
+recall_query    = recall_cmd recall_body ;
+recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
 
 (* Canonical order: terms, then anchors, then modifiers.         *)
 (* SEMANTIC RULE: at least one POSITIVE seed is required — a      *)
@@ -99,20 +100,21 @@ vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 (* Asserts a fact (phrase) and the topics it is about.           *)
 (* Entities are extracted at ingestion, not asserted here.       *)
 (* Occur prefixes (+ - ~) are NOT valid on remember.             *)
-remember_query  = 'remember' graph_selector? phrase topic_assign+ ;
+remember_query  = remember_cmd phrase topic_assign+ ;
+remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace before '@' *)
 topic_assign    = 'topic' ':' anchor_value ;
 
 (* ------------------------------------------------------------ *)
 (* SHARED                                                       *)
 (* ------------------------------------------------------------ *)
 
-graph_selector  = '@' integer ;                (* memory graph index, default 0 *)
+graph_selector  = '@' integer ;                (* default 0; lexed WITH the command as one token: (recall|remember)(@[0-9]+)? *)
 
 (* ------------------------------------------------------------ *)
 (* LITERALS                                                     *)
 (* ------------------------------------------------------------ *)
 
-term              = ?[a-z0-9_][a-z0-9_\-]*? ;  (* must NOT start with '-' (see notes) *)
+bare_word         = ?[a-z0-9_][a-z0-9_\-]*? ;  (* must NOT start with '-' (see notes) *)
 phrase            = '"' ?[^"]*? '"' ;
 identifier        = ?[a-z][a-z0-9_\-]*? ;
 quoted_identifier = '"' ?[^"]+? '"' ;
@@ -130,7 +132,7 @@ param_ref         = '$' identifier ;
 recall billing +entity:acme since:7d top:5
 recall ~topic:billing -entity:acme
 recall "annual contract" topic:billing entity:acme depth:3
-recall @3 +topic:auth +entity:okta
+recall@3 +topic:auth +entity:okta
 remember "acme moved to annual billing" topic:billing topic:contracts
 ```
 
