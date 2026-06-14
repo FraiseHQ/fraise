@@ -79,8 +79,8 @@ recall_body     = term* anchor* modifiers ;
 
 term            = bare_word | phrase ;        (* soft ranking seed (SHOULD) *)
 
-anchor          = occur? anchor_field ;       (* at most one prefix; not composable *)
-occur           = '+' | '-' | '~' ;           (* MUST | MUST_NOT | LOOSEN *)
+anchor          = clause? anchor_field ;       (* at most one prefix; not composable *)
+clause          = '+' | '-' | '~' ;           (* MUST | MUST_NOT | LOOSEN *)
 anchor_field    = topic_field | entity_field ;
 topic_field     = 'topic'  ':' anchor_value ;
 entity_field    = 'entity' ':' anchor_value ;
@@ -99,7 +99,7 @@ vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 
 (* Asserts a fact (phrase) and the topics it is about.           *)
 (* Entities are extracted at ingestion, not asserted here.       *)
-(* Occur prefixes (+ - ~) are NOT valid on remember.             *)
+(* clauses (+ - ~) are NOT valid on remember.             *)
 remember_query  = remember_cmd phrase topic_assign+ ;
 remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace before '@' *)
 topic_assign    = 'topic' ':' anchor_value ;
