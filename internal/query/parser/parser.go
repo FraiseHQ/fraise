@@ -24,6 +24,7 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
 )
@@ -101,35 +102,121 @@ func (p *parser) warnf(pos lexer.Position, format string, args ...any) {
 
 func (p *parser) parseQuery() (CommandNode, error) {
 	switch p.cur.Type {
-	case lexer.RECALL:
-		return p.parseRecall()
 	case lexer.REMEMBER:
-		return p.parseRemember()
+		return (*p).parseRemember()
 	default:
 		return nil, p.errf(p.l.CurrentPos, "expected a command (recall, remember), found %q", p.cur.Literal)
 	}
 }
 
-func (p *parser) parseRecall() (*RecallCommandNode, error) {
-}
-
 func (p *parser) parseRemember() (*RememberCommandNode, error) {
+	r := RememberCommandNode{}
+	p.next()
+	r.key = p.cur
+
+	if p.peek.Type == lexer.AT {
+		selector, err := p.parseGraphSelector()
+		if err != nil {
+			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
+		}
+		r.selector = *selector
+	}
+
+	// Remember only supports one phrase
+	_, err := p.expect(lexer.COMMA)
+
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "expected comma, but found %q", p.cur.Literal)
+	}
+
+	// one phrase or multiple terms
+
+	phrase, err := p.parsePhrase()
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "Error while parsing phrase %e", err)
+	}
+	r.value = *phrase
+
+	p.next()
+
+	var anchors []AnchorFieldNode
+	var vec RefFieldNode[[]float32]
+
+	for p.cur.Type != lexer.EOL {
+		switch p.cur.Type {
+		case lexer.ENTITY, lexer.TOPIC:
+			anchor, err := p.parseAnchorField()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+			}
+			anchors = append(anchors, *anchor)
+			p.next()
+		case lexer.DOLLAR:
+			vec, err = p.parseVecField()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
+			}
+			p.next()
+		default:
+			return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
+		}
+	}
+
+	r.vec = vec
+	r.anchors = anchors
+
+	return &r, nil
 }
 
 func (p *parser) parseGraphSelector() (*GraphSelectorNode, error) {
+	gsn := &GraphSelectorNode{}
+
+	gsn.key = p.cur
+
+	p.next()
+
+	_, err := p.expect(lexer.LITERAL)
+
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+	}
+
+	i, err := strconv.Atoi(p.cur.Literal)
+
+	// NOTE: probably not the safest way to do this (panic if you can't convert or casts anyway?).
+	// Maybe just store the graph id as a int and check that value doesn't exceed number of graphs
+	/// a bit awkwards but maybe better than having to do this.
+	gsn.value = uint8(i)
+
+	return gsn, nil
 }
 
-func (p *parser) parseTerm() TermNode {
+func (p *parser) parsePhrase() (*PhraseNode, error) {
+	pn := PhraseNode{}
+
+	for p.cur.Type != lexer.COMMA {
+		switch p.cur.Type {
+		case lexer.LITERAL:
+			pn.tokens = append(pn.tokens, p.cur)
+			p.next()
+		default:
+			return nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+		}
+	}
+	return &pn, nil
 }
 
-func (p *parser) isFieldStart() bool {}
+func (p *parser) parseAnchorField() (*AnchorFieldNode, error) {
+	a := AnchorFieldNode{}
 
-func (p *parser) parseFieldClause() (FieldNode, error) {
+	_, err := p.expect(lexer.TOPIC | lexer.ENTITY)
+
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "Expected anchor tag (entity, topic), but found %q", p.cur.Literal)
+	}
+
 }
 
-func (p *parser) parseTopicField() (*TopicField, error)   { panic("TODO") }
-func (p *parser) parseEntityField() (*EntityField, error) { panic("TODO") }
-func (p *parser) parseTimeField() (FieldNode, error)      { panic("TODO") } // since/until + parseTimeValue
-func (p *parser) parseIntField() (FieldNode, error)       { panic("TODO") } // depth/top
-func (p *parser) parseVecField() (*VectorField, error)    { panic("TODO") }
-func (p *parser) parseGroupField() (*GroupField, error)   { panic("TODO") }
+func (p *parser) parseVecField() (RefFieldNode[[]float32], error) {
+
+}
