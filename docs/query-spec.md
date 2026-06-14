@@ -65,7 +65,7 @@ recall_query    = 'recall' graph_selector? recall_body ;
 
 graph_selector  = '@' integer ;
 
-(* A recall must contain at least one term OR one field clause. *)
+(* Grammatically permits unbounded queries but the engine may reject/limit them by policy *)
 recall_body     = term_list field_clause*
                 | field_clause+ ;
 
@@ -82,17 +82,17 @@ simple_field    = topic_field
                 | until_field
                 | depth_field
                 | top_field
-                | v_field ;
+                | vec_field ;
 
 topic_field     = 'topic' ':' topic_value ;
-topic_value     = identifier ;
+topic_value     = identifier | quoted_identifier ;
 entity_field    = 'entity' ':' entity_value ;
-topic_value     = entity_value ;
-search_field    = topic_field | entity_field ;
+entity_value     = identifier | quoted_identifier ;
+search_field    = topic_field | entity_field | group_field ;
 
-(* Boolean grouping is permitted over topic_field in v0.1. *)
+(* Boolean grouping is permitted over search_field in v0.1. *)
 group_field     = '(' search_field (bool_op search_field)+ ')' ;
-bool_op         = 'or' | 'and';
+bool_op         = 'or' | 'and' | 'not' ;
 
 since_field     = 'since' ':' time_value ;
 until_field     = 'until' ':' time_value ;
@@ -102,16 +102,15 @@ depth_field    = 'depth' ':' integer ;     (* graph hop depth, default 2 *)
 top_field      = 'top' ':' integer ;     (* result limit, default 10 *)
 vec_field        = 'vec' ':' param_ref ;   (* nearest-neighbor (semantic) *)
 
-(* ============================================================ *)
-(* REMEMBER                                                     *)
-(* ============================================================ *)
+(* ============================================================================ *)
+(* REMEMBER                                                                     *)
+(* ============================================================================ *)
 
-remember_query  = 'remember' graph_selector? phrase topic_field+ ;
+remember_query  = 'remember' graph_selector? phrase topic_field* entity_field* ;
 
-
-(* ============================================================ *)
-(* LITERALS                                                     *)
-(* ============================================================ *)
+(* ============================================================================ *)
+(* LITERALS                                                                     *)
+(* ============================================================================ *)
 
 identifier        = ?[a-z][a-z0-9_\-]*? ;
 quoted_identifier = '"' ?[^"]+? '"' ;
@@ -125,9 +124,9 @@ param_ref         = '$' identifier ;
 ## Glossary
 
 * **fact**: a memory atomic element.
-* **memory graph**: a collection of organised facts related to topics and indexed for hybrid search (full text, semantic and graph)
+* **memory graph**: a collection of organised facts related to topics and / or entities and indexed for hybrid search (full text, semantic and graph)
 * **field**: additional information provided to the search in order to find the right facts.
 * **field value**: value of a field used to find a fact
 * **term**: a word or sequence of words used to find a fact.
-* **command**: task to perform by the engine: recall, remember, forget, update
+* **command**: task to perform by the engine: recall, remember.
 * **instruction**: a full query sent to the database engine with a command, search terms and fields (can be used interchangeably with the term query).
