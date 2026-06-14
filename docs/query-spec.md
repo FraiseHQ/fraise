@@ -124,6 +124,16 @@ iso_date          = ?\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z?)?? ;
 param_ref         = '$' identifier ;
 ```
 
+## Examples
+
+```
+recall billing +entity:acme since:7d top:5
+recall ~topic:billing -entity:acme
+recall "annual contract" topic:billing entity:acme depth:3
+recall @3 +topic:auth +entity:okta
+remember "acme moved to annual billing" topic:billing topic:contracts
+```
+
 ## Glossary
 
 * **fact**: a memory atomic element.
