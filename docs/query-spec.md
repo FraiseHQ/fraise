@@ -58,63 +58,66 @@ Keywords are specific query instructions. They are reserved keywords.
 ## Grammar
 
 ```ebnf
+(* ============================================================ *)
+(* Fraise Query Language (FQL) — v0.1.0                         *)
+(* ============================================================ *)
+
 query           = recall_query | remember_query ;
 
+(* ------------------------------------------------------------ *)
+(* RECALL                                                       *)
+(* ------------------------------------------------------------ *)
 
 recall_query    = 'recall' graph_selector? recall_body ;
 
-graph_selector  = '@' integer ;
+(* Canonical order: terms, then anchors, then modifiers.         *)
+(* SEMANTIC RULE: at least one POSITIVE seed is required — a      *)
+(* term, a 'vec', or a non-'-' anchor. A query whose only        *)
+(* anchors are '-' (MUST_NOT) matches nothing and is rejected.   *)
+recall_body     = term* anchor* modifiers ;
 
-(* Grammatically permits unbounded queries but the engine may reject/limit them by policy *)
-recall_body     = term_list field_clause*
-                | field_clause+ ;
+term            = bare_word | phrase ;        (* soft ranking seed (SHOULD) *)
 
-term_list       = term+ ;
-term            = bare_word | phrase ;
-bare_word       = ?[a-z0-9_\-]+? ;
-phrase          = '"' ?[^"]*? '"' ;
+anchor          = occur? anchor_field ;       (* at most one prefix; not composable *)
+occur           = '+' | '-' | '~' ;           (* MUST | MUST_NOT | LOOSEN *)
+anchor_field    = topic_field | entity_field ;
+topic_field     = 'topic'  ':' anchor_value ;
+entity_field    = 'entity' ':' anchor_value ;
+anchor_value    = identifier | quoted_identifier ;
 
-field_clause    = simple_field | group_field ;
+modifiers       = since_field? until_field? depth_field? top_field? vec_field? ;
+since_field     = 'since' ':' time_value ;     (* lower time bound; duration read as "ago" *)
+until_field     = 'until' ':' time_value ;     (* upper time bound; duration read as "ago" *)
+depth_field     = 'depth' ':' integer ;        (* graph fact-hops, default 2 *)
+top_field       = 'top'   ':' integer ;        (* result limit, default 10 *)
+vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 
-simple_field    = topic_field
-                | entity_field
-                | since_field
-                | until_field
-                | depth_field
-                | top_field
-                | vec_field ;
+(* ------------------------------------------------------------ *)
+(* REMEMBER                                                     *)
+(* ------------------------------------------------------------ *)
 
-topic_field     = 'topic' ':' topic_value ;
-topic_value     = identifier | quoted_identifier ;
-entity_field    = 'entity' ':' entity_value ;
-entity_value     = identifier | quoted_identifier ;
-search_field    = topic_field | entity_field | group_field ;
+(* Asserts a fact (phrase) and the topics it is about.           *)
+(* Entities are extracted at ingestion, not asserted here.       *)
+(* Occur prefixes (+ - ~) are NOT valid on remember.             *)
+remember_query  = 'remember' graph_selector? phrase topic_assign+ ;
+topic_assign    = 'topic' ':' anchor_value ;
 
-(* Boolean grouping is permitted over search_field in v0.1. *)
-group_field     = '(' search_field (bool_op search_field)+ ')' ;
-bool_op         = 'or' | 'and' | 'not' ;
+(* ------------------------------------------------------------ *)
+(* SHARED                                                       *)
+(* ------------------------------------------------------------ *)
 
-since_field     = 'since' ':' time_value ;
-until_field     = 'until' ':' time_value ;
-time_value      = duration | iso_date ;
+graph_selector  = '@' integer ;                (* memory graph index, default 0 *)
 
-depth_field    = 'depth' ':' integer ;     (* graph hop depth, default 2 *)
-top_field      = 'top' ':' integer ;     (* result limit, default 10 *)
-vec_field        = 'vec' ':' param_ref ;   (* nearest-neighbor (semantic) *)
+(* ------------------------------------------------------------ *)
+(* LITERALS                                                     *)
+(* ------------------------------------------------------------ *)
 
-(* ============================================================================ *)
-(* REMEMBER                                                                     *)
-(* ============================================================================ *)
-
-remember_query  = 'remember' graph_selector? phrase topic_field* entity_field* ;
-
-(* ============================================================================ *)
-(* LITERALS                                                                     *)
-(* ============================================================================ *)
-
+term              = ?[a-z0-9_][a-z0-9_\-]*? ;  (* must NOT start with '-' (see notes) *)
+phrase            = '"' ?[^"]*? '"' ;
 identifier        = ?[a-z][a-z0-9_\-]*? ;
 quoted_identifier = '"' ?[^"]+? '"' ;
 integer           = ?[0-9]+? ;
+time_value        = duration | iso_date ;
 duration          = integer time_unit ;
 time_unit         = 's' | 'm' | 'h' | 'd' | 'w' ;
 iso_date          = ?\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z?)?? ;
