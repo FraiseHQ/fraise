@@ -41,8 +41,9 @@ func TestTokenTypeString(t *testing.T) {
 		{"REMEMBER", lexer.REMEMBER, "remember"},
 		{"FORGET", lexer.FORGET, "forget"},
 		{"UPDATE", lexer.UPDATE, "update"},
-		{"AND", lexer.AND, "and"},
-		{"OR", lexer.OR, "or"},
+		{"PLUS", lexer.PLUS, "+"},
+		{"TILDE", lexer.TILDE, "~"},
+		{"MINUS", lexer.MINUS, "-"},
 		{"COLON", lexer.COLON, ":"},
 		{"NEWLINE", lexer.NEWLINE, "\n"},
 		{"COMMA", lexer.COMMA, "'"},
@@ -71,7 +72,7 @@ func TestTokenMapCompleteness(t *testing.T) {
 	allTokenTypes := []lexer.TokenType{
 		lexer.ILLEGAL, lexer.EOL, lexer.LITERAL,
 		lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE,
-		lexer.AND, lexer.OR,
+		lexer.PLUS, lexer.TILDE, lexer.MINUS,
 		lexer.COLON, lexer.COMMA, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
 		lexer.TOPIC, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
 		lexer.VEC,
@@ -110,8 +111,6 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 		{"remember", lexer.REMEMBER, true},
 		{"forget", lexer.FORGET, true},
 		{"update", lexer.UPDATE, true},
-		{"or", lexer.OR, true},
-		{"and", lexer.AND, true},
 		{"topic", lexer.TOPIC, true},
 		{"since", lexer.SINCE, true},
 		{"until", lexer.UNTIL, true},
@@ -121,6 +120,11 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 		{"nonexistent", lexer.ILLEGAL, false},
 		{"RECALL", lexer.ILLEGAL, false},
 		{"Recall", lexer.ILLEGAL, false},
+		{"and", lexer.ILLEGAL, false},
+		{"or", lexer.ILLEGAL, false},
+		{"+", lexer.ILLEGAL, false},
+		{"~", lexer.ILLEGAL, false},
+		{"-", lexer.ILLEGAL, false},
 	}
 
 	for _, tt := range tests {
@@ -137,7 +141,7 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 }
 
 func TestKeyLITERALsMapCaseSensitivity(t *testing.T) {
-	caseSensitiveTests := []string{"RECALL", "Recall", "ReCaLl", "AND", "Or"}
+	caseSensitiveTests := []string{"RECALL", "Recall", "ReCaLl", "REMEMBER", "Update"}
 
 	for _, keyLITERAL := range caseSensitiveTests {
 		t.Run(keyLITERAL, func(t *testing.T) {
@@ -160,7 +164,7 @@ func TestTokenCreation(t *testing.T) {
 		{"Empty literal", lexer.LITERAL, ""},
 		{"Special chars", lexer.LITERAL, "hello-world_123"},
 		{"Punctuation", lexer.COLON, ":"},
-		{"Boolean op", lexer.AND, "and"},
+		{"Anchor", lexer.PLUS, "+"},
 	}
 
 	for _, tt := range tests {
@@ -222,7 +226,6 @@ func TestKeyLITERALsMapAndTokenMapConsistency(t *testing.T) {
 func TestRoundTripTokenTypeToStringToKeyLITERAL(t *testing.T) {
 	keyLITERALTokens := []lexer.TokenType{
 		lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE,
-		lexer.AND, lexer.OR,
 		lexer.TOPIC, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
 		lexer.VEC,
 	}

@@ -43,9 +43,10 @@ const (
 	FORGET
 	UPDATE
 
-	// boolean operations
-	AND
-	OR
+	// anchors
+	PLUS
+	TILDE
+	MINUS
 
 	// punctuation
 	AT
@@ -73,14 +74,15 @@ var TokenMap = map[TokenType]string{
 	REMEMBER: "remember",
 	FORGET:   "forget",
 	UPDATE:   "update",
-	OR:       "or",
-	AND:      "and",
 	COLON:    ":",
 	LPAREN:   "(",
 	RPAREN:   ")",
 	DOLLAR:   "$",
 	COMMA:    "'",
 	NEWLINE:  "\n",
+	PLUS:     "+",
+	TILDE:    "~",
+	MINUS:    "-",
 	TOPIC:    "topic",
 	ENTITY:   "entity",
 	SINCE:    "since",
@@ -98,8 +100,6 @@ var KeywordsMap = map[string]TokenType{
 	"remember": REMEMBER,
 	"forget":   FORGET,
 	"update":   UPDATE,
-	"or":       OR,
-	"and":      AND,
 	"topic":    TOPIC,
 	"entity":   ENTITY,
 	"since":    SINCE,
