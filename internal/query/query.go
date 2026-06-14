@@ -24,6 +24,7 @@ package query
 
 import (
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
 	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
@@ -40,8 +41,8 @@ type Query[K comparable, P float32 | float64] interface {
 type QueryParameters struct {
 	Top   int
 	Depth int
-	Since TimeValue
-	Until TimeValue
+	Since containers.TimeValue
+	Until containers.TimeValue
 }
 
 type QueryContext struct {
