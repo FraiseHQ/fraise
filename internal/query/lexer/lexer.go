@@ -85,6 +85,15 @@ func (l *Lexer) Next() Token {
 	case rune('$'):
 		l.readCharacter()
 		tok = Token{Type: DOLLAR, Literal: string(l.Character)}
+	case rune('+'):
+		l.readCharacter()
+		tok = Token{Type: PLUS, Literal: string(l.Character)}
+	case rune('-'):
+		l.readCharacter()
+		tok = Token{Type: MINUS, Literal: string(l.Character)}
+	case rune('~'):
+		l.readCharacter()
+		tok = Token{Type: TILDE, Literal: string(l.Character)}
 	case rune(0):
 		tok = Token{Type: EOL}
 	default:

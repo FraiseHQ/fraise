@@ -23,6 +23,7 @@
 package lexer_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
@@ -508,29 +509,23 @@ func Test_PositionTracking(t *testing.T) {
 }
 
 func Test_VeryLongQuery(t *testing.T) {
-	input := "recall $vec (anna or bob or charlie) and (topic:personal or topic:draft) since:2024-01-01 until:2024-12-31 top:10 depth:5"
+	input := "recall $vec anna bob charlie +topic:personal ~topic:draft since:2024-01-01 until:2024-12-31 top:10 depth:5"
 
 	expected := []lexer.Token{
 		{Type: lexer.RECALL, Literal: "recall"},
 		{Type: lexer.DOLLAR, Literal: "$"},
 		{Type: lexer.VEC, Literal: "vec"},
-		{Type: lexer.LPAREN, Literal: "("},
 		{Type: lexer.LITERAL, Literal: "anna"},
-		{Type: lexer.LITERAL, Literal: "or"},
 		{Type: lexer.LITERAL, Literal: "bob"},
-		{Type: lexer.LITERAL, Literal: "or"},
 		{Type: lexer.LITERAL, Literal: "charlie"},
-		{Type: lexer.RPAREN, Literal: ")"},
-		{Type: lexer.LITERAL, Literal: "and"},
-		{Type: lexer.LPAREN, Literal: "("},
+		{Type: lexer.PLUS, Literal: "+"},
 		{Type: lexer.TOPIC, Literal: "topic"},
 		{Type: lexer.COLON, Literal: ":"},
 		{Type: lexer.LITERAL, Literal: "personal"},
-		{Type: lexer.LITERAL, Literal: "or"},
+		{Type: lexer.TILDE, Literal: "~"},
 		{Type: lexer.TOPIC, Literal: "topic"},
 		{Type: lexer.COLON, Literal: ":"},
 		{Type: lexer.LITERAL, Literal: "draft"},
-		{Type: lexer.RPAREN, Literal: ")"},
 		{Type: lexer.SINCE, Literal: "since"},
 		{Type: lexer.COLON, Literal: ":"},
 		{Type: lexer.LITERAL, Literal: "2024-01-01"},
@@ -549,6 +544,7 @@ func Test_VeryLongQuery(t *testing.T) {
 	l := lexer.New(input)
 	for i, expected := range expected {
 		token := l.Next()
+		fmt.Println(token)
 		if token.Type != expected.Type || token.Literal != expected.Literal {
 			t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
 				i, expected.Type, expected.Literal, token.Type, token.Literal)
