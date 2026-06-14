@@ -25,6 +25,7 @@ package parser
 import (
 	"fmt"
 
+	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
 )
 
@@ -61,13 +62,21 @@ type FieldNode[T any] interface {
 type RefFieldNode[T any] interface {
 	AstNode
 	FieldNode[T]
+	Param() string
 	Set(value T)
+}
+
+// literal field
+type LiteralFieldNode interface {
+	AstNode
+	Literal() string
 }
 
 // recall command node
 type RecallCommandNode struct {
+	key      lexer.Token
 	selector GraphSelectorNode
-	terms    []TermNode
+	terms    []LiteralFieldNode
 	entities []AnchorFieldNode
 	topics   []AnchorFieldNode
 	top      TopFieldNode
@@ -81,10 +90,10 @@ type RecallCommandNode struct {
 
 // remember command node
 type RememberCommandNode struct {
+	key      lexer.Token
 	selector GraphSelectorNode
-	value    string
-	entities []EntityFieldNode
-	topics   []TopicFieldNode
+	value    PhraseNode
+	anchors  []AnchorFieldNode
 	vec      RefFieldNode[[]float32]
 	pos      lexer.Position
 	end      lexer.Position
@@ -92,6 +101,7 @@ type RememberCommandNode struct {
 
 // Selector node is the graph selection statement
 type GraphSelectorNode struct {
+	key   lexer.Token
 	value uint8
 	pos   lexer.Position
 	end   lexer.Position
@@ -146,7 +156,7 @@ type TopicFieldNode struct {
 // Since field
 type SinceFieldNode struct {
 	key   lexer.Token
-	value TimeValue
+	value containers.TimeValue
 	pos   lexer.Position
 	end   lexer.Position
 }
@@ -154,7 +164,7 @@ type SinceFieldNode struct {
 // Until field
 type UntilFieldNode struct {
 	key   lexer.Token
-	value TimeValue
+	value containers.TimeValue
 	pos   lexer.Position
 	end   lexer.Position
 }
@@ -178,6 +188,7 @@ type DepthFieldNode struct {
 // Ref field
 type VecFieldNode struct {
 	key   lexer.Token
+	param lexer.Token
 	value []float32
 	pos   lexer.Position
 	end   lexer.Position
@@ -189,10 +200,91 @@ func (n RememberCommandNode) Selector() GraphSelectorNode {
 	return n.selector
 }
 
+func (n RememberCommandNode) String() string {
+	var s string
+
+	// command
+	s += n.key.Literal
+
+	// selector
+	s += n.selector.String()
+
+	// value
+	s += n.value.Literal()
+
+	// anchors
+	for _, e := range n.anchors {
+		s += e.String()
+	}
+
+	// vec
+	s += n.vec.String()
+
+	return s
+}
+
+func (n RememberCommandNode) Pos() lexer.Position {
+	return n.pos
+}
+
+func (n RememberCommandNode) End() lexer.Position {
+	return n.end
+}
+
 // recall impl
 
 func (n RecallCommandNode) Selector() GraphSelectorNode {
 	return n.selector
+}
+
+func (n RecallCommandNode) String() string {
+	var s string
+
+	// command
+	s += n.key.Literal
+
+	// selector
+	s += n.selector.String()
+
+	// terms
+	for _, t := range n.terms {
+		s += t.Literal()
+	}
+
+	// entities
+	for _, e := range n.entities {
+		s += e.String()
+	}
+
+	// topics
+	for _, t := range n.topics {
+		s += t.String()
+	}
+
+	// top
+	s += n.top.String()
+
+	// depth
+	s += n.depth.String()
+
+	// since
+	s += n.since.String()
+
+	// until
+	s += n.until.String()
+
+	// vec
+	s += n.vec.String()
+
+	return s
+}
+
+func (n RecallCommandNode) Pos() lexer.Position {
+	return n.pos
+}
+
+func (n RecallCommandNode) End() lexer.Position {
+	return n.end
 }
 
 // graph selector node impl
@@ -245,7 +337,7 @@ func (n AnchorFieldNode) Value() string {
 
 // term node impl
 
-func (n TermNode) String() string {
+func (n TermNode) Literal() string {
 	return fmt.Sprintf(n.token.Literal)
 }
 
@@ -255,6 +347,64 @@ func (n TermNode) Pos() lexer.Position {
 
 func (n TermNode) End() lexer.Position {
 	return n.end
+}
+
+func (n TermNode) String() string {
+	return n.Literal()
+}
+
+// makes it easier to manage a list of TermNode
+type Terms []TermNode
+
+func (n Terms) Literal() string {
+	var s string
+	for _, t := range n {
+		s += t.token.Literal
+	}
+	return s
+}
+
+func (n Terms) String() string {
+	return n.Literal()
+}
+
+func (n Terms) Pos() lexer.Position {
+	if len(n) > 0 {
+		return n[0].pos
+	} else {
+		return lexer.Position{}
+	}
+}
+
+func (n Terms) End() lexer.Position {
+	if len(n) > 0 {
+		return n[len(n)-1].pos
+	} else {
+		return lexer.Position{}
+	}
+}
+
+// phrase node impl
+
+func (n PhraseNode) Literal() string {
+	var s string
+
+	for _, t := range n.tokens {
+		s += t.Literal
+	}
+	return s
+}
+
+func (n PhraseNode) Pos() lexer.Position {
+	return n.pos
+}
+
+func (n PhraseNode) End() lexer.Position {
+	return n.end
+}
+
+func (n PhraseNode) String() string {
+	return n.Literal()
 }
 
 // entity field node impl
@@ -311,7 +461,7 @@ func (n SinceFieldNode) Key() string {
 	return n.key.Literal
 }
 
-func (n SinceFieldNode) Value() TimeValue {
+func (n SinceFieldNode) Value() containers.TimeValue {
 	return n.value
 }
 
@@ -333,7 +483,7 @@ func (n UntilFieldNode) Key() string {
 	return n.key.Literal
 }
 
-func (n UntilFieldNode) Value() TimeValue {
+func (n UntilFieldNode) Value() containers.TimeValue {
 	return n.value
 }
 
@@ -389,10 +539,14 @@ func (n DepthFieldNode) End() lexer.Position {
 	return n.end
 }
 
-// ref field node impl
+// vec field node impl
+
+func (n VecFieldNode) Param() string {
+	return n.param.Literal
+}
 
 func (n VecFieldNode) String() string {
-	return fmt.Sprintf("%:%", n.key.Literal, n.value)
+	return fmt.Sprintf("%:$%", n.key.Literal, n.param.Literal)
 }
 
 func (n VecFieldNode) Key() string {
