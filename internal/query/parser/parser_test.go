@@ -29,7 +29,7 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 )
 
-func TestRecallParser(t *testing.T) {
+func TestRememberParser(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
 
 	qo, _, err := parser.Parse(q)
