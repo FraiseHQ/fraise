@@ -23,18 +23,15 @@
 package parser_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 )
 
 func TestRememberParser(t *testing.T) {
-	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
+	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne vec:$v"
 
 	qo, _, err := parser.Parse(q)
-
-	fmt.Println(qo)
 
 	if err != nil {
 		t.Error("Expected no error while parsing this query.")

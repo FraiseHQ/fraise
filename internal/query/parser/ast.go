@@ -95,7 +95,7 @@ type RememberCommandNode struct {
 	selector GraphSelectorNode
 	value    PhraseNode
 	anchors  []AnchorFieldNode
-	vec      RefFieldNode[[]float32]
+	vec      *VecFieldNode
 	pos      lexer.Position
 	end      lexer.Position
 }
@@ -216,7 +216,9 @@ func (n RememberCommandNode) String() string {
 	}
 
 	// vec
-	// s += n.vec.String()
+	if n.vec != nil {
+		s = append(s, n.vec.String())
+	}
 
 	return strings.Join(s, " ")
 }

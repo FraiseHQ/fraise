@@ -142,7 +142,7 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 	p.next()
 
 	var anchors []AnchorFieldNode
-	// var vec RefFieldNode[[]float32]
+	// var vec VecFieldNode
 
 	for p.cur.Type != lexer.EOL {
 		switch p.cur.Type {
@@ -152,20 +152,19 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
 			}
 			anchors = append(anchors, *anchor)
+			r.anchors = anchors
 			p.next()
-		// case lexer.DOLLAR:
-		// 	vec, err = p.parseVecField()
-		// 	if err != nil {
-		// 		return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
-		// 	}
-		// 	p.next()
+		case lexer.VEC:
+			vec, err := p.parseVecField()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
+			}
+			r.vec = vec
+			p.next()
 		default:
 			return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
 		}
 	}
-
-	// r.vec = vec
-	r.anchors = anchors
 
 	return &r, nil
 }
@@ -232,6 +231,36 @@ func (p *parser) parseAnchorField() (*AnchorFieldNode, error) {
 	return &a, nil
 }
 
-// func (p *parser) parseVecField() (RefFieldNode[[]float32], error) {
+func (p *parser) parseVecField() (*VecFieldNode, error) {
+	r := VecFieldNode{}
 
-// }
+	tok, err := p.expect(lexer.VEC)
+
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "Expected vec field, but found %q", tok)
+	}
+
+	r.key = tok
+
+	_, err = p.expect(lexer.COLON)
+
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "Expected colon, but found %q", tok)
+	}
+
+	_, err = p.expect(lexer.DOLLAR)
+
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "Expected param field operator $, but found %q", p.cur.Literal)
+	}
+
+	tok, err = p.expect(lexer.LITERAL)
+
+	r.param = tok
+
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", tok)
+	}
+
+	return &r, nil
+}
