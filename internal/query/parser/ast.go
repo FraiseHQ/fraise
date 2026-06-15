@@ -290,7 +290,7 @@ func (n RecallCommandNode) End() lexer.Position {
 // graph selector node impl
 
 func (n GraphSelectorNode) String() string {
-	return fmt.Sprintf("@%", n.value)
+	return fmt.Sprintf("@%d", n.value)
 }
 
 func (n GraphSelectorNode) Pos() lexer.Position {
@@ -316,7 +316,7 @@ func (n AnchorFieldNode) Field() FieldNode[string] {
 }
 
 func (n AnchorFieldNode) String() string {
-	return fmt.Sprintf("%%:%", n.token.Literal, n.field.Key(), n.field.Value())
+	return fmt.Sprintf("%s%s:%s", n.token.Literal, n.field.Key(), n.field.Value())
 }
 
 func (n AnchorFieldNode) Pos() lexer.Position {
@@ -338,7 +338,7 @@ func (n AnchorFieldNode) Value() string {
 // term node impl
 
 func (n TermNode) Literal() string {
-	return fmt.Sprintf(n.token.Literal)
+	return n.token.Literal
 }
 
 func (n TermNode) Pos() lexer.Position {
@@ -410,7 +410,7 @@ func (n PhraseNode) String() string {
 // entity field node impl
 
 func (n EntityFieldNode) String() string {
-	return fmt.Sprintf("%:%", n.key.Literal, n.value.Literal)
+	return fmt.Sprintf("%s:%s", n.key.Literal, n.value.Literal)
 }
 
 func (n EntityFieldNode) Pos() lexer.Position {
@@ -432,7 +432,7 @@ func (n EntityFieldNode) Value() string {
 // topic field node impl
 
 func (n TopicFieldNode) String() string {
-	return fmt.Sprintf("%:%", n.key.Literal, n.value.Literal)
+	return fmt.Sprintf("%s:%s", n.key.Literal, n.value.Literal)
 }
 
 func (n TopicFieldNode) Key() string {
@@ -454,7 +454,7 @@ func (n TopicFieldNode) End() lexer.Position {
 // since field node impl
 
 func (n SinceFieldNode) String() string {
-	return fmt.Sprintf("%:%", n.key.Literal, n.value)
+	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
 func (n SinceFieldNode) Key() string {
@@ -476,7 +476,7 @@ func (n SinceFieldNode) End() lexer.Position {
 // until field node impl
 
 func (n UntilFieldNode) String() string {
-	return fmt.Sprintf("%:%", n.key.Literal, n.value)
+	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
 func (n UntilFieldNode) Key() string {
@@ -498,7 +498,7 @@ func (n UntilFieldNode) End() lexer.Position {
 // top field node impl
 
 func (n TopFieldNode) String() string {
-	return fmt.Sprintf("%:%", n.key.Literal, n.value)
+	return fmt.Sprintf("%s:%d", n.key.Literal, n.value)
 }
 
 func (n TopFieldNode) Key() string {
@@ -520,7 +520,7 @@ func (n TopFieldNode) End() lexer.Position {
 // depth field node impl
 
 func (n DepthFieldNode) String() string {
-	return fmt.Sprintf("%:%", n.key.Literal, n.value)
+	return fmt.Sprintf("%s:%d", n.key.Literal, n.value)
 }
 
 func (n DepthFieldNode) Key() string {
@@ -546,7 +546,7 @@ func (n VecFieldNode) Param() string {
 }
 
 func (n VecFieldNode) String() string {
-	return fmt.Sprintf("%:$%", n.key.Literal, n.param.Literal)
+	return fmt.Sprintf("%s:$%s", n.key.Literal, n.param.Literal)
 }
 
 func (n VecFieldNode) Key() string {
@@ -565,6 +565,6 @@ func (n VecFieldNode) End() lexer.Position {
 	return n.end
 }
 
-func (n VecFieldNode) Set(value []float32) {
-	n.value = value
+func (n VecFieldNode) Set(v []float32) {
+	n.value = v
 }
