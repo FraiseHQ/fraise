@@ -290,7 +290,7 @@ func TestAnchorFieldNode(t *testing.T) {
 		field:  field,
 	}
 
-	if got := n.Clause(); got != clause {
+	if got := n.Clause(); got != &clause {
 		t.Errorf("Clause() = %+v, want %+v", got, clause)
 	}
 	if got := n.Field(); got != FieldNode[string](field) {

@@ -24,6 +24,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
@@ -201,26 +202,23 @@ func (n RememberCommandNode) Selector() GraphSelectorNode {
 }
 
 func (n RememberCommandNode) String() string {
-	var s string
+	var s []string
 
-	// command
-	s += n.key.Literal
-
-	// selector
-	s += n.selector.String()
+	// command + selector
+	s = append(s, n.key.Literal+n.selector.String())
 
 	// value
-	s += n.value.Literal()
+	s = append(s, n.value.String())
 
 	// anchors
 	for _, e := range n.anchors {
-		s += e.String()
+		s = append(s, e.String())
 	}
 
 	// vec
-	s += n.vec.String()
+	// s += n.vec.String()
 
-	return s
+	return strings.Join(s, " ")
 }
 
 func (n RememberCommandNode) Pos() lexer.Position {
@@ -307,8 +305,8 @@ func (n GraphSelectorNode) Value() uint8 {
 
 // anchor node impl
 
-func (n AnchorFieldNode) Clause() ClauseNode {
-	return *n.clause
+func (n AnchorFieldNode) Clause() *ClauseNode {
+	return n.clause
 }
 
 func (n AnchorFieldNode) Field() FieldNode[string] {
@@ -316,7 +314,11 @@ func (n AnchorFieldNode) Field() FieldNode[string] {
 }
 
 func (n AnchorFieldNode) String() string {
-	return fmt.Sprintf("%s%s:%s", n.token.Literal, n.field.Key(), n.field.Value())
+	var c string
+	if n.clause != nil {
+		c = n.clause.value.Literal
+	}
+	return fmt.Sprintf("%s%s%s:%s", c, n.token.Literal, n.field.Key(), n.field.Value())
 }
 
 func (n AnchorFieldNode) Pos() lexer.Position {
@@ -387,12 +389,12 @@ func (n Terms) End() lexer.Position {
 // phrase node impl
 
 func (n PhraseNode) Literal() string {
-	var s string
+	var s []string
 
 	for _, t := range n.tokens {
-		s += t.Literal
+		s = append(s, t.Literal)
 	}
-	return s
+	return "'" + strings.Join(s, " ") + "'"
 }
 
 func (n PhraseNode) Pos() lexer.Position {

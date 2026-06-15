@@ -21,3 +21,26 @@
 // SOFTWARE.
 
 package parser_test
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/RonsenbergVI/fraise/internal/query/parser"
+)
+
+func TestRecallParser(t *testing.T) {
+	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
+
+	qo, _, err := parser.Parse(q)
+
+	fmt.Println(qo)
+
+	if err != nil {
+		t.Error("Expected no error while parsing this query.")
+	}
+
+	if qo.String() != q {
+		t.Error("Reconstructed string query should equal original query.")
+	}
+}

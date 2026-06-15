@@ -110,18 +110,20 @@ func (p *parser) parseQuery() (CommandNode, error) {
 }
 
 func (p *parser) parseRemember() (*RememberCommandNode, error) {
+
 	r := RememberCommandNode{}
-	p.next()
+
 	r.key = p.cur
 
-	if p.peek.Type == lexer.AT {
+	p.next()
+
+	if p.cur.Type == lexer.AT {
 		selector, err := p.parseGraphSelector()
 		if err != nil {
 			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
 		}
 		r.selector = *selector
 	}
-
 	// Remember only supports one phrase
 	_, err := p.expect(lexer.COMMA)
 
@@ -140,7 +142,7 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 	p.next()
 
 	var anchors []AnchorFieldNode
-	var vec RefFieldNode[[]float32]
+	// var vec RefFieldNode[[]float32]
 
 	for p.cur.Type != lexer.EOL {
 		switch p.cur.Type {
@@ -151,18 +153,18 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 			}
 			anchors = append(anchors, *anchor)
 			p.next()
-		case lexer.DOLLAR:
-			vec, err = p.parseVecField()
-			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
-			}
-			p.next()
+		// case lexer.DOLLAR:
+		// 	vec, err = p.parseVecField()
+		// 	if err != nil {
+		// 		return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
+		// 	}
+		// 	p.next()
 		default:
 			return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
 		}
 	}
 
-	r.vec = vec
+	// r.vec = vec
 	r.anchors = anchors
 
 	return &r, nil
@@ -175,13 +177,13 @@ func (p *parser) parseGraphSelector() (*GraphSelectorNode, error) {
 
 	p.next()
 
-	_, err := p.expect(lexer.LITERAL)
+	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
 		return nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, err := strconv.Atoi(p.cur.Literal)
+	i, _ := strconv.Atoi(tok.Literal)
 
 	// NOTE: probably not the safest way to do this (panic if you can't convert or casts anyway?).
 	// Maybe just store the graph id as a int and check that value doesn't exceed number of graphs
@@ -209,14 +211,27 @@ func (p *parser) parsePhrase() (*PhraseNode, error) {
 func (p *parser) parseAnchorField() (*AnchorFieldNode, error) {
 	a := AnchorFieldNode{}
 
-	_, err := p.expect(lexer.TOPIC | lexer.ENTITY)
-
-	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "Expected anchor tag (entity, topic), but found %q", p.cur.Literal)
+	if p.cur.Type == lexer.TOPIC {
+		f := TopicFieldNode{}
+		f.key = p.cur
+		// skip comma
+		p.next()
+		p.next()
+		f.value = p.cur
+		a.field = f
+	} else {
+		f := EntityFieldNode{}
+		f.key = p.cur
+		// skip comma
+		p.next()
+		p.next()
+		f.value = p.cur
+		a.field = f
 	}
 
+	return &a, nil
 }
 
-func (p *parser) parseVecField() (RefFieldNode[[]float32], error) {
+// func (p *parser) parseVecField() (RefFieldNode[[]float32], error) {
 
-}
+// }
