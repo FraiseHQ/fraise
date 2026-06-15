@@ -44,6 +44,14 @@ The database application is made up of the following components:
 
 Fraise query language is inspired from the simplicity of Redis and borrows some syntax elements from Lucene.
 
+## Clauses
+
+Queries are executed around 3 main pillars:
+
+* terms (or phrase)
+* anchors
+* modifiers
+
 ### Database
 
 ### Server
