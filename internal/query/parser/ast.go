@@ -115,7 +115,7 @@ type ClauseNode struct {
 // Search nodes are particular nodes using for graph and
 // full text search (entity, topic)
 type AnchorFieldNode struct {
-	clause ClauseNode
+	clause *ClauseNode
 	token  lexer.Token
 	field  FieldNode[string]
 }
@@ -308,7 +308,7 @@ func (n GraphSelectorNode) Value() uint8 {
 // anchor node impl
 
 func (n AnchorFieldNode) Clause() ClauseNode {
-	return n.clause
+	return *n.clause
 }
 
 func (n AnchorFieldNode) Field() FieldNode[string] {
