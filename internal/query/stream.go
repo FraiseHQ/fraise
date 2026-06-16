@@ -58,7 +58,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	}
 
 	// Read stream
-	recall := s.Query.(Recall[K, P])
+	recall := s.Query.(*Recall[K, P])
 	nodes, scores := g.Search(
 		recall.Keywords,
 		recall.Vector,
