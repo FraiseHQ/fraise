@@ -22,22 +22,39 @@
 
 package cache
 
+// Cache is a fixed-capacity key/value store. Implementations decide which
+// entry to evict when an insertion would exceed the capacity (for example, the
+// least-recently-used entry). Implementations are expected to be safe for
+// concurrent use.
 type Cache[K comparable, T any] interface {
+	// Capacity returns the maximum number of entries the cache will hold.
 	Capacity() int
 
+	// Resize changes the cache's capacity to capacity, evicting entries as
+	// needed to fit the new bound, and returns the number of entries evicted.
 	Resize(capacity int) int
 
+	// Put inserts or updates the value stored under key. If adding a new key
+	// would exceed the capacity, an existing entry is evicted to make room.
 	Put(key K, value T)
 
+	// Get returns the value stored under key and true if present, or the zero
+	// value and false otherwise. A successful lookup counts as a use of the
+	// entry (relevant to usage-based eviction policies).
 	Get(key K) (T, bool)
 
+	// Delete removes key from the cache, returning true if it was present and
+	// false if it was not.
 	Delete(key K) bool
 
+	// Len returns the current number of entries held in the cache.
 	Len() int
 
+	// Clear removes all entries from the cache.
 	Clear()
 }
 
+// Entry is a single key/value pair held by a Cache.
 type Entry[K comparable, T any] struct {
 	Key   K
 	Value T
