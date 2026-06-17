@@ -40,15 +40,15 @@ type LRUCache[K comparable, T any] struct {
 
 // NewLRUCache returns a new LRU cache with the given capacity.
 // Capacity must be > 0; the constructor panics otherwise.
-func NewLRUCache[K comparable, T any](capacity int) *LRUCache[K, T] {
+func NewLRUCache[K comparable, T any](capacity int) (*LRUCache[K, T], error) {
 	if capacity <= 0 {
-		panic("cache: capacity must be > 0")
+		return nil, ErrCacheCapacity
 	}
 	return &LRUCache[K, T]{
 		capacity: capacity,
 		items:    make(map[K]*list.Element, capacity),
 		order:    list.New(),
-	}
+	}, nil
 }
 
 // Get returns the value for key and true if present, or zero value

@@ -21,3 +21,9 @@
 // SOFTWARE.
 
 package cache
+
+import "errors"
+
+var (
+	ErrCacheCapacity = errors.New("Invalid cache capacity")
+)

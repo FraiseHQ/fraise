@@ -30,14 +30,14 @@ import (
 )
 
 func TestLRUCache_GetMiss(t *testing.T) {
-	c := cache.NewLRUCache[string, int](3)
+	c, _ := cache.NewLRUCache[string, int](3)
 	if _, ok := c.Get("nope"); ok {
 		t.Fatal("expected miss")
 	}
 }
 
 func TestLRUCache_PutGet(t *testing.T) {
-	c := cache.NewLRUCache[string, int](3)
+	c, _ := cache.NewLRUCache[string, int](3)
 	c.Put("a", 1)
 	v, ok := c.Get("a")
 	if !ok || v != 1 {
@@ -46,7 +46,7 @@ func TestLRUCache_PutGet(t *testing.T) {
 }
 
 func TestLRUCache_Eviction(t *testing.T) {
-	c := cache.NewLRUCache[string, int](2)
+	c, _ := cache.NewLRUCache[string, int](2)
 	c.Put("a", 1)
 	c.Put("b", 2)
 	c.Put("c", 3) // should evict "a"
@@ -63,7 +63,7 @@ func TestLRUCache_Eviction(t *testing.T) {
 }
 
 func TestLRUCache_GetMovesToFront(t *testing.T) {
-	c := cache.NewLRUCache[string, int](2)
+	c, _ := cache.NewLRUCache[string, int](2)
 	c.Put("a", 1)
 	c.Put("b", 2)
 	c.Get("a")    // touch "a" so it's most recent
@@ -78,7 +78,7 @@ func TestLRUCache_GetMovesToFront(t *testing.T) {
 }
 
 func TestLRUCache_Update(t *testing.T) {
-	c := cache.NewLRUCache[string, int](2)
+	c, _ := cache.NewLRUCache[string, int](2)
 	c.Put("a", 1)
 	c.Put("a", 2)
 	if v, ok := c.Get("a"); !ok || v != 2 {
@@ -90,7 +90,7 @@ func TestLRUCache_Update(t *testing.T) {
 }
 
 func TestLRUCache_Concurrent(t *testing.T) {
-	c := cache.NewLRUCache[string, int](100)
+	c, _ := cache.NewLRUCache[string, int](100)
 	done := make(chan struct{})
 
 	for i := 0; i < 10; i++ {
