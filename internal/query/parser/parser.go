@@ -142,7 +142,6 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 	p.next()
 
 	var anchors []AnchorFieldNode
-	// var vec VecFieldNode
 
 	for p.cur.Type != lexer.EOL {
 		switch p.cur.Type {
