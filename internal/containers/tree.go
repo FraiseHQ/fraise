@@ -21,3 +21,21 @@
 // SOFTWARE.
 
 package containers
+
+type Point[P float32 | float64] interface {
+	Dim() int
+
+	GetValue(dim int) P
+
+	Distance(p Point[P]) P
+
+	PlaneDistance(val P, dim int) P
+}
+
+type BallPoint[P float32 | float64] struct {
+	Point[P]
+	Data Vector[P]
+}
+
+type Tree interface {
+}
