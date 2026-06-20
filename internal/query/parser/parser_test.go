@@ -44,3 +44,49 @@ func TestRememberParser(t *testing.T) {
 		t.Error("Reconstructed string query should equal original query.")
 	}
 }
+
+// TestRecallParser checks that valid recall queries parse without error and
+// round-trip through String(). Fields are written in the order String() emits
+// them (terms, entities, topics, top, depth) so the reconstruction matches.
+//
+// since/until are intentionally omitted: the parser handles them, but a
+// containers.TimeValue cannot currently render back to its source text
+// (RelativeTime.String recurses, AbsoluteTime.String uses RFC822), so a
+// time field can't round-trip yet.
+func TestRecallParser(t *testing.T) {
+	queries := []string{
+		"recall anna",
+		"recall anna bob charlie",
+		"recall@2 anna",
+		"recall@2 anna bob entity:alice topic:job top:10 depth:5",
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			qo, _, err := parser.Parse(q)
+			fmt.Print(qo)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
+			}
+			if qo.String() != q {
+				t.Errorf("round-trip mismatch: String() = %q, want %q", qo.String(), q)
+			}
+		})
+	}
+}
+
+// TestRecallParserErrors checks that malformed recall queries are rejected.
+func TestRecallParserErrors(t *testing.T) {
+	queries := []string{
+		"recall",           // a recall must carry at least one term
+		"recall topic:job", // fields may only follow a term
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			if _, _, err := parser.Parse(q); err == nil {
+				t.Errorf("Parse(%q) = nil error, want an error", q)
+			}
+		})
+	}
+}

@@ -195,14 +195,17 @@ func (p *parser) parseRecall() (*RecallCommandNode, error) {
 
 	// parse terms
 	// only terms are supported in a recall command
-	_, err := p.expect(lexer.LITERAL)
+	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
 		return nil, p.errf(p.l.CurrentPos, "expected literal, but found %q", p.cur.Literal)
 	}
 
-	for p.cur.Type != lexer.EOL {
+	r.terms = append(r.terms, TermNode{token: tok, value: tok.Literal})
 
+	for p.cur.Type == lexer.LITERAL {
+		r.terms = append(r.terms, TermNode{token: p.cur, value: p.cur.Literal})
+		p.next()
 	}
 
 	// parse
@@ -255,6 +258,7 @@ func (p *parser) parseDepth() (lexer.Token, int, error) {
 	key := p.cur
 
 	p.next()
+	p.next() // skip colon
 
 	tok, err := p.expect(lexer.LITERAL)
 
@@ -271,6 +275,7 @@ func (p *parser) parseTop() (lexer.Token, int, error) {
 	key := p.cur
 
 	p.next()
+	p.next() // skip colon
 
 	tok, err := p.expect(lexer.LITERAL)
 
@@ -287,6 +292,7 @@ func (p *parser) parseTimeValue() (lexer.Token, containers.TimeValue, error) {
 	key := p.cur
 
 	p.next()
+	p.next() // skip colon
 
 	tok, err := p.expect(lexer.LITERAL)
 

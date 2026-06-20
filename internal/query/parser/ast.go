@@ -244,45 +244,56 @@ func (n RecallCommandNode) Selector() GraphSelectorNode {
 }
 
 func (n RecallCommandNode) String() string {
-	var s string
+	var s []string
 
-	// command
-	s += n.key.Literal
-
-	// selector
-	s += n.selector.String()
+	// command + selector
+	cmd := n.key.Literal
+	if n.selector.key.Type == lexer.AT {
+		cmd += n.selector.String()
+	}
+	s = append(s, cmd)
 
 	// terms
 	for _, t := range n.terms {
-		s += t.Literal()
+		s = append(s, t.Literal())
 	}
 
 	// entities
 	for _, e := range n.entities {
-		s += e.String()
+		s = append(s, e.String())
 	}
 
 	// topics
 	for _, t := range n.topics {
-		s += t.String()
+		s = append(s, t.String())
 	}
 
 	// top
-	s += n.top.String()
+	if n.top.key.Type == lexer.TOP {
+		s = append(s, n.top.String())
+	}
 
 	// depth
-	s += n.depth.String()
+	if n.depth.key.Type == lexer.DEPTH {
+		s = append(s, n.depth.String())
+	}
 
 	// since
-	s += n.since.String()
+	if n.since.key.Type == lexer.SINCE {
+		s = append(s, n.since.String())
+	}
 
 	// until
-	s += n.until.String()
+	if n.until.key.Type == lexer.UNTIL {
+		s = append(s, n.until.String())
+	}
 
 	// vec
-	s += n.vec.String()
+	if n.vec != nil {
+		s = append(s, n.vec.String())
+	}
 
-	return s
+	return strings.Join(s, " ")
 }
 
 func (n RecallCommandNode) Pos() lexer.Position {
