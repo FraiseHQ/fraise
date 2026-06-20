@@ -22,7 +22,11 @@
 
 package containers
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"time"
+)
 
 type TimeValue interface {
 	Resolve(now time.Time) time.Time
@@ -53,4 +57,44 @@ func (tf TimeFilter) Resolve(now time.Time) time.Time {
 		return tf.Abs
 	}
 	return now.Add(-tf.Dur)
+}
+
+// ParseTimeValue converts a string into a TimeValue: a RelativeTime
+// ("7d", "30m", "1w") or an AbsoluteTime ("2026-01-15" or RFC3339).
+func ParseTimeValue(s string) (TimeValue, error) {
+	if s == "" {
+		return nil, fmt.Errorf("empty time value")
+	}
+
+	// Relative: <int><unit>. A date never ends in a unit letter.
+	if mult, ok := unitDuration(s[len(s)-1]); ok {
+		if n, err := strconv.Atoi(s[:len(s)-1]); err == nil && n >= 0 {
+			return RelativeTime{Dur: time.Duration(n) * mult}, nil
+		}
+	}
+
+	// Absolute: ISO date or RFC3339 datetime.
+	for _, layout := range []string{"2006-01-02", time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return AbsoluteTime{T: t}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid time value %q (want e.g. 7d or 2026-01-15)", s)
+}
+
+func unitDuration(b byte) (time.Duration, bool) {
+	switch b {
+	case 's':
+		return time.Second, true
+	case 'm':
+		return time.Minute, true
+	case 'h':
+		return time.Hour, true
+	case 'd':
+		return 24 * time.Hour, true
+	case 'w':
+		return 7 * 24 * time.Hour, true
+	}
+	return 0, false
 }
