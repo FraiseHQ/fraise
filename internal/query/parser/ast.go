@@ -25,6 +25,7 @@ package parser
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
@@ -57,6 +58,7 @@ type FieldNode[T any] interface {
 	AstNode
 	Key() string
 	Value() T
+	Set(key lexer.Token, value T)
 }
 
 // Ref field
@@ -64,13 +66,17 @@ type RefFieldNode[T any] interface {
 	AstNode
 	FieldNode[T]
 	Param() string
-	Set(value T)
 }
 
 // literal field
 type LiteralFieldNode interface {
 	AstNode
 	Literal() string
+}
+
+type TimeValueFieldNode interface {
+	FieldNode[containers.TimeValue]
+	TimeValue() time.Time
 }
 
 // recall command node
@@ -141,7 +147,7 @@ type PhraseNode struct {
 // Entity field
 type EntityFieldNode struct {
 	key   lexer.Token
-	value lexer.Token
+	value string
 	pos   lexer.Position
 	end   lexer.Position
 }
@@ -149,7 +155,7 @@ type EntityFieldNode struct {
 // Topic field
 type TopicFieldNode struct {
 	key   lexer.Token
-	value lexer.Token
+	value string
 	pos   lexer.Position
 	end   lexer.Position
 }
@@ -414,7 +420,7 @@ func (n PhraseNode) String() string {
 // entity field node impl
 
 func (n EntityFieldNode) String() string {
-	return fmt.Sprintf("%s:%s", n.key.Literal, n.value.Literal)
+	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
 func (n EntityFieldNode) Pos() lexer.Position {
@@ -430,13 +436,18 @@ func (n EntityFieldNode) Key() string {
 }
 
 func (n EntityFieldNode) Value() string {
-	return n.value.Literal
+	return n.value
+}
+
+func (n EntityFieldNode) Set(key lexer.Token, value string) {
+	n.key = key
+	n.value = value
 }
 
 // topic field node impl
 
 func (n TopicFieldNode) String() string {
-	return fmt.Sprintf("%s:%s", n.key.Literal, n.value.Literal)
+	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
 func (n TopicFieldNode) Key() string {
@@ -444,7 +455,7 @@ func (n TopicFieldNode) Key() string {
 }
 
 func (n TopicFieldNode) Value() string {
-	return n.value.Literal
+	return n.value
 }
 
 func (n TopicFieldNode) Pos() lexer.Position {
@@ -453,6 +464,11 @@ func (n TopicFieldNode) Pos() lexer.Position {
 
 func (n TopicFieldNode) End() lexer.Position {
 	return n.end
+}
+
+func (n TopicFieldNode) Set(key lexer.Token, value string) {
+	n.key = key
+	n.value = value
 }
 
 // since field node impl
@@ -469,12 +485,21 @@ func (n SinceFieldNode) Value() containers.TimeValue {
 	return n.value
 }
 
+func (n SinceFieldNode) TimeValue() time.Time {
+	return n.value.Resolve(time.Now())
+}
+
 func (n SinceFieldNode) Pos() lexer.Position {
 	return n.pos
 }
 
 func (n SinceFieldNode) End() lexer.Position {
 	return n.end
+}
+
+func (n SinceFieldNode) Set(key lexer.Token, value containers.TimeValue) {
+	n.key = key
+	n.value = value
 }
 
 // until field node impl
@@ -491,12 +516,21 @@ func (n UntilFieldNode) Value() containers.TimeValue {
 	return n.value
 }
 
+func (n UntilFieldNode) TimeValue() time.Time {
+	return n.value.Resolve(time.Now())
+}
+
 func (n UntilFieldNode) Pos() lexer.Position {
 	return n.pos
 }
 
 func (n UntilFieldNode) End() lexer.Position {
 	return n.end
+}
+
+func (n UntilFieldNode) Set(key lexer.Token, value containers.TimeValue) {
+	n.key = key
+	n.value = value
 }
 
 // top field node impl
@@ -521,6 +555,11 @@ func (n TopFieldNode) End() lexer.Position {
 	return n.end
 }
 
+func (n TopFieldNode) Set(key lexer.Token, value int) {
+	n.key = key
+	n.value = value
+}
+
 // depth field node impl
 
 func (n DepthFieldNode) String() string {
@@ -541,6 +580,11 @@ func (n DepthFieldNode) Pos() lexer.Position {
 
 func (n DepthFieldNode) End() lexer.Position {
 	return n.end
+}
+
+func (n DepthFieldNode) Set(key lexer.Token, value int) {
+	n.key = key
+	n.value = value
 }
 
 // vec field node impl
@@ -569,6 +613,7 @@ func (n VecFieldNode) End() lexer.Position {
 	return n.end
 }
 
-func (n VecFieldNode) Set(v []float32) {
+func (n VecFieldNode) Set(key lexer.Token, v []float32) {
+	n.key = key
 	n.value = v
 }

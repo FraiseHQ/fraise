@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
 )
 
@@ -104,6 +105,8 @@ func (p *parser) parseQuery() (CommandNode, error) {
 	switch p.cur.Type {
 	case lexer.REMEMBER:
 		return (*p).parseRemember()
+	case lexer.RECALL:
+		return (*p).parseRecall()
 	default:
 		return nil, p.errf(p.l.CurrentPos, "expected a command (recall, remember), found %q", p.cur.Literal)
 	}
@@ -118,12 +121,13 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 	p.next()
 
 	if p.cur.Type == lexer.AT {
-		selector, err := p.parseGraphSelector()
+		key, value, err := p.parseGraphSelector()
 		if err != nil {
 			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
 		}
-		r.selector = *selector
+		r.selector = GraphSelectorNode{key: key, value: value}
 	}
+
 	// Remember only supports one phrase
 	_, err := p.expect(lexer.COMMA)
 
@@ -146,13 +150,18 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 	for p.cur.Type != lexer.EOL {
 		switch p.cur.Type {
 		case lexer.ENTITY, lexer.TOPIC:
-			anchor, err := p.parseAnchorField()
+			key, value, err := p.parseAnchorField()
 			if err != nil {
 				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
 			}
-			anchors = append(anchors, *anchor)
+			var field FieldNode[string]
+			if key.Type == lexer.TOPIC {
+				field = TopicFieldNode{key: key, value: value}
+			} else {
+				field = EntityFieldNode{key: key, value: value}
+			}
+			anchors = append(anchors, AnchorFieldNode{field: field})
 			r.anchors = anchors
-			p.next()
 		case lexer.VEC:
 			vec, err := p.parseVecField()
 			if err != nil {
@@ -161,24 +170,144 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 			r.vec = vec
 			p.next()
 		default:
-			return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
+			return nil, p.errf(p.l.CurrentPos, "Encountered unexpected token: %q", p.cur.Literal)
 		}
 	}
 
 	return &r, nil
 }
 
-func (p *parser) parseGraphSelector() (*GraphSelectorNode, error) {
-	gsn := &GraphSelectorNode{}
+func (p *parser) parseRecall() (*RecallCommandNode, error) {
 
-	gsn.key = p.cur
+	r := RecallCommandNode{}
+
+	r.key = p.cur
+
+	p.next()
+
+	if p.cur.Type == lexer.AT {
+		key, value, err := p.parseGraphSelector()
+		if err != nil {
+			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
+		}
+		r.selector = GraphSelectorNode{key: key, value: value}
+	}
+
+	// parse terms
+	// only terms are supported in a recall command
+	_, err := p.expect(lexer.LITERAL)
+
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "expected literal, but found %q", p.cur.Literal)
+	}
+
+	for p.cur.Type != lexer.EOL {
+
+	}
+
+	// parse
+	for p.cur.Type != lexer.EOL {
+		switch p.cur.Type {
+		case lexer.ENTITY:
+			key, value, err := p.parseAnchorField()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+			}
+			r.entities = append(r.entities, AnchorFieldNode{field: EntityFieldNode{key: key, value: value}})
+		case lexer.TOPIC:
+			key, value, err := p.parseAnchorField()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+			}
+			r.topics = append(r.topics, AnchorFieldNode{field: TopicFieldNode{key: key, value: value}})
+		case lexer.UNTIL:
+			key, t, err := p.parseTimeValue()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing until clause %e", err)
+			}
+			r.until = UntilFieldNode{key: key, value: t}
+		case lexer.SINCE:
+			key, t, err := p.parseTimeValue()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing since clause %e", err)
+			}
+			r.since = SinceFieldNode{key: key, value: t}
+		case lexer.DEPTH:
+			key, value, err := p.parseDepth()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing depth clause %e", err)
+			}
+			r.depth = DepthFieldNode{key: key, value: value}
+		case lexer.TOP:
+			key, value, err := p.parseTop()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing top clause %e", err)
+			}
+			r.top = TopFieldNode{key: key, value: value}
+		default:
+			return nil, p.errf(p.l.CurrentPos, "Encountered unexpected token: %q", p.cur.Literal)
+		}
+	}
+	return &r, nil
+}
+
+func (p *parser) parseDepth() (lexer.Token, int, error) {
+	key := p.cur
 
 	p.next()
 
 	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+	}
+
+	i, _ := strconv.Atoi(tok.Literal)
+
+	return key, i, nil
+}
+
+func (p *parser) parseTop() (lexer.Token, int, error) {
+	key := p.cur
+
+	p.next()
+
+	tok, err := p.expect(lexer.LITERAL)
+
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+	}
+
+	i, _ := strconv.Atoi(tok.Literal)
+
+	return key, i, nil
+}
+
+func (p *parser) parseTimeValue() (lexer.Token, containers.TimeValue, error) {
+	key := p.cur
+
+	p.next()
+
+	tok, err := p.expect(lexer.LITERAL)
+
+	if err != nil {
+		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+	}
+
+	t, _ := containers.ParseTimeValue(tok.Literal)
+
+	return key, t, nil
+}
+
+func (p *parser) parseGraphSelector() (lexer.Token, uint8, error) {
+	key := p.cur
+
+	p.next()
+
+	tok, err := p.expect(lexer.LITERAL)
+
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
 	i, _ := strconv.Atoi(tok.Literal)
@@ -186,9 +315,7 @@ func (p *parser) parseGraphSelector() (*GraphSelectorNode, error) {
 	// NOTE: probably not the safest way to do this (panic if you can't convert or casts anyway?).
 	// Maybe just store the graph id as a int and check that value doesn't exceed number of graphs
 	/// a bit awkwards but maybe better than having to do this.
-	gsn.value = uint8(i)
-
-	return gsn, nil
+	return key, uint8(i), nil
 }
 
 func (p *parser) parsePhrase() (*PhraseNode, error) {
@@ -206,28 +333,19 @@ func (p *parser) parsePhrase() (*PhraseNode, error) {
 	return &pn, nil
 }
 
-func (p *parser) parseAnchorField() (*AnchorFieldNode, error) {
-	a := AnchorFieldNode{}
+func (p *parser) parseAnchorField() (lexer.Token, string, error) {
+	key := p.cur
 
-	if p.cur.Type == lexer.TOPIC {
-		f := TopicFieldNode{}
-		f.key = p.cur
-		// skip comma
-		p.next()
-		p.next()
-		f.value = p.cur
-		a.field = f
-	} else {
-		f := EntityFieldNode{}
-		f.key = p.cur
-		// skip comma
-		p.next()
-		p.next()
-		f.value = p.cur
-		a.field = f
+	p.next()
+	p.next() // skip comma
+
+	tok, err := p.expect(lexer.LITERAL)
+
+	if err != nil {
+		return lexer.Token{}, "", p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	return &a, nil
+	return key, tok.Literal, nil
 }
 
 func (p *parser) parseVecField() (*VecFieldNode, error) {

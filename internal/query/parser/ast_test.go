@@ -231,7 +231,7 @@ func TestPhraseNodeEmpty(t *testing.T) {
 func TestEntityFieldNode(t *testing.T) {
 	n := EntityFieldNode{
 		key:   tok(lexer.ENTITY, "entity"),
-		value: tok(lexer.LITERAL, "alice"),
+		value: "alice",
 		pos:   pos(1),
 		end:   pos(8),
 	}
@@ -253,7 +253,7 @@ func TestEntityFieldNode(t *testing.T) {
 func TestTopicFieldNode(t *testing.T) {
 	n := TopicFieldNode{
 		key:   tok(lexer.TOPIC, "topic"),
-		value: tok(lexer.LITERAL, "weather"),
+		value: "weather",
 		pos:   pos(3),
 		end:   pos(10),
 	}
@@ -279,7 +279,7 @@ func TestTopicFieldNode(t *testing.T) {
 func TestAnchorFieldNode(t *testing.T) {
 	field := EntityFieldNode{
 		key:   tok(lexer.ENTITY, "entity"),
-		value: tok(lexer.LITERAL, "bob"),
+		value: "bob",
 		pos:   pos(5),
 		end:   pos(12),
 	}
@@ -439,7 +439,7 @@ func TestVecFieldNode(t *testing.T) {
 // assert that the value IS mutated.
 func TestVecFieldNodeSetDoesNotMutate(t *testing.T) {
 	n := VecFieldNode{value: []float32{1}}
-	n.Set([]float32{9, 8, 7})
+	n.Set(tok(lexer.LITERAL, "v"), []float32{9, 8, 7})
 
 	if got := n.Value(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("after Set, Value() = %v; expected it to remain [1] due to value receiver", got)
