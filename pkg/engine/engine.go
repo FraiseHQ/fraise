@@ -23,8 +23,11 @@
 package engine
 
 import (
+	"fmt"
+
 	"github.com/RonsenbergVI/fraise/internal/cache"
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/internal/query/optimisation"
 
@@ -36,20 +39,26 @@ type Engine[K comparable, P float32 | float64] struct {
 	Cache         cache.Cache[K, query.Query[K, P]]
 	Scheduler     *scheduler.Scheduler[K, P]
 	Optimisations *optimisation.Pipeline[K, P]
+	Hasher        hash.Hasher[K, string]
 }
 
-func NewEngine[K comparable, P float32 | float64](c *config.ConfigSet) *Engine[K, P] {
+func NewEngine[K comparable, P float32 | float64](c *config.ConfigSet, hasher hash.Hasher[K, string]) *Engine[K, P] {
 	e := &Engine[K, P]{
 		Config:        c,
 		Optimisations: optimisation.NewPipeline[K, P](),
 		Scheduler:     scheduler.NewScheduler[K, P](c),
+		Hasher:        hasher,
 	}
 	return e
 }
 
 func (e *Engine[K, P]) Start() {
 	// allocate cache memory
-	e.Cache = cache.NewLRUCache[K, query.Query[K, P]](e.Config.Engine.CacheCapacity)
+	c, err := cache.NewLRUCache[K, query.Query[K, P]](e.Config.Engine.CacheCapacity)
+	if err != nil {
+		fmt.Errorf("Error while initialising cache.")
+	}
+	e.Cache = c
 }
 
 func (e *Engine[K, P]) Stop() {
@@ -59,13 +68,13 @@ func (e *Engine[K, P]) Stop() {
 
 func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
-	if cached, ok := e.Cache.Get(q.Hash()); ok {
+	if cached, ok := e.Cache.Get(q.Hash(e.Hasher)); ok {
 		q = cached
 	} else {
 		// NOTE: run optimisaitons on query and cache optimised query
 		// only optimised queries are cached
 		optimised := e.Optimisations.Optimise(q)
-		e.Cache.Put(q.Hash(), optimised)
+		e.Cache.Put(q.Hash(e.Hasher), optimised)
 		q = optimised
 	}
 

@@ -24,6 +24,7 @@ package server
 
 import (
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 
 	"github.com/RonsenbergVI/fraise/pkg/db"
 	"github.com/RonsenbergVI/fraise/pkg/engine"
@@ -41,13 +42,13 @@ type Server[K comparable, P float32 | float64] struct {
 	router *gin.Engine
 }
 
-func New[K comparable, P float32 | float64](config *config.ConfigSet) *Server[K, P] {
+func New[K comparable, P float32 | float64](config *config.ConfigSet, hasher hash.Hasher[K, string]) *Server[K, P] {
 
 	db, err := db.NewDB[K, P](config)
 	if err != nil {
 
 	}
-	engine := engine.NewEngine[K, P](config)
+	engine := engine.NewEngine[K, P](config, hasher)
 
 	s := &Server[K, P]{
 		DB:     db,

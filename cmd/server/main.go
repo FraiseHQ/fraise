@@ -22,7 +22,14 @@
 
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/RonsenbergVI/fraise/pkg/server"
+)
 
 func PrintBanner() {
 	fmt.Print(`
@@ -31,5 +38,15 @@ func PrintBanner() {
 }
 
 func main() {
+	PrintBanner()
 
+	conf := config.New()
+
+	// MurmurHash produces uint32 keys, so the server is instantiated with
+	// K = uint32; float64 is used for embedding/score precision.
+	srv := server.New[uint32, float64](conf, hash.MurmurHash{})
+
+	if err := srv.Start(); err != nil {
+		logger.Error("Failed to start server", "error", err)
+	}
 }

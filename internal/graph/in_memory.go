@@ -91,45 +91,45 @@ func (g *InMemoryGraph[K, P]) Delete(node *Node[K]) error {
 }
 
 func (g *InMemoryGraph[K, P]) AdjacencyMap() map[K]map[K]*Relationship[K] {
-
+	return nil
 }
 
 func (g *InMemoryGraph[K, P]) PredecessorMap() map[K]map[K]*Relationship[K] {
-
+	return nil
 }
 
 func (g *InMemoryGraph[K, P]) Copy() Graph[K, P] {
-
+	return nil
 }
 
 func (g *InMemoryGraph[K, P]) Order() int {
-
+	return 0
 }
 
 func (g *InMemoryGraph[K, P]) Size() int {
-
+	return 0
 }
 
 func (g *InMemoryGraph[K, P]) Stats() GraphStats {
-
+	return GraphStats{}
 }
 
 func (g *InMemoryGraph[K, P]) Entities() []*Entity[K] {
-
+	return nil
 }
 
 func (g *InMemoryGraph[K, P]) Relationships() []*Relationship[K] {
-
+	return nil
 }
 
 // Returns the graph vector index
 func (g *InMemoryGraph[K, P]) GetVectorIndex() *index.Index[K, containers.Vector[P], P] {
-
+	return nil
 }
 
 // Returns the graph full text search index
 func (g *InMemoryGraph[K, P]) GetTextIndex() *index.Index[K, string, P] {
-
+	return nil
 }
 
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P) {
@@ -147,16 +147,31 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	filtered, scores := g.timeFilter(neighbors, since, until)
 
 	// D. Truncate search results
+	//
+	// filtered and scores are parallel slices; sort an index permutation
+	// by score so both stay aligned, then truncate to top.
 
-	sort.Slice(filtered, func(i, j int) bool {
-		return filtered[i].Score > filtered[j].Score
+	order := make([]int, len(filtered))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(i, j int) bool {
+		return scores[order[i]] > scores[order[j]]
 	})
+
 	limit := top
-	if limit > len(filtered) {
-		limit = len(filtered)
+	if limit > len(order) {
+		limit = len(order)
 	}
 
-	return filtered[:limit]
+	nodes := make([]*Node[K], limit)
+	ranked := make([]P, limit)
+	for i := 0; i < limit; i++ {
+		nodes[i] = filtered[order[i]]
+		ranked[i] = scores[order[i]]
+	}
+
+	return nodes, ranked
 }
 
 func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[P]) ([]*Node[K], []P) {
