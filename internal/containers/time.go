@@ -36,7 +36,7 @@ type RelativeTime struct{ Dur time.Duration }
 type AbsoluteTime struct{ T time.Time }
 
 func (r RelativeTime) String() string {
-	return r.String()
+	return r.Dur.String()
 }
 
 func (a AbsoluteTime) String() string {
