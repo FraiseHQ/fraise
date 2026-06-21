@@ -42,7 +42,7 @@ type Recall[K comparable, P float32 | float64] struct {
 	context QueryContext
 }
 
-func (q Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
+func (r Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
 	return nil, nil
 }
 
@@ -50,7 +50,7 @@ func (r Recall[K, P]) GetGraphID() uint8 {
 	return r.context.GraphID
 }
 
-func (r *Recall[K, P]) SetGraphID(id uint8) {
+func (r Recall[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
 

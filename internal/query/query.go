@@ -33,7 +33,6 @@ import (
 type Query[K comparable, P float32 | float64] interface {
 	Plan(config *config.ConfigSet) (*Stream[K, P], error)
 	GetGraphID() uint8
-	SetGraphID(id uint8)
 	hash.Hashable[K, string]
 	IsWrite() bool
 }
@@ -61,19 +60,25 @@ type Hit[K comparable, P float32 | float64] struct {
 
 func Parse[K comparable, P float32 | float64](q string) (*Query[K, P], error) {
 
-	qo := &Query[K, P]{}
-	i := Interpreter{}
+	var qo Query[K, P]
 
-	cmd, warns, err := parser.Parse(q)
+	cmd, _, err := parser.Parse(q)
+
 	if err != nil {
 		return nil, ErrParsingFailed
 	}
-	qp := i.Evaluate(cmd)
 
-	// remember
-	qo.QueryParameters = qp
+	// qp := i.Evaluate(cmd)
 
-	// recall
+	switch cmd.(type) {
+	case parser.RememberCommandNode:
+		_ = cmd.(parser.RememberCommandNode)
+		qo = Remember[K, P]{}
+	case parser.RecallCommandNode:
+		_ = cmd.(parser.RecallCommandNode)
+		qo = Recall[K, P]{}
+	default:
+	}
 
-	return qo, nil
+	return &qo, nil
 }

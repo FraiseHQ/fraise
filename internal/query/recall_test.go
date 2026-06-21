@@ -103,7 +103,7 @@ func TestRecallSinceUntil(t *testing.T) {
 	r := Recall[string, float32]{
 		Parameters: QueryParameters{
 			Since: containers.RelativeTime{Dur: time.Hour}, // relative: now - 1h
-			Until: containers.AbsoluteTime{T: absUntil},     // absolute: fixed instant
+			Until: containers.AbsoluteTime{T: absUntil},    // absolute: fixed instant
 		},
 	}
 
