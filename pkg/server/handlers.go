@@ -44,9 +44,14 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 			return
 		}
 
-		q := query.Parse[K, P](req.Query)
+		q, err := query.Parse[K, P](req.Query)
 
-		stream, err := s.Engine.Plan(q)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		stream, err := s.Engine.Plan(*q)
 
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
