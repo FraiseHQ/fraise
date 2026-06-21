@@ -94,10 +94,10 @@ func TestRememberCommandNode(t *testing.T) {
 		end:      pos(42),
 	}
 
-	if got := n.Selector(); got != sel {
+	if got := n.selector; got != sel {
 		t.Errorf("Selector() = %+v, want %+v", got, sel)
 	}
-	if got := n.Selector().Value(); got != 5 {
+	if got := n.Selector(); got != 5 {
 		t.Errorf("Selector().Value() = %d, want 5", got)
 	}
 	if got := n.Pos(); got != pos(0) {
@@ -119,7 +119,7 @@ func TestRecallCommandNode(t *testing.T) {
 		end:      pos(9),
 	}
 
-	if got := n.Selector(); got != sel {
+	if got := n.selector; got != sel {
 		t.Errorf("Selector() = %+v, want %+v", got, sel)
 	}
 	if got := n.Pos(); got != pos(3) {
@@ -439,7 +439,7 @@ func TestVecFieldNode(t *testing.T) {
 // assert that the value IS mutated.
 func TestVecFieldNodeSetDoesNotMutate(t *testing.T) {
 	n := VecFieldNode{value: []float32{1}}
-	n.Set(tok(lexer.LITERAL, "v"), []float32{9, 8, 7})
+	n.Set(tok(lexer.LITERAL, "q"), []float32{9, 8, 7})
 
 	if got := n.Value(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("after Set, Value() = %v; expected it to remain [1] due to value receiver", got)

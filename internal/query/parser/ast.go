@@ -50,7 +50,7 @@ type AstNode interface {
 // Node representing a command (remember, recall)
 type CommandNode interface {
 	AstNode
-	Selector() GraphSelectorNode
+	Selector() uint8
 }
 
 // Node representing a field (topic, since, until, )
@@ -90,7 +90,7 @@ type RecallCommandNode struct {
 	depth    DepthFieldNode
 	since    SinceFieldNode
 	until    UntilFieldNode
-	vec      RefFieldNode[[]float32]
+	vec      *VecFieldNode
 	pos      lexer.Position
 	end      lexer.Position
 }
@@ -203,8 +203,8 @@ type VecFieldNode struct {
 
 // remember impl
 
-func (n RememberCommandNode) Selector() GraphSelectorNode {
-	return n.selector
+func (n RememberCommandNode) Selector() uint8 {
+	return n.selector.value
 }
 
 func (n RememberCommandNode) String() string {
@@ -239,8 +239,8 @@ func (n RememberCommandNode) End() lexer.Position {
 
 // recall impl
 
-func (n RecallCommandNode) Selector() GraphSelectorNode {
-	return n.selector
+func (n RecallCommandNode) Selector() uint8 {
+	return n.selector.value
 }
 
 func (n RecallCommandNode) String() string {

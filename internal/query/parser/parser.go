@@ -258,7 +258,6 @@ func (p *parser) parseDepth() (lexer.Token, int, error) {
 	key := p.cur
 
 	p.next()
-	p.next() // skip colon
 
 	tok, err := p.expect(lexer.LITERAL)
 
@@ -275,7 +274,6 @@ func (p *parser) parseTop() (lexer.Token, int, error) {
 	key := p.cur
 
 	p.next()
-	p.next() // skip colon
 
 	tok, err := p.expect(lexer.LITERAL)
 
