@@ -44,15 +44,15 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("parse error at %d: %s", e.Pos, e.Msg)
 }
 
-type parser struct {
+type parser[P float32 | float64] struct {
 	l     *lexer.Lexer
 	cur   lexer.Token
 	peek  lexer.Token
 	warns []Warning
 }
 
-func Parse(q string) (cmd CommandNode, warns []Warning, err error) {
-	p := &parser{l: lexer.New(q)}
+func Parse[P float32 | float64](q string) (cmd CommandNode, warns []Warning, err error) {
+	p := &parser[P]{l: lexer.New(q)}
 	// prime cur and peek
 	p.next()
 	p.next()
@@ -71,14 +71,14 @@ func Parse(q string) (cmd CommandNode, warns []Warning, err error) {
 }
 
 // Goes to next token for parser to analyse
-func (p *parser) next() {
+func (p *parser[P]) next() {
 	p.cur = p.peek
 	p.peek = p.l.Next()
 }
 
 // expect consumes the current token if it has the given type, otherwise
 // returns an error pointing at it.
-func (p *parser) expect(t lexer.TokenType) (lexer.Token, error) {
+func (p *parser[P]) expect(t lexer.TokenType) (lexer.Token, error) {
 	if p.cur.Type != t {
 		return p.cur, p.errf(p.l.CurrentPos, "expected %v, found %q", t, p.cur.Literal)
 	}
@@ -87,21 +87,21 @@ func (p *parser) expect(t lexer.TokenType) (lexer.Token, error) {
 	return tok, nil
 }
 
-func (p *parser) errf(pos lexer.Position, format string, args ...any) error {
+func (p *parser[P]) errf(pos lexer.Position, format string, args ...any) error {
 	return &Error{
 		Pos: pos,
 		Msg: fmt.Sprintf(format, args...),
 	}
 }
 
-func (p *parser) warnf(pos lexer.Position, format string, args ...any) {
+func (p *parser[P]) warnf(pos lexer.Position, format string, args ...any) {
 	p.warns = append(p.warns, Warning{
 		Pos: pos,
 		Msg: fmt.Sprintf(format, args...),
 	})
 }
 
-func (p *parser) parseQuery() (CommandNode, error) {
+func (p *parser[P]) parseQuery() (CommandNode, error) {
 	switch p.cur.Type {
 	case lexer.REMEMBER:
 		return (*p).parseRemember()
@@ -112,9 +112,9 @@ func (p *parser) parseQuery() (CommandNode, error) {
 	}
 }
 
-func (p *parser) parseRemember() (*RememberCommandNode, error) {
+func (p *parser[P]) parseRemember() (*RememberCommandNode[P], error) {
 
-	r := RememberCommandNode{}
+	r := RememberCommandNode[P]{}
 
 	r.key = p.cur
 
@@ -177,9 +177,9 @@ func (p *parser) parseRemember() (*RememberCommandNode, error) {
 	return &r, nil
 }
 
-func (p *parser) parseRecall() (*RecallCommandNode, error) {
+func (p *parser[P]) parseRecall() (*RecallCommandNode[P], error) {
 
-	r := RecallCommandNode{}
+	r := RecallCommandNode[P]{}
 
 	r.key = p.cur
 
@@ -254,7 +254,7 @@ func (p *parser) parseRecall() (*RecallCommandNode, error) {
 	return &r, nil
 }
 
-func (p *parser) parseDepth() (lexer.Token, int, error) {
+func (p *parser[P]) parseDepth() (lexer.Token, int, error) {
 	key := p.cur
 
 	p.next()
@@ -270,7 +270,7 @@ func (p *parser) parseDepth() (lexer.Token, int, error) {
 	return key, i, nil
 }
 
-func (p *parser) parseTop() (lexer.Token, int, error) {
+func (p *parser[P]) parseTop() (lexer.Token, int, error) {
 	key := p.cur
 
 	p.next()
@@ -286,7 +286,7 @@ func (p *parser) parseTop() (lexer.Token, int, error) {
 	return key, i, nil
 }
 
-func (p *parser) parseTimeValue() (lexer.Token, containers.TimeValue, error) {
+func (p *parser[P]) parseTimeValue() (lexer.Token, containers.TimeValue, error) {
 	key := p.cur
 
 	p.next()
@@ -303,7 +303,7 @@ func (p *parser) parseTimeValue() (lexer.Token, containers.TimeValue, error) {
 	return key, t, nil
 }
 
-func (p *parser) parseGraphSelector() (lexer.Token, uint8, error) {
+func (p *parser[P]) parseGraphSelector() (lexer.Token, uint8, error) {
 	key := p.cur
 
 	p.next()
@@ -322,7 +322,7 @@ func (p *parser) parseGraphSelector() (lexer.Token, uint8, error) {
 	return key, uint8(i), nil
 }
 
-func (p *parser) parsePhrase() (*PhraseNode, error) {
+func (p *parser[P]) parsePhrase() (*PhraseNode, error) {
 	pn := PhraseNode{}
 
 	for p.cur.Type != lexer.COMMA {
@@ -337,7 +337,7 @@ func (p *parser) parsePhrase() (*PhraseNode, error) {
 	return &pn, nil
 }
 
-func (p *parser) parseAnchorField() (lexer.Token, string, error) {
+func (p *parser[P]) parseAnchorField() (lexer.Token, string, error) {
 	key := p.cur
 
 	p.next()
@@ -352,8 +352,8 @@ func (p *parser) parseAnchorField() (lexer.Token, string, error) {
 	return key, tok.Literal, nil
 }
 
-func (p *parser) parseVecField() (*VecFieldNode, error) {
-	r := VecFieldNode{}
+func (p *parser[P]) parseVecField() (*VecFieldNode[P], error) {
+	r := VecFieldNode[P]{}
 
 	tok, err := p.expect(lexer.VEC)
 

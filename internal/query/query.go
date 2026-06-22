@@ -64,7 +64,7 @@ func Parse[K comparable, P float32 | float64](q string) (*Query[K, P], error) {
 	var qo Query[K, P]
 	var qc parser.CommandNode
 
-	cmd, _, err := parser.Parse(q)
+	cmd, _, err := parser.Parse[P](q)
 
 	if err != nil {
 		return nil, ErrParsingFailed
@@ -73,11 +73,15 @@ func Parse[K comparable, P float32 | float64](q string) (*Query[K, P], error) {
 	// qp := i.Evaluate(cmd)
 
 	switch cmd.(type) {
-	case parser.RememberCommandNode:
-		qc := cmd.(parser.RememberCommandNode)
-		qo = Remember[K, P]{}
-	case parser.RecallCommandNode:
-		qc := cmd.(parser.RecallCommandNode)
+	case parser.RememberCommandNode[P]:
+		qc := cmd.(parser.RememberCommandNode[P])
+		qo = Remember[K, P]{
+			Value:    qc.Value(),
+			Entities: qc.Entities(),
+			Topics:   qc.Topics(),
+		}
+	case parser.RecallCommandNode[P]:
+		qc := cmd.(parser.RecallCommandNode[P])
 		qp := QueryParameters{
 			Top:   qc.Top(),
 			Depth: qc.Depth(),

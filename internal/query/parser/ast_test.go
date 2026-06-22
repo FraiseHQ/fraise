@@ -39,8 +39,8 @@ import (
 // These assertions fail to compile if a node ever stops satisfying the
 // interface it is meant to implement.
 var (
-	_ CommandNode             = RememberCommandNode{}
-	_ CommandNode             = RecallCommandNode{}
+	_ CommandNode             = RememberCommandNode[float32]{}
+	_ CommandNode             = RecallCommandNode[float32]{}
 	_ AstNode                 = GraphSelectorNode{}
 	_ AstNode                 = AnchorFieldNode{}
 	_ AstNode                 = TermNode{}
@@ -53,7 +53,7 @@ var (
 	_ LiteralFieldNode        = TermNode{}
 	_ LiteralFieldNode        = PhraseNode{}
 	_ LiteralFieldNode        = Terms{}
-	_ RefFieldNode[[]float32] = VecFieldNode{}
+	_ RefFieldNode[[]float32] = VecFieldNode[float32]{}
 )
 
 func tok(t lexer.TokenType, lit string) lexer.Token {
@@ -87,7 +87,7 @@ func TestGraphSelectorNode(t *testing.T) {
 
 func TestRememberCommandNode(t *testing.T) {
 	sel := GraphSelectorNode{value: 5}
-	n := RememberCommandNode{
+	n := RememberCommandNode[float32]{
 		key:      tok(lexer.REMEMBER, "remember"),
 		selector: sel,
 		pos:      pos(0),
@@ -112,7 +112,7 @@ func TestRememberCommandNode(t *testing.T) {
 
 func TestRecallCommandNode(t *testing.T) {
 	sel := GraphSelectorNode{value: 7}
-	n := RecallCommandNode{
+	n := RecallCommandNode[float32]{
 		key:      tok(lexer.RECALL, "recall"),
 		selector: sel,
 		pos:      pos(3),
@@ -408,7 +408,7 @@ func TestDepthFieldNode(t *testing.T) {
 
 func TestVecFieldNode(t *testing.T) {
 	vec := []float32{0.1, 0.2, 0.3}
-	n := VecFieldNode{
+	n := VecFieldNode[float32]{
 		key:   tok(lexer.DOLLAR, "vec"),
 		param: tok(lexer.LITERAL, "q"),
 		value: vec,
@@ -438,7 +438,7 @@ func TestVecFieldNode(t *testing.T) {
 // Set is ever changed to a pointer receiver, this test should be updated to
 // assert that the value IS mutated.
 func TestVecFieldNodeSetDoesNotMutate(t *testing.T) {
-	n := VecFieldNode{value: []float32{1}}
+	n := VecFieldNode[float32]{value: []float32{1}}
 	n.Set(tok(lexer.LITERAL, "q"), []float32{9, 8, 7})
 
 	if got := n.Value(); len(got) != 1 || got[0] != 1 {

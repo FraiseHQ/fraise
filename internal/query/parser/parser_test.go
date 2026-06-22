@@ -32,7 +32,7 @@ import (
 func TestRememberParser(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne vec:$v"
 
-	qo, _, err := parser.Parse(q)
+	qo, _, err := parser.Parse[float32](q)
 
 	fmt.Println(qo)
 
@@ -63,7 +63,7 @@ func TestRecallParser(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			qo, _, err := parser.Parse(q)
+			qo, _, err := parser.Parse[float32](q)
 			fmt.Print(qo)
 			if err != nil {
 				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
@@ -84,7 +84,7 @@ func TestRecallParserErrors(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			if _, _, err := parser.Parse(q); err == nil {
+			if _, _, err := parser.Parse[float32](q); err == nil {
 				t.Errorf("Parse(%q) = nil error, want an error", q)
 			}
 		})

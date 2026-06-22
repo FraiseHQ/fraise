@@ -80,7 +80,7 @@ type TimeValueFieldNode interface {
 }
 
 // recall command node
-type RecallCommandNode struct {
+type RecallCommandNode[P float32 | float64] struct {
 	key      lexer.Token
 	selector GraphSelectorNode
 	terms    []LiteralFieldNode
@@ -90,20 +90,82 @@ type RecallCommandNode struct {
 	depth    DepthFieldNode
 	since    SinceFieldNode
 	until    UntilFieldNode
-	vec      *VecFieldNode
+	vec      *VecFieldNode[P]
 	pos      lexer.Position
 	end      lexer.Position
 }
 
+func (r RecallCommandNode[P]) Terms() []string {
+	var res []string
+
+	for _, v := range r.terms {
+		res = append(res, v.Literal())
+	}
+
+	return res
+}
+
+func (r RecallCommandNode[P]) Entities() []string {
+	var res []string
+
+	for _, v := range r.entities {
+		res = append(res, v.Value())
+	}
+
+	return res
+}
+
+func (r RecallCommandNode[P]) Topics() []string {
+	var res []string
+
+	for _, v := range r.topics {
+		res = append(res, v.Value())
+	}
+
+	return res
+}
+
+func (r RecallCommandNode[P]) Top() int {
+	return r.top.value
+}
+
+func (r RecallCommandNode[P]) Depth() int {
+	return r.depth.value
+}
+
+func (r RecallCommandNode[P]) Since() containers.TimeValue {
+	return r.since.Value()
+}
+
+func (r RecallCommandNode[P]) Until() containers.TimeValue {
+	return r.until.Value()
+}
+
+func (r RecallCommandNode[P]) Vector() []P {
+	return r.vec.Value()
+}
+
 // remember command node
-type RememberCommandNode struct {
+type RememberCommandNode[P float32 | float64] struct {
 	key      lexer.Token
 	selector GraphSelectorNode
 	value    PhraseNode
 	anchors  []AnchorFieldNode
-	vec      *VecFieldNode
+	vec      *VecFieldNode[P]
 	pos      lexer.Position
 	end      lexer.Position
+}
+
+func (r RememberCommandNode[P]) Value() string {
+	return r.value.Literal()
+}
+
+func (r RememberCommandNode[P]) Entities() []string {
+	return []string{}
+}
+
+func (r RememberCommandNode[P]) Topics() []string {
+	return []string{}
 }
 
 // Selector node is the graph selection statement
@@ -193,21 +255,21 @@ type DepthFieldNode struct {
 }
 
 // Ref field
-type VecFieldNode struct {
+type VecFieldNode[P float32 | float64] struct {
 	key   lexer.Token
 	param lexer.Token
-	value []float32
+	value []P
 	pos   lexer.Position
 	end   lexer.Position
 }
 
 // remember impl
 
-func (n RememberCommandNode) Selector() uint8 {
+func (n RememberCommandNode[P]) Selector() uint8 {
 	return n.selector.value
 }
 
-func (n RememberCommandNode) String() string {
+func (n RememberCommandNode[P]) String() string {
 	var s []string
 
 	// command + selector
@@ -229,21 +291,21 @@ func (n RememberCommandNode) String() string {
 	return strings.Join(s, " ")
 }
 
-func (n RememberCommandNode) Pos() lexer.Position {
+func (n RememberCommandNode[P]) Pos() lexer.Position {
 	return n.pos
 }
 
-func (n RememberCommandNode) End() lexer.Position {
+func (n RememberCommandNode[P]) End() lexer.Position {
 	return n.end
 }
 
 // recall impl
 
-func (n RecallCommandNode) Selector() uint8 {
+func (n RecallCommandNode[P]) Selector() uint8 {
 	return n.selector.value
 }
 
-func (n RecallCommandNode) String() string {
+func (n RecallCommandNode[P]) String() string {
 	var s []string
 
 	// command + selector
@@ -296,11 +358,11 @@ func (n RecallCommandNode) String() string {
 	return strings.Join(s, " ")
 }
 
-func (n RecallCommandNode) Pos() lexer.Position {
+func (n RecallCommandNode[P]) Pos() lexer.Position {
 	return n.pos
 }
 
-func (n RecallCommandNode) End() lexer.Position {
+func (n RecallCommandNode[P]) End() lexer.Position {
 	return n.end
 }
 
@@ -600,31 +662,31 @@ func (n DepthFieldNode) Set(key lexer.Token, value int) {
 
 // vec field node impl
 
-func (n VecFieldNode) Param() string {
+func (n VecFieldNode[P]) Param() string {
 	return n.param.Literal
 }
 
-func (n VecFieldNode) String() string {
+func (n VecFieldNode[P]) String() string {
 	return fmt.Sprintf("%s:$%s", n.key.Literal, n.param.Literal)
 }
 
-func (n VecFieldNode) Key() string {
+func (n VecFieldNode[P]) Key() string {
 	return n.key.Literal
 }
 
-func (n VecFieldNode) Value() []float32 {
+func (n VecFieldNode[P]) Value() []P {
 	return n.value
 }
 
-func (n VecFieldNode) Pos() lexer.Position {
+func (n VecFieldNode[P]) Pos() lexer.Position {
 	return n.pos
 }
 
-func (n VecFieldNode) End() lexer.Position {
+func (n VecFieldNode[P]) End() lexer.Position {
 	return n.end
 }
 
-func (n VecFieldNode) Set(key lexer.Token, v []float32) {
+func (n VecFieldNode[P]) Set(key lexer.Token, v []P) {
 	n.key = key
 	n.value = v
 }
