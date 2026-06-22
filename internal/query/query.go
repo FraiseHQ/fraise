@@ -35,6 +35,7 @@ type Query[K comparable, P float32 | float64] interface {
 	GetGraphID() uint8
 	hash.Hashable[K, string]
 	IsWrite() bool
+	SetGraphID(id uint8)
 }
 
 type QueryParameters struct {
@@ -61,6 +62,7 @@ type Hit[K comparable, P float32 | float64] struct {
 func Parse[K comparable, P float32 | float64](q string) (*Query[K, P], error) {
 
 	var qo Query[K, P]
+	var qc parser.CommandNode
 
 	cmd, _, err := parser.Parse(q)
 
@@ -72,13 +74,27 @@ func Parse[K comparable, P float32 | float64](q string) (*Query[K, P], error) {
 
 	switch cmd.(type) {
 	case parser.RememberCommandNode:
-		_ = cmd.(parser.RememberCommandNode)
+		qc := cmd.(parser.RememberCommandNode)
 		qo = Remember[K, P]{}
 	case parser.RecallCommandNode:
-		_ = cmd.(parser.RecallCommandNode)
-		qo = Recall[K, P]{}
+		qc := cmd.(parser.RecallCommandNode)
+		qp := QueryParameters{
+			Top:   qc.Top(),
+			Depth: qc.Depth(),
+			Since: qc.Since(),
+			Until: qc.Until(),
+		}
+		qo = Recall[K, P]{
+			Keywords:   qc.Terms(),
+			Entities:   qc.Entities(),
+			Topics:     qc.Topics(),
+			Vector:     containers.Vector[P]{Data: qc.Vector()},
+			Parameters: qp,
+		}
 	default:
 	}
+
+	qo.SetGraphID(qc.Selector())
 
 	return &qo, nil
 }
