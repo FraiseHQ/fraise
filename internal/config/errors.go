@@ -21,3 +21,9 @@
 // SOFTWARE.
 
 package config
+
+import "errors"
+
+var (
+	ErrParsingFailed = errors.New("Error while parsing config file.")
+)

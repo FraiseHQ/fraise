@@ -23,6 +23,7 @@
 package config
 
 import (
+	"encoding/json"
 	"flag"
 	"time"
 
@@ -112,9 +113,11 @@ func (c *ConfigSet) Clone() *ConfigSet {
 
 // Returns config as string (useful for debugging)
 func (c *ConfigSet) String() string {
-	var result string
-
-	return result
+	data, err := json.MarshalIndent(c, "", " ")
+	if err != nil {
+		return "<nil>"
+	}
+	return string(data)
 }
 
 // Validates config
@@ -128,5 +131,9 @@ func (c *ConfigSet) Parse(arguments []string) error {
 }
 
 func (c *ConfigSet) FromFile(path string) (*toml.MetaData, error) {
-	return nil, nil
+	meta, err := toml.DecodeFile(path, c)
+	if err != nil {
+		return nil, ErrParsingFailed
+	}
+	return &meta, nil
 }
