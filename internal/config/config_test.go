@@ -20,13 +20,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package config
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/RonsenbergVI/fraise/internal/config"
 )
 
 func TestConfigSet_FromFile(t *testing.T) {
@@ -57,12 +59,12 @@ hashing-function = "xxhash"
 `
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "fraise.config.toml")
+	path := filepath.Join(dir, config.DefaultConfigFile)
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("writing config file: %v", err)
 	}
 
-	c := New()
+	c := config.New()
 	if _, err := c.FromFile(path); err != nil {
 		t.Fatalf("FromFile returned error: %v", err)
 	}
@@ -112,7 +114,7 @@ hashing-function = "xxhash"
 }
 
 func TestConfigSet_FromFile_Missing(t *testing.T) {
-	c := New()
+	c := config.New()
 	if _, err := c.FromFile(filepath.Join(t.TempDir(), "does-not-exist.toml")); err == nil {
 		t.Fatal("expected error for missing file, got nil")
 	}

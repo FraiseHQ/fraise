@@ -23,7 +23,7 @@
 package config
 
 const (
-	defaultConfigFile = "fraise.config.toml"
+	DefaultConfigFile = "fraise.config.toml"
 
 	defaultPort = 9489
 
