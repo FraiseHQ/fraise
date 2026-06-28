@@ -62,21 +62,21 @@ func (g *fakeGraph) Search(keywords []string, vector containers.Vector[float32],
 
 // --- inert stubs (unused by Stream) ----------------------------------------
 
-func (g *fakeGraph) Get(key string) *graph.Node[string]              { return nil }
+func (g *fakeGraph) Get(key string) *graph.Node[string]             { return nil }
 func (g *fakeGraph) Set(node *graph.Node[string]) error             { return nil }
 func (g *fakeGraph) Put(key string, node *graph.Node[string]) error { return nil }
 func (g *fakeGraph) Delete(node *graph.Node[string]) error          { return nil }
 func (g *fakeGraph) GetVectorIndex() *index.Index[string, containers.Vector[float32], float32] {
 	return nil
 }
-func (g *fakeGraph) GetTextIndex() *index.Index[string, string, float32]    { return nil }
-func (g *fakeGraph) Entities() []*graph.Entity[string]                      { return nil }
-func (g *fakeGraph) Relationships() []*graph.Relationship[string]           { return nil }
+func (g *fakeGraph) GetTextIndex() *index.Index[string, string, float32]               { return nil }
+func (g *fakeGraph) Entities() []*graph.Entity[string]                                 { return nil }
+func (g *fakeGraph) Relationships() []*graph.Relationship[string]                      { return nil }
 func (g *fakeGraph) AdjacencyMap() map[string]map[string]*graph.Relationship[string]   { return nil }
 func (g *fakeGraph) PredecessorMap() map[string]map[string]*graph.Relationship[string] { return nil }
-func (g *fakeGraph) Order() int               { return 0 }
-func (g *fakeGraph) Size() int                { return 0 }
-func (g *fakeGraph) Stats() graph.GraphStats  { return graph.GraphStats{} }
+func (g *fakeGraph) Order() int                                                        { return 0 }
+func (g *fakeGraph) Size() int                                                         { return 0 }
+func (g *fakeGraph) Stats() graph.GraphStats                                           { return graph.GraphStats{} }
 
 // --- helpers ---------------------------------------------------------------
 
