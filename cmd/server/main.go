@@ -47,6 +47,7 @@ func main() {
 	logger.SetDefault(logger.NewLogger(c))
 
 	logger.Info("Starting server...")
+	logger.Debug("Config", c)
 
 	// MurmurHash produces uint32 keys, so the server is instantiated with
 	// K = uint32; float64 is used for embedding/score precision.
