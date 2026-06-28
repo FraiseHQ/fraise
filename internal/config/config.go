@@ -47,7 +47,7 @@ type ConfigSet struct {
 
 type SchedulerConfig struct {
 	// Number of workers scheduler has to execute read and writes
-	Workers uint `toml:"workers"`
+	Workers int `toml:"workers"`
 
 	// Buffer size is the scheduler channel buffer size.
 	BufferSize uint `toml:"buffer-size"`
@@ -83,7 +83,7 @@ type EngineConfig struct {
 	HopAttenuation float32 `toml:"hop-attenuation"`
 
 	// Query cache size
-	CacheCapacity uint `toml:"cache-capacity"`
+	CacheCapacity int `toml:"cache-capacity"`
 }
 
 type DBConfig struct {
@@ -104,7 +104,7 @@ func New() *ConfigSet {
 	flagSet := config.FlagSet
 
 	// scheduler
-	flagSet.UintVar(&config.Scheduler.Workers, "workers", DefaultWorkersCount, "Default worker count.")
+	flagSet.IntVar(&config.Scheduler.Workers, "workers", DefaultWorkersCount, "Default worker count.")
 	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Default Buffer size")
 
 	// server
@@ -128,7 +128,7 @@ func New() *ConfigSet {
 		config.Engine.HopAttenuation = float32(v)
 		return nil
 	})
-	flagSet.UintVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
+	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
 
 	// db
 	flagSet.StringVar(&config.DB.HashingFunction, "hashing-function", DefaultHashingFunction, "Default Hashing function")

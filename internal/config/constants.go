@@ -31,7 +31,7 @@ const (
 
 	DefaultNumGraph uint8 = 8
 
-	DefaultWorkersCount uint = 2
+	DefaultWorkersCount int = 2
 
 	DefaultBufferSize uint = 200
 
@@ -53,5 +53,5 @@ const (
 
 	DefaultHopAttenuation float32 = 0.5
 
-	DefaultCacheCapacity uint = 1000
+	DefaultCacheCapacity int = 1000
 )
