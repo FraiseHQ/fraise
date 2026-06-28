@@ -59,46 +59,38 @@ type Hit[K comparable, P float32 | float64] struct {
 	Score P
 }
 
-func Parse[K comparable, P float32 | float64](q string) (*Query[K, P], error) {
-
-	var qo Query[K, P]
-	var qc parser.CommandNode
-
+func Parse[K comparable, P float32 | float64](q string) (Query[K, P], error) {
 	cmd, _, err := parser.Parse[P](q)
-
 	if err != nil {
 		return nil, ErrParsingFailed
 	}
 
 	// qp := i.Evaluate(cmd)
 
-	switch cmd.(type) {
-	case parser.RememberCommandNode[P]:
-		qc := cmd.(parser.RememberCommandNode[P])
-		qo = Remember[K, P]{
-			Value:    qc.Value(),
-			Entities: qc.Entities(),
-			Topics:   qc.Topics(),
+	switch n := cmd.(type) {
+	case *parser.RememberCommandNode[P]:
+		qo := Remember[K, P]{
+			Value:    n.Value(),
+			Entities: n.Entities(),
+			Topics:   n.Topics(),
 		}
-	case parser.RecallCommandNode[P]:
-		qc := cmd.(parser.RecallCommandNode[P])
-		qp := QueryParameters{
-			Top:   qc.Top(),
-			Depth: qc.Depth(),
-			Since: qc.Since(),
-			Until: qc.Until(),
+		qo.SetGraphID(n.Selector())
+		return qo, nil
+
+	case *parser.RecallCommandNode[P]:
+		qo := Recall[K, P]{
+			Keywords: n.Terms(),
+			Entities: n.Entities(),
+			Topics:   n.Topics(),
+			// Vector:   containers.Vector[P]{Data: n.Vector()},
+			Parameters: QueryParameters{
+				Top: n.Top(), Depth: n.Depth(), Since: n.Since(), Until: n.Until(),
+			},
 		}
-		qo = Recall[K, P]{
-			Keywords:   qc.Terms(),
-			Entities:   qc.Entities(),
-			Topics:     qc.Topics(),
-			Vector:     containers.Vector[P]{Data: qc.Vector()},
-			Parameters: qp,
-		}
+		qo.SetGraphID(n.Selector())
+		return qo, nil
+
 	default:
+		return nil, ErrParsingFailed
 	}
-
-	qo.SetGraphID(qc.Selector())
-
-	return &qo, nil
 }

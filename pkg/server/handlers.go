@@ -51,7 +51,7 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 			return
 		}
 
-		stream, err := s.Engine.Plan(*q)
+		stream, err := s.Engine.Plan(q)
 
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
