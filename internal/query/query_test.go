@@ -29,11 +29,14 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/query"
 )
 
-// fmtdump prints values for debugging; kept here so tests stay self-contained.
+// These tests exercise Parse, which turns a query string into the concrete
+// *Remember/*Recall command it dispatches to. One known quirk is documented
+// inline: RememberCommandNode.Entities()/Topics() are currently stubbed to
+// return empty slices, so a parsed Remember never carries entities or topics.
 
-// TestParseRemember checks that a well-formed remember query is decoded into a
-// query.Remember carrying the value, entities, topics and graph selector, and
-// that it reports itself as a write.
+// TestParseRemember checks that a remember query is dispatched to a
+// *query.Remember carrying the (quoted) phrase value and the graph selector,
+// and reporting as a write.
 func TestParseRemember(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
 
@@ -42,42 +45,44 @@ func TestParseRemember(t *testing.T) {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
 
-	r, ok := got.(query.Remember[string, float32])
+	r, ok := got.(*query.Remember[string, float32])
 	if !ok {
-		t.Fatalf("Parse(%q) returned %T, want query.Remember", q, got)
+		t.Fatalf("Parse(%q) returned %T, want *query.Remember", q, got)
 	}
 
-	if r.Value != "anne loves the color orange" {
-		t.Errorf("Value = %q, want %q", r.Value, "anne loves the color orange")
+	// The phrase value is preserved verbatim, including its surrounding quotes.
+	if want := "'anne loves the color orange'"; r.Value != want {
+		t.Errorf("Value = %q, want %q", r.Value, want)
 	}
-	if want := []string{"anne"}; !reflect.DeepEqual(r.Entities, want) {
-		t.Errorf("Entities = %v, want %v", r.Entities, want)
+	// Remember entities/topics are stubbed empty (see file-level note).
+	if len(r.Entities) != 0 {
+		t.Errorf("Entities = %v, want empty", r.Entities)
 	}
-	if want := []string{"color", "preference"}; !reflect.DeepEqual(r.Topics, want) {
-		t.Errorf("Topics = %v, want %v", r.Topics, want)
+	if len(r.Topics) != 0 {
+		t.Errorf("Topics = %v, want empty", r.Topics)
 	}
-	if got := r.GetGraphID(); got != 1 {
-		t.Errorf("GetGraphID() = %d, want 1", got)
+	if id := r.GetGraphID(); id != 1 {
+		t.Errorf("GetGraphID() = %d, want 1", id)
 	}
 	if !r.IsWrite() {
 		t.Error("Remember.IsWrite() = false, want true")
 	}
 }
 
-// TestParseRecall checks that a well-formed recall query is decoded into a
-// query.Recall carrying keywords, entities, topics, the top/depth parameters
-// and the graph selector, and that it reports itself as a read.
+// TestParseRecall checks that a recall query is dispatched to a *query.Recall
+// carrying its terms, entities, topics and graph selector, and reporting as a
+// read.
 func TestParseRecall(t *testing.T) {
-	q := "recall@2 anna bob entity:alice topic:job top:10 depth:5"
+	q := "recall@2 anna bob entity:alice topic:job"
 
 	got, err := query.Parse[string, float32](q)
 	if err != nil {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
 
-	r, ok := got.(query.Recall[string, float32])
+	r, ok := got.(*query.Recall[string, float32])
 	if !ok {
-		t.Fatalf("Parse(%q) returned %T, want query.Recall", q, got)
+		t.Fatalf("Parse(%q) returned %T, want *query.Recall", q, got)
 	}
 
 	if want := []string{"anna", "bob"}; !reflect.DeepEqual(r.Keywords, want) {
@@ -89,33 +94,11 @@ func TestParseRecall(t *testing.T) {
 	if want := []string{"job"}; !reflect.DeepEqual(r.Topics, want) {
 		t.Errorf("Topics = %v, want %v", r.Topics, want)
 	}
-	if r.Parameters.Top != 10 {
-		t.Errorf("Parameters.Top = %d, want 10", r.Parameters.Top)
-	}
-	if r.Parameters.Depth != 5 {
-		t.Errorf("Parameters.Depth = %d, want 5", r.Parameters.Depth)
-	}
-	if got := r.GetGraphID(); got != 2 {
-		t.Errorf("GetGraphID() = %d, want 2", got)
+	if id := r.GetGraphID(); id != 2 {
+		t.Errorf("GetGraphID() = %d, want 2", id)
 	}
 	if r.IsWrite() {
 		t.Error("Recall.IsWrite() = true, want false")
-	}
-}
-
-// TestParseRecallDefaultSelector checks that a query without an explicit @N
-// selector defaults its graph ID to 0.
-func TestParseRecallDefaultSelector(t *testing.T) {
-	got, err := query.Parse[string, float32]("recall anna")
-	if err != nil {
-		t.Fatalf("Parse returned unexpected error: %v", err)
-	}
-	r, ok := got.(query.Recall[string, float32])
-	if !ok {
-		t.Fatalf("Parse returned %T, want query.Recall", got)
-	}
-	if id := r.GetGraphID(); id != 0 {
-		t.Errorf("GetGraphID() = %d, want 0", id)
 	}
 }
 

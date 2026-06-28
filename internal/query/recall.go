@@ -50,7 +50,7 @@ func (r Recall[K, P]) GetGraphID() uint8 {
 	return r.context.GraphID
 }
 
-func (r Recall[K, P]) SetGraphID(id uint8) {
+func (r *Recall[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
 

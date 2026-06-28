@@ -69,7 +69,7 @@ func Parse[K comparable, P float32 | float64](q string) (Query[K, P], error) {
 
 	switch n := cmd.(type) {
 	case *parser.RememberCommandNode[P]:
-		qo := Remember[K, P]{
+		qo := &Remember[K, P]{
 			Value:    n.Value(),
 			Entities: n.Entities(),
 			Topics:   n.Topics(),
@@ -78,7 +78,7 @@ func Parse[K comparable, P float32 | float64](q string) (Query[K, P], error) {
 		return qo, nil
 
 	case *parser.RecallCommandNode[P]:
-		qo := Recall[K, P]{
+		qo := &Recall[K, P]{
 			Keywords: n.Terms(),
 			Entities: n.Entities(),
 			Topics:   n.Topics(),

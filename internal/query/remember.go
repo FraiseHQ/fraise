@@ -43,7 +43,7 @@ func (r Remember[K, P]) GetGraphID() uint8 {
 	return r.context.GraphID
 }
 
-func (r Remember[K, P]) SetGraphID(id uint8) {
+func (r *Remember[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
 
