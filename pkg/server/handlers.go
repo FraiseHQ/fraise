@@ -29,21 +29,28 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// handleHealthCheck returns a handler that reports the server is alive,
+// responding with HTTP 200 and a simple status payload.
 func (s *Server[K, P]) handleHealthCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	}
 }
 
-// handle query with parameters
+// handleQuery returns a handler that parses, plans, and executes a query.
+// It binds the JSON request body, parses the query string, asks the engine
+// for an execution plan, applies it, and streams back the results. Any
+// failure along the way is reported as an HTTP error.
 func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Decode the request body; reject malformed JSON with 400.
 		var req HandleQueryRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
+		// Parse the raw query string into an executable query.
 		q, err := query.Parse[K, P](req.Query)
 
 		if err != nil {
@@ -51,6 +58,7 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 			return
 		}
 
+		// Build an execution plan (stream) for the parsed query.
 		stream, err := s.Engine.Plan(q)
 
 		if err != nil {
@@ -58,8 +66,10 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 			return
 		}
 
+		// Execute the plan asynchronously against the engine.
 		s.Engine.Apply(stream)
 
+		// Wait for the stream to finish, then return results or the error.
 		select {
 		case <-stream.Done():
 			if stream.Err != nil {
@@ -75,6 +85,8 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 	}
 }
 
+// handleQueryWithParameters returns the handler for parameterised queries.
+// It is not yet implemented.
 func (s *Server[K, P]) handleQueryWithParameters() gin.HandlerFunc {
 	return nil
 }

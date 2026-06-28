@@ -35,21 +35,33 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Server ties together the HTTP layer, the database, and the query engine.
+// K is the key type used to identify records, and P is the floating-point
+// precision (float32 or float64) used for the values they hold.
 type Server[K comparable, P float32 | float64] struct {
+	// Config holds the full application configuration.
 	Config *config.ConfigSet
 
-	DB     *db.DB[K, P]
+	// DB is the underlying data store.
+	DB *db.DB[K, P]
+	// Engine executes queries against the data store.
 	Engine *engine.Engine[K, P]
 
+	// router dispatches incoming HTTP requests to their handlers.
 	router *gin.Engine
 }
 
+// New constructs a Server wired up with a database, an engine, and the HTTP
+// routes. The hasher determines how keys are mapped to their string
+// representation for storage and lookup.
 func New[K comparable, P float32 | float64](config *config.ConfigSet, hasher hash.Hasher[K, string]) *Server[K, P] {
 
+	// Initialise the data store from the configuration.
 	db, err := db.NewDB[K, P](config)
 	if err != nil {
 
 	}
+	// Initialise the query engine with the same configuration and hasher.
 	engine := engine.NewEngine[K, P](config, hasher)
 
 	s := &Server[K, P]{
@@ -58,10 +70,14 @@ func New[K comparable, P float32 | float64](config *config.ConfigSet, hasher has
 		Engine: engine,
 		router: gin.Default(),
 	}
+	// Register the HTTP routes before the server is returned.
 	s.setupRoutes()
 	return s
 }
 
+// Start brings up the database and engine, then begins serving HTTP requests
+// on the configured port. It blocks until the HTTP server stops, and returns
+// an error if any component fails to start.
 func (s *Server[K, P]) Start() error {
 	logger.Info("Starting database")
 	err := s.DB.Start()
@@ -75,6 +91,7 @@ func (s *Server[K, P]) Start() error {
 		logger.Info("Failed to start engine!")
 		return ErrUnableToStartEngine
 	}
+	// Block serving HTTP requests on the configured port.
 	err = s.router.Run(":" + strconv.Itoa(s.Config.Server.Port))
 	if err != nil {
 		logger.Info("Failed to start server!")
@@ -83,6 +100,8 @@ func (s *Server[K, P]) Start() error {
 	return nil
 }
 
+// Stop gracefully shuts down the database and engine. It returns an error if
+// the database fails to stop.
 func (s *Server[K, P]) Stop() error {
 	logger.Info("Stopping database")
 	err := s.DB.Stop()
@@ -96,12 +115,17 @@ func (s *Server[K, P]) Stop() error {
 	return nil
 }
 
+// setupRoutes registers the HTTP endpoints: a root health check plus the
+// versioned query endpoints under /api/v1.
 func (s *Server[K, P]) setupRoutes() {
 
+	// Group versioned API endpoints under /api/v1.
 	v1 := s.router.Group("/api/v1")
 
+	// Root health check endpoint.
 	s.router.GET("/", s.handleHealthCheck())
 
+	// Query endpoints: /q for plain queries, /qp for parameterised queries.
 	v1.POST("/q", s.handleQuery())
 	v1.POST("/qp", s.handleQueryWithParameters())
 }

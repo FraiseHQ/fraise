@@ -22,15 +22,20 @@
 
 package server
 
+// Request is a placeholder for a generic incoming request payload.
 type Request struct {
 }
 
+// Error is the JSON error response returned to clients. It carries the HTTP
+// status code, a human-readable message, and an optional detailed error string.
 type Error struct {
 	Status  int    `json:"status"`
 	Message string `json:"message"`
 	Error   string `json:"error,omitempty"`
 }
 
+// HandleQueryRequest is the JSON body expected by the query endpoint,
+// containing the raw query string to execute.
 type HandleQueryRequest struct {
 	Query string `json:"query"`
 }
