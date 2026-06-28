@@ -32,5 +32,5 @@ type Error struct {
 }
 
 type HandleQueryRequest struct {
-	Query string `json:"name"`
+	Query string `json:"query"`
 }

@@ -102,6 +102,6 @@ func (s *Server[K, P]) setupRoutes() {
 
 	s.router.GET("/", s.handleHealthCheck())
 
-	v1.GET("/q", s.handleQuery())
-	v1.GET("/qp", s.handleQueryWithParameters())
+	v1.POST("/q", s.handleQuery())
+	v1.POST("/qp", s.handleQueryWithParameters())
 }
