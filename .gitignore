@@ -38,3 +38,7 @@ sdk/typescript/dist/
 
 # python
 .venv
+
+# fraise artifacts
+
+bin/
