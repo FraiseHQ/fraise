@@ -31,13 +31,14 @@ import (
 type Interpreter struct {
 }
 
-func (i *Interpreter) Evaluate(r parser.RememberCommandNode) QueryParameters {
+func (i *Interpreter) Evaluate(r parser.CommandNode) QueryParameters {
+	return QueryParameters{}
 }
 
 func (i *Interpreter) once(name string) error {
-
+	return nil
 }
 
 func (i *Interpreter) resolveTime(name string) (time.Time, error) {
-
+	return time.Now(), nil
 }
