@@ -1,3 +1,11 @@
+---
+name: example
+about: example
+title: '[milestone] '
+labels: ''
+assignees: ''
+---
+
 # Milestone Template
 
 A major strategic goal or phase of work that delivers significant business value. Milestones typically span multiple features and can take weeks to months.

@@ -1,3 +1,11 @@
+---
+name: example
+about: example
+title: '[feat] '
+labels: ''
+assignees: ''
+---
+
 # Feature template
 
 Features are a block of functionality user can interact with.

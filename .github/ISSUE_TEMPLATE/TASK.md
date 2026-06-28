@@ -1,3 +1,11 @@
+---
+name: example
+about: example
+title: '[task] '
+labels: ''
+assignees: ''
+---
+
 # Task Template
 
 A work item that needs to be done while developing feature and does not span more than 2 days.
