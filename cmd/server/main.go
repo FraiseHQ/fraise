@@ -24,6 +24,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/hash"
@@ -40,11 +41,16 @@ func PrintBanner() {
 func main() {
 	PrintBanner()
 
-	conf := config.New()
+	c := config.New()
+	_ = c.Parse(os.Args[1:]) // override config via CLI flags
+
+	logger.SetDefault(logger.NewLogger(c))
+
+	logger.Info("Starting server...")
 
 	// MurmurHash produces uint32 keys, so the server is instantiated with
 	// K = uint32; float64 is used for embedding/score precision.
-	srv := server.New[uint32, float64](conf, hash.MurmurHash{})
+	srv := server.New[uint32, float64](c, hash.MurmurHash{})
 
 	if err := srv.Start(); err != nil {
 		logger.Error("Failed to start server", "error", err)

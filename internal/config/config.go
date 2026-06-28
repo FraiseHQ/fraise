@@ -25,6 +25,7 @@ package config
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -39,6 +40,8 @@ type ConfigSet struct {
 	Log       LogConfig       `toml:"log"`
 	Engine    EngineConfig    `toml:"engine"`
 	DB        DBConfig        `toml:"db"`
+
+	configFile string
 }
 
 type SchedulerConfig struct {
@@ -126,7 +129,42 @@ func (c *ConfigSet) Validate() error {
 }
 
 // / Parses flag definition from argument list.
+// priority order is: parameters defined via CLI override config file.
 func (c *ConfigSet) Parse(arguments []string) error {
+
+	err := c.FlagSet.Parse(arguments)
+
+	if err != nil {
+		return err
+	}
+
+	if c.configFile == "" {
+		c.configFile = DefaultConfigFile
+	}
+
+	var meta *toml.MetaData
+	meta, err = c.FromFile(c.configFile)
+
+	if err != nil {
+		return err
+	}
+
+	// Parse again to replace with command line options
+	err = c.FlagSet.Parse(arguments)
+	if err != nil {
+		return err
+	}
+
+	if len(c.FlagSet.Args()) != 0 {
+		return fmt.Errorf("'%s' is an invalid flag", c.FlagSet.Arg(0))
+	}
+
+	err = c.adjust(meta)
+
+	return err
+}
+
+func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	return nil
 }
 

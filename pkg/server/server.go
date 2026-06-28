@@ -23,6 +23,8 @@
 package server
 
 import (
+	"strconv"
+
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/hash"
 
@@ -51,6 +53,7 @@ func New[K comparable, P float32 | float64](config *config.ConfigSet, hasher has
 	engine := engine.NewEngine[K, P](config, hasher)
 
 	s := &Server[K, P]{
+		Config: config,
 		DB:     db,
 		Engine: engine,
 		router: gin.Default(),
@@ -72,6 +75,11 @@ func (s *Server[K, P]) Start() error {
 		logger.Info("Failed to start engine!")
 		return ErrUnableToStartEngine
 	}
+	err = s.router.Run(":" + strconv.Itoa(s.Config.Server.Port))
+	if err != nil {
+		logger.Info("Failed to start server!")
+		return ErrUnableToStartEngine
+	}
 	return nil
 }
 
@@ -89,7 +97,11 @@ func (s *Server[K, P]) Stop() error {
 }
 
 func (s *Server[K, P]) setupRoutes() {
+
+	v1 := s.router.Group("/api/v1")
+
 	s.router.GET("/", s.handleHealthCheck())
-	s.router.GET("/v1/q", s.handleQuery())
-	s.router.GET("/v1/qp", s.handleQueryWithParameters())
+
+	v1.GET("/q", s.handleQuery())
+	v1.GET("/qp", s.handleQueryWithParameters())
 }
