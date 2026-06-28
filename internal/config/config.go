@@ -154,11 +154,6 @@ func (c *ConfigSet) String() string {
 	return string(data)
 }
 
-// Validates config
-func (c *ConfigSet) Validate() error {
-	return nil
-}
-
 // / Parses flag definition from argument list.
 // priority order is: parameters defined via CLI override config file.
 func (c *ConfigSet) Parse(arguments []string) error {
