@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -46,10 +47,10 @@ type ConfigSet struct {
 
 type SchedulerConfig struct {
 	// Number of workers scheduler has to execute read and writes
-	Workers int `toml:"workers"`
+	Workers uint `toml:"workers"`
 
 	// Buffer size is the scheduler channel buffer size.
-	BufferSize int `toml:"buffer-size"`
+	BufferSize uint `toml:"buffer-size"`
 }
 
 type ServerConfig struct {
@@ -76,19 +77,19 @@ type EngineConfig struct {
 	Halflife time.Duration `toml:"half-life"`
 
 	// How many seeds to pull from each source (keywords and vector)
-	SeedSize int `toml:"seed-size"`
+	SeedSize uint `toml:"seed-size"`
 
 	// Score attenuation for graph walk
-	HopAttenuation float64 `toml:"hop-attenuation"`
+	HopAttenuation float32 `toml:"hop-attenuation"`
 
 	// Query cache size
-	CacheCapacity int `toml:"cache-capacity"`
+	CacheCapacity uint `toml:"cache-capacity"`
 }
 
 type DBConfig struct {
-	DefaultTop int `toml:"default-top"`
+	DefaultTop uint `toml:"default-top"`
 
-	DefaultDepth int `toml:"default-depth"`
+	DefaultDepth uint `toml:"default-depth"`
 
 	// database hashing function (xxhash, murmur3, t1ha)
 	HashingFunction string `toml:"hashing-function"`
@@ -102,7 +103,37 @@ func New() *ConfigSet {
 
 	flagSet := config.FlagSet
 
-	flagSet.IntVar(&config.Server.Port, "port", defaultPort, "Server port")
+	// scheduler
+	flagSet.UintVar(&config.Scheduler.Workers, "workers", DefaultWorkersCount, "Default worker count.")
+	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Default Buffer size")
+
+	// server
+	flagSet.IntVar(&config.Server.Port, "port", DefaultPort, "Server port")
+
+	// log
+	flagSet.StringVar(&config.Log.Level, "log-level", DefaultLogLevel, "Log level")
+	flagSet.StringVar(&config.Log.Format, "log-format", DefaultLogFormat, "Log Format")
+	flagSet.BoolVar(&config.Log.DisableTimestamp, "log-disable-timestamp", true, "Log Format")
+
+	// engine
+	flagSet.BoolVar(&config.Engine.AllowUnanchoredRecall, "allow-unanchored-recall", DefaultAllowUnanchoredRecall, "Allow unanchored recalls")
+	flagSet.DurationVar(&config.Engine.Halflife, "half-life", DefaultHalflife, "Half life for time decay")
+	flagSet.UintVar(&config.Engine.SeedSize, "seed-size", DefaultSeedSize, "Seeds to pull from each source")
+	config.Engine.HopAttenuation = DefaultHopAttenuation
+	flagSet.Func("hop-attenuation", "Score attenuation for graph walk", func(s string) error {
+		v, err := strconv.ParseFloat(s, 32)
+		if err != nil {
+			return err
+		}
+		config.Engine.HopAttenuation = float32(v)
+		return nil
+	})
+	flagSet.UintVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
+
+	// db
+	flagSet.StringVar(&config.DB.HashingFunction, "hashing-function", DefaultHashingFunction, "Default Hashing function")
+	flagSet.UintVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
+	flagSet.UintVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
 
 	return config
 }
@@ -165,6 +196,39 @@ func (c *ConfigSet) Parse(arguments []string) error {
 }
 
 func (c *ConfigSet) adjust(meta *toml.MetaData) error {
+
+	// Reject keys present in the config file that map to no known field.
+	if meta != nil {
+		if undecoded := meta.Undecoded(); len(undecoded) != 0 {
+			return fmt.Errorf("%w: unknown keys %v", ErrParsingFailed, undecoded)
+		}
+	}
+
+	// scheduler
+	Adjust(&c.Scheduler.Workers, DefaultWorkersCount)
+	Adjust(&c.Scheduler.BufferSize, DefaultBufferSize)
+
+	// server
+	Adjust(&c.Server.Port, DefaultPort)
+
+	// log
+	Adjust(&c.Log.Level, DefaultLogLevel)
+	Adjust(&c.Log.Format, DefaultLogFormat)
+	// Log.DisableTimestamp is intentionally not adjusted: its default is true,
+	// so Adjust would override any explicit false from the config file.
+
+	// engine
+	Adjust(&c.Engine.AllowUnanchoredRecall, DefaultAllowUnanchoredRecall)
+	Adjust(&c.Engine.Halflife, DefaultHalflife)
+	Adjust(&c.Engine.SeedSize, DefaultSeedSize)
+	Adjust(&c.Engine.HopAttenuation, DefaultHopAttenuation)
+	Adjust(&c.Engine.CacheCapacity, DefaultCacheCapacity)
+
+	// db
+	Adjust(&c.DB.DefaultTop, DefaultTop)
+	Adjust(&c.DB.DefaultDepth, DefaultDepth)
+	Adjust(&c.DB.HashingFunction, DefaultHashingFunction)
+
 	return nil
 }
 

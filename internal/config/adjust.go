@@ -22,36 +22,11 @@
 
 package config
 
-import "time"
-
-const (
-	DefaultConfigFile = "fraise.config.toml"
-
-	DefaultPort = 9876
-
-	DefaultNumGraph uint8 = 8
-
-	DefaultWorkersCount uint = 2
-
-	DefaultBufferSize uint = 200
-
-	DefaultLogLevel string = "INFO"
-
-	DefaultLogFormat string = "text"
-
-	DefaultHashingFunction string = "xxhash"
-
-	DefaultTop uint = 10
-
-	DefaultDepth uint = 2
-
-	DefaultAllowUnanchoredRecall bool = false
-
-	DefaultHalflife time.Duration = 7 * 24 * time.Hour
-
-	DefaultSeedSize uint = 50
-
-	DefaultHopAttenuation float32 = 0.5
-
-	DefaultCacheCapacity uint = 1000
-)
+// Adjust sets *v to defValue when *v holds the zero value of its type.
+// It works for any comparable type (string, numeric, bool, time.Duration, ...).
+func Adjust[T comparable](v *T, defValue T) {
+	var zero T
+	if *v == zero {
+		*v = defValue
+	}
+}
