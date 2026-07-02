@@ -22,10 +22,14 @@
 
 package hash
 
+// Hasher maps a value of type T to a comparable key of type K. Implementations
+// such as XxHash provide a concrete hashing algorithm.
 type Hasher[K comparable, T any] interface {
 	Hash(T) K
 }
 
+// Hashable is implemented by types that know how to hash themselves using a
+// provided Hasher, returning the resulting comparable key of type K.
 type Hashable[K comparable, T any] interface {
 	Hash(h Hasher[K, T]) K
 }
