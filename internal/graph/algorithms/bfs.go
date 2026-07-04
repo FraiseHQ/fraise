@@ -21,3 +21,30 @@
 // SOFTWARE.
 
 package algorithms
+
+import "github.com/RonsenbergVI/fraise/internal/graph"
+
+// BFS is a breadth-first traversal: it explores the graph frontier by frontier
+// (nearest vertices first) using a FIFO queue, starting from a configured
+// source vertex. It implements Traversal.
+type BFS[K comparable, P float32 | float64] struct {
+	dir    Direction // which edges to follow
+	source K         // vertex the traversal starts from
+}
+
+// NewBFS returns a breadth-first traversal that starts from source and follows
+// edges in the given direction.
+func NewBFS[K comparable, P float32 | float64](source K, dir Direction) *BFS[K, P] {
+	return &BFS[K, P]{dir: dir, source: source}
+}
+
+// Run traverses g from the configured source and returns the result as an
+// AlgorithmResult (a TraversalResult).
+func (b *BFS[K, P]) Run(g graph.Graph[K, P]) AlgorithmResult {
+	panic("not implemented")
+}
+
+// traverse walks g breadth-first from the configured source.
+func (b *BFS[K, P]) traverse(g graph.Graph[K, P], source K) (TraversalResult[K], error) {
+	panic("not implemented")
+}

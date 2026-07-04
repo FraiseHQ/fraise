@@ -21,3 +21,72 @@
 // SOFTWARE.
 
 package algorithms
+
+import "github.com/RonsenbergVI/fraise/internal/graph"
+
+// Direction selects which edges a traversal follows in a directed graph.
+type Direction int
+
+const (
+	// Outgoing follows edges from a vertex to its successors (AdjacencyMap).
+	Outgoing Direction = iota
+
+	// Incoming follows edges from a vertex to its predecessors (PredecessorMap).
+	Incoming
+
+	// Both treats edges as undirected, following successors and predecessors.
+	Both
+)
+
+// Algorithm is the common root of every graph algorithm. It exposes only
+// identity; the runnable contract lives on the Traversal and Ranking
+// sub-interfaces, which differ in what they consume and produce.
+type Algorithm[K comparable, P float32 | float64] interface {
+	Run(g graph.Graph[K, P]) AlgorithmResult
+}
+
+type AlgorithmResult interface {
+}
+
+// TraversalResult captures the outcome of a source-based traversal.
+type TraversalResult[K comparable] struct {
+	AlgorithmResult
+	// Order lists the vertices in the order they were first visited.
+	Order []K
+
+	// Parent maps each visited vertex to the vertex it was discovered from,
+	// forming the traversal tree. The source maps to its own key.
+	Parent map[K]K
+
+	// Depth maps each visited vertex to its hop distance from the source.
+	Depth map[K]int
+}
+
+// RankingResult captures the outcome of a whole-graph ranking.
+type RankingResult[K comparable, P float32 | float64] struct {
+	AlgorithmResult
+
+	// Scores maps each vertex to its computed score.
+	Scores map[K]P
+}
+
+// Traversal explores a graph starting from a source vertex, visiting reachable
+// vertices in an order defined by the concrete algorithm (breadth-first for
+// BFS, depth-first for DFS). K is the vertex key type and P the graph's score
+// precision.
+type Traversal[K comparable, P float32 | float64] interface {
+	Algorithm[K, P]
+
+	// traverse walks g from the algorithm's configured source and returns the
+	// visit order, traversal tree and per-vertex depth.
+	traverse(g graph.Graph[K, P], source K) (TraversalResult[K], error)
+}
+
+// Ranking assigns a score to every vertex from the graph's global structure,
+// rather than from a single source (PageRank and other centralities).
+type Ranking[K comparable, P float32 | float64] interface {
+	Algorithm[K, P]
+
+	// Rank computes a score for each vertex of g, keyed by vertex.
+	rank(g graph.Graph[K, P]) (map[K]P, error)
+}
