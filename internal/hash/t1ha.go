@@ -49,6 +49,10 @@ func (t T1haHash) Hash(data string) uint64 {
 	return t1ha1LE([]byte(data), t.seed)
 }
 
+func (t T1haHash) Seed() uint64 {
+	return t.seed
+}
+
 // rot64 rotates v right by s bits.
 func rot64(v uint64, s int) uint64 {
 	return bits.RotateLeft64(v, -s)

@@ -42,6 +42,10 @@ type XxHash struct {
 	seed uint64
 }
 
+func (x XxHash) Seed() uint64 {
+	return x.seed
+}
+
 func (x XxHash) Hash(data string) uint64 {
 	return xxh64([]byte(data), x.seed)
 }

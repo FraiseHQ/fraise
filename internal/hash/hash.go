@@ -26,6 +26,7 @@ package hash
 // such as XxHash provide a concrete hashing algorithm.
 type Hasher[K comparable, T any] interface {
 	Hash(T) K
+	Seed() uint64
 }
 
 // Hashable is implemented by types that know how to hash themselves using a

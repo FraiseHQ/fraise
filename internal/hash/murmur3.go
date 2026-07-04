@@ -32,7 +32,7 @@ const (
 type MurmurHash struct {
 	offset int
 	size   int
-	seed   int
+	seed   uint64
 }
 
 func (m MurmurHash) Hash(data string) uint32 {
@@ -109,4 +109,8 @@ func (m MurmurHash) hash(data string) (uint32, error) {
 	h1 ^= h1 >> 16
 
 	return h1, nil
+}
+
+func (m MurmurHash) Seed() uint64 {
+	return m.seed
 }
