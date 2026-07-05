@@ -4,7 +4,7 @@
 
 # Fraise
 
-[![Discord](https://img.shields.io/discord/YOUR_SERVER_ID?logo=discord&logoColor=white&label=discord&color=5865F2)](https://discord.gg/eHDFwnwHq)
+[![Discord](https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2)](https://discord.gg/eHDFwnwHq)
 
 Fraise is an in-memory memory store for AI agents. A real database your agent queries directly, with a language built for tokens, not humans.
 
