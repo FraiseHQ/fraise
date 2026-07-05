@@ -15,7 +15,21 @@ permissions:
   contents: read
 
 jobs:
+
+  lint:
+    name: Lint Typescript SDK
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Lint typescript sdk ${{ matrix.node }}
+        run: make lint-ts
+
   test:
+    name: Test Typescript SDK
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,12 +44,6 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
-
-      - name: Install
-        run: npm ci
-
-      - name: Lint
-        run: make lint-ts
 
       - name: Build
         run: make build-ts

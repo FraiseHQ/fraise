@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   lint:
+    name: Lint Go
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +29,7 @@ jobs:
           version: latest
 
   test:
+    name: Test Go
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +47,7 @@ jobs:
         run: make build
 
   cross-compile:
+    name: Cross Platform Compiling
     runs-on: ubuntu-latest
     strategy:
       matrix:
