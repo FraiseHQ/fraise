@@ -1,0 +1,36 @@
+name: Python SDK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/python/**"
+      - ".github/workflows/python.yaml"
+  pull_request:
+    paths:
+      - "sdk/python/**"
+      - ".github/workflows/python.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/python
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest
