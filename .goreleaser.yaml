@@ -1,0 +1,80 @@
+version: 2
+
+project_name: fraise
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: fraise
+    # Adjust if your server entrypoint lives elsewhere:
+    main: ./cmd/fraise
+    binary: fraise
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .CommitDate }}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  groups:
+    - title: Upgrades
+      regexp: '^[a-z]+(\(.*\))?!:|^upgrade(\(.*\))?:'
+      order: 0
+    - title: Features
+      regexp: '^feat(\(.*\))?:'
+      order: 1
+    - title: Bug fixes
+      regexp: '^fix(\(.*\))?:'
+      order: 2
+    - title: Performance
+      regexp: '^perf(\(.*\))?:'
+      order: 3
+    - title: Maintenance
+      regexp: '^(chore|build|deps|ci|refactor)(\(.*\))?:'
+      order: 4
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: RonsenbergVI
+    name: fraise
+  draft: false
+  prerelease: auto # v0.x.y-rc1 etc. auto-marked as pre-release
+  header: |
+    ## Fraise {{ .Tag }}
+
+    See [CHANGELOG.md](https://github.com/RonsenbergVI/fraise/blob/main/CHANGELOG.md)
+    for the curated summary.
+  footer: |
+    **Install**: download a binary below, or `go install github.com/RonsenbergVI/fraise/cmd/fraise@{{ .Tag }}`
+
+# Announcement — Discord enabled; swap to the slack block if you land on Slack.
+announce:
+  discord:
+    enabled: true
+    message_template: >-
+      🍓 Fraise {{ .Tag }} is out!
+      {{ .ReleaseURL }}
