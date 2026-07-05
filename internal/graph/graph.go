@@ -64,10 +64,10 @@ type Graph[K comparable, P float32 | float64] interface {
 
 	// GetVectorIndex returns the graph's vector (semantic) index, keyed
 	// by node key and storing embedding vectors of precision P.
-	GetVectorIndex() *index.Index[K, containers.Vector[P], P]
+	GetVectorIndex() index.VectorIndex[K, P]
 
 	// GetTextIndex returns the graph's full-text search index.
-	GetTextIndex() *index.Index[K, string, P]
+	GetTextIndex() index.TextIndex[K]
 
 	// MergeFrom merges the contents of g into this graph: nodes,
 	// relationships and index entries. Nodes with colliding keys are

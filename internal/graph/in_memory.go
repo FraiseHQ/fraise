@@ -69,45 +69,39 @@ func (g *InMemoryGraph[K, P]) RUnlock() {
 }
 
 func (g *InMemoryGraph[K, P]) Get(key K) *Node[K] {
-	return nil
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Set(node *Node[K]) error {
-	// err := d.currentSet(key, value)
-	// if err != nil {
-	// 	return err,
-	// }
-	// return errors
-	return nil
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Put(key K, node *Node[K]) error {
-
-	return nil
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Delete(node *Node[K]) error {
-	return nil
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) AdjacencyMap() map[K]map[K]*Relationship[K] {
-	return nil
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) PredecessorMap() map[K]map[K]*Relationship[K] {
-	return nil
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Copy() Graph[K, P] {
-	return nil
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Order() int {
-	return 0
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Size() int {
-	return 0
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Stats() GraphStats {
@@ -115,21 +109,21 @@ func (g *InMemoryGraph[K, P]) Stats() GraphStats {
 }
 
 func (g *InMemoryGraph[K, P]) Entities() []*Entity[K] {
-	return nil
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Relationships() []*Relationship[K] {
-	return nil
+	panic("not implemented")
 }
 
 // Returns the graph vector index
-func (g *InMemoryGraph[K, P]) GetVectorIndex() *index.Index[K, containers.Vector[P], P] {
-	return nil
+func (g *InMemoryGraph[K, P]) GetVectorIndex() index.VectorIndex[K, P] {
+	panic("not implemented")
 }
 
 // Returns the graph full text search index
-func (g *InMemoryGraph[K, P]) GetTextIndex() *index.Index[K, string, P] {
-	return nil
+func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K] {
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P) {
@@ -175,17 +169,17 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 }
 
 func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[P]) ([]*Node[K], []P) {
-	return nil, []P{}
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) findNeighbours(seeds []*Node[K], topics []string, entities []string, depth int) ([]*Node[K], []P) {
-	return nil, []P{}
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) timeFilter(nodes []*Node[K], since time.Time, until time.Time) ([]*Node[K], []P) {
-	return nil, []P{}
+	panic("not implemented")
 }
 
 func (g *InMemoryGraph[K, P]) MergeFrom(in Graph[K, P]) {
-
+	panic("not implemented")
 }

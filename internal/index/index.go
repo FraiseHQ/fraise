@@ -24,30 +24,48 @@ package index
 
 import "github.com/RonsenbergVI/fraise/internal/containers"
 
-// An index is used to search over a collection of values V indexed by their key K
-type Index[K comparable, V string | containers.Vector[P], P float32 | float64] interface {
-
-	// Insert into index
+// Index is the storage/lifecycle contract shared by every index. It maps keys
+// of type K to values of type V; how a value is queried is left to the
+// search-specific interfaces below (TextIndex, VectorIndex), because a keyword
+// query and a nearest-neighbour query take different arguments.
+type Index[K comparable, V any] interface {
+	// Insert adds value under key.
 	Insert(key K, value V) error
 
-	// Retrieve element from index
+	// Retrieve returns the value stored under key, or ErrIndexNotFound.
 	Retrieve(key K) (V, error)
 
-	// Update index entry
+	// Update replaces the value stored under key.
 	Update(key K, value V) error
 
-	// Remove element
+	// Delete removes the entry stored under key.
 	Delete(key K) error
 
-	// search value in index
-	Search(value V) ([]K, error)
-
-	// Index size in MiB
+	// Size reports the approximate in-memory footprint of the index in MiB.
 	Size() int
 
-	// size of element in index
+	// Count reports the number of entries currently held.
 	Count() int
 
-	// flush all elements in the index
+	// Flush persists/compacts the index, releasing pending buffers.
 	Flush() error
+}
+
+// TextIndex is a full-text index: it tokenizes string values on insert and
+// answers keyword queries, returning the keys of matching documents.
+type TextIndex[K comparable] interface {
+	Index[K, string]
+
+	// Search returns the keys of documents matching the query, best matches
+	// first.
+	Search(query string) ([]K, error)
+}
+
+// VectorIndex is an (approximate) nearest-neighbour index over dense vectors.
+// P is the coordinate type of the indexed vectors.
+type VectorIndex[K comparable, P float32 | float64] interface {
+	Index[K, containers.Vector[P]]
+
+	// Search returns the keys of the k vectors closest to query, nearest first.
+	Search(query containers.Vector[P], k int) ([]K, error)
 }

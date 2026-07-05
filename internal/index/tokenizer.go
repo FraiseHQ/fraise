@@ -20,4 +20,31 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package bkdtree
+package index
+
+import (
+	"strings"
+	"unicode"
+)
+
+// Tokenizer splits raw document text into the sequence of normalized terms that
+// get indexed and queried. Implementations decide casing, stemming, stop-word
+// removal, n-gramming, etc. The same Tokenizer must be used at index and query
+// time so terms line up.
+type Tokenizer interface {
+	Tokenize(text string) []string
+}
+
+// SimpleTokenizer lowercases text and splits it on runs of characters that are
+// neither letters nor digits. It performs no stemming or stop-word removal.
+type SimpleTokenizer struct{}
+
+// compile-time check that SimpleTokenizer is a Tokenizer.
+var _ Tokenizer = SimpleTokenizer{}
+
+// Tokenize returns the lowercased alphanumeric terms found in text.
+func (SimpleTokenizer) Tokenize(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}

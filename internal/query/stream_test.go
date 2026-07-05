@@ -66,10 +66,10 @@ func (g *fakeGraph) Get(key string) *graph.Node[string]             { return nil
 func (g *fakeGraph) Set(node *graph.Node[string]) error             { return nil }
 func (g *fakeGraph) Put(key string, node *graph.Node[string]) error { return nil }
 func (g *fakeGraph) Delete(node *graph.Node[string]) error          { return nil }
-func (g *fakeGraph) GetVectorIndex() *index.Index[string, containers.Vector[float32], float32] {
+func (g *fakeGraph) GetVectorIndex() index.VectorIndex[string, float32] {
 	return nil
 }
-func (g *fakeGraph) GetTextIndex() *index.Index[string, string, float32]               { return nil }
+func (g *fakeGraph) GetTextIndex() index.TextIndex[string]                             { return nil }
 func (g *fakeGraph) Entities() []*graph.Entity[string]                                 { return nil }
 func (g *fakeGraph) Relationships() []*graph.Relationship[string]                      { return nil }
 func (g *fakeGraph) AdjacencyMap() map[string]map[string]*graph.Relationship[string]   { return nil }
