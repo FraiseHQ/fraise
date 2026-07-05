@@ -5,6 +5,11 @@
 # Fraise
 
 [![Discord](https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2)](https://discord.gg/eHDFwnwHq)
+[![CI](https://github.com/RonsenbergVI/fraise/actions/workflows/go.yaml/badge.svg)](https://github.com/RonsenbergVI/fraise/actions/workflows/go.yaml)
+[![Release](https://img.shields.io/github/v/release/RonsenbergVI/fraise?sort=semver)](https://github.com/RonsenbergVI/fraise/releases/latest)
+[![Go Reference](https://pkg.go.dev/badge/github.com/RonsenbergVI/fraise.svg)](https://pkg.go.dev/github.com/RonsenbergVI/fraise)
+[![Go Report Card](https://goreportcard.com/badge/github.com/RonsenbergVI/fraise)](https://goreportcard.com/report/github.com/RonsenbergVI/fraise)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 Fraise is an in-memory memory store for AI agents. A real database your agent queries directly, with a language built for tokens, not humans.
 
