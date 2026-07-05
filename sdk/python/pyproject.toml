@@ -1,7 +1,7 @@
 [project]
-name = "sdk"
-version = "0.1.0"
-description = "Add your description here"
+name = "fraise-sdk"
+version = "0.0.1"
+description = "Fraise SDK"
 authors = [
     { name = "Rene Jean Corneille", email = "14303619+RonsenbergVI@users.noreply.github.com" }
 ]

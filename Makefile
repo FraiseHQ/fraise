@@ -61,7 +61,7 @@ LDFLAGS        := -X 'main.Version=$(BUILD_VERSION)' \
                   -X 'main.BuildDate=$(BUILD_DATE)' \
                   -X 'main.Branch=$(BUILD_BRANCH)'
 
-.PHONY: help build test clean install dev fmt lint check all
+.PHONY: help build test clean install dev fmt lint check all publish publish-py publish-npm
 .DEFAULT_GOAL := help
 
 ##@ General
@@ -219,6 +219,20 @@ clean-py: ## Clean Python build artifacts
 	@echo "$(GREEN)✓ Python artifacts cleaned$(RESET)"
 
 clean-all: clean ## Alias for clean
+
+##@ Publishing
+
+publish: publish-py publish-npm ## Publish Python SDK to PyPI and TypeScript SDK to npm
+
+publish-py: build-py ## Publish Python SDK to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)
+	@echo "$(CYAN)Publishing Python SDK to PyPI...$(RESET)"
+	@cd $(PY_DIR) && $(UV_CMD) publish
+	@echo "$(GREEN)✓ Python SDK published to PyPI$(RESET)"
+
+publish-ts: build-ts ## Publish TypeScript SDK to npm (requires npm auth / NODE_AUTH_TOKEN)
+	@echo "$(CYAN)Publishing TypeScript SDK to npm...$(RESET)"
+	@cd $(TS_DIR) && $(NPM_CMD) publish --access public --no-git-checks
+	@echo "$(GREEN)✓ TypeScript SDK published to npm$(RESET)"
 
 ##@ Workflows
 
