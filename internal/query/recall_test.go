@@ -41,6 +41,10 @@ func (h *fakeHasher) Hash(s string) string {
 	return "H(" + s + ")"
 }
 
+func (h *fakeHasher) Seed() uint64 {
+	return 0
+}
+
 var (
 	_ hash.Hasher[string, string] = (*fakeHasher)(nil)
 	// SetGraphID has a pointer receiver, so only *Recall satisfies Query.
