@@ -25,5 +25,5 @@ langchain = [
     "langchain>=1.2.17",
 ]
 pydantic-ai = [
-    "pydantic-ai>=1.89.0",
+    "pydantic-ai>=1.99.0",
 ]
