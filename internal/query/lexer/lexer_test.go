@@ -23,7 +23,6 @@
 package lexer_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
@@ -544,7 +543,6 @@ func Test_VeryLongQuery(t *testing.T) {
 	l := lexer.New(input)
 	for i, expected := range expected {
 		token := l.Next()
-		fmt.Println(token)
 		if token.Type != expected.Type || token.Literal != expected.Literal {
 			t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
 				i, expected.Type, expected.Literal, token.Type, token.Literal)

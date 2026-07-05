@@ -23,7 +23,6 @@
 package parser_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
@@ -33,8 +32,6 @@ func TestRememberParser(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne vec:$v"
 
 	qo, _, err := parser.Parse[float32](q)
-
-	fmt.Println(qo)
 
 	if err != nil {
 		t.Error("Expected no error while parsing this query.")
@@ -64,7 +61,6 @@ func TestRecallParser(t *testing.T) {
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
 			qo, _, err := parser.Parse[float32](q)
-			fmt.Print(qo)
 			if err != nil {
 				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 			}
