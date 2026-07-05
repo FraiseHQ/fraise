@@ -97,13 +97,15 @@ build-py: ## Build Python SDK
 
 test: test-go ## Run all Go tests
 
+coverage: coverage-go
+
 test-all: test-go test-ts test-py ## Run tests for Go and all SDKs
 
 test-go: ## Run Go tests with verbose output
 	@echo "$(CYAN)Running Go tests...$(RESET)"
 	$(GO_TEST) -v ./...
 
-test-go-coverage: ## Run Go tests with coverage report
+coverage-go: ## Run Go tests with coverage report
 	@echo "$(CYAN)Running Go tests with coverage...$(RESET)"
 	$(GO_TEST) -v -race -coverprofile=coverage.out -covermode=atomic ./...
 	$(GO_CMD) tool cover -html=coverage.out -o coverage.html
