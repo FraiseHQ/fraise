@@ -22,24 +22,41 @@
 
 package containers
 
-type CompareFunc func(a, b uint64) int
-
+// Item is a single entry in the Heap. Ordering is by Priority: the Heap is a
+// max-heap, so the item with the largest Priority is surfaced first.
 type Item[K comparable, T any] struct {
 	Key      K
 	Value    T
 	Priority uint64
 }
 
+// Heap is a max-heap keyed by Item.Priority with O(1) key lookup, allowing
+// Remove and duplicate-key handling by Key. It is not safe for concurrent use.
 type Heap[K comparable, T any] struct {
 	items  []Item[K, T]
 	lookup map[K]int
 }
 
+// NewHeap builds a heap from the given items. The items are copied (the caller's
+// slice is never retained or mutated), the key lookup is populated, and the heap
+// invariant is established in O(n) via Floyd's bottom-up heapify.
+//
+// If two items share a Key, both are inserted; behaviour of subsequent lookups
+// on that Key is undefined, so callers should pass distinct keys.
 func NewHeap[K comparable, T any](items ...Item[K, T]) *Heap[K, T] {
-	return &Heap[K, T]{
-		lookup: make(map[K]int),
-		items:  items,
+	h := &Heap[K, T]{
+		lookup: make(map[K]int, len(items)),
+		items:  make([]Item[K, T], len(items)),
 	}
+	copy(h.items, items)
+	for i, item := range h.items {
+		h.lookup[item.Key] = i
+	}
+	// Floyd's heapify: sift down every internal node, from the last parent up.
+	for i := len(h.items)/2 - 1; i >= 0; i-- {
+		h.siftDown(i)
+	}
+	return h
 }
 
 func (h *Heap[K, T]) Len() int {
@@ -52,6 +69,10 @@ func (h *Heap[K, T]) Swap(i, j int) {
 	h.lookup[h.items[j].Key] = j
 }
 
+// Push inserts item, maintaining the heap invariant. If an item with the same
+// Key already exists, Push keeps whichever has the higher Priority: the existing
+// item is retained when its Priority is greater, otherwise it is replaced by the
+// new item. Priorities are therefore monotonically non-decreasing per key.
 func (h *Heap[K, T]) Push(item Item[K, T]) {
 	if i, ok := h.lookup[item.Key]; ok {
 		if h.items[i].Priority > item.Priority {
@@ -108,9 +129,9 @@ func (h *Heap[K, T]) Remove(key K) bool {
 	// replace item at index with last element of the heap
 	h.remove(index, size)
 
-	// and ensure the property of the data structure (parent > children) is respected
+	// and ensure the max-heap property (parent >= children) is respected
 	parent := (index - 1) / 2
-	if h.items[parent].Priority > h.items[index].Priority {
+	if h.items[index].Priority > h.items[parent].Priority {
 		h.siftUp(index)
 	} else {
 		h.siftDown(index)
@@ -145,10 +166,10 @@ func (h *Heap[K, T]) Pop() *Item[K, T] {
 	return &first
 }
 
-func (h *Heap[K, V]) siftUp(index int) {
+func (h *Heap[K, T]) siftUp(index int) {
 	for index > 0 {
 		parent := (index - 1) / 2
-		if h.items[parent].Priority <= h.items[index].Priority {
+		if h.items[parent].Priority >= h.items[index].Priority {
 			break
 		}
 
@@ -157,25 +178,25 @@ func (h *Heap[K, V]) siftUp(index int) {
 	}
 }
 
-func (h *Heap[K, V]) siftDown(index int) {
+func (h *Heap[K, T]) siftDown(index int) {
 	size := len(h.items)
 	for index < size {
 		left, right := 2*index+1, 2*index+2
-		parent := index
+		largest := index
 
-		if left < size && h.items[left].Priority < h.items[parent].Priority {
-			parent = left
+		if left < size && h.items[left].Priority > h.items[largest].Priority {
+			largest = left
 		}
 
-		if right < size && h.items[right].Priority < h.items[parent].Priority {
-			parent = right
+		if right < size && h.items[right].Priority > h.items[largest].Priority {
+			largest = right
 		}
 
-		if parent == index {
+		if largest == index {
 			break
 		}
 
-		h.Swap(index, parent)
-		index = parent
+		h.Swap(index, largest)
+		index = largest
 	}
 }
