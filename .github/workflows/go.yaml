@@ -31,6 +31,7 @@ jobs:
   test:
     name: Test Go
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -49,6 +50,7 @@ jobs:
   cross-compile:
     name: Cross Platform Compiling
     runs-on: ubuntu-latest
+    needs: test
     strategy:
       matrix:
         goos: [linux, darwin, windows]
