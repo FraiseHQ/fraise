@@ -54,22 +54,25 @@ jobs:
   test-python:
     if: startsWith(github.ref_name, 'python/v')
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
     defaults:
       run:
         working-directory: sdk/python
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
       - name: Version must match tag
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#python/v}"
           PKG_VERSION=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           [ "$TAG_VERSION" = "$PKG_VERSION" ] || { echo "::error::tag $TAG_VERSION != pyproject $PKG_VERSION"; exit 1; }
-      - run: pip install -e ".[dev]"
-      - run: ruff check .
-      - run: pytest
+
+      - name: Lint python ${{ matrix.python }}
+        run: make lint-py
+
+      - name: Test with python ${{ matrix.python }}
+        run: make test-py
 
   publish-python:
     needs: test-python
@@ -82,16 +85,12 @@ jobs:
         working-directory: sdk/python
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+
       - name: Build
-        run: |
-          pip install build
-          python -m build
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: sdk/python/dist/
+        run: uv build
+    
+      - name: Release
+        run: uv publish
 
   # ---------------- typescript sdk: typescript/v* ----------------
   test-typescript:
@@ -112,10 +111,8 @@ jobs:
           TAG_VERSION="${GITHUB_REF_NAME#typescript/v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           [ "$TAG_VERSION" = "$PKG_VERSION" ] || { echo "::error::tag $TAG_VERSION != package.json $PKG_VERSION"; exit 1; }
-      - run: npm ci
-      - run: npm run lint --if-present
-      - run: npm run build
-      - run: npm test
+      - run: make lint-ts
+      - run: make test-ts
 
   publish-typescript:
     needs: test-typescript
@@ -132,8 +129,7 @@ jobs:
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
-      - run: npm ci
-      - run: npm run build
-      - run: npm publish --provenance --access public
+
+      - run: make publish-ts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
