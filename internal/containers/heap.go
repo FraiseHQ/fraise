@@ -129,9 +129,9 @@ func (h *Heap[K, T]) Remove(key K) bool {
 	// replace item at index with last element of the heap
 	h.remove(index, size)
 
-	// and ensure the max-heap property (parent >= children) is respected
+	// and ensure the property of the data structure (parent > children) is respected
 	parent := (index - 1) / 2
-	if h.items[index].Priority > h.items[parent].Priority {
+	if h.items[parent].Priority > h.items[index].Priority {
 		h.siftUp(index)
 	} else {
 		h.siftDown(index)
@@ -169,7 +169,7 @@ func (h *Heap[K, T]) Pop() *Item[K, T] {
 func (h *Heap[K, T]) siftUp(index int) {
 	for index > 0 {
 		parent := (index - 1) / 2
-		if h.items[parent].Priority >= h.items[index].Priority {
+		if h.items[parent].Priority <= h.items[index].Priority {
 			break
 		}
 
@@ -182,21 +182,21 @@ func (h *Heap[K, T]) siftDown(index int) {
 	size := len(h.items)
 	for index < size {
 		left, right := 2*index+1, 2*index+2
-		largest := index
+		parent := index
 
-		if left < size && h.items[left].Priority > h.items[largest].Priority {
-			largest = left
+		if left < size && h.items[left].Priority < h.items[parent].Priority {
+			parent = left
 		}
 
-		if right < size && h.items[right].Priority > h.items[largest].Priority {
-			largest = right
+		if right < size && h.items[right].Priority < h.items[parent].Priority {
+			parent = right
 		}
 
-		if largest == index {
+		if parent == index {
 			break
 		}
 
-		h.Swap(index, largest)
-		index = largest
+		h.Swap(index, parent)
+		index = parent
 	}
 }
