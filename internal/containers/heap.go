@@ -44,9 +44,21 @@ type Heap[K comparable, T any] struct {
 // If two items share a Key, both are inserted; behaviour of subsequent lookups
 // on that Key is undefined, so callers should pass distinct keys.
 func NewHeap[K comparable, T any](items ...Item[K, T]) *Heap[K, T] {
+	return NewHeapCap(len(items), items...)
+}
+
+// NewHeapCap behaves like NewHeap but pre-allocates the backing slice and lookup
+// map to hold at least capacity items, so pushes up to that size do not trigger a
+// reallocation. The heap stays growable: it is a hint, not a bound, and capacity
+// is silently raised to len(items) when the initial items already exceed it.
+func NewHeapCap[K comparable, T any](capacity int, items ...Item[K, T]) *Heap[K, T] {
+	n := len(items)
+	if capacity < n {
+		capacity = n
+	}
 	h := &Heap[K, T]{
-		lookup: make(map[K]int, len(items)),
-		items:  make([]Item[K, T], len(items)),
+		lookup: make(map[K]int, capacity),
+		items:  make([]Item[K, T], n, capacity),
 	}
 	copy(h.items, items)
 	for i, item := range h.items {
@@ -57,6 +69,12 @@ func NewHeap[K comparable, T any](items ...Item[K, T]) *Heap[K, T] {
 		h.siftDown(i)
 	}
 	return h
+}
+
+// Cap reports the current capacity of the backing slice: the number of items the
+// heap can hold before its next reallocation. It grows as the heap grows.
+func (h *Heap[K, T]) Cap() int {
+	return cap(h.items)
 }
 
 func (h *Heap[K, T]) Len() int {
@@ -129,9 +147,9 @@ func (h *Heap[K, T]) Remove(key K) bool {
 	// replace item at index with last element of the heap
 	h.remove(index, size)
 
-	// and ensure the property of the data structure (parent > children) is respected
+	// and ensure the max-heap property (parent >= children) is respected
 	parent := (index - 1) / 2
-	if h.items[parent].Priority > h.items[index].Priority {
+	if h.items[index].Priority > h.items[parent].Priority {
 		h.siftUp(index)
 	} else {
 		h.siftDown(index)
@@ -169,7 +187,7 @@ func (h *Heap[K, T]) Pop() *Item[K, T] {
 func (h *Heap[K, T]) siftUp(index int) {
 	for index > 0 {
 		parent := (index - 1) / 2
-		if h.items[parent].Priority <= h.items[index].Priority {
+		if h.items[parent].Priority >= h.items[index].Priority {
 			break
 		}
 
@@ -182,21 +200,21 @@ func (h *Heap[K, T]) siftDown(index int) {
 	size := len(h.items)
 	for index < size {
 		left, right := 2*index+1, 2*index+2
-		parent := index
+		largest := index
 
-		if left < size && h.items[left].Priority < h.items[parent].Priority {
-			parent = left
+		if left < size && h.items[left].Priority > h.items[largest].Priority {
+			largest = left
 		}
 
-		if right < size && h.items[right].Priority < h.items[parent].Priority {
-			parent = right
+		if right < size && h.items[right].Priority > h.items[largest].Priority {
+			largest = right
 		}
 
-		if parent == index {
+		if largest == index {
 			break
 		}
 
-		h.Swap(index, parent)
-		index = parent
+		h.Swap(index, largest)
+		index = largest
 	}
 }
