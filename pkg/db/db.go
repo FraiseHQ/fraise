@@ -47,17 +47,19 @@ func NewDB[K comparable, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P],
 		Config: cfg,
 		Graphs: make([]graph.Graph[K, P], config.DefaultNumGraph),
 	}
-	for i := range d.Graphs {
-		d.Graphs[i] = graph.NewGraph[K, P]()
-	}
 	return d, nil
 }
 
 func (d *DB[K, P]) Start() error {
+	for i := range d.Graphs {
+		d.Graphs[i] = graph.NewGraph[K, P]()
+	}
 	return nil
 }
 
 func (d *DB[K, P]) Stop() error {
+	// Reinitialise graphs
+	d.Graphs = make([]graph.Graph[K, P], config.DefaultNumGraph)
 	return nil
 }
 
