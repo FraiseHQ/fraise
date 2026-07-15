@@ -27,7 +27,7 @@ package trees
 type KDTreeNode[K comparable, T any, P float32 | float64] struct {
 	key   K                    // key identifying the node
 	value T                    // stored payload
-	point Point[P]             // coordinates used for splitting and search
+	point Point[K, P]          // coordinates used for splitting and search
 	axis  int                  // dimension this node splits on
 	left  *KDTreeNode[K, T, P] // subtree with smaller coordinate on axis
 	right *KDTreeNode[K, T, P] // subtree with larger coordinate on axis
@@ -57,10 +57,10 @@ func (t *KDTree[K, T, P]) Iterator() TreeIterator[K, T, P] {
 	panic("not implemented")
 }
 
-func (t *KDTree[K, T, P]) Nearest(p Point[P], k int) []TreeNode[K, T, P] {
+func (t *KDTree[K, T, P]) Nearest(p Point[K, P], k int) []TreeNode[K, T, P] {
 	panic("not implemented")
 }
 
-func (t *KDTree[K, T, P]) Range(min, max Point[P]) []TreeNode[K, T, P] {
+func (t *KDTree[K, T, P]) Range(min, max Point[K, P]) []TreeNode[K, T, P] {
 	panic("not implemented")
 }

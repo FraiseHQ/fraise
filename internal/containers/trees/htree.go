@@ -60,7 +60,7 @@ func (t *HTree[K, T, P]) Get(key K) TreeNode[K, T, P] {
 	panic("not implemented")
 }
 
-func (t *HTree[K, T, P]) Find(key K, exact bool) (int, TreeNode[K, T, P], []int) {
+func (t *HTree[K, T, P]) Find(values []T, exact bool, depth int) (int, []TreeNode[K, T, P], []int) {
 	panic("not implemented")
 }
 
