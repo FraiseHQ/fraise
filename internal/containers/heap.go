@@ -184,6 +184,8 @@ func (h *Heap[K, T]) Pop() *Item[K, T] {
 	return &first
 }
 
+// used when a child node doesn't follow the heap propoerty with its parent
+// restore the heap property
 func (h *Heap[K, T]) percolateUp(index int) {
 	for index > 0 {
 		parent := (index - 1) / 2
@@ -196,6 +198,8 @@ func (h *Heap[K, T]) percolateUp(index int) {
 	}
 }
 
+// used when a parent node doesn't follow the heap propoerty with its parent
+// restore the heap property
 func (h *Heap[K, T]) percolateDown(index int) {
 	size := len(h.items)
 	for index < size {
