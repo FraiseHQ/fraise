@@ -36,11 +36,11 @@ func (pr Projection[K, P]) Apply(p Point[K, P]) []P {
 
 // rpNode is a node in the RPTree's binary space partition.
 // Internal nodes split on a random direction; leaves hold the actual data.
-type rpNode[K comparable, T any, P float32 | float64] struct {
+type RPTreeNode[K comparable, T any, P float32 | float64] struct {
 	// internal-node fields (unused when leaf is true)
-	splitRow    int                  // index into Projection.rows
-	splitVal    P                    // threshold: dot(point, rows[splitRow]) < splitVal → left
-	left, right *rpNode[K, T, P]
+	splitRow    int // index into Projection.rows
+	splitVal    P   // threshold: dot(point, rows[splitRow]) < splitVal → left
+	left, right *RPTreeNode[K, T, P]
 	// leaf-node fields
 	leaf bool
 	data []TreeNode[K, T, P]
@@ -54,8 +54,8 @@ type rpNode[K comparable, T any, P float32 | float64] struct {
 // A single RPTree is a weak approximator; recall improves by querying a forest
 // of them with independent projections, assembled at the index layer.
 type RPTree[K comparable, T any, P float32 | float64] struct {
-	proj    Projection[K, P]    // random basis for all splits in this tree
-	root    *rpNode[K, T, P]
+	proj    Projection[K, P] // random basis for all splits in this tree
+	root    *RPTreeNode[K, T, P]
 	dim     int    // dimensionality of input points
 	projDim int    // number of random directions (rows in proj)
 	seed    uint64 // seed for reproducible random projections
