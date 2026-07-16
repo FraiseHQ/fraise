@@ -22,92 +22,80 @@
 
 package trees
 
-import "github.com/RonsenbergVI/fraise/internal/hash"
-
-// Projection is the random linear map an RPTree applies to points before it
-// hands them to its underlying KDTree. Each row is a random direction in the
-// input space; a point is projected by taking its dot product with every row.
-// Projecting the data through random directions makes the KDTree's axis-aligned
-// splits behave like the arbitrary-direction splits of a classic
-// random-projection tree.
+// Projection holds the random basis for one RPTree. Each row is a unit vector
+// in the input space; internal tree nodes pick one row as their split direction.
 type Projection[K comparable, P float32 | float64] struct {
-	rows [][]P // random directions; one per projected (output) coordinate
+	rows [][]P // random unit vectors; one per projected coordinate
 }
 
-// Apply projects p through the random directions, returning its coordinates in
-// the projected space (dimension len(rows)).
-func (pr Projection[K, P]) Apply(p Point[K, P]) Point[K, P] {
+// Apply computes the dot product of p with every row, returning p's coordinates
+// in the lower-dimensional projected space.
+func (pr Projection[K, P]) Apply(p Point[K, P]) []P {
 	panic("not implemented")
 }
 
-// projectedNode adapts an original TreeNode so the coordinates the inner KDTree
-// splits and searches on are the projected ones, while the key, payload and the
-// original (unprojected) point stay reachable for result re-ranking.
-type projectedNode[K comparable, T any, P float32 | float64] struct {
-	orig      TreeNode[K, T, P] // original node: Key, Value, Hash, true Point
-	projected Point[K, P]       // coordinates in the projected space
+// rpNode is a node in the RPTree's binary space partition.
+// Internal nodes split on a random direction; leaves hold the actual data.
+type rpNode[K comparable, T any, P float32 | float64] struct {
+	// internal-node fields (unused when leaf is true)
+	splitRow    int                  // index into Projection.rows
+	splitVal    P                    // threshold: dot(point, rows[splitRow]) < splitVal → left
+	left, right *rpNode[K, T, P]
+	// leaf-node fields
+	leaf bool
+	data []TreeNode[K, T, P]
 }
 
-func (n projectedNode[K, T, P]) Key() K                          { return n.orig.Key() }
-func (n projectedNode[K, T, P]) Value() T                        { return n.orig.Value() }
-func (n projectedNode[K, T, P]) Point() Point[K, P]              { return n.projected }
-func (n projectedNode[K, T, P]) Hash(h hash.Hasher[K, string]) K { return n.orig.Hash(h) }
-
-// RPTree is a random-projection tree built on top of a KDTree. Points are first
-// mapped through a random Projection, then indexed by an axis-aligned KDTree in
-// the projected space. The random rotation lets the KDTree's cheap axis-aligned
-// splits approximate arbitrary-direction splits, which keeps nearest-neighbour
-// search effective in high dimensions where a plain KDTree degrades. It
-// implements SpatialTree; its Nearest results are approximate.
+// RPTree is a random-projection tree: a binary space partition where each
+// internal node splits points by their projection onto one random direction
+// drawn from the tree's Projection. It implements SpatialTree; Nearest results
+// are approximate.
 //
-// A single RPTree is a weak approximator; recall comes from querying a forest of
-// them with independent projections. That forest is assembled at the index
-// layer, not here.
+// A single RPTree is a weak approximator; recall improves by querying a forest
+// of them with independent projections, assembled at the index layer.
 type RPTree[K comparable, T any, P float32 | float64] struct {
-	proj    Projection[K, P] // random projection applied before indexing
-	kd      *KDTree[K, T, P] // KDTree over the projected coordinates
-	dim     int              // dimensionality of input points
-	projDim int              // dimensionality after projection
-	seed    uint64           // seed for reproducible random projections
+	proj    Projection[K, P]    // random basis for all splits in this tree
+	root    *rpNode[K, T, P]
+	dim     int    // dimensionality of input points
+	projDim int    // number of random directions (rows in proj)
+	seed    uint64 // seed for reproducible random projections
+	length  int    // number of stored nodes
 }
 
-// NewRPTree returns an empty RPTree that indexes points of the given input
-// dimension, projecting them onto projDim random directions before handing them
-// to an inner KDTree. seed makes the projection reproducible.
+// NewRPTree returns an empty RPTree that indexes dim-dimensional points using
+// projDim random split directions. seed makes the projection reproducible.
 func NewRPTree[K comparable, T any, P float32 | float64](dim, projDim int, seed uint64) *RPTree[K, T, P] {
 	return &RPTree[K, T, P]{
-		proj:    Projection[K, P]{}, // TODO: fill with projDim random directions seeded by seed
-		kd:      NewKDTree[K, T, P](projDim),
+		proj:    Projection[K, P]{}, // TODO: fill with projDim random unit vectors seeded by seed
 		dim:     dim,
 		projDim: projDim,
 		seed:    seed,
 	}
 }
 
-// Len reports the number of stored nodes, delegating to the inner KDTree.
-func (t *RPTree[K, T, P]) Len() int { return t.kd.Len() }
+// Len reports the number of stored nodes.
+func (t *RPTree[K, T, P]) Len() int { return t.length }
 
-// Insert projects node's point and inserts a projectedNode into the inner
-// KDTree, keeping the original node for result re-ranking.
+// Insert adds node to the tree, routing it to the correct leaf using the
+// random-projection splits.
 func (t *RPTree[K, T, P]) Insert(node TreeNode[K, T, P]) error {
 	panic("not implemented")
 }
 
-// Iterator walks the underlying KDTree.
-func (t *RPTree[K, T, P]) Iterator() TreeIterator[K, T, P] { return t.kd.Iterator() }
+// Iterator walks the tree nodes in insertion order.
+func (t *RPTree[K, T, P]) Iterator() TreeIterator[K, T, P] {
+	panic("not implemented")
+}
 
-// Nearest projects p, asks the inner KDTree for candidates in the projected
-// space, then re-ranks them by true distance in the original space and returns
-// the k closest original nodes.
+// Nearest returns the k nodes whose true distance to p is smallest. The search
+// descends the partition using projected coordinates, then re-ranks candidates
+// by true distance in the original space.
 func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int) []TreeNode[K, T, P] {
 	panic("not implemented")
 }
 
-// Range returns the points within the axis-aligned box bounded by min and max.
-// NOTE: a random projection does not map an axis-aligned box to an axis-aligned
-// box, so this cannot simply delegate to the inner KDTree's Range; the box must
-// be answered in the original space. See the interface discussion on whether
-// Range belongs on SpatialTree at all.
+// Range returns every node whose point falls within the axis-aligned box bounded
+// by min and max, evaluated in the original (unprojected) space.
 func (t *RPTree[K, T, P]) Range(min, max Point[K, P]) []TreeNode[K, T, P] {
 	panic("not implemented")
 }
