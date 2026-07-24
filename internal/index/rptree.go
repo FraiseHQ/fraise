@@ -53,24 +53,40 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 // NewRPTreeIndex returns an empty RPTreeIndex holding numTrees random-projection
 // trees, each mapping dim-dimensional vectors onto projDim random directions.
 // seed seeds the first tree; the rest derive from it so every tree gets an
-// independent projection.
+// independent projection. A dim of 0 defers forest construction until the
+// first Insert, whose vector fixes the index dimensionality.
 func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees int, seed uint64) *RPTreeIndex[K, P] {
-	forest := make([]*trees.RPTree[K, containers.Vector[P], P], numTrees)
-	for i := range forest {
-		forest[i] = trees.NewRPTree[K, containers.Vector[P], P](dim, projDim, seed+uint64(i))
-	}
-	return &RPTreeIndex[K, P]{
-		forest:   forest,
+	idx := &RPTreeIndex[K, P]{
 		vectors:  make(map[K]containers.Vector[P]),
 		dim:      dim,
 		projDim:  projDim,
 		numTrees: numTrees,
 		seed:     seed,
 	}
+	if dim > 0 {
+		idx.forest = idx.newForest()
+	}
+	return idx
+}
+
+// newForest builds numTrees empty RPTrees for the current dimensionality.
+func (idx *RPTreeIndex[K, P]) newForest() []*trees.RPTree[K, containers.Vector[P], P] {
+	forest := make([]*trees.RPTree[K, containers.Vector[P], P], idx.numTrees)
+	for i := range forest {
+		forest[i] = trees.NewRPTree[K, containers.Vector[P], P](idx.dim, idx.projDim, idx.seed+uint64(i))
+	}
+	return forest
 }
 
 // Insert validates the vector dimension and adds it to every tree in the forest.
 func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[P]) error {
+	if value.Dim() == 0 {
+		return ErrInvalidDimension
+	}
+	if idx.dim == 0 {
+		idx.dim = value.Dim()
+		idx.forest = idx.newForest()
+	}
 	if value.Dim() != idx.dim {
 		return ErrInvalidDimension
 	}
@@ -83,6 +99,15 @@ func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[P]) error {
 		}
 	}
 	return nil
+}
+
+// Vectors returns a copy of the live key -> vector mapping.
+func (idx *RPTreeIndex[K, P]) Vectors() map[K]containers.Vector[P] {
+	out := make(map[K]containers.Vector[P], len(idx.vectors))
+	for k, v := range idx.vectors {
+		out[k] = v
+	}
+	return out
 }
 
 // Retrieve returns the vector stored under key.
@@ -191,10 +216,7 @@ func (idx *RPTreeIndex[K, P]) Count() int {
 // Flush rebuilds the forest from the currently live vectors, discarding
 // deleted vectors and any stale copies left behind by Insert/Update.
 func (idx *RPTreeIndex[K, P]) Flush() error {
-	forest := make([]*trees.RPTree[K, containers.Vector[P], P], idx.numTrees)
-	for i := range forest {
-		forest[i] = trees.NewRPTree[K, containers.Vector[P], P](idx.dim, idx.projDim, idx.seed+uint64(i))
-	}
+	forest := idx.newForest()
 
 	for key, value := range idx.vectors {
 		node := trees.NewVectorNode(key, value)

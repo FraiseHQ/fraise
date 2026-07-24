@@ -21,3 +21,11 @@
 // SOFTWARE.
 
 package graph
+
+import "errors"
+
+var (
+	ErrNilNode           = errors.New("graph: node is nil")
+	ErrNodeAlreadyExists = errors.New("graph: node already exists")
+	ErrNodeNotFound      = errors.New("graph: node not found")
+)

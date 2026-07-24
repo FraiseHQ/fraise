@@ -29,9 +29,29 @@ type Mentions[K comparable] struct {
 	NodeAttributes
 }
 
+func (m *Mentions[K]) Source() *Entity[K] {
+	var e Entity[K] = m.Fact
+	return &e
+}
+
+func (m *Mentions[K]) Target() *Entity[K] {
+	var e Entity[K] = m.NamedEntity
+	return &e
+}
+
 // Fact is about Topic relationship
 type IsAbout[K comparable] struct {
 	Fact  *Fact[K]
 	Topic *Topic[K]
 	NodeAttributes
+}
+
+func (a *IsAbout[K]) Source() *Entity[K] {
+	var e Entity[K] = a.Fact
+	return &e
+}
+
+func (a *IsAbout[K]) Target() *Entity[K] {
+	var e Entity[K] = a.Topic
+	return &e
 }
