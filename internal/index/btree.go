@@ -22,64 +22,156 @@
 
 package index
 
-import "github.com/RonsenbergVI/fraise/internal/containers/trees"
+import (
+	"errors"
+	"sort"
+
+	"github.com/RonsenbergVI/fraise/internal/comparator"
+	"github.com/RonsenbergVI/fraise/internal/containers/trees"
+)
+
+// compile-time check that BTreeIndex is a TextIndex.
+var _ TextIndex[int] = (*BTreeIndex[int, float64])(nil)
 
 // BTreeIndex is a full-text index backed by an ordered BTree from the
-// containers/trees submodule. The tree is used as the term dictionary, mapping
-// each indexed term to the keys of the documents that contain it. It implements
-// TextIndex.
-type BTreeIndex[K comparable] struct {
-	tree *trees.BTree[string, []K, float32] // term -> document keys (P is unused)
+// containers/trees submodule. The tree holds the set of indexed terms in
+// sorted order; the term -> document-keys mapping itself (the postings) is
+// kept in a plain map, since BTree only tracks membership, not payloads. It
+// implements TextIndex.
+type BTreeIndex[K comparable, P float32 | float64] struct {
+	tree      *trees.BTree[K, string, P] // ordered term dictionary (P is unused)
+	postings  map[string]map[K]struct{}  // term -> keys of documents containing it
+	documents map[K]string               // key -> raw document text
+	tokenizer Tokenizer
 }
 
 // NewBTreeIndex returns an empty BTreeIndex whose term dictionary is an ordered
 // BTree over lexicographically sorted terms.
-func NewBTreeIndex[K comparable]() *BTreeIndex[K] {
-	return &BTreeIndex[K]{
-		tree: trees.NewBTree[string, []K, float32](32, func(a, b string) bool { return a < b }),
+func NewBTreeIndex[K comparable, P float32 | float64]() *BTreeIndex[K, P] {
+	return &BTreeIndex[K, P]{
+		tree:      trees.NewBTree[K, string, P](32, comparator.OrderedComparator[string]),
+		postings:  make(map[string]map[K]struct{}),
+		documents: make(map[K]string),
+		tokenizer: SimpleTokenizer{},
 	}
 }
 
 // Insert tokenizes value and adds key to the term dictionary, then records the
-// raw document for retrieval.
-func (idx *BTreeIndex[K]) Insert(key K, value string) error {
-	panic("not implemented")
+// raw document for retrieval. If key is already indexed, its previous document
+// is replaced.
+func (idx *BTreeIndex[K, P]) Insert(key K, value string) error {
+	return idx.index(key, value)
 }
 
 // Retrieve returns the raw document stored under key.
-func (idx *BTreeIndex[K]) Retrieve(key K) (string, error) {
-	panic("not implemented")
+func (idx *BTreeIndex[K, P]) Retrieve(key K) (string, error) {
+	value, ok := idx.documents[key]
+	if !ok {
+		return "", ErrIndexNotFound
+	}
+	return value, nil
 }
 
 // Update re-tokenizes the document under key, adjusting the affected posting
 // lists.
-func (idx *BTreeIndex[K]) Update(key K, value string) error {
-	panic("not implemented")
+func (idx *BTreeIndex[K, P]) Update(key K, value string) error {
+	if _, ok := idx.documents[key]; !ok {
+		return ErrIndexNotFound
+	}
+	return idx.index(key, value)
 }
 
 // Delete removes key from every posting list it appears in and drops the stored
 // document.
-func (idx *BTreeIndex[K]) Delete(key K) error {
-	panic("not implemented")
+func (idx *BTreeIndex[K, P]) Delete(key K) error {
+	value, ok := idx.documents[key]
+	if !ok {
+		return ErrIndexNotFound
+	}
+	idx.removePostings(key, value)
+	delete(idx.documents, key)
+	return nil
 }
 
 // Search tokenizes query, combines the matching posting lists and returns the
-// document keys ranked by relevance.
-func (idx *BTreeIndex[K]) Search(query string) ([]K, error) {
-	panic("not implemented")
+// document keys ranked by relevance (the number of query terms they contain).
+func (idx *BTreeIndex[K, P]) Search(query string) ([]K, error) {
+	if len(idx.documents) == 0 {
+		return nil, ErrEmptyIndex
+	}
+
+	scores := make(map[K]int)
+	for _, term := range idx.tokenizer.Tokenize(query) {
+		for key := range idx.postings[term] {
+			scores[key]++
+		}
+	}
+
+	keys := make([]K, 0, len(scores))
+	for key := range scores {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return scores[keys[i]] > scores[keys[j]] })
+	return keys, nil
 }
 
 // Size reports the approximate in-memory footprint of the index in MiB.
-func (idx *BTreeIndex[K]) Size() int {
-	panic("not implemented")
+func (idx *BTreeIndex[K, P]) Size() int {
+	var bytes int
+	for _, doc := range idx.documents {
+		bytes += len(doc)
+	}
+	for term, keys := range idx.postings {
+		bytes += len(term) + len(keys)*8
+	}
+	return bytes / (1024 * 1024)
 }
 
 // Count reports the number of indexed documents.
-func (idx *BTreeIndex[K]) Count() int {
-	panic("not implemented")
+func (idx *BTreeIndex[K, P]) Count() int {
+	return len(idx.documents)
 }
 
-// Flush compacts the term dictionary and posting lists.
-func (idx *BTreeIndex[K]) Flush() error {
-	panic("not implemented")
+// Flush is a no-op: this index keeps no buffered state to compact.
+func (idx *BTreeIndex[K, P]) Flush() error {
+	return nil
+}
+
+// index tokenizes value, removes any postings left over from a previous
+// document stored under key, and records the new term postings and document.
+func (idx *BTreeIndex[K, P]) index(key K, value string) error {
+	if old, ok := idx.documents[key]; ok {
+		idx.removePostings(key, old)
+	}
+
+	for _, term := range idx.tokenizer.Tokenize(value) {
+		keys, ok := idx.postings[term]
+		if !ok {
+			if err := idx.tree.Insert(term); err != nil && !errors.Is(err, trees.ErrDuplicateValue) {
+				return err
+			}
+			keys = make(map[K]struct{})
+			idx.postings[term] = keys
+		}
+		keys[key] = struct{}{}
+	}
+
+	idx.documents[key] = value
+	return nil
+}
+
+// removePostings drops key from the posting list of every term in value,
+// removing terms from the dictionary once no document references them.
+func (idx *BTreeIndex[K, P]) removePostings(key K, value string) {
+	for _, term := range idx.tokenizer.Tokenize(value) {
+		keys, ok := idx.postings[term]
+		if !ok {
+			continue
+		}
+		delete(keys, key)
+		if len(keys) == 0 {
+			delete(idx.postings, term)
+			idx.tree.Delete(term)
+		}
+	}
 }
