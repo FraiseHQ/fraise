@@ -51,7 +51,7 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		}
 
 		// Parse the raw query string into an executable query.
-		q, err := query.Parse[K, P](req.Query)
+		q, err := query.Parse[K, P](req.Query, s.Config)
 
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

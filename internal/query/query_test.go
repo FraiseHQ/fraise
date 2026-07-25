@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/query"
 )
 
@@ -40,7 +41,7 @@ import (
 func TestParseRemember(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
 
-	got, err := query.Parse[string, float32](q)
+	got, err := query.Parse[string, float32](q, config.New())
 	if err != nil {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
@@ -75,7 +76,7 @@ func TestParseRemember(t *testing.T) {
 func TestParseRecall(t *testing.T) {
 	q := "recall@2 anna bob entity:alice topic:job"
 
-	got, err := query.Parse[string, float32](q)
+	got, err := query.Parse[string, float32](q, config.New())
 	if err != nil {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
@@ -114,7 +115,7 @@ func TestParseErrors(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			got, err := query.Parse[string, float32](q)
+			got, err := query.Parse[string, float32](q, config.New())
 			if err != query.ErrParsingFailed {
 				t.Errorf("Parse(%q) err = %v, want ErrParsingFailed", q, err)
 			}

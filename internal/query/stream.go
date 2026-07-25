@@ -23,6 +23,7 @@
 package query
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -120,6 +121,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 	// Read stream
 	recall := s.Query.(*Recall[K, P])
+	fmt.Println(recall.Parameters.Depth)
 	nodes, scores := g.Search(
 		recall.Keywords,
 		recall.Vector,

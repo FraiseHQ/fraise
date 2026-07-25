@@ -80,9 +80,11 @@ type EngineConfig struct {
 }
 
 type DBConfig struct {
-	DefaultTop uint `toml:"default-top"`
+	// default top
+	DefaultTop int `toml:"default-top"`
 
-	DefaultDepth uint `toml:"default-depth"`
+	// default depth
+	DefaultDepth int `toml:"default-depth"`
 
 	// How many seeds to pull from each source (keywords and vector)
 	SeedSize int `toml:"seed-size"`
@@ -163,8 +165,8 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
 
 	// db
-	flagSet.UintVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
-	flagSet.UintVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
+	flagSet.IntVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
+	flagSet.IntVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Seeds to pull from each source")
 	flagSet.Float64Var(&config.DB.HopAttenuation, "hop-attenuation", float64(DefaultHopAttenuation), "Score attenuation for graph walk")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")

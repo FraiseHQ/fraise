@@ -59,7 +59,7 @@ type Hit[K comparable, P float32 | float64] struct {
 	Score P
 }
 
-func Parse[K comparable, P float32 | float64](q string) (Query[K, P], error) {
+func Parse[K comparable, P float32 | float64](q string, c *config.ConfigSet) (Query[K, P], error) {
 	cmd, _, err := parser.Parse[P](q)
 	if err != nil {
 		return nil, ErrParsingFailed
@@ -84,7 +84,7 @@ func Parse[K comparable, P float32 | float64](q string) (Query[K, P], error) {
 			Topics:   n.Topics(),
 			// Vector:   containers.Vector[P]{Data: n.Vector()},
 			Parameters: QueryParameters{
-				Top: n.Top(), Depth: n.Depth(), Since: n.Since(), Until: n.Until(),
+				Top: n.Top(c.DB.DefaultTop), Depth: n.Depth(c.DB.DefaultDepth), Since: n.Since(), Until: n.Until(),
 			},
 		}
 		qo.SetGraphID(n.Selector())

@@ -53,9 +53,9 @@ const (
 
 	DefaultPageRankTol float64 = 1e-6
 
-	DefaultTop uint = 10
+	DefaultTop int = 10
 
-	DefaultDepth uint = 2
+	DefaultDepth int = 2
 
 	DefaultAllowUnanchoredRecall bool = false
 

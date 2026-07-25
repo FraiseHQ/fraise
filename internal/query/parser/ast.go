@@ -125,11 +125,17 @@ func (r RecallCommandNode[P]) Topics() []string {
 	return res
 }
 
-func (r RecallCommandNode[P]) Top() int {
+func (r RecallCommandNode[P]) Top(v int) int {
+	if r.top.value == 0 {
+		return v
+	}
 	return r.top.value
 }
 
-func (r RecallCommandNode[P]) Depth() int {
+func (r RecallCommandNode[P]) Depth(v int) int {
+	if r.depth.value == 0 {
+		return v
+	}
 	return r.depth.value
 }
 
