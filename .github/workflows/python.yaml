@@ -24,7 +24,7 @@ jobs:
         python: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v5
-    
+
       - name: Install the latest version of uv and set the python version
         uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
         with:
@@ -41,7 +41,7 @@ jobs:
         python: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v5
-    
+
       - name: Install the latest version of uv and set the python version
         uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
         with:
@@ -49,4 +49,3 @@ jobs:
 
       - name: Test with python ${{ matrix.python }}
         run: make test-py
-

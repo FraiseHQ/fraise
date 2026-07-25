@@ -27,7 +27,7 @@ Tokens form the vocabulary of the fraise query language. The classes of token ar
 * literals
 * punctuations
 * fields
-  
+
 ### Keywords
 
 Keywords are specific query instructions. They are reserved keywords.
