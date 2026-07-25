@@ -122,10 +122,18 @@ func TestRecallSinceUntil(t *testing.T) {
 func TestRecallPlan(t *testing.T) {
 	var r Recall[string, float32]
 	s, err := r.Plan(nil)
-	if s != nil {
-		t.Errorf("Plan() stream = %v, want nil", s)
-	}
 	if err != nil {
-		t.Errorf("Plan() err = %v, want nil", err)
+		t.Fatalf("Plan() err = %v, want nil", err)
+	}
+	if s == nil {
+		t.Fatal("Plan() stream = nil, want a ready stream")
+	}
+	if s.Query != Query[string, float32](&r) {
+		t.Errorf("Plan() stream.Query = %v, want the receiver", s.Query)
+	}
+	select {
+	case <-s.Done():
+		t.Error("Plan() stream is already done; it must stay open until committed")
+	default:
 	}
 }

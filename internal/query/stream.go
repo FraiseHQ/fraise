@@ -42,6 +42,12 @@ type Stream[K comparable, P float32 | float64] struct {
 	once    sync.Once
 }
 
+// NewStream returns a stream ready to be scheduled for q: Done() blocks until
+// the scheduler commits or rolls the stream back.
+func NewStream[K comparable, P float32 | float64](q Query[K, P]) *Stream[K, P] {
+	return &Stream[K, P]{Query: q, done: make(chan struct{})}
+}
+
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	defer s.finish()
 	defer s.release(g)

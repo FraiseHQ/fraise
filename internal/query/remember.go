@@ -35,8 +35,8 @@ type Remember[K comparable, P float32 | float64] struct {
 	context QueryContext
 }
 
-func (r Remember[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
-	return nil, nil
+func (r *Remember[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
+	return NewStream[K, P](r), nil
 }
 
 func (r Remember[K, P]) GetGraphID() uint8 {

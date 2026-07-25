@@ -42,8 +42,8 @@ type Recall[K comparable, P float32 | float64] struct {
 	context QueryContext
 }
 
-func (r Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
-	return nil, nil
+func (r *Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
+	return NewStream[K, P](r), nil
 }
 
 func (r Recall[K, P]) GetGraphID() uint8 {
@@ -62,10 +62,20 @@ func (r Recall[K, P]) IsWrite() bool {
 	return false
 }
 
+// Since resolves the query's lower time bound; the zero time (no bound) is
+// returned when the query has no since clause.
 func (r Recall[K, P]) Since(now time.Time) time.Time {
+	if r.Parameters.Since == nil {
+		return time.Time{}
+	}
 	return r.Parameters.Since.Resolve(now)
 }
 
+// Until resolves the query's upper time bound; the zero time (no bound) is
+// returned when the query has no until clause.
 func (r Recall[K, P]) Until(now time.Time) time.Time {
+	if r.Parameters.Until == nil {
+		return time.Time{}
+	}
 	return r.Parameters.Until.Resolve(now)
 }
