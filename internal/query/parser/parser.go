@@ -259,6 +259,10 @@ func (p *parser[P]) parseDepth() (lexer.Token, int, error) {
 
 	p.next()
 
+	if _, err := p.expect(lexer.COLON); err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected colon, but found %q", p.cur.Literal)
+	}
+
 	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
@@ -274,6 +278,10 @@ func (p *parser[P]) parseTop() (lexer.Token, int, error) {
 	key := p.cur
 
 	p.next()
+
+	if _, err := p.expect(lexer.COLON); err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected colon, but found %q", p.cur.Literal)
+	}
 
 	tok, err := p.expect(lexer.LITERAL)
 

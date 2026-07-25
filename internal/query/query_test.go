@@ -35,7 +35,7 @@ import (
 // return empty slices, so a parsed Remember never carries entities or topics.
 
 // TestParseRemember checks that a remember query is dispatched to a
-// *query.Remember carrying the (quoted) phrase value and the graph selector,
+// *query.Remember carrying the phrase value and the graph selector,
 // and reporting as a write.
 func TestParseRemember(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
@@ -50,8 +50,8 @@ func TestParseRemember(t *testing.T) {
 		t.Fatalf("Parse(%q) returned %T, want *query.Remember", q, got)
 	}
 
-	// The phrase value is preserved verbatim, including its surrounding quotes.
-	if want := "'anne loves the color orange'"; r.Value != want {
+	// The phrase value is the raw text: the quotes are query syntax, not data.
+	if want := "anne loves the color orange"; r.Value != want {
 		t.Errorf("Value = %q, want %q", r.Value, want)
 	}
 	// Remember entities/topics are stubbed empty (see file-level note).

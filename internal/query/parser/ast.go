@@ -275,8 +275,8 @@ func (n RememberCommandNode[P]) String() string {
 	// command + selector
 	s = append(s, n.key.Literal+n.selector.String())
 
-	// value
-	s = append(s, n.value.String())
+	// value, re-quoted as in the source query (PhraseNode.String is unquoted)
+	s = append(s, "'"+n.value.String()+"'")
 
 	// anchors
 	for _, e := range n.anchors {
@@ -469,13 +469,15 @@ func (n Terms) End() lexer.Position {
 
 // phrase node impl
 
+// Literal returns the phrase text: the tokens' literals normalised to single
+// spacing, without the surrounding quotes of the source query.
 func (n PhraseNode) Literal() string {
-	var s []string
+	s := make([]string, 0, len(n.tokens))
 
 	for _, t := range n.tokens {
-		s = append(s, t.Literal)
+		s = append(s, strings.TrimSpace(t.Literal))
 	}
-	return "'" + strings.Join(s, " ") + "'"
+	return strings.Join(s, " ")
 }
 
 func (n PhraseNode) Pos() lexer.Position {
