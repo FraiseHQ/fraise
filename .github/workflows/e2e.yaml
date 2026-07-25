@@ -12,10 +12,10 @@ permissions:
   contents: read
 
 jobs:
-  vulncheck:
+  e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: golang/govulncheck-action@v1
-        with:
-          go-version-file: go.mod
-          go-package: ./...
+
+      - uses: actions/checkout@v5
+      - name: e2e tests
+        run: make test-e2e
