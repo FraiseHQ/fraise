@@ -63,8 +63,11 @@ func (m Mentions[K]) Target() *Entity[K] {
 	return &e
 }
 
+// Hash identifies the edge by the (fact, entity) pair it connects. Hashing the
+// (empty) attribute value instead would collapse every Mentions edge onto one
+// key, so Set would keep only the first and drop the rest.
 func (m Mentions[K]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(m.NodeAttributes.Value)
+	return h.Hash("mentions:" + m.Fact.Value + "\x00" + m.NamedEntity.Value)
 }
 
 // Fact is about Topic relationship
@@ -102,6 +105,9 @@ func (a IsAbout[K]) Target() *Entity[K] {
 	return &e
 }
 
+// Hash identifies the edge by the (fact, topic) pair it connects. Hashing the
+// (empty) attribute value instead would collapse every IsAbout edge onto one
+// key, so Set would keep only the first and drop the rest.
 func (a IsAbout[K]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(a.NodeAttributes.Value)
+	return h.Hash("isabout:" + a.Fact.Value + "\x00" + a.Topic.Value)
 }
