@@ -1,0 +1,23 @@
+repos:
+  # ================
+  # General
+  # ================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=700']  # Increase the limit to 700 KB
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-json
+        name: Check JSON syntax
+        exclude: sdk/typescript/tsconfig.json
+  
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.12.2
+    hooks:
+    - id: golangci-lint
