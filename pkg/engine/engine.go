@@ -23,14 +23,13 @@
 package engine
 
 import (
-	"fmt"
-
 	"github.com/RonsenbergVI/fraise/internal/cache"
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/internal/query/optimisation"
 
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 )
 
@@ -56,13 +55,20 @@ func (e *Engine[K, P]) Start() {
 	// allocate cache memory
 	c, err := cache.NewLRUCache[K, query.Query[K, P]](e.Config.Engine.CacheCapacity)
 	if err != nil {
-		fmt.Errorf("Error while initialising cache.")
+		logger.Error("Error while initialising cache", "error", err)
+		return
 	}
 	e.Cache = c
+
+	// start the scheduler workers that execute planned streams
+	if err := e.Scheduler.Start(); err != nil {
+		logger.Error("Error while starting scheduler", "error", err)
+	}
 }
 
 func (e *Engine[K, P]) Stop() {
-	// release cache memory
+	// stop scheduler workers, then release cache memory
+	e.Scheduler.Stop()
 	e.Cache.Clear()
 }
 
