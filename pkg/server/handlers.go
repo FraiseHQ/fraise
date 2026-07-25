@@ -70,6 +70,7 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		s.Engine.Apply(stream)
 
 		// Wait for the stream to finish, then return results or the error.
+		// If the client goes away first, stop waiting.
 		select {
 		case <-stream.Done():
 			if stream.Err != nil {
@@ -79,7 +80,7 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{
 				"results": stream.Result,
 			})
-		case <-stream.Done():
+		case <-c.Request.Context().Done():
 			return
 		}
 	}
@@ -88,5 +89,7 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 // handleQueryWithParameters returns the handler for parameterised queries.
 // It is not yet implemented.
 func (s *Server[K, P]) handleQueryWithParameters() gin.HandlerFunc {
-	return nil
+	return func(c *gin.Context) {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "parameterised queries are not implemented yet"})
+	}
 }
