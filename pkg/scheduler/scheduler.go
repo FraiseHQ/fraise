@@ -108,6 +108,8 @@ func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 		stream.Rollback(g)
 		return ErrStreamCommit
 	}
-	g.MergeFrom(stg)
+	if stream.Query.IsWrite() {
+		g.MergeFrom(stg)
+	}
 	return nil
 }
