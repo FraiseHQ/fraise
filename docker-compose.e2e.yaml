@@ -1,0 +1,20 @@
+services:
+  fraise:
+    build:
+      context: .
+      dockerfile: Dockerfile.fraise
+    ports:
+      - "${FRAISE_PORT:-9877}:9876"
+
+
+  # End-to-end test runner: talks to the fraise service over the compose
+  # network. Behind a profile so a plain `docker compose up` never runs it;
+  # invoke it with `make test-e2e` (or `docker compose --profile e2e run e2e`).
+  e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e
+    command: ["uv", "run", "pytest", "e2e", "-vvv"]
+    profiles: ["e2e"]
+    environment:
+      FRAISE_URL: http://fraise:9876

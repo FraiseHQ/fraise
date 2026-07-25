@@ -61,7 +61,7 @@ LDFLAGS        := -X 'main.Version=$(BUILD_VERSION)' \
                   -X 'main.BuildDate=$(BUILD_DATE)' \
                   -X 'main.Branch=$(BUILD_BRANCH)'
 
-.PHONY: help build test clean install dev fmt lint check all publish publish-py publish-npm
+.PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py publish-npm
 .DEFAULT_GOAL := help
 
 ##@ General
@@ -118,6 +118,15 @@ test-go-short: ## Run Go tests in short mode
 test-go-bench: ## Run Go benchmarks
 	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
 	$(GO_TEST) -bench=. -benchmem ./...
+
+# Host port the e2e compose stack binds fraise to (override if 9876 is taken;
+# the tests themselves talk to fraise over the compose network, not this port)
+FRAISE_E2E_PORT ?= 9876
+
+test-e2e: ## Run end-to-end tests (python) as a docker compose service
+	@echo "$(CYAN)Running end-to-end tests with docker compose...$(RESET)"
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.e2e.yaml --profile e2e up --build --exit-code-from e2e --force-recreate --attach-dependencies; \
+	status=$$?; \
 
 test-ts: ## Run TypeScript tests
 	@echo "$(CYAN)Running TypeScript tests...$(RESET)"

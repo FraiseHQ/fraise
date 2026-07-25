@@ -14,3 +14,7 @@ dependencies = [
 
 [project.scripts]
 tests = "tests:main"
+
+[tool.pytest]
+minversion = "8.0"
+addopts = ["-ra", "-q", "--capture=no", "-vvv"]
