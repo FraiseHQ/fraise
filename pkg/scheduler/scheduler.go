@@ -23,7 +23,6 @@
 package scheduler
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
@@ -104,11 +103,6 @@ func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 	stream.Acquire(g)
 
 	stg, err := stream.Stage(g)
-
-	fmt.Println(stream.Result)
-	fmt.Println(g.PredecessorMap())
-	fmt.Println(g.AdjacencyMap())
-	fmt.Println(g.Nodes())
 
 	if err != nil {
 		stream.Rollback(g)

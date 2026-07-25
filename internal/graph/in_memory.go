@@ -386,8 +386,10 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, seedScores map[K]P, topi
 func (g *InMemoryGraph[K, P]) walk(source K, depth int) map[K]int {
 	if g.traversal != nil {
 
-		g.traversal.SetSource(source)
-		result, err := g.traversal.Run(g)
+		// Clone per walk so concurrent searches never share the mutable source.
+		t := g.traversal.Clone()
+		t.SetSource(source)
+		result, err := t.Run(g)
 
 		r, _ := result.(TraversalResult[K])
 

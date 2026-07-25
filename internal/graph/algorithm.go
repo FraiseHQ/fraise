@@ -81,6 +81,11 @@ type Traversal[K comparable, P float32 | float64] interface {
 
 	// Sets the traversal source
 	SetSource(source K)
+
+	// Clone returns a fresh traversal with the same configuration but no
+	// per-run state, so each walk can set its own source and run on its own
+	// instance instead of mutating a shared one.
+	Clone() Traversal[K, P]
 }
 
 // Ranking assigns a score to every vertex from the graph's global structure,

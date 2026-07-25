@@ -61,6 +61,14 @@ func (b *BFS[K, P]) SetSource(source K) {
 	b.source = source
 }
 
+// Clone returns a new BFS with the same direction and no source set, so it can
+// be given its own source and run independently of the original. This lets a
+// single configured traversal serve many concurrent walks without sharing the
+// mutable source.
+func (b *BFS[K, P]) Clone() Traversal[K, P] {
+	return &BFS[K, P]{dir: b.dir}
+}
+
 // Traverse walks g breadth-first from source, following edges in the
 // configured direction, and records the visit order, the traversal tree and
 // each vertex's hop distance from source.
