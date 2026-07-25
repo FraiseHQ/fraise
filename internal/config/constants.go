@@ -41,6 +41,16 @@ const (
 
 	DefaultHashingFunction string = "xxhash"
 
+	DefaultSearchAlgorithm string = "bfs"
+
+	DefaultRankingAlgorithm string = "none"
+
+	DefaultPageRankDamping float64 = 0.85
+
+	DefaultPageRankMaxIter int = 100
+
+	DefaultPageRankTol float64 = 1e-6
+
 	DefaultTop uint = 10
 
 	DefaultDepth uint = 2

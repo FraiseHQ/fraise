@@ -93,6 +93,22 @@ type DBConfig struct {
 
 	// database hashing function (xxhash, murmur3, t1ha)
 	HashingFunction string `toml:"hashing-function"`
+
+	// graph search traversal algorithm (bfs)
+	SearchAlgorithm string `toml:"search-algorithm"`
+
+	// graph search ranking boost (none, pagerank)
+	RankingAlgorithm string `toml:"ranking-algorithm"`
+
+	// PageRank probability of following an edge (used when
+	// ranking-algorithm is pagerank)
+	PageRankDamping float64 `toml:"pagerank-damping"`
+
+	// PageRank iteration cap
+	PageRankMaxIter int `toml:"pagerank-max-iter"`
+
+	// PageRank convergence threshold on the score delta
+	PageRankTol float64 `toml:"pagerank-tol"`
 }
 
 // Instanciates new configset
@@ -134,6 +150,11 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.DB.HashingFunction, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.UintVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
 	flagSet.UintVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
+	flagSet.StringVar(&config.DB.SearchAlgorithm, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
+	flagSet.StringVar(&config.DB.RankingAlgorithm, "ranking-algorithm", DefaultRankingAlgorithm, "Graph search ranking boost")
+	flagSet.Float64Var(&config.DB.PageRankDamping, "pagerank-damping", DefaultPageRankDamping, "PageRank damping factor")
+	flagSet.IntVar(&config.DB.PageRankMaxIter, "pagerank-max-iter", DefaultPageRankMaxIter, "PageRank iteration cap")
+	flagSet.Float64Var(&config.DB.PageRankTol, "pagerank-tol", DefaultPageRankTol, "PageRank convergence threshold")
 
 	return config
 }
@@ -223,6 +244,11 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.DefaultTop, DefaultTop)
 	Adjust(&c.DB.DefaultDepth, DefaultDepth)
 	Adjust(&c.DB.HashingFunction, DefaultHashingFunction)
+	Adjust(&c.DB.SearchAlgorithm, DefaultSearchAlgorithm)
+	Adjust(&c.DB.RankingAlgorithm, DefaultRankingAlgorithm)
+	Adjust(&c.DB.PageRankDamping, DefaultPageRankDamping)
+	Adjust(&c.DB.PageRankMaxIter, DefaultPageRankMaxIter)
+	Adjust(&c.DB.PageRankTol, DefaultPageRankTol)
 
 	return nil
 }
