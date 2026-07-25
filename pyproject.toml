@@ -8,3 +8,10 @@ dependencies = [
     "pre-commit>=4.6.1",
     "pytest>=9.0.1",
 ]
+
+[tool.uv]
+environments = [
+    "sys_platform == 'darwin'",
+    "sys_platform == 'linux'",
+]
+required-version = ">0.9,<0.12"
