@@ -78,8 +78,8 @@ def test_recall_on_empty_graph(query):
     assert status == 200
     results = body["results"]
     assert results is not None
-    assert results["Count"] == 0
-    assert results["Hits"] == []
+    assert results["count"] == 0
+    assert results["hits"] == []
 
 
 def test_recall_with_clauses(query):
@@ -100,7 +100,7 @@ def test_remember_then_recall(query):
 
     status, body = query("recall@3 parrot")
     assert status == 200, body.get("error")
-    assert body["results"]["Count"] > 0, "recall found nothing, want the remembered fact"
+    assert body["results"]["count"] > 0, "recall found nothing, want the remembered fact"
 
 
 def test_parameterised_query_not_implemented(base_url):
@@ -183,8 +183,8 @@ def test_many_writes_then_concurrent_reads(query, base_url):
     # 3. Every concurrent read must succeed and return its own fact.
     for keyword, status, body in results:
         assert status == 200, f"recall {keyword!r} failed: {body}"
-        hits = body["results"]["Hits"]
-        values = [hit["Node"]["Value"] for hit in hits]
+        hits = body["results"]["hits"]
+        values = [hit["value"] for hit in hits]
         assert BIRD_FACTS[keyword] in values, (
             f"recall {keyword!r} lost its fact under load; got {values}"
         )
@@ -194,7 +194,7 @@ def test_many_writes_then_concurrent_reads(query, base_url):
     for keyword, phrase in BIRD_FACTS.items():
         status, body = query(f"recall@{graph} {keyword}")
         assert status == 200, body.get("error")
-        values = [hit["Node"]["Value"] for hit in body["results"]["Hits"]]
+        values = [hit["value"] for hit in body["results"]["hits"]]
         assert phrase in values, f"fact {keyword!r} missing after concurrency; got {values}"
 
 
@@ -230,7 +230,7 @@ def planets_graph(query):
 def _recall_count(query, text):
     status, body = query(text)
     assert status == 200, body.get("error")
-    return body["results"]["Count"]
+    return body["results"]["count"]
 
 
 def test_recall_depth_controls_reach(planets_graph, query):
@@ -272,5 +272,5 @@ def test_recall_depth_one_returns_only_the_seed(planets_graph, query):
     g = planets_graph
     status, body = query(f"recall@{g} mercury depth:1")
     assert status == 200, body.get("error")
-    values = [hit["Node"]["Value"] for hit in body["results"]["Hits"]]
+    values = [hit["value"] for hit in body["results"]["hits"]]
     assert values == [PLANET_FACTS["mercury"]]

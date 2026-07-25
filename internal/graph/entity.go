@@ -31,7 +31,7 @@ import (
 type Fact[K comparable] struct {
 	NodeAttributes
 
-	Hasher hash.Hasher[K, string]
+	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
 func (f Fact[K]) Key() K {
@@ -57,7 +57,7 @@ func (f Fact[K]) Hash(h hash.Hasher[K, string]) K {
 type NamedEntity[K comparable] struct {
 	NodeAttributes
 
-	Hasher hash.Hasher[K, string]
+	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
 func (n NamedEntity[K]) Key() K {
@@ -84,7 +84,7 @@ type Topic[K comparable] struct {
 	ID K
 	NodeAttributes
 
-	Hasher hash.Hasher[K, string]
+	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
 func (t Topic[K]) Key() K {

@@ -23,6 +23,9 @@
 package query
 
 import (
+	"encoding/json"
+	"time"
+
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
@@ -50,13 +53,28 @@ type QueryContext struct {
 }
 
 type QueryResult[K comparable, P float32 | float64] struct {
-	Count int
-	Hits  []Hit[K, P]
+	Count int         `json:"count"`
+	Hits  []Hit[K, P] `json:"hits"`
 }
 
 type Hit[K comparable, P float32 | float64] struct {
 	Node  *graph.Node[K]
 	Score P
+}
+
+// MarshalJSON flattens the node into the hit so the response carries only the
+// value, timestamp and score, with no nested Node object.
+func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
+	node := *h.Node
+	return json.Marshal(struct {
+		Value     string    `json:"value"`
+		Timestamp time.Time `json:"timestamp"`
+		Score     P         `json:"score"`
+	}{
+		Value:     node.GetValue(),
+		Timestamp: node.GetTimestamp(),
+		Score:     h.Score,
+	})
 }
 
 func Parse[K comparable, P float32 | float64](q string, c *config.ConfigSet) (Query[K, P], error) {
