@@ -26,6 +26,7 @@ Run by the `e2e` docker compose service against the `fraise` service over
 the compose network (see docker-compose.yml and `make test-e2e`).
 """
 
+import random
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -117,3 +118,68 @@ def test_concurrent_queries(base_url):
 
     failures = [(i, status) for i, status in results if status != 200]
     assert not failures, f"non-200 responses: {failures}"
+
+
+# A batch of distinct facts, each carrying a unique keyword so a recall can
+# target exactly one of them. They share a topic so the write path also
+# exercises relationship creation.
+BIRD_FACTS = {
+    "parrot": "the parrot is turquoise",
+    "raven": "the raven is midnight black",
+    "canary": "the canary is bright yellow",
+    "flamingo": "the flamingo is pink",
+    "peacock": "the peacock is iridescent",
+    "robin": "the robin has a red breast",
+    "magpie": "the magpie loves shiny things",
+    "owl": "the owl hunts at night",
+}
+
+
+def test_many_writes_then_concurrent_reads(query, base_url):
+    """Store a batch of distinct facts, then read them back under heavy
+    parallelism and verify every reader still gets its own fact intact.
+
+    This stresses the read/write path together: it should surface data races
+    or corruption in the scheduler/graph (missing hits, wrong values, 5xx, or
+    a server that stops responding) that a single-threaded round trip hides.
+    """
+    graph = 5
+
+    # 1. Write every fact. Writes are serialized server-side, so do them
+    #    sequentially and confirm each is accepted before reading.
+    for keyword, phrase in BIRD_FACTS.items():
+        status, body = query(f"remember@{graph} '{phrase}' topic:birds")
+        assert status == 200, body.get("error")
+
+    # 2. Build a shuffled workload where each keyword is recalled several times,
+    #    then fire them all concurrently.
+    workload = [kw for kw in BIRD_FACTS for _ in range(8)]
+    random.shuffle(workload)
+
+    def recall(keyword: str):
+        response = requests.post(
+            f"{base_url}/api/v1/q",
+            json={"query": f"recall@{graph} {keyword}"},
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        return keyword, response.status_code, response.json()
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(recall, workload))
+
+    # 3. Every concurrent read must succeed and return its own fact.
+    for keyword, status, body in results:
+        assert status == 200, f"recall {keyword!r} failed: {body}"
+        hits = body["results"]["Hits"]
+        values = [hit["Node"]["Value"] for hit in hits]
+        assert BIRD_FACTS[keyword] in values, (
+            f"recall {keyword!r} lost its fact under load; got {values}"
+        )
+
+    # 4. After the storm the graph must be intact: each fact still retrievable
+    #    on its own.
+    for keyword, phrase in BIRD_FACTS.items():
+        status, body = query(f"recall@{graph} {keyword}")
+        assert status == 200, body.get("error")
+        values = [hit["Node"]["Value"] for hit in body["results"]["Hits"]]
+        assert phrase in values, f"fact {keyword!r} missing after concurrency; got {values}"
