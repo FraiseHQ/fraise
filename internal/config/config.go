@@ -26,7 +26,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -76,12 +75,6 @@ type EngineConfig struct {
 	// Half life for time decay (used to score facts)
 	Halflife time.Duration `toml:"half-life"`
 
-	// How many seeds to pull from each source (keywords and vector)
-	SeedSize uint `toml:"seed-size"`
-
-	// Score attenuation for graph walk
-	HopAttenuation float32 `toml:"hop-attenuation"`
-
 	// Query cache size
 	CacheCapacity int `toml:"cache-capacity"`
 }
@@ -91,14 +84,39 @@ type DBConfig struct {
 
 	DefaultDepth uint `toml:"default-depth"`
 
-	// database hashing function (xxhash, murmur3, t1ha)
-	HashingFunction string `toml:"hashing-function"`
+	// How many seeds to pull from each source (keywords and vector)
+	SeedSize int `toml:"seed-size"`
 
-	// graph search traversal algorithm (bfs)
-	SearchAlgorithm string `toml:"search-algorithm"`
+	// Score attenuation for graph walk
+	HopAttenuation float64 `toml:"hop-attenuation"`
+
+	// database hashing function
+	HashingFunction HashingFunction `toml:"hashing-function"`
+
+	// graph search traversal algorithm
+	SearchAlgorithm SearchAlgorithm `toml:"search-algorithm"`
 
 	// graph search ranking boost (none, pagerank)
-	RankingAlgorithm string `toml:"ranking-algorithm"`
+	RankingAlgorithm RankingAlgorithm `toml:"ranking-algorithm"`
+
+	VectorSearch VectorSearch `toml:"vector-search"`
+}
+
+type HashingFunction struct {
+	// (xxhash, t1ha)
+	Name string `toml:"name"`
+
+	// hashing function seed
+	Seed uint64 `toml:"seed"`
+}
+
+type SearchAlgorithm struct {
+	// name (bfs)
+	Name string `toml:"name"`
+}
+type RankingAlgorithm struct {
+	// only pagerank supported (if no ranking none is accepted)
+	Name string `toml:"name"`
 
 	// PageRank probability of following an edge (used when
 	// ranking-algorithm is pagerank)
@@ -109,6 +127,14 @@ type DBConfig struct {
 
 	// PageRank convergence threshold on the score delta
 	PageRankTol float64 `toml:"pagerank-tol"`
+}
+
+type VectorSearch struct {
+	ProjectionDimention uint32 `toml:"projection-dimension"`
+
+	NumberTrees uint32 `toml:"number-trees"`
+
+	Seed uint64 `toml:"seed"`
 }
 
 // Instanciates new configset
@@ -134,27 +160,20 @@ func New() *ConfigSet {
 	// engine
 	flagSet.BoolVar(&config.Engine.AllowUnanchoredRecall, "allow-unanchored-recall", DefaultAllowUnanchoredRecall, "Allow unanchored recalls")
 	flagSet.DurationVar(&config.Engine.Halflife, "half-life", DefaultHalflife, "Half life for time decay")
-	flagSet.UintVar(&config.Engine.SeedSize, "seed-size", DefaultSeedSize, "Seeds to pull from each source")
-	config.Engine.HopAttenuation = DefaultHopAttenuation
-	flagSet.Func("hop-attenuation", "Score attenuation for graph walk", func(s string) error {
-		v, err := strconv.ParseFloat(s, 32)
-		if err != nil {
-			return err
-		}
-		config.Engine.HopAttenuation = float32(v)
-		return nil
-	})
 	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
 
 	// db
-	flagSet.StringVar(&config.DB.HashingFunction, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.UintVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
 	flagSet.UintVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
-	flagSet.StringVar(&config.DB.SearchAlgorithm, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
-	flagSet.StringVar(&config.DB.RankingAlgorithm, "ranking-algorithm", DefaultRankingAlgorithm, "Graph search ranking boost")
-	flagSet.Float64Var(&config.DB.PageRankDamping, "pagerank-damping", DefaultPageRankDamping, "PageRank damping factor")
-	flagSet.IntVar(&config.DB.PageRankMaxIter, "pagerank-max-iter", DefaultPageRankMaxIter, "PageRank iteration cap")
-	flagSet.Float64Var(&config.DB.PageRankTol, "pagerank-tol", DefaultPageRankTol, "PageRank convergence threshold")
+	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Seeds to pull from each source")
+	flagSet.Float64Var(&config.DB.HopAttenuation, "hop-attenuation", float64(DefaultHopAttenuation), "Score attenuation for graph walk")
+	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
+	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
+	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
+	flagSet.StringVar(&config.DB.RankingAlgorithm.Name, "ranking-algorithm", DefaultRankingAlgorithm, "Graph search ranking boost")
+	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankDamping, "pagerank-damping", DefaultPageRankDamping, "PageRank damping factor")
+	flagSet.IntVar(&config.DB.RankingAlgorithm.PageRankMaxIter, "pagerank-max-iter", DefaultPageRankMaxIter, "PageRank iteration cap")
+	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankTol, "pagerank-tol", DefaultPageRankTol, "PageRank convergence threshold")
 
 	return config
 }
@@ -236,19 +255,25 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// engine
 	Adjust(&c.Engine.AllowUnanchoredRecall, DefaultAllowUnanchoredRecall)
 	Adjust(&c.Engine.Halflife, DefaultHalflife)
-	Adjust(&c.Engine.SeedSize, DefaultSeedSize)
-	Adjust(&c.Engine.HopAttenuation, DefaultHopAttenuation)
 	Adjust(&c.Engine.CacheCapacity, DefaultCacheCapacity)
 
 	// db
 	Adjust(&c.DB.DefaultTop, DefaultTop)
 	Adjust(&c.DB.DefaultDepth, DefaultDepth)
-	Adjust(&c.DB.HashingFunction, DefaultHashingFunction)
-	Adjust(&c.DB.SearchAlgorithm, DefaultSearchAlgorithm)
-	Adjust(&c.DB.RankingAlgorithm, DefaultRankingAlgorithm)
-	Adjust(&c.DB.PageRankDamping, DefaultPageRankDamping)
-	Adjust(&c.DB.PageRankMaxIter, DefaultPageRankMaxIter)
-	Adjust(&c.DB.PageRankTol, DefaultPageRankTol)
+	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
+	Adjust(&c.DB.HopAttenuation, float64(DefaultHopAttenuation))
+	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
+	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
+	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)
+	Adjust(&c.DB.RankingAlgorithm.Name, DefaultRankingAlgorithm)
+	Adjust(&c.DB.RankingAlgorithm.PageRankDamping, DefaultPageRankDamping)
+	Adjust(&c.DB.RankingAlgorithm.PageRankMaxIter, DefaultPageRankMaxIter)
+	Adjust(&c.DB.RankingAlgorithm.PageRankTol, DefaultPageRankTol)
+
+	// vector search
+	Adjust(&c.DB.VectorSearch.ProjectionDimention, uint32(DefaultProjectionDimention))
+	Adjust(&c.DB.VectorSearch.NumberTrees, uint32(DefaultNumberTrees))
+	Adjust(&c.DB.VectorSearch.Seed, uint64(DefaultRPSeed))
 
 	return nil
 }

@@ -29,4 +29,5 @@ var (
 	// that has already been committed or rolled back.
 	ErrStreamClosed  = errors.New("Stream closed")
 	ErrParsingFailed = errors.New("Query Parsing Error")
+	ErrCommitFailed  = errors.New("Commit failed.")
 )

@@ -33,7 +33,7 @@ import (
 	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 )
 
-type Engine[K comparable, P float32 | float64] struct {
+type Engine[K ~uint64, P float32 | float64] struct {
 	Config        *config.ConfigSet
 	Cache         cache.Cache[K, query.Query[K, P]]
 	Scheduler     *scheduler.Scheduler[K, P]
@@ -41,7 +41,7 @@ type Engine[K comparable, P float32 | float64] struct {
 	Hasher        hash.Hasher[K, string]
 }
 
-func NewEngine[K comparable, P float32 | float64](c *config.ConfigSet, hasher hash.Hasher[K, string]) *Engine[K, P] {
+func NewEngine[K ~uint64, P float32 | float64](c *config.ConfigSet, hasher hash.Hasher[K, string]) *Engine[K, P] {
 	e := &Engine[K, P]{
 		Config:        c,
 		Optimisations: optimisation.NewPipeline[K, P](),

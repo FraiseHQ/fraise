@@ -23,6 +23,7 @@
 package scheduler
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
@@ -35,7 +36,7 @@ import (
 // The scheduler decides when to run a stream.
 // one concurrent write stream is supported at a time
 // The scheduler decides when to wait for a write operation to finish
-type Scheduler[K comparable, P float32 | float64] struct {
+type Scheduler[K ~uint64, P float32 | float64] struct {
 	Config *config.ConfigSet
 	Queue  chan *query.Stream[K, P]
 	DB     *db.DB[K, P]
@@ -44,7 +45,7 @@ type Scheduler[K comparable, P float32 | float64] struct {
 	wg            sync.WaitGroup
 }
 
-func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
+func NewScheduler[K ~uint64, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
 	s := &Scheduler[K, P]{
 		Config:        config,
 		writeInFlight: false,
@@ -90,18 +91,29 @@ func (s *Scheduler[K, P]) Submit(stream *query.Stream[K, P]) {
 
 // Executes stream
 func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
+
 	g, err := s.DB.Select(stream.Query.GetGraphID())
+
 	if err != nil {
 		return err
 	}
-	err = stream.Stage(g)
+
+	defer stream.Release(g)
+	defer stream.Finish()
+
+	stream.Acquire(g)
+
+	stg, err := stream.Stage(g)
+
+	fmt.Println(stream.Result)
+	fmt.Println(g.PredecessorMap())
+	fmt.Println(g.AdjacencyMap())
+	fmt.Println(g.Nodes())
+
 	if err != nil {
-		stream.Rollback(g)
-		return ErrStreamExecution
-	}
-	if err := stream.Commit(g); err != nil {
 		stream.Rollback(g)
 		return ErrStreamCommit
 	}
+	g.MergeFrom(stg)
 	return nil
 }

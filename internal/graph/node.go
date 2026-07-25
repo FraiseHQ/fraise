@@ -34,17 +34,23 @@ type NodeAttributes struct {
 }
 
 type Node[K comparable] interface {
-	GetID() K
+	hash.Hashable[K, string]
+
+	Key() K
+	GetValue() string
 	GetTimestamp() time.Time
 	GetAttributes() *NodeAttributes
-	hash.Hashable[K, string]
 }
 
 type Entity[K comparable] interface {
+	Node[K]
+
 	GetValue() string
 }
 
 type Relationship[K comparable] interface {
+	Node[K]
+
 	Source() *Entity[K]
 	Target() *Entity[K]
 }

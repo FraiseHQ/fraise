@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
@@ -47,20 +48,21 @@ type GraphStats struct {
 // callers are responsible for acquiring the appropriate lock around the
 // operations they compose (see the locking section below).
 type Graph[K comparable, P float32 | float64] interface {
+	GetHasher() hash.Hasher[K, string]
 
 	// Get returns the node stored under key, or nil if absent.
-	Get(key K) *Node[K]
+	Get(key K) Node[K]
 
 	// Set inserts a new node, deriving its key via the graph's hash
 	// function.
-	Set(node *Node[K]) error
+	Set(node Node[K]) error
 
 	// Put replaces the node stored under key with the given node.
-	Put(key K, node *Node[K]) error
+	Put(key K, node Node[K]) error
 
 	// Delete removes the node (and, by extension, its index entries and
 	// incident relationships).
-	Delete(node *Node[K]) error
+	Delete(node Node[K]) error
 
 	// GetVectorIndex returns the graph's vector (semantic) index, keyed
 	// by node key and storing embedding vectors of precision P.
@@ -78,21 +80,16 @@ type Graph[K comparable, P float32 | float64] interface {
 	// original: mutating one never affects the other.
 	Copy() Graph[K, P]
 
-	// Entities returns every entity (vertex) currently in the graph.
-	Entities() []*Entity[K]
-
-	// Relationships returns every relationship (edge) currently in the
-	// graph.
-	Relationships() []*Relationship[K]
+	Nodes() map[K]Node[K]
 
 	// AdjacencyMap returns the outgoing-edge view of the graph:
 	// AdjacencyMap()[from][to] is the relationship from -> to.
-	AdjacencyMap() map[K]map[K]*Relationship[K]
+	AdjacencyMap() map[K]map[K]K
 
 	// PredecessorMap returns the incoming-edge view of the graph:
 	// PredecessorMap()[to][from] is the relationship from -> to. It is
 	// the transpose of AdjacencyMap and serves reverse traversal.
-	PredecessorMap() map[K]map[K]*Relationship[K]
+	PredecessorMap() map[K]map[K]K
 
 	// Order returns the number of entities (vertices) in the graph.
 	Order() int

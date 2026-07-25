@@ -38,7 +38,7 @@ import (
 // Server ties together the HTTP layer, the database, and the query engine.
 // K is the key type used to identify records, and P is the floating-point
 // precision (float32 or float64) used for the values they hold.
-type Server[K comparable, P float32 | float64] struct {
+type Server[K ~uint64, P float32 | float64] struct {
 	// Config holds the full application configuration.
 	Config *config.ConfigSet
 
@@ -54,7 +54,7 @@ type Server[K comparable, P float32 | float64] struct {
 // New constructs a Server wired up with a database, an engine, and the HTTP
 // routes. The hasher determines how keys are mapped to their string
 // representation for storage and lookup.
-func New[K comparable, P float32 | float64](config *config.ConfigSet, hasher hash.Hasher[K, string]) *Server[K, P] {
+func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.Hasher[K, string]) *Server[K, P] {
 
 	// Initialise the data store from the configuration.
 	db, err := db.NewDB[K, P](config)

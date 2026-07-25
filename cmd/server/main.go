@@ -53,7 +53,7 @@ func main() {
 
 	// MurmurHash produces uint32 keys, so the server is instantiated with
 	// K = uint32; float64 is used for embedding/score precision.
-	srv := server.New[uint32, float64](c, hash.MurmurHash{})
+	srv := server.New[uint64, float64](c, hash.NewHasher[uint64](c))
 
 	if err := srv.Start(); err != nil {
 		logger.Error("Failed to start server", "error", err)

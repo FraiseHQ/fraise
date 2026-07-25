@@ -41,7 +41,9 @@ const (
 
 	DefaultHashingFunction string = "xxhash"
 
-	DefaultSearchAlgorithm string = "bfs"
+	DefaultHashingFunctionSeed uint64 = 0
+
+	DefaultSearchAlgorithm string = "none"
 
 	DefaultRankingAlgorithm string = "none"
 
@@ -59,9 +61,15 @@ const (
 
 	DefaultHalflife time.Duration = 7 * 24 * time.Hour
 
-	DefaultSeedSize uint = 50
+	DefaultSeedSize uint = 10
 
 	DefaultHopAttenuation float32 = 0.5
 
 	DefaultCacheCapacity int = 1000
+
+	DefaultProjectionDimention int = 8
+
+	DefaultNumberTrees int = 4
+
+	DefaultRPSeed int = 4
 )

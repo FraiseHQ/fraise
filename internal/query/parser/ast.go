@@ -161,11 +161,27 @@ func (r RememberCommandNode[P]) Value() string {
 }
 
 func (r RememberCommandNode[P]) Entities() []string {
-	return []string{}
+	var res []string
+
+	for _, a := range r.anchors {
+		if f, ok := a.Field().(EntityFieldNode); ok {
+			res = append(res, f.Value())
+		}
+	}
+
+	return res
 }
 
 func (r RememberCommandNode[P]) Topics() []string {
-	return []string{}
+	var res []string
+
+	for _, a := range r.anchors {
+		if f, ok := a.Field().(TopicFieldNode); ok {
+			res = append(res, f.Value())
+		}
+	}
+
+	return res
 }
 
 // Selector node is the graph selection statement

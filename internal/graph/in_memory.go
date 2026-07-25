@@ -29,24 +29,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/index"
-)
-
-const (
-	// defaultSeedSize is how many seeds each source (text, vector) contributes
-	// to a search.
-	defaultSeedSize = 10
-
-	// rpProjDim, rpNumTrees and rpSeed configure the vector index forest. The
-	// embedding dimension itself is learned from the first inserted vector.
-	rpProjDim  = 8
-	rpNumTrees = 4
-	rpSeed     = 1
-
-	// hopAttenuation is the per-hop score decay applied while walking the
-	// graph away from a seed.
-	hopAttenuation = 0.5
 )
 
 // InMemoryGraph is the in-process implementation of Graph. Nodes live in a
@@ -54,21 +40,25 @@ const (
 // two secondary indices serve hybrid search: a BTree full-text index over the
 // nodes' values and an RPTree (random projection forest) vector index over
 // caller-provided embeddings.
-type InMemoryGraph[K comparable, P float32 | float64] struct {
-	idToNodes     map[K]Node[K]
-	nodeToSources map[K]map[K]Relationship[K] // incoming: target -> source -> edge
-	nodeToTargets map[K]map[K]Relationship[K] // outgoing: source -> target -> edge
+type InMemoryGraph[K ~uint64, P float32 | float64] struct {
+	idToNodes     map[K]Node[K] // all nodes
+	nodeToSources map[K]map[K]K // incoming: target -> source -> edge
+	nodeToTargets map[K]map[K]K // outgoing: source -> target -> edge
 
 	textIndex   *index.BTreeIndex[K, P]
 	vectorIndex *index.RPTreeIndex[K, P]
 
 	// traversal and ranking are the pluggable search algorithms (see
-	// algorithms.Traversal and algorithms.Ranking, mirrored here by the
+	// Traversal and Ranking, mirrored here by the
 	// unexported hook interfaces). traversal nil falls back to a built-in
 	// breadth-first walk over both edge directions; ranking nil applies no
 	// structural boost.
 	traversal Traversal[K, P]
 	ranking   Ranking[K, P]
+
+	hasher hash.Hasher[K, string]
+
+	config *config.ConfigSet
 
 	mu sync.RWMutex
 }
@@ -85,13 +75,20 @@ func (g *InMemoryGraph[K, P]) SetRanking(r Ranking[K, P]) {
 	g.ranking = r
 }
 
-func NewGraph[K comparable, P float32 | float64]() *InMemoryGraph[K, P] {
+func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemoryGraph[K, P] {
 	g := &InMemoryGraph[K, P]{
 		idToNodes:     make(map[K]Node[K]),
-		nodeToSources: make(map[K]map[K]Relationship[K]),
-		nodeToTargets: make(map[K]map[K]Relationship[K]),
+		nodeToSources: make(map[K]map[K]K),
+		nodeToTargets: make(map[K]map[K]K),
 		textIndex:     index.NewBTreeIndex[K, P](),
-		vectorIndex:   index.NewRPTreeIndex[K, P](0, rpProjDim, rpNumTrees, rpSeed),
+		vectorIndex: index.NewRPTreeIndex[K, P](
+			0,
+			int(config.DB.VectorSearch.ProjectionDimention),
+			int(config.DB.VectorSearch.NumberTrees),
+			config.DB.VectorSearch.Seed,
+		),
+		hasher: hash.NewHasher[K](config),
+		config: config,
 	}
 	return g
 }
@@ -116,39 +113,64 @@ func (g *InMemoryGraph[K, P]) RUnlock() {
 	g.mu.RUnlock()
 }
 
+// Get hasher
+func (g *InMemoryGraph[K, P]) GetHasher() hash.Hasher[K, string] {
+	return g.hasher
+}
+
 // Get returns the node stored under key, or nil if absent.
-func (g *InMemoryGraph[K, P]) Get(key K) *Node[K] {
+func (g *InMemoryGraph[K, P]) Get(key K) Node[K] {
 	node, ok := g.idToNodes[key]
 	if !ok {
 		return nil
 	}
-	return &node
+	return node
 }
 
 // Set inserts a new node under its own ID, returning ErrNodeAlreadyExists if
 // the key is taken.
-func (g *InMemoryGraph[K, P]) Set(node *Node[K]) error {
+func (g *InMemoryGraph[K, P]) Set(node Node[K]) error {
 	if node == nil {
 		return ErrNilNode
 	}
-	n := *node
-	if _, exists := g.idToNodes[n.GetID()]; exists {
+	n := node
+	if _, exists := g.idToNodes[n.Key()]; exists {
 		return ErrNodeAlreadyExists
 	}
-	return g.store(n.GetID(), n)
+	return g.store(n.Key(), n)
 }
 
 // Put stores node under key, replacing whatever was there.
-func (g *InMemoryGraph[K, P]) Put(key K, node *Node[K]) error {
+func (g *InMemoryGraph[K, P]) Put(key K, node Node[K]) error {
 	if node == nil {
 		return ErrNilNode
 	}
-	return g.store(key, *node)
+	return g.store(key, node)
 }
 
 // store records the node and (re)indexes its value in the text index.
 func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	g.idToNodes[key] = node
+
+	r, ok := node.(Relationship[K])
+	if ok {
+		// store relationship
+		source := (*r.Source()).Key()
+		target := (*r.Target()).Key()
+
+		if g.nodeToTargets[source] == nil {
+			g.nodeToTargets[source] = make(map[K]K)
+		}
+
+		g.nodeToTargets[source][target] = r.Key()
+
+		if g.nodeToSources[target] == nil {
+			g.nodeToSources[target] = make(map[K]K)
+		}
+
+		g.nodeToSources[target][source] = r.Key()
+	}
+
 	if attrs := node.GetAttributes(); attrs != nil {
 		return g.textIndex.Insert(key, attrs.Value)
 	}
@@ -156,11 +178,11 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 }
 
 // Delete removes the node, its incident relationships and its index entries.
-func (g *InMemoryGraph[K, P]) Delete(node *Node[K]) error {
+func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	if node == nil {
 		return ErrNilNode
 	}
-	key := (*node).GetID()
+	key := node.Key()
 	if _, ok := g.idToNodes[key]; !ok {
 		return ErrNodeNotFound
 	}
@@ -181,64 +203,28 @@ func (g *InMemoryGraph[K, P]) Delete(node *Node[K]) error {
 	return nil
 }
 
-// AddRelationship records the directed edge source -> target. Both endpoints
-// must already be stored in the graph.
-func (g *InMemoryGraph[K, P]) AddRelationship(source, target K, rel Relationship[K]) error {
-	if _, ok := g.idToNodes[source]; !ok {
-		return ErrNodeNotFound
-	}
-	if _, ok := g.idToNodes[target]; !ok {
-		return ErrNodeNotFound
-	}
-
-	if g.nodeToTargets[source] == nil {
-		g.nodeToTargets[source] = make(map[K]Relationship[K])
-	}
-	g.nodeToTargets[source][target] = rel
-
-	if g.nodeToSources[target] == nil {
-		g.nodeToSources[target] = make(map[K]Relationship[K])
-	}
-	g.nodeToSources[target][source] = rel
-	return nil
+func (g *InMemoryGraph[K, P]) Nodes() map[K]Node[K] {
+	return g.idToNodes
 }
 
-func (g *InMemoryGraph[K, P]) AdjacencyMap() map[K]map[K]*Relationship[K] {
+func (g *InMemoryGraph[K, P]) AdjacencyMap() map[K]map[K]K {
 	return exportEdges(g.nodeToTargets)
 }
 
-func (g *InMemoryGraph[K, P]) PredecessorMap() map[K]map[K]*Relationship[K] {
+func (g *InMemoryGraph[K, P]) PredecessorMap() map[K]map[K]K {
 	return exportEdges(g.nodeToSources)
 }
 
 // exportEdges converts the internal edge maps to the pointer-valued shape the
 // Graph interface exposes.
-func exportEdges[K comparable](edges map[K]map[K]Relationship[K]) map[K]map[K]*Relationship[K] {
-	out := make(map[K]map[K]*Relationship[K], len(edges))
+func exportEdges[K comparable](edges map[K]map[K]K) map[K]map[K]K {
+	out := make(map[K]map[K]K, len(edges))
 	for from, tos := range edges {
-		row := make(map[K]*Relationship[K], len(tos))
+		row := make(map[K]K, len(tos))
 		for to, rel := range tos {
-			row[to] = &rel
+			row[to] = rel
 		}
 		out[from] = row
-	}
-	return out
-}
-
-// Copy returns a deep copy of the graph: nodes, relationships and both
-// indices are rebuilt so mutating one graph never affects the other.
-func (g *InMemoryGraph[K, P]) Copy() Graph[K, P] {
-	out := NewGraph[K, P]()
-	for key, node := range g.idToNodes {
-		_ = out.store(key, node)
-	}
-	for source, targets := range g.nodeToTargets {
-		for target, rel := range targets {
-			_ = out.AddRelationship(source, target, rel)
-		}
-	}
-	for key, vector := range g.vectorIndex.Vectors() {
-		_ = out.vectorIndex.Insert(key, vector)
 	}
 	return out
 }
@@ -269,28 +255,6 @@ func (g *InMemoryGraph[K, P]) Stats() GraphStats {
 		Size:  g.Size(),
 		Nodes: len(g.idToNodes),
 	}
-}
-
-// Entities returns every stored node that is an Entity (has a value).
-func (g *InMemoryGraph[K, P]) Entities() []*Entity[K] {
-	entities := make([]*Entity[K], 0, len(g.idToNodes))
-	for _, node := range g.idToNodes {
-		if entity, ok := node.(Entity[K]); ok {
-			entities = append(entities, &entity)
-		}
-	}
-	return entities
-}
-
-// Relationships returns every relationship (edge) currently in the graph.
-func (g *InMemoryGraph[K, P]) Relationships() []*Relationship[K] {
-	rels := make([]*Relationship[K], 0, g.Size())
-	for _, targets := range g.nodeToTargets {
-		for _, rel := range targets {
-			rels = append(rels, &rel)
-		}
-	}
-	return rels
 }
 
 // Returns the graph vector index
@@ -361,7 +325,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 
 	if vector.Dim() > 0 {
-		if keys, err := g.vectorIndex.Search(vector, defaultSeedSize); err == nil {
+		if keys, err := g.vectorIndex.Search(vector, g.config.DB.SeedSize); err == nil {
 			for rank, key := range keys {
 				scores[key] += P(1) / P(1+rank)
 			}
@@ -385,7 +349,7 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, seedScores map[K]P, topi
 	scores := make(map[K]P, len(seedScores))
 	for _, seed := range seeds {
 		for key, hop := range g.walk(seed, depth) {
-			scores[key] += seedScores[seed] * P(math.Pow(hopAttenuation, float64(hop)))
+			scores[key] += seedScores[seed] * P(math.Pow(g.config.DB.HopAttenuation, float64(hop)))
 		}
 	}
 
@@ -422,6 +386,7 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, seedScores map[K]P, topi
 func (g *InMemoryGraph[K, P]) walk(source K, depth int) map[K]int {
 	if g.traversal != nil {
 
+		g.traversal.SetSource(source)
 		result, err := g.traversal.Run(g)
 
 		r, _ := result.(TraversalResult[K])
@@ -443,7 +408,7 @@ func (g *InMemoryGraph[K, P]) walk(source K, depth int) map[K]int {
 	for hop := 1; hop <= depth && len(frontier) > 0; hop++ {
 		var next []K
 		for _, u := range frontier {
-			for _, neighbors := range []map[K]Relationship[K]{g.nodeToTargets[u], g.nodeToSources[u]} {
+			for _, neighbors := range []map[K]K{g.nodeToTargets[u], g.nodeToSources[u]} {
 				for v := range neighbors {
 					if _, seen := depths[v]; seen {
 						continue
@@ -510,7 +475,7 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 		if !ok {
 			continue
 		}
-		ts := node.GetTimestamp()
+		ts := node.GetAttributes().Timestamp
 		if !since.IsZero() && ts.Before(since) {
 			continue
 		}
@@ -523,6 +488,19 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 	return nodes, ranked
 }
 
+// Copy returns a deep copy of the graph: nodes, relationships and both
+// indices are rebuilt so mutating one graph never affects the other.
+func (g *InMemoryGraph[K, P]) Copy() Graph[K, P] {
+	out := NewGraph[K, P](g.config)
+	for key, node := range g.idToNodes {
+		_ = out.store(key, node)
+	}
+	for key, vector := range g.vectorIndex.Vectors() {
+		_ = out.vectorIndex.Insert(key, vector)
+	}
+	return out
+}
+
 // MergeFrom merges the contents of in into this graph: nodes, relationships
 // and index entries. On key collision the incoming node wins.
 func (g *InMemoryGraph[K, P]) MergeFrom(in Graph[K, P]) {
@@ -533,11 +511,6 @@ func (g *InMemoryGraph[K, P]) MergeFrom(in Graph[K, P]) {
 
 	for key, node := range other.idToNodes {
 		_ = g.store(key, node)
-	}
-	for source, targets := range other.nodeToTargets {
-		for target, rel := range targets {
-			_ = g.AddRelationship(source, target, rel)
-		}
 	}
 	for key, vector := range other.vectorIndex.Vectors() {
 		_ = g.vectorIndex.Insert(key, vector)

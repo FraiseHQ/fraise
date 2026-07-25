@@ -29,12 +29,13 @@ import (
 )
 
 type Fact[K comparable] struct {
-	ID K
 	NodeAttributes
+
+	Hasher hash.Hasher[K, string]
 }
 
-func (f Fact[K]) GetID() K {
-	return f.ID
+func (f Fact[K]) Key() K {
+	return f.Hash(f.Hasher)
 }
 
 func (f Fact[K]) GetValue() string {
@@ -45,7 +46,7 @@ func (f Fact[K]) GetTimestamp() time.Time {
 	return f.Timestamp
 }
 
-func (f *Fact[K]) GetAttributes() *NodeAttributes {
+func (f Fact[K]) GetAttributes() *NodeAttributes {
 	return &f.NodeAttributes
 }
 
@@ -54,12 +55,13 @@ func (f Fact[K]) Hash(h hash.Hasher[K, string]) K {
 }
 
 type NamedEntity[K comparable] struct {
-	ID K
 	NodeAttributes
+
+	Hasher hash.Hasher[K, string]
 }
 
-func (n NamedEntity[K]) GetID() K {
-	return n.ID
+func (n NamedEntity[K]) Key() K {
+	return n.Hash(n.Hasher)
 }
 
 func (n NamedEntity[K]) GetValue() string {
@@ -81,10 +83,12 @@ func (n NamedEntity[K]) Hash(h hash.Hasher[K, string]) K {
 type Topic[K comparable] struct {
 	ID K
 	NodeAttributes
+
+	Hasher hash.Hasher[K, string]
 }
 
-func (t Topic[K]) GetID() K {
-	return t.ID
+func (t Topic[K]) Key() K {
+	return t.Hash(t.Hasher)
 }
 
 func (t Topic[K]) GetValue() string {

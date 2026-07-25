@@ -49,17 +49,72 @@ func NewStream[K comparable, P float32 | float64](q Query[K, P]) *Stream[K, P] {
 }
 
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
-	defer s.finish()
-	defer s.release(g)
-
-	if s.staging == nil {
-		return ErrStreamClosed
-	}
 
 	// Write stream
 	if s.Query.IsWrite() {
-		g.MergeFrom(s.staging)
-		s.staging = nil
+
+		if s.staging == nil {
+			return ErrStreamClosed
+		}
+
+		remember := s.Query.(*Remember[K, P])
+
+		// TODO: Implement stream query write logic
+
+		fact := graph.Fact[K]{NodeAttributes: graph.NodeAttributes{
+			Value:     remember.Value,
+			Timestamp: time.Now(),
+		},
+			Hasher: g.GetHasher(),
+		}
+
+		g.Set(fact)
+
+		for _, e := range remember.Entities {
+
+			entity := graph.NamedEntity[K]{NodeAttributes: graph.NodeAttributes{
+				Value:     e,
+				Timestamp: time.Now(),
+			},
+				Hasher: g.GetHasher(),
+			}
+
+			mentions := graph.Mentions[K]{NodeAttributes: graph.NodeAttributes{
+				Timestamp: time.Now(),
+			},
+				Fact:        &fact,
+				NamedEntity: &entity,
+				Hasher:      g.GetHasher(),
+			}
+
+			g.Set(mentions)
+		}
+
+		for _, t := range remember.Topics {
+
+			topic := graph.Topic[K]{NodeAttributes: graph.NodeAttributes{
+				Value:     t,
+				Timestamp: time.Now(),
+			},
+				Hasher: g.GetHasher(),
+			}
+
+			about := graph.IsAbout[K]{NodeAttributes: graph.NodeAttributes{
+				Timestamp: time.Now(),
+			},
+				Fact:   &fact,
+				Topic:  &topic,
+				Hasher: g.GetHasher(),
+			}
+
+			g.Set(about)
+		}
+
+		r := QueryResult[K, P]{
+			Count: 0,
+			Hits:  make([]Hit[K, P], 0),
+		}
+		s.Result = &r
 		return nil
 	}
 
@@ -87,19 +142,11 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		r.Hits[i].Score = scores[i]
 	}
 
-	s.staging = nil
 	s.Result = &r
 	return nil
 }
 
 func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) error {
-
-	defer s.finish()
-	defer s.release(g)
-
-	if s.staging == nil {
-		return ErrStreamClosed
-	}
 
 	if s.Query.IsWrite() {
 		s.staging = nil
@@ -109,14 +156,20 @@ func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) error {
 	return nil
 }
 
-func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) error {
-	s.acquire(g)
-
-	s.staging = g.Copy()
+func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) (graph.Graph[K, P], error) {
 	if s.Query.IsWrite() {
-		// remember logic
+		s.staging = g.Copy()
+		err := s.Commit(s.staging)
+		if err != nil {
+			return nil, ErrCommitFailed
+		}
+		return s.staging, nil
 	}
-	return nil
+	err := s.Commit(g)
+	if err != nil {
+		return nil, ErrCommitFailed
+	}
+	return g, nil
 }
 
 func (s *Stream[K, P]) GraphID() uint8 {
@@ -127,11 +180,11 @@ func (s *Stream[K, P]) Done() <-chan struct{} {
 	return s.done
 }
 
-func (s *Stream[K, P]) finish() {
+func (s *Stream[K, P]) Finish() {
 	s.once.Do(func() { close(s.done) })
 }
 
-func (s *Stream[K, P]) acquire(g graph.Graph[K, P]) {
+func (s *Stream[K, P]) Acquire(g graph.Graph[K, P]) {
 	if s.Query.IsWrite() {
 		g.Lock()
 	} else {
@@ -139,7 +192,7 @@ func (s *Stream[K, P]) acquire(g graph.Graph[K, P]) {
 	}
 }
 
-func (s *Stream[K, P]) release(g graph.Graph[K, P]) {
+func (s *Stream[K, P]) Release(g graph.Graph[K, P]) {
 	if s.Query.IsWrite() {
 		g.Unlock()
 	} else {
