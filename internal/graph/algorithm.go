@@ -20,9 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package algorithms
-
-import "github.com/RonsenbergVI/fraise/internal/graph"
+package graph
 
 // Direction selects which edges a traversal follows in a directed graph.
 type Direction int
@@ -42,7 +40,7 @@ const (
 // identity; the runnable contract lives on the Traversal and Ranking
 // sub-interfaces, which differ in what they consume and produce.
 type Algorithm[K comparable, P float32 | float64] interface {
-	Run(g graph.Graph[K, P]) AlgorithmResult
+	Run(g Graph[K, P]) (AlgorithmResult, error)
 }
 
 type AlgorithmResult interface {
@@ -79,7 +77,10 @@ type Traversal[K comparable, P float32 | float64] interface {
 
 	// traverse walks g from the algorithm's configured source and returns the
 	// visit order, traversal tree and per-vertex depth.
-	traverse(g graph.Graph[K, P], source K) (TraversalResult[K], error)
+	traverse(g Graph[K, P], source K) (TraversalResult[K], error)
+
+	// Sets the traversal source
+	SetSource(source K)
 }
 
 // Ranking assigns a score to every vertex from the graph's global structure,
@@ -88,5 +89,5 @@ type Ranking[K comparable, P float32 | float64] interface {
 	Algorithm[K, P]
 
 	// Rank computes a score for each vertex of g, keyed by vertex.
-	rank(g graph.Graph[K, P]) (map[K]P, error)
+	rank(g Graph[K, P]) (map[K]P, error)
 }

@@ -23,7 +23,7 @@
 package graph
 
 import (
-	"maps"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -62,7 +62,27 @@ type InMemoryGraph[K comparable, P float32 | float64] struct {
 	textIndex   *index.BTreeIndex[K, P]
 	vectorIndex *index.RPTreeIndex[K, P]
 
+	// traversal and ranking are the pluggable search algorithms (see
+	// algorithms.Traversal and algorithms.Ranking, mirrored here by the
+	// unexported hook interfaces). traversal nil falls back to a built-in
+	// breadth-first walk over both edge directions; ranking nil applies no
+	// structural boost.
+	traversal Traversal[K, P]
+	ranking   Ranking[K, P]
+
 	mu sync.RWMutex
+}
+
+// SetTraversal installs the traversal algorithm Search expands seeds with
+// (typically an algorithms.Traversal such as BFS).
+func (g *InMemoryGraph[K, P]) SetTraversal(t Traversal[K, P]) {
+	g.traversal = t
+}
+
+// SetRanking installs the global ranking algorithm Search boosts scores with
+// (typically an algorithms.Ranking such as PageRank).
+func (g *InMemoryGraph[K, P]) SetRanking(r Ranking[K, P]) {
+	g.ranking = r
 }
 
 func NewGraph[K comparable, P float32 | float64]() *InMemoryGraph[K, P] {
@@ -355,29 +375,34 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	return seeds, scores
 }
 
-// findNeighbours walks the graph breadth-first from every seed, following
-// edges in both directions up to depth hops. A node discovered h hops from a
-// seed inherits the seed's score attenuated by hopAttenuation^h. The pooled
-// nodes are then filtered by topics and entities.
+// findNeighbours expands every seed into its neighbourhood using the graph's
+// walker (or the built-in breadth-first walk when none is set). A node
+// discovered h hops from a seed contributes that seed's score attenuated by
+// hopAttenuation^h; contributions from multiple seeds accumulate. When a
+// ranker is installed its global scores boost the pooled walk scores. The
+// pooled nodes are then filtered by topics and entities.
 func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, seedScores map[K]P, topics []string, entities []string, depth int) ([]K, map[K]P) {
 	scores := make(map[K]P, len(seedScores))
-	maps.Copy(scores, seedScores)
+	for _, seed := range seeds {
+		for key, hop := range g.walk(seed, depth) {
+			scores[key] += seedScores[seed] * P(math.Pow(hopAttenuation, float64(hop)))
+		}
+	}
 
-	frontier := seeds
-	for hop := 0; hop < depth && len(frontier) > 0; hop++ {
-		var next []K
-		for _, u := range frontier {
-			for _, neighbors := range []map[K]Relationship[K]{g.nodeToTargets[u], g.nodeToSources[u]} {
-				for v := range neighbors {
-					if _, seen := scores[v]; seen {
-						continue
-					}
-					scores[v] = scores[u] * P(hopAttenuation)
-					next = append(next, v)
+	if g.ranking != nil {
+		result, err := g.ranking.Run(g)
+		r, _ := result.(RankingResult[K, P])
+		if err == nil && len(r.Scores) > 0 {
+			// Boost by the mean-normalised global score: an average node is
+			// unchanged, central nodes gain, nodes unknown to the ranker
+			// (e.g. isolated ones) keep their walk score.
+			n := P(len(r.Scores))
+			for key := range scores {
+				if r, ok := r.Scores[key]; ok {
+					scores[key] *= 1 + r*n
 				}
 			}
 		}
-		frontier = next
 	}
 
 	keys := make([]K, 0, len(scores))
@@ -389,6 +414,48 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, seedScores map[K]P, topi
 		keys = append(keys, key)
 	}
 	return keys, scores
+}
+
+// walk expands source up to depth hops, delegating to the installed
+// Traversal or falling back to a breadth-first traversal over both edge
+// directions.
+func (g *InMemoryGraph[K, P]) walk(source K, depth int) map[K]int {
+	if g.traversal != nil {
+
+		result, err := g.traversal.Run(g)
+
+		r, _ := result.(TraversalResult[K])
+
+		if err != nil {
+			return nil
+		}
+		depths := make(map[K]int, len(r.Depth))
+		for key, hop := range r.Depth {
+			if hop <= depth {
+				depths[key] = hop
+			}
+		}
+		return depths
+	}
+
+	depths := map[K]int{source: 0}
+	frontier := []K{source}
+	for hop := 1; hop <= depth && len(frontier) > 0; hop++ {
+		var next []K
+		for _, u := range frontier {
+			for _, neighbors := range []map[K]Relationship[K]{g.nodeToTargets[u], g.nodeToSources[u]} {
+				for v := range neighbors {
+					if _, seen := depths[v]; seen {
+						continue
+					}
+					depths[v] = hop
+					next = append(next, v)
+				}
+			}
+		}
+		frontier = next
+	}
+	return depths
 }
 
 // matchesFilter reports whether the node passes a value filter: trivially if

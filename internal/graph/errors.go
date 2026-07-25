@@ -28,4 +28,6 @@ var (
 	ErrNilNode           = errors.New("graph: node is nil")
 	ErrNodeAlreadyExists = errors.New("graph: node already exists")
 	ErrNodeNotFound      = errors.New("graph: node not found")
+	ErrSourceNotFound    = errors.New("algorithms: source vertex not found in graph")
+	ErrEmptyGraph        = errors.New("algorithms: graph has no edges to rank")
 )
