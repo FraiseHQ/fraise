@@ -52,7 +52,24 @@ func NewDB[K comparable, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P],
 
 func (d *DB[K, P]) Start() error {
 	for i := range d.Graphs {
-		d.Graphs[i] = graph.NewGraph[K, P]()
+		g := graph.NewGraph[K, P]()
+
+		// The search algorithms are injected from configuration; unknown
+		// names keep the graph's built-in defaults.
+		switch d.Config.DB.SearchAlgorithm {
+		case "bfs":
+			g.SetTraversal(graph.NewBFSTraversal[K, P](graph.Both))
+		}
+		switch d.Config.DB.RankingAlgorithm {
+		case "pagerank":
+			g.SetRanking(graph.NewPageRank[K, P](
+				P(d.Config.DB.PageRankDamping),
+				d.Config.DB.PageRankMaxIter,
+				P(d.Config.DB.PageRankTol),
+			))
+		}
+
+		d.Graphs[i] = g
 	}
 	return nil
 }
