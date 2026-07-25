@@ -1,12 +1,14 @@
 [project]
 name = "fraise"
 version = "0.1.0"
-description = "Add your description here"
+description = "Fraise repository."
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+    { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
+]
 dependencies = [
     "pre-commit>=4.6.1",
-    "pytest>=9.0.1",
 ]
 
 [tool.uv]
@@ -15,3 +17,8 @@ environments = [
     "sys_platform == 'linux'",
 ]
 required-version = ">0.9,<0.12"
+
+[tool.uv.workspace]
+members = [
+    "tests",
+]

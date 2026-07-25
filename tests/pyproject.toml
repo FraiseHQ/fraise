@@ -1,0 +1,16 @@
+[project]
+name = "tests"
+version = "0.1.0"
+description = "e2e tests"
+readme = "README.md"
+authors = [
+    { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=9.0.1",
+    "requests>=2.32.5",
+]
+
+[project.scripts]
+tests = "tests:main"
