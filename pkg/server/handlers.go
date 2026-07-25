@@ -23,6 +23,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/RonsenbergVI/fraise/internal/query"
@@ -55,6 +56,17 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Reject a selector outside the allocated range up front: it is a
+		// client error, and letting it reach the scheduler would otherwise
+		// fail deep in Select.
+		if int(q.GetGraphID()) >= s.DB.NumGraphs() {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("graph %d does not exist (valid range 0-%d)",
+					q.GetGraphID(), s.DB.NumGraphs()-1),
+			})
 			return
 		}
 

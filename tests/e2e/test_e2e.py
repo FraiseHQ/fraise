@@ -60,6 +60,19 @@ def test_query_rejects_unparsable_query(query):
     assert body.get("error"), "expected a parse error message"
 
 
+def test_query_rejects_out_of_range_graph(base_url):
+    """A selector past the allocated graph range is a fast client error, not a
+    hang. Graph 9 is above the eight graphs the store allocates."""
+    response = requests.post(
+        f"{base_url}/api/v1/q",
+        json={"query": "recall@9 anything"},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+
+    assert response.status_code == 400
+    assert response.json().get("error"), "expected an out-of-range error message"
+
+
 def test_recall_on_empty_graph(query):
     status, body = query("recall nothingindexedyet")
     assert status == 200

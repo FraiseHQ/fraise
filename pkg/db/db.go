@@ -84,6 +84,12 @@ func (d *DB[K, P]) Stats() Stats {
 	return *d.stats
 }
 
+// NumGraphs reports how many graphs the store holds. Valid selectors are in
+// [0, NumGraphs).
+func (d *DB[K, P]) NumGraphs() int {
+	return len(d.Graphs)
+}
+
 func (d *DB[K, P]) Select(index uint8) (graph.Graph[K, P], error) {
 	if int(index) >= len(d.Graphs) {
 		return nil, fmt.Errorf("index %d out of bounds for slice of length %d", index, len(d.Graphs))

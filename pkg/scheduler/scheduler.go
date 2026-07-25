@@ -91,14 +91,18 @@ func (s *Scheduler[K, P]) Submit(stream *query.Stream[K, P]) {
 // Executes stream
 func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 
+	// Always signal completion, even on an early error, so a caller waiting on
+	// Done() never blocks forever (e.g. a request for an out-of-range graph).
+	defer stream.Finish()
+
 	g, err := s.DB.Select(stream.Query.GetGraphID())
 
 	if err != nil {
+		stream.Err = err
 		return err
 	}
 
 	defer stream.Release(g)
-	defer stream.Finish()
 
 	stream.Acquire(g)
 
@@ -106,6 +110,7 @@ func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 
 	if err != nil {
 		stream.Rollback(g)
+		stream.Err = ErrStreamCommit
 		return ErrStreamCommit
 	}
 	if stream.Query.IsWrite() {
