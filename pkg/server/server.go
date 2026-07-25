@@ -64,6 +64,9 @@ func New[K comparable, P float32 | float64](config *config.ConfigSet, hasher has
 	// Initialise the query engine with the same configuration and hasher.
 	engine := engine.NewEngine[K, P](config, hasher)
 
+	// The scheduler executes streams against the data store.
+	engine.Scheduler.DB = db
+
 	s := &Server[K, P]{
 		Config: config,
 		DB:     db,
