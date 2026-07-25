@@ -183,3 +183,81 @@ def test_many_writes_then_concurrent_reads(query, base_url):
         assert status == 200, body.get("error")
         values = [hit["Node"]["Value"] for hit in body["results"]["Hits"]]
         assert phrase in values, f"fact {keyword!r} missing after concurrency; got {values}"
+
+
+# Four facts sharing a single topic, each with a unique keyword. This is a
+# star: every fact hangs off the same "planets" hub. Recall returns facts, not
+# the hub, so from a seed fact the hub is one hop away (depth 1, invisible) and
+# the sibling facts are two hops away (depth 2). That makes the exact result
+# counts a clean function of depth and top.
+PLANET_TOPIC = "planets"
+PLANET_FACTS = {
+    "mercury": "mercury is the smallest planet",
+    "venus": "venus is the hottest planet",
+    "mars": "mars is the red planet",
+    "jupiter": "jupiter is the largest planet",
+}
+
+
+@pytest.fixture(scope="module")
+def planets_graph(query):
+    """Populate a dedicated graph with the planet star and return its id.
+
+    A fact is keyed by its value, so these writes are idempotent: re-running the
+    suite against a long-lived server leaves the counts unchanged. Graph 7 is
+    used by no other test, so its contents are fully known here.
+    """
+    graph = 7
+    for phrase in PLANET_FACTS.values():
+        status, body = query(f"remember@{graph} '{phrase}' topic:{PLANET_TOPIC}")
+        assert status == 200, body.get("error")
+    return graph
+
+
+def _recall_count(query, text):
+    status, body = query(text)
+    assert status == 200, body.get("error")
+    return body["results"]["Count"]
+
+
+def test_recall_depth_controls_reach(planets_graph, query):
+    """depth bounds how far the walk leaves the seed, and thus the count.
+
+    Note: depth:0 is not exercised — the query parser treats a 0 as "unset" and
+    substitutes the configured default, so it cannot be expressed.
+    """
+    g = planets_graph
+    n = len(PLANET_FACTS)
+
+    # depth 1: only the seed fact. The shared topic hub is one hop away, but the
+    # hub is graph structure, not a result, so nothing else surfaces.
+    assert _recall_count(query, f"recall@{g} mercury depth:1") == 1
+    # depth 2: the walk crosses the hub and reaches every sibling fact.
+    assert _recall_count(query, f"recall@{g} mercury depth:2") == n
+    # A single-topic star has nothing beyond two hops, so deeper adds nothing.
+    assert _recall_count(query, f"recall@{g} mercury depth:3") == n
+    # With no depth clause the configured default (2) applies, so a bare recall
+    # already reaches the whole star. This guards the default-depth wiring.
+    assert _recall_count(query, f"recall@{g} mercury") == n
+
+
+def test_recall_top_truncates_results(planets_graph, query):
+    """top caps the number of ranked results returned, never pads."""
+    g = planets_graph
+    n = len(PLANET_FACTS)
+
+    # At depth 2 all facts are reachable; top decides how many come back.
+    assert _recall_count(query, f"recall@{g} mercury depth:2 top:1") == 1
+    assert _recall_count(query, f"recall@{g} mercury depth:2 top:2") == 2
+    assert _recall_count(query, f"recall@{g} mercury depth:2 top:3") == 3
+    # top larger than the number available returns everything, not padding.
+    assert _recall_count(query, f"recall@{g} mercury depth:2 top:10") == n
+
+
+def test_recall_depth_one_returns_only_the_seed(planets_graph, query):
+    """The depth:1 result is exactly the seed fact, by value."""
+    g = planets_graph
+    status, body = query(f"recall@{g} mercury depth:1")
+    assert status == 200, body.get("error")
+    values = [hit["Node"]["Value"] for hit in body["results"]["Hits"]]
+    assert values == [PLANET_FACTS["mercury"]]

@@ -23,6 +23,7 @@
 package query
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,8 +55,25 @@ func (r *Recall[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
 
+// Hash keys the query for the plan cache. It must fold in everything that
+// changes the result set: two recalls that differ only in graph, depth or top
+// must not collide, or the cache would hand back a stale plan. The lists are
+// delimited so ["ab"] and ["a","b"] do not hash alike.
 func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(strings.Join(r.Keywords, "") + strings.Join(r.Entities, "") + strings.Join(r.Topics, ""))
+	var b strings.Builder
+	b.WriteString("g=")
+	b.WriteString(strconv.Itoa(int(r.context.GraphID)))
+	b.WriteString("|kw=")
+	b.WriteString(strings.Join(r.Keywords, "\x00"))
+	b.WriteString("|en=")
+	b.WriteString(strings.Join(r.Entities, "\x00"))
+	b.WriteString("|to=")
+	b.WriteString(strings.Join(r.Topics, "\x00"))
+	b.WriteString("|d=")
+	b.WriteString(strconv.Itoa(r.Parameters.Depth))
+	b.WriteString("|t=")
+	b.WriteString(strconv.Itoa(r.Parameters.Top))
+	return h.Hash(b.String())
 }
 
 func (r Recall[K, P]) IsWrite() bool {

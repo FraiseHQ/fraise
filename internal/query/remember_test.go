@@ -53,14 +53,46 @@ func TestRememberGetGraphID(t *testing.T) {
 }
 
 func TestRememberHash(t *testing.T) {
-	r := Remember[string, float32]{Value: "hello world"}
+	r := Remember[string, float32]{
+		Value:    "hello world",
+		Entities: []string{"alice"},
+		Topics:   []string{"greeting"},
+		context:  QueryContext{GraphID: 2},
+	}
 	h := &fakeHasher{}
 
-	if got := r.Hash(h); got != "H(hello world)" {
-		t.Errorf("Hash() = %q, want %q", got, "H(hello world)")
+	// Hash folds in graph, value and the delimited entity/topic lists so writes
+	// that differ in any of those get distinct cache keys.
+	const want = "g=2|v=hello world|en=alice|to=greeting"
+	if got := r.Hash(h); got != "H("+want+")" {
+		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
-	if h.last != "hello world" {
-		t.Errorf("hasher received %q, want %q", h.last, "hello world")
+	if h.last != want {
+		t.Errorf("hasher received %q, want %q", h.last, want)
+	}
+}
+
+// TestRememberHashDistinguishesGraphAndTags is the real contract: writes that
+// differ only in graph, entities or topics must not share a cache key, or the
+// engine reuses a stale plan and writes to the wrong graph/tags.
+func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
+	base := func() Remember[string, float32] {
+		return Remember[string, float32]{Value: "the parrot is turquoise"}
+	}
+	variants := map[string]Remember[string, float32]{
+		"base":   base(),
+		"graph":  func() Remember[string, float32] { r := base(); r.context.GraphID = 5; return r }(),
+		"topic":  func() Remember[string, float32] { r := base(); r.Topics = []string{"birds"}; return r }(),
+		"entity": func() Remember[string, float32] { r := base(); r.Entities = []string{"polly"}; return r }(),
+	}
+
+	seen := make(map[string]string)
+	for name, r := range variants {
+		key := r.Hash(&fakeHasher{})
+		if other, clash := seen[key]; clash {
+			t.Errorf("hash collision: %q and %q both produced %q", name, other, key)
+		}
+		seen[key] = name
 	}
 }
 

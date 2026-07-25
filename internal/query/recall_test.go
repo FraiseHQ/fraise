@@ -77,14 +77,17 @@ func TestRecallSetGraphIDPersists(t *testing.T) {
 
 func TestRecallHash(t *testing.T) {
 	r := Recall[string, float32]{
-		Keywords: []string{"qu", "ick"},
-		Entities: []string{"alice"},
-		Topics:   []string{"weather"},
+		Keywords:   []string{"qu", "ick"},
+		Entities:   []string{"alice"},
+		Topics:     []string{"weather"},
+		Parameters: QueryParameters{Depth: 2, Top: 5},
+		context:    QueryContext{GraphID: 3},
 	}
 	h := &fakeHasher{}
 
-	// Hash joins keywords, then entities, then topics with no separator.
-	const want = "quickaliceweather"
+	// Hash folds in graph, delimited keyword/entity/topic lists, depth and top
+	// so queries that differ in any of those get distinct cache keys.
+	const want = "g=3|kw=qu\x00ick|en=alice|to=weather|d=2|t=5"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -96,8 +99,34 @@ func TestRecallHash(t *testing.T) {
 func TestRecallHashEmpty(t *testing.T) {
 	var r Recall[string, float32]
 	h := &fakeHasher{}
-	if got := r.Hash(h); got != "H()" {
-		t.Errorf("Hash() = %q, want %q", got, "H()")
+	const want = "g=0|kw=|en=|to=|d=0|t=0"
+	if got := r.Hash(h); got != "H("+want+")" {
+		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
+	}
+}
+
+// TestRecallHashDistinguishesParameters is the real contract: recalls that
+// differ only in graph, depth or top must not share a cache key, otherwise the
+// engine hands back a stale plan (e.g. a depth:1 result for a depth:2 query).
+func TestRecallHashDistinguishesParameters(t *testing.T) {
+	base := func() Recall[string, float32] {
+		return Recall[string, float32]{Keywords: []string{"mercury"}}
+	}
+	variants := map[string]Recall[string, float32]{
+		"base":    base(),
+		"depth":   func() Recall[string, float32] { r := base(); r.Parameters.Depth = 2; return r }(),
+		"top":     func() Recall[string, float32] { r := base(); r.Parameters.Top = 5; return r }(),
+		"graph":   func() Recall[string, float32] { r := base(); r.context.GraphID = 1; return r }(),
+		"keyword": func() Recall[string, float32] { r := base(); r.Keywords = []string{"venus"}; return r }(),
+	}
+
+	seen := make(map[string]string)
+	for name, r := range variants {
+		key := r.Hash(&fakeHasher{})
+		if other, clash := seen[key]; clash {
+			t.Errorf("hash collision: %q and %q both produced %q", name, other, key)
+		}
+		seen[key] = name
 	}
 }
 
