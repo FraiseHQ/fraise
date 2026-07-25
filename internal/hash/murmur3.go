@@ -54,18 +54,24 @@ func (m MurmurHash) hash(data string) (uint32, error) {
 			m.offset, m.size)
 	}
 
-	h1 := uint32(m.seed)
-	end := m.offset + m.size
-	end -= end % 4
+	// A zero size means "hash everything from offset"; a non-zero size
+	// restricts hashing to the d[offset : offset+size] window.
+	size := m.size
+	if size == 0 {
+		size = len(d) - m.offset
+	}
 
 	// Check length of available data
 
-	if len(d) <= end {
+	if size < 0 || m.offset+size > len(d) {
 		return 0, fmt.Errorf("Data out of bounds; set boundary: %v; data length: %v",
-			end, len(d))
+			m.offset+size, len(d))
 	}
 
-	for i := m.offset; i < end; i += 4 {
+	h1 := uint32(m.seed)
+	blockEnd := m.offset + (size - size%4)
+
+	for i := m.offset; i < blockEnd; i += 4 {
 
 		var k1 = uint32(d[i])
 		k1 |= uint32(d[i+1]) << 8
@@ -85,22 +91,22 @@ func (m MurmurHash) hash(data string) (uint32, error) {
 
 	var k1 uint32
 
-	switch m.size & 3 {
+	switch size & 3 {
 	case 3:
-		k1 = uint32(d[end+2]) << 16
+		k1 = uint32(d[blockEnd+2]) << 16
 		fallthrough
 	case 2:
-		k1 |= uint32(d[end+1]) << 8
+		k1 |= uint32(d[blockEnd+1]) << 8
 		fallthrough
 	case 1:
-		k1 |= uint32(d[end])
+		k1 |= uint32(d[blockEnd])
 		k1 *= c1
 		k1 = (k1 << 15) | (k1 >> 17) // ROTL32(k1,15);
 		k1 *= c2
 		h1 ^= k1
 	}
 
-	h1 ^= uint32(m.size)
+	h1 ^= uint32(size)
 
 	h1 ^= h1 >> 16
 	h1 *= 0x85ebca6b

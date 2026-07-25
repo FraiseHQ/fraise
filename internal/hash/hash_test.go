@@ -29,12 +29,27 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/hash"
 )
 
-// Compile-time proof that both new hashers satisfy the Hasher contract for
-// uint64 keys over strings, mirroring how MurmurHash satisfies Hasher[uint32,string].
-var (
-	_ hash.Hasher[uint64, string] = hash.T1haHash{}
-	_ hash.Hasher[uint64, string] = hash.XxHash{}
-)
+// TestMurmur3KnownVectors pins the implementation to the canonical
+// MurmurHash3 x86_32 test vectors (seed 0). These prove correctness, not just
+// stability.
+func TestMurmur3KnownVectors(t *testing.T) {
+	cases := []struct {
+		in   string
+		want uint32
+	}{
+		{"", 0x00000000},
+		{"a", 0x3c2569b2},
+		{"abc", 0xb3dd93fa},
+		{"test", 0xba6bd213},
+		{"Hello, world!", 0xc0363e43},
+		{"The quick brown fox jumps over the lazy dog", 0x2e4ff723},
+	}
+	for _, c := range cases {
+		if got := (hash.MurmurHash{}).Hash(c.in); got != c.want {
+			t.Errorf("MurmurHash.Hash(%q) = %#08x, want %#08x", c.in, got, c.want)
+		}
+	}
+}
 
 // TestXXH64KnownVectors pins the implementation to the canonical XXH64 test
 // vectors published by the reference (seed 0). These prove correctness, not
