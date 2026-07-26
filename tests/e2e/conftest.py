@@ -63,10 +63,18 @@ def query(base_url):
     Returns (status_code, decoded JSON body).
     """
 
-    def _query(text: str):
+    def _query(text: str, parameters: dict[str, object] | None = None):
+
+        data = {
+            "query": text
+        }
+
+        if parameters:
+            data["parameters"] = parameters
+
         response = requests.post(
             f"{base_url}/api/v1/q",
-            json={"query": text},
+            json=data,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
         return response.status_code, response.json()

@@ -34,8 +34,11 @@ type Error struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// HandleQueryRequest is the JSON body expected by the query endpoint,
-// containing the raw query string to execute.
-type HandleQueryRequest struct {
-	Query string `json:"query"`
+// HandleQueryRequest is the JSON body expected by the query endpoint. It carries
+// the raw query string plus any out-of-band parameters it references. Vector
+// placeholders in the query (e.g. vec:$v) are bound by name from Parameters, so
+// the parser never has to handle large vector literals inline.
+type HandleQueryRequest[P float32 | float64] struct {
+	Query      string         `json:"query"`
+	Parameters map[string][]P `json:"parameters,omitempty"`
 }

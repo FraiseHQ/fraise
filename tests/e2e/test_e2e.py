@@ -31,6 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import requests
+import numpy as np
 
 REQUEST_TIMEOUT_SECONDS = 15
 
@@ -274,3 +275,22 @@ def test_recall_depth_one_returns_only_the_seed(planets_graph, query):
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
     assert values == [PLANET_FACTS["mercury"]]
+
+
+def test_vector_calls(query):
+    DIM: int = 128
+    vector = np.ones((1,DIM)).tolist()
+
+    body, status = query("remember@3 'the parrot is turquoise' vec:$v topic:color",
+        parameters = {"v": vector}
+    )
+
+
+def test_vector_calls_incompatible_size(query):
+    DIM: int = 128
+    vector = np.ones((1,DIM)).tolist()
+
+    body, status = query("remember@3 'the parrot is turquoise' vec:$v topic:color",
+        parameters = {"v": vector}
+    )
+

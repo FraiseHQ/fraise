@@ -45,14 +45,15 @@ func (s *Server[K, P]) handleHealthCheck() gin.HandlerFunc {
 func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Decode the request body; reject malformed JSON with 400.
-		var req HandleQueryRequest
+		var req HandleQueryRequest[P]
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Parse the raw query string into an executable query.
-		q, err := query.Parse[K, P](req.Query, s.Config)
+		// Parse the raw query string into an executable query, binding any
+		// vector placeholders (vec:$v) from the request parameters.
+		q, err := query.Parse[K, P](req.Query, req.Parameters, s.Config)
 
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
