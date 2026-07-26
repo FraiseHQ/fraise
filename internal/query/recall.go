@@ -44,7 +44,7 @@ type Recall[K comparable, P float32 | float64] struct {
 }
 
 func (r *Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
-	return NewStream[K, P](r), nil
+	return NewStream(r), nil
 }
 
 func (r Recall[K, P]) GetGraphID() uint8 {
