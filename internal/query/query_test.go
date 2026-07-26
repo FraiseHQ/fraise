@@ -23,6 +23,7 @@
 package query_test
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -31,9 +32,7 @@ import (
 )
 
 // These tests exercise Parse, which turns a query string into the concrete
-// *Remember/*Recall command it dispatches to. One known quirk is documented
-// inline: RememberCommandNode.Entities()/Topics() are currently stubbed to
-// return empty slices, so a parsed Remember never carries entities or topics.
+// *Remember/*Recall command it dispatches to.
 
 // TestParseRemember checks that a remember query is dispatched to a
 // *query.Remember carrying the phrase value and the graph selector,
@@ -41,7 +40,7 @@ import (
 func TestParseRemember(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
 
-	got, err := query.Parse[string, float32](q, config.New())
+	got, err := query.Parse[string, float32](q, nil, config.New())
 	if err != nil {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
@@ -55,12 +54,11 @@ func TestParseRemember(t *testing.T) {
 	if want := "anne loves the color orange"; r.Value != want {
 		t.Errorf("Value = %q, want %q", r.Value, want)
 	}
-	// Remember entities/topics are stubbed empty (see file-level note).
-	if len(r.Entities) != 0 {
-		t.Errorf("Entities = %v, want empty", r.Entities)
+	if want := []string{"anne"}; !reflect.DeepEqual(r.Entities, want) {
+		t.Errorf("Entities = %v, want %v", r.Entities, want)
 	}
-	if len(r.Topics) != 0 {
-		t.Errorf("Topics = %v, want empty", r.Topics)
+	if want := []string{"color", "preference"}; !reflect.DeepEqual(r.Topics, want) {
+		t.Errorf("Topics = %v, want %v", r.Topics, want)
 	}
 	if id := r.GetGraphID(); id != 1 {
 		t.Errorf("GetGraphID() = %d, want 1", id)
@@ -76,7 +74,7 @@ func TestParseRemember(t *testing.T) {
 func TestParseRecall(t *testing.T) {
 	q := "recall@2 anna bob entity:alice topic:job"
 
-	got, err := query.Parse[string, float32](q, config.New())
+	got, err := query.Parse[string, float32](q, nil, config.New())
 	if err != nil {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
@@ -115,7 +113,7 @@ func TestParseErrors(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			got, err := query.Parse[string, float32](q, config.New())
+			got, err := query.Parse[string, float32](q, nil, config.New())
 			if err != query.ErrParsingFailed {
 				t.Errorf("Parse(%q) err = %v, want ErrParsingFailed", q, err)
 			}
@@ -123,5 +121,41 @@ func TestParseErrors(t *testing.T) {
 				t.Errorf("Parse(%q) = %v, want nil query", q, got)
 			}
 		})
+	}
+}
+
+// TestParseRecallBindsVector checks that a vec:$v placeholder is bound from the
+// supplied parameters into the resulting *query.Recall, and that the parser
+// itself never touches the vector data.
+func TestParseRecallBindsVector(t *testing.T) {
+	q := "recall@0 amelia entity:amelia topic:preferences vec:$v"
+	params := map[string][]float32{"v": {0.1, 0.2, 0.3}}
+
+	got, err := query.Parse[string, float32](q, params, config.New())
+	if err != nil {
+		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
+	}
+
+	r, ok := got.(*query.Recall[string, float32])
+	if !ok {
+		t.Fatalf("Parse(%q) returned %T, want *query.Recall", q, got)
+	}
+
+	if want := []float32{0.1, 0.2, 0.3}; !reflect.DeepEqual(r.Vector.Data, want) {
+		t.Errorf("Vector.Data = %v, want %v", r.Vector.Data, want)
+	}
+}
+
+// TestParseRecallMissingParameter checks that referencing a placeholder with no
+// matching parameter is rejected with ErrMissingParameter.
+func TestParseRecallMissingParameter(t *testing.T) {
+	q := "recall@0 amelia vec:$v"
+
+	got, err := query.Parse[string, float32](q, nil, config.New())
+	if !errors.Is(err, query.ErrMissingParameter) {
+		t.Errorf("Parse(%q) err = %v, want ErrMissingParameter", q, err)
+	}
+	if got != nil {
+		t.Errorf("Parse(%q) = %v, want nil query", q, got)
 	}
 }
