@@ -24,10 +24,6 @@ package query
 
 import "testing"
 
-// Remember uses a pointer receiver for SetGraphID, so only *Remember satisfies
-// the Query interface.
-var _ Query[string, float32] = (*Remember[string, float32])(nil)
-
 func TestRememberIsWrite(t *testing.T) {
 	var r Remember[string, float32]
 	if !r.IsWrite() {

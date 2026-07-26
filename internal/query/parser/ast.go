@@ -151,6 +151,16 @@ func (r RecallCommandNode[P]) Vector() []P {
 	return r.vec.Value()
 }
 
+// VecParam reports the name of the vector placeholder (the identifier after
+// `vec:$`) and whether the recall carried one at all. The parser only records
+// the placeholder; the real vector is bound later from the request parameters.
+func (r RecallCommandNode[P]) VecParam() (string, bool) {
+	if r.vec == nil {
+		return "", false
+	}
+	return r.vec.Param(), true
+}
+
 // remember command node
 type RememberCommandNode[P float32 | float64] struct {
 	key      lexer.Token
@@ -188,6 +198,17 @@ func (r RememberCommandNode[P]) Topics() []string {
 	}
 
 	return res
+}
+
+func (r RememberCommandNode[P]) Vector() []P {
+	return r.vec.Value()
+}
+
+func (r RememberCommandNode[P]) VecParam() (string, bool) {
+	if r.vec == nil {
+		return "", false
+	}
+	return r.vec.Param(), true
 }
 
 // Selector node is the graph selection statement

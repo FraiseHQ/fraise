@@ -23,6 +23,7 @@
 package index
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
@@ -88,7 +89,9 @@ func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[P]) error {
 		idx.forest = idx.newForest()
 	}
 	if value.Dim() != idx.dim {
-		return ErrInvalidDimension
+		// The first inserted vector fixes the index dimension; report it so
+		// callers know the size every subsequent vector must match.
+		return fmt.Errorf("%w: index expects %d, got %d", ErrInvalidDimension, idx.dim, value.Dim())
 	}
 
 	idx.vectors[key] = value

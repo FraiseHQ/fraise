@@ -22,8 +22,6 @@
 
 package containers
 
-import "math"
-
 type Vector[P float32 | float64] struct {
 	Data []P
 }
@@ -36,21 +34,6 @@ func (v Vector[P]) Dim() int {
 	return len(v.Data)
 }
 
-// Cosine distance between 2 vectors
-func Cosine[P float32 | float64](lhs, rhs Vector[P]) (P, error) {
-	if len(lhs.Data) != len(rhs.Data) {
-		return 0, DimMismatchError
-	}
-	var dot, na, nb P
-	for i := range lhs.Data {
-		dot += lhs.Data[i] * rhs.Data[i]
-		na += lhs.Data[i] * lhs.Data[i]
-		nb += rhs.Data[i] * rhs.Data[i]
-	}
-	// NOTE: isn't it expensive to convert to float64 if P is of type float32?
-	denom := P(math.Sqrt(float64(na)) + math.Sqrt(float64(nb)))
-	if denom == 0 {
-		return 0, nil
-	}
-	return dot / denom, nil
+func (v Vector[P]) Empty() bool {
+	return v.Data == nil
 }

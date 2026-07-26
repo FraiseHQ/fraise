@@ -30,7 +30,6 @@ import (
 
 type Fact[K comparable] struct {
 	NodeAttributes
-
 	Hasher hash.Hasher[K, string] `json:"-"`
 }
 

@@ -168,7 +168,6 @@ func (p *parser[P]) parseRemember() (*RememberCommandNode[P], error) {
 				return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
 			}
 			r.vec = vec
-			p.next()
 		default:
 			return nil, p.errf(p.l.CurrentPos, "Encountered unexpected token: %q", p.cur.Literal)
 		}
@@ -247,6 +246,12 @@ func (p *parser[P]) parseRecall() (*RecallCommandNode[P], error) {
 				return nil, p.errf(p.l.CurrentPos, "Error while parsing top clause %e", err)
 			}
 			r.top = TopFieldNode{key: key, value: value}
+		case lexer.VEC:
+			vec, err := p.parseVecField()
+			if err != nil {
+				return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
+			}
+			r.vec = vec
 		default:
 			return nil, p.errf(p.l.CurrentPos, "Encountered unexpected token: %q", p.cur.Literal)
 		}

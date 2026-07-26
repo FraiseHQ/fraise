@@ -30,4 +30,7 @@ var (
 	ErrStreamClosed  = errors.New("Stream closed")
 	ErrParsingFailed = errors.New("Query Parsing Error")
 	ErrCommitFailed  = errors.New("Commit failed.")
+	// ErrMissingParameter is returned when a query references a placeholder
+	// (e.g. vec:$v) that has no matching entry in the supplied parameters.
+	ErrMissingParameter = errors.New("missing query parameter")
 )

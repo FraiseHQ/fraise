@@ -23,6 +23,7 @@
 package query
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -61,14 +62,20 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 		// TODO: Implement stream query write logic
 
-		fact := graph.Fact[K]{NodeAttributes: graph.NodeAttributes{
-			Value:     remember.Value,
-			Timestamp: time.Now(),
-		},
+		fact := graph.Fact[K]{
+			NodeAttributes: graph.NodeAttributes{
+				Value:     remember.Value,
+				Timestamp: time.Now(),
+			},
 			Hasher: g.GetHasher(),
 		}
 
 		g.Set(fact)
+		if !remember.Vector.Empty() {
+			if err := g.GetVectorIndex().Insert(fact.Key(), remember.Vector); err != nil {
+				return fmt.Errorf("indexing vector for fact %q: %w", remember.Value, err)
+			}
+		}
 
 		for _, e := range remember.Entities {
 

@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/hash"
 )
 
@@ -34,6 +35,7 @@ type Remember[K comparable, P float32 | float64] struct {
 	Value    string
 	Entities []string
 	Topics   []string
+	Vector   containers.Vector[P]
 
 	context QueryContext
 }

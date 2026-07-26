@@ -24,6 +24,7 @@ package query
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
@@ -77,7 +78,19 @@ func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func Parse[K comparable, P float32 | float64](q string, c *config.ConfigSet) (Query[K, P], error) {
+func bindVector[P float32 | float64](params map[string][]P, name string) ([]P, error) {
+	data, provided := params[name]
+	if !provided {
+		return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
+	}
+	return data, nil
+}
+
+// Parse turns a raw query string into an executable Query. Vector arguments are
+// passed out-of-band in params, keyed by the placeholder name used in the query
+// (e.g. `vec:$v` binds to params["v"]). This keeps the parser lightweight: it
+// only records the placeholder, and the real vector is injected here.
+func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c *config.ConfigSet) (Query[K, P], error) {
 	cmd, _, err := parser.Parse[P](q)
 	if err != nil {
 		return nil, ErrParsingFailed
@@ -93,6 +106,16 @@ func Parse[K comparable, P float32 | float64](q string, c *config.ConfigSet) (Qu
 			Topics:   n.Topics(),
 		}
 		qo.SetGraphID(n.Selector())
+
+		// Bind the vector placeholder (if any) from the request parameters.
+		if name, ok := n.VecParam(); ok {
+			data, err := bindVector(params, name)
+			if err != nil {
+				return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
+			}
+			qo.Vector = containers.NewVector(data)
+		}
+
 		return qo, nil
 
 	case *parser.RecallCommandNode[P]:
@@ -100,12 +123,21 @@ func Parse[K comparable, P float32 | float64](q string, c *config.ConfigSet) (Qu
 			Keywords: n.Terms(),
 			Entities: n.Entities(),
 			Topics:   n.Topics(),
-			// Vector:   containers.Vector[P]{Data: n.Vector()},
 			Parameters: QueryParameters{
 				Top: n.Top(c.DB.DefaultTop), Depth: n.Depth(c.DB.DefaultDepth), Since: n.Since(), Until: n.Until(),
 			},
 		}
 		qo.SetGraphID(n.Selector())
+
+		// Bind the vector placeholder (if any) from the request parameters.
+		if name, ok := n.VecParam(); ok {
+			data, err := bindVector(params, name)
+			if err != nil {
+				return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
+			}
+			qo.Vector = containers.NewVector(data)
+		}
+
 		return qo, nil
 
 	default:

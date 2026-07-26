@@ -324,7 +324,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 		}
 	}
 
-	if vector.Dim() > 0 {
+	if !vector.Empty() {
 		if keys, err := g.vectorIndex.Search(vector, g.config.DB.SeedSize); err == nil {
 			for rank, key := range keys {
 				scores[key] += P(1) / P(1+rank)
