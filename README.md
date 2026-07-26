@@ -132,7 +132,7 @@ curl -X POST localhost:9876/api/v1/q \
   "results": {
     "count": 1,
     "hits": [
-      { "node": { "value": "the parrot is turquoise", "timestamp": "..." }, "score": 1 }
+      { "value": "the parrot is turquoise", "timestamp": "...", "score": 1 }
     ]
   }
 }
