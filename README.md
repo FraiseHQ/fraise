@@ -84,7 +84,6 @@ remember@2 "she prefers morning meetings" topic:scheduling entity:anna
 recall billing                        # free-text search
 recall topic:billing entity:acme      # anchored to a topic and an entity
 recall billing since:30d top:5        # last 30 days, best 5
-recall@2 +topic:auth -entity:okta     # require auth, exclude okta
 recall onboarding depth:3             # follow the graph 3 hops out
 ```
 
