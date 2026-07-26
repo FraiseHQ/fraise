@@ -24,11 +24,6 @@
   <a href="https://discord.gg/eHDFwnwHq"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
 </p>
 
-<p align="center">
-  <strong>Fraise is a memory database for AI agents.</strong><br>
-  One they query directly, in a language built for tokens — not humans.
-</p>
-
 **Fraise is a memory database for AI agents.** One they query directly, in a
 language built for tokens, not humans.
 
