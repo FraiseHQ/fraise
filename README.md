@@ -85,29 +85,6 @@ optionally by vector similarity), expands through shared entities and topics up 
 A single Fraise instance holds several independent memory graphs (8 by default),
 addressed with `@N` — one per user, per session, per agent, however you like.
 
-## The query language
-
-```text
-remember "acme moved to annual billing" topic:billing entity:acme
-remember@2 "she prefers morning meetings" topic:scheduling entity:anna
-
-recall billing                        # free-text search
-recall topic:billing entity:acme      # anchored to a topic and an entity
-recall billing since:30d top:5        # last 30 days, best 5
-recall onboarding depth:3             # follow the graph 3 hops out
-```
-
-| | |
-|---|---|
-| `topic:` `entity:` | anchor the search to a topic or an entity |
-| `+` `-` `~` | require / exclude / loosen an anchor |
-| `since:` `until:` | time window (`7d`, `2h`, or `2026-01-15`) |
-| `top:` | how many results (default 10) |
-| `depth:` | how far to walk the graph (default 2) |
-| `@N` | which memory graph |
-
-Full grammar: [query language spec](./docs/query-spec.md).
-
 ## Get Started
 
 ### Run with Docker
@@ -149,10 +126,7 @@ curl -X POST localhost:9876/api/v1/q \
 
 ### SDKs
 
-```sh
-pip install fraise-sdk        # Python
-npm install fraise-sdk        # TypeScript
-```
+_Coming soon._
 
 ### Integrate with Claude Agents
 
