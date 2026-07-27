@@ -4,8 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.fraise
     ports:
-      - "${FRAISE_PORT:-9877}:9876"
-
+      - "${FRAISE_PORT:-9876}:9876"
 
   # End-to-end test runner: talks to the fraise service over the compose
   # network. Behind a profile so a plain `docker compose up` never runs it;

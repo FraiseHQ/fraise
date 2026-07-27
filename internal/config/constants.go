@@ -71,5 +71,5 @@ const (
 
 	DefaultNumberTrees int = 4
 
-	DefaultRPSeed int = 4
+	DefaultRPSeed uint64 = 4
 )

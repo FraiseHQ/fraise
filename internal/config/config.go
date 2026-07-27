@@ -132,9 +132,9 @@ type RankingAlgorithm struct {
 }
 
 type VectorSearch struct {
-	ProjectionDimention uint32 `toml:"projection-dimension"`
+	ProjectionDimension int `toml:"projection-dimension"`
 
-	NumberTrees uint32 `toml:"number-trees"`
+	NumberTrees int `toml:"number-trees"`
 
 	Seed uint64 `toml:"seed"`
 }
@@ -176,6 +176,10 @@ func New() *ConfigSet {
 	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankDamping, "pagerank-damping", DefaultPageRankDamping, "PageRank damping factor")
 	flagSet.IntVar(&config.DB.RankingAlgorithm.PageRankMaxIter, "pagerank-max-iter", DefaultPageRankMaxIter, "PageRank iteration cap")
 	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankTol, "pagerank-tol", DefaultPageRankTol, "PageRank convergence threshold")
+
+	flagSet.IntVar(&config.DB.VectorSearch.ProjectionDimension, "rptree-projection-dimension", DefaultProjectionDimention, "RP Tree Projection dimension")
+	flagSet.IntVar(&config.DB.VectorSearch.NumberTrees, "rptree-n-trees", DefaultNumberTrees, "RP Tree Number Trees")
+	flagSet.Uint64Var(&config.DB.VectorSearch.Seed, "rptree-seed", DefaultRPSeed, "RP Tree seed")
 
 	return config
 }
@@ -273,9 +277,9 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.RankingAlgorithm.PageRankTol, DefaultPageRankTol)
 
 	// vector search
-	Adjust(&c.DB.VectorSearch.ProjectionDimention, uint32(DefaultProjectionDimention))
-	Adjust(&c.DB.VectorSearch.NumberTrees, uint32(DefaultNumberTrees))
-	Adjust(&c.DB.VectorSearch.Seed, uint64(DefaultRPSeed))
+	Adjust(&c.DB.VectorSearch.ProjectionDimension, DefaultProjectionDimention)
+	Adjust(&c.DB.VectorSearch.NumberTrees, DefaultNumberTrees)
+	Adjust(&c.DB.VectorSearch.Seed, DefaultRPSeed)
 
 	return nil
 }

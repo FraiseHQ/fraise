@@ -77,6 +77,8 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 			}
 		}
 
+		fmt.Println(g.Stats())
+
 		for _, e := range remember.Entities {
 
 			entity := graph.NamedEntity[K]{NodeAttributes: graph.NodeAttributes{

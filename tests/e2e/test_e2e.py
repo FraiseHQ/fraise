@@ -104,14 +104,6 @@ def test_remember_then_recall(query):
     assert body["results"]["count"] > 0, "recall found nothing, want the remembered fact"
 
 
-def test_parameterised_query_not_implemented(base_url):
-    response = requests.post(
-        f"{base_url}/api/v1/qp", json={}, timeout=REQUEST_TIMEOUT_SECONDS
-    )
-
-    assert response.status_code == 501
-
-
 def test_concurrent_queries(base_url):
     """Hammer the endpoint with parallel reads and writes to shake out
     scheduler deadlocks and races in the request path."""
@@ -277,20 +269,65 @@ def test_recall_depth_one_returns_only_the_seed(planets_graph, query):
     assert values == [PLANET_FACTS["mercury"]]
 
 
-def test_vector_calls(query):
-    DIM: int = 128
-    vector = np.ones((1,DIM)).tolist()
+# Vector tests use graphs 4 and 6, which no other test writes to, so each
+# graph's vector index dimension is fixed solely by these tests. The API takes
+# the embedding out-of-band: `vec:$v` in the query is a placeholder bound by
+# name from the flat float list in `parameters["v"]`.
+VECTOR_DIM = 128
 
-    body, status = query("remember@3 'the parrot is turquoise' vec:$v topic:color",
-        parameters = {"v": vector}
+
+def _vector(dim: int, value: float = 1.0) -> list[float]:
+    """A flat embedding of `dim` floats — the shape the API expects for a
+    parameter. (np.ones(dim) is 1-D; .tolist() keeps it flat, not nested.)"""
+    return np.full(dim, value, dtype=float).tolist()
+
+
+def test_remember_with_vector_is_accepted(query):
+    """A remember carrying a vector parameter is accepted and exercises the
+    write path's vector-index insert (stream.Commit -> VectorIndex.Insert)."""
+    status, body = query(
+        "remember@6 'the parrot is turquoise' vec:$v topic:color",
+        parameters={"v": _vector(VECTOR_DIM)},
     )
 
+    assert status == 200, body.get("error")
 
-def test_vector_calls_incompatible_size(query):
-    DIM: int = 128
-    vector = np.ones((1,DIM)).tolist()
 
-    body, status = query("remember@3 'the parrot is turquoise' vec:$v topic:color",
-        parameters = {"v": vector}
+def test_recall_missing_vector_parameter_is_rejected(query):
+    """A query references `vec:$v` but supplies no matching parameter. Binding
+    fails at parse time, so the request is a 400 naming the missing placeholder,
+    not a 500 or a silent empty result."""
+    status, body = query("recall@6 parrot vec:$v")
+
+    assert status == 400
+    error = body.get("error", "")
+    assert "$v" in error, f"expected the error to name the missing parameter, got {error!r}"
+
+
+def test_remember_vector_incompatible_size_is_rejected(query):
+    """The first vector inserted into a graph fixes that graph's embedding
+    dimension; a later vector of a different size is rejected.
+
+    Both writes go to graph 4, which no other test touches, so the first insert
+    here establishes the dimension deterministically even across reruns against
+    a long-lived server.
+
+    NOTE: the current server surfaces this as a 500 with a generic
+    "Error while comitting stream." message — the Commit error (which does name
+    the expected vs actual dimension) is flattened into ErrCommitFailed by the
+    scheduler's Stage step before it reaches the handler. This asserts today's
+    behavior; tighten to 400 with the dimension detail if that path is fixed."""
+    # Establish the graph's dimension.
+    status, body = query(
+        "remember@4 'establish the vector dimension' vec:$v topic:size",
+        parameters={"v": _vector(VECTOR_DIM)},
     )
+    assert status == 200, body.get("error")
 
+    # A vector of a different size must be rejected, not silently dropped.
+    status, body = query(
+        "remember@4 'a differently sized vector' vec:$v topic:size",
+        parameters={"v": _vector(VECTOR_DIM // 2)},
+    )
+    assert status == 500, f"expected the mismatched-dimension write to fail, got {status}: {body}"
+    assert body.get("error"), "expected an error message on the rejected write"

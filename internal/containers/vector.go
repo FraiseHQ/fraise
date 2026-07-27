@@ -35,5 +35,8 @@ func (v Vector[P]) Dim() int {
 }
 
 func (v Vector[P]) Empty() bool {
-	return v.Data == nil
+	if v.Data == nil {
+		return true
+	}
+	return len(v.Data) == 0
 }

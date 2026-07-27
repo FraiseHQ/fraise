@@ -23,6 +23,7 @@
 package graph
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -76,6 +77,7 @@ func (g *InMemoryGraph[K, P]) SetRanking(r Ranking[K, P]) {
 }
 
 func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemoryGraph[K, P] {
+	fmt.Println(config)
 	g := &InMemoryGraph[K, P]{
 		idToNodes:     make(map[K]Node[K]),
 		nodeToSources: make(map[K]map[K]K),
@@ -83,8 +85,8 @@ func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemor
 		textIndex:     index.NewBTreeIndex[K, P](),
 		vectorIndex: index.NewRPTreeIndex[K, P](
 			0,
-			int(config.DB.VectorSearch.ProjectionDimention),
-			int(config.DB.VectorSearch.NumberTrees),
+			config.DB.VectorSearch.ProjectionDimension,
+			config.DB.VectorSearch.NumberTrees,
 			config.DB.VectorSearch.Seed,
 		),
 		hasher: hash.NewHasher[K](config),
@@ -251,9 +253,10 @@ func (g *InMemoryGraph[K, P]) Size() int {
 
 func (g *InMemoryGraph[K, P]) Stats() GraphStats {
 	return GraphStats{
-		Order: g.Order(),
-		Size:  g.Size(),
-		Nodes: len(g.idToNodes),
+		Order:   g.Order(),
+		Size:    g.Size(),
+		Nodes:   len(g.idToNodes),
+		Vectors: g.GetVectorIndex().Count(),
 	}
 }
 

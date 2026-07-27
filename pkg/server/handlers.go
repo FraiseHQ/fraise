@@ -98,11 +98,3 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		}
 	}
 }
-
-// handleQueryWithParameters returns the handler for parameterised queries.
-// It is not yet implemented.
-func (s *Server[K, P]) handleQueryWithParameters() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "parameterised queries are not implemented yet"})
-	}
-}

@@ -32,9 +32,10 @@ import (
 
 // GraphStats is a point-in-time snapshot of a graph's shape.
 type GraphStats struct {
-	Order int // number of entities (vertices)
-	Size  int // number of relationships (edges)
-	Nodes int // total stored nodes
+	Order   int // number of entities (vertices)
+	Size    int // number of relationships (edges)
+	Nodes   int // total stored nodes
+	Vectors int // total vectors indexed
 }
 
 // Graph is a temporal memory graph: the storage atomic component of the

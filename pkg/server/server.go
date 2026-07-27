@@ -128,7 +128,6 @@ func (s *Server[K, P]) setupRoutes() {
 	// Root health check endpoint.
 	s.router.GET("/", s.handleHealthCheck())
 
-	// Query endpoints: /q for plain queries, /qp for parameterised queries.
+	// Query endpoint: /q for queries
 	v1.POST("/q", s.handleQuery())
-	v1.POST("/qp", s.handleQueryWithParameters())
 }
