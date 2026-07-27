@@ -26,13 +26,15 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: make test
+        run: make test-go
 
       - name: Coverage
-        run: make coverage
+        run: make coverage-go
 
-      - name: Build
-        run: make build
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   cross-compile:
     name: Cross Platform Compiling
@@ -51,4 +53,4 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-        run: make build
+        run: make build-go

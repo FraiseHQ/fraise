@@ -107,9 +107,8 @@ test-go: ## Run Go tests with verbose output
 
 coverage-go: ## Run Go tests with coverage report
 	@echo "$(CYAN)Running Go tests with coverage...$(RESET)"
-	$(GO_TEST) -v -race -coverprofile=coverage.out -covermode=atomic ./...
-	$(GO_CMD) tool cover -html=coverage.out -o coverage.html
-	@echo "$(GREEN)✓ Coverage report: coverage.html$(RESET)"
+	$(GO_TEST) -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+	@echo "$(GREEN)✓ Coverage report: coverage.txt$(RESET)"
 
 test-go-short: ## Run Go tests in short mode
 	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
