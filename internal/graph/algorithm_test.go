@@ -114,7 +114,7 @@ func (g *fakeGraph) Set(graph.Node[uint64]) error                       { return
 func (g *fakeGraph) Put(uint64, graph.Node[uint64]) error               { return nil }
 func (g *fakeGraph) Delete(graph.Node[uint64]) error                    { return nil }
 func (g *fakeGraph) GetVectorIndex() index.VectorIndex[uint64, float64] { return nil }
-func (g *fakeGraph) GetTextIndex() index.TextIndex[uint64]              { return nil }
+func (g *fakeGraph) GetTextIndex() index.TextIndex[uint64, float64]     { return nil }
 func (g *fakeGraph) MergeFrom(graph.Graph[uint64, float64])             {}
 func (g *fakeGraph) Copy() graph.Graph[uint64, float64]                 { return g }
 func (g *fakeGraph) Nodes() map[uint64]graph.Node[uint64]               { return nil }

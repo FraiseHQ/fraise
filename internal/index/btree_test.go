@@ -24,6 +24,7 @@ package index_test
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/index"
@@ -57,7 +58,7 @@ func TestBTreeIndexRetrieveMissing(t *testing.T) {
 
 func TestBTreeIndexSearchEmpty(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64]()
-	if _, err := idx.Search("anything"); !errors.Is(err, index.ErrEmptyIndex) {
+	if _, _, err := idx.Search("anything", 0); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search on empty index = %v, want ErrEmptyIndex", err)
 	}
 }
@@ -75,7 +76,7 @@ func TestBTreeIndexSearchRanksByMatchCount(t *testing.T) {
 		}
 	}
 
-	got, err := idx.Search("quick brown fox")
+	got, _, err := idx.Search("quick brown fox", 0)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -95,7 +96,7 @@ func TestBTreeIndexSearchNoMatchOnNonEmptyIndex(t *testing.T) {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
 
-	got, err := idx.Search("nonexistent")
+	got, _, err := idx.Search("nonexistent", 0)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil (no match is not an error)", err)
 	}
@@ -113,10 +114,10 @@ func TestBTreeIndexUpdateMovesPostings(t *testing.T) {
 		t.Fatalf("Update = %v, want nil", err)
 	}
 
-	if got, err := idx.Search("apples"); err != nil || len(got) != 0 {
+	if got, _, err := idx.Search("apples", 0); err != nil || len(got) != 0 {
 		t.Errorf("Search(apples) after update = (%v, %v), want (empty, nil)", got, err)
 	}
-	got, err := idx.Search("oranges")
+	got, _, err := idx.Search("oranges", 0)
 	if err != nil || len(got) != 1 || got[0] != 1 {
 		t.Errorf("Search(oranges) after update = (%v, %v), want ([1], nil)", got, err)
 	}
@@ -150,7 +151,7 @@ func TestBTreeIndexDelete(t *testing.T) {
 
 	// Term "shared" is still referenced by doc 2, so it must still be
 	// searchable.
-	got, err := idx.Search("shared")
+	got, _, err := idx.Search("shared", 0)
 	if err != nil || len(got) != 1 || got[0] != 2 {
 		t.Errorf("Search(shared) after deleting doc 1 = (%v, %v), want ([2], nil)", got, err)
 	}
@@ -160,7 +161,7 @@ func TestBTreeIndexDelete(t *testing.T) {
 	}
 	// The index itself is now empty, which is a distinct condition from "no
 	// document matched the query".
-	if _, err := idx.Search("shared"); !errors.Is(err, index.ErrEmptyIndex) {
+	if _, _, err := idx.Search("shared", 0); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search(shared) after deleting all docs = %v, want ErrEmptyIndex", err)
 	}
 }
@@ -187,7 +188,79 @@ func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
 	if err != nil || got != "second version" {
 		t.Errorf("Retrieve(1) = (%q, %v), want (\"second version\", nil)", got, err)
 	}
-	if got, err := idx.Search("first"); err != nil || len(got) != 0 {
+	if got, _, err := idx.Search("first", 0); err != nil || len(got) != 0 {
 		t.Errorf("Search(first) after overwrite = (%v, %v), want (empty, nil)", got, err)
+	}
+}
+
+// textScoresRankByMatchCount checks that Search ranks documents by how many
+// query terms they contain and returns those counts as the P-typed score. It is
+// generic over P so the score type and values are exercised for both float32 and
+// float64. Doc 1 contains both query terms (score 2), doc 2 only one (score 1).
+func textScoresRankByMatchCount[P float32 | float64](t *testing.T) {
+	t.Helper()
+	idx := index.NewBTreeIndex[int, P]()
+	if err := idx.Insert(1, "red green"); err != nil {
+		t.Fatalf("Insert(1) = %v, want nil", err)
+	}
+	if err := idx.Insert(2, "green blue"); err != nil {
+		t.Fatalf("Insert(2) = %v, want nil", err)
+	}
+
+	keys, scores, err := idx.Search("red green", 0)
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	if want := []int{1, 2}; !reflect.DeepEqual(keys, want) {
+		t.Errorf("Search keys = %v, want %v (doc 1 matches both terms, doc 2 one)", keys, want)
+	}
+	if want := []P{2, 1}; !reflect.DeepEqual(scores, want) {
+		t.Errorf("Search scores = %v, want %v (match counts as %T)", scores, want, *new(P))
+	}
+}
+
+func TestBTreeIndexScoresByMatchCount_float64(t *testing.T) { textScoresRankByMatchCount[float64](t) }
+func TestBTreeIndexScoresByMatchCount_float32(t *testing.T) { textScoresRankByMatchCount[float32](t) }
+
+// TestBTreeIndexSearchTopKBounds checks the k parameter: k <= 0 returns every
+// match, a positive k caps the result to the top-k best matches. This is the
+// same bound the graph now applies to text seeds (SeedSize), so text and vector
+// seeds are gathered symmetrically.
+func TestBTreeIndexSearchTopKBounds(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64]()
+	// Four documents, all matching "sky", plus a term that ranks one highest.
+	docs := map[int]string{
+		1: "sky",
+		2: "sky sky blue", // "sky" appears once as a term set, still count 1
+		3: "clear sky",
+		4: "sky at night",
+	}
+	for key, doc := range docs {
+		if err := idx.Insert(key, doc); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+
+	// k <= 0 returns all four matches.
+	all, _, err := idx.Search("sky", 0)
+	if err != nil {
+		t.Fatalf("Search(sky, 0) = %v, want nil", err)
+	}
+	if len(all) != 4 {
+		t.Errorf("Search(sky, 0) returned %d keys, want all 4: %v", len(all), all)
+	}
+
+	// A positive k caps the results.
+	for _, k := range []int{1, 2, 3} {
+		got, scores, err := idx.Search("sky", k)
+		if err != nil {
+			t.Fatalf("Search(sky, %d) = %v, want nil", k, err)
+		}
+		if len(got) != k {
+			t.Errorf("Search(sky, %d) returned %d keys, want %d", k, len(got), k)
+		}
+		if len(scores) != len(got) {
+			t.Errorf("Search(sky, %d): %d keys but %d scores", k, len(got), len(scores))
+		}
 	}
 }

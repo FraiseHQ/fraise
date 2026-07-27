@@ -80,6 +80,11 @@ type EngineConfig struct {
 }
 
 type DBConfig struct {
+	// Floating-point precision for embeddings and scores: "float32" or
+	// "float64". Selects which generic instantiation of the server is built at
+	// startup (see cmd/server).
+	Precision string `toml:"precision"`
+
 	// default top
 	DefaultTop int `toml:"default-top"`
 
@@ -170,6 +175,7 @@ func New() *ConfigSet {
 	// db
 	flagSet.IntVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
 	flagSet.IntVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
+	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Seeds to pull from each source")
 	flagSet.Float64Var(&config.DB.HopAttenuation, "hop-attenuation", float64(DefaultHopAttenuation), "Score attenuation for graph walk")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
@@ -269,6 +275,7 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// db
 	Adjust(&c.DB.DefaultTop, DefaultTop)
 	Adjust(&c.DB.DefaultDepth, DefaultDepth)
+	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
 	Adjust(&c.DB.HopAttenuation, float64(DefaultHopAttenuation))
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)

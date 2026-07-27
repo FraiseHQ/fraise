@@ -51,6 +51,7 @@ half-life = "168h"
 cache-capacity = 1024
 
 [db]
+precision = "float32"
 default-top = 10
 default-depth = 3
 seed-size = 64
@@ -94,6 +95,9 @@ name = "xxhash"
 	}
 	if c.Engine.Halflife != 168*time.Hour {
 		t.Errorf("Engine.Halflife: got %v, want %v", c.Engine.Halflife, 168*time.Hour)
+	}
+	if c.DB.Precision != "float32" {
+		t.Errorf("DB.Precision: got %q, want %q", c.DB.Precision, "float32")
 	}
 	if c.DB.SeedSize != 64 {
 		t.Errorf("DB.SeedSize: got %d, want 64", c.DB.SeedSize)

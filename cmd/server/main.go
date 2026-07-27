@@ -56,11 +56,30 @@ func main() {
 	}
 	logger.Debug("Config loaded", "config", c)
 
-	// MurmurHash produces uint32 keys, so the server is instantiated with
-	// K = uint32; float64 is used for embedding/score precision.
-	srv := server.New[uint64, float64](c, hash.NewHasher[uint64](c))
+	// P (embedding/score precision) is a compile-time type parameter, so the
+	// config value selects which instantiation to build and run here. Both are
+	// compiled in; the whole stack below is generic over P.
+	var err error
+	switch c.DB.Precision {
+	case "float32":
+		logger.Info("Using single precision", "precision", "float32")
+		err = runServer[float32](c)
+	case "float64":
+		logger.Info("Using double precision", "precision", "float64")
+		err = runServer[float64](c)
+	default:
+		logger.Warn("Unknown precision, falling back to float64", "precision", c.DB.Precision)
+		err = runServer[float64](c)
+	}
 
-	if err := srv.Start(); err != nil {
+	if err != nil {
 		logger.Error("Failed to start server", "error", err)
 	}
+}
+
+// run builds a server at the requested floating-point precision and starts it.
+// K is fixed to uint64 (the hasher's key type); only P varies with config.
+func runServer[P float32 | float64](c *config.ConfigSet) error {
+	srv := server.New[uint64, P](c, hash.NewHasher[uint64](c))
+	return srv.Start()
 }

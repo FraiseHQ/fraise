@@ -28,6 +28,7 @@ import (
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/containers/trees"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
 // compile-time check that RPTreeIndex is a VectorIndex.
@@ -87,10 +88,14 @@ func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[P]) error {
 	if idx.dim == 0 {
 		idx.dim = value.Dim()
 		idx.forest = idx.newForest()
+		logger.Info("Vector index dimension established",
+			"dimension", idx.dim, "trees", idx.numTrees, "projection", idx.projDim)
 	}
 	if value.Dim() != idx.dim {
 		// The first inserted vector fixes the index dimension; report it so
 		// callers know the size every subsequent vector must match.
+		logger.Warn("Rejecting vector of mismatched dimension",
+			"expected", idx.dim, "got", value.Dim())
 		return fmt.Errorf("%w: index expects %d, got %d", ErrInvalidDimension, idx.dim, value.Dim())
 	}
 
@@ -140,13 +145,14 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 }
 
 // Search fans query out across the forest, pools the candidates, re-ranks them
-// by true distance and returns the keys of the k nearest vectors.
-func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[P], k int) ([]K, error) {
+// by true distance and returns the keys of the k nearest vectors, nearest
+// first, together with their distances to the query.
+func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[P], k int) ([]K, []P, error) {
 	if len(idx.vectors) == 0 {
-		return nil, ErrEmptyIndex
+		return nil, nil, ErrEmptyIndex
 	}
 	if query.Dim() != idx.dim {
-		return nil, ErrInvalidDimension
+		return nil, nil, ErrInvalidDimension
 	}
 
 	var zeroKey K
@@ -182,10 +188,13 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[P], k int) ([]K, er
 	}
 
 	out := make([]K, len(candidates))
+	scores := make([]P, len(candidates))
 	for i, c := range candidates {
 		out[i] = c.key
+		scores[i] = c.d
 	}
-	return out, nil
+	logger.Debug("Vector search returned neighbours", "k", k, "found", len(out))
+	return out, scores, nil
 }
 
 // Size reports the approximate in-memory footprint of the index in MiB.

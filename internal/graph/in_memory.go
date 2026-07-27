@@ -33,6 +33,7 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/index"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
 // InMemoryGraph is the in-process implementation of Graph. Nodes live in a
@@ -172,7 +173,10 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	}
 
 	if attrs := node.GetAttributes(); attrs != nil {
-		return g.textIndex.Insert(key, attrs.Value)
+		if err := g.textIndex.Insert(key, attrs.Value); err != nil {
+			logger.Warn("Failed to index node text", "error", err)
+			return err
+		}
 	}
 	return nil
 }
@@ -264,7 +268,7 @@ func (g *InMemoryGraph[K, P]) GetVectorIndex() index.VectorIndex[K, P] {
 }
 
 // Returns the graph full text search index
-func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K] {
+func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 	return g.textIndex
 }
 
@@ -307,6 +311,8 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		scoresOut[i] = ranked[order[i]]
 	}
 
+	logger.Debug("Graph search completed",
+		"seeds", len(seeds), "candidates", len(filtered), "returned", limit)
 	return nodes, scoresOut
 }
 
@@ -316,20 +322,30 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[P]) ([]K, map[K]P) {
 	scores := make(map[K]P)
 
+	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
-		// Index errors (empty index) just mean no text seeds.
-		if keys, err := g.textIndex.Search(strings.Join(keywords, " ")); err == nil {
+		// Index errors (empty index) just mean no text seeds. Seeds are scored
+		// by rank rather than raw index score: the text and vector indices score
+		// on different scales (match count vs distance), so rank keeps them
+		// comparable when their seeds are pooled here.
+		if keys, _, err := g.textIndex.Search(strings.Join(keywords, " "), g.config.DB.SeedSize); err == nil {
+			textSeeds = len(keys)
 			for rank, key := range keys {
 				scores[key] += P(1) / P(1+rank)
 			}
+		} else {
+			logger.Debug("Text index yielded no seeds", "error", err)
 		}
 	}
 
 	if !vector.Empty() {
-		if keys, err := g.vectorIndex.Search(vector, g.config.DB.SeedSize); err == nil {
+		if keys, _, err := g.vectorIndex.Search(vector, g.config.DB.SeedSize); err == nil {
+			vectorSeeds = len(keys)
 			for rank, key := range keys {
 				scores[key] += P(1) / P(1+rank)
 			}
+		} else {
+			logger.Debug("Vector index yielded no seeds", "error", err)
 		}
 	}
 
@@ -337,6 +353,8 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	for key := range scores {
 		seeds = append(seeds, key)
 	}
+	logger.Debug("Gathered search seeds",
+		"text", textSeeds, "vector", vectorSeeds, "unique", len(seeds))
 	return seeds, scores
 }
 

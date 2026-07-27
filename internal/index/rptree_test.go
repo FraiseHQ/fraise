@@ -25,6 +25,7 @@ package index_test
 import (
 	"errors"
 	"math/rand"
+	"reflect"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
@@ -78,7 +79,7 @@ func TestRPTreeIndexRetrieveMissing(t *testing.T) {
 
 func TestRPTreeIndexSearchEmpty(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1)
-	if _, err := idx.Search(containers.NewVector([]float64{0, 0, 0}), 3); !errors.Is(err, index.ErrEmptyIndex) {
+	if _, _, err := idx.Search(containers.NewVector([]float64{0, 0, 0}), 3); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search on empty index = %v, want ErrEmptyIndex", err)
 	}
 }
@@ -88,7 +89,7 @@ func TestRPTreeIndexSearchRejectsWrongDimension(t *testing.T) {
 	if err := idx.Insert(1, containers.NewVector([]float64{1, 2, 3})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
-	if _, err := idx.Search(containers.NewVector([]float64{1, 2}), 3); !errors.Is(err, index.ErrInvalidDimension) {
+	if _, _, err := idx.Search(containers.NewVector([]float64{1, 2}), 3); !errors.Is(err, index.ErrInvalidDimension) {
 		t.Errorf("Search with wrong dimension = %v, want ErrInvalidDimension", err)
 	}
 }
@@ -113,7 +114,7 @@ func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
 		t.Fatalf("Insert(4) = %v, want nil", err)
 	}
 
-	got, err := idx.Search(containers.NewVector([]float64{0, 0}), 3)
+	got, _, err := idx.Search(containers.NewVector([]float64{0, 0}), 3)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -174,7 +175,7 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 		t.Fatalf("Delete = %v, want nil", err)
 	}
 
-	got, err := idx.Search(containers.NewVector([]float64{0, 0}), 5)
+	got, _, err := idx.Search(containers.NewVector([]float64{0, 0}), 5)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -210,7 +211,7 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 
 	// After Flush, deleted keys must be absent even from raw Nearest scans:
 	// Search over the whole remaining corpus should never surface them.
-	got, err := idx.Search(randVector(rng, 3), n)
+	got, _, err := idx.Search(randVector(rng, 3), n)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -233,5 +234,110 @@ func TestRPTreeIndexSize(t *testing.T) {
 	}
 	if got := idx.Size(); got < 0 {
 		t.Errorf("Size() = %d, want >= 0", got)
+	}
+}
+
+// ranksTenByDistance indexes ten vectors whose distances to the query are all
+// distinct and known ahead of time, then checks that Search returns them
+// nearest-first and that the returned scores are exactly those distances.
+//
+// It is generic over P so the identical assertions run for both float32 and
+// float64: key i sits at (i, 0) and the query is the origin, so key i is exactly
+// distance i away — a small integer representable exactly in either precision,
+// which is what lets the score equality hold at both.
+//
+// Ten points sit well under a single leaf (defaultRPLeafSize is 32), so every
+// tree in the forest holds the whole corpus and Search re-ranks the pooled
+// candidates by true distance: the result is exact, not approximate.
+func ranksTenByDistance[P float32 | float64](t *testing.T) {
+	t.Helper()
+	idx := index.NewRPTreeIndex[int, P](2, 2, 5, 7)
+
+	for i := 1; i <= 10; i++ {
+		if err := idx.Insert(i, containers.NewVector([]P{P(i), 0})); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	if got, want := idx.Count(), 10; got != want {
+		t.Fatalf("Count() = %d, want %d", got, want)
+	}
+
+	query := containers.NewVector([]P{0, 0})
+
+	// Full search returns every key, nearest first: 1, 2, ..., 10.
+	got, scores, err := idx.Search(query, 10)
+	if err != nil {
+		t.Fatalf("Search(k=10) = %v, want nil", err)
+	}
+	want := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Search(k=10) order = %v, want %v", got, want)
+	}
+	if len(scores) != len(got) {
+		t.Fatalf("Search returned %d keys but %d scores; slices must be parallel", len(got), len(scores))
+	}
+
+	// Each returned score is the actual distance driving the ranking: key i is
+	// exactly distance i from the origin, and scores strictly increase.
+	var prev P = -1
+	for rank, key := range got {
+		if want := P(key); scores[rank] != want {
+			t.Errorf("rank %d, key %d: score = %v, want distance %v", rank, key, scores[rank], want)
+		}
+		if scores[rank] <= prev {
+			t.Errorf("rank %d: score %v not greater than previous %v; not ordered by distance", rank, scores[rank], prev)
+		}
+		prev = scores[rank]
+	}
+
+	// A smaller k truncates to exactly the k nearest, with their distances.
+	got3, scores3, err := idx.Search(query, 3)
+	if err != nil {
+		t.Fatalf("Search(k=3) = %v, want nil", err)
+	}
+	if want3 := []int{1, 2, 3}; !reflect.DeepEqual(got3, want3) {
+		t.Errorf("Search(k=3) keys = %v, want %v", got3, want3)
+	}
+	if want3 := []P{1, 2, 3}; !reflect.DeepEqual(scores3, want3) {
+		t.Errorf("Search(k=3) scores = %v, want %v", scores3, want3)
+	}
+}
+
+func TestRPTreeIndexSearchRanksTenByDistance_float64(t *testing.T) { ranksTenByDistance[float64](t) }
+func TestRPTreeIndexSearchRanksTenByDistance_float32(t *testing.T) { ranksTenByDistance[float32](t) }
+
+// nearestKeys indexes pts (integer coordinates, exact in both precisions) at
+// precision P and returns the keys of the k nearest to query, nearest first.
+func nearestKeys[P float32 | float64](pts [][]int, query []int, k int) []int {
+	idx := index.NewRPTreeIndex[int, P](len(query), 2, 5, 7)
+	for i, p := range pts {
+		vec := make([]P, len(p))
+		for d, v := range p {
+			vec[d] = P(v)
+		}
+		_ = idx.Insert(i, containers.NewVector(vec))
+	}
+	q := make([]P, len(query))
+	for d, v := range query {
+		q[d] = P(v)
+	}
+	keys, _, _ := idx.Search(containers.NewVector(q), k)
+	return keys
+}
+
+// TestRPTreeSearchIdenticalAcrossPrecision indexes the same well-separated
+// corpus at float32 and float64 and asserts both return the identical
+// nearest-neighbour ordering. Precision changes the stored coordinate width,
+// not which neighbours a search finds for a cleanly separated corpus — this is
+// the "results are the same at both precisions" guarantee.
+func TestRPTreeSearchIdenticalAcrossPrecision(t *testing.T) {
+	pts := [][]int{{0, 0}, {3, 1}, {1, 4}, {8, 8}, {2, 2}, {9, 1}, {5, 7}, {6, 3}}
+	k := len(pts)
+
+	got32 := nearestKeys[float32](pts, []int{0, 0}, k)
+	got64 := nearestKeys[float64](pts, []int{0, 0}, k)
+
+	if !reflect.DeepEqual(got32, got64) {
+		t.Errorf("nearest-neighbour order differs by precision:\n float32 = %v\n float64 = %v", got32, got64)
 	}
 }

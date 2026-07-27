@@ -28,10 +28,11 @@ import (
 
 	"github.com/RonsenbergVI/fraise/internal/comparator"
 	"github.com/RonsenbergVI/fraise/internal/containers/trees"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
 // compile-time check that BTreeIndex is a TextIndex.
-var _ TextIndex[int] = (*BTreeIndex[int, float64])(nil)
+var _ TextIndex[int, float64] = (*BTreeIndex[int, float64])(nil)
 
 // BTreeIndex is a full-text index backed by an ordered BTree from the
 // containers/trees submodule. The tree holds the set of indexed terms in
@@ -94,25 +95,36 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 }
 
 // Search tokenizes query, combines the matching posting lists and returns the
-// document keys ranked by relevance (the number of query terms they contain).
-func (idx *BTreeIndex[K, P]) Search(query string) ([]K, error) {
+// document keys ranked by relevance (the number of query terms they contain),
+// best first, with a parallel slice of those match counts as scores. k bounds
+// the number of results; k <= 0 returns every match.
+func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	if len(idx.documents) == 0 {
-		return nil, ErrEmptyIndex
+		return nil, nil, ErrEmptyIndex
 	}
 
-	scores := make(map[K]int)
+	counts := make(map[K]int)
 	for _, term := range idx.tokenizer.Tokenize(query) {
 		for key := range idx.postings[term] {
-			scores[key]++
+			counts[key]++
 		}
 	}
 
-	keys := make([]K, 0, len(scores))
-	for key := range scores {
+	keys := make([]K, 0, len(counts))
+	for key := range counts {
 		keys = append(keys, key)
 	}
-	sort.Slice(keys, func(i, j int) bool { return scores[keys[i]] > scores[keys[j]] })
-	return keys, nil
+	sort.Slice(keys, func(i, j int) bool { return counts[keys[i]] > counts[keys[j]] })
+	if k > 0 && len(keys) > k {
+		keys = keys[:k]
+	}
+
+	scores := make([]P, len(keys))
+	for i, key := range keys {
+		scores[i] = P(counts[key])
+	}
+	logger.Debug("Text search matched documents", "matches", len(keys), "k", k)
+	return keys, scores, nil
 }
 
 // Size reports the approximate in-memory footprint of the index in MiB.

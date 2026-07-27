@@ -162,7 +162,7 @@ func TestInMemoryGraphIndexes(t *testing.T) {
 	mustSet(t, g, fact)
 
 	// Set must index the node's value in the text index.
-	keys, err := g.GetTextIndex().Search("acme")
+	keys, _, err := g.GetTextIndex().Search("acme", 0)
 	if err != nil || len(keys) != 1 || keys[0] != key {
 		t.Errorf("text Search(acme) = (%v, %v), want ([key], nil)", keys, err)
 	}
@@ -171,7 +171,7 @@ func TestInMemoryGraphIndexes(t *testing.T) {
 	if err := g.GetVectorIndex().Insert(key, containers.NewVector([]float64{1, 0, 0})); err != nil {
 		t.Fatalf("vector Insert = %v, want nil", err)
 	}
-	got, err := g.GetVectorIndex().Search(containers.NewVector([]float64{1, 0, 0}), 1)
+	got, _, err := g.GetVectorIndex().Search(containers.NewVector([]float64{1, 0, 0}), 1)
 	if err != nil || len(got) != 1 || got[0] != key {
 		t.Errorf("vector Search = (%v, %v), want ([key], nil)", got, err)
 	}
@@ -180,7 +180,7 @@ func TestInMemoryGraphIndexes(t *testing.T) {
 	if err := g.Delete(fact); err != nil {
 		t.Fatalf("Delete = %v, want nil", err)
 	}
-	if keys, err := g.GetTextIndex().Search("acme"); err == nil && len(keys) != 0 {
+	if keys, _, err := g.GetTextIndex().Search("acme", 0); err == nil && len(keys) != 0 {
 		t.Errorf("text Search(acme) after delete = %v, want no hits", keys)
 	}
 	if _, err := g.GetVectorIndex().Retrieve(key); err == nil {
@@ -353,10 +353,61 @@ func TestInMemoryGraphMergeFrom(t *testing.T) {
 	if a.Get(fact2.Key()) == nil || a.Get(entity.Key()) == nil {
 		t.Errorf("merged nodes missing: Get(fact2)=%v Get(entity)=%v", a.Get(fact2.Key()), a.Get(entity.Key()))
 	}
-	if keys, err := a.GetTextIndex().Search("tennis"); err != nil || len(keys) != 1 || keys[0] != fact2.Key() {
+	if keys, _, err := a.GetTextIndex().Search("tennis", 0); err != nil || len(keys) != 1 || keys[0] != fact2.Key() {
 		t.Errorf("text Search(tennis) after merge = (%v, %v), want ([fact2], nil)", keys, err)
 	}
 	if _, err := a.GetVectorIndex().Retrieve(fact2.Key()); err != nil {
 		t.Errorf("vector Retrieve(fact2) after merge = %v, want nil", err)
 	}
 }
+
+// vectorHybridSearchAtPrecision indexes three facts with orthogonal embeddings,
+// then runs a full graph.Search whose query sits closest to one of them and
+// asserts that fact ranks first. It exercises the whole precision-sensitive read
+// path — vector distance, rank-based seed scoring, hop attenuation and result
+// assembly — and is generic over P so the identical scenario runs for both
+// float32 and float64, proving the results match at either precision.
+func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
+	t.Helper()
+	g := graph.NewGraph[uint64, P](testConfig())
+	now := time.Now()
+
+	facts := []struct {
+		value string
+		vec   []P
+	}{
+		{"alpha fact about foxes", []P{1, 0, 0}},
+		{"beta fact about kites", []P{0, 1, 0}},
+		{"gamma fact about reefs", []P{0, 0, 1}},
+	}
+	for _, f := range facts {
+		fact := graph.Fact[uint64]{
+			NodeAttributes: graph.NodeAttributes{Value: f.value, Timestamp: now},
+			Hasher:         g.GetHasher(),
+		}
+		if err := g.Set(fact); err != nil {
+			t.Fatalf("Set(%q) = %v, want nil", f.value, err)
+		}
+		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector(f.vec)); err != nil {
+			t.Fatalf("vector Insert(%q) = %v, want nil", f.value, err)
+		}
+	}
+
+	// The query sits nearest the "beta" embedding, so beta must rank first. No
+	// keywords: the vector index is the only seed source.
+	query := containers.NewVector([]P{0.1, 0.9, 0.1})
+	nodes, scores := g.Search(nil, query, nil, nil, 1, 10, time.Time{}, time.Time{})
+
+	if len(nodes) == 0 {
+		t.Fatalf("Search returned no results, want the nearest fact")
+	}
+	if got := (*nodes[0]).GetValue(); got != "beta fact about kites" {
+		t.Errorf("nearest result = %q, want the beta fact", got)
+	}
+	if len(scores) != len(nodes) {
+		t.Errorf("got %d nodes but %d scores; slices must be parallel", len(nodes), len(scores))
+	}
+}
+
+func TestGraphVectorSearch_float64(t *testing.T) { vectorHybridSearchAtPrecision[float64](t) }
+func TestGraphVectorSearch_float32(t *testing.T) { vectorHybridSearchAtPrecision[float32](t) }

@@ -70,7 +70,7 @@ type Graph[K comparable, P float32 | float64] interface {
 	GetVectorIndex() index.VectorIndex[K, P]
 
 	// GetTextIndex returns the graph's full-text search index.
-	GetTextIndex() index.TextIndex[K]
+	GetTextIndex() index.TextIndex[K, P]
 
 	// MergeFrom merges the contents of g into this graph: nodes,
 	// relationships and index entries. Nodes with colliding keys are

@@ -71,7 +71,7 @@ func (g *fakeGraph) Get(key string) graph.Node[string]                  { return
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error      { return nil }
 func (g *fakeGraph) Delete(node graph.Node[string]) error               { return nil }
 func (g *fakeGraph) GetVectorIndex() index.VectorIndex[string, float32] { return nil }
-func (g *fakeGraph) GetTextIndex() index.TextIndex[string]              { return nil }
+func (g *fakeGraph) GetTextIndex() index.TextIndex[string, float32]     { return nil }
 func (g *fakeGraph) Nodes() map[string]graph.Node[string]               { return nil }
 func (g *fakeGraph) AdjacencyMap() map[string]map[string]string         { return nil }
 func (g *fakeGraph) PredecessorMap() map[string]map[string]string       { return nil }

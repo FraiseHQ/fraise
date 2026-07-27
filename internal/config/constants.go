@@ -72,4 +72,6 @@ const (
 	DefaultNumberTrees int = 4
 
 	DefaultRPSeed uint64 = 4
+
+	DefaultPrecision string = "float32"
 )
