@@ -23,7 +23,6 @@
 package graph
 
 import (
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -77,7 +76,6 @@ func (g *InMemoryGraph[K, P]) SetRanking(r Ranking[K, P]) {
 }
 
 func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemoryGraph[K, P] {
-	fmt.Println(config)
 	g := &InMemoryGraph[K, P]{
 		idToNodes:     make(map[K]Node[K]),
 		nodeToSources: make(map[K]map[K]K),

@@ -23,7 +23,6 @@
 package graph_test
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
@@ -38,7 +37,6 @@ import (
 // during a full Parse. NewGraph reads those to size its RPTree index.
 func testConfig() *config.ConfigSet {
 	cfg := config.New()
-	fmt.Println(cfg)
 	cfg.DB.VectorSearch.ProjectionDimension = 8
 	cfg.DB.VectorSearch.NumberTrees = 4
 	cfg.DB.VectorSearch.Seed = 4
