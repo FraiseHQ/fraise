@@ -147,6 +147,9 @@ func New() *ConfigSet {
 
 	flagSet := config.FlagSet
 
+	// config file (path to the TOML config Parse reads before applying flags)
+	flagSet.StringVar(&config.configFile, "config", DefaultConfigFile, "Path to the TOML config file")
+
 	// scheduler
 	flagSet.IntVar(&config.Scheduler.Workers, "workers", DefaultWorkersCount, "Default worker count.")
 	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Default Buffer size")

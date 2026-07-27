@@ -5,6 +5,9 @@ services:
       dockerfile: Dockerfile.fraise
     ports:
       - "${FRAISE_PORT:-9876}:9876"
+    volumes:
+      - ./tests/e2e/fraise.config.toml:/etc/fraise/fraise.config.toml:ro
+    command: ["-config", "/etc/fraise/fraise.config.toml"]
 
   # End-to-end test runner: talks to the fraise service over the compose
   # network. Behind a profile so a plain `docker compose up` never runs it;
