@@ -32,6 +32,7 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/graph"
 	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
 type Query[K comparable, P float32 | float64] interface {
@@ -93,6 +94,7 @@ func bindVector[P float32 | float64](params map[string][]P, name string) ([]P, e
 func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c *config.ConfigSet) (Query[K, P], error) {
 	cmd, _, err := parser.Parse[P](q)
 	if err != nil {
+		logger.Debug("Query parsing failed", "query", q, "error", err)
 		return nil, ErrParsingFailed
 	}
 
@@ -111,11 +113,13 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		if name, ok := n.VecParam(); ok {
 			data, err := bindVector(params, name)
 			if err != nil {
+				logger.Warn("Missing vector parameter for remember", "parameter", name)
 				return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
 			}
 			qo.Vector = containers.NewVector(data)
 		}
 
+		logger.Debug("Parsed remember query", "graph", qo.GetGraphID(), "value", qo.Value)
 		return qo, nil
 
 	case *parser.RecallCommandNode[P]:
@@ -133,14 +137,17 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		if name, ok := n.VecParam(); ok {
 			data, err := bindVector(params, name)
 			if err != nil {
+				logger.Warn("Missing vector parameter for recall", "parameter", name)
 				return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
 			}
 			qo.Vector = containers.NewVector(data)
 		}
 
+		logger.Debug("Parsed recall query", "graph", qo.GetGraphID(), "keywords", len(qo.Keywords))
 		return qo, nil
 
 	default:
+		logger.Debug("Unsupported query command", "query", q)
 		return nil, ErrParsingFailed
 	}
 }

@@ -93,33 +93,45 @@ func (l *Logger) log(level slog.Level, msg string, attrs ...any) {
 }
 
 func (l *Logger) Debug(msg string, attrs ...any) {
-	l.log(slog.LevelDebug, msg, attrs)
+	l.log(slog.LevelDebug, msg, attrs...)
 }
 
 func (l *Logger) Info(msg string, attrs ...any) {
-	l.log(slog.LevelInfo, msg, attrs)
+	l.log(slog.LevelInfo, msg, attrs...)
 }
 
 func (l *Logger) Warn(msg string, attrs ...any) {
-	l.log(slog.LevelWarn, msg, attrs)
+	l.log(slog.LevelWarn, msg, attrs...)
 }
 
 func (l *Logger) Error(msg string, attrs ...any) {
-	l.log(slog.LevelError, msg, attrs)
+	l.log(slog.LevelError, msg, attrs...)
 }
 
 func Debug(msg string, attrs ...any) {
+	if defaultLogger == nil {
+		return
+	}
 	defaultLogger.Debug(msg, attrs...)
 }
 
 func Info(msg string, attrs ...any) {
+	if defaultLogger == nil {
+		return
+	}
 	defaultLogger.Info(msg, attrs...)
 }
 
 func Warn(msg string, attrs ...any) {
+	if defaultLogger == nil {
+		return
+	}
 	defaultLogger.Warn(msg, attrs...)
 }
 
 func Error(msg string, attrs ...any) {
+	if defaultLogger == nil {
+		return
+	}
 	defaultLogger.Error(msg, attrs...)
 }

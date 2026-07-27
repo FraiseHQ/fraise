@@ -59,6 +59,8 @@ func (s *Scheduler[K, P]) Start() error {
 		s.wg.Add(1)
 		go s.worker()
 	}
+	logger.Info("Scheduler started",
+		"workers", s.Config.Scheduler.Workers, "buffer", s.Config.Scheduler.BufferSize)
 	return nil
 }
 
@@ -68,6 +70,7 @@ func (s *Scheduler[K, P]) Stop() {
 		close(s.Queue)
 		s.wg.Wait()
 		s.Queue = nil
+		logger.Info("Scheduler stopped")
 	}
 }
 
@@ -77,7 +80,7 @@ func (s *Scheduler[K, P]) worker() {
 	for stream := range s.Queue {
 		err := s.execute(stream)
 		if err != nil {
-			logger.Error("Failed to execute stream", "error:", err)
+			logger.Error("Failed to execute stream", "error", err)
 		}
 	}
 

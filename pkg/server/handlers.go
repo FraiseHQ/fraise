@@ -27,6 +27,7 @@ import (
 	"net/http"
 
 	"github.com/RonsenbergVI/fraise/internal/query"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,15 +48,19 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		// Decode the request body; reject malformed JSON with 400.
 		var req HandleQueryRequest[P]
 		if err := c.ShouldBindJSON(&req); err != nil {
+			logger.Warn("Rejecting malformed query request body", "error", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		logger.Debug("Query received", "query", req.Query, "parameters", len(req.Parameters))
 
 		// Parse the raw query string into an executable query, binding any
 		// vector placeholders (vec:$v) from the request parameters.
 		q, err := query.Parse[K, P](req.Query, req.Parameters, s.Config)
 
 		if err != nil {
+			logger.Warn("Rejecting unparsable query", "query", req.Query, "error", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -64,6 +69,8 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		// client error, and letting it reach the scheduler would otherwise
 		// fail deep in Select.
 		if int(q.GetGraphID()) >= s.DB.NumGraphs() {
+			logger.Warn("Rejecting out-of-range graph selector",
+				"graph", q.GetGraphID(), "max", s.DB.NumGraphs()-1)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": fmt.Sprintf("graph %d does not exist (valid range 0-%d)",
 					q.GetGraphID(), s.DB.NumGraphs()-1),
@@ -75,9 +82,13 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		stream, err := s.Engine.Plan(q)
 
 		if err != nil {
+			logger.Error("Failed to plan query", "query", req.Query, "error", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		logger.Debug("Query planned, dispatching to engine",
+			"graph", q.GetGraphID(), "write", q.IsWrite())
 
 		// Execute the plan asynchronously against the engine.
 		s.Engine.Apply(stream)
@@ -87,13 +98,16 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		select {
 		case <-stream.Done():
 			if stream.Err != nil {
+				logger.Error("Query execution failed", "query", req.Query, "error", stream.Err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": stream.Err.Error()})
 				return
 			}
+			logger.Info("Query executed", "query", req.Query, "graph", q.GetGraphID())
 			c.JSON(http.StatusOK, gin.H{
 				"results": stream.Result,
 			})
 		case <-c.Request.Context().Done():
+			logger.Warn("Client disconnected before query completed", "query", req.Query)
 			return
 		}
 	}

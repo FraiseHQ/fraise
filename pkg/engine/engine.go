@@ -59,6 +59,7 @@ func (e *Engine[K, P]) Start() {
 		return
 	}
 	e.Cache = c
+	logger.Info("Engine cache initialised", "capacity", e.Config.Engine.CacheCapacity)
 
 	// start the scheduler workers that execute planned streams
 	if err := e.Scheduler.Start(); err != nil {
@@ -68,6 +69,7 @@ func (e *Engine[K, P]) Start() {
 
 func (e *Engine[K, P]) Stop() {
 	// stop scheduler workers, then release cache memory
+	logger.Info("Stopping engine")
 	e.Scheduler.Stop()
 	e.Cache.Clear()
 }
@@ -86,6 +88,7 @@ func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
 	stream, err := q.Plan(e.Config)
 	if err != nil {
+		logger.Error("Failed to plan query", "graph", q.GetGraphID(), "error", err)
 		return nil, ErrQueryPlan
 	}
 	return stream, nil

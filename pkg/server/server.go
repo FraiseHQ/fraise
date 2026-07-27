@@ -85,19 +85,17 @@ func (s *Server[K, P]) Start() error {
 	logger.Info("Starting database")
 	err := s.DB.Start()
 	if err != nil {
-		logger.Info("Failed to start database!")
+		logger.Error("Failed to start database", "error", err)
 		return ErrUnableToStartDatabase
 	}
-	logger.Info("Starting Engine")
+	logger.Info("Starting engine")
 	s.Engine.Start()
-	if err != nil {
-		logger.Info("Failed to start engine!")
-		return ErrUnableToStartEngine
-	}
+
 	// Block serving HTTP requests on the configured port.
+	logger.Info("Serving HTTP", "port", s.Config.Server.Port)
 	err = s.router.Run(":" + strconv.Itoa(s.Config.Server.Port))
 	if err != nil {
-		logger.Info("Failed to start server!")
+		logger.Error("HTTP server stopped", "error", err)
 		return ErrUnableToStartEngine
 	}
 	return nil
@@ -109,7 +107,7 @@ func (s *Server[K, P]) Stop() error {
 	logger.Info("Stopping database")
 	err := s.DB.Stop()
 	if err != nil {
-		logger.Info("Failed to stop database!")
+		logger.Error("Failed to stop database", "error", err)
 		return ErrUnableToStopDatabase
 	}
 

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
 // data structure representing a stream: language of the scheduler
@@ -60,6 +61,11 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 		remember := s.Query.(*Remember[K, P])
 
+		logger.Debug("Committing write stream",
+			"entities", len(remember.Entities),
+			"topics", len(remember.Topics),
+			"vector", !remember.Vector.Empty())
+
 		// TODO: Implement stream query write logic
 
 		fact := graph.Fact[K]{
@@ -73,6 +79,8 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		g.Set(fact)
 		if !remember.Vector.Empty() {
 			if err := g.GetVectorIndex().Insert(fact.Key(), remember.Vector); err != nil {
+				logger.Error("Failed to index fact vector",
+					"value", remember.Value, "error", err)
 				return fmt.Errorf("indexing vector for fact %q: %w", remember.Value, err)
 			}
 		}
@@ -122,11 +130,17 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 			Hits:  make([]Hit[K, P], 0),
 		}
 		s.Result = &r
+		logger.Debug("Write stream committed", "value", remember.Value)
 		return nil
 	}
 
 	// Read stream
 	recall := s.Query.(*Recall[K, P])
+	logger.Debug("Committing read stream",
+		"keywords", len(recall.Keywords),
+		"vector", !recall.Vector.Empty(),
+		"depth", recall.Parameters.Depth,
+		"top", recall.Parameters.Top)
 	nodes, scores := g.Search(
 		recall.Keywords,
 		recall.Vector,
@@ -150,6 +164,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	}
 
 	s.Result = &r
+	logger.Debug("Read stream committed", "hits", n)
 	return nil
 }
 

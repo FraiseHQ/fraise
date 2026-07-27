@@ -44,12 +44,17 @@ func main() {
 	PrintBanner()
 
 	c := config.New()
-	_ = c.Parse(os.Args[1:]) // override config via CLI flags
+	cfgErr := c.Parse(os.Args[1:]) // load config file, then override via CLI flags
 
 	logger.SetDefault(logger.NewLogger(c))
 
 	logger.Info("Starting server...")
-	logger.Debug("Config", c)
+	if cfgErr != nil {
+		// Parse falls back to built-in defaults on a missing/invalid file; log
+		// so a silently-defaulted config is visible rather than a surprise.
+		logger.Warn("Config not fully loaded, using defaults", "error", cfgErr)
+	}
+	logger.Debug("Config loaded", "config", c)
 
 	// MurmurHash produces uint32 keys, so the server is instantiated with
 	// K = uint32; float64 is used for embedding/score precision.
