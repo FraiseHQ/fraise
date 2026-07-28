@@ -29,9 +29,9 @@ the compose network (see docker-compose.yml and `make test-e2e`).
 import random
 from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
 import pytest
 import requests
-import numpy as np
 
 REQUEST_TIMEOUT_SECONDS = 15
 
@@ -90,7 +90,9 @@ def test_recall_with_clauses(query):
 
 
 def test_remember_is_accepted(query):
-    status, _ = query("remember@1 'anne loves the color orange' topic:color entity:anne")
+    status, _ = query(
+        "remember@1 'anne loves the color orange' topic:color entity:anne"
+    )
     assert status == 200
 
 
@@ -101,7 +103,9 @@ def test_remember_then_recall(query):
 
     status, body = query("recall@3 parrot")
     assert status == 200, body.get("error")
-    assert body["results"]["count"] > 0, "recall found nothing, want the remembered fact"
+    assert body["results"]["count"] > 0, (
+        "recall found nothing, want the remembered fact"
+    )
 
 
 def test_concurrent_queries(base_url):
@@ -188,7 +192,9 @@ def test_many_writes_then_concurrent_reads(query, base_url):
         status, body = query(f"recall@{graph} {keyword}")
         assert status == 200, body.get("error")
         values = [hit["value"] for hit in body["results"]["hits"]]
-        assert phrase in values, f"fact {keyword!r} missing after concurrency; got {values}"
+        assert phrase in values, (
+            f"fact {keyword!r} missing after concurrency; got {values}"
+        )
 
 
 # Four facts sharing a single topic, each with a unique keyword. This is a
@@ -372,7 +378,9 @@ def test_remember_vector_then_recall_by_vector(query):
     assert status == 200, body.get("error")
 
     # "zzznomatch" matches no fact's text, so only the vector can seed the recall.
-    status, body = query(f"recall@{graph} zzznomatch vec:$v", parameters={"v": embedding})
+    status, body = query(
+        f"recall@{graph} zzznomatch vec:$v", parameters={"v": embedding}
+    )
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
     assert phrase in values, (
@@ -388,7 +396,9 @@ def test_recall_missing_vector_parameter_is_rejected(query):
 
     assert status == 400
     error = body.get("error", "")
-    assert "$v" in error, f"expected the error to name the missing parameter, got {error!r}"
+    assert "$v" in error, (
+        f"expected the error to name the missing parameter, got {error!r}"
+    )
 
 
 def test_remember_vector_incompatible_size_is_rejected(query):
@@ -416,7 +426,9 @@ def test_remember_vector_incompatible_size_is_rejected(query):
         "remember@4 'a differently sized vector' vec:$v topic:size",
         parameters={"v": _vector(VECTOR_DIM // 2)},
     )
-    assert status == 500, f"expected the mismatched-dimension write to fail, got {status}: {body}"
+    assert status == 500, (
+        f"expected the mismatched-dimension write to fail, got {status}: {body}"
+    )
     assert body.get("error"), "expected an error message on the rejected write"
 
 
@@ -455,9 +467,10 @@ def test_vector_search_with_real_embeddings(query):
     try:
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
         model = transformers.AutoModel.from_pretrained(model_id)
-    except Exception as exc:
-        # Installed but the weights are not available (no network, no cache,
-        # blocked Hub). That is an environment limitation, not a test failure.
+    except OSError as exc:
+        # transformers raises OSError ("Can't load the model for ...") when the
+        # weights are not available: no network, no cache, or a blocked Hub. That
+        # is an environment limitation, not a test failure, so skip.
         pytest.skip(f"embedding model unavailable: {exc}")
     model.eval()
 
@@ -491,9 +504,9 @@ def test_vector_search_with_real_embeddings(query):
         parameters={"v": query_vec},
     )
 
-    print(50*"-")
+    print(50 * "-")
     print(body)
-    print(50*"-")
+    print(50 * "-")
 
     assert status == 200, body.get("error")
 
@@ -508,7 +521,9 @@ def test_vector_search_with_real_embeddings(query):
     # to a Python int, so the top score may be int while lower ranks are float —
     # assert both that all are numeric and that real floats appear.)
     for hit in hits:
-        assert isinstance(hit["score"], (int, float)), f"score not numeric: {hit['score']!r}"
+        assert isinstance(hit["score"], (int, float)), (
+            f"score not numeric: {hit['score']!r}"
+        )
     assert any(isinstance(hit["score"], float) for hit in hits), (
         f"expected floating-point scores, got {[type(h['score']).__name__ for h in hits]}"
     )

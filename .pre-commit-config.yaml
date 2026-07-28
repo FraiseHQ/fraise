@@ -17,7 +17,31 @@ repos:
         name: Check JSON syntax
         exclude: sdk/typescript/tsconfig.json
 
+  # ================
+  # Go
+  # ================
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.12.2
     hooks:
     - id: golangci-lint
+
+
+  # ================
+  # Python
+  # ================
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.0
+    hooks:
+    # Run the linter.
+    - id: ruff
+      args: [ --fix, --config=pyproject.toml, --show-fixes ]
+    # Run the formatter.
+    - id: ruff-format
+      args: [--config=pyproject.toml, --verbose ]
+
+  - repo: https://github.com/astral-sh/ty-pre-commit
+    # ty version.
+    rev: v0.0.64
+    hooks:
+    - id: ty

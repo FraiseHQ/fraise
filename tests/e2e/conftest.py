@@ -74,9 +74,7 @@ def query(base_url):
 
     def _query(text: str, parameters: dict[str, object] | None = None):
 
-        data = {
-            "query": text
-        }
+        data = {"query": text}
 
         if parameters:
             data["parameters"] = parameters
