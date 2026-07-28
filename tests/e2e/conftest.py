@@ -39,6 +39,15 @@ WAIT_TIMEOUT_SECONDS = 30
 REQUEST_TIMEOUT_SECONDS = 10
 
 
+def pytest_configure(config):
+    # Register the marker so `-m "not embeddings"` works and pytest doesn't warn
+    # about an unknown mark. Tests carrying it need a real embedding model.
+    config.addinivalue_line(
+        "markers",
+        "embeddings: requires a HuggingFace embedding model (sentence-transformers); skippable",
+    )
+
+
 @pytest.fixture(scope="session")
 def base_url():
     """Base URL of a Fraise server that is confirmed to be up."""

@@ -269,6 +269,66 @@ def test_recall_depth_one_returns_only_the_seed(planets_graph, query):
     assert values == [PLANET_FACTS["mercury"]]
 
 
+# Three facts that all contain the keyword "comet" but are otherwise unrelated:
+# each carries a *different* topic, so nothing connects them in the graph except
+# the shared word. A recall for that word must therefore surface all three
+# purely through the text index.
+#
+# Every other recall test uses a keyword unique to a single fact, so the text
+# search there always matches exactly one document — a regression that capped
+# text search at one hit would pass the whole rest of the suite unnoticed. This
+# test is the one that would catch it, on its own graph (0) so the count is
+# fully determined here.
+COMET_FACTS = {
+    "the comet streaked past mars": "astronomy",
+    "children watched the comet at dawn": "memory",
+    "the comet will not return for centuries": "time",
+}
+
+
+def test_recall_returns_every_document_sharing_a_keyword(query):
+    graph = 0
+    for phrase, topic in COMET_FACTS.items():
+        status, body = query(f"remember@{graph} '{phrase}' topic:{topic}")
+        assert status == 200, body.get("error")
+
+    status, body = query(f"recall@{graph} comet top:10")
+    assert status == 200, body.get("error")
+
+    values = {hit["value"] for hit in body["results"]["hits"]}
+    assert set(COMET_FACTS) <= values, (
+        "recall by a shared keyword must return every matching fact, not just "
+        f"one; want all of {set(COMET_FACTS)}, got {values}"
+    )
+
+
+def test_recall_unions_matches_across_keywords(query):
+    """A recall naming several keywords returns the union of their matches, so a
+    single query yields multiple results.
+
+    The two facts share no word and carry different topics, so nothing links
+    them in the graph. "saturn" matches only the first, "neptune" only the
+    second; recalling both keywords must return both facts. Graph 2 is only ever
+    recalled elsewhere in the suite, never written, so these are its only facts.
+    """
+    graph = 2
+    facts = {
+        "saturn has bright rings": "rings",
+        "neptune is a deep blue giant": "orbit",
+    }
+    for phrase, topic in facts.items():
+        status, body = query(f"remember@{graph} '{phrase}' topic:{topic}")
+        assert status == 200, body.get("error")
+
+    status, body = query(f"recall@{graph} saturn neptune top:10")
+    assert status == 200, body.get("error")
+
+    values = {hit["value"] for hit in body["results"]["hits"]}
+    assert set(facts) <= values, (
+        f"recall across two keywords should union both matches; want {set(facts)}, got {values}"
+    )
+
+
 # Vector tests use graphs 4 and 6, which no other test writes to, so each
 # graph's vector index dimension is fixed solely by these tests. The API takes
 # the embedding out-of-band: `vec:$v` in the query is a placeholder bound by
@@ -291,6 +351,33 @@ def test_remember_with_vector_is_accepted(query):
     )
 
     assert status == 200, body.get("error")
+
+
+def test_remember_vector_then_recall_by_vector(query):
+    """The vector round trip: store a fact with an embedding, then recall it by
+    that embedding alone.
+
+    The recall term is a keyword that appears in no stored fact, so the text
+    index yields no seeds. The fact can only surface if the vector index seeds
+    the search from `vec:$v` — this is what proves vector search actually works
+    end to end, not just that the write was accepted."""
+    graph = 6
+    phrase = "the kingfisher is electric blue"
+    embedding = _vector(VECTOR_DIM, value=0.5)
+
+    status, body = query(
+        f"remember@{graph} '{phrase}' vec:$v topic:color",
+        parameters={"v": embedding},
+    )
+    assert status == 200, body.get("error")
+
+    # "zzznomatch" matches no fact's text, so only the vector can seed the recall.
+    status, body = query(f"recall@{graph} zzznomatch vec:$v", parameters={"v": embedding})
+    assert status == 200, body.get("error")
+    values = [hit["value"] for hit in body["results"]["hits"]]
+    assert phrase in values, (
+        f"vector recall did not surface the remembered fact; got {values}"
+    )
 
 
 def test_recall_missing_vector_parameter_is_rejected(query):
@@ -331,3 +418,97 @@ def test_remember_vector_incompatible_size_is_rejected(query):
     )
     assert status == 500, f"expected the mismatched-dimension write to fail, got {status}: {body}"
     assert body.get("error"), "expected an error message on the rejected write"
+
+
+# Documents on three clearly distinct subjects. A real sentence embedding places
+# each far from the others, so a query close in meaning to one of them retrieves
+# that one by vector alone. Graph 3 carries no other vectors, so its embedding
+# dimension is fixed by this test.
+# No apostrophes: a single-quoted query phrase has no escaping, so an apostrophe
+# would close the phrase early and fail to parse.
+EMBEDDING_DOCS = {
+    "cat": "the tabby cat curled up and slept on the warm windowsill",
+    "space": "the mars rover drilled into red rock to collect samples",
+    "bread": "he kneaded the dough and baked a fresh loaf of sourdough",
+}
+
+
+@pytest.mark.embeddings
+def test_vector_search_with_real_embeddings(query):
+    """End-to-end semantic search with a real HuggingFace embedding model.
+
+    Embeds a few documents with a small model loaded through the vanilla
+    transformers API (AutoTokenizer + AutoModel, mean-pooled), stores each with
+    its vector, then recalls with the embedding of a semantically related phrase
+    and checks the closest document comes back — and that the scores the API
+    returns are floating-point numbers.
+
+    Skippable three ways: the `embeddings` marker (`pytest -m "not embeddings"`),
+    importorskip when transformers/torch are not installed, and a skip when the
+    model itself cannot be loaded — e.g. an offline CI container that cannot
+    download it from the HuggingFace Hub.
+    """
+    transformers = pytest.importorskip("transformers")
+    torch = pytest.importorskip("torch")
+
+    model_id = "google/bert_uncased_L-2_H-128_A-2"
+    try:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
+        model = transformers.AutoModel.from_pretrained(model_id)
+    except Exception as exc:
+        # Installed but the weights are not available (no network, no cache,
+        # blocked Hub). That is an environment limitation, not a test failure.
+        pytest.skip(f"embedding model unavailable: {exc}")
+    model.eval()
+
+    def embed(text: str) -> list[float]:
+        # Vanilla transformers gives per-token hidden states; a sentence
+        # embedding is the attention-masked mean over tokens, L2-normalized —
+        # the standard pooling for this model. .tolist() yields a flat list of
+        # Python floats, the shape the API binds to vec:$v.
+        enc = tokenizer(text, padding=True, truncation=True, return_tensors="pt")
+        with torch.no_grad():
+            hidden = model(**enc).last_hidden_state
+        mask = enc["attention_mask"].unsqueeze(-1).float()
+        pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+        pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
+        return pooled[0].tolist()
+
+    graph = 3
+    for topic, text in EMBEDDING_DOCS.items():
+        status, body = query(
+            f"remember@{graph} '{text}' vec:$v topic:{topic}",
+            parameters={"v": embed(text)},
+        )
+        assert status == 200, body.get("error")
+
+    # A phrase close in meaning to the cat document, sharing none of its words.
+    # The recall keyword matches no stored text, and depth:1 keeps the walk on
+    # the seeds, so only the vector index decides the result.
+    query_vec = embed("a sleepy kitten dozing in the afternoon sun")
+    status, body = query(
+        f"recall@{graph} zzznomatch vec:$v depth:1",
+        parameters={"v": query_vec},
+    )
+
+    print(50*"-")
+    print(body)
+    print(50*"-")
+
+    assert status == 200, body.get("error")
+
+    hits = body["results"]["hits"]
+    assert hits, "vector search returned no hits"
+    assert hits[0]["value"] == EMBEDDING_DOCS["cat"], (
+        f"nearest document should be the cat one; got {hits[0]['value']!r}"
+    )
+
+    # Outputs are floats. Every score is a JSON number, and the ranking produces
+    # genuine fractional scores. (JSON renders an exact 1.0 as `1`, which decodes
+    # to a Python int, so the top score may be int while lower ranks are float —
+    # assert both that all are numeric and that real floats appear.)
+    for hit in hits:
+        assert isinstance(hit["score"], (int, float)), f"score not numeric: {hit['score']!r}"
+    assert any(isinstance(hit["score"], float) for hit in hits), (
+        f"expected floating-point scores, got {[type(h['score']).__name__ for h in hits]}"
+    )

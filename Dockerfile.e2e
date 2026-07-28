@@ -11,4 +11,19 @@ COPY pyproject.toml uv.lock ./
 
 COPY tests/ .
 
-RUN uv sync --package tests
+RUN uv sync --package tests --all-extras
+
+# Pre-download the embedding model while the build still has network, so the
+# `embeddings`-marked e2e test can load it from the image's cache. The compose
+# network the tests run in has no outbound internet, so a runtime download would
+# fail; the two OFFLINE vars below (set only after this download) force the
+# runtime to load the cached snapshot instead of reaching out to the Hub.
+#
+# HF_HUB_DISABLE_XET disables HuggingFace's Xet transfer backend (hf_xet): its
+# Rust client fails here with "Reqwest error: builder error" on the Xet-backed
+# model.safetensors, surfacing as a misleading "can't find pytorch_model.bin".
+# Disabling it falls back to the classic HTTPS download, which works.
+RUN HF_HUB_DISABLE_XET=1 uv run python -c "from transformers import AutoTokenizer, AutoModel; m='google/bert_uncased_L-2_H-128_A-2'; AutoTokenizer.from_pretrained(m); AutoModel.from_pretrained(m)"
+
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
