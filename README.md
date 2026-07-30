@@ -126,15 +126,90 @@ curl -X POST localhost:9876/api/v1/q \
 
 ### SDKs
 
-_Coming soon._
+Prefer to talk to Fraise from your own code? Official clients wrap the query
+endpoint behind two verbs — `remember` and `recall` — with optional vector
+embeddings and agent-framework tools.
+
+**Python** ([`sdk/python`](./sdk/python)):
+
+```sh
+pip install fraise-sdk
+```
+
+```python
+from fraise_sdk import FraiseClient
+
+with FraiseClient("http://localhost:9876") as fraise:
+    fraise.remember("the parrot is turquoise", topics=["color"])
+    for hit in fraise.recall("parrot", top=5):
+        print(hit.value, hit.score)
+```
+
+**TypeScript** ([`sdk/typescript`](./sdk/typescript)):
+
+```sh
+npm install fraise-sdk
+```
+
+```ts
+import { FraiseClient } from "fraise-sdk";
+
+const fraise = new FraiseClient({ baseUrl: "http://localhost:9876" });
+await fraise.remember("the parrot is turquoise", { topics: ["color"] });
+const result = await fraise.recall(["parrot"], { top: 5 });
+for (const hit of result.hits) console.log(hit.value, hit.score);
+```
+
+Both are dependency-light and support vector search when you supply an embedder.
+See each SDK's README for embeddings and the full API.
 
 ### Integrate with Claude Agents
 
-_Coming soon._
+The Python SDK ships memory tools for the [Claude Agent
+SDK](./sdk/python#claude-agent-sdk-tools), exposed as an in-process MCP server so
+the agent decides *what* to store and recall:
+
+```python
+from claude_agent_sdk import ClaudeAgentOptions
+from fraise_sdk import FraiseClient
+from fraise_sdk.integrations.claude_agents import memory_server, allowed_tools
+
+fraise = FraiseClient("http://localhost:9876")
+options = ClaudeAgentOptions(
+    system_prompt="Remember durable facts the user shares, and recall them when relevant.",
+    mcp_servers={"fraise_memory": memory_server(fraise)},
+    allowed_tools=allowed_tools(),
+)
+```
+
+A complete, Docker-runnable agent lives in
+[`examples/claude-agent-sdk`](./examples/claude-agent-sdk).
 
 ### Integrate with OpenAI Agents
 
-_Coming soon._
+Both SDKs ship tools for the [OpenAI Agents
+SDK](./sdk/python#openai-agents-tools). `memory_tools(client)` returns bound
+`recall` and `remember` tools:
+
+```python
+from agents import Agent, Runner
+from fraise_sdk import FraiseClient
+from fraise_sdk.integrations.openai_agents import memory_tools
+
+fraise = FraiseClient("http://localhost:9876")
+agent = Agent(
+    name="Assistant",
+    instructions="Remember durable facts the user shares, and recall them when relevant.",
+    tools=memory_tools(fraise),
+)
+
+result = Runner.run_sync(agent, "My favourite colour is orange.")
+print(result.final_output)
+```
+
+The TypeScript equivalent is `memoryTools(client)` from
+`fraise-sdk/integrations/openai-agents`. Complete, Docker-runnable agents live in
+[`examples/openai-agents`](./examples/openai-agents).
 
 ## References
 
