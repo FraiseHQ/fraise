@@ -28,7 +28,7 @@
 language built for tokens, not humans.
 
 ```text
-remember "acme moved to annual billing" topic:billing entity:acme
+remember 'acme moved to annual billing' topic:billing entity:acme
 
 recall billing entity:acme since:30d top:5
 ```
