@@ -32,7 +32,8 @@ jobs:
         run: uvx pre-commit run --all-files --show-diff-on-failure
 
   validate:
-    if: github.event_name == 'pull_request_target'
+    name: Validate branch name and PR title
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     # Writes the conventions sticky comment on the PR.
     permissions:
