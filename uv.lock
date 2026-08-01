@@ -306,35 +306,30 @@ requires-dist = [{ name = "pre-commit", specifier = ">=4.6.1" }]
 
 [[package]]
 name = "fraise-sdk"
-version = "0.0.1"
+version = "0.1.0rc1"
 source = { editable = "sdk/python" }
 dependencies = [
     { name = "requests" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 anthropic = [
     { name = "claude-agent-sdk" },
+]
+dev = [
+    { name = "pytest" },
 ]
 openai = [
     { name = "openai-agents" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
 [package.metadata]
-requires-dist = [
-    { name = "claude-agent-sdk", marker = "extra == 'anthropic'", specifier = ">=0.2.128" },
-    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.18.3" },
-    { name = "requests", specifier = ">=2.33.1" },
-]
-provides-extras = ["openai", "anthropic"]
+requires-dist = [{ name = "requests", specifier = ">=2.33.1" }]
 
 [package.metadata.requires-dev]
+anthropic = [{ name = "claude-agent-sdk", specifier = ">=0.2.128" }]
 dev = [{ name = "pytest", specifier = ">=9.0.3" }]
+openai = [{ name = "openai-agents", specifier = ">=0.18.3" }]
 
 [[package]]
 name = "fsspec"
