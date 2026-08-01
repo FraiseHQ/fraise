@@ -46,11 +46,11 @@ func (m Mentions[K]) GetAttributes() *NodeAttributes {
 }
 
 func (m Mentions[K]) GetTimestamp() time.Time {
-	return m.NodeAttributes.Timestamp
+	return m.Timestamp
 }
 
 func (m Mentions[K]) GetValue() string {
-	return m.NodeAttributes.Value
+	return m.Value
 }
 
 func (m Mentions[K]) Source() *Entity[K] {
@@ -88,11 +88,11 @@ func (a IsAbout[K]) GetAttributes() *NodeAttributes {
 }
 
 func (a IsAbout[K]) GetTimestamp() time.Time {
-	return a.NodeAttributes.Timestamp
+	return a.Timestamp
 }
 
 func (a IsAbout[K]) GetValue() string {
-	return a.NodeAttributes.Value
+	return a.Value
 }
 
 func (a IsAbout[K]) Source() *Entity[K] {
