@@ -90,7 +90,7 @@ addressed with `@N` — one per user, per session, per agent, however you like.
 ### Run with Docker
 
 ```sh
-docker run -p 9876:9876 ghcr.io/ronsenbergvi/fraise:latest
+docker run -p 127.0.0.1:9876:9876 ghcr.io/ronsenbergvi/fraise:latest
 ```
 
 ### Run from source
