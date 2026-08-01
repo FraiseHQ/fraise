@@ -115,9 +115,9 @@ graph_selector  = '@' integer ;                (* default 0; lexed WITH the comm
 (* ------------------------------------------------------------ *)
 
 bare_word         = ?[a-z0-9_][a-z0-9_\-]*? ;  (* must NOT start with '-' (see notes) *)
-phrase            = '"' ?[^"]*? '"' ;
+phrase            = "'" ?[^']*? "'" ;          (* facts are single-quoted; no escape inside *)
 identifier        = ?[a-z][a-z0-9_\-]*? ;
-quoted_identifier = '"' ?[^"]+? '"' ;
+quoted_identifier = "'" ?[^']+? "'" ;
 integer           = ?[0-9]+? ;
 time_value        = duration | iso_date ;
 duration          = integer time_unit ;
@@ -131,9 +131,9 @@ param_ref         = '$' identifier ;
 ```
 recall billing +entity:acme since:7d top:5
 recall ~topic:billing -entity:acme
-recall "annual contract" topic:billing entity:acme depth:3
+recall 'annual contract' topic:billing entity:acme depth:3
 recall@3 +topic:auth +entity:okta
-remember "acme moved to annual billing" topic:billing topic:contracts
+remember 'acme moved to annual billing' topic:billing topic:contracts
 ```
 
 ## Glossary
