@@ -46,7 +46,10 @@ func TestMain(m *testing.M) {
 func newTestServer(t *testing.T) *Server[uint64, float32] {
 	t.Helper()
 	cfg := config.New()
-	s := New[uint64, float32](cfg, hash.NewHasher[uint64](cfg))
+	s, err := New[uint64, float32](cfg, hash.NewHasher[uint64](cfg))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
 
 	if err := s.DB.Start(); err != nil {
 		t.Fatalf("db.Start returned error: %v", err)

@@ -3,7 +3,7 @@ package containers
 import "errors"
 
 var (
-	DimMismatchError         = errors.New("Vector dimensions do not match.")
-	ErrPriorityQueueCapacity = errors.New("Priority queue capacity must be strictly positive.")
-	ErrEmptyPriorityQueue    = errors.New("Priority queue is empty")
+	ErrDimMismatch           = errors.New("vector dimensions do not match")
+	ErrPriorityQueueCapacity = errors.New("priority queue capacity must be strictly positive")
+	ErrEmptyPriorityQueue    = errors.New("priority queue is empty")
 )

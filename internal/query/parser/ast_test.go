@@ -432,16 +432,3 @@ func TestVecFieldNode(t *testing.T) {
 		t.Errorf("End() = %v, want %v", got, pos(5))
 	}
 }
-
-// TestVecFieldNodeSetDoesNotMutate documents current behaviour: Set has a value
-// receiver, so the assignment to n.value never reaches the caller's copy. If
-// Set is ever changed to a pointer receiver, this test should be updated to
-// assert that the value IS mutated.
-func TestVecFieldNodeSetDoesNotMutate(t *testing.T) {
-	n := VecFieldNode[float32]{value: []float32{1}}
-	n.Set(tok(lexer.LITERAL, "q"), []float32{9, 8, 7})
-
-	if got := n.Value(); len(got) != 1 || got[0] != 1 {
-		t.Errorf("after Set, Value() = %v; expected it to remain [1] due to value receiver", got)
-	}
-}

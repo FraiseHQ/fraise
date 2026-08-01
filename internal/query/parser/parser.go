@@ -94,13 +94,6 @@ func (p *parser[P]) errf(pos lexer.Position, format string, args ...any) error {
 	}
 }
 
-func (p *parser[P]) warnf(pos lexer.Position, format string, args ...any) {
-	p.warns = append(p.warns, Warning{
-		Pos: pos,
-		Msg: fmt.Sprintf(format, args...),
-	})
-}
-
 func (p *parser[P]) parseQuery() (CommandNode, error) {
 	switch p.cur.Type {
 	case lexer.REMEMBER:

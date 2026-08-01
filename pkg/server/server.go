@@ -54,12 +54,12 @@ type Server[K ~uint64, P float32 | float64] struct {
 // New constructs a Server wired up with a database, an engine, and the HTTP
 // routes. The hasher determines how keys are mapped to their string
 // representation for storage and lookup.
-func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.Hasher[K, string]) *Server[K, P] {
+func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.Hasher[K, string]) (*Server[K, P], error) {
 
 	// Initialise the data store from the configuration.
 	db, err := db.NewDB[K, P](config)
 	if err != nil {
-
+		return nil, err
 	}
 	// Initialise the query engine with the same configuration and hasher.
 	engine := engine.NewEngine[K, P](config, hasher)
@@ -75,7 +75,7 @@ func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.H
 	}
 	// Register the HTTP routes before the server is returned.
 	s.setupRoutes()
-	return s
+	return s, nil
 }
 
 // Start brings up the database and engine, then begins serving HTTP requests

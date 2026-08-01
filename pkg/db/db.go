@@ -56,12 +56,10 @@ func (d *DB[K, P]) Start() error {
 
 		// The search algorithms are injected from configuration; unknown
 		// names keep the graph's built-in defaults.
-		switch d.Config.DB.SearchAlgorithm.Name {
-		case "bfs":
+		if d.Config.DB.SearchAlgorithm.Name == "bfs" {
 			g.SetTraversal(graph.NewBFSTraversal[K, P](graph.Both))
 		}
-		switch d.Config.DB.RankingAlgorithm.Name {
-		case "pagerank":
+		if d.Config.DB.RankingAlgorithm.Name == "pagerank" {
 			g.SetRanking(graph.NewPageRank[K, P](
 				P(d.Config.DB.RankingAlgorithm.PageRankDamping),
 				d.Config.DB.RankingAlgorithm.PageRankMaxIter,

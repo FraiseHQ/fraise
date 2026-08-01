@@ -28,9 +28,9 @@ import "errors"
 // This is error is introduced to differentiate between
 // "nothing has been indexed yet" and "indexed but no match"
 var (
-	ErrEmptyIndex          = errors.New("Index is empty")
-	ErrIndexNotFound       = errors.New("Index not found")
-	ErrInvalidDimension    = errors.New("Invalid vector dimension")
-	ErrFailedToCreateIndex = errors.New("Failed to create index")
-	ErrFailedToLoadIndex   = errors.New("Failed to load index")
+	ErrEmptyIndex          = errors.New("index is empty")
+	ErrIndexNotFound       = errors.New("index not found")
+	ErrInvalidDimension    = errors.New("invalid vector dimension")
+	ErrFailedToCreateIndex = errors.New("failed to create index")
+	ErrFailedToLoadIndex   = errors.New("failed to load index")
 )
