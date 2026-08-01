@@ -1,15 +1,43 @@
 name: PR checks
 
 on:
+  # Title/branch conventions need the token to comment on fork PRs, hence
+  # pull_request_target. The lint job runs untrusted PR code, so it stays on
+  # the plain pull_request event (no write token).
+  pull_request:
   pull_request_target:
     types: [opened, edited, synchronize]
 
 permissions:
-  pull-requests: read
+  contents: read
 
 jobs:
-  validate:
+
+  lint:
+    name: General pre-commit hooks
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Runs untrusted PR code — read-only, no token to write comments/contents.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version-file: "pyproject.toml"
+      - name: Lint
+        # Language- and docker-specific hooks run in their own workflows.
+        env:
+          SKIP: golangci-lint-full,ruff,ruff-format,ty,biome-check,hadolint-docker
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
+  validate:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    # Writes the conventions sticky comment on the PR.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: amannn/action-semantic-pull-request@v5
         env:

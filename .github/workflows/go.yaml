@@ -18,9 +18,24 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version-file: "pyproject.toml"
+      - name: Lint
+        run: make lint-go
+
   test:
     name: Test Go
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
