@@ -55,7 +55,6 @@ repos:
     rev: v2.5.6
     hooks:
       - id: biome-check
-        args: [--write, --no-errors-on-unmatched]
         files: ^sdk/typescript/.*\.(ts|tsx|js|jsx|json|jsonc)$
         exclude: ^sdk/typescript/dist/
 
