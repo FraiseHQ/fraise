@@ -1,4 +1,5 @@
 repos:
+
   # ================
   # General
   # ================
@@ -23,8 +24,9 @@ repos:
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.12.2
     hooks:
-    - id: golangci-lint
-
+    # -full lints the whole module; the plain hook only diffs against HEAD,
+    # which lints nothing in CI.
+    - id: golangci-lint-full
 
   # ================
   # Python
@@ -36,7 +38,6 @@ repos:
     # Run the linter.
     - id: ruff
       args: [ --fix, --config=pyproject.toml, --show-fixes ]
-    # Run the formatter.
     - id: ruff-format
       args: [--config=pyproject.toml, --verbose ]
 
@@ -45,3 +46,26 @@ repos:
     rev: v0.0.64
     hooks:
     - id: ty
+
+  # ================
+  # TypeScript
+  # ================
+
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v2.5.6
+    hooks:
+      - id: biome-check
+        files: ^sdk/typescript/.*\.(ts|tsx|js|jsx|json|jsonc)$
+        exclude: ^sdk/typescript/dist/
+
+  # ================
+  # Docker
+  # ================
+  # types: [file] + files override because the hook's default types: [dockerfile]
+  # doesn't match the non-standard Dockerfile.<name> filenames used here.
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.15.1
+    hooks:
+      - id: hadolint-docker
+        types: [file]
+        files: (^|/)Dockerfile[^/]*$

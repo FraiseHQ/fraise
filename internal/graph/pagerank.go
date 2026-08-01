@@ -110,7 +110,7 @@ func (pr *PageRank[K, P]) rank(g Graph[K, P]) (map[K]P, error) {
 func (pr *PageRank[K, P]) Run(g Graph[K, P]) (AlgorithmResult, error) {
 	scores, err := pr.rank(g)
 	if err != nil {
-		return nil, fmt.Errorf("Page rank failed: %w", err)
+		return nil, fmt.Errorf("page rank failed: %w", err)
 	}
 	return RankingResult[K, P]{Scores: scores}, nil
 }

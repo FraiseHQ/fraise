@@ -30,7 +30,7 @@ import (
 
 func Test_newLexer(t *testing.T) {
 	l := lexer.New("recall anna topic:job")
-	if !(l.Character == rune('r')) {
+	if l.Character != rune('r') {
 		t.Error("Character should be:", rune('r'), "but got:", l.Character)
 	}
 }
@@ -39,10 +39,10 @@ func Test_Next(t *testing.T) {
 	l := lexer.New("remember anna 'I work at Google' topic:job")
 	token1 := l.Next()
 	token2 := l.Next()
-	if !(token1.Literal == "remember" && token1.Type == lexer.REMEMBER) {
+	if token1.Literal != "remember" || token1.Type != lexer.REMEMBER {
 		t.Error("Wrong Value")
 	}
-	if !(token2.Literal == "anna" && token2.Type == lexer.LITERAL) {
+	if token2.Literal != "anna" || token2.Type != lexer.LITERAL {
 		t.Error("Wrong Value")
 	}
 }
@@ -53,7 +53,7 @@ func Test_NextUntilEol(t *testing.T) {
 		_ = l.Next()
 	}
 	token := l.Next()
-	if !(token.Literal == "" && token.Type == lexer.EOL) {
+	if token.Literal != "" || token.Type != lexer.EOL {
 		t.Error("Wrong Value")
 	}
 }

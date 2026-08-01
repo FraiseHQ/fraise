@@ -237,8 +237,8 @@ func (c *ConfigSet) Parse(arguments []string) error {
 		return err
 	}
 
-	if len(c.FlagSet.Args()) != 0 {
-		return fmt.Errorf("'%s' is an invalid flag", c.FlagSet.Arg(0))
+	if len(c.Args()) != 0 {
+		return fmt.Errorf("'%s' is an invalid flag", c.Arg(0))
 	}
 
 	err = c.adjust(meta)

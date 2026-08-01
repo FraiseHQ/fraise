@@ -182,20 +182,31 @@ fmt-py: ## Format Python code with ruff
 	@echo "$(CYAN)Formatting Python code...$(RESET)"
 	@cd $(PY_DIR) && $(UV_CMD) run ruff format 2>/dev/null || echo "$(YELLOW)⚠ Ruff not configured$(RESET)"
 
-lint: lint-go lint-ts lint-py ## Lint all code
+# All linting flows through pre-commit (config: .pre-commit-config.yaml) so local
+# and CI run identical hooks. Each target runs one slice; CI calls these directly.
+PRECOMMIT     := uvx pre-commit run --all-files --show-diff-on-failure
 
-lint-go: ## Lint Go code with vet and golangci-lint
+lint: ## Lint all code via pre-commit (every hook)
+	@echo "$(CYAN)Running pre-commit hooks on all files...$(RESET)"
+	@uvx pre-commit run --all-files
+
+lint-go: ## Lint Go via golangci-lint (pre-commit)
 	@echo "$(CYAN)Linting Go code...$(RESET)"
-	$(GO_VET) ./...
-	@which golangci-lint > /dev/null && golangci-lint run || echo "$(YELLOW)⚠ golangci-lint not installed, run 'make install-tools'$(RESET)"
+	@$(PRECOMMIT) golangci-lint-full
 
-lint-ts: ## Lint TypeScript code
+lint-ts: ## Lint TypeScript via biome (pre-commit)
 	@echo "$(CYAN)Linting TypeScript code...$(RESET)"
-	@cd $(TS_DIR) && $(NPM_CMD) run lint 2>/dev/null || echo "$(YELLOW)⚠ No TypeScript linter configured$(RESET)"
+	@$(PRECOMMIT) biome-check
 
-lint-py: ## Lint Python code with ruff
+lint-py: ## Lint Python via ruff + ty (pre-commit)
 	@echo "$(CYAN)Linting Python code...$(RESET)"
-	@cd $(PY_DIR) && $(UV_CMD) run ruff check 2>/dev/null || echo "$(YELLOW)⚠ Ruff not configured$(RESET)"
+	@$(PRECOMMIT) ruff
+	@$(PRECOMMIT) ruff-format
+	@$(PRECOMMIT) ty
+
+lint-docker: ## Lint Dockerfiles via hadolint (pre-commit)
+	@echo "$(CYAN)Linting Dockerfiles...$(RESET)"
+	@$(PRECOMMIT) hadolint-docker
 
 check: fmt lint test ## Format, lint, and test Go code
 	@echo "$(GREEN)✓ All checks passed$(RESET)"

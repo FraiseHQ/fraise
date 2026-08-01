@@ -25,5 +25,5 @@ package engine
 import "errors"
 
 var (
-	ErrQueryPlan = errors.New("Query plan failed.")
+	ErrQueryPlan = errors.New("query plan failed")
 )

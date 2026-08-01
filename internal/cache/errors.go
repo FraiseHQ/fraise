@@ -25,5 +25,5 @@ package cache
 import "errors"
 
 var (
-	ErrCacheCapacity = errors.New("Invalid cache capacity")
+	ErrCacheCapacity = errors.New("invalid cache capacity")
 )

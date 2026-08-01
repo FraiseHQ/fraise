@@ -37,7 +37,6 @@ package containers_test
 
 import (
 	"math/rand"
-	"sort"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
@@ -252,9 +251,6 @@ func TestEnqueue_CapacityIsHintNotBound(t *testing.T) {
 // less reports the max-priority ordering used by the queue. Invert to switch to
 // a min-priority queue.
 func less(a, b uint64) bool { return a < b }
-
-// byPriority sorts priorities into pop order (descending for a max-queue).
-func byPriority(s []uint64) { sort.Slice(s, func(i, j int) bool { return less(s[j], s[i]) }) }
 
 // TestFuzz_AgainstReferenceModel drives a long random sequence of Enqueue and
 // Dequeue against a plain slice used as an oracle. The queue is growable, so the

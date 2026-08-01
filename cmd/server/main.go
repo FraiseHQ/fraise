@@ -80,6 +80,9 @@ func main() {
 // run builds a server at the requested floating-point precision and starts it.
 // K is fixed to uint64 (the hasher's key type); only P varies with config.
 func runServer[P float32 | float64](c *config.ConfigSet) error {
-	srv := server.New[uint64, P](c, hash.NewHasher[uint64](c))
+	srv, err := server.New[uint64, P](c, hash.NewHasher[uint64](c))
+	if err != nil {
+		return err
+	}
 	return srv.Start()
 }

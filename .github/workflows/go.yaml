@@ -3,22 +3,39 @@ name: Go
 on:
   push:
     branches: [main]
-    paths: &go-paths
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*" # pre-releases: -alpha.N / -beta.N / -rc.N
+  pull_request:
+    paths:
       - "**.go"
       - "go.mod"
       - "go.sum"
       - ".golangci.yml"
       - ".github/workflows/go.yaml"
-  pull_request:
-    paths: *go-paths
 
 permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version-file: "pyproject.toml"
+      - name: Lint
+        run: make lint-go
+
   test:
     name: Test Go
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -54,3 +71,38 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: make build-go
+
+  publish:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [cross-compile, test]
+    runs-on: ubuntu-latest
+    environment: release # manual approval gate
+    permissions:
+      contents: write
+    steps:
+      - name: Validate tag format
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::bad tag '$GITHUB_REF_NAME' — expected vX.Y.Z or vX.Y.Z-alpha.N/-beta.N/-rc.N"; exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tag is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag ${GITHUB_REF_NAME} is not on main"; exit 1
+          fi
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

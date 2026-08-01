@@ -46,7 +46,7 @@ The following are not tolerated anywhere in this project:
 
 You do not have to agree with anyone's politics, identity, or worldview to work
 alongside them here. You do have to treat them decently. This document governs
-**conduct**, not belief — but conduct is not negotiable.
+**conduct**, not belief. Conduct is not negotiable.
 
 ## Where this applies
 

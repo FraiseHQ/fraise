@@ -27,9 +27,9 @@ import "errors"
 var (
 	// ErrStreamClosed is returned when committing or rolling back a stream
 	// that has already been committed or rolled back.
-	ErrStreamClosed  = errors.New("Stream closed")
-	ErrParsingFailed = errors.New("Query Parsing Error")
-	ErrCommitFailed  = errors.New("Commit failed.")
+	ErrStreamClosed  = errors.New("stream closed")
+	ErrParsingFailed = errors.New("query parsing error")
+	ErrCommitFailed  = errors.New("commit failed")
 	// ErrMissingParameter is returned when a query references a placeholder
 	// (e.g. vec:$v) that has no matching entry in the supplied parameters.
 	ErrMissingParameter = errors.New("missing query parameter")

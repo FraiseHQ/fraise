@@ -58,7 +58,6 @@ type FieldNode[T any] interface {
 	AstNode
 	Key() string
 	Value() T
-	Set(key lexer.Token, value T)
 }
 
 // Ref field
@@ -244,7 +243,6 @@ type TermNode struct {
 // Phrase representation. A phrase is a quoted text search
 type PhraseNode struct {
 	tokens []lexer.Token
-	value  string
 	pos    lexer.Position
 	end    lexer.Position
 }
@@ -557,11 +555,6 @@ func (n EntityFieldNode) Value() string {
 	return n.value
 }
 
-func (n EntityFieldNode) Set(key lexer.Token, value string) {
-	n.key = key
-	n.value = value
-}
-
 // topic field node impl
 
 func (n TopicFieldNode) String() string {
@@ -582,11 +575,6 @@ func (n TopicFieldNode) Pos() lexer.Position {
 
 func (n TopicFieldNode) End() lexer.Position {
 	return n.end
-}
-
-func (n TopicFieldNode) Set(key lexer.Token, value string) {
-	n.key = key
-	n.value = value
 }
 
 // since field node impl
@@ -615,11 +603,6 @@ func (n SinceFieldNode) End() lexer.Position {
 	return n.end
 }
 
-func (n SinceFieldNode) Set(key lexer.Token, value containers.TimeValue) {
-	n.key = key
-	n.value = value
-}
-
 // until field node impl
 
 func (n UntilFieldNode) String() string {
@@ -646,11 +629,6 @@ func (n UntilFieldNode) End() lexer.Position {
 	return n.end
 }
 
-func (n UntilFieldNode) Set(key lexer.Token, value containers.TimeValue) {
-	n.key = key
-	n.value = value
-}
-
 // top field node impl
 
 func (n TopFieldNode) String() string {
@@ -673,11 +651,6 @@ func (n TopFieldNode) End() lexer.Position {
 	return n.end
 }
 
-func (n TopFieldNode) Set(key lexer.Token, value int) {
-	n.key = key
-	n.value = value
-}
-
 // depth field node impl
 
 func (n DepthFieldNode) String() string {
@@ -698,11 +671,6 @@ func (n DepthFieldNode) Pos() lexer.Position {
 
 func (n DepthFieldNode) End() lexer.Position {
 	return n.end
-}
-
-func (n DepthFieldNode) Set(key lexer.Token, value int) {
-	n.key = key
-	n.value = value
 }
 
 // vec field node impl
@@ -729,9 +697,4 @@ func (n VecFieldNode[P]) Pos() lexer.Position {
 
 func (n VecFieldNode[P]) End() lexer.Position {
 	return n.end
-}
-
-func (n VecFieldNode[P]) Set(key lexer.Token, v []P) {
-	n.key = key
-	n.value = v
 }
