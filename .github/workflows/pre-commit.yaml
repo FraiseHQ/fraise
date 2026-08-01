@@ -13,8 +13,6 @@ on:
 jobs:
   pre-commits:
     runs-on: ubuntu-22.04
-    env:
-      AWS_PROFILE: AWS_PROFILE
     steps:
 
       - name: Check out code
