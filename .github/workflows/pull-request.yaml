@@ -76,7 +76,7 @@ jobs:
         with:
           regex: '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\/[a-z0-9]+([-.][a-z0-9]+)*$'
           exclude: main,master,develop
- 
+
       # https://github.com/marocchino/sticky-pull-request-comment
       - name: Comment on failure
         if: always() && (steps.title.outcome == 'failure' || steps.branch.outcome == 'failure')
@@ -86,50 +86,50 @@ jobs:
           skip_unchanged: true
           message: |
             ### ❌ PR conventions check failed
- 
+
             | Check | Value | Result |
             | --- | --- | --- |
             | PR title | `${{ github.event.pull_request.title }}` | ${{ steps.title.outcome == 'failure' && '❌ invalid' || '✅' }} |
             | Branch name | `${{ github.event.pull_request.head.ref }}` | ${{ steps.branch.outcome == 'failure' && '❌ invalid' || steps.branch.outcome == 'skipped' && '⏭️ exempt' || '✅' }} |
- 
+
             **Details**
- 
+
             ```
             ${{ steps.title.outputs.error_message || 'The PR title is fine — fix the branch name.' }}
             ```
- 
+
             <details><summary>The rules</summary>
- 
+
             **Title** — `type(optional-scope): subject`
- 
+
             ```
             feat(api): add request rate limiting
             fix: handle empty response body
             refactor(auth)!: drop legacy session cookies
             ```
- 
+
             Lowercase subject, no trailing period, 3-60 characters.
- 
+
             **Branch** — `type/short-description`
- 
+
             ```
             feat/rate-limiting
             fix/empty-response-body
             ```
- 
+
             Allowed types: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`
- 
+
             Editing the PR title re-runs this check. To rename a branch:
             `git branch -m <new-name> && git push origin -u <new-name>`, then retarget the PR.
             </details>
- 
+
       - name: Remove comment once fixed
         if: always() && steps.title.outcome != 'failure' && steps.branch.outcome != 'failure'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: pr-conventions
           delete: true
- 
+
       - name: Fail the job
         if: steps.title.outcome == 'failure' || steps.branch.outcome == 'failure'
         run: exit 1
