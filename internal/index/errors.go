@@ -24,13 +24,19 @@ package index
 
 import "errors"
 
-// Error returned by a search call when the index is empty
-// This is error is introduced to differentiate between
-// "nothing has been indexed yet" and "indexed but no match"
 var (
-	ErrEmptyIndex          = errors.New("index is empty")
-	ErrIndexNotFound       = errors.New("index not found")
-	ErrInvalidDimension    = errors.New("invalid vector dimension")
-	ErrFailedToCreateIndex = errors.New("failed to create index")
-	ErrFailedToLoadIndex   = errors.New("failed to load index")
+	// ErrEmptyIndex is returned by a search when nothing has been indexed yet.
+	// It is kept distinct from ErrIndexNotFound ("indexed, but no match") so
+	// callers can tell the two situations apart.
+	ErrEmptyIndex = errors.New("index: is empty")
+	// ErrIndexNotFound is returned by a lookup (e.g. Retrieve) when the key or
+	// point is not present in a non-empty index.
+	ErrIndexNotFound = errors.New("index: not found")
+	// ErrInvalidDimension is returned when a vector's dimensionality does not
+	// match the index it is being used with.
+	ErrInvalidDimension = errors.New("index: invalid vector dimension")
+	// ErrFailedToCreateIndex is returned when an index cannot be constructed.
+	ErrFailedToCreateIndex = errors.New("index: failed to create index")
+	// ErrFailedToLoadIndex is returned when an existing index cannot be loaded.
+	ErrFailedToLoadIndex = errors.New("index: failed to load index")
 )

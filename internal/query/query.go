@@ -95,7 +95,7 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 	cmd, _, err := parser.Parse[P](q)
 	if err != nil {
 		logger.Debug("Query parsing failed", "query", q, "error", err)
-		return nil, ErrParsingFailed
+		return nil, fmt.Errorf("%w: %w", ErrParsingFailed, err)
 	}
 
 	// qp := i.Evaluate(cmd)

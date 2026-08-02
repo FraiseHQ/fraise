@@ -25,9 +25,18 @@ package graph
 import "errors"
 
 var (
-	ErrNilNode           = errors.New("graph: node is nil")
+	// ErrNilNode is returned when a nil node is passed to a graph mutation.
+	ErrNilNode = errors.New("graph: node is nil")
+	// ErrNodeAlreadyExists is returned when adding a node whose key is already
+	// present in the graph.
 	ErrNodeAlreadyExists = errors.New("graph: node already exists")
-	ErrNodeNotFound      = errors.New("graph: node not found")
-	ErrSourceNotFound    = errors.New("algorithms: source vertex not found in graph")
-	ErrEmptyGraph        = errors.New("algorithms: graph has no edges to rank")
+	// ErrNodeNotFound is returned when an operation references a node that is
+	// not in the graph.
+	ErrNodeNotFound = errors.New("graph: node not found")
+	// ErrSourceNotFound is returned by traversal algorithms (e.g. BFS) when the
+	// requested source vertex is absent from the graph.
+	ErrSourceNotFound = errors.New("algorithms: source vertex not found in graph")
+	// ErrEmptyGraph is returned by ranking algorithms (e.g. PageRank) when the
+	// graph has no edges to rank over.
+	ErrEmptyGraph = errors.New("algorithms: graph has no edges to rank")
 )

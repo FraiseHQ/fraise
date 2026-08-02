@@ -21,3 +21,9 @@
 // SOFTWARE.
 
 package db
+
+import "errors"
+
+// ErrIndexOutOfBounds is returned by Select when the graph selector is outside
+// the range of allocated graphs. Callers can match it with errors.Is.
+var ErrIndexOutOfBounds = errors.New("db: graph index out of bounds")
