@@ -90,7 +90,7 @@ func (d *DB[K, P]) NumGraphs() int {
 
 func (d *DB[K, P]) Select(index uint8) (graph.Graph[K, P], error) {
 	if int(index) >= len(d.Graphs) {
-		return nil, fmt.Errorf("index %d out of bounds for slice of length %d", index, len(d.Graphs))
+		return nil, fmt.Errorf("%w: index %d for %d graphs", ErrIndexOutOfBounds, index, len(d.Graphs))
 	}
 	return d.Graphs[index], nil
 }

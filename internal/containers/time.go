@@ -63,7 +63,7 @@ func (tf TimeFilter) Resolve(now time.Time) time.Time {
 // ("7d", "30m", "1w") or an AbsoluteTime ("2026-01-15" or RFC3339).
 func ParseTimeValue(s string) (TimeValue, error) {
 	if s == "" {
-		return nil, fmt.Errorf("empty time value")
+		return nil, fmt.Errorf("%w: empty string", ErrInvalidTime)
 	}
 
 	// Relative: <int><unit>. A date never ends in a unit letter.
@@ -80,7 +80,7 @@ func ParseTimeValue(s string) (TimeValue, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("invalid time value %q (want e.g. 7d or 2026-01-15)", s)
+	return nil, fmt.Errorf("%w: %q (want e.g. 7d or 2026-01-15)", ErrInvalidTime, s)
 }
 
 func unitDuration(b byte) (time.Duration, bool) {

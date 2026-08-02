@@ -114,8 +114,8 @@ func TestParseErrors(t *testing.T) {
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
 			got, err := query.Parse[string, float32](q, nil, config.New())
-			if err != query.ErrParsingFailed {
-				t.Errorf("Parse(%q) err = %v, want ErrParsingFailed", q, err)
+			if !errors.Is(err, query.ErrParsingFailed) {
+				t.Errorf("Parse(%q) err = %v, want it to wrap ErrParsingFailed", q, err)
 			}
 			if got != nil {
 				t.Errorf("Parse(%q) = %v, want nil query", q, got)

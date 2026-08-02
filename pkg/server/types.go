@@ -26,12 +26,12 @@ package server
 type Request struct {
 }
 
-// Error is the JSON error response returned to clients. It carries the HTTP
-// status code, a human-readable message, and an optional detailed error string.
-type Error struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
-	Error   string `json:"error,omitempty"`
+// ErrorResponse is the JSON error body returned to clients: a single
+// human-readable message under "error". The HTTP status code carries the
+// category (4xx client error, 5xx server error), so it is not duplicated in the
+// body. Both SDKs read the "error" field, so that key is part of the contract.
+type ErrorResponse struct {
+	Error string `json:"error"`
 }
 
 // HandleQueryRequest is the JSON body expected by the query endpoint. It carries

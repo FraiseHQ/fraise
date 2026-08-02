@@ -39,7 +39,7 @@ type LRUCache[K comparable, T any] struct {
 }
 
 // NewLRUCache returns a new LRU cache with the given capacity.
-// Capacity must be > 0; the constructor panics otherwise.
+// Capacity must be > 0; it returns ErrCacheCapacity otherwise.
 func NewLRUCache[K comparable, T any](capacity int) (*LRUCache[K, T], error) {
 	if capacity <= 0 {
 		return nil, ErrCacheCapacity
@@ -132,10 +132,10 @@ func (c *LRUCache[K, T]) Clear() {
 }
 
 // Resizes LRU cache Returns the number of entries evicted
-func (c *LRUCache[K, T]) Resize(capacity int) int {
+func (c *LRUCache[K, T]) Resize(capacity int) (int, error) {
 
 	if capacity <= 0 {
-		panic("cache: capacity must be > 0")
+		return 0, ErrCacheCapacity
 	}
 	entries := 0
 
@@ -168,5 +168,5 @@ func (c *LRUCache[K, T]) Resize(capacity int) int {
 	}
 
 	c.capacity = capacity
-	return entries
+	return entries, nil
 }

@@ -23,6 +23,7 @@
 package query
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -205,7 +206,7 @@ func TestStreamCommitWriteWrites(t *testing.T) {
 
 func TestStreamCommitWriteRequiresStaging(t *testing.T) {
 	s := newStream(&Remember[string, float32]{}) // no Stage -> staging is nil
-	if err := s.Commit(&fakeGraph{}); err != ErrStreamClosed {
+	if err := s.Commit(&fakeGraph{}); !errors.Is(err, ErrStreamClosed) {
 		t.Errorf("Commit() on unstaged write stream = %v, want ErrStreamClosed", err)
 	}
 }
