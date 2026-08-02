@@ -17,7 +17,7 @@ RUN adduser -DHu 10001 fraise
 
 COPY --from=build /out/fraise /usr/local/bin/fraise
 
-USER fraise
+USER 10001
 EXPOSE 9876
 
 ENTRYPOINT ["fraise"]
