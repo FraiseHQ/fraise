@@ -132,7 +132,7 @@ jobs:
         env:
           NOTES: ${{ steps.changelog.outputs.changelog }}
         run: printf '%s' "$NOTES" > /tmp/release-notes.md
-  
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
