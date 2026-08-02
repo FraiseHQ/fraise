@@ -1,0 +1,60 @@
+{
+  "categories": [
+    {
+      "title": "### Upgrades",
+      "labels": [
+        "breaking-change",
+        "upgrade"
+      ]
+    },
+    {
+      "title": "### Features",
+      "labels": [
+        "feature"
+      ]
+    },
+    {
+      "title": "### Bug fixes",
+      "labels": [
+        "fix"
+      ]
+    },
+    {
+      "title": "### Performance",
+      "labels": [
+        "performance"
+      ]
+    },
+    {
+      "title": "### Maintenance",
+      "labels": [
+        "maintenance"
+      ]
+    },
+    {
+      "title": "### Docs",
+      "labels": [
+        "docs"
+      ]
+    },
+    {
+      "title": "### Tests",
+      "labels": [
+        "test"
+      ]
+    }
+  ],
+  "ignore_labels": [
+    "release"
+  ],
+  "tag_resolver": {
+    "method": "semver",
+    "filter": {
+      "pattern": "^v(.+)$",
+      "flags": "gu"
+    }
+  },
+  "template": "#{{CHANGELOG}}\n### Other changes\n\n#{{UNCATEGORIZED}}\n\n**Full changelog**: https://github.com/RonsenbergVI/fraise/compare/#{{FROM_TAG}}...#{{TO_TAG}}",
+  "pr_template": "- #{{TITLE}} (##{{NUMBER}})",
+  "empty_template": "_No changes since #{{FROM_TAG}}._"
+}
