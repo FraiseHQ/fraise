@@ -67,6 +67,10 @@ func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.H
 	// The scheduler executes streams against the data store.
 	engine.Scheduler.DB = db
 
+	if gin.Mode() == gin.DebugMode {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	s := &Server[K, P]{
 		Config: config,
 		DB:     db,
