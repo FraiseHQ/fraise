@@ -1,0 +1,41 @@
+# Config for actions/labeler — path-based area labels.
+# https://github.com/actions/labeler
+
+area:server:
+  - changed-files:
+      - any-glob-to-any-file:
+          - cmd/**
+          - internal/**
+          - pkg/**
+          - go.mod
+          - go.sum
+          - Dockerfile.fraise
+          - .goreleaser.yaml
+
+area:sdk-python:
+  - changed-files:
+      - any-glob-to-any-file:
+          - sdk/python/**
+
+area:sdk-typescript:
+  - changed-files:
+      - any-glob-to-any-file:
+          - sdk/typescript/**
+
+area:docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - "*.md"
+
+area:ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - Makefile
+          - .pre-commit-config.yaml
+          - docker-compose*
+          - Dockerfile.e2e
+          - tests/**
+          - biome.json
+          - codecov.yaml
