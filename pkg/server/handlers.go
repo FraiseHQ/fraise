@@ -23,13 +23,36 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/RonsenbergVI/fraise/internal/query"
+	"github.com/RonsenbergVI/fraise/internal/query/parser"
 	"github.com/RonsenbergVI/fraise/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
+
+// errorToResponse maps an error coming out of the query pipeline to an HTTP
+// status code and a client-safe message. It is the single place that decides
+// how an internal error is surfaced, so handlers never hand-pick status codes:
+//
+//   - a *parser.Error is a client mistake (400) and its position is safe to show;
+//   - known client sentinels (bad parse, missing parameter) are 400;
+//   - anything else is treated as an internal fault (500) with a generic
+//     message, so we never leak internal error detail to clients (we log it).
+func errorToResponse(err error) (int, string) {
+	var perr *parser.Error
+	switch {
+	case errors.As(err, &perr):
+		return http.StatusBadRequest, perr.Error()
+	case errors.Is(err, query.ErrParsingFailed),
+		errors.Is(err, query.ErrMissingParameter):
+		return http.StatusBadRequest, err.Error()
+	default:
+		return http.StatusInternalServerError, "internal server error"
+	}
+}
 
 // handleHealthCheck returns a handler that reports the server is alive,
 // responding with HTTP 200 and a simple status payload.
@@ -49,7 +72,7 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		var req HandleQueryRequest[P]
 		if err := c.ShouldBindJSON(&req); err != nil {
 			logger.Warn("Rejecting malformed query request body", "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return
 		}
 
@@ -61,7 +84,8 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 
 		if err != nil {
 			logger.Warn("Rejecting unparsable query", "query", req.Query, "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			status, msg := errorToResponse(err)
+			c.JSON(status, ErrorResponse{Error: msg})
 			return
 		}
 
@@ -71,8 +95,8 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		if int(q.GetGraphID()) >= s.DB.NumGraphs() {
 			logger.Warn("Rejecting out-of-range graph selector",
 				"graph", q.GetGraphID(), "max", s.DB.NumGraphs()-1)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("graph %d does not exist (valid range 0-%d)",
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error: fmt.Sprintf("graph %d does not exist (valid range 0-%d)",
 					q.GetGraphID(), s.DB.NumGraphs()-1),
 			})
 			return
@@ -83,7 +107,8 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 
 		if err != nil {
 			logger.Error("Failed to plan query", "query", req.Query, "error", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			status, msg := errorToResponse(err)
+			c.JSON(status, ErrorResponse{Error: msg})
 			return
 		}
 
@@ -99,7 +124,8 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		case <-stream.Done():
 			if stream.Err != nil {
 				logger.Error("Query execution failed", "query", req.Query, "error", stream.Err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": stream.Err.Error()})
+				status, msg := errorToResponse(stream.Err)
+				c.JSON(status, ErrorResponse{Error: msg})
 				return
 			}
 			logger.Info("Query executed", "query", req.Query, "graph", q.GetGraphID())

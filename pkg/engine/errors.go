@@ -25,5 +25,7 @@ package engine
 import "errors"
 
 var (
-	ErrQueryPlan = errors.New("query plan failed")
+	// ErrQueryPlan is returned when the engine cannot build an execution plan
+	// for a query.
+	ErrQueryPlan = errors.New("engine: query plan failed")
 )

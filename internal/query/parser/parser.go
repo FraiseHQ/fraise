@@ -35,13 +35,15 @@ type Warning struct {
 	Pos lexer.Position
 }
 
+// Error is a parse failure at a specific position in the query. It is returned
+// (wrapped) by the query layer; recover it with errors.As to get the position.
 type Error struct {
 	Msg string
 	Pos lexer.Position
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("parse error at %d: %s", e.Pos, e.Msg)
+	return fmt.Sprintf("parse error at column %d: %s", e.Pos.Column, e.Msg)
 }
 
 type parser[P float32 | float64] struct {
