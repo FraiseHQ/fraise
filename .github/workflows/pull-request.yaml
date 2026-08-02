@@ -5,13 +5,32 @@ on:
   # pull_request_target. The lint job runs untrusted PR code, so it stays on
   # the plain pull_request event (no write token).
   pull_request:
-  pull_request_target:
-    types: [opened, edited, synchronize]
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          sync-labels: true
+          configuration-path: .github/labeler.yaml
+
+      - uses: bcoe/conventional-release-labels@v1
+        with:
+          type_labels: >-
+            {"feat": "feature", "fix": "fix", "perf": "performance",
+             "refactor": "maintenance", "chore": "maintenance", "build": "maintenance",
+             "deps": "maintenance", "ci": "maintenance", "upgrade": "upgrade",
+             "docs": "docs", "test": "test", "style": "maintenance",
+             "revert": "maintenance", "release": "release",
+             "breaking": "breaking-change"}
+          ignored_types: "[]"
+
 
   lint:
     name: General pre-commit hooks
