@@ -40,3 +40,16 @@ func (v Vector[P]) Empty() bool {
 	}
 	return len(v.Data) == 0
 }
+
+// Equal reports whether v and other hold exactly the same coordinates.
+func (v Vector[P]) Equal(other Vector[P]) bool {
+	if len(v.Data) != len(other.Data) {
+		return false
+	}
+	for i, x := range v.Data {
+		if x != other.Data[i] {
+			return false
+		}
+	}
+	return true
+}
