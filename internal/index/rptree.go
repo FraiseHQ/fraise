@@ -38,12 +38,16 @@ var _ VectorIndex[int, float64] = (*RPTreeIndex[int, float64])(nil)
 // forest of random-projection trees from the containers/trees submodule. Each
 // tree indexes the same vectors through an independent random projection; a
 // query fans out across the forest and pools the candidates. RPTree has no
-// delete/update primitive, so vectors map is the source of truth: Delete and
-// Update only tombstone/replace it, and Insert appends into the live forest
-// (a key may briefly have a stale copy sitting in the forest until the next
-// Flush); Search always re-ranks candidates against vectors, so stale forest
-// entries are filtered out or corrected before results are returned. It
-// implements VectorIndex.
+// delete/update primitive, so vectors map is the source of truth: Delete
+// tombstones it and an Update leaves the old copy in the forest until the next
+// Flush; Search always re-ranks candidates against vectors, so stale forest
+// entries are filtered out or corrected before results are returned.
+//
+// Insert is idempotent: re-inserting a key with its current vector is a no-op,
+// so callers that replay whole vector sets (e.g. Graph.MergeFrom after a
+// staged write) do not bloat the forest. Stale copies left by updates and
+// deletes are bounded by an automatic Flush once the forest holds more than
+// flushFactor entries per live vector. It implements VectorIndex.
 type RPTreeIndex[K comparable, P float32 | float64] struct {
 	forest  []*trees.RPTree[K, containers.Vector[P], P]
 	vectors map[K]containers.Vector[P] // live vectors; source of truth
@@ -51,6 +55,12 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 	dim, projDim, numTrees int
 	seed                   uint64
 }
+
+// flushFactor bounds forest garbage: once a tree holds more than flushFactor
+// entries per live vector, the forest is rebuilt from the live vectors. 2x
+// keeps rebuild cost amortised O(1) per write while capping memory at twice
+// the live set.
+const flushFactor = 2
 
 // NewRPTreeIndex returns an empty RPTreeIndex holding numTrees random-projection
 // trees, each mapping dim-dimensional vectors onto projDim random directions.
@@ -80,7 +90,12 @@ func (idx *RPTreeIndex[K, P]) newForest() []*trees.RPTree[K, containers.Vector[P
 	return forest
 }
 
-// Insert validates the vector dimension and adds it to every tree in the forest.
+// Insert validates the vector dimension and adds it to every tree in the
+// forest. It is idempotent: if key already holds an equal vector, nothing is
+// appended, so replaying a whole vector set (Copy/MergeFrom) costs no forest
+// growth. Inserting a different vector under an existing key replaces it in
+// the live map; the old forest copy becomes garbage that the next (automatic
+// or explicit) Flush discards.
 func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[P]) error {
 	if value.Dim() == 0 {
 		return ErrInvalidDimension
@@ -99,6 +114,12 @@ func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[P]) error {
 		return fmt.Errorf("%w: index expects %d, got %d", ErrInvalidDimension, idx.dim, value.Dim())
 	}
 
+	// Idempotence: the key already holds exactly this vector — the forest
+	// already indexes it, appending again would only duplicate it.
+	if existing, ok := idx.vectors[key]; ok && existing.Equal(value) {
+		return nil
+	}
+
 	idx.vectors[key] = value
 	node := trees.NewVectorNode(key, value)
 	for _, t := range idx.forest {
@@ -106,7 +127,23 @@ func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[P]) error {
 			return err
 		}
 	}
-	return nil
+	return idx.maybeFlush()
+}
+
+// maybeFlush rebuilds the forest when it holds more than flushFactor entries
+// per live vector — garbage accumulated from updates and deletes. Called after
+// every mutation, it keeps forest size O(live vectors) with amortised-constant
+// rebuild cost.
+func (idx *RPTreeIndex[K, P]) maybeFlush() error {
+	if len(idx.forest) == 0 {
+		return nil
+	}
+	if idx.forest[0].Len() <= flushFactor*len(idx.vectors) {
+		return nil
+	}
+	logger.Debug("Vector index compaction",
+		"live", len(idx.vectors), "forest", idx.forest[0].Len())
+	return idx.Flush()
 }
 
 // Vectors returns a copy of the live key -> vector mapping.
@@ -135,13 +172,15 @@ func (idx *RPTreeIndex[K, P]) Update(key K, value containers.Vector[P]) error {
 	return idx.Insert(key, value)
 }
 
-// Delete removes the vector stored under key.
+// Delete removes the vector stored under key. The forest copy becomes garbage
+// (Search filters it against the live map); the automatic Flush reclaims it
+// once garbage exceeds the flushFactor bound.
 func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 	if _, ok := idx.vectors[key]; !ok {
 		return ErrIndexNotFound
 	}
 	delete(idx.vectors, key)
-	return nil
+	return idx.maybeFlush()
 }
 
 // Search fans query out across the forest, pools the candidates, re-ranks them
@@ -223,6 +262,16 @@ func coordSize[P float32 | float64]() int {
 // Count reports the number of indexed vectors.
 func (idx *RPTreeIndex[K, P]) Count() int {
 	return len(idx.vectors)
+}
+
+// ForestLen reports how many entries each tree currently holds — live vectors
+// plus garbage awaiting compaction. The automatic Flush keeps it bounded by
+// flushFactor * Count().
+func (idx *RPTreeIndex[K, P]) ForestLen() int {
+	if len(idx.forest) == 0 {
+		return 0
+	}
+	return idx.forest[0].Len()
 }
 
 // Flush rebuilds the forest from the currently live vectors, discarding

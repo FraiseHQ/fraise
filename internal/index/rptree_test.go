@@ -341,3 +341,85 @@ func TestRPTreeSearchIdenticalAcrossPrecision(t *testing.T) {
 		t.Errorf("nearest-neighbour order differs by precision:\n float32 = %v\n float64 = %v", got32, got64)
 	}
 }
+
+// TestRPTreeIndexInsertIdempotent checks that re-inserting a key with its
+// current vector never grows the forest. This is the regression guard for the
+// quadratic bloat bug: Graph.MergeFrom replays the whole vector set into the
+// live index after every staged write, so a non-idempotent Insert turned W
+// writes into O(W^2) forest entries.
+func TestRPTreeIndexInsertIdempotent(t *testing.T) {
+	rng := rand.New(rand.NewSource(7))
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5)
+
+	const n = 20
+	vecs := make([]containers.Vector[float64], n)
+	for i := 0; i < n; i++ {
+		vecs[i] = randVector(rng, 3)
+		if err := idx.Insert(i, vecs[i]); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	if got := idx.ForestLen(); got != n {
+		t.Fatalf("ForestLen() after %d inserts = %d, want %d", n, got, n)
+	}
+
+	// Replay the full set 50 times — the MergeFrom pattern. Forest must not grow.
+	for round := 0; round < 50; round++ {
+		for i := 0; i < n; i++ {
+			if err := idx.Insert(i, vecs[i]); err != nil {
+				t.Fatalf("re-Insert(%d) = %v, want nil", i, err)
+			}
+		}
+	}
+	if got := idx.ForestLen(); got != n {
+		t.Errorf("ForestLen() after 50 replays = %d, want %d (forest must not grow on re-insert)", got, n)
+	}
+	if got := idx.Count(); got != n {
+		t.Errorf("Count() = %d, want %d", got, n)
+	}
+}
+
+// TestRPTreeIndexForestBounded checks the automatic compaction: sustained
+// updates and deletes leave garbage in the forest, but ForestLen must stay
+// within the flushFactor bound of the live count instead of growing forever.
+func TestRPTreeIndexForestBounded(t *testing.T) {
+	rng := rand.New(rand.NewSource(11))
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5)
+
+	const n = 30
+	for i := 0; i < n; i++ {
+		if err := idx.Insert(i, randVector(rng, 3)); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+
+	// 500 in-place updates with fresh vectors: each appends one garbage entry.
+	for round := 0; round < 500; round++ {
+		key := round % n
+		if err := idx.Update(key, randVector(rng, 3)); err != nil {
+			t.Fatalf("Update(%d) = %v, want nil", key, err)
+		}
+	}
+	if got, bound := idx.ForestLen(), 2*idx.Count(); got > bound {
+		t.Errorf("ForestLen() after 500 updates = %d, want <= %d (auto-flush bound)", got, bound)
+	}
+
+	// Delete everything: compaction must reclaim the forest as well.
+	for i := 0; i < n; i++ {
+		if err := idx.Delete(i); err != nil {
+			t.Fatalf("Delete(%d) = %v, want nil", i, err)
+		}
+	}
+	if got := idx.ForestLen(); got != 0 {
+		t.Errorf("ForestLen() after deleting all = %d, want 0", got)
+	}
+
+	// The index must still work after repeated compactions.
+	if err := idx.Insert(1000, randVector(rng, 3)); err != nil {
+		t.Fatalf("Insert after compactions = %v, want nil", err)
+	}
+	keys, _, err := idx.Search(randVector(rng, 3), 1)
+	if err != nil || len(keys) != 1 || keys[0] != 1000 {
+		t.Errorf("Search after compactions = (%v, err=%v), want key 1000", keys, err)
+	}
+}

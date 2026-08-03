@@ -29,6 +29,7 @@ import (
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
 // newGraph builds an empty graph carrying the test config.
@@ -411,3 +412,40 @@ func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 
 func TestGraphVectorSearch_float64(t *testing.T) { vectorHybridSearchAtPrecision[float64](t) }
 func TestGraphVectorSearch_float32(t *testing.T) { vectorHybridSearchAtPrecision[float32](t) }
+
+// TestMergeFromForestStaysBounded replays the production write cycle — Stage
+// copies the graph, the write commits one vector to the copy, MergeFrom folds
+// the copy back — and checks the live vector forest stays O(live vectors).
+// Regression test for the quadratic-bloat bug where MergeFrom re-inserted every
+// staged vector on each write, growing the forest to ~W^2/2 entries after W
+// writes (~900x bloat at 300 writes).
+func TestMergeFromForestStaysBounded(t *testing.T) {
+	g := newGraph()
+
+	const writes = 300
+	const dim = 8
+	for w := 0; w < writes; w++ {
+		stg := g.Copy() // what Stream.Stage does for a write
+
+		vec := make([]float64, dim)
+		vec[w%dim] = float64(w + 1)
+		if err := stg.GetVectorIndex().Insert(uint64(w+1), containers.NewVector(vec)); err != nil {
+			t.Fatalf("staging insert (write %d) = %v, want nil", w, err)
+		}
+
+		g.MergeFrom(stg) // what scheduler.execute does on success
+	}
+
+	idx, ok := g.GetVectorIndex().(*index.RPTreeIndex[uint64, float64])
+	if !ok {
+		t.Fatalf("vector index is %T, want *index.RPTreeIndex", g.GetVectorIndex())
+	}
+	if got := idx.Count(); got != writes {
+		t.Fatalf("Count() = %d, want %d", got, writes)
+	}
+	// Bound: idempotent inserts + auto-flush keep the forest within 2x live.
+	if got, bound := idx.ForestLen(), 2*writes; got > bound {
+		t.Errorf("ForestLen() after %d write cycles = %d, want <= %d (was ~%d before the fix)",
+			writes, got, bound, writes*writes/2)
+	}
+}
