@@ -196,13 +196,9 @@ func TestTermsEmpty(t *testing.T) {
 
 func TestPhraseNode(t *testing.T) {
 	n := PhraseNode{
-		tokens: []lexer.Token{
-			tok(lexer.LITERAL, "the "),
-			tok(lexer.LITERAL, "lazy "),
-			tok(lexer.LITERAL, "dog"),
-		},
-		pos: pos(2),
-		end: pos(20),
+		value: "the lazy dog",
+		pos:   pos(2),
+		end:   pos(20),
 	}
 
 	if got, want := n.Literal(), "the lazy dog"; got != want {
