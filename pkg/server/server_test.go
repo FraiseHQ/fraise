@@ -25,6 +25,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -134,5 +135,52 @@ func TestQuerySuccess(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "results") {
 		t.Errorf("body = %q, want a results payload", w.Body.String())
+	}
+}
+
+// TestStatsEndpoint checks that GET /api/v1/stats returns one snapshot per
+// graph and that a committed write with a vector is reflected in the counts —
+// including the forest_entries gauge the bloat regression tests key off.
+func TestStatsEndpoint(t *testing.T) {
+	s := newTestServer(t)
+
+	w := s.do(http.MethodGet, "/api/v1/stats", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var stats struct {
+		Graphs []struct {
+			ID            int `json:"id"`
+			Nodes         int `json:"nodes"`
+			Vectors       int `json:"vectors"`
+			ForestEntries int `json:"forest_entries"`
+		} `json:"graphs"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("stats body is not valid JSON: %v (body: %s)", err, w.Body.String())
+	}
+	if got, want := len(stats.Graphs), s.DB.NumGraphs(); got != want {
+		t.Fatalf("len(graphs) = %d, want %d", got, want)
+	}
+
+	// Commit a fact with a vector, then confirm the write shows up in stats.
+	w = s.do(http.MethodPost, "/api/v1/q",
+		`{"query":"remember@0 'stats probe fact' vec:$v topic:probe","parameters":{"v":[1,2,3]}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("remember status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	w = s.do(http.MethodGet, "/api/v1/stats", "")
+	if err := json.Unmarshal(w.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("stats body is not valid JSON: %v", err)
+	}
+	g0 := stats.Graphs[0]
+	if g0.Vectors != 1 {
+		t.Errorf("graphs[0].vectors = %d, want 1", g0.Vectors)
+	}
+	if g0.ForestEntries < g0.Vectors || g0.ForestEntries > 2*g0.Vectors {
+		t.Errorf("graphs[0].forest_entries = %d, want within [vectors, 2*vectors] = [%d, %d]",
+			g0.ForestEntries, g0.Vectors, 2*g0.Vectors)
 	}
 }

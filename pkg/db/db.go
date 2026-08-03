@@ -34,18 +34,34 @@ import (
 type DB[K ~uint64, P float32 | float64] struct {
 	Config *config.ConfigSet
 	Graphs []graph.Graph[K, P]
-
-	stats *Stats
 }
 
+// Stats is a point-in-time snapshot of the store: one entry per graph, in
+// selector order. It is computed on demand from the live graphs (never cached)
+// and serialised as-is by the server's stats endpoint.
 type Stats struct {
-	Memory int
+	Graphs []GraphStats `json:"graphs"`
+}
+
+// GraphStats is one graph's snapshot, tagged with its selector.
+type GraphStats struct {
+	ID int `json:"id"`
+	graph.GraphStats
+}
+
+// numGraphs resolves the configured graph count, falling back to the default
+// for hand-built configs that never went through Parse/adjust.
+func numGraphs(cfg *config.ConfigSet) int {
+	if cfg.DB.NumGraphs <= 0 {
+		return config.DefaultNumGraph
+	}
+	return cfg.DB.NumGraphs
 }
 
 func NewDB[K ~uint64, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P], error) {
 	d := &DB[K, P]{
 		Config: cfg,
-		Graphs: make([]graph.Graph[K, P], config.DefaultNumGraph),
+		Graphs: make([]graph.Graph[K, P], numGraphs(cfg)),
 	}
 	return d, nil
 }
@@ -74,12 +90,27 @@ func (d *DB[K, P]) Start() error {
 
 func (d *DB[K, P]) Stop() error {
 	// Reinitialise graphs
-	d.Graphs = make([]graph.Graph[K, P], config.DefaultNumGraph)
+	d.Graphs = make([]graph.Graph[K, P], numGraphs(d.Config))
 	return nil
 }
 
+// Stats snapshots every graph in selector order. Graphs not yet populated
+// (before Start, or after Stop) contribute zero-valued entries, so the method
+// is safe to call at any point in the store's lifecycle. Each live graph is
+// read-locked for its snapshot, consistent with the scheduler holding the
+// write lock during merges.
 func (d *DB[K, P]) Stats() Stats {
-	return *d.stats
+	stats := Stats{Graphs: make([]GraphStats, len(d.Graphs))}
+	for i, g := range d.Graphs {
+		stats.Graphs[i].ID = i
+		if g == nil {
+			continue
+		}
+		g.RLock()
+		stats.Graphs[i].GraphStats = g.Stats()
+		g.RUnlock()
+	}
+	return stats
 }
 
 // NumGraphs reports how many graphs the store holds. Valid selectors are in

@@ -100,3 +100,62 @@ func TestStopReinitialises(t *testing.T) {
 		t.Errorf("NumGraphs() after Stop = %d, want %d", got, config.DefaultNumGraph)
 	}
 }
+
+// TestStatsSafeAcrossLifecycle guards against the nil-pointer landmine: Stats
+// must be callable at any point — before Start, after Start, after Stop —
+// without panicking, and must report one entry per graph slot.
+func TestStatsSafeAcrossLifecycle(t *testing.T) {
+	d, err := db.NewDB[uint64, float32](config.New())
+	if err != nil {
+		t.Fatalf("NewDB returned error: %v", err)
+	}
+
+	// Before Start: slots are nil — zero-valued entries, no panic.
+	stats := d.Stats()
+	if got, want := len(stats.Graphs), d.NumGraphs(); got != want {
+		t.Fatalf("len(Stats().Graphs) = %d, want %d", got, want)
+	}
+	for i, g := range stats.Graphs {
+		if g.ID != i {
+			t.Errorf("Graphs[%d].ID = %d, want %d", i, g.ID, i)
+		}
+		if g.Nodes != 0 || g.Vectors != 0 || g.ForestEntries != 0 {
+			t.Errorf("Graphs[%d] before Start = %+v, want zero-valued", i, g)
+		}
+	}
+
+	if err := d.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if got, want := len(d.Stats().Graphs), d.NumGraphs(); got != want {
+		t.Errorf("len(Stats().Graphs) after Start = %d, want %d", got, want)
+	}
+
+	if err := d.Stop(); err != nil {
+		t.Fatalf("Stop returned error: %v", err)
+	}
+	if got, want := len(d.Stats().Graphs), d.NumGraphs(); got != want {
+		t.Errorf("len(Stats().Graphs) after Stop = %d, want %d", got, want)
+	}
+}
+
+// TestNumGraphsConfigurable checks that NewDB honours db.num-graphs instead of
+// hardcoding the default, and that Stop preserves the configured count.
+func TestNumGraphsConfigurable(t *testing.T) {
+	cfg := config.New()
+	cfg.DB.NumGraphs = 3
+
+	d, err := db.NewDB[uint64, float32](cfg)
+	if err != nil {
+		t.Fatalf("NewDB returned error: %v", err)
+	}
+	if got := d.NumGraphs(); got != 3 {
+		t.Errorf("NumGraphs() = %d, want 3", got)
+	}
+	if err := d.Stop(); err != nil {
+		t.Fatalf("Stop returned error: %v", err)
+	}
+	if got := d.NumGraphs(); got != 3 {
+		t.Errorf("NumGraphs() after Stop = %d, want 3 (Stop must not reset to default)", got)
+	}
+}

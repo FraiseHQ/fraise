@@ -62,6 +62,16 @@ func (s *Server[K, P]) handleHealthCheck() gin.HandlerFunc {
 	}
 }
 
+// handleStats returns a handler that snapshots every graph's shape (nodes,
+// edges, vectors, forest entries). It makes internal invariants observable —
+// e.g. the vector forest staying O(live vectors) under sustained writes — for
+// monitoring and end-to-end tests.
+func (s *Server[K, P]) handleStats() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, s.DB.Stats())
+	}
+}
+
 // handleQuery returns a handler that parses, plans, and executes a query.
 // It binds the JSON request body, parses the query string, asks the engine
 // for an execution plan, applies it, and streams back the results. Any

@@ -444,8 +444,8 @@ func TestMergeFromForestStaysBounded(t *testing.T) {
 		t.Fatalf("Count() = %d, want %d", got, writes)
 	}
 	// Bound: idempotent inserts + auto-flush keep the forest within 2x live.
-	if got, bound := idx.ForestLen(), 2*writes; got > bound {
-		t.Errorf("ForestLen() after %d write cycles = %d, want <= %d (was ~%d before the fix)",
+	if got, bound := idx.Entries(), 2*writes; got > bound {
+		t.Errorf("Entries() after %d write cycles = %d, want <= %d (was ~%d before the fix)",
 			writes, got, bound, writes*writes/2)
 	}
 }

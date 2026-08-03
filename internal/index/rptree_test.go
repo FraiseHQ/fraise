@@ -359,8 +359,8 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 			t.Fatalf("Insert(%d) = %v, want nil", i, err)
 		}
 	}
-	if got := idx.ForestLen(); got != n {
-		t.Fatalf("ForestLen() after %d inserts = %d, want %d", n, got, n)
+	if got := idx.Entries(); got != n {
+		t.Fatalf("Entries() after %d inserts = %d, want %d", n, got, n)
 	}
 
 	// Replay the full set 50 times — the MergeFrom pattern. Forest must not grow.
@@ -371,8 +371,8 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 			}
 		}
 	}
-	if got := idx.ForestLen(); got != n {
-		t.Errorf("ForestLen() after 50 replays = %d, want %d (forest must not grow on re-insert)", got, n)
+	if got := idx.Entries(); got != n {
+		t.Errorf("Entries() after 50 replays = %d, want %d (forest must not grow on re-insert)", got, n)
 	}
 	if got := idx.Count(); got != n {
 		t.Errorf("Count() = %d, want %d", got, n)
@@ -380,7 +380,7 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 }
 
 // TestRPTreeIndexForestBounded checks the automatic compaction: sustained
-// updates and deletes leave garbage in the forest, but ForestLen must stay
+// updates and deletes leave garbage in the forest, but Entries must stay
 // within the flushFactor bound of the live count instead of growing forever.
 func TestRPTreeIndexForestBounded(t *testing.T) {
 	rng := rand.New(rand.NewSource(11))
@@ -400,8 +400,8 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 			t.Fatalf("Update(%d) = %v, want nil", key, err)
 		}
 	}
-	if got, bound := idx.ForestLen(), 2*idx.Count(); got > bound {
-		t.Errorf("ForestLen() after 500 updates = %d, want <= %d (auto-flush bound)", got, bound)
+	if got, bound := idx.Entries(), 2*idx.Count(); got > bound {
+		t.Errorf("Entries() after 500 updates = %d, want <= %d (auto-flush bound)", got, bound)
 	}
 
 	// Delete everything: compaction must reclaim the forest as well.
@@ -410,8 +410,8 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 			t.Fatalf("Delete(%d) = %v, want nil", i, err)
 		}
 	}
-	if got := idx.ForestLen(); got != 0 {
-		t.Errorf("ForestLen() after deleting all = %d, want 0", got)
+	if got := idx.Entries(); got != 0 {
+		t.Errorf("Entries() after deleting all = %d, want 0", got)
 	}
 
 	// The index must still work after repeated compactions.

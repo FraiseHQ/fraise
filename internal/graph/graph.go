@@ -32,10 +32,14 @@ import (
 
 // GraphStats is a point-in-time snapshot of a graph's shape.
 type GraphStats struct {
-	Order   int // number of entities (vertices)
-	Size    int // number of relationships (edges)
-	Nodes   int // total stored nodes
-	Vectors int // total vectors indexed
+	Order   int `json:"order"`   // number of entities (vertices)
+	Size    int `json:"size"`    // number of relationships (edges)
+	Nodes   int `json:"nodes"`   // total stored nodes
+	Vectors int `json:"vectors"` // total vectors indexed
+	// ForestEntries is how many entries the vector forest holds (live vectors
+	// plus garbage awaiting compaction); bounded by the index's flush factor
+	// times Vectors. 0 for index implementations without a forest.
+	ForestEntries int `json:"forest_entries"`
 }
 
 // Graph is a temporal memory graph: the storage atomic component of the
