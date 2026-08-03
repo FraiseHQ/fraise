@@ -86,3 +86,98 @@ func TestRecallParserErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestRememberPhrase covers the opaque single-quoted phrase: reserved words and
+// symbols (: ' $ @ ( )) inside it are stored verbatim, and a doubled quote (”)
+// is an escaped apostrophe. These are the cases from the phrase-storage bug
+// report — each one used to fail to parse.
+func TestRememberPhrase(t *testing.T) {
+	cases := []struct {
+		name  string
+		query string
+		want  string // the fact that should be stored (RememberCommandNode.Value)
+	}{
+		{"colon in phrase", "remember 'meeting at 3:30pm with anna' topic:meetings", "meeting at 3:30pm with anna"},
+		{"reserved word in phrase", "remember 'remind me about this topic later' topic:reminders", "remind me about this topic later"},
+		{"multiple reserved words", "remember 'recall the top since until depth vec entity' topic:x", "recall the top since until depth vec entity"},
+		{"symbols in phrase", "remember 'email $bill @ (acme)' topic:contacts", "email $bill @ (acme)"},
+		{"escaped apostrophe", "remember 'alice''s laptop' topic:devices", "alice's laptop"},
+		{"apostrophe at edges", "remember '''quoted''' topic:x", "'quoted'"},
+		{"interior spacing preserved", "remember 'a   b' topic:x", "a   b"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd, _, err := parser.Parse[float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+			}
+			rc, ok := cmd.(*parser.RememberCommandNode[float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *RememberCommandNode", tc.query, cmd)
+			}
+			if got := rc.Value(); got != tc.want {
+				t.Errorf("stored fact = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRememberPhraseRoundTrip checks that a fact containing an apostrophe
+// survives String() reconstruction (the inner quote is re-escaped to ”).
+func TestRememberPhraseRoundTrip(t *testing.T) {
+	// String() always renders the graph selector (@0 by default), so include it.
+	q := "remember@0 'alice''s laptop' topic:devices"
+	cmd, _, err := parser.Parse[float32](q)
+	if err != nil {
+		t.Fatalf("Parse(%q) unexpected error: %v", q, err)
+	}
+	if got := cmd.String(); got != q {
+		t.Errorf("String() = %q, want %q", got, q)
+	}
+}
+
+// TestRememberPhraseErrors checks phrases that must be rejected.
+func TestRememberPhraseErrors(t *testing.T) {
+	queries := []string{
+		"remember 'unterminated phrase topic:x", // no closing quote
+		"remember topic:x",                      // missing the quoted fact
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			if _, _, err := parser.Parse[float32](q); err == nil {
+				t.Errorf("Parse(%q) = nil error, want an error", q)
+			}
+		})
+	}
+}
+
+// TestQuotedValues checks that quoting also works for anchor values and recall
+// terms, so a topic or a search term can itself contain spaces, symbols, or a
+// reserved word.
+func TestQuotedValues(t *testing.T) {
+	t.Run("quoted anchor value", func(t *testing.T) {
+		cmd, _, err := parser.Parse[float32]("remember 'x' topic:'my project'")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		rc := cmd.(*parser.RememberCommandNode[float32])
+		got := rc.Topics()
+		if len(got) != 1 || got[0] != "my project" {
+			t.Errorf("Topics() = %v, want [\"my project\"]", got)
+		}
+	})
+
+	t.Run("quoted recall term", func(t *testing.T) {
+		cmd, _, err := parser.Parse[float32]("recall 'meeting at 3:30pm' topic:work")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		rc := cmd.(*parser.RecallCommandNode[float32])
+		terms := rc.Terms()
+		if len(terms) != 1 || terms[0] != "meeting at 3:30pm" {
+			t.Errorf("Terms() = %v, want [\"meeting at 3:30pm\"]", terms)
+		}
+	})
+}

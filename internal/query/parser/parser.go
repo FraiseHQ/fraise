@@ -123,22 +123,14 @@ func (p *parser[P]) parseRemember() (*RememberCommandNode[P], error) {
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
 
-	// Remember only supports one phrase
-	_, err := p.expect(lexer.COMMA)
-
-	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "expected comma, but found %q", p.cur.Literal)
-	}
-
-	// one phrase or multiple terms
-
+	// Remember carries exactly one quoted phrase (the fact). The lexer returns
+	// the whole '...' as a single PHRASE token, so consuming it also consumes
+	// the closing quote — no separate delimiter handling here.
 	phrase, err := p.parsePhrase()
 	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "Error while parsing phrase %e", err)
+		return nil, err
 	}
 	r.value = *phrase
-
-	p.next()
 
 	var anchors []AnchorFieldNode
 
@@ -187,17 +179,16 @@ func (p *parser[P]) parseRecall() (*RecallCommandNode[P], error) {
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
 
-	// parse terms
-	// only terms are supported in a recall command
-	tok, err := p.expect(lexer.LITERAL)
-
+	// parse terms — a recall requires at least one term (a bare word or a quoted
+	// phrase); fields (topic:, since:, ...) follow.
+	tok, err := p.expectValue()
 	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "expected literal, but found %q", p.cur.Literal)
+		return nil, err
 	}
 
 	r.terms = append(r.terms, TermNode{token: tok, value: tok.Literal})
 
-	for p.cur.Type == lexer.LITERAL {
+	for p.cur.Type == lexer.LITERAL || p.cur.Type == lexer.PHRASE {
 		r.terms = append(r.terms, TermNode{token: p.cur, value: p.cur.Literal})
 		p.next()
 	}
@@ -330,31 +321,46 @@ func (p *parser[P]) parseGraphSelector() (lexer.Token, uint8, error) {
 	return key, uint8(i), nil
 }
 
+// parsePhrase consumes a single opaque PHRASE token (a quoted fact). The lexer
+// has already stripped the quotes and decoded the ” escape.
 func (p *parser[P]) parsePhrase() (*PhraseNode, error) {
-	pn := PhraseNode{}
-
-	for p.cur.Type != lexer.COMMA {
-		switch p.cur.Type {
-		case lexer.LITERAL:
-			pn.tokens = append(pn.tokens, p.cur)
-			p.next()
-		default:
-			return nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
-		}
+	// An ILLEGAL token here means the lexer hit end-of-input before the closing
+	// quote — report it at the opening quote it recorded.
+	if p.cur.Type == lexer.ILLEGAL {
+		return nil, p.errf(p.cur.Pos, "unterminated quoted phrase")
 	}
-	return &pn, nil
+	tok, err := p.expect(lexer.PHRASE)
+	if err != nil {
+		return nil, p.errf(p.l.CurrentPos, "expected a quoted phrase, but found %q", p.cur.Literal)
+	}
+	return &PhraseNode{value: tok.Literal, pos: tok.Pos}, nil
+}
+
+// expectValue consumes a value that may be either a bare word (LITERAL) or a
+// quoted phrase (PHRASE) — the two forms a recall term or an anchor value can
+// take. Quoting lets a value contain reserved words or symbols verbatim.
+func (p *parser[P]) expectValue() (lexer.Token, error) {
+	if p.cur.Type == lexer.ILLEGAL {
+		return p.cur, p.errf(p.cur.Pos, "unterminated quoted phrase")
+	}
+	if p.cur.Type == lexer.LITERAL || p.cur.Type == lexer.PHRASE {
+		tok := p.cur
+		p.next()
+		return tok, nil
+	}
+	return p.cur, p.errf(p.l.CurrentPos, "expected a word or quoted phrase, but found %q", p.cur.Literal)
 }
 
 func (p *parser[P]) parseAnchorField() (lexer.Token, string, error) {
 	key := p.cur
 
 	p.next()
-	p.next() // skip comma
+	p.next() // skip the ':' separator
 
-	tok, err := p.expect(lexer.LITERAL)
-
+	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my project').
+	tok, err := p.expectValue()
 	if err != nil {
-		return lexer.Token{}, "", p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+		return lexer.Token{}, "", err
 	}
 
 	return key, tok.Literal, nil

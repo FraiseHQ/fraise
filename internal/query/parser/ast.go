@@ -242,9 +242,9 @@ type TermNode struct {
 
 // Phrase representation. A phrase is a quoted text search
 type PhraseNode struct {
-	tokens []lexer.Token
-	pos    lexer.Position
-	end    lexer.Position
+	value string
+	pos   lexer.Position
+	end   lexer.Position
 }
 
 // Entity field
@@ -316,8 +316,9 @@ func (n RememberCommandNode[P]) String() string {
 	// command + selector
 	s = append(s, n.key.Literal+n.selector.String())
 
-	// value, re-quoted as in the source query (PhraseNode.String is unquoted)
-	s = append(s, "'"+n.value.String()+"'")
+	// value, re-quoted as in the source query (PhraseNode.String is unquoted);
+	// inner quotes are re-escaped ('') so the reconstruction is valid FQL.
+	s = append(s, "'"+strings.ReplaceAll(n.value.String(), "'", "''")+"'")
 
 	// anchors
 	for _, e := range n.anchors {
@@ -510,15 +511,11 @@ func (n Terms) End() lexer.Position {
 
 // phrase node impl
 
-// Literal returns the phrase text: the tokens' literals normalised to single
-// spacing, without the surrounding quotes of the source query.
+// Literal returns the phrase text exactly as written between the quotes, with
+// the escape (”) already decoded and no surrounding quotes. Interior spacing
+// is preserved verbatim — the phrase is opaque literal text.
 func (n PhraseNode) Literal() string {
-	s := make([]string, 0, len(n.tokens))
-
-	for _, t := range n.tokens {
-		s = append(s, strings.TrimSpace(t.Literal))
-	}
-	return strings.Join(s, " ")
+	return n.value
 }
 
 func (n PhraseNode) Pos() lexer.Position {

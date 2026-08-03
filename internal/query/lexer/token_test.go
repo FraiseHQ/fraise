@@ -46,7 +46,7 @@ func TestTokenTypeString(t *testing.T) {
 		{"MINUS", lexer.MINUS, "-"},
 		{"COLON", lexer.COLON, ":"},
 		{"NEWLINE", lexer.NEWLINE, "\n"},
-		{"COMMA", lexer.COMMA, "'"},
+		{"PHRASE", lexer.PHRASE, "phrase"},
 		{"LPAREN", lexer.LPAREN, "("},
 		{"RPAREN", lexer.RPAREN, ")"},
 		{"DOLLAR", lexer.DOLLAR, "$"},
@@ -73,7 +73,7 @@ func TestTokenMapCompleteness(t *testing.T) {
 		lexer.ILLEGAL, lexer.EOL, lexer.LITERAL,
 		lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE,
 		lexer.PLUS, lexer.TILDE, lexer.MINUS,
-		lexer.COLON, lexer.COMMA, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
+		lexer.COLON, lexer.PHRASE, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
 		lexer.TOPIC, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
 		lexer.VEC,
 	}

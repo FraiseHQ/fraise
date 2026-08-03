@@ -115,9 +115,9 @@ graph_selector  = '@' integer ;                (* default 0; lexed WITH the comm
 (* ------------------------------------------------------------ *)
 
 bare_word         = ?[a-z0-9_][a-z0-9_\-]*? ;  (* must NOT start with '-' (see notes) *)
-phrase            = "'" ?[^']*? "'" ;          (* facts are single-quoted; no escape inside *)
+phrase            = "'" { ?[^']? | "''" } "'" ; (* opaque: any char is literal; '' is an escaped quote *)
 identifier        = ?[a-z][a-z0-9_\-]*? ;
-quoted_identifier = "'" ?[^']+? "'" ;
+quoted_identifier = "'" { ?[^']? | "''" } "'" ; (* same opaque rule as phrase *)
 integer           = ?[0-9]+? ;
 time_value        = duration | iso_date ;
 duration          = integer time_unit ;
@@ -134,6 +134,8 @@ recall ~topic:billing -entity:acme
 recall 'annual contract' topic:billing entity:acme depth:3
 recall@3 +topic:auth +entity:okta
 remember 'acme moved to annual billing' topic:billing topic:contracts
+remember 'meeting at 3:30pm about the topic' topic:meetings   (* colons and reserved words are literal inside a phrase *)
+remember 'alice''s laptop' topic:devices                     (* '' is an escaped apostrophe -> alice's laptop *)
 ```
 
 ## Glossary
