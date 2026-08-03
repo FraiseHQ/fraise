@@ -144,6 +144,12 @@ func (idx *BTreeIndex[K, P]) Count() int {
 	return len(idx.documents)
 }
 
+// Entries equals Count: this index compacts eagerly (deletes remove postings
+// immediately), so it holds no garbage between Flushes.
+func (idx *BTreeIndex[K, P]) Entries() int {
+	return idx.Count()
+}
+
 // Flush is a no-op: this index keeps no buffered state to compact.
 func (idx *BTreeIndex[K, P]) Flush() error {
 	return nil

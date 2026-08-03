@@ -33,8 +33,9 @@ const (
 	DefaultPort = 9876
 
 	// DefaultNumGraph is how many independent graphs the store allocates; valid
-	// selectors are 0..DefaultNumGraph-1.
-	DefaultNumGraph uint8 = 8
+	// selectors are 0..DefaultNumGraph-1. Graph selectors are uint8, so values
+	// above 256 leave the extra graphs unreachable.
+	DefaultNumGraph int = 8
 
 	// DefaultWorkersCount is the number of scheduler worker goroutines that
 	// execute query streams.

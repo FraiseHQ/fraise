@@ -132,4 +132,7 @@ func (s *Server[K, P]) setupRoutes() {
 
 	// Query endpoint: /q for queries
 	v1.POST("/q", s.handleQuery())
+
+	// Stats endpoint: per-graph snapshots (nodes, edges, vectors, forest).
+	v1.GET("/stats", s.handleStats())
 }

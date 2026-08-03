@@ -44,8 +44,15 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// Size reports the approximate in-memory footprint of the index in MiB.
 	Size() int
 
-	// Count reports the number of entries currently held.
+	// Count reports the number of live entries currently held.
 	Count() int
+
+	// Entries reports the number of entries the underlying structure
+	// physically holds: the live entries plus any garbage awaiting Flush
+	// (stale copies from updates, tombstoned deletes). For structures that
+	// compact eagerly it equals Count. The gap between Entries and Count is
+	// the compaction debt surfaced by the stats endpoint.
+	Entries() int
 
 	// Flush persists/compacts the index, releasing pending buffers.
 	Flush() error

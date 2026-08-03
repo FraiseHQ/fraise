@@ -272,10 +272,10 @@ func (idx *RPTreeIndex[K, P]) Count() int {
 	return len(idx.vectors)
 }
 
-// ForestLen reports how many entries each tree currently holds — live vectors
+// Entries reports how many entries each tree currently holds — live vectors
 // plus garbage awaiting compaction. The automatic Flush keeps it bounded by
 // flushFactor * Count().
-func (idx *RPTreeIndex[K, P]) ForestLen() int {
+func (idx *RPTreeIndex[K, P]) Entries() int {
 	if len(idx.forest) == 0 {
 		return 0
 	}

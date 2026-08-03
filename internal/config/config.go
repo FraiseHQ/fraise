@@ -85,6 +85,9 @@ type DBConfig struct {
 	// startup (see cmd/server).
 	Precision string `toml:"precision"`
 
+	// How many independent graphs the store allocates (selectors 0..n-1)
+	NumGraphs int `toml:"num-graphs"`
+
 	// default top
 	DefaultTop int `toml:"default-top"`
 
@@ -177,6 +180,7 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
 
 	// db
+	flagSet.IntVar(&config.DB.NumGraphs, "num-graphs", DefaultNumGraph, "Number of independent graphs the store allocates")
 	flagSet.IntVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
 	flagSet.IntVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
@@ -279,6 +283,7 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.Engine.CacheCapacity, DefaultCacheCapacity)
 
 	// db
+	Adjust(&c.DB.NumGraphs, DefaultNumGraph)
 	Adjust(&c.DB.DefaultTop, DefaultTop)
 	Adjust(&c.DB.DefaultDepth, DefaultDepth)
 	Adjust(&c.DB.Precision, DefaultPrecision)
