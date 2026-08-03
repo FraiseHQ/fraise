@@ -527,3 +527,53 @@ def test_vector_search_with_real_embeddings(query):
     assert any(isinstance(hit["score"], float) for hit in hits), (
         f"expected floating-point scores, got {[type(h['score']).__name__ for h in hits]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Stats endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_stats_reports_per_graph_snapshots(base_url):
+    """GET /api/v1/stats returns one snapshot per graph with the shape gauges
+    (nodes, edges, vectors, forest entries)."""
+    response = requests.get(f"{base_url}/api/v1/stats", timeout=REQUEST_TIMEOUT_SECONDS)
+
+    assert response.status_code == 200
+    body = response.json()
+    graphs = body["graphs"]
+    assert len(graphs) > 0
+    for i, g in enumerate(graphs):
+        assert g["id"] == i
+        for key in ("order", "size", "nodes", "vectors", "forest_entries"):
+            assert key in g, f"graphs[{i}] missing {key!r}"
+
+
+def test_vector_forest_stays_bounded_under_writes(base_url, query):
+    """Sustained writes must not bloat the vector forest: forest_entries stays
+    within the flush-factor bound (2x) of live vectors.
+
+    Regression test for the quadratic-bloat bug where every write re-inserted
+    all staged vectors into the live forest (~W^2/2 entries after W writes);
+    with 40 writes the pre-fix forest holds ~800 entries for ~40 vectors, so
+    the 2x bound fails loudly on a regression. The bound is a per-graph
+    invariant, so writes from other tests on this graph don't disturb it.
+    """
+    graph = 4
+    writes = 40
+    for i in range(writes):
+        status, body = query(
+            f"remember@{graph} 'bounded forest fact {i}' vec:$v topic:bloat",
+            parameters={"v": _vector(VECTOR_DIM, value=float(i + 1))},
+        )
+        assert status == 200, body.get("error")
+
+    response = requests.get(f"{base_url}/api/v1/stats", timeout=REQUEST_TIMEOUT_SECONDS)
+    assert response.status_code == 200
+
+    g = response.json()["graphs"][graph]
+    assert g["vectors"] >= writes
+    assert g["forest_entries"] <= 2 * g["vectors"], (
+        f"forest holds {g['forest_entries']} entries for {g['vectors']} live "
+        f"vectors — exceeds the flush-factor bound, vector index is bloating"
+    )
