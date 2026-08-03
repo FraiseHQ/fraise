@@ -500,6 +500,12 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 		if !ok {
 			continue
 		}
+		// Only facts are memories: Topic/NamedEntity nodes exist to seed and
+		// filter searches (they are walked through and matched against), but
+		// they are never returned as hits themselves.
+		if _, isFact := node.(Fact[K]); !isFact {
+			continue
+		}
 		ts := node.GetAttributes().Timestamp
 		if !since.IsZero() && ts.Before(since) {
 			continue

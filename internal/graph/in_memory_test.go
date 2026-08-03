@@ -195,11 +195,15 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 
 	fact1 := mkFact(g, "alice works at acme", now)
 	fact2 := mkFact(g, "bob plays tennis", now)
+	fact3 := mkFact(g, "alice lives in paris", now)
 	entity := mkEntity(g, "alice", now)
 	mustSet(t, g, fact1)
 	mustSet(t, g, fact2)
+	mustSet(t, g, fact3)
 	mustSet(t, g, entity)
+	// fact1 and fact3 share the alice entity; fact2 is unconnected.
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact1, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact3, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
 	nodes, scores := g.Search([]string{"acme"}, containers.Vector[float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
@@ -209,13 +213,18 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 		t.Errorf("Search(acme) scores = %v, want one positive score", scores)
 	}
 
-	// With depth 1 the mentioned entity is pulled in, at a lower score.
-	nodes, scores = g.Search([]string{"acme"}, containers.Vector[float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	// With depth 2 the walk crosses the shared entity into the related fact,
+	// which joins at an attenuated score. Only facts are hits, so the entity
+	// node itself never appears in the results.
+	nodes, scores = g.Search([]string{"acme"}, containers.Vector[float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 {
-		t.Fatalf("Search(acme, depth=1) = %v, want 2 nodes", values(nodes))
+		t.Fatalf("Search(acme, depth=2) = %v, want 2 nodes", values(nodes))
 	}
 	if (*nodes[0]).GetValue() != "alice works at acme" {
-		t.Errorf("Search(acme, depth=1) best hit = %q, want the direct hit", (*nodes[0]).GetValue())
+		t.Errorf("Search(acme, depth=2) best hit = %q, want the direct hit", (*nodes[0]).GetValue())
+	}
+	if (*nodes[1]).GetValue() != "alice lives in paris" {
+		t.Errorf("Search(acme, depth=2) second hit = %q, want the entity-linked fact", (*nodes[1]).GetValue())
 	}
 	if scores[1] >= scores[0] {
 		t.Errorf("neighbour score %v not attenuated below seed score %v", scores[1], scores[0])

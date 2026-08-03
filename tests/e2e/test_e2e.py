@@ -577,3 +577,26 @@ def test_vector_forest_stays_bounded_under_writes(base_url, query):
         f"forest holds {g['forest_entries']} entries for {g['vectors']} live "
         f"vectors — exceeds the flush-factor bound, vector index is bloating"
     )
+
+
+def test_recall_with_anchor_filters_returns_tagged_fact(query):
+    """A fact written with topic:/entity: anchors must be recallable through
+    those anchors — the ticket repro. Regression: Commit created the anchor
+    edges but never stored the Topic/NamedEntity nodes, so every anchored
+    recall filtered everything out and returned count 0."""
+    graph = 5
+    status, body = query(
+        f"remember@{graph} 'ulysse moved to quimper' topic:relocation entity:ulysse"
+    )
+    assert status == 200, body.get("error")
+
+    for q in (
+        f"recall@{graph} quimper",
+        f"recall@{graph} quimper topic:relocation",
+        f"recall@{graph} quimper entity:ulysse",
+    ):
+        status, body = query(q)
+        assert status == 200, body.get("error")
+        hits = body["results"]["hits"]
+        assert len(hits) == 1, f"{q!r} -> {body['results']}"
+        assert hits[0]["value"] == "ulysse moved to quimper"
