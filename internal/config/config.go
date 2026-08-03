@@ -142,6 +142,10 @@ type VectorSearch struct {
 	NumberTrees int `toml:"number-trees"`
 
 	Seed uint64 `toml:"seed"`
+
+	// Forest garbage compaction threshold: entries per live vector before
+	// the forest is rebuilt from the live set.
+	FlushFactor int `toml:"flush-factor"`
 }
 
 // Instanciates new configset
@@ -190,6 +194,7 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.VectorSearch.ProjectionDimension, "rptree-projection-dimension", DefaultProjectionDimention, "RP Tree Projection dimension")
 	flagSet.IntVar(&config.DB.VectorSearch.NumberTrees, "rptree-n-trees", DefaultNumberTrees, "RP Tree Number Trees")
 	flagSet.Uint64Var(&config.DB.VectorSearch.Seed, "rptree-seed", DefaultRPSeed, "RP Tree seed")
+	flagSet.IntVar(&config.DB.VectorSearch.FlushFactor, "rptree-flush-factor", DefaultFlushFactor, "RP forest compaction threshold (entries per live vector)")
 
 	return config
 }
@@ -291,6 +296,7 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.VectorSearch.ProjectionDimension, DefaultProjectionDimention)
 	Adjust(&c.DB.VectorSearch.NumberTrees, DefaultNumberTrees)
 	Adjust(&c.DB.VectorSearch.Seed, DefaultRPSeed)
+	Adjust(&c.DB.VectorSearch.FlushFactor, DefaultFlushFactor)
 
 	return nil
 }

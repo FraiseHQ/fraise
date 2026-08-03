@@ -41,7 +41,7 @@ func randVector(rng *rand.Rand, dim int) containers.Vector[float64] {
 }
 
 func TestRPTreeIndexInsertAndRetrieve(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
 	v := containers.NewVector([]float64{1, 2, 3})
 
 	if err := idx.Insert(1, v); err != nil {
@@ -61,7 +61,7 @@ func TestRPTreeIndexInsertAndRetrieve(t *testing.T) {
 }
 
 func TestRPTreeIndexInsertRejectsWrongDimension(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
 	if err := idx.Insert(1, containers.NewVector([]float64{1, 2})); !errors.Is(err, index.ErrInvalidDimension) {
 		t.Errorf("Insert with wrong dimension = %v, want ErrInvalidDimension", err)
 	}
@@ -71,21 +71,21 @@ func TestRPTreeIndexInsertRejectsWrongDimension(t *testing.T) {
 }
 
 func TestRPTreeIndexRetrieveMissing(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
 	if _, err := idx.Retrieve(1); !errors.Is(err, index.ErrIndexNotFound) {
 		t.Errorf("Retrieve(1) = %v, want ErrIndexNotFound", err)
 	}
 }
 
 func TestRPTreeIndexSearchEmpty(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
 	if _, _, err := idx.Search(containers.NewVector([]float64{0, 0, 0}), 3); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search on empty index = %v, want ErrEmptyIndex", err)
 	}
 }
 
 func TestRPTreeIndexSearchRejectsWrongDimension(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
 	if err := idx.Insert(1, containers.NewVector([]float64{1, 2, 3})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -98,7 +98,7 @@ func TestRPTreeIndexSearchRejectsWrongDimension(t *testing.T) {
 // single tree leaf) and checks that querying near a tight cluster of vectors
 // returns that cluster's keys ahead of a far-away outlier.
 func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 7)
+	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 7, 2)
 
 	cluster := map[int][]float64{
 		1: {0, 0},
@@ -129,7 +129,7 @@ func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
 }
 
 func TestRPTreeIndexUpdateAndDelete(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](2, 4, 3, 1)
+	idx := index.NewRPTreeIndex[int, float64](2, 4, 3, 1, 2)
 	if err := idx.Insert(1, containers.NewVector([]float64{1, 1})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -164,7 +164,7 @@ func TestRPTreeIndexUpdateAndDelete(t *testing.T) {
 // even though it still physically sits inside the forest until Flush, is
 // filtered out of Search results by the vectors ground truth.
 func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 3)
+	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 3, 2)
 	if err := idx.Insert(1, containers.NewVector([]float64{0, 0})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -188,7 +188,7 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 
 func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 	rng := rand.New(rand.NewSource(21))
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2)
 
 	const n = 50
 	for i := 0; i < n; i++ {
@@ -223,7 +223,7 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 }
 
 func TestRPTreeIndexSize(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
 	if got := idx.Size(); got != 0 {
 		t.Errorf("Size() on empty index = %d, want 0", got)
 	}
@@ -251,7 +251,7 @@ func TestRPTreeIndexSize(t *testing.T) {
 // candidates by true distance: the result is exact, not approximate.
 func ranksTenByDistance[P float32 | float64](t *testing.T) {
 	t.Helper()
-	idx := index.NewRPTreeIndex[int, P](2, 2, 5, 7)
+	idx := index.NewRPTreeIndex[int, P](2, 2, 5, 7, 2)
 
 	for i := 1; i <= 10; i++ {
 		if err := idx.Insert(i, containers.NewVector([]P{P(i), 0})); err != nil {
@@ -309,7 +309,7 @@ func TestRPTreeIndexSearchRanksTenByDistance_float32(t *testing.T) { ranksTenByD
 // nearestKeys indexes pts (integer coordinates, exact in both precisions) at
 // precision P and returns the keys of the k nearest to query, nearest first.
 func nearestKeys[P float32 | float64](pts [][]int, query []int, k int) []int {
-	idx := index.NewRPTreeIndex[int, P](len(query), 2, 5, 7)
+	idx := index.NewRPTreeIndex[int, P](len(query), 2, 5, 7, 2)
 	for i, p := range pts {
 		vec := make([]P, len(p))
 		for d, v := range p {
@@ -349,7 +349,7 @@ func TestRPTreeSearchIdenticalAcrossPrecision(t *testing.T) {
 // writes into O(W^2) forest entries.
 func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2)
 
 	const n = 20
 	vecs := make([]containers.Vector[float64], n)
@@ -384,7 +384,7 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 // within the flushFactor bound of the live count instead of growing forever.
 func TestRPTreeIndexForestBounded(t *testing.T) {
 	rng := rand.New(rand.NewSource(11))
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5)
+	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2)
 
 	const n = 30
 	for i := 0; i < n; i++ {

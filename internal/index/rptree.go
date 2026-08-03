@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/containers/trees"
 	"github.com/RonsenbergVI/fraise/pkg/logger"
@@ -54,26 +55,33 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 
 	dim, projDim, numTrees int
 	seed                   uint64
-}
 
-// flushFactor bounds forest garbage: once a tree holds more than flushFactor
-// entries per live vector, the forest is rebuilt from the live vectors. 2x
-// keeps rebuild cost amortised O(1) per write while capping memory at twice
-// the live set.
-const flushFactor = 2
+	// flushFactor bounds forest garbage: once a tree holds more than
+	// flushFactor entries per live vector, the forest is rebuilt from the
+	// live vectors. Comes from config (db.vector-search.flush-factor); 2x
+	// keeps rebuild cost amortised O(1) per write while capping memory at
+	// twice the live set.
+	flushFactor int
+}
 
 // NewRPTreeIndex returns an empty RPTreeIndex holding numTrees random-projection
 // trees, each mapping dim-dimensional vectors onto projDim random directions.
 // seed seeds the first tree; the rest derive from it so every tree gets an
 // independent projection. A dim of 0 defers forest construction until the
-// first Insert, whose vector fixes the index dimensionality.
-func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees int, seed uint64) *RPTreeIndex[K, P] {
+// first Insert, whose vector fixes the index dimensionality. flushFactor is the
+// garbage compaction threshold (entries per live vector); a value <= 0 falls
+// back to the config default.
+func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees int, seed uint64, flushFactor int) *RPTreeIndex[K, P] {
+	if flushFactor <= 0 {
+		flushFactor = config.DefaultFlushFactor
+	}
 	idx := &RPTreeIndex[K, P]{
-		vectors:  make(map[K]containers.Vector[P]),
-		dim:      dim,
-		projDim:  projDim,
-		numTrees: numTrees,
-		seed:     seed,
+		vectors:     make(map[K]containers.Vector[P]),
+		dim:         dim,
+		projDim:     projDim,
+		numTrees:    numTrees,
+		seed:        seed,
+		flushFactor: flushFactor,
 	}
 	if dim > 0 {
 		idx.forest = idx.newForest()
@@ -138,7 +146,7 @@ func (idx *RPTreeIndex[K, P]) maybeFlush() error {
 	if len(idx.forest) == 0 {
 		return nil
 	}
-	if idx.forest[0].Len() <= flushFactor*len(idx.vectors) {
+	if idx.forest[0].Len() <= idx.flushFactor*len(idx.vectors) {
 		return nil
 	}
 	logger.Debug("Vector index compaction",

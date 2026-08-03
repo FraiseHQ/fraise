@@ -87,6 +87,7 @@ func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemor
 			config.DB.VectorSearch.ProjectionDimension,
 			config.DB.VectorSearch.NumberTrees,
 			config.DB.VectorSearch.Seed,
+			config.DB.VectorSearch.FlushFactor,
 		),
 		hasher: hash.NewHasher[K](config),
 		config: config,

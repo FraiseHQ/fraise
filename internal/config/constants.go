@@ -109,6 +109,10 @@ const (
 	// DefaultRPSeed seeds the RP-trees' random projections (deterministic builds).
 	DefaultRPSeed uint64 = 4
 
+	// DefaultFlushFactor bounds RP forest garbage: once a tree holds more than
+	// this many entries per live vector, the forest is rebuilt from the live set.
+	DefaultFlushFactor int = 2
+
 	// DefaultPrecision is the floating-point precision for embeddings and scores
 	// ("float32" or "float64"), selecting which server instantiation is built.
 	DefaultPrecision string = "float32"
