@@ -23,6 +23,7 @@
 """HTTP surface and request validation: the health check, malformed request
 bodies, and query strings the parser must reject as client errors."""
 
+import pytest
 import requests
 
 
@@ -58,3 +59,26 @@ def test_query_rejects_out_of_range_graph(query):
 
     assert status == 400
     assert body.get("error"), "expected an out-of-range error message"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall x depth:abc",  # non-numeric depth
+        "recall x top:abc",  # non-numeric top
+        "recall x top:99999999999999999999",  # top overflows int
+        "recall x since:yesterday",  # unparseable time bound
+        "recall x until:soon",  # unparseable time bound
+        "recall@abc x",  # non-numeric graph selector
+        "recall@999 x",  # selector overflows uint8 (would wrap to @231)
+    ],
+)
+def test_query_rejects_invalid_modifier_value(query, text):
+    """An invalid depth/top/since/until/selector value is a 400 with a message,
+    not a silent fall back to the default or to no constraint at all. Agents
+    self-correct from the error; a differently-scoped result with no error is
+    the worst failure mode for this product."""
+    status, body = query(text)
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert body.get("error"), f"expected a parse error message for {text!r}"

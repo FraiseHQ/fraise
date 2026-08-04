@@ -260,7 +260,10 @@ func (p *parser[K, P]) parseDepth() (lexer.Token, int, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	i, err := strconv.Atoi(tok.Literal)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid depth value %q: expected a non-negative integer", tok.Literal)
+	}
 
 	return key, i, nil
 }
@@ -280,7 +283,10 @@ func (p *parser[K, P]) parseTop() (lexer.Token, int, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	i, err := strconv.Atoi(tok.Literal)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid top value %q: expected a non-negative integer", tok.Literal)
+	}
 
 	return key, i, nil
 }
@@ -297,7 +303,10 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	t, _ := containers.ParseTimeValue[K](tok.Literal)
+	t, err := containers.ParseTimeValue[K](tok.Literal)
+	if err != nil {
+		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "invalid %s value %q: expected a duration like 7d or a date like 2026-01-15", key.Literal, tok.Literal)
+	}
 
 	return key, t, nil
 }
@@ -313,11 +322,15 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	// ParseUint with bitSize 8 rejects both non-numeric selectors and values
+	// past 255 in one step, so a selector can never silently wrap into a
+	// different graph (e.g. @999 truncating to @231). The handler still checks
+	// it against the number of graphs actually allocated.
+	i, err := strconv.ParseUint(tok.Literal, 10, 8)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid graph selector %q: expected an integer in range 0-255", tok.Literal)
+	}
 
-	// NOTE: probably not the safest way to do this (panic if you can't convert or casts anyway?).
-	// Maybe just store the graph id as a int and check that value doesn't exceed number of graphs
-	/// a bit awkwards but maybe better than having to do this.
 	return key, uint8(i), nil
 }
 

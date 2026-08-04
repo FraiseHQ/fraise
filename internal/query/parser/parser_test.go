@@ -87,6 +87,32 @@ func TestRecallParserErrors(t *testing.T) {
 	}
 }
 
+// TestRecallModifierValueErrors is the regression guard for the silent-fallback
+// bug: an invalid depth/top/since/until/selector value must be a parse error,
+// not a quiet fall back to the default (or to no constraint at all). Returning
+// differently-scoped results with no error is the worst failure mode here — an
+// agent can only self-correct when told it was wrong.
+func TestRecallModifierValueErrors(t *testing.T) {
+	queries := []string{
+		"recall x depth:abc",                // non-numeric depth
+		"recall x depth:1.5",                // non-integer depth
+		"recall x top:abc",                  // non-numeric top
+		"recall x top:99999999999999999999", // top overflows int
+		"recall x since:yesterday",          // unparseable time bound
+		"recall x until:soon",               // unparseable time bound
+		"recall@abc x",                      // non-numeric graph selector
+		"recall@999 x",                      // selector overflows uint8 (would wrap to @231)
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			if _, _, err := parser.Parse[uint64, float32](q); err == nil {
+				t.Errorf("Parse(%q) = nil error, want a parse error", q)
+			}
+		})
+	}
+}
+
 // TestRememberPhrase covers the opaque single-quoted phrase: reserved words and
 // symbols (: ' $ @ ( )) inside it are stored verbatim, and a doubled quote (”)
 // is an escaped apostrophe. These are the cases from the phrase-storage bug
