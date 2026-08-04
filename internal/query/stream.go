@@ -23,6 +23,7 @@
 package query
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -94,6 +95,16 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 				Hasher: g.GetHasher(),
 			}
 
+			// Store the entity node itself: anchored recalls resolve a fact's
+			// tags through its neighbours in idToNodes, so an edge to a
+			// never-stored node makes every entity: filter miss. Entities are
+			// shared across facts (keyed by value), so an already-stored node
+			// is the normal upsert case, not an error.
+			if err := g.Set(&entity); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
+				logger.Error("Failed to store entity node", "entity", e, "error", err)
+				return fmt.Errorf("storing entity %q: %w", e, err)
+			}
+
 			mentions := graph.Mentions[K]{NodeAttributes: graph.NodeAttributes{
 				Timestamp: time.Now(),
 			},
@@ -112,6 +123,13 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 				Timestamp: time.Now(),
 			},
 				Hasher: g.GetHasher(),
+			}
+
+			// Same as entities above: the topic node must exist for topic:
+			// filters to resolve; re-storing a shared topic is the upsert case.
+			if err := g.Set(&topic); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
+				logger.Error("Failed to store topic node", "topic", t, "error", err)
+				return fmt.Errorf("storing topic %q: %w", t, err)
 			}
 
 			about := graph.IsAbout[K]{NodeAttributes: graph.NodeAttributes{
