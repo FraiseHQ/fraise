@@ -43,11 +43,11 @@ type Query[K comparable, P float32 | float64] interface {
 	SetGraphID(id uint8)
 }
 
-type QueryParameters struct {
+type QueryParameters[K comparable] struct {
 	Top   int
 	Depth int
-	Since containers.TimeValue
-	Until containers.TimeValue
+	Since containers.TimeValue[K]
+	Until containers.TimeValue[K]
 }
 
 type QueryContext struct {
@@ -92,7 +92,7 @@ func bindVector[P float32 | float64](params map[string][]P, name string) ([]P, e
 // (e.g. `vec:$v` binds to params["v"]). This keeps the parser lightweight: it
 // only records the placeholder, and the real vector is injected here.
 func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c *config.ConfigSet) (Query[K, P], error) {
-	cmd, _, err := parser.Parse[P](q)
+	cmd, _, err := parser.Parse[K, P](q)
 	if err != nil {
 		logger.Debug("Query parsing failed", "query", q, "error", err)
 		return nil, fmt.Errorf("%w: %w", ErrParsingFailed, err)
@@ -116,18 +116,18 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 				logger.Warn("Missing vector parameter for remember", "parameter", name)
 				return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
 			}
-			qo.Vector = containers.NewVector(data)
+			qo.Vector = containers.NewVector[K](data)
 		}
 
 		logger.Debug("Parsed remember query", "graph", qo.GetGraphID(), "value", qo.Value)
 		return qo, nil
 
-	case *parser.RecallCommandNode[P]:
+	case *parser.RecallCommandNode[K, P]:
 		qo := &Recall[K, P]{
 			Keywords: n.Terms(),
 			Entities: n.Entities(),
 			Topics:   n.Topics(),
-			Parameters: QueryParameters{
+			Parameters: QueryParameters[K]{
 				Top: n.Top(c.DB.DefaultTop), Depth: n.Depth(c.DB.DefaultDepth), Since: n.Since(), Until: n.Until(),
 			},
 		}
@@ -140,7 +140,7 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 				logger.Warn("Missing vector parameter for recall", "parameter", name)
 				return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
 			}
-			qo.Vector = containers.NewVector(data)
+			qo.Vector = containers.NewVector[K](data)
 		}
 
 		logger.Debug("Parsed recall query", "graph", qo.GetGraphID(), "keywords", len(qo.Keywords))

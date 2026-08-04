@@ -301,8 +301,8 @@ func TestRPTreeDeterministicAcrossRuns(t *testing.T) {
 }
 
 func TestVectorPointGeometry(t *testing.T) {
-	a := trees.NewVectorPoint(1, containers.NewVector([]float64{0, 0, 0}))
-	b := trees.NewVectorPoint(2, containers.NewVector([]float64{3, 4, 0}))
+	a := trees.NewVectorPoint(1, containers.NewVector[int]([]float64{0, 0, 0}))
+	b := trees.NewVectorPoint(2, containers.NewVector[int]([]float64{3, 4, 0}))
 
 	if got, want := a.Dim(), 3; got != want {
 		t.Errorf("Dim() = %d, want %d", got, want)
@@ -326,9 +326,9 @@ func TestVectorPointGeometry(t *testing.T) {
 
 func TestVectorPointHash(t *testing.T) {
 	hasher := hash.XxHash[uint64]{}
-	a := trees.NewVectorPoint(uint64(1), containers.NewVector([]float64{1, 2, 3}))
-	b := trees.NewVectorPoint(uint64(2), containers.NewVector([]float64{1, 2, 3}))
-	c := trees.NewVectorPoint(uint64(3), containers.NewVector([]float64{4, 5, 6}))
+	a := trees.NewVectorPoint(uint64(1), containers.NewVector[uint64]([]float64{1, 2, 3}))
+	b := trees.NewVectorPoint(uint64(2), containers.NewVector[uint64]([]float64{1, 2, 3}))
+	c := trees.NewVectorPoint(uint64(3), containers.NewVector[uint64]([]float64{4, 5, 6}))
 
 	if got, want := a.Hash(hasher), b.Hash(hasher); got != want {
 		t.Errorf("points with equal coordinates hashed differently: %#x vs %#x", got, want)
@@ -339,7 +339,7 @@ func TestVectorPointHash(t *testing.T) {
 }
 
 func TestVectorNode(t *testing.T) {
-	vec := containers.NewVector([]float64{1, 2, 3})
+	vec := containers.NewVector[int]([]float64{1, 2, 3})
 	n := trees.NewVectorNode(42, vec)
 
 	if got, want := n.Key(), 42; got != want {
@@ -368,7 +368,7 @@ func TestRPTreeWithVectorNodes(t *testing.T) {
 	const dim = 4
 	const n = 20 // stays under the default leaf size
 
-	rt := trees.NewRPTree[int, containers.Vector[float64], float64](dim, 4, 13)
+	rt := trees.NewRPTree[int, containers.Vector[int, float64], float64](dim, 4, 13)
 
 	type sample struct {
 		key   int
@@ -381,7 +381,7 @@ func TestRPTreeWithVectorNodes(t *testing.T) {
 			coord[d] = rng.Float64() * 100
 		}
 		samples[i] = sample{key: i, coord: coord}
-		node := trees.NewVectorNode(i, containers.NewVector(coord))
+		node := trees.NewVectorNode(i, containers.NewVector[int](coord))
 		if err := rt.Insert(node); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", i, err)
 		}
@@ -390,7 +390,7 @@ func TestRPTreeWithVectorNodes(t *testing.T) {
 		t.Fatalf("Len() = %d, want %d", got, n)
 	}
 
-	query := trees.NewVectorNode(-1, containers.NewVector([]float64{50, 50, 50, 50})).Point()
+	query := trees.NewVectorNode(-1, containers.NewVector[int]([]float64{50, 50, 50, 50})).Point()
 	got := rt.Nearest(query, 3)
 	if len(got) != 3 {
 		t.Fatalf("Nearest returned %d nodes, want 3", len(got))

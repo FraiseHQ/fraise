@@ -152,7 +152,7 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 
 	// Without a ranking the direct hit wins over the hub reached at hop 1.
 	g := build()
-	nodes, _ := g.Search([]string{"alpha"}, containers.Vector[float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, _ := g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 || (*nodes[0]).GetValue() != "alpha query" {
 		t.Fatalf("Search without ranking = %d nodes, want the direct hit first", len(nodes))
 	}
@@ -161,7 +161,7 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 	// above the direct hit.
 	g = build()
 	g.SetRanking(graph.NewPageRank[uint64, float64](0.85, 100, 1e-9))
-	nodes, _ = g.Search([]string{"alpha"}, containers.Vector[float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 || (*nodes[0]).GetValue() != "hub" {
 		t.Errorf("Search with PageRank ranking did not put the hub first")
 	}

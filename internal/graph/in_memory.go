@@ -276,7 +276,7 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 	return g.textIndex
 }
 
-func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P) {
+func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P) {
 	// A. Search starts with gathering seeds for the graph search.
 	// Seeds are found from
 	// 1. Vector search (top K - default = 10)
@@ -323,7 +323,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 // gatherSeeds pools search seeds from the text index (keywords) and the
 // vector index (query embedding). Seeds are scored by source rank, 1/(1+rank),
 // and a key surfaced by both sources accumulates both scores.
-func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[P]) ([]K, map[K]P) {
+func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P]) ([]K, map[K]P) {
 	scores := make(map[K]P)
 
 	var textSeeds, vectorSeeds int
