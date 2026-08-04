@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
 	"github.com/RonsenbergVI/fraise/internal/hash"
@@ -60,7 +61,7 @@ func (g *fakeGraph) Copy() graph.Graph[string, float32]        { g.copied = true
 func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32]) { g.merged = true }
 func (g *fakeGraph) Set(node graph.Node[string]) error         { g.sets++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
 	g.searchCalled = true
 	return g.searchNodes, g.searchScores
 }
@@ -276,5 +277,51 @@ func TestStreamFinishIsIdempotent(t *testing.T) {
 	s.Finish() // second call must not panic or double-close (sync.Once)
 	if !isClosed(s.Done()) {
 		t.Error("Done channel not closed after Finish")
+	}
+}
+
+// TestCommitStoresAnchorNodesForFilteredRecall drives the exact production
+// write path (Stage -> Commit on staging -> MergeFrom) and checks the written
+// fact is recallable through its topic:/entity: anchors. Regression test for
+// anchored recalls returning nothing: Commit created the Mentions/IsAbout
+// edges but never stored the NamedEntity/Topic nodes themselves, so the
+// filter could not resolve the anchor values and dropped every fact.
+func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+
+	remember := &Remember[uint64, float32]{
+		Value:    "alice moved to paris",
+		Topics:   []string{"travel"},
+		Entities: []string{"alice"},
+	}
+	s := NewStream[uint64, float32](remember)
+
+	stg, err := s.Stage(g)
+	if err != nil {
+		t.Fatalf("Stage = %v, want nil", err)
+	}
+	g.MergeFrom(stg)
+
+	cases := []struct {
+		name     string
+		topics   []string
+		entities []string
+	}{
+		{"no filter", nil, nil},
+		{"topic filter", []string{"travel"}, nil},
+		{"entity filter", nil, []string{"alice"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nodes, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			got := make([]string, 0, len(nodes))
+			for _, n := range nodes {
+				got = append(got, (*n).GetValue())
+			}
+			if len(nodes) != 1 || got[0] != "alice moved to paris" {
+				t.Errorf("Search(paris, topics=%v entities=%v) = %v, want [alice moved to paris]",
+					tc.topics, tc.entities, got)
+			}
+		})
 	}
 }

@@ -31,7 +31,7 @@ import (
 func TestRememberParser(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne vec:$v"
 
-	qo, _, err := parser.Parse[float32](q)
+	qo, _, err := parser.Parse[uint64, float32](q)
 
 	if err != nil {
 		t.Error("Expected no error while parsing this query.")
@@ -60,7 +60,7 @@ func TestRecallParser(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			qo, _, err := parser.Parse[float32](q)
+			qo, _, err := parser.Parse[uint64, float32](q)
 			if err != nil {
 				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 			}
@@ -80,7 +80,7 @@ func TestRecallParserErrors(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			if _, _, err := parser.Parse[float32](q); err == nil {
+			if _, _, err := parser.Parse[uint64, float32](q); err == nil {
 				t.Errorf("Parse(%q) = nil error, want an error", q)
 			}
 		})
@@ -108,7 +108,7 @@ func TestRememberPhrase(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd, _, err := parser.Parse[float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -128,7 +128,7 @@ func TestRememberPhrase(t *testing.T) {
 func TestRememberPhraseRoundTrip(t *testing.T) {
 	// String() always renders the graph selector (@0 by default), so include it.
 	q := "remember@0 'alice''s laptop' topic:devices"
-	cmd, _, err := parser.Parse[float32](q)
+	cmd, _, err := parser.Parse[uint64, float32](q)
 	if err != nil {
 		t.Fatalf("Parse(%q) unexpected error: %v", q, err)
 	}
@@ -146,7 +146,7 @@ func TestRememberPhraseErrors(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			if _, _, err := parser.Parse[float32](q); err == nil {
+			if _, _, err := parser.Parse[uint64, float32](q); err == nil {
 				t.Errorf("Parse(%q) = nil error, want an error", q)
 			}
 		})
@@ -158,7 +158,7 @@ func TestRememberPhraseErrors(t *testing.T) {
 // reserved word.
 func TestQuotedValues(t *testing.T) {
 	t.Run("quoted anchor value", func(t *testing.T) {
-		cmd, _, err := parser.Parse[float32]("remember 'x' topic:'my project'")
+		cmd, _, err := parser.Parse[uint64, float32]("remember 'x' topic:'my project'")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -170,11 +170,11 @@ func TestQuotedValues(t *testing.T) {
 	})
 
 	t.Run("quoted recall term", func(t *testing.T) {
-		cmd, _, err := parser.Parse[float32]("recall 'meeting at 3:30pm' topic:work")
+		cmd, _, err := parser.Parse[uint64, float32]("recall 'meeting at 3:30pm' topic:work")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		rc := cmd.(*parser.RecallCommandNode[float32])
+		rc := cmd.(*parser.RecallCommandNode[uint64, float32])
 		terms := rc.Terms()
 		if len(terms) != 1 || terms[0] != "meeting at 3:30pm" {
 			t.Errorf("Terms() = %v, want [\"meeting at 3:30pm\"]", terms)

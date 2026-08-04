@@ -34,11 +34,11 @@ import (
 
 type Recall[K comparable, P float32 | float64] struct {
 	Keywords []string
-	Vector   containers.Vector[P]
+	Vector   containers.Vector[K, P]
 	Entities []string
 	Topics   []string
 
-	Parameters QueryParameters
+	Parameters QueryParameters[K]
 
 	context QueryContext
 }
@@ -56,9 +56,10 @@ func (r *Recall[K, P]) SetGraphID(id uint8) {
 }
 
 // Hash keys the query for the plan cache. It must fold in everything that
-// changes the result set: two recalls that differ only in graph, depth or top
-// must not collide, or the cache would hand back a stale plan. The lists are
-// delimited so ["ab"] and ["a","b"] do not hash alike.
+// changes the result set: two recalls that differ only in graph, depth, top,
+// time bounds or the bound vector must not collide, or the cache would hand
+// back a stale plan. The lists are delimited so ["ab"] and ["a","b"] do not
+// hash alike.
 func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")
@@ -73,6 +74,16 @@ func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	b.WriteString(strconv.Itoa(r.Parameters.Depth))
 	b.WriteString("|t=")
 	b.WriteString(strconv.Itoa(r.Parameters.Top))
+	b.WriteString("|s=")
+	if s := r.Parameters.Since; s != nil {
+		b.WriteString(s.Hash(h))
+	}
+	b.WriteString("|u=")
+	if u := r.Parameters.Until; u != nil {
+		b.WriteString(u.Hash(h))
+	}
+	b.WriteString("|vec=")
+	b.WriteString(r.Vector.Hash(h))
 	return h.Hash(b.String())
 }
 

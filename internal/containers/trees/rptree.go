@@ -330,12 +330,12 @@ func (t *RPTree[K, T, P]) Nodes() []TreeNode[K, T, P] {
 // and any other SpatialTree.
 type VectorPoint[K comparable, P float32 | float64] struct {
 	key    K
-	vector containers.Vector[P]
+	vector containers.Vector[K, P]
 }
 
 // NewVectorPoint returns a VectorPoint identified by key, at vector's
 // coordinates.
-func NewVectorPoint[K comparable, P float32 | float64](key K, vector containers.Vector[P]) VectorPoint[K, P] {
+func NewVectorPoint[K comparable, P float32 | float64](key K, vector containers.Vector[K, P]) VectorPoint[K, P] {
 	return VectorPoint[K, P]{key: key, vector: vector}
 }
 
@@ -369,21 +369,21 @@ func (v VectorPoint[K, P]) Hash(h hash.Hasher[K, string]) K {
 }
 
 // VectorNode bundles a key and a containers.Vector into a
-// TreeNode[K, containers.Vector[P], P], ready to hand to RPTree.Insert (or any
+// TreeNode[K, containers.Vector[K, P], P], ready to hand to RPTree.Insert (or any
 // other SpatialTree). Its Point is a VectorPoint over the same vector.
 type VectorNode[K comparable, P float32 | float64] struct {
 	key   K
-	value containers.Vector[P]
+	value containers.Vector[K, P]
 }
 
 // NewVectorNode returns a VectorNode pairing key with value.
-func NewVectorNode[K comparable, P float32 | float64](key K, value containers.Vector[P]) *VectorNode[K, P] {
+func NewVectorNode[K comparable, P float32 | float64](key K, value containers.Vector[K, P]) *VectorNode[K, P] {
 	return &VectorNode[K, P]{key: key, value: value}
 }
 
-func (n *VectorNode[K, P]) Key() K                      { return n.key }
-func (n *VectorNode[K, P]) Value() containers.Vector[P] { return n.value }
-func (n *VectorNode[K, P]) Point() Point[K, P]          { return NewVectorPoint(n.key, n.value) }
+func (n *VectorNode[K, P]) Key() K                         { return n.key }
+func (n *VectorNode[K, P]) Value() containers.Vector[K, P] { return n.value }
+func (n *VectorNode[K, P]) Point() Point[K, P]             { return NewVectorPoint(n.key, n.value) }
 func (n *VectorNode[K, P]) Hash(h hash.Hasher[K, string]) K {
 	return h.Hash(fmt.Sprint(n.value.Data))
 }

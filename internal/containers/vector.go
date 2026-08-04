@@ -22,19 +22,29 @@
 
 package containers
 
-type Vector[P float32 | float64] struct {
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/RonsenbergVI/fraise/internal/hash"
+)
+
+// Vector carries K so it can hash itself with the same Hasher[K, string] its
+// enclosing query uses, mirroring the Recall/Remember pattern.
+type Vector[K comparable, P float32 | float64] struct {
 	Data []P
 }
 
-func NewVector[P float32 | float64](data []P) Vector[P] {
-	return Vector[P]{Data: data}
+func NewVector[K comparable, P float32 | float64](data []P) Vector[K, P] {
+	return Vector[K, P]{Data: data}
 }
 
-func (v Vector[P]) Dim() int {
+func (v Vector[K, P]) Dim() int {
 	return len(v.Data)
 }
 
-func (v Vector[P]) Empty() bool {
+func (v Vector[K, P]) Empty() bool {
 	if v.Data == nil {
 		return true
 	}
@@ -42,7 +52,7 @@ func (v Vector[P]) Empty() bool {
 }
 
 // Equal reports whether v and other hold exactly the same coordinates.
-func (v Vector[P]) Equal(other Vector[P]) bool {
+func (v Vector[K, P]) Equal(other Vector[K, P]) bool {
 	if len(v.Data) != len(other.Data) {
 		return false
 	}
@@ -52,4 +62,19 @@ func (v Vector[P]) Equal(other Vector[P]) bool {
 		}
 	}
 	return true
+}
+
+// Hash keys the vector through h and renders the key for folding into an
+// enclosing query's hash material. The coordinates hash in a stable, lossless
+// form: exact hex floats so distinct vectors never render alike, delimited so
+// [1, 23] and [12, 3] do not collide.
+func (v Vector[K, P]) Hash(h hash.Hasher[K, string]) string {
+	var b strings.Builder
+	for i, x := range v.Data {
+		if i > 0 {
+			b.WriteByte('\x00')
+		}
+		b.WriteString(strconv.FormatFloat(float64(x), 'x', -1, 64))
+	}
+	return fmt.Sprint(h.Hash(b.String()))
 }

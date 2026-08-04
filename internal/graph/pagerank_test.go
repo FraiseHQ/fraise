@@ -29,6 +29,7 @@ import (
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 )
 
 // starGraph builds spokes 2..6 all pointing at hub 1.
@@ -93,8 +94,29 @@ func TestPageRankEmptyGraph(t *testing.T) {
 	}
 }
 
+// factLink is a test-only fact->fact relationship. Production edges only run
+// fact->tag (Mentions, IsAbout), which gives facts no in-links and therefore
+// near-uniform PageRank; linking facts directly lets the test build a star
+// whose hub is itself a fact — the only node kind Search returns as a hit.
+type factLink struct {
+	src, dst *graph.Fact[uint64]
+	graph.NodeAttributes
+	h hash.Hasher[uint64, string]
+}
+
+func (l factLink) Key() uint64                          { return l.Hash(l.h) }
+func (l factLink) GetValue() string                     { return l.Value }
+func (l factLink) GetTimestamp() time.Time              { return l.Timestamp }
+func (l factLink) GetAttributes() *graph.NodeAttributes { return &l.NodeAttributes }
+func (l factLink) Hash(h hash.Hasher[uint64, string]) uint64 {
+	return h.Hash("link:" + l.src.Value + "\x00" + l.dst.Value)
+}
+func (l factLink) Source() *graph.Entity[uint64] { var e graph.Entity[uint64] = l.src; return &e }
+func (l factLink) Target() *graph.Entity[uint64] { var e graph.Entity[uint64] = l.dst; return &e }
+
 // TestSearchWithPageRankRanking shows the ranking boost re-ordering results:
-// the hub of a star out-ranks the direct text hit once PageRank is installed.
+// the hub fact of a star out-ranks the direct text hit once PageRank is
+// installed. Only facts are eligible hits, so the star is built from facts.
 func TestSearchWithPageRankRanking(t *testing.T) {
 	now := time.Now()
 
@@ -102,8 +124,8 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 		g := graph.NewGraph[uint64, float64](testConfig())
 		h := g.GetHasher()
 
-		// A star of five facts all mentioning the same hub entity.
-		hub := &graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: "hub", Timestamp: now}, Hasher: h}
+		// A star of five spoke facts all linking to the same hub fact.
+		hub := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: "hub", Timestamp: now}, Hasher: h}
 		if err := g.Set(hub); err != nil {
 			t.Fatalf("Set(hub) = %v, want nil", err)
 		}
@@ -112,27 +134,25 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 			if err := g.Set(fact); err != nil {
 				t.Fatalf("Set(%q) = %v, want nil", v, err)
 			}
-			mentions := graph.Mentions[uint64]{Fact: &fact, NamedEntity: hub, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: h}
-			if err := g.Set(mentions); err != nil {
-				t.Fatalf("Set(mentions) = %v, want nil", err)
+			if err := g.Set(factLink{src: &fact, dst: &hub, NodeAttributes: graph.NodeAttributes{Timestamp: now}, h: h}); err != nil {
+				t.Fatalf("Set(link) = %v, want nil", err)
 			}
 		}
 
-		// The seed fact is the direct text hit; it too mentions the hub.
+		// The seed fact is the direct text hit; it too links to the hub.
 		seed := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: "alpha query", Timestamp: now}, Hasher: h}
 		if err := g.Set(seed); err != nil {
 			t.Fatalf("Set(seed) = %v, want nil", err)
 		}
-		mentions := graph.Mentions[uint64]{Fact: &seed, NamedEntity: hub, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: h}
-		if err := g.Set(mentions); err != nil {
-			t.Fatalf("Set(seed mentions) = %v, want nil", err)
+		if err := g.Set(factLink{src: &seed, dst: &hub, NodeAttributes: graph.NodeAttributes{Timestamp: now}, h: h}); err != nil {
+			t.Fatalf("Set(seed link) = %v, want nil", err)
 		}
 		return g
 	}
 
 	// Without a ranking the direct hit wins over the hub reached at hop 1.
 	g := build()
-	nodes, _ := g.Search([]string{"alpha"}, containers.Vector[float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, _ := g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 || (*nodes[0]).GetValue() != "alpha query" {
 		t.Fatalf("Search without ranking = %d nodes, want the direct hit first", len(nodes))
 	}
@@ -141,7 +161,7 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 	// above the direct hit.
 	g = build()
 	g.SetRanking(graph.NewPageRank[uint64, float64](0.85, 100, 1e-9))
-	nodes, _ = g.Search([]string{"alpha"}, containers.Vector[float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 || (*nodes[0]).GetValue() != "hub" {
 		t.Errorf("Search with PageRank ranking did not put the hub first")
 	}

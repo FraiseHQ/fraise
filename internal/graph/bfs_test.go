@@ -170,18 +170,21 @@ func TestSearchWithConfiguredTraversal(t *testing.T) {
 		return g
 	}
 
-	// The default traversal follows both directions: the fact is one hop away.
+	// The default traversal follows both directions: seeding on the entity's
+	// value walks the incoming Mentions edge to the fact. The entity itself is
+	// not a fact, so the fact is the only hit.
 	g := build()
-	nodes, _ := g.Search([]string{"gizmo"}, containers.Vector[float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
-	if len(nodes) != 2 {
-		t.Errorf("Search with default traversal returned %d nodes, want 2", len(nodes))
+	nodes, _ := g.Search([]string{"gizmo"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	if len(nodes) != 1 || (*nodes[0]).GetValue() != "acme makes things" {
+		t.Errorf("Search with default traversal = %d nodes, want just the linked fact", len(nodes))
 	}
 
-	// Outgoing-only BFS: the entity has no outgoing edges, nothing joins.
+	// Outgoing-only BFS: the entity has no outgoing edges, so the walk never
+	// reaches the fact and nothing (fact-typed) remains to return.
 	g = build()
 	g.SetTraversal(graph.NewBFSTraversal[uint64, float64](graph.Outgoing))
-	nodes, _ = g.Search([]string{"gizmo"}, containers.Vector[float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "gizmo" {
-		t.Errorf("Search with outgoing BFS returned %d nodes, want just the seed entity", len(nodes))
+	nodes, _ = g.Search([]string{"gizmo"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	if len(nodes) != 0 {
+		t.Errorf("Search with outgoing BFS returned %d nodes, want none", len(nodes))
 	}
 }
