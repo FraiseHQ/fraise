@@ -119,7 +119,7 @@ type Graph[K comparable, P float32 | float64] interface {
 	//   - top:      maximum number of results returned
 	//   - since:    inclusive lower time bound; zero value = unbounded
 	//   - until:    exclusive upper time bound; zero value = unbounded
-	Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P)
+	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P)
 
 	// Graphs expose their read-write lock so callers can hold a single
 	// lock across a sequence of calls (e.g. Get-then-Put) instead of

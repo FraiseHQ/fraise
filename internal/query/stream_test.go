@@ -61,7 +61,7 @@ func (g *fakeGraph) Copy() graph.Graph[string, float32]        { g.copied = true
 func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32]) { g.merged = true }
 func (g *fakeGraph) Set(node graph.Node[string]) error         { g.sets++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
 	g.searchCalled = true
 	return g.searchNodes, g.searchScores
 }
@@ -313,7 +313,7 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			nodes, _ := g.Search([]string{"paris"}, containers.Vector[float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			nodes, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
 				got = append(got, (*n).GetValue())

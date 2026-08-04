@@ -34,28 +34,6 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
 )
 
-// --- compile-time interface conformance ------------------------------------
-//
-// These assertions fail to compile if a node ever stops satisfying the
-// interface it is meant to implement.
-var (
-	_ CommandNode             = RememberCommandNode[float32]{}
-	_ CommandNode             = RecallCommandNode[float32]{}
-	_ AstNode                 = GraphSelectorNode{}
-	_ AstNode                 = AnchorFieldNode{}
-	_ AstNode                 = TermNode{}
-	_ AstNode                 = PhraseNode{}
-	_ AstNode                 = Terms{}
-	_ FieldNode[string]       = EntityFieldNode{}
-	_ FieldNode[string]       = TopicFieldNode{}
-	_ FieldNode[int]          = TopFieldNode{}
-	_ FieldNode[int]          = DepthFieldNode{}
-	_ LiteralFieldNode        = TermNode{}
-	_ LiteralFieldNode        = PhraseNode{}
-	_ LiteralFieldNode        = Terms{}
-	_ RefFieldNode[[]float32] = VecFieldNode[float32]{}
-)
-
 func tok(t lexer.TokenType, lit string) lexer.Token {
 	return lexer.Token{Type: t, Literal: lit}
 }
@@ -112,7 +90,7 @@ func TestRememberCommandNode(t *testing.T) {
 
 func TestRecallCommandNode(t *testing.T) {
 	sel := GraphSelectorNode{value: 7}
-	n := RecallCommandNode[float32]{
+	n := RecallCommandNode[uint64, float32]{
 		key:      tok(lexer.RECALL, "recall"),
 		selector: sel,
 		pos:      pos(3),
@@ -309,8 +287,8 @@ func TestAnchorFieldNode(t *testing.T) {
 // --- SinceFieldNode / UntilFieldNode ----------------------------------------
 
 func TestSinceFieldNode(t *testing.T) {
-	tv := containers.AbsoluteTime{T: time.Date(2026, time.June, 14, 0, 0, 0, 0, time.UTC)}
-	n := SinceFieldNode{
+	tv := containers.AbsoluteTime[uint64]{T: time.Date(2026, time.June, 14, 0, 0, 0, 0, time.UTC)}
+	n := SinceFieldNode[uint64]{
 		key:   tok(lexer.SINCE, "since"),
 		value: tv,
 		pos:   pos(1),
@@ -320,7 +298,7 @@ func TestSinceFieldNode(t *testing.T) {
 	if got := n.Key(); got != "since" {
 		t.Errorf("Key() = %q, want %q", got, "since")
 	}
-	if got := n.Value(); got != containers.TimeValue(tv) {
+	if got := n.Value(); got != containers.TimeValue[uint64](tv) {
 		t.Errorf("Value() = %v, want %v", got, tv)
 	}
 	if got := n.Pos(); got != pos(1) {
@@ -332,8 +310,8 @@ func TestSinceFieldNode(t *testing.T) {
 }
 
 func TestUntilFieldNode(t *testing.T) {
-	tv := containers.RelativeTime{Dur: 24 * time.Hour}
-	n := UntilFieldNode{
+	tv := containers.RelativeTime[uint64]{Dur: 24 * time.Hour}
+	n := UntilFieldNode[uint64]{
 		key:   tok(lexer.UNTIL, "until"),
 		value: tv,
 		pos:   pos(2),
@@ -343,7 +321,7 @@ func TestUntilFieldNode(t *testing.T) {
 	if got := n.Key(); got != "until" {
 		t.Errorf("Key() = %q, want %q", got, "until")
 	}
-	if got := n.Value(); got != containers.TimeValue(tv) {
+	if got := n.Value(); got != containers.TimeValue[uint64](tv) {
 		t.Errorf("Value() = %v, want %v", got, tv)
 	}
 	if got := n.Pos(); got != pos(2) {

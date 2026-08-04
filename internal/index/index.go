@@ -71,4 +71,4 @@ type TextIndex[K comparable, P float32 | float64] = SearchIndex[K, string, P]
 // VectorIndex is an (approximate) nearest-neighbour index over dense vectors of
 // precision P. Its score is the distance from the query to each vector, so
 // lower is nearer.
-type VectorIndex[K comparable, P float32 | float64] = SearchIndex[K, containers.Vector[P], P]
+type VectorIndex[K comparable, P float32 | float64] = SearchIndex[K, containers.Vector[K, P], P]

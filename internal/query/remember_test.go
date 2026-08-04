@@ -22,7 +22,11 @@
 
 package query
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/RonsenbergVI/fraise/internal/containers"
+)
 
 func TestRememberIsWrite(t *testing.T) {
 	var r Remember[string, float32]
@@ -53,13 +57,15 @@ func TestRememberHash(t *testing.T) {
 		Value:    "hello world",
 		Entities: []string{"alice"},
 		Topics:   []string{"greeting"},
+		Vector:   containers.NewVector[string]([]float32{0.5}),
 		context:  QueryContext{GraphID: 2},
 	}
 	h := &fakeHasher{}
 
-	// Hash folds in graph, value and the delimited entity/topic lists so writes
-	// that differ in any of those get distinct cache keys.
-	const want = "g=2|v=hello world|en=alice|to=greeting"
+	// Hash folds in graph, value, the delimited entity/topic lists and the
+	// bound vector so writes that differ in any of those get distinct cache
+	// keys.
+	const want = "g=2|v=hello world|en=alice|to=greeting|vec=H(0x1p-01)"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -69,8 +75,9 @@ func TestRememberHash(t *testing.T) {
 }
 
 // TestRememberHashDistinguishesGraphAndTags is the real contract: writes that
-// differ only in graph, entities or topics must not share a cache key, or the
-// engine reuses a stale plan and writes to the wrong graph/tags.
+// differ only in graph, entities, topics or the bound vector must not share a
+// cache key, or the engine reuses a stale plan and writes to the wrong
+// graph/tags (or with the wrong embedding).
 func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 	base := func() Remember[string, float32] {
 		return Remember[string, float32]{Value: "the parrot is turquoise"}
@@ -80,6 +87,16 @@ func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 		"graph":  func() Remember[string, float32] { r := base(); r.context.GraphID = 5; return r }(),
 		"topic":  func() Remember[string, float32] { r := base(); r.Topics = []string{"birds"}; return r }(),
 		"entity": func() Remember[string, float32] { r := base(); r.Entities = []string{"polly"}; return r }(),
+		"vector-a": func() Remember[string, float32] {
+			r := base()
+			r.Vector = containers.NewVector[string]([]float32{1, 0})
+			return r
+		}(),
+		"vector-b": func() Remember[string, float32] {
+			r := base()
+			r.Vector = containers.NewVector[string]([]float32{0, 1})
+			return r
+		}(),
 	}
 
 	seen := make(map[string]string)

@@ -32,17 +32,17 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
-func randVector(rng *rand.Rand, dim int) containers.Vector[float64] {
+func randVector(rng *rand.Rand, dim int) containers.Vector[int, float64] {
 	data := make([]float64, dim)
 	for i := range data {
 		data[i] = rng.Float64() * 100
 	}
-	return containers.NewVector(data)
+	return containers.NewVector[int](data)
 }
 
 func TestRPTreeIndexInsertAndRetrieve(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
-	v := containers.NewVector([]float64{1, 2, 3})
+	v := containers.NewVector[int]([]float64{1, 2, 3})
 
 	if err := idx.Insert(1, v); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
@@ -62,7 +62,7 @@ func TestRPTreeIndexInsertAndRetrieve(t *testing.T) {
 
 func TestRPTreeIndexInsertRejectsWrongDimension(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
-	if err := idx.Insert(1, containers.NewVector([]float64{1, 2})); !errors.Is(err, index.ErrInvalidDimension) {
+	if err := idx.Insert(1, containers.NewVector[int]([]float64{1, 2})); !errors.Is(err, index.ErrInvalidDimension) {
 		t.Errorf("Insert with wrong dimension = %v, want ErrInvalidDimension", err)
 	}
 	if got, want := idx.Count(), 0; got != want {
@@ -79,17 +79,17 @@ func TestRPTreeIndexRetrieveMissing(t *testing.T) {
 
 func TestRPTreeIndexSearchEmpty(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
-	if _, _, err := idx.Search(containers.NewVector([]float64{0, 0, 0}), 3); !errors.Is(err, index.ErrEmptyIndex) {
+	if _, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0, 0}), 3); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search on empty index = %v, want ErrEmptyIndex", err)
 	}
 }
 
 func TestRPTreeIndexSearchRejectsWrongDimension(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2)
-	if err := idx.Insert(1, containers.NewVector([]float64{1, 2, 3})); err != nil {
+	if err := idx.Insert(1, containers.NewVector[int]([]float64{1, 2, 3})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
-	if _, _, err := idx.Search(containers.NewVector([]float64{1, 2}), 3); !errors.Is(err, index.ErrInvalidDimension) {
+	if _, _, err := idx.Search(containers.NewVector[int]([]float64{1, 2}), 3); !errors.Is(err, index.ErrInvalidDimension) {
 		t.Errorf("Search with wrong dimension = %v, want ErrInvalidDimension", err)
 	}
 }
@@ -106,15 +106,15 @@ func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
 		3: {0, 1},
 	}
 	for key, coord := range cluster {
-		if err := idx.Insert(key, containers.NewVector(coord)); err != nil {
+		if err := idx.Insert(key, containers.NewVector[int](coord)); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", key, err)
 		}
 	}
-	if err := idx.Insert(4, containers.NewVector([]float64{1000, 1000})); err != nil {
+	if err := idx.Insert(4, containers.NewVector[int]([]float64{1000, 1000})); err != nil {
 		t.Fatalf("Insert(4) = %v, want nil", err)
 	}
 
-	got, _, err := idx.Search(containers.NewVector([]float64{0, 0}), 3)
+	got, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), 3)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -130,11 +130,11 @@ func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
 
 func TestRPTreeIndexUpdateAndDelete(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 3, 1, 2)
-	if err := idx.Insert(1, containers.NewVector([]float64{1, 1})); err != nil {
+	if err := idx.Insert(1, containers.NewVector[int]([]float64{1, 1})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
 
-	if err := idx.Update(1, containers.NewVector([]float64{9, 9})); err != nil {
+	if err := idx.Update(1, containers.NewVector[int]([]float64{9, 9})); err != nil {
 		t.Fatalf("Update = %v, want nil", err)
 	}
 	got, err := idx.Retrieve(1)
@@ -142,7 +142,7 @@ func TestRPTreeIndexUpdateAndDelete(t *testing.T) {
 		t.Errorf("Retrieve(1) after update = (%v, %v), want vector starting with 9", got, err)
 	}
 
-	if err := idx.Update(99, containers.NewVector([]float64{0, 0})); !errors.Is(err, index.ErrIndexNotFound) {
+	if err := idx.Update(99, containers.NewVector[int]([]float64{0, 0})); !errors.Is(err, index.ErrIndexNotFound) {
 		t.Errorf("Update on missing key = %v, want ErrIndexNotFound", err)
 	}
 
@@ -165,17 +165,17 @@ func TestRPTreeIndexUpdateAndDelete(t *testing.T) {
 // filtered out of Search results by the vectors ground truth.
 func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 3, 2)
-	if err := idx.Insert(1, containers.NewVector([]float64{0, 0})); err != nil {
+	if err := idx.Insert(1, containers.NewVector[int]([]float64{0, 0})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
-	if err := idx.Insert(2, containers.NewVector([]float64{0.1, 0.1})); err != nil {
+	if err := idx.Insert(2, containers.NewVector[int]([]float64{0.1, 0.1})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
 	if err := idx.Delete(1); err != nil {
 		t.Fatalf("Delete = %v, want nil", err)
 	}
 
-	got, _, err := idx.Search(containers.NewVector([]float64{0, 0}), 5)
+	got, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), 5)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -228,7 +228,7 @@ func TestRPTreeIndexSize(t *testing.T) {
 		t.Errorf("Size() on empty index = %d, want 0", got)
 	}
 	for i := 0; i < 100; i++ {
-		if err := idx.Insert(i, containers.NewVector([]float64{1, 2, 3})); err != nil {
+		if err := idx.Insert(i, containers.NewVector[int]([]float64{1, 2, 3})); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", i, err)
 		}
 	}
@@ -254,7 +254,7 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 	idx := index.NewRPTreeIndex[int, P](2, 2, 5, 7, 2)
 
 	for i := 1; i <= 10; i++ {
-		if err := idx.Insert(i, containers.NewVector([]P{P(i), 0})); err != nil {
+		if err := idx.Insert(i, containers.NewVector[int]([]P{P(i), 0})); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", i, err)
 		}
 	}
@@ -262,7 +262,7 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 		t.Fatalf("Count() = %d, want %d", got, want)
 	}
 
-	query := containers.NewVector([]P{0, 0})
+	query := containers.NewVector[int]([]P{0, 0})
 
 	// Full search returns every key, nearest first: 1, 2, ..., 10.
 	got, scores, err := idx.Search(query, 10)
@@ -315,13 +315,13 @@ func nearestKeys[P float32 | float64](pts [][]int, query []int, k int) []int {
 		for d, v := range p {
 			vec[d] = P(v)
 		}
-		_ = idx.Insert(i, containers.NewVector(vec))
+		_ = idx.Insert(i, containers.NewVector[int](vec))
 	}
 	q := make([]P, len(query))
 	for d, v := range query {
 		q[d] = P(v)
 	}
-	keys, _, _ := idx.Search(containers.NewVector(q), k)
+	keys, _, _ := idx.Search(containers.NewVector[int](q), k)
 	return keys
 }
 
@@ -352,7 +352,7 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2)
 
 	const n = 20
-	vecs := make([]containers.Vector[float64], n)
+	vecs := make([]containers.Vector[int, float64], n)
 	for i := 0; i < n; i++ {
 		vecs[i] = randVector(rng, 3)
 		if err := idx.Insert(i, vecs[i]); err != nil {

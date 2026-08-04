@@ -50,8 +50,8 @@ var _ VectorIndex[int, float64] = (*RPTreeIndex[int, float64])(nil)
 // deletes are bounded by an automatic Flush once the forest holds more than
 // flushFactor entries per live vector. It implements VectorIndex.
 type RPTreeIndex[K comparable, P float32 | float64] struct {
-	forest  []*trees.RPTree[K, containers.Vector[P], P]
-	vectors map[K]containers.Vector[P] // live vectors; source of truth
+	forest  []*trees.RPTree[K, containers.Vector[K, P], P]
+	vectors map[K]containers.Vector[K, P] // live vectors; source of truth
 
 	dim, projDim, numTrees int
 	seed                   uint64
@@ -76,7 +76,7 @@ func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees in
 		flushFactor = config.DefaultFlushFactor
 	}
 	idx := &RPTreeIndex[K, P]{
-		vectors:     make(map[K]containers.Vector[P]),
+		vectors:     make(map[K]containers.Vector[K, P]),
 		dim:         dim,
 		projDim:     projDim,
 		numTrees:    numTrees,
@@ -90,10 +90,10 @@ func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees in
 }
 
 // newForest builds numTrees empty RPTrees for the current dimensionality.
-func (idx *RPTreeIndex[K, P]) newForest() []*trees.RPTree[K, containers.Vector[P], P] {
-	forest := make([]*trees.RPTree[K, containers.Vector[P], P], idx.numTrees)
+func (idx *RPTreeIndex[K, P]) newForest() []*trees.RPTree[K, containers.Vector[K, P], P] {
+	forest := make([]*trees.RPTree[K, containers.Vector[K, P], P], idx.numTrees)
 	for i := range forest {
-		forest[i] = trees.NewRPTree[K, containers.Vector[P], P](idx.dim, idx.projDim, idx.seed+uint64(i))
+		forest[i] = trees.NewRPTree[K, containers.Vector[K, P], P](idx.dim, idx.projDim, idx.seed+uint64(i))
 	}
 	return forest
 }
@@ -104,7 +104,7 @@ func (idx *RPTreeIndex[K, P]) newForest() []*trees.RPTree[K, containers.Vector[P
 // growth. Inserting a different vector under an existing key replaces it in
 // the live map; the old forest copy becomes garbage that the next (automatic
 // or explicit) Flush discards.
-func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[P]) error {
+func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[K, P]) error {
 	if value.Dim() == 0 {
 		return ErrInvalidDimension
 	}
@@ -155,8 +155,8 @@ func (idx *RPTreeIndex[K, P]) maybeFlush() error {
 }
 
 // Vectors returns a copy of the live key -> vector mapping.
-func (idx *RPTreeIndex[K, P]) Vectors() map[K]containers.Vector[P] {
-	out := make(map[K]containers.Vector[P], len(idx.vectors))
+func (idx *RPTreeIndex[K, P]) Vectors() map[K]containers.Vector[K, P] {
+	out := make(map[K]containers.Vector[K, P], len(idx.vectors))
 	for k, v := range idx.vectors {
 		out[k] = v
 	}
@@ -164,16 +164,16 @@ func (idx *RPTreeIndex[K, P]) Vectors() map[K]containers.Vector[P] {
 }
 
 // Retrieve returns the vector stored under key.
-func (idx *RPTreeIndex[K, P]) Retrieve(key K) (containers.Vector[P], error) {
+func (idx *RPTreeIndex[K, P]) Retrieve(key K) (containers.Vector[K, P], error) {
 	v, ok := idx.vectors[key]
 	if !ok {
-		return containers.Vector[P]{}, ErrIndexNotFound
+		return containers.Vector[K, P]{}, ErrIndexNotFound
 	}
 	return v, nil
 }
 
 // Update replaces the vector stored under key.
-func (idx *RPTreeIndex[K, P]) Update(key K, value containers.Vector[P]) error {
+func (idx *RPTreeIndex[K, P]) Update(key K, value containers.Vector[K, P]) error {
 	if _, ok := idx.vectors[key]; !ok {
 		return ErrIndexNotFound
 	}
@@ -194,7 +194,7 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 // Search fans query out across the forest, pools the candidates, re-ranks them
 // by true distance and returns the keys of the k nearest vectors, nearest
 // first, together with their distances to the query.
-func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[P], k int) ([]K, []P, error) {
+func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K, []P, error) {
 	if len(idx.vectors) == 0 {
 		return nil, nil, ErrEmptyIndex
 	}
