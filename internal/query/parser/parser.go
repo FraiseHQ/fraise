@@ -118,7 +118,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
-			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
+			return nil, err
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
@@ -174,7 +174,10 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
-			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
+			// parseGraphSelector already returns a positioned parse error with a
+			// clear message; surface it as-is rather than re-wrapping (which lost
+			// the column and mangled the message via a bad %e verb).
+			return nil, err
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
@@ -313,11 +316,20 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	// Validate the full integer before narrowing to uint8. A blind uint8(i)
+	// wraps an out-of-range selector into a valid-looking graph (@256 -> 0,
+	// @300 -> 44), so it would silently execute against the wrong graph — a
+	// tenant-isolation break, since a graph is a user/session. Reject a
+	// non-integer or anything outside the uint8 range here; the handler still
+	// enforces the tighter [0, num-graphs) bound on what survives.
+	i, err := strconv.Atoi(tok.Literal)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(tok.Pos, "invalid graph selector %q: expected a whole number", tok.Literal)
+	}
+	if i < 0 || i > 255 {
+		return lexer.Token{}, 0, p.errf(tok.Pos, "graph selector %d out of range (0-255)", i)
+	}
 
-	// NOTE: probably not the safest way to do this (panic if you can't convert or casts anyway?).
-	// Maybe just store the graph id as a int and check that value doesn't exceed number of graphs
-	/// a bit awkwards but maybe better than having to do this.
 	return key, uint8(i), nil
 }
 

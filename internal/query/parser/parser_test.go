@@ -87,6 +87,36 @@ func TestRecallParserErrors(t *testing.T) {
 	}
 }
 
+// TestGraphSelectorRejectsOutOfRange checks that a selector which does not fit
+// in a uint8 is rejected at parse time rather than silently wrapped into a
+// valid-looking graph (@256 -> 0, @300 -> 44). Wrapping would route the query to
+// the wrong tenant's graph, so this must fail before execution. A non-integer
+// selector is likewise rejected. Applies to both recall and remember.
+func TestGraphSelectorRejectsOutOfRange(t *testing.T) {
+	queries := []string{
+		"recall@256 secret",
+		"recall@300 secret",
+		"recall@-1 secret",
+		"recall@abc secret",
+		"remember@256 'secret plan' topic:x",
+		"remember@300 'secret plan' topic:x",
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			if _, _, err := parser.Parse[uint64, float32](q); err == nil {
+				t.Errorf("Parse(%q) = nil error, want an out-of-range/parse error", q)
+			}
+		})
+	}
+
+	// A selector that fits in a uint8 still parses here; the tighter
+	// [0, num-graphs) bound is the handler's job, not the parser's.
+	if _, _, err := parser.Parse[uint64, float32]("recall@255 secret"); err != nil {
+		t.Errorf("Parse(recall@255 …) returned error: %v, want nil", err)
+	}
+}
+
 // TestRememberPhrase covers the opaque single-quoted phrase: reserved words and
 // symbols (: ' $ @ ( )) inside it are stored verbatim, and a doubled quote (”)
 // is an escaped apostrophe. These are the cases from the phrase-storage bug
