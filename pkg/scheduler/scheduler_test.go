@@ -246,6 +246,19 @@ func TestStopDrainsBufferedWrite(t *testing.T) {
 	if stream.Err != nil {
 		t.Errorf("stream.Err = %v, want nil", stream.Err)
 	}
+
+	// The write must have landed in the live graph — commits are in place, so
+	// a fact that only ever reached a discarded staging copy is a regression.
+	g, err := s.DB.Select(0)
+	if err != nil {
+		t.Fatalf("Select(0) returned error: %v", err)
+	}
+	g.RLock()
+	nodes := g.Stats().Nodes
+	g.RUnlock()
+	if nodes == 0 {
+		t.Error("committed write left the live graph empty, want the fact stored in place")
+	}
 }
 
 // TestConcurrentSubmitStop is a race-detector guard: many submits racing a Stop

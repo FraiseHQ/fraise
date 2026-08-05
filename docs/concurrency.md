@@ -50,7 +50,7 @@ Queue (buffered channel)
      ↓
 Workers (pool of goroutines)
      ↓
-execute(stream) → Stage → Commit/Rollback
+execute(stream) → Acquire lock → Commit in place
 ```
 
 ### Configuration
@@ -100,8 +100,15 @@ func (s *Scheduler) worker() {
 The `execute()` method:
 
 1. **Selects the graph**: `DB.Select(stream.Query.GetGraphID())`
-2. **Stages the changes**: `stream.Stage(g)` — prepares mutations without committing
-3. **Commits or rolls back**: `stream.Commit(g)` or `stream.Rollback(g)` — finalizes or discards
+2. **Acquires the graph's lock**: `stream.Acquire(g)` — the write lock for
+   writes, a read lock for reads
+3. **Commits in place**: `stream.Commit(g)` — reads run the search against the
+   live graph; writes mutate it directly under the exclusive lock, costing
+   O(fact + incremental index updates) regardless of graph size. The lock is
+   already exclusive, so no staging copy is needed: nothing can observe
+   intermediate state. On error the stream records it and completes; the one
+   realistic write failure (vector-dimension mismatch) is checked before any
+   mutation, leaving the graph untouched.
 
 ## Locking Strategy
 
@@ -204,7 +211,9 @@ Writes serialize on graph 0's lock
 
 1. **Distribute data**: Use multiple graphs; partition by agent, conversation, or domain
 2. **Batch reads**: Use `RLock()` to read multiple entities in one critical section
-3. **Minimize lock hold time**: Stage mutations outside the lock where possible
+3. **Minimize lock hold time**: writes commit in place, so lock hold time is
+   proportional to the fact being written — keep facts small rather than
+   batching many into one stream
 4. **Monitor queue depth**: If the queue fills up, consider increasing `BufferSize` or `Workers`
 
 ## Future Considerations
