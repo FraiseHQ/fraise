@@ -89,6 +89,77 @@ func TestLRUCache_Update(t *testing.T) {
 	}
 }
 
+// TestLRUCache_ResizeShrink is the regression guard for the no-op-shrink bug:
+// Resize(smaller) must evict immediately, dropping least-recently-used entries
+// first, not defer eviction to later Puts.
+func TestLRUCache_ResizeShrink(t *testing.T) {
+	c, _ := cache.NewLRUCache[int, int](10)
+	for i := 0; i < 10; i++ {
+		c.Put(i, i) // 0 is now least-recently-used, 9 most-recently-used
+	}
+
+	evicted, err := c.Resize(3)
+	if err != nil {
+		t.Fatalf("Resize returned error: %v", err)
+	}
+	if evicted != 7 {
+		t.Errorf("Resize evicted %d, want 7", evicted)
+	}
+	if got := c.Len(); got != 3 {
+		t.Fatalf("Len() after Resize(3) = %d, want 3", got)
+	}
+	if got := c.Capacity(); got != 3 {
+		t.Errorf("Capacity() after Resize(3) = %d, want 3", got)
+	}
+
+	// The 3 most-recently-used survive; the 7 oldest are gone.
+	for i := 0; i < 7; i++ {
+		if _, ok := c.Get(i); ok {
+			t.Errorf("key %d should have been evicted", i)
+		}
+	}
+	for i := 7; i < 10; i++ {
+		if _, ok := c.Get(i); !ok {
+			t.Errorf("key %d should have survived", i)
+		}
+	}
+}
+
+// TestLRUCache_ResizeGrow checks the grow path keeps every entry and lets the
+// cache hold more before evicting.
+func TestLRUCache_ResizeGrow(t *testing.T) {
+	c, _ := cache.NewLRUCache[int, int](2)
+	c.Put(1, 1)
+	c.Put(2, 2)
+
+	if evicted, err := c.Resize(4); err != nil || evicted != 0 {
+		t.Fatalf("Resize(4) = (%d, %v), want (0, nil)", evicted, err)
+	}
+	c.Put(3, 3)
+	c.Put(4, 4) // still within the grown capacity, nothing evicted
+	if got := c.Len(); got != 4 {
+		t.Fatalf("Len() = %d, want 4", got)
+	}
+	for i := 1; i <= 4; i++ {
+		if _, ok := c.Get(i); !ok {
+			t.Errorf("key %d should be present after growing", i)
+		}
+	}
+}
+
+// TestLRUCache_ResizeInvalid checks a non-positive capacity is rejected and the
+// cache is left unchanged.
+func TestLRUCache_ResizeInvalid(t *testing.T) {
+	c, _ := cache.NewLRUCache[int, int](2)
+	c.Put(1, 1)
+	if _, err := c.Resize(0); err == nil {
+		t.Error("Resize(0) = nil error, want ErrCacheCapacity")
+	}
+	if got := c.Capacity(); got != 2 {
+		t.Errorf("Capacity() after rejected Resize = %d, want 2", got)
+	}
+}
+
 func TestLRUCache_Concurrent(t *testing.T) {
 	c, _ := cache.NewLRUCache[string, int](100)
 	done := make(chan struct{})
