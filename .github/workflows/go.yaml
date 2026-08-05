@@ -99,11 +99,25 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Resolve previous release tag
+        id: prevtag
+        run: |
+          # The immediately-preceding v* tag by commit ancestry, prereleases
+          # included, so a prerelease's notes show only its delta rather than
+          # every change since the first commit. --match 'v*' keeps this on the
+          # server line (ignores python/v*). Empty on the very first tag, which
+          # lets the builder fall back to the repo start.
+          prev=$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
+          echo "from=$prev" >> "$GITHUB_OUTPUT"
+
       - name: Build changelog
         id: changelog
         uses: mikepenz/release-changelog-builder-action@v5
         with:
           configuration: .github/changelog-config-server.json
+          # Explicit fromTag: don't rely on semver auto-resolution, which skips
+          # prereleases and spans back to the first commit (see prevtag above).
+          fromTag: ${{ steps.prevtag.outputs.from }}
           toTag: ${{ github.ref_name }}
           # HYBRID also lists direct-to-main commits (no PR) as uncategorized
           # entries instead of dropping them.
