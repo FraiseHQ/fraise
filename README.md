@@ -17,9 +17,9 @@
 <p align="center">
   <a href="https://github.com/RonsenbergVI/fraise/actions/workflows/go.yaml"><img src="https://github.com/RonsenbergVI/fraise/actions/workflows/go.yaml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/RonsenbergVI/fraise"><img src="https://codecov.io/gh/RonsenbergVI/fraise/branch/main/graph/badge.svg" alt="codecov"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/RonsenbergVI/fraise"><img src="https://api.scorecard.dev/projects/github.com/RonsenbergVI/fraise/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://github.com/RonsenbergVI/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/RonsenbergVI/fraise?sort=semver" alt="Release"></a>
   <a href="https://pkg.go.dev/github.com/RonsenbergVI/fraise"><img src="https://pkg.go.dev/badge/github.com/RonsenbergVI/fraise.svg" alt="Go Reference"></a>
-  <a href="https://goreportcard.com/report/github.com/RonsenbergVI/fraise"><img src="https://goreportcard.com/badge/github.com/RonsenbergVI/fraise" alt="Go Report Card"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://discord.gg/eHDFwnwHq"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
 </p>
