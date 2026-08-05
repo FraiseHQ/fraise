@@ -1,0 +1,10 @@
+{
+  // Typecheck the library and its tests together (no emit). The build config
+  // (tsconfig.json) restricts rootDir to src/; this widens it to cover test/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "test"]
+}

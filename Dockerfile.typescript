@@ -1,0 +1,23 @@
+# TypeScript SDK integration tests: builds the SDK, then runs vitest against the
+# `fraise` service over the compose network. The test project depends on the SDK
+# via a file: reference (../../../sdk/typescript), so the repo layout is kept.
+FROM node:22-slim
+
+# CI=true keeps pnpm non-interactive (no "reinstall node_modules?" prompt that
+# would hang the build) and silences the update notifier.
+ENV CI=true
+
+RUN corepack enable
+
+WORKDIR /app
+
+# Build the SDK first so the file: dependency resolves to its dist/ output.
+COPY sdk/typescript/ ./sdk/typescript/
+RUN cd sdk/typescript && pnpm install --frozen-lockfile && pnpm run build
+
+COPY tests/integration/typescript/ ./tests/integration/typescript/
+# No committed lockfile for the throwaway test project, so opt out of the
+# frozen default that CI=true turns on.
+RUN cd tests/integration/typescript && pnpm install --no-frozen-lockfile
+
+# Runner command lives in docker-compose.tests.yaml (typescript-sdk-integration-tests service).

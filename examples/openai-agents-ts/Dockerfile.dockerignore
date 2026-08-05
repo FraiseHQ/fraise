@@ -1,0 +1,24 @@
+# Ignore-file for this example's image build (build context is the repo root).
+# BuildKit uses this in place of the repo-root .dockerignore. Keep sdk/typescript
+# (its sources + lockfile) and this example; drop everything else — and always
+# drop any host-built node_modules/dist so the image builds them fresh.
+.git
+.claude
+**/node_modules
+**/dist
+internal
+pkg
+cmd
+go.mod
+go.sum
+coverage.out
+coverage.html
+coverage.txt
+docs
+assets
+tests
+sdk/python
+examples/openai-agents
+examples/claude-agent-sdk
+Dockerfile*
+docker-compose*

@@ -1,0 +1,15 @@
+{
+  "name": "fraise-example-openai-agents-ts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenAI Agents (TypeScript) agent backed by Fraise memory",
+  "scripts": {
+    "start": "node --experimental-strip-types agent.ts"
+  },
+  "dependencies": {
+    "@openai/agents": "^0.14.1",
+    "openai": "^7.1.0",
+    "zod": "^4.4.3"
+  }
+}
