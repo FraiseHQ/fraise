@@ -23,6 +23,8 @@
 package engine_test
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
@@ -30,6 +32,7 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/pkg/db"
 	"github.com/RonsenbergVI/fraise/pkg/engine"
+	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 )
 
 // newEngine builds an engine wired to a started store, mirroring how the server
@@ -67,11 +70,55 @@ func TestNewEngine(t *testing.T) {
 func TestStartInitialisesCache(t *testing.T) {
 	cfg := config.New()
 	e := newEngine(t, cfg)
-	e.Start()
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
 	defer e.Stop()
 
 	if e.Cache == nil {
 		t.Fatal("Start did not initialise the cache")
+	}
+}
+
+// TestStartReturnsCacheError checks that a cache-init failure is propagated
+// rather than swallowed, and that no unusable cache is left behind — so a caller
+// never brings up a live server backed by a nil cache.
+func TestStartReturnsCacheError(t *testing.T) {
+	cfg := config.New()
+	cfg.Engine.CacheCapacity = 0 // NewLRUCache rejects a non-positive capacity
+	e := newEngine(t, cfg)
+
+	if err := e.Start(); !errors.Is(err, engine.ErrCacheInit) {
+		t.Fatalf("Start with zero cache capacity = %v, want ErrCacheInit", err)
+	}
+	if e.Cache != nil {
+		t.Error("Start assigned a cache despite the init failure")
+	}
+}
+
+// TestApplyAfterStopReturnsShutdown checks that Apply surfaces the scheduler's
+// ErrShutdown once the engine has stopped, so a handler learns the stream was
+// never enqueued and does not wait on a completion that will never come.
+func TestApplyAfterStopReturnsShutdown(t *testing.T) {
+	cfg := config.New()
+	e := newEngine(t, cfg)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+
+	q, err := query.Parse[uint64, float32]("recall@0 anna", nil, cfg)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	stream, err := e.Plan(q)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+
+	e.Stop()
+
+	if err := e.Apply(context.Background(), stream); !errors.Is(err, scheduler.ErrShutdown) {
+		t.Fatalf("Apply after Stop = %v, want ErrShutdown", err)
 	}
 }
 
@@ -80,7 +127,9 @@ func TestStartInitialisesCache(t *testing.T) {
 func TestPlanReturnsStream(t *testing.T) {
 	cfg := config.New()
 	e := newEngine(t, cfg)
-	e.Start()
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
 	defer e.Stop()
 
 	q, err := query.Parse[uint64, float32]("recall@0 anna", nil, cfg)
@@ -103,7 +152,9 @@ func TestPlanReturnsStream(t *testing.T) {
 func TestPlanCachesQuery(t *testing.T) {
 	cfg := config.New()
 	e := newEngine(t, cfg)
-	e.Start()
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
 	defer e.Stop()
 
 	q, err := query.Parse[uint64, float32]("recall@0 anna topic:color", nil, cfg)

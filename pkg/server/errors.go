@@ -30,6 +30,9 @@ var (
 	ErrUnableToStartDatabase = errors.New("server: error while attempting to start database")
 	// ErrUnableToStartEngine is returned when the query engine fails to start.
 	ErrUnableToStartEngine = errors.New("server: error while attempting to start engine")
+	// ErrUnableToServe is returned when the HTTP server fails for a reason other
+	// than a clean shutdown (e.g. the port is already in use).
+	ErrUnableToServe = errors.New("server: error while serving HTTP")
 	// ErrUnableToStopDatabase is returned when the database fails to stop.
 	ErrUnableToStopDatabase = errors.New("server: error while attempting to stop database")
 	// ErrUnableToStopEngine is returned when the query engine fails to stop.

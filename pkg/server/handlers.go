@@ -30,6 +30,7 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,7 +48,8 @@ func errorToResponse(err error) (int, string) {
 	case errors.As(err, &perr):
 		return http.StatusBadRequest, perr.Error()
 	case errors.Is(err, query.ErrParsingFailed),
-		errors.Is(err, query.ErrMissingParameter):
+		errors.Is(err, query.ErrMissingParameter),
+		errors.Is(err, query.ErrLimitExceeded):
 		return http.StatusBadRequest, err.Error()
 	default:
 		return http.StatusInternalServerError, "internal server error"
@@ -125,8 +127,20 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 		logger.Debug("Query planned, dispatching to engine",
 			"graph", q.GetGraphID(), "write", q.IsWrite())
 
-		// Execute the plan asynchronously against the engine.
-		s.Engine.Apply(stream)
+		// Execute the plan asynchronously against the engine. If it cannot be
+		// enqueued the stream never runs, so we must not wait on its completion.
+		if err := s.Engine.Apply(c.Request.Context(), stream); err != nil {
+			if errors.Is(err, scheduler.ErrShutdown) {
+				logger.Warn("Rejecting query, server shutting down", "query", req.Query)
+				c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "server shutting down"})
+				return
+			}
+			// The request context was cancelled (client gone or write timeout)
+			// before the stream could be enqueued; there is no live connection
+			// left to answer.
+			logger.Warn("Query not enqueued", "query", req.Query, "error", err)
+			return
+		}
 
 		// Wait for the stream to finish, then return results or the error.
 		// If the client goes away first, stop waiting.

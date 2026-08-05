@@ -159,3 +159,41 @@ func TestParseRecallMissingParameter(t *testing.T) {
 		t.Errorf("Parse(%q) = %v, want nil query", q, got)
 	}
 }
+
+// TestParseRejectsOverLimits checks that the configured ceilings are enforced at
+// parse time: a recall over the top/depth ceiling, or a bound vector longer than
+// the dimension ceiling, is rejected with ErrLimitExceeded and no query.
+func TestParseRejectsOverLimits(t *testing.T) {
+	cfg := config.New()
+	cfg.DB.MaxTop = 10
+	cfg.DB.MaxDepth = 2
+	cfg.DB.MaxVectorDimension = 3
+
+	cases := []struct {
+		name   string
+		query  string
+		params map[string][]float32
+	}{
+		{"top over ceiling", "recall@0 anna top:99", nil},
+		{"depth over ceiling", "recall@0 anna depth:9", nil},
+		{"recall vector too long", "recall@0 anna vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
+		{"remember vector too long", "remember@0 'a fact' vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := query.Parse[string, float32](tc.query, tc.params, cfg)
+			if !errors.Is(err, query.ErrLimitExceeded) {
+				t.Errorf("Parse(%q) err = %v, want ErrLimitExceeded", tc.query, err)
+			}
+			if got != nil {
+				t.Errorf("Parse(%q) = %v, want nil query", tc.query, got)
+			}
+		})
+	}
+
+	// A request within every ceiling still parses cleanly.
+	if _, err := query.Parse[string, float32]("recall@0 anna top:5 depth:1", nil, cfg); err != nil {
+		t.Errorf("within-limit recall returned error: %v", err)
+	}
+}
