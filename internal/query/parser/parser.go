@@ -264,7 +264,10 @@ func (p *parser[K, P]) parseDepth() (lexer.Token, int, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	i, err := strconv.Atoi(tok.Literal)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid depth value %q: expected a non-negative integer", tok.Literal)
+	}
 
 	return key, i, nil
 }
@@ -284,7 +287,10 @@ func (p *parser[K, P]) parseTop() (lexer.Token, int, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	i, err := strconv.Atoi(tok.Literal)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid top value %q: expected a non-negative integer", tok.Literal)
+	}
 
 	return key, i, nil
 }
@@ -301,7 +307,10 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	t, _ := containers.ParseTimeValue[K](tok.Literal)
+	t, err := containers.ParseTimeValue[K](tok.Literal)
+	if err != nil {
+		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "invalid %s value %q: expected a duration like 7d or a date like 2026-01-15", key.Literal, tok.Literal)
+	}
 
 	return key, t, nil
 }

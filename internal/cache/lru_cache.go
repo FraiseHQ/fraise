@@ -156,7 +156,8 @@ func (c *LRUCache[K, T]) Resize(capacity int) (int, error) {
 		c.items = n
 	// evict entries (reduce size)
 	case c.capacity > capacity:
-		for c.order.Len() > c.capacity {
+		// Evict down to the new capacity.
+		for c.order.Len() > capacity {
 			oldest := c.order.Back()
 			if oldest == nil {
 				break
