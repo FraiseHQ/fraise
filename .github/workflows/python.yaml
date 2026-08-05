@@ -1,0 +1,79 @@
+name: Python SDK
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "python/v[0-9]+.[0-9]+.[0-9]+"
+      - "python/v[0-9]+.[0-9]+.[0-9]+-*" # pre-releases: -alpha.N / -beta.N / -rc.N
+  pull_request:
+    paths:
+      - "sdk/python/**"
+      - ".github/workflows/python.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+
+  lint:
+    name: Lint Python SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+      - name: Lint
+        run: make lint-py
+
+  test:
+    name: Test Python SDK
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the latest version of uv and set the python version
+        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Test with python ${{ matrix.python }}
+        run: make test-py
+
+  publish-python:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/python/v')
+    needs: test
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write # PyPI trusted publishing — no token secret
+    defaults:
+      run:
+        working-directory: sdk/python
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+
+      - name: Version must match tag
+        run: |
+          RAW="${GITHUB_REF_NAME#python/v}"
+          if [[ ! "$RAW" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::bad tag '$GITHUB_REF_NAME' — expected python/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
+          fi
+          # Map the semver-style git tag to a PEP 440 version so it matches
+          # pyproject.toml: -alpha.N -> aN, -beta.N -> bN, -rc.N -> rcN.
+          TAG_VERSION=$(echo "$RAW" | sed -E 's/-alpha\./a/; s/-beta\./b/; s/-rc\./rc/')
+          PKG_VERSION=$(uv run python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          [ "$TAG_VERSION" = "$PKG_VERSION" ] || { echo "::error::tag maps to $TAG_VERSION != pyproject $PKG_VERSION"; exit 1; }
+
+      - name: Build
+        run: uv build
+
+      - name: Release
+        run: uv publish

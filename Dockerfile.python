@@ -1,0 +1,14 @@
+# Python SDK integration tests: installs the SDK from source and runs pytest
+# against the `fraise` service over the compose network.
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install the SDK from source (pulls its runtime deps, e.g. requests) plus
+# pytest. Copying only the SDK first keeps this layer cached across test edits.
+COPY sdk/python/ ./sdk/python/
+RUN pip install --no-cache-dir ./sdk/python pytest
+
+COPY tests/integration/python/ ./integration/
+
+# Runner command lives in docker-compose.tests.yaml (python-sdk-integration-tests service).

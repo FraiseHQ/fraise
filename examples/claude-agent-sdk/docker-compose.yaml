@@ -1,0 +1,34 @@
+name: fraise-example-claude-agent-sdk
+
+# Two services on one network: the Fraise server and the example agent that
+# talks to it. The agent waits until Fraise reports healthy before starting.
+#
+#   ANTHROPIC_API_KEY=sk-ant-... docker compose run --rm agent
+#
+services:
+  fraise:
+    build:
+      # Repo root: the fraise binary is built from the Go sources there.
+      context: ../..
+      dockerfile: Dockerfile.fraise
+    volumes:
+      - ./fraise.config.toml:/etc/fraise/fraise.config.toml:ro
+    command: ["-config", "/etc/fraise/fraise.config.toml"]
+    healthcheck:
+      # busybox wget ships in the alpine runtime image.
+      test: ["CMD", "wget", "-qO-", "http://localhost:9876/"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  agent:
+    build:
+      context: ../..
+      dockerfile: examples/claude-agent-sdk/Dockerfile
+    depends_on:
+      fraise:
+        condition: service_healthy
+    environment:
+      FRAISE_URL: http://fraise:9876
+      # Taken from your shell; the run fails fast if it is unset.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in your environment}
