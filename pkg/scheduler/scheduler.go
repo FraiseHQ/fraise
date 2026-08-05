@@ -23,6 +23,8 @@
 package scheduler
 
 import (
+	"context"
+	"fmt"
 	"sync"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
@@ -40,6 +42,17 @@ type Scheduler[K ~uint64, P float32 | float64] struct {
 	Queue  chan *query.Stream[K, P]
 	DB     *db.DB[K, P]
 
+	// quit is closed by Stop to signal shutdown. Workers drain the queue and
+	// exit when it closes; Submit selects on it to refuse new work. It is never
+	// the Queue channel itself, so Stop never closes a channel a Submit might
+	// still be sending on (which would panic).
+	quit chan struct{}
+
+	// mu guards the Queue/quit fields against the Stop that nils them, so a
+	// Submit racing Stop reads a consistent pair instead of a half-torn-down
+	// scheduler (a send on a nil channel would otherwise hang forever).
+	mu sync.RWMutex
+
 	writeInFlight bool
 	wg            sync.WaitGroup
 }
@@ -54,41 +67,115 @@ func NewScheduler[K ~uint64, P float32 | float64](config *config.ConfigSet) *Sch
 
 // Starts scheduler: allocates memory for queue and initializes workers
 func (s *Scheduler[K, P]) Start() error {
-	s.Queue = make(chan *query.Stream[K, P], s.Config.Scheduler.BufferSize)
+	s.mu.Lock()
+	queue := make(chan *query.Stream[K, P], s.Config.Scheduler.BufferSize)
+	quit := make(chan struct{})
+	s.Queue = queue
+	s.quit = quit
+	s.mu.Unlock()
+
 	for i := 0; i < s.Config.Scheduler.Workers; i++ {
 		s.wg.Add(1)
-		go s.worker()
+		go s.worker(queue, quit)
 	}
 	logger.Info("Scheduler started",
 		"workers", s.Config.Scheduler.Workers, "buffer", s.Config.Scheduler.BufferSize)
 	return nil
 }
 
-// Stops scheduler: frees resources and stops coroutines
+// Stops scheduler: signals shutdown, drains accepted work, and releases the
+// queue. It is idempotent and safe on a scheduler that never started. The queue
+// is never closed — shutdown is signalled by closing quit — so a Submit racing
+// Stop can never send on a closed channel.
 func (s *Scheduler[K, P]) Stop() {
-	if s.Queue != nil {
-		close(s.Queue)
-		s.wg.Wait()
-		s.Queue = nil
-		logger.Info("Scheduler stopped")
+	s.mu.Lock()
+	queue, quit := s.Queue, s.quit
+	if queue == nil {
+		s.mu.Unlock()
+		return
 	}
-}
+	// Refuse new work; unblock any Submit parked on a full queue.
+	close(quit)
+	s.mu.Unlock()
 
-// worker executes stream (read or write in database)
-func (s *Scheduler[K, P]) worker() {
-	defer s.wg.Done()
-	for stream := range s.Queue {
-		err := s.execute(stream)
-		if err != nil {
-			logger.Error("Failed to execute stream", "error", err)
+	// Workers drain what they can, then exit.
+	s.wg.Wait()
+
+	// Drain any straggler that a Submit raced into the buffer as quit closed:
+	// once the workers are gone this runs single-threaded, so an accepted write
+	// is executed rather than silently dropped.
+	for {
+		select {
+		case stream := <-queue:
+			if err := s.execute(stream); err != nil {
+				logger.Error("Failed to execute stream", "error", err)
+			}
+		default:
+			s.mu.Lock()
+			s.Queue = nil
+			s.quit = nil
+			s.mu.Unlock()
+			logger.Info("Scheduler stopped")
+			return
 		}
 	}
-
 }
 
-// Submits new stream in queue to be executed
-func (s *Scheduler[K, P]) Submit(stream *query.Stream[K, P]) {
-	s.Queue <- stream
+// worker executes streams (read or write) until shutdown. On quit it drains the
+// streams already buffered before returning, so work accepted by Submit is not
+// lost to a graceful Stop.
+func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struct{}) {
+	defer s.wg.Done()
+	for {
+		select {
+		case stream := <-queue:
+			if err := s.execute(stream); err != nil {
+				logger.Error("Failed to execute stream", "error", err)
+			}
+		case <-quit:
+			for {
+				select {
+				case stream := <-queue:
+					if err := s.execute(stream); err != nil {
+						logger.Error("Failed to execute stream", "error", err)
+					}
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+// Submit enqueues a stream for execution. It is bounded and context-aware: it
+// blocks only until the queue has room, the context is cancelled, or the
+// scheduler shuts down. It returns ErrShutdown if the scheduler is not running
+// (never started, or stopped), so a caller is never left blocked on a full,
+// nil, or closed queue.
+func (s *Scheduler[K, P]) Submit(ctx context.Context, stream *query.Stream[K, P]) error {
+	s.mu.RLock()
+	queue, quit := s.Queue, s.quit
+	s.mu.RUnlock()
+
+	if queue == nil {
+		return ErrShutdown
+	}
+
+	// Fast path: already shutting down, refuse before parking on the queue.
+	select {
+	case <-quit:
+		return ErrShutdown
+	default:
+	}
+
+	select {
+	case queue <- stream:
+		return nil
+	case <-quit:
+		return ErrShutdown
+	case <-ctx.Done():
+		return fmt.Errorf("%w: %w", ErrEnqueueStream, ctx.Err())
+	}
 }
 
 // Executes stream
