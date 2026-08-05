@@ -491,8 +491,16 @@ func (g *InMemoryGraph[K, P]) matchesFilter(key K, values []string) bool {
 }
 
 // timeFilter drops nodes outside [since, until) — either bound is unbounded
-// when zero — and materialises the survivors alongside their scores.
+// when zero — and materialises the survivors alongside their scores, decayed
+// by recency: a fact's score is multiplied by 0.5^(age/half-life), so of two
+// equally relevant facts the more recent one outranks the older ("recent
+// memories outrank older ones"). The half-life comes from Engine.Halflife; a
+// non-positive value disables decay. A timestamp in the future decays as age
+// zero — recency never boosts a score above its relevance.
 func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Time, until time.Time) ([]*Node[K], []P) {
+	now := time.Now()
+	halflife := g.config.Engine.Halflife
+
 	nodes := make([]*Node[K], 0, len(keys))
 	ranked := make([]P, 0, len(keys))
 	for _, key := range keys {
@@ -513,8 +521,15 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 		if !until.IsZero() && !ts.Before(until) {
 			continue
 		}
+
+		score := scores[key]
+		if halflife > 0 {
+			if age := now.Sub(ts); age > 0 {
+				score *= P(math.Pow(0.5, age.Seconds()/halflife.Seconds()))
+			}
+		}
 		nodes = append(nodes, &node)
-		ranked = append(ranked, scores[key])
+		ranked = append(ranked, score)
 	}
 	return nodes, ranked
 }
