@@ -28,4 +28,7 @@ var (
 	// ErrQueryPlan is returned when the engine cannot build an execution plan
 	// for a query.
 	ErrQueryPlan = errors.New("engine: query plan failed")
+	// ErrCacheInit is returned when the query plan cache cannot be allocated at
+	// startup; the engine has no usable cache and must not be considered started.
+	ErrCacheInit = errors.New("engine: cache initialisation failed")
 )

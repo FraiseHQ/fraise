@@ -23,8 +23,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/hash"
@@ -34,14 +37,22 @@ import (
 
 func PrintBanner() {
 	fmt.Print(`
+
 	██████ ▄▄▄▄   ▄▄▄  ▄▄  ▄▄▄▄ ▄▄▄▄▄
 	██▄▄   ██▄█▄ ██▀██ ██ ███▄▄ ██▄▄
 	██     ██ ██ ██▀██ ██ ▄▄██▀ ██▄▄▄
+
 	`)
 }
 
 func main() {
 	PrintBanner()
+
+	// A context cancelled on SIGINT/SIGTERM drives graceful shutdown: an
+	// operator's `docker stop`/Ctrl-C lets in-flight writes finish instead of
+	// being dropped. stop restores default signal handling on return.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	c := config.New()
 	cfgErr := c.Parse(os.Args[1:]) // load config file, then override via CLI flags
@@ -63,13 +74,13 @@ func main() {
 	switch c.DB.Precision {
 	case "float32":
 		logger.Info("Using single precision", "precision", "float32")
-		err = runServer[float32](c)
+		err = runServer[float32](ctx, c)
 	case "float64":
 		logger.Info("Using double precision", "precision", "float64")
-		err = runServer[float64](c)
+		err = runServer[float64](ctx, c)
 	default:
 		logger.Warn("Unknown precision, falling back to float64", "precision", c.DB.Precision)
-		err = runServer[float64](c)
+		err = runServer[float64](ctx, c)
 	}
 
 	if err != nil {
@@ -78,11 +89,13 @@ func main() {
 }
 
 // run builds a server at the requested floating-point precision and starts it.
-// K is fixed to uint64 (the hasher's key type); only P varies with config.
-func runServer[P float32 | float64](c *config.ConfigSet) error {
+// K is fixed to uint64 (the hasher's key type); only P varies with config. The
+// context drives graceful shutdown: Start returns once it is cancelled and the
+// stack has drained.
+func runServer[P float32 | float64](ctx context.Context, c *config.ConfigSet) error {
 	srv, err := server.New[uint64, P](c, hash.NewHasher[uint64](c))
 	if err != nil {
 		return err
 	}
-	return srv.Start()
+	return srv.Start(ctx)
 }

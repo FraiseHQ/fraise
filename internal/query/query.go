@@ -79,10 +79,18 @@ func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func bindVector[P float32 | float64](params map[string][]P, name string) ([]P, error) {
+// bindVector resolves a vector placeholder to its data, enforcing both that the
+// parameter was supplied and that its dimension is within maxDim. A missing
+// parameter is ErrMissingParameter; an over-long vector is ErrLimitExceeded —
+// both are client errors surfaced as 400, and both are bounded here so a huge
+// vector never reaches the index.
+func bindVector[P float32 | float64](params map[string][]P, name string, maxDim int) ([]P, error) {
 	data, provided := params[name]
 	if !provided {
 		return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
+	}
+	if len(data) > maxDim {
+		return nil, fmt.Errorf("%w: vector $%s has %d dimensions, max %d", ErrLimitExceeded, name, len(data), maxDim)
 	}
 	return data, nil
 }
@@ -109,12 +117,13 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		}
 		qo.SetGraphID(n.Selector())
 
-		// Bind the vector placeholder (if any) from the request parameters.
+		// Bind the vector placeholder (if any) from the request parameters,
+		// rejecting a missing or over-long vector.
 		if name, ok := n.VecParam(); ok {
-			data, err := bindVector(params, name)
+			data, err := bindVector(params, name, c.DB.MaxVectorDimension)
 			if err != nil {
-				logger.Warn("Missing vector parameter for remember", "parameter", name)
-				return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
+				logger.Warn("Rejecting vector parameter for remember", "parameter", name, "error", err)
+				return nil, err
 			}
 			qo.Vector = containers.NewVector[K](data)
 		}
@@ -123,22 +132,40 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		return qo, nil
 
 	case *parser.RecallCommandNode[K, P]:
+		// Enforce the top/depth ceilings before building the query: a
+		// client-supplied result count or walk depth over its ceiling is a
+		// client error, rejected here rather than clamped. Only an explicit
+		// clause is checked — the configured default is operator-set and trusted,
+		// so an unspecified top/depth is never rejected even if the default
+		// itself exceeds the ceiling.
+		top := n.Top(c.DB.DefaultTop)
+		if n.HasTop() && top > c.DB.MaxTop {
+			logger.Warn("Rejecting recall over top ceiling", "top", top, "max", c.DB.MaxTop)
+			return nil, fmt.Errorf("%w: top:%d exceeds max %d", ErrLimitExceeded, top, c.DB.MaxTop)
+		}
+		depth := n.Depth(c.DB.DefaultDepth)
+		if n.HasDepth() && depth > c.DB.MaxDepth {
+			logger.Warn("Rejecting recall over depth ceiling", "depth", depth, "max", c.DB.MaxDepth)
+			return nil, fmt.Errorf("%w: depth:%d exceeds max %d", ErrLimitExceeded, depth, c.DB.MaxDepth)
+		}
+
 		qo := &Recall[K, P]{
 			Keywords: n.Terms(),
 			Entities: n.Entities(),
 			Topics:   n.Topics(),
 			Parameters: QueryParameters[K]{
-				Top: n.Top(c.DB.DefaultTop), Depth: n.Depth(c.DB.DefaultDepth), Since: n.Since(), Until: n.Until(),
+				Top: top, Depth: depth, Since: n.Since(), Until: n.Until(),
 			},
 		}
 		qo.SetGraphID(n.Selector())
 
-		// Bind the vector placeholder (if any) from the request parameters.
+		// Bind the vector placeholder (if any) from the request parameters,
+		// rejecting a missing or over-long vector.
 		if name, ok := n.VecParam(); ok {
-			data, err := bindVector(params, name)
+			data, err := bindVector(params, name, c.DB.MaxVectorDimension)
 			if err != nil {
-				logger.Warn("Missing vector parameter for recall", "parameter", name)
-				return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
+				logger.Warn("Rejecting vector parameter for recall", "parameter", name, "error", err)
+				return nil, err
 			}
 			qo.Vector = containers.NewVector[K](data)
 		}

@@ -37,4 +37,9 @@ var (
 	// ErrMissingParameter is returned when a query references a placeholder
 	// (e.g. vec:$v) that has no matching entry in the supplied parameters.
 	ErrMissingParameter = errors.New("query: missing parameter")
+	// ErrLimitExceeded is returned when a query asks for more than a configured
+	// ceiling allows (top:, depth:, or the length of a bound vector). It is a
+	// client error: the request is rejected rather than clamped, so the caller
+	// learns their bound was too high.
+	ErrLimitExceeded = errors.New("query: request limit exceeded")
 )
