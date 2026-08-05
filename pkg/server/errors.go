@@ -27,13 +27,13 @@ import "errors"
 // Sentinel errors returned by the server when a component fails to start or stop.
 var (
 	// ErrUnableToStartDatabase is returned when the database fails to start.
-	ErrUnableToStartDatabase = errors.New("Error while attempting to start database.")
+	ErrUnableToStartDatabase = errors.New("server: error while attempting to start database")
 	// ErrUnableToStartEngine is returned when the query engine fails to start.
-	ErrUnableToStartEngine = errors.New("Error while attempting to start engine.")
+	ErrUnableToStartEngine = errors.New("server: error while attempting to start engine")
 	// ErrUnableToStopDatabase is returned when the database fails to stop.
-	ErrUnableToStopDatabase = errors.New("Error while attempting to stop database.")
+	ErrUnableToStopDatabase = errors.New("server: error while attempting to stop database")
 	// ErrUnableToStopEngine is returned when the query engine fails to stop.
-	ErrUnableToStopEngine = errors.New("Error while attempting to stop engine.")
+	ErrUnableToStopEngine = errors.New("server: error while attempting to stop engine")
 	// ErrUnableToStartScheduler is returned when the scheduler fails to start.
-	ErrUnableToStartScheduler = errors.New("Error while attempting to start scheduler")
+	ErrUnableToStartScheduler = errors.New("server: error while attempting to start scheduler")
 )

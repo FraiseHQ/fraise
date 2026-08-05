@@ -26,7 +26,9 @@ import "github.com/RonsenbergVI/fraise/internal/hash"
 
 // Point represents a value in a P-dimensional space (with P being float32 or
 // float64) that spatial trees can index and query.
-type Point[P float32 | float64] interface {
+type Point[K comparable, P float32 | float64] interface {
+	hash.Hashable[K, string]
+
 	// Dim reports the number of dimensions of the point.
 	Dim() int
 
@@ -34,11 +36,13 @@ type Point[P float32 | float64] interface {
 	GetValue(dim int) P
 
 	// Distance returns the distance between this point and p.
-	Distance(p Point[P]) P
+	Distance(p Point[K, P]) P
 
 	// PlaneDistance returns the distance from the point to the axis-aligned
 	// hyperplane at coordinate val along the given dimension.
 	PlaneDistance(val P, dim int) P
+
+	Key() K
 }
 
 // TreeNode is a single element stored in a Tree. Every node is Hashable, so it
@@ -59,7 +63,7 @@ type TreeNode[K comparable, T any, P float32 | float64] interface {
 
 	// Point returns the spatial coordinates of the node. Non-spatial trees
 	// (BTree, HTree) may return nil.
-	Point() Point[P]
+	Point() Point[K, P]
 }
 
 // Tree is the contract shared by every tree container in this package (BTree,
@@ -88,7 +92,7 @@ type OrderedTree[K comparable, T any, P float32 | float64] interface {
 	// Find locates key in the tree. When exact is true only an exact match is
 	// reported; otherwise the closest node is returned. It reports the depth at
 	// which the node was found, the node itself and the search path taken.
-	Find(key K, exact bool) (int, TreeNode[K, T, P], []int)
+	Find(values []T, exact bool, depth int) (int, []TreeNode[K, T, P], []int)
 
 	// Delete removes the node stored under key, reporting whether a node was
 	// removed.
@@ -103,11 +107,11 @@ type SpatialTree[K comparable, T any, P float32 | float64] interface {
 
 	// Nearest returns up to k nodes closest to p, ordered from nearest to
 	// farthest.
-	Nearest(p Point[P], k int) []TreeNode[K, T, P]
+	Nearest(p Point[K, P], k int) []TreeNode[K, T, P]
 
 	// Range returns every node whose Point falls within the axis-aligned box
 	// bounded by the min and max corners (inclusive).
-	Range(min, max Point[P]) []TreeNode[K, T, P]
+	Range(min, max Point[K, P]) []TreeNode[K, T, P]
 }
 
 // TreeIterator performs an ordered traversal over the nodes of a Tree.

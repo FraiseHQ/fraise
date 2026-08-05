@@ -15,6 +15,9 @@ This document describes how maintainers cut a release. The process is:
 ## Versioning
 
 - Semantic versioning with a `v` prefix: `vMAJOR.MINOR.PATCH` (e.g. `v0.1.0`).
+- Pre-releases use a dot-numbered suffix: `vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`, or
+  `vX.Y.Z-rc.N` (e.g. `v0.1.0-alpha.1`). These are the only suffix forms the
+  release workflows accept, and GoReleaser auto-marks them as pre-releases.
 - Pre-1.0: breaking changes bump MINOR, fixes bump PATCH.
 - The FQL surface is part of the public API — a breaking grammar change is a breaking release.
 
@@ -58,8 +61,8 @@ Pushing the tag **is** the trigger. The workflow fires automatically:
 
 > **One-time setup:** repo **Settings → Environments → New environment**
 > named `release`, enable **Required reviewers**, add the maintainers. Move
-> the `DISCORD_WEBHOOK_URL` secret into this environment for extra hygiene
-> (only approved runs can read it).
+> the `DISCORD_WEBHOOK_ID` / `DISCORD_WEBHOOK_TOKEN` secrets into this
+> environment for extra hygiene (only approved runs can read them).
 
 If the workflow fails before publishing, fix the problem on main, delete the
 tag (`git push origin :refs/tags/vX.Y.Z`), and re-tag.
@@ -208,5 +211,8 @@ mechanism — one process for everything.
 
 ## Secrets required (repo settings → Actions secrets)
 
-- `DISCORD_WEBHOOK_URL` *(or `SLACK_WEBHOOK_URL` — see `.goreleaser.yaml` announce section)*
+- `DISCORD_WEBHOOK_ID` and `DISCORD_WEBHOOK_TOKEN` — the two halves of a Discord
+  webhook URL (`https://discord.com/api/webhooks/<ID>/<TOKEN>`). GoReleaser's
+  Discord announcer reads these, not the full URL. *(For Slack instead, use
+  `SLACK_WEBHOOK_URL` — see the `.goreleaser.yaml` announce section.)*
 - `GITHUB_TOKEN` is provided automatically by Actions.

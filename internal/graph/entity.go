@@ -22,15 +22,19 @@
 
 package graph
 
-import "time"
+import (
+	"time"
+
+	"github.com/RonsenbergVI/fraise/internal/hash"
+)
 
 type Fact[K comparable] struct {
-	ID K
 	NodeAttributes
+	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
-func (f Fact[K]) GetID() K {
-	return f.ID
+func (f Fact[K]) Key() K {
+	return f.Hash(f.Hasher)
 }
 
 func (f Fact[K]) GetValue() string {
@@ -41,13 +45,22 @@ func (f Fact[K]) GetTimestamp() time.Time {
 	return f.Timestamp
 }
 
-type NamedEntity[K comparable] struct {
-	ID K
-	NodeAttributes
+func (f Fact[K]) GetAttributes() *NodeAttributes {
+	return &f.NodeAttributes
 }
 
-func (n NamedEntity[K]) GetID() K {
-	return n.ID
+func (f Fact[K]) Hash(h hash.Hasher[K, string]) K {
+	return h.Hash(f.Value)
+}
+
+type NamedEntity[K comparable] struct {
+	NodeAttributes
+
+	Hasher hash.Hasher[K, string] `json:"-"`
+}
+
+func (n NamedEntity[K]) Key() K {
+	return n.Hash(n.Hasher)
 }
 
 func (n NamedEntity[K]) GetValue() string {
@@ -58,13 +71,23 @@ func (n NamedEntity[K]) GetTimestamp() time.Time {
 	return n.Timestamp
 }
 
+func (n *NamedEntity[K]) GetAttributes() *NodeAttributes {
+	return &n.NodeAttributes
+}
+
+func (n NamedEntity[K]) Hash(h hash.Hasher[K, string]) K {
+	return h.Hash(n.Value)
+}
+
 type Topic[K comparable] struct {
 	ID K
 	NodeAttributes
+
+	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
-func (t Topic[K]) GetID() K {
-	return t.ID
+func (t Topic[K]) Key() K {
+	return t.Hash(t.Hasher)
 }
 
 func (t Topic[K]) GetValue() string {
@@ -73,4 +96,12 @@ func (t Topic[K]) GetValue() string {
 
 func (t Topic[K]) GetTimestamp() time.Time {
 	return t.Timestamp
+}
+
+func (t *Topic[K]) GetAttributes() *NodeAttributes {
+	return &t.NodeAttributes
+}
+
+func (t Topic[K]) Hash(h hash.Hasher[K, string]) K {
+	return h.Hash(t.Value)
 }

@@ -61,7 +61,7 @@ LDFLAGS        := -X 'main.Version=$(BUILD_VERSION)' \
                   -X 'main.BuildDate=$(BUILD_DATE)' \
                   -X 'main.Branch=$(BUILD_BRANCH)'
 
-.PHONY: help build test clean install dev fmt lint check all publish publish-py publish-npm
+.PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py publish-npm
 .DEFAULT_GOAL := help
 
 ##@ General
@@ -107,9 +107,8 @@ test-go: ## Run Go tests with verbose output
 
 coverage-go: ## Run Go tests with coverage report
 	@echo "$(CYAN)Running Go tests with coverage...$(RESET)"
-	$(GO_TEST) -v -race -coverprofile=coverage.out -covermode=atomic ./...
-	$(GO_CMD) tool cover -html=coverage.out -o coverage.html
-	@echo "$(GREEN)✓ Coverage report: coverage.html$(RESET)"
+	$(GO_TEST) -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+	@echo "$(GREEN)✓ Coverage report: coverage.txt$(RESET)"
 
 test-go-short: ## Run Go tests in short mode
 	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
@@ -118,6 +117,15 @@ test-go-short: ## Run Go tests in short mode
 test-go-bench: ## Run Go benchmarks
 	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
 	$(GO_TEST) -bench=. -benchmem ./...
+
+# Host port the e2e compose stack binds fraise to (override if 9876 is taken;
+# the tests themselves talk to fraise over the compose network, not this port)
+FRAISE_E2E_PORT ?= 9876
+
+test-e2e: ## Run end-to-end tests (python) as a docker compose service
+	@echo "$(CYAN)Running end-to-end tests with docker compose...$(RESET)"
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.e2e.yaml --profile e2e up --build --exit-code-from e2e --force-recreate --attach-dependencies; \
+	status=$$?; \
 
 test-ts: ## Run TypeScript tests
 	@echo "$(CYAN)Running TypeScript tests...$(RESET)"
@@ -174,20 +182,31 @@ fmt-py: ## Format Python code with ruff
 	@echo "$(CYAN)Formatting Python code...$(RESET)"
 	@cd $(PY_DIR) && $(UV_CMD) run ruff format 2>/dev/null || echo "$(YELLOW)⚠ Ruff not configured$(RESET)"
 
-lint: lint-go lint-ts lint-py ## Lint all code
+# All linting flows through pre-commit (config: .pre-commit-config.yaml) so local
+# and CI run identical hooks. Each target runs one slice; CI calls these directly.
+PRECOMMIT     := uvx pre-commit run --all-files --show-diff-on-failure
 
-lint-go: ## Lint Go code with vet and golangci-lint
+lint: ## Lint all code via pre-commit (every hook)
+	@echo "$(CYAN)Running pre-commit hooks on all files...$(RESET)"
+	@uvx pre-commit run --all-files
+
+lint-go: ## Lint Go via golangci-lint (pre-commit)
 	@echo "$(CYAN)Linting Go code...$(RESET)"
-	$(GO_VET) ./...
-	@which golangci-lint > /dev/null && golangci-lint run || echo "$(YELLOW)⚠ golangci-lint not installed, run 'make install-tools'$(RESET)"
+	@$(PRECOMMIT) golangci-lint-full
 
-lint-ts: ## Lint TypeScript code
+lint-ts: ## Lint TypeScript via biome (pre-commit)
 	@echo "$(CYAN)Linting TypeScript code...$(RESET)"
-	@cd $(TS_DIR) && $(NPM_CMD) run lint 2>/dev/null || echo "$(YELLOW)⚠ No TypeScript linter configured$(RESET)"
+	@$(PRECOMMIT) biome-check
 
-lint-py: ## Lint Python code with ruff
+lint-py: ## Lint Python via ruff + ty (pre-commit)
 	@echo "$(CYAN)Linting Python code...$(RESET)"
-	@cd $(PY_DIR) && $(UV_CMD) run ruff check 2>/dev/null || echo "$(YELLOW)⚠ Ruff not configured$(RESET)"
+	@$(PRECOMMIT) ruff
+	@$(PRECOMMIT) ruff-format
+	@$(PRECOMMIT) ty
+
+lint-docker: ## Lint Dockerfiles via hadolint (pre-commit)
+	@echo "$(CYAN)Linting Dockerfiles...$(RESET)"
+	@$(PRECOMMIT) hadolint-docker
 
 check: fmt lint test ## Format, lint, and test Go code
 	@echo "$(GREEN)✓ All checks passed$(RESET)"

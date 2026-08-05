@@ -1,0 +1,71 @@
+repos:
+
+  # ================
+  # General
+  # ================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=700']  # Increase the limit to 700 KB
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-json
+        name: Check JSON syntax
+        exclude: sdk/typescript/tsconfig.json
+
+  # ================
+  # Go
+  # ================
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.12.2
+    hooks:
+    # -full lints the whole module; the plain hook only diffs against HEAD,
+    # which lints nothing in CI.
+    - id: golangci-lint-full
+
+  # ================
+  # Python
+  # ================
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.0
+    hooks:
+    # Run the linter.
+    - id: ruff
+      args: [ --fix, --config=pyproject.toml, --show-fixes ]
+    - id: ruff-format
+      args: [--config=pyproject.toml, --verbose ]
+
+  - repo: https://github.com/astral-sh/ty-pre-commit
+    # ty version.
+    rev: v0.0.64
+    hooks:
+    - id: ty
+
+  # ================
+  # TypeScript
+  # ================
+
+  - repo: https://github.com/biomejs/pre-commit
+    rev: v2.5.6
+    hooks:
+      - id: biome-check
+        files: ^sdk/typescript/.*\.(ts|tsx|js|jsx|json|jsonc)$
+        exclude: ^sdk/typescript/dist/
+
+  # ================
+  # Docker
+  # ================
+  # types: [file] + files override because the hook's default types: [dockerfile]
+  # doesn't match the non-standard Dockerfile.<name> filenames used here.
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.15.1
+    hooks:
+      - id: hadolint-docker
+        types: [file]
+        files: (^|/)Dockerfile[^/]*$

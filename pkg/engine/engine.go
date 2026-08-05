@@ -23,18 +23,17 @@
 package engine
 
 import (
-	"fmt"
-
 	"github.com/RonsenbergVI/fraise/internal/cache"
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/internal/query/optimisation"
 
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 	"github.com/RonsenbergVI/fraise/pkg/scheduler"
 )
 
-type Engine[K comparable, P float32 | float64] struct {
+type Engine[K ~uint64, P float32 | float64] struct {
 	Config        *config.ConfigSet
 	Cache         cache.Cache[K, query.Query[K, P]]
 	Scheduler     *scheduler.Scheduler[K, P]
@@ -42,7 +41,7 @@ type Engine[K comparable, P float32 | float64] struct {
 	Hasher        hash.Hasher[K, string]
 }
 
-func NewEngine[K comparable, P float32 | float64](c *config.ConfigSet, hasher hash.Hasher[K, string]) *Engine[K, P] {
+func NewEngine[K ~uint64, P float32 | float64](c *config.ConfigSet, hasher hash.Hasher[K, string]) *Engine[K, P] {
 	e := &Engine[K, P]{
 		Config:        c,
 		Optimisations: optimisation.NewPipeline[K, P](),
@@ -56,13 +55,22 @@ func (e *Engine[K, P]) Start() {
 	// allocate cache memory
 	c, err := cache.NewLRUCache[K, query.Query[K, P]](e.Config.Engine.CacheCapacity)
 	if err != nil {
-		fmt.Errorf("Error while initialising cache.")
+		logger.Error("Error while initialising cache", "error", err)
+		return
 	}
 	e.Cache = c
+	logger.Info("Engine cache initialised", "capacity", e.Config.Engine.CacheCapacity)
+
+	// start the scheduler workers that execute planned streams
+	if err := e.Scheduler.Start(); err != nil {
+		logger.Error("Error while starting scheduler", "error", err)
+	}
 }
 
 func (e *Engine[K, P]) Stop() {
-	// release cache memory
+	// stop scheduler workers, then release cache memory
+	logger.Info("Stopping engine")
+	e.Scheduler.Stop()
 	e.Cache.Clear()
 }
 
@@ -80,6 +88,7 @@ func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
 	stream, err := q.Plan(e.Config)
 	if err != nil {
+		logger.Error("Failed to plan query", "graph", q.GetGraphID(), "error", err)
 		return nil, ErrQueryPlan
 	}
 	return stream, nil

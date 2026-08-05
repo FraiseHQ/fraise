@@ -23,22 +23,27 @@
 package query
 
 import (
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
-// fakeGraph is a controllable graph.Graph used to observe how Stream drives
-// the graph: which lock it takes, whether it copies/merges/searches, and what
-// Search returns. Only the methods Stream touches carry behaviour; the rest are
-// inert stubs present to satisfy the interface.
+// fakeGraph is a controllable graph.Graph used to observe how Stream drives the
+// graph: which lock Acquire/Release take, whether Stage copies, whether the
+// write path writes and the read path searches, and what Search returns. Only
+// the methods Stream touches carry behaviour; the rest are inert stubs present
+// to satisfy the interface.
 type fakeGraph struct {
 	locks, unlocks   int
 	rlocks, runlocks int
 	copied, merged   bool
+	sets             int
 	searchCalled     bool
 
 	searchNodes  []*graph.Node[string]
@@ -54,29 +59,27 @@ func (g *fakeGraph) RUnlock() { g.runlocks++ }
 
 func (g *fakeGraph) Copy() graph.Graph[string, float32]        { g.copied = true; return g }
 func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32]) { g.merged = true }
+func (g *fakeGraph) Set(node graph.Node[string]) error         { g.sets++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
 	g.searchCalled = true
 	return g.searchNodes, g.searchScores
 }
 
 // --- inert stubs (unused by Stream) ----------------------------------------
 
-func (g *fakeGraph) Get(key string) *graph.Node[string]             { return nil }
-func (g *fakeGraph) Set(node *graph.Node[string]) error             { return nil }
-func (g *fakeGraph) Put(key string, node *graph.Node[string]) error { return nil }
-func (g *fakeGraph) Delete(node *graph.Node[string]) error          { return nil }
-func (g *fakeGraph) GetVectorIndex() index.VectorIndex[string, float32] {
-	return nil
-}
-func (g *fakeGraph) GetTextIndex() index.TextIndex[string]                             { return nil }
-func (g *fakeGraph) Entities() []*graph.Entity[string]                                 { return nil }
-func (g *fakeGraph) Relationships() []*graph.Relationship[string]                      { return nil }
-func (g *fakeGraph) AdjacencyMap() map[string]map[string]*graph.Relationship[string]   { return nil }
-func (g *fakeGraph) PredecessorMap() map[string]map[string]*graph.Relationship[string] { return nil }
-func (g *fakeGraph) Order() int                                                        { return 0 }
-func (g *fakeGraph) Size() int                                                         { return 0 }
-func (g *fakeGraph) Stats() graph.GraphStats                                           { return graph.GraphStats{} }
+func (g *fakeGraph) GetHasher() hash.Hasher[string, string]             { return nil }
+func (g *fakeGraph) Get(key string) graph.Node[string]                  { return nil }
+func (g *fakeGraph) Put(key string, node graph.Node[string]) error      { return nil }
+func (g *fakeGraph) Delete(node graph.Node[string]) error               { return nil }
+func (g *fakeGraph) GetVectorIndex() index.VectorIndex[string, float32] { return nil }
+func (g *fakeGraph) GetTextIndex() index.TextIndex[string, float32]     { return nil }
+func (g *fakeGraph) Nodes() map[string]graph.Node[string]               { return nil }
+func (g *fakeGraph) AdjacencyMap() map[string]map[string]string         { return nil }
+func (g *fakeGraph) PredecessorMap() map[string]map[string]string       { return nil }
+func (g *fakeGraph) Order() int                                         { return 0 }
+func (g *fakeGraph) Size() int                                          { return 0 }
+func (g *fakeGraph) Stats() graph.GraphStats                            { return graph.GraphStats{} }
 
 // --- helpers ---------------------------------------------------------------
 
@@ -84,18 +87,12 @@ func newStream(q Query[string, float32]) *Stream[string, float32] {
 	return &Stream[string, float32]{Query: q, done: make(chan struct{})}
 }
 
-// readQuery builds a Recall with non-nil time bounds so the read path in
-// Commit can call Since/Until without dereferencing a nil TimeValue. It returns
-// a *Recall because SetGraphID's pointer receiver means only *Recall satisfies
-// Query (and Commit's read path asserts *Recall).
+// readQuery builds a Recall. Its nil time bounds resolve to the zero time, so
+// the read path in Commit can call Since/Until safely. It returns a *Recall
+// because SetGraphID's pointer receiver means only *Recall satisfies Query (and
+// Commit's read path asserts *Recall).
 func readQuery() *Recall[string, float32] {
-	return &Recall[string, float32]{
-		Keywords: []string{"x"},
-		Parameters: QueryParameters{
-			Since: containers.AbsoluteTime{},
-			Until: containers.AbsoluteTime{},
-		},
-	}
+	return &Recall[string, float32]{Keywords: []string{"x"}}
 }
 
 func isClosed(ch <-chan struct{}) bool {
@@ -109,33 +106,48 @@ func isClosed(ch <-chan struct{}) bool {
 
 // --- Stage -----------------------------------------------------------------
 
-func TestStreamStageReadTakesReadLock(t *testing.T) {
+func TestStreamStageReadCommitsInPlace(t *testing.T) {
 	g := &fakeGraph{}
 	s := newStream(readQuery())
 
-	if err := s.Stage(g); err != nil {
+	staged, err := s.Stage(g)
+	if err != nil {
 		t.Fatalf("Stage() err = %v", err)
 	}
-	if g.rlocks != 1 || g.locks != 0 {
-		t.Errorf("read Stage locks: rlocks=%d locks=%d, want rlocks=1 locks=0", g.rlocks, g.locks)
+	// The read path commits against the live graph: no copy, no staging.
+	if g.copied {
+		t.Error("read Stage copied the graph, want in-place")
 	}
-	if !g.copied {
-		t.Error("Stage did not Copy the graph into staging")
+	if s.staging != nil {
+		t.Error("read Stage set staging, want nil")
 	}
-	if s.staging == nil {
-		t.Error("staging is nil after Stage")
+	if !g.searchCalled {
+		t.Error("read Stage did not run the query's Search")
+	}
+	if staged != graph.Graph[string, float32](g) {
+		t.Error("read Stage returned a different graph than the one passed")
 	}
 }
 
-func TestStreamStageWriteTakesWriteLock(t *testing.T) {
+func TestStreamStageWriteCopiesAndWrites(t *testing.T) {
 	g := &fakeGraph{}
-	s := newStream(&Remember[string, float32]{})
+	s := newStream(&Remember[string, float32]{Value: "alice"})
 
-	if err := s.Stage(g); err != nil {
+	staged, err := s.Stage(g)
+	if err != nil {
 		t.Fatalf("Stage() err = %v", err)
 	}
-	if g.locks != 1 || g.rlocks != 0 {
-		t.Errorf("write Stage locks: locks=%d rlocks=%d, want locks=1 rlocks=0", g.locks, g.rlocks)
+	if !g.copied {
+		t.Error("write Stage did not Copy the graph into staging")
+	}
+	if s.staging == nil {
+		t.Error("staging is nil after write Stage")
+	}
+	if g.sets == 0 {
+		t.Error("write Stage did not write the fact into staging")
+	}
+	if staged == nil {
+		t.Error("write Stage returned a nil graph")
 	}
 }
 
@@ -147,9 +159,6 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 		searchScores: []float32{0.9, 0.8, 0.7},
 	}
 	s := newStream(readQuery())
-	if err := s.Stage(g); err != nil {
-		t.Fatalf("Stage() err = %v", err)
-	}
 
 	if err := s.Commit(g); err != nil {
 		t.Fatalf("Commit() err = %v", err)
@@ -172,62 +181,43 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 			t.Errorf("Hits[%d].Score = %v, want %v", i, s.Result.Hits[i].Score, wantScore)
 		}
 	}
-	if s.staging != nil {
-		t.Error("Commit did not clear staging")
-	}
-	if g.runlocks != 1 {
-		t.Errorf("read lock released %d times, want 1", g.runlocks)
-	}
-	if !isClosed(s.Done()) {
-		t.Error("Done channel not closed after Commit")
-	}
 }
 
 // --- Commit (write path) ---------------------------------------------------
 
-func TestStreamCommitWriteMerges(t *testing.T) {
+func TestStreamCommitWriteWrites(t *testing.T) {
 	g := &fakeGraph{}
-	s := newStream(&Remember[string, float32]{})
-	if err := s.Stage(g); err != nil {
-		t.Fatalf("Stage() err = %v", err)
-	}
+	s := newStream(&Remember[string, float32]{Value: "alice"})
+	s.staging = g // a staged write stream
 
 	if err := s.Commit(g); err != nil {
 		t.Fatalf("Commit() err = %v", err)
 	}
 
-	if !g.merged {
-		t.Error("Commit did not MergeFrom on a write query")
+	if g.sets == 0 {
+		t.Error("Commit did not write the fact on a write query")
 	}
 	if g.searchCalled {
 		t.Error("Commit called Search on a write query")
 	}
-	if s.staging != nil {
-		t.Error("Commit did not clear staging")
-	}
-	if g.unlocks != 1 {
-		t.Errorf("write lock released %d times, want 1", g.unlocks)
-	}
-	if !isClosed(s.Done()) {
-		t.Error("Done channel not closed after Commit")
+	if s.Result == nil {
+		t.Fatal("Commit left Result nil on a write query")
 	}
 }
 
-func TestStreamCommitClosedStream(t *testing.T) {
-	s := newStream(readQuery()) // no Stage -> staging is nil
-	if err := s.Commit(&fakeGraph{}); err != ErrStreamClosed {
-		t.Errorf("Commit() on unstaged stream = %v, want ErrStreamClosed", err)
+func TestStreamCommitWriteRequiresStaging(t *testing.T) {
+	s := newStream(&Remember[string, float32]{}) // no Stage -> staging is nil
+	if err := s.Commit(&fakeGraph{}); !errors.Is(err, ErrStreamClosed) {
+		t.Errorf("Commit() on unstaged write stream = %v, want ErrStreamClosed", err)
 	}
 }
 
 // --- Rollback --------------------------------------------------------------
 
-func TestStreamRollback(t *testing.T) {
+func TestStreamRollbackClearsStaging(t *testing.T) {
 	g := &fakeGraph{}
-	s := newStream(readQuery())
-	if err := s.Stage(g); err != nil {
-		t.Fatalf("Stage() err = %v", err)
-	}
+	s := newStream(&Remember[string, float32]{})
+	s.staging = g
 
 	if err := s.Rollback(g); err != nil {
 		t.Fatalf("Rollback() err = %v", err)
@@ -238,22 +228,39 @@ func TestStreamRollback(t *testing.T) {
 	if g.merged {
 		t.Error("Rollback merged staging into the graph")
 	}
+}
+
+// --- Acquire / Release -----------------------------------------------------
+
+func TestStreamAcquireReleaseRead(t *testing.T) {
+	g := &fakeGraph{}
+	s := newStream(readQuery())
+
+	s.Acquire(g)
+	if g.rlocks != 1 || g.locks != 0 {
+		t.Errorf("read Acquire: rlocks=%d locks=%d, want rlocks=1 locks=0", g.rlocks, g.locks)
+	}
+	s.Release(g)
 	if g.runlocks != 1 {
-		t.Errorf("read lock released %d times, want 1", g.runlocks)
-	}
-	if !isClosed(s.Done()) {
-		t.Error("Done channel not closed after Rollback")
+		t.Errorf("read Release: runlocks=%d, want 1", g.runlocks)
 	}
 }
 
-func TestStreamRollbackClosedStream(t *testing.T) {
-	s := newStream(readQuery()) // no Stage -> staging is nil
-	if err := s.Rollback(&fakeGraph{}); err != ErrStreamClosed {
-		t.Errorf("Rollback() on unstaged stream = %v, want ErrStreamClosed", err)
+func TestStreamAcquireReleaseWrite(t *testing.T) {
+	g := &fakeGraph{}
+	s := newStream(&Remember[string, float32]{})
+
+	s.Acquire(g)
+	if g.locks != 1 || g.rlocks != 0 {
+		t.Errorf("write Acquire: locks=%d rlocks=%d, want locks=1 rlocks=0", g.locks, g.rlocks)
+	}
+	s.Release(g)
+	if g.unlocks != 1 {
+		t.Errorf("write Release: unlocks=%d, want 1", g.unlocks)
 	}
 }
 
-// --- GraphID / Done / finish -----------------------------------------------
+// --- GraphID / Done / Finish -----------------------------------------------
 
 func TestStreamGraphID(t *testing.T) {
 	r := &Remember[string, float32]{}
@@ -266,9 +273,55 @@ func TestStreamGraphID(t *testing.T) {
 
 func TestStreamFinishIsIdempotent(t *testing.T) {
 	s := newStream(readQuery())
-	s.finish()
-	s.finish() // second call must not panic or double-close (sync.Once)
+	s.Finish()
+	s.Finish() // second call must not panic or double-close (sync.Once)
 	if !isClosed(s.Done()) {
-		t.Error("Done channel not closed after finish")
+		t.Error("Done channel not closed after Finish")
+	}
+}
+
+// TestCommitStoresAnchorNodesForFilteredRecall drives the exact production
+// write path (Stage -> Commit on staging -> MergeFrom) and checks the written
+// fact is recallable through its topic:/entity: anchors. Regression test for
+// anchored recalls returning nothing: Commit created the Mentions/IsAbout
+// edges but never stored the NamedEntity/Topic nodes themselves, so the
+// filter could not resolve the anchor values and dropped every fact.
+func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+
+	remember := &Remember[uint64, float32]{
+		Value:    "alice moved to paris",
+		Topics:   []string{"travel"},
+		Entities: []string{"alice"},
+	}
+	s := NewStream[uint64, float32](remember)
+
+	stg, err := s.Stage(g)
+	if err != nil {
+		t.Fatalf("Stage = %v, want nil", err)
+	}
+	g.MergeFrom(stg)
+
+	cases := []struct {
+		name     string
+		topics   []string
+		entities []string
+	}{
+		{"no filter", nil, nil},
+		{"topic filter", []string{"travel"}, nil},
+		{"entity filter", nil, []string{"alice"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nodes, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			got := make([]string, 0, len(nodes))
+			for _, n := range nodes {
+				got = append(got, (*n).GetValue())
+			}
+			if len(nodes) != 1 || got[0] != "alice moved to paris" {
+				t.Errorf("Search(paris, topics=%v entities=%v) = %v, want [alice moved to paris]",
+					tc.topics, tc.entities, got)
+			}
+		})
 	}
 }

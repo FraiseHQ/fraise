@@ -24,11 +24,11 @@ package index
 
 import "github.com/RonsenbergVI/fraise/internal/containers"
 
-// Index is the storage/lifecycle contract shared by every index. It maps keys
-// of type K to values of type V; how a value is queried is left to the
-// search-specific interfaces below (TextIndex, VectorIndex), because a keyword
-// query and a nearest-neighbour query take different arguments.
-type Index[K comparable, V any] interface {
+// SearchIndex maps keys of type K to values of type V and ranks those keys by
+// relevance to a query. The query has the same type V the index stores — a
+// keyword string for a text index, a vector for a vector index — because in
+// both cases you search with an example of what you stored.
+type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// Insert adds value under key.
 	Insert(key K, value V) error
 
@@ -44,28 +44,31 @@ type Index[K comparable, V any] interface {
 	// Size reports the approximate in-memory footprint of the index in MiB.
 	Size() int
 
-	// Count reports the number of entries currently held.
+	// Count reports the number of live entries currently held.
 	Count() int
+
+	// Entries reports the number of entries the underlying structure
+	// physically holds: the live entries plus any garbage awaiting Flush
+	// (stale copies from updates, tombstoned deletes). For structures that
+	// compact eagerly it equals Count. The gap between Entries and Count is
+	// the compaction debt surfaced by the stats endpoint.
+	Entries() int
 
 	// Flush persists/compacts the index, releasing pending buffers.
 	Flush() error
+
+	// Search returns the keys most relevant to query, best match first, with a
+	// parallel slice of their scores. k bounds the number of results; k <= 0
+	// returns all matches. Score direction is index-specific (see the aliases).
+	Search(query V, k int) ([]K, []P, error)
 }
 
-// TextIndex is a full-text index: it tokenizes string values on insert and
-// answers keyword queries, returning the keys of matching documents.
-type TextIndex[K comparable] interface {
-	Index[K, string]
+// TextIndex is a full-text index: it tokenizes string documents on insert and
+// answers keyword queries. Its score is the number of query terms a document
+// matches, so higher is a better match.
+type TextIndex[K comparable, P float32 | float64] = SearchIndex[K, string, P]
 
-	// Search returns the keys of documents matching the query, best matches
-	// first.
-	Search(query string) ([]K, error)
-}
-
-// VectorIndex is an (approximate) nearest-neighbour index over dense vectors.
-// P is the coordinate type of the indexed vectors.
-type VectorIndex[K comparable, P float32 | float64] interface {
-	Index[K, containers.Vector[P]]
-
-	// Search returns the keys of the k vectors closest to query, nearest first.
-	Search(query containers.Vector[P], k int) ([]K, error)
-}
+// VectorIndex is an (approximate) nearest-neighbour index over dense vectors of
+// precision P. Its score is the distance from the query to each vector, so
+// lower is nearer.
+type VectorIndex[K comparable, P float32 | float64] = SearchIndex[K, containers.Vector[K, P], P]

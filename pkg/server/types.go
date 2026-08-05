@@ -26,16 +26,19 @@ package server
 type Request struct {
 }
 
-// Error is the JSON error response returned to clients. It carries the HTTP
-// status code, a human-readable message, and an optional detailed error string.
-type Error struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
-	Error   string `json:"error,omitempty"`
+// ErrorResponse is the JSON error body returned to clients: a single
+// human-readable message under "error". The HTTP status code carries the
+// category (4xx client error, 5xx server error), so it is not duplicated in the
+// body. Both SDKs read the "error" field, so that key is part of the contract.
+type ErrorResponse struct {
+	Error string `json:"error"`
 }
 
-// HandleQueryRequest is the JSON body expected by the query endpoint,
-// containing the raw query string to execute.
-type HandleQueryRequest struct {
-	Query string `json:"query"`
+// HandleQueryRequest is the JSON body expected by the query endpoint. It carries
+// the raw query string plus any out-of-band parameters it references. Vector
+// placeholders in the query (e.g. vec:$v) are bound by name from Parameters, so
+// the parser never has to handle large vector literals inline.
+type HandleQueryRequest[P float32 | float64] struct {
+	Query      string         `json:"query"`
+	Parameters map[string][]P `json:"parameters,omitempty"`
 }

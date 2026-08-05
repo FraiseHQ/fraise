@@ -20,9 +20,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package algorithms
+package graph
 
-import "github.com/RonsenbergVI/fraise/internal/graph"
+import "fmt"
 
 // PageRank scores every vertex by the stationary distribution of a random walk
 // that follows an outgoing edge with probability damping and teleports to a
@@ -44,11 +44,73 @@ func NewPageRank[K comparable, P float32 | float64](damping P, maxIter int, tol 
 // Name returns the algorithm identifier.
 func (pr *PageRank[K, P]) Name() string { return "pagerank" }
 
-// Rank computes the PageRank score of every vertex in g.
-func (pr *PageRank[K, P]) rank(g graph.Graph[K, P]) (map[K]P, error) {
-	panic("not implemented")
+// Rank computes the PageRank score of every vertex in g. Vertices are taken
+// from the union of both edge views, so isolated nodes (no edges at all) are
+// not ranked. Dangling vertices (no outgoing edges) redistribute their mass
+// uniformly, keeping the scores a probability distribution.
+func (pr *PageRank[K, P]) rank(g Graph[K, P]) (map[K]P, error) {
+	adjacency := g.AdjacencyMap()
+	predecessors := g.PredecessorMap()
+
+	vertices := make(map[K]bool)
+	for u, targets := range adjacency {
+		vertices[u] = true
+		for v := range targets {
+			vertices[v] = true
+		}
+	}
+	for v := range predecessors {
+		vertices[v] = true
+	}
+	n := len(vertices)
+	if n == 0 {
+		return nil, ErrEmptyGraph
+	}
+
+	scores := make(map[K]P, n)
+	for v := range vertices {
+		scores[v] = P(1) / P(n)
+	}
+
+	for iter := 0; iter < pr.maxIter; iter++ {
+		var danglingMass P
+		for v := range vertices {
+			if len(adjacency[v]) == 0 {
+				danglingMass += scores[v]
+			}
+		}
+
+		next := make(map[K]P, n)
+		base := (P(1)-pr.damping)/P(n) + pr.damping*danglingMass/P(n)
+		var delta P
+		for v := range vertices {
+			score := base
+			for u := range predecessors[v] {
+				score += pr.damping * scores[u] / P(len(adjacency[u]))
+			}
+			next[v] = score
+
+			diff := score - scores[v]
+			if diff < 0 {
+				diff = -diff
+			}
+			delta += diff
+		}
+
+		scores = next
+		if delta < pr.tol {
+			break
+		}
+	}
+	return scores, nil
 }
 
-func (b *PageRank[K, P]) Run(g graph.Graph[K, P]) AlgorithmResult {
-	panic("not implemented")
+// Run ranks every vertex of g and returns the result as an AlgorithmResult
+// (a RankingResult).
+func (pr *PageRank[K, P]) Run(g Graph[K, P]) (AlgorithmResult, error) {
+	scores, err := pr.rank(g)
+	if err != nil {
+		return nil, fmt.Errorf("page rank failed: %w", err)
+	}
+	return RankingResult[K, P]{Scores: scores}, nil
 }

@@ -58,7 +58,6 @@ type FieldNode[T any] interface {
 	AstNode
 	Key() string
 	Value() T
-	Set(key lexer.Token, value T)
 }
 
 // Ref field
@@ -74,13 +73,13 @@ type LiteralFieldNode interface {
 	Literal() string
 }
 
-type TimeValueFieldNode interface {
-	FieldNode[containers.TimeValue]
+type TimeValueFieldNode[K comparable] interface {
+	FieldNode[containers.TimeValue[K]]
 	TimeValue() time.Time
 }
 
 // recall command node
-type RecallCommandNode[P float32 | float64] struct {
+type RecallCommandNode[K comparable, P float32 | float64] struct {
 	key      lexer.Token
 	selector GraphSelectorNode
 	terms    []LiteralFieldNode
@@ -88,14 +87,14 @@ type RecallCommandNode[P float32 | float64] struct {
 	topics   []AnchorFieldNode
 	top      TopFieldNode
 	depth    DepthFieldNode
-	since    SinceFieldNode
-	until    UntilFieldNode
+	since    SinceFieldNode[K]
+	until    UntilFieldNode[K]
 	vec      *VecFieldNode[P]
 	pos      lexer.Position
 	end      lexer.Position
 }
 
-func (r RecallCommandNode[P]) Terms() []string {
+func (r RecallCommandNode[K, P]) Terms() []string {
 	var res []string
 
 	for _, v := range r.terms {
@@ -105,7 +104,7 @@ func (r RecallCommandNode[P]) Terms() []string {
 	return res
 }
 
-func (r RecallCommandNode[P]) Entities() []string {
+func (r RecallCommandNode[K, P]) Entities() []string {
 	var res []string
 
 	for _, v := range r.entities {
@@ -115,7 +114,7 @@ func (r RecallCommandNode[P]) Entities() []string {
 	return res
 }
 
-func (r RecallCommandNode[P]) Topics() []string {
+func (r RecallCommandNode[K, P]) Topics() []string {
 	var res []string
 
 	for _, v := range r.topics {
@@ -125,24 +124,40 @@ func (r RecallCommandNode[P]) Topics() []string {
 	return res
 }
 
-func (r RecallCommandNode[P]) Top() int {
+func (r RecallCommandNode[K, P]) Top(v int) int {
+	if r.top.value == 0 {
+		return v
+	}
 	return r.top.value
 }
 
-func (r RecallCommandNode[P]) Depth() int {
+func (r RecallCommandNode[K, P]) Depth(v int) int {
+	if r.depth.value == 0 {
+		return v
+	}
 	return r.depth.value
 }
 
-func (r RecallCommandNode[P]) Since() containers.TimeValue {
+func (r RecallCommandNode[K, P]) Since() containers.TimeValue[K] {
 	return r.since.Value()
 }
 
-func (r RecallCommandNode[P]) Until() containers.TimeValue {
+func (r RecallCommandNode[K, P]) Until() containers.TimeValue[K] {
 	return r.until.Value()
 }
 
-func (r RecallCommandNode[P]) Vector() []P {
+func (r RecallCommandNode[K, P]) Vector() []P {
 	return r.vec.Value()
+}
+
+// VecParam reports the name of the vector placeholder (the identifier after
+// `vec:$`) and whether the recall carried one at all. The parser only records
+// the placeholder; the real vector is bound later from the request parameters.
+func (r RecallCommandNode[K, P]) VecParam() (string, bool) {
+	if r.vec == nil {
+		return "", false
+	}
+	return r.vec.Param(), true
 }
 
 // remember command node
@@ -161,11 +176,38 @@ func (r RememberCommandNode[P]) Value() string {
 }
 
 func (r RememberCommandNode[P]) Entities() []string {
-	return []string{}
+	var res []string
+
+	for _, a := range r.anchors {
+		if f, ok := a.Field().(EntityFieldNode); ok {
+			res = append(res, f.Value())
+		}
+	}
+
+	return res
 }
 
 func (r RememberCommandNode[P]) Topics() []string {
-	return []string{}
+	var res []string
+
+	for _, a := range r.anchors {
+		if f, ok := a.Field().(TopicFieldNode); ok {
+			res = append(res, f.Value())
+		}
+	}
+
+	return res
+}
+
+func (r RememberCommandNode[P]) Vector() []P {
+	return r.vec.Value()
+}
+
+func (r RememberCommandNode[P]) VecParam() (string, bool) {
+	if r.vec == nil {
+		return "", false
+	}
+	return r.vec.Param(), true
 }
 
 // Selector node is the graph selection statement
@@ -200,10 +242,9 @@ type TermNode struct {
 
 // Phrase representation. A phrase is a quoted text search
 type PhraseNode struct {
-	tokens []lexer.Token
-	value  string
-	pos    lexer.Position
-	end    lexer.Position
+	value string
+	pos   lexer.Position
+	end   lexer.Position
 }
 
 // Entity field
@@ -223,17 +264,17 @@ type TopicFieldNode struct {
 }
 
 // Since field
-type SinceFieldNode struct {
+type SinceFieldNode[K comparable] struct {
 	key   lexer.Token
-	value containers.TimeValue
+	value containers.TimeValue[K]
 	pos   lexer.Position
 	end   lexer.Position
 }
 
 // Until field
-type UntilFieldNode struct {
+type UntilFieldNode[K comparable] struct {
 	key   lexer.Token
-	value containers.TimeValue
+	value containers.TimeValue[K]
 	pos   lexer.Position
 	end   lexer.Position
 }
@@ -275,8 +316,9 @@ func (n RememberCommandNode[P]) String() string {
 	// command + selector
 	s = append(s, n.key.Literal+n.selector.String())
 
-	// value
-	s = append(s, n.value.String())
+	// value, re-quoted as in the source query (PhraseNode.String is unquoted);
+	// inner quotes are re-escaped ('') so the reconstruction is valid FQL.
+	s = append(s, "'"+strings.ReplaceAll(n.value.String(), "'", "''")+"'")
 
 	// anchors
 	for _, e := range n.anchors {
@@ -301,11 +343,11 @@ func (n RememberCommandNode[P]) End() lexer.Position {
 
 // recall impl
 
-func (n RecallCommandNode[P]) Selector() uint8 {
+func (n RecallCommandNode[K, P]) Selector() uint8 {
 	return n.selector.value
 }
 
-func (n RecallCommandNode[P]) String() string {
+func (n RecallCommandNode[K, P]) String() string {
 	var s []string
 
 	// command + selector
@@ -358,11 +400,11 @@ func (n RecallCommandNode[P]) String() string {
 	return strings.Join(s, " ")
 }
 
-func (n RecallCommandNode[P]) Pos() lexer.Position {
+func (n RecallCommandNode[K, P]) Pos() lexer.Position {
 	return n.pos
 }
 
-func (n RecallCommandNode[P]) End() lexer.Position {
+func (n RecallCommandNode[K, P]) End() lexer.Position {
 	return n.end
 }
 
@@ -469,13 +511,11 @@ func (n Terms) End() lexer.Position {
 
 // phrase node impl
 
+// Literal returns the phrase text exactly as written between the quotes, with
+// the escape (”) already decoded and no surrounding quotes. Interior spacing
+// is preserved verbatim — the phrase is opaque literal text.
 func (n PhraseNode) Literal() string {
-	var s []string
-
-	for _, t := range n.tokens {
-		s = append(s, t.Literal)
-	}
-	return "'" + strings.Join(s, " ") + "'"
+	return n.value
 }
 
 func (n PhraseNode) Pos() lexer.Position {
@@ -512,11 +552,6 @@ func (n EntityFieldNode) Value() string {
 	return n.value
 }
 
-func (n EntityFieldNode) Set(key lexer.Token, value string) {
-	n.key = key
-	n.value = value
-}
-
 // topic field node impl
 
 func (n TopicFieldNode) String() string {
@@ -539,71 +574,56 @@ func (n TopicFieldNode) End() lexer.Position {
 	return n.end
 }
 
-func (n TopicFieldNode) Set(key lexer.Token, value string) {
-	n.key = key
-	n.value = value
-}
-
 // since field node impl
 
-func (n SinceFieldNode) String() string {
+func (n SinceFieldNode[K]) String() string {
 	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
-func (n SinceFieldNode) Key() string {
+func (n SinceFieldNode[K]) Key() string {
 	return n.key.Literal
 }
 
-func (n SinceFieldNode) Value() containers.TimeValue {
+func (n SinceFieldNode[K]) Value() containers.TimeValue[K] {
 	return n.value
 }
 
-func (n SinceFieldNode) TimeValue() time.Time {
+func (n SinceFieldNode[K]) TimeValue() time.Time {
 	return n.value.Resolve(time.Now())
 }
 
-func (n SinceFieldNode) Pos() lexer.Position {
+func (n SinceFieldNode[K]) Pos() lexer.Position {
 	return n.pos
 }
 
-func (n SinceFieldNode) End() lexer.Position {
+func (n SinceFieldNode[K]) End() lexer.Position {
 	return n.end
-}
-
-func (n SinceFieldNode) Set(key lexer.Token, value containers.TimeValue) {
-	n.key = key
-	n.value = value
 }
 
 // until field node impl
 
-func (n UntilFieldNode) String() string {
+func (n UntilFieldNode[K]) String() string {
 	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
-func (n UntilFieldNode) Key() string {
+func (n UntilFieldNode[K]) Key() string {
 	return n.key.Literal
 }
 
-func (n UntilFieldNode) Value() containers.TimeValue {
+func (n UntilFieldNode[K]) Value() containers.TimeValue[K] {
 	return n.value
 }
 
-func (n UntilFieldNode) TimeValue() time.Time {
+func (n UntilFieldNode[K]) TimeValue() time.Time {
 	return n.value.Resolve(time.Now())
 }
 
-func (n UntilFieldNode) Pos() lexer.Position {
+func (n UntilFieldNode[K]) Pos() lexer.Position {
 	return n.pos
 }
 
-func (n UntilFieldNode) End() lexer.Position {
+func (n UntilFieldNode[K]) End() lexer.Position {
 	return n.end
-}
-
-func (n UntilFieldNode) Set(key lexer.Token, value containers.TimeValue) {
-	n.key = key
-	n.value = value
 }
 
 // top field node impl
@@ -628,11 +648,6 @@ func (n TopFieldNode) End() lexer.Position {
 	return n.end
 }
 
-func (n TopFieldNode) Set(key lexer.Token, value int) {
-	n.key = key
-	n.value = value
-}
-
 // depth field node impl
 
 func (n DepthFieldNode) String() string {
@@ -653,11 +668,6 @@ func (n DepthFieldNode) Pos() lexer.Position {
 
 func (n DepthFieldNode) End() lexer.Position {
 	return n.end
-}
-
-func (n DepthFieldNode) Set(key lexer.Token, value int) {
-	n.key = key
-	n.value = value
 }
 
 // vec field node impl
@@ -684,9 +694,4 @@ func (n VecFieldNode[P]) Pos() lexer.Position {
 
 func (n VecFieldNode[P]) End() lexer.Position {
 	return n.end
-}
-
-func (n VecFieldNode[P]) Set(key lexer.Token, v []P) {
-	n.key = key
-	n.value = v
 }

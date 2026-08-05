@@ -20,4 +20,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package query_test
+package comparator
+
+import (
+	"cmp"
+	"time"
+)
+
+// Comparator orders two values of type T, returning a negative number if a < b,
+// zero if a == b, and a positive number if a > b.
+type Comparator[T any] func(a, b T) int
+
+// TimeComparator provides a basic comparison on time.Time
+func TimeComparator(a, b time.Time) int {
+	switch {
+	case a.After(b):
+		return 1
+	case a.Before(b):
+		return -1
+	default:
+		return 0
+	}
+}
+
+// OrderedComparator provides a basic comparison on any cmp.Ordered type (e.g. int, string).
+func OrderedComparator[T cmp.Ordered](a, b T) int {
+	return cmp.Compare(a, b)
+}

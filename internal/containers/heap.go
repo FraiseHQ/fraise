@@ -66,7 +66,7 @@ func NewHeapCap[K comparable, T any](capacity int, items ...Item[K, T]) *Heap[K,
 	}
 	// Floyd's heapify: sift down every internal node, from the last parent up.
 	for i := len(h.items)/2 - 1; i >= 0; i-- {
-		h.siftDown(i)
+		h.percolateDown(i)
 	}
 	return h
 }
@@ -102,7 +102,7 @@ func (h *Heap[K, T]) Push(item Item[K, T]) {
 	h.items = append(h.items, item)
 	size := h.Len()
 	h.lookup[item.Key] = size - 1
-	h.siftUp(size - 1)
+	h.percolateUp(size - 1)
 }
 
 func (h *Heap[K, T]) Clear() {
@@ -150,9 +150,9 @@ func (h *Heap[K, T]) Remove(key K) bool {
 	// and ensure the max-heap property (parent >= children) is respected
 	parent := (index - 1) / 2
 	if h.items[index].Priority > h.items[parent].Priority {
-		h.siftUp(index)
+		h.percolateUp(index)
 	} else {
-		h.siftDown(index)
+		h.percolateDown(index)
 	}
 
 	return true
@@ -179,12 +179,14 @@ func (h *Heap[K, T]) Pop() *Item[K, T] {
 		h.items = h.items[:0]
 	} else {
 		h.remove(0, size)
-		h.siftDown(0)
+		h.percolateDown(0)
 	}
 	return &first
 }
 
-func (h *Heap[K, T]) siftUp(index int) {
+// used when a child node doesn't follow the heap propoerty with its parent
+// restore the heap property
+func (h *Heap[K, T]) percolateUp(index int) {
 	for index > 0 {
 		parent := (index - 1) / 2
 		if h.items[parent].Priority >= h.items[index].Priority {
@@ -196,7 +198,9 @@ func (h *Heap[K, T]) siftUp(index int) {
 	}
 }
 
-func (h *Heap[K, T]) siftDown(index int) {
+// used when a parent node doesn't follow the heap propoerty with its parent
+// restore the heap property
+func (h *Heap[K, T]) percolateDown(index int) {
 	size := len(h.items)
 	for index < size {
 		left, right := 2*index+1, 2*index+2

@@ -25,8 +25,13 @@ package scheduler
 import "errors"
 
 var (
-	ErrShutdown        = errors.New("Scheduler: shut down")
-	ErrEnqueueStream   = errors.New("Could not add stream to queue")
-	ErrStreamExecution = errors.New("Error while executing stream.")
-	ErrStreamCommit    = errors.New("Error while comitting stream.")
+	// ErrShutdown is returned when work is submitted to a scheduler that has
+	// already been shut down.
+	ErrShutdown = errors.New("scheduler: shut down")
+	// ErrEnqueueStream is returned when a stream cannot be added to the queue.
+	ErrEnqueueStream = errors.New("scheduler: could not add stream to queue")
+	// ErrStreamExecution is returned when a stream fails while being executed.
+	ErrStreamExecution = errors.New("scheduler: error while executing stream")
+	// ErrStreamCommit is returned when a stream fails while being committed.
+	ErrStreamCommit = errors.New("scheduler: error while committing stream")
 )

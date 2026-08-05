@@ -27,6 +27,14 @@ import "errors"
 var (
 	// ErrStreamClosed is returned when committing or rolling back a stream
 	// that has already been committed or rolled back.
-	ErrStreamClosed  = errors.New("Stream closed")
-	ErrParsingFailed = errors.New("Query Parsing Error")
+	ErrStreamClosed = errors.New("query: stream closed")
+	// ErrParsingFailed is returned when a raw query string cannot be parsed into
+	// an executable query. It wraps the underlying *parser.Error (with its
+	// position), so callers can errors.As it out at the boundary.
+	ErrParsingFailed = errors.New("query: parsing error")
+	// ErrCommitFailed is returned when a stream cannot be committed to the graph.
+	ErrCommitFailed = errors.New("query: commit failed")
+	// ErrMissingParameter is returned when a query references a placeholder
+	// (e.g. vec:$v) that has no matching entry in the supplied parameters.
+	ErrMissingParameter = errors.New("query: missing parameter")
 )

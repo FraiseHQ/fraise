@@ -8,8 +8,7 @@ before:
 
 builds:
   - id: fraise
-    # Adjust if your server entrypoint lives elsewhere:
-    main: ./cmd/fraise
+    main: ./cmd/server
     binary: fraise
     env:
       - CGO_ENABLED=0
@@ -17,9 +16,9 @@ builds:
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
-      - -X main.version={{ .Version }}
-      - -X main.commit={{ .ShortCommit }}
-      - -X main.date={{ .CommitDate }}
+      - -X github.com/RonsenbergVI/fraise/pkg/version.Version={{ .Version }}
+      - -X github.com/RonsenbergVI/fraise/pkg/version.Commit={{ .ShortCommit }}
+      - -X github.com/RonsenbergVI/fraise/pkg/version.Date={{ .CommitDate }}
 
 archives:
   - formats: [tar.gz]
@@ -62,7 +61,7 @@ release:
     owner: RonsenbergVI
     name: fraise
   draft: false
-  prerelease: auto # v0.x.y-rc1 etc. auto-marked as pre-release
+  prerelease: auto # vX.Y.Z-alpha.N / -beta.N / -rc.N auto-marked as pre-release
   header: |
     ## Fraise {{ .Tag }}
 

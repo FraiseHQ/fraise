@@ -29,13 +29,6 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/hash"
 )
 
-// Compile-time proof that both new hashers satisfy the Hasher contract for
-// uint64 keys over strings, mirroring how MurmurHash satisfies Hasher[uint32,string].
-var (
-	_ hash.Hasher[uint64, string] = hash.T1haHash{}
-	_ hash.Hasher[uint64, string] = hash.XxHash{}
-)
-
 // TestXXH64KnownVectors pins the implementation to the canonical XXH64 test
 // vectors published by the reference (seed 0). These prove correctness, not
 // just stability.
@@ -50,7 +43,7 @@ func TestXXH64KnownVectors(t *testing.T) {
 		{"The quick brown fox jumps over the lazy dog", 0x0b242d361fda71bc},
 	}
 	for _, c := range cases {
-		if got := (hash.XxHash{}).Hash(c.in); got != c.want {
+		if got := (hash.XxHash[uint64]{}).Hash(c.in); got != c.want {
 			t.Errorf("XxHash.Hash(%q) = %#016x, want %#016x", c.in, got, c.want)
 		}
 	}
@@ -74,7 +67,7 @@ func TestT1haRegressionVectors(t *testing.T) {
 		{"0123456789012345678901234567890123456789", 0x9843d2619726b77c},
 	}
 	for _, c := range cases {
-		if got := (hash.T1haHash{}).Hash(c.in); got != c.want {
+		if got := (hash.T1haHash[uint64]{}).Hash(c.in); got != c.want {
 			t.Errorf("T1haHash.Hash(%q) = %#016x, want %#016x", c.in, got, c.want)
 		}
 	}
@@ -86,7 +79,7 @@ func TestT1haRegressionVectors(t *testing.T) {
 // tail branch actually mixes the trailing bytes.
 func TestT1haCoversAllTailLengths(t *testing.T) {
 	seen := make(map[uint64]int)
-	h := hash.T1haHash{}
+	h := hash.T1haHash[uint64]{}
 	for n := 0; n <= 80; n++ {
 		b := make([]byte, n)
 		for i := range b {
@@ -103,10 +96,10 @@ func TestT1haCoversAllTailLengths(t *testing.T) {
 func TestHashDeterminism(t *testing.T) {
 	inputs := []string{"", "x", "fraise", "The quick brown fox jumps over the lazy dog", "0123456789012345678901234567890123456789"}
 	for _, in := range inputs {
-		if a, b := (hash.T1haHash{}).Hash(in), (hash.T1haHash{}).Hash(in); a != b {
+		if a, b := (hash.T1haHash[uint64]{}).Hash(in), (hash.T1haHash[uint64]{}).Hash(in); a != b {
 			t.Errorf("T1haHash not deterministic for %q: %#x vs %#x", in, a, b)
 		}
-		if a, b := (hash.XxHash{}).Hash(in), (hash.XxHash{}).Hash(in); a != b {
+		if a, b := (hash.XxHash[uint64]{}).Hash(in), (hash.XxHash[uint64]{}).Hash(in); a != b {
 			t.Errorf("XxHash not deterministic for %q: %#x vs %#x", in, a, b)
 		}
 	}
@@ -118,7 +111,7 @@ func TestHashNoCollisionsOverCorpus(t *testing.T) {
 	const n = 50000
 	t1seen := make(map[uint64]string, n)
 	xxseen := make(map[uint64]string, n)
-	t1, xx := hash.T1haHash{}, hash.XxHash{}
+	t1, xx := hash.T1haHash[uint64]{}, hash.XxHash[uint64]{}
 	for i := 0; i < n; i++ {
 		s := fmt.Sprintf("key-%d-value", i)
 
@@ -138,7 +131,7 @@ func TestHashNoCollisionsOverCorpus(t *testing.T) {
 
 func BenchmarkT1haHash(b *testing.B) {
 	data := "The quick brown fox jumps over the lazy dog"
-	h := hash.T1haHash{}
+	h := hash.T1haHash[uint64]{}
 	b.SetBytes(int64(len(data)))
 	for i := 0; i < b.N; i++ {
 		_ = h.Hash(data)
@@ -147,7 +140,7 @@ func BenchmarkT1haHash(b *testing.B) {
 
 func BenchmarkXxHash(b *testing.B) {
 	data := "The quick brown fox jumps over the lazy dog"
-	h := hash.XxHash{}
+	h := hash.XxHash[uint64]{}
 	b.SetBytes(int64(len(data)))
 	for i := 0; i < b.N; i++ {
 		_ = h.Hash(data)

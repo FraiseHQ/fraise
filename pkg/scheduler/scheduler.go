@@ -35,7 +35,7 @@ import (
 // The scheduler decides when to run a stream.
 // one concurrent write stream is supported at a time
 // The scheduler decides when to wait for a write operation to finish
-type Scheduler[K comparable, P float32 | float64] struct {
+type Scheduler[K ~uint64, P float32 | float64] struct {
 	Config *config.ConfigSet
 	Queue  chan *query.Stream[K, P]
 	DB     *db.DB[K, P]
@@ -44,7 +44,7 @@ type Scheduler[K comparable, P float32 | float64] struct {
 	wg            sync.WaitGroup
 }
 
-func NewScheduler[K comparable, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
+func NewScheduler[K ~uint64, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
 	s := &Scheduler[K, P]{
 		Config:        config,
 		writeInFlight: false,
@@ -59,6 +59,8 @@ func (s *Scheduler[K, P]) Start() error {
 		s.wg.Add(1)
 		go s.worker()
 	}
+	logger.Info("Scheduler started",
+		"workers", s.Config.Scheduler.Workers, "buffer", s.Config.Scheduler.BufferSize)
 	return nil
 }
 
@@ -68,6 +70,7 @@ func (s *Scheduler[K, P]) Stop() {
 		close(s.Queue)
 		s.wg.Wait()
 		s.Queue = nil
+		logger.Info("Scheduler stopped")
 	}
 }
 
@@ -77,7 +80,7 @@ func (s *Scheduler[K, P]) worker() {
 	for stream := range s.Queue {
 		err := s.execute(stream)
 		if err != nil {
-			logger.Error("Failed to execute stream", "error:", err)
+			logger.Error("Failed to execute stream", "error", err)
 		}
 	}
 
@@ -90,18 +93,31 @@ func (s *Scheduler[K, P]) Submit(stream *query.Stream[K, P]) {
 
 // Executes stream
 func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
+
+	// Always signal completion, even on an early error, so a caller waiting on
+	// Done() never blocks forever (e.g. a request for an out-of-range graph).
+	defer stream.Finish()
+
 	g, err := s.DB.Select(stream.Query.GetGraphID())
+
 	if err != nil {
+		stream.Err = err
 		return err
 	}
-	err = stream.Stage(g)
+
+	defer stream.Release(g)
+
+	stream.Acquire(g)
+
+	stg, err := stream.Stage(g)
+
 	if err != nil {
 		stream.Rollback(g)
-		return ErrStreamExecution
-	}
-	if err := stream.Commit(g); err != nil {
-		stream.Rollback(g)
+		stream.Err = ErrStreamCommit
 		return ErrStreamCommit
+	}
+	if stream.Query.IsWrite() {
+		g.MergeFrom(stg)
 	}
 	return nil
 }

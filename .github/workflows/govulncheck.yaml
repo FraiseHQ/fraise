@@ -1,8 +1,6 @@
 name: govulncheck
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   schedule:
@@ -19,4 +17,3 @@ jobs:
         with:
           go-version-file: go.mod
           go-package: ./...
-

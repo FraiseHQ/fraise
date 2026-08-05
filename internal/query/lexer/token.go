@@ -26,6 +26,10 @@ package lexer
 type Token struct {
 	Type    TokenType
 	Literal string
+	// Pos is the position of the token's first character. Currently set by the
+	// phrase scanner so an unterminated phrase can be reported at its opening
+	// quote; zero-valued for tokens that don't record it.
+	Pos Position
 }
 
 type TokenType int
@@ -36,6 +40,10 @@ const (
 
 	// literal
 	LITERAL
+	// PHRASE is an opaque single-quoted string, scanned verbatim: reserved
+	// words and symbols inside it carry no special meaning, and a doubled
+	// quote ('') is an escaped literal quote.
+	PHRASE
 
 	// commands
 	RECALL
@@ -51,7 +59,6 @@ const (
 	// punctuation
 	AT
 	COLON
-	COMMA
 	LPAREN
 	RPAREN
 	DOLLAR
@@ -78,7 +85,7 @@ var TokenMap = map[TokenType]string{
 	LPAREN:   "(",
 	RPAREN:   ")",
 	DOLLAR:   "$",
-	COMMA:    "'",
+	PHRASE:   "phrase",
 	NEWLINE:  "\n",
 	PLUS:     "+",
 	TILDE:    "~",

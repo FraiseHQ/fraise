@@ -74,8 +74,7 @@ func (l *Lexer) Next() Token {
 		l.readCharacter()
 		tok = Token{Type: COLON, Literal: string(l.Character)}
 	case rune('\''):
-		l.readCharacter()
-		tok = Token{Type: COMMA, Literal: string(l.Character)}
+		tok = l.scanPhrase()
 	case rune('('):
 		l.readCharacter()
 		tok = Token{Type: LPAREN, Literal: string(l.Character)}
@@ -132,4 +131,39 @@ f:
 		l.readCharacter()
 	}
 	return string(res)
+}
+
+// scanPhrase reads an opaque single-quoted phrase: every character between the
+// quotes is taken literally — reserved words and symbols carry no meaning — so
+// realistic facts can be stored verbatim. A doubled quote (”) is an escaped
+// literal quote; the first single quote that is not doubled closes the phrase.
+//
+// The opening quote is at the current position. On success a PHRASE token with
+// the decoded (unquoted, unescaped) text is returned. If the input ends before
+// a closing quote, an ILLEGAL token carrying the partial text is returned so the
+// parser can report an unterminated phrase.
+func (l *Lexer) scanPhrase() Token {
+	start := l.CurrentPos
+	l.readCharacter() // consume the opening quote
+
+	var res []rune
+	for {
+		switch l.peek() {
+		case rune(0):
+			return Token{Type: ILLEGAL, Literal: string(res), Pos: start}
+		case rune('\''):
+			l.readCharacter() // consume the quote
+			if l.peek() == rune('\'') {
+				// doubled quote -> one literal quote, keep scanning
+				res = append(res, rune('\''))
+				l.readCharacter()
+				continue
+			}
+			// a lone quote closes the phrase
+			return Token{Type: PHRASE, Literal: string(res), Pos: start}
+		default:
+			res = append(res, l.peek())
+			l.readCharacter()
+		}
+	}
 }

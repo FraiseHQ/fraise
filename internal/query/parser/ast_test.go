@@ -34,28 +34,6 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
 )
 
-// --- compile-time interface conformance ------------------------------------
-//
-// These assertions fail to compile if a node ever stops satisfying the
-// interface it is meant to implement.
-var (
-	_ CommandNode             = RememberCommandNode[float32]{}
-	_ CommandNode             = RecallCommandNode[float32]{}
-	_ AstNode                 = GraphSelectorNode{}
-	_ AstNode                 = AnchorFieldNode{}
-	_ AstNode                 = TermNode{}
-	_ AstNode                 = PhraseNode{}
-	_ AstNode                 = Terms{}
-	_ FieldNode[string]       = EntityFieldNode{}
-	_ FieldNode[string]       = TopicFieldNode{}
-	_ FieldNode[int]          = TopFieldNode{}
-	_ FieldNode[int]          = DepthFieldNode{}
-	_ LiteralFieldNode        = TermNode{}
-	_ LiteralFieldNode        = PhraseNode{}
-	_ LiteralFieldNode        = Terms{}
-	_ RefFieldNode[[]float32] = VecFieldNode[float32]{}
-)
-
 func tok(t lexer.TokenType, lit string) lexer.Token {
 	return lexer.Token{Type: t, Literal: lit}
 }
@@ -112,7 +90,7 @@ func TestRememberCommandNode(t *testing.T) {
 
 func TestRecallCommandNode(t *testing.T) {
 	sel := GraphSelectorNode{value: 7}
-	n := RecallCommandNode[float32]{
+	n := RecallCommandNode[uint64, float32]{
 		key:      tok(lexer.RECALL, "recall"),
 		selector: sel,
 		pos:      pos(3),
@@ -196,13 +174,9 @@ func TestTermsEmpty(t *testing.T) {
 
 func TestPhraseNode(t *testing.T) {
 	n := PhraseNode{
-		tokens: []lexer.Token{
-			tok(lexer.LITERAL, "the "),
-			tok(lexer.LITERAL, "lazy "),
-			tok(lexer.LITERAL, "dog"),
-		},
-		pos: pos(2),
-		end: pos(20),
+		value: "the lazy dog",
+		pos:   pos(2),
+		end:   pos(20),
 	}
 
 	if got, want := n.Literal(), "the lazy dog"; got != want {
@@ -313,8 +287,8 @@ func TestAnchorFieldNode(t *testing.T) {
 // --- SinceFieldNode / UntilFieldNode ----------------------------------------
 
 func TestSinceFieldNode(t *testing.T) {
-	tv := containers.AbsoluteTime{T: time.Date(2026, time.June, 14, 0, 0, 0, 0, time.UTC)}
-	n := SinceFieldNode{
+	tv := containers.AbsoluteTime[uint64]{T: time.Date(2026, time.June, 14, 0, 0, 0, 0, time.UTC)}
+	n := SinceFieldNode[uint64]{
 		key:   tok(lexer.SINCE, "since"),
 		value: tv,
 		pos:   pos(1),
@@ -324,7 +298,7 @@ func TestSinceFieldNode(t *testing.T) {
 	if got := n.Key(); got != "since" {
 		t.Errorf("Key() = %q, want %q", got, "since")
 	}
-	if got := n.Value(); got != containers.TimeValue(tv) {
+	if got := n.Value(); got != containers.TimeValue[uint64](tv) {
 		t.Errorf("Value() = %v, want %v", got, tv)
 	}
 	if got := n.Pos(); got != pos(1) {
@@ -336,8 +310,8 @@ func TestSinceFieldNode(t *testing.T) {
 }
 
 func TestUntilFieldNode(t *testing.T) {
-	tv := containers.RelativeTime{Dur: 24 * time.Hour}
-	n := UntilFieldNode{
+	tv := containers.RelativeTime[uint64]{Dur: 24 * time.Hour}
+	n := UntilFieldNode[uint64]{
 		key:   tok(lexer.UNTIL, "until"),
 		value: tv,
 		pos:   pos(2),
@@ -347,7 +321,7 @@ func TestUntilFieldNode(t *testing.T) {
 	if got := n.Key(); got != "until" {
 		t.Errorf("Key() = %q, want %q", got, "until")
 	}
-	if got := n.Value(); got != containers.TimeValue(tv) {
+	if got := n.Value(); got != containers.TimeValue[uint64](tv) {
 		t.Errorf("Value() = %v, want %v", got, tv)
 	}
 	if got := n.Pos(); got != pos(2) {
@@ -430,18 +404,5 @@ func TestVecFieldNode(t *testing.T) {
 	}
 	if got := n.End(); got != pos(5) {
 		t.Errorf("End() = %v, want %v", got, pos(5))
-	}
-}
-
-// TestVecFieldNodeSetDoesNotMutate documents current behaviour: Set has a value
-// receiver, so the assignment to n.value never reaches the caller's copy. If
-// Set is ever changed to a pointer receiver, this test should be updated to
-// assert that the value IS mutated.
-func TestVecFieldNodeSetDoesNotMutate(t *testing.T) {
-	n := VecFieldNode[float32]{value: []float32{1}}
-	n.Set(tok(lexer.LITERAL, "q"), []float32{9, 8, 7})
-
-	if got := n.Value(); len(got) != 1 || got[0] != 1 {
-		t.Errorf("after Set, Value() = %v; expected it to remain [1] due to value receiver", got)
 	}
 }

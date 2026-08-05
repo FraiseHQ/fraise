@@ -78,13 +78,24 @@ func TestRecallSetGraphIDPersists(t *testing.T) {
 func TestRecallHash(t *testing.T) {
 	r := Recall[string, float32]{
 		Keywords: []string{"qu", "ick"},
+		Vector:   containers.NewVector[string]([]float32{0.5, 0.25}),
 		Entities: []string{"alice"},
 		Topics:   []string{"weather"},
+		Parameters: QueryParameters[string]{
+			Depth: 2,
+			Top:   5,
+			Since: containers.RelativeTime[string]{Dur: time.Hour},
+			Until: containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 12, 0, 0, 0, time.UTC)},
+		},
+		context: QueryContext{GraphID: 3},
 	}
 	h := &fakeHasher{}
 
-	// Hash joins keywords, then entities, then topics with no separator.
-	const want = "quickaliceweather"
+	// Hash folds in graph, delimited keyword/entity/topic lists, depth, top,
+	// the time bounds and the bound vector so queries that differ in any of
+	// those get distinct cache keys.
+	const want = "g=3|kw=qu\x00ick|en=alice|to=weather|d=2|t=5" +
+		"|s=H(r1h0m0s)|u=H(a2026-06-18T12:00:00Z)|vec=H(0x1p-01\x000x1p-02)"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -96,8 +107,61 @@ func TestRecallHash(t *testing.T) {
 func TestRecallHashEmpty(t *testing.T) {
 	var r Recall[string, float32]
 	h := &fakeHasher{}
-	if got := r.Hash(h); got != "H()" {
-		t.Errorf("Hash() = %q, want %q", got, "H()")
+	const want = "g=0|kw=|en=|to=|d=0|t=0|s=|u=|vec=H()"
+	if got := r.Hash(h); got != "H("+want+")" {
+		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
+	}
+}
+
+// TestRecallHashDistinguishesParameters is the real contract: recalls that
+// differ only in graph, depth, top, time bounds or the bound vector must not
+// share a cache key, otherwise the engine hands back a stale plan (e.g. a
+// depth:1 result for a depth:2 query, or results seeded by another query's
+// vector).
+func TestRecallHashDistinguishesParameters(t *testing.T) {
+	base := func() Recall[string, float32] {
+		return Recall[string, float32]{Keywords: []string{"mercury"}}
+	}
+	variants := map[string]Recall[string, float32]{
+		"base":    base(),
+		"depth":   func() Recall[string, float32] { r := base(); r.Parameters.Depth = 2; return r }(),
+		"top":     func() Recall[string, float32] { r := base(); r.Parameters.Top = 5; return r }(),
+		"graph":   func() Recall[string, float32] { r := base(); r.context.GraphID = 1; return r }(),
+		"keyword": func() Recall[string, float32] { r := base(); r.Keywords = []string{"venus"}; return r }(),
+		"since-1h": func() Recall[string, float32] {
+			r := base()
+			r.Parameters.Since = containers.RelativeTime[string]{Dur: time.Hour}
+			return r
+		}(),
+		"since-30d": func() Recall[string, float32] {
+			r := base()
+			r.Parameters.Since = containers.RelativeTime[string]{Dur: 30 * 24 * time.Hour}
+			return r
+		}(),
+		"until": func() Recall[string, float32] {
+			r := base()
+			r.Parameters.Until = containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 0, 0, 0, 0, time.UTC)}
+			return r
+		}(),
+		"vector-a": func() Recall[string, float32] {
+			r := base()
+			r.Vector = containers.NewVector[string]([]float32{1, 0})
+			return r
+		}(),
+		"vector-b": func() Recall[string, float32] {
+			r := base()
+			r.Vector = containers.NewVector[string]([]float32{0, 1})
+			return r
+		}(),
+	}
+
+	seen := make(map[string]string)
+	for name, r := range variants {
+		key := r.Hash(&fakeHasher{})
+		if other, clash := seen[key]; clash {
+			t.Errorf("hash collision: %q and %q both produced %q", name, other, key)
+		}
+		seen[key] = name
 	}
 }
 
@@ -105,9 +169,9 @@ func TestRecallSinceUntil(t *testing.T) {
 	now := time.Date(2026, time.June, 16, 12, 0, 0, 0, time.UTC)
 	absUntil := now.Add(48 * time.Hour)
 	r := Recall[string, float32]{
-		Parameters: QueryParameters{
-			Since: containers.RelativeTime{Dur: time.Hour}, // relative: now - 1h
-			Until: containers.AbsoluteTime{T: absUntil},    // absolute: fixed instant
+		Parameters: QueryParameters[string]{
+			Since: containers.RelativeTime[string]{Dur: time.Hour}, // relative: now - 1h
+			Until: containers.AbsoluteTime[string]{T: absUntil},    // absolute: fixed instant
 		},
 	}
 
@@ -122,10 +186,18 @@ func TestRecallSinceUntil(t *testing.T) {
 func TestRecallPlan(t *testing.T) {
 	var r Recall[string, float32]
 	s, err := r.Plan(nil)
-	if s != nil {
-		t.Errorf("Plan() stream = %v, want nil", s)
-	}
 	if err != nil {
-		t.Errorf("Plan() err = %v, want nil", err)
+		t.Fatalf("Plan() err = %v, want nil", err)
+	}
+	if s == nil {
+		t.Fatal("Plan() stream = nil, want a ready stream")
+	}
+	if s.Query != Query[string, float32](&r) {
+		t.Errorf("Plan() stream.Query = %v, want the receiver", s.Query)
+	}
+	select {
+	case <-s.Done():
+		t.Error("Plan() stream is already done; it must stay open until committed")
+	default:
 	}
 }

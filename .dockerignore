@@ -1,0 +1,11 @@
+.git
+.claude
+bin
+node_modules
+sdk
+docs
+assets
+examples
+coverage.out
+coverage.html
+*.md

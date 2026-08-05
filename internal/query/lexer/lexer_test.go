@@ -30,7 +30,7 @@ import (
 
 func Test_newLexer(t *testing.T) {
 	l := lexer.New("recall anna topic:job")
-	if !(l.Character == rune('r')) {
+	if l.Character != rune('r') {
 		t.Error("Character should be:", rune('r'), "but got:", l.Character)
 	}
 }
@@ -39,10 +39,10 @@ func Test_Next(t *testing.T) {
 	l := lexer.New("remember anna 'I work at Google' topic:job")
 	token1 := l.Next()
 	token2 := l.Next()
-	if !(token1.Literal == "remember" && token1.Type == lexer.REMEMBER) {
+	if token1.Literal != "remember" || token1.Type != lexer.REMEMBER {
 		t.Error("Wrong Value")
 	}
-	if !(token2.Literal == "anna" && token2.Type == lexer.LITERAL) {
+	if token2.Literal != "anna" || token2.Type != lexer.LITERAL {
 		t.Error("Wrong Value")
 	}
 }
@@ -53,7 +53,7 @@ func Test_NextUntilEol(t *testing.T) {
 		_ = l.Next()
 	}
 	token := l.Next()
-	if !(token.Literal == "" && token.Type == lexer.EOL) {
+	if token.Literal != "" || token.Type != lexer.EOL {
 		t.Error("Wrong Value")
 	}
 }
@@ -94,12 +94,10 @@ func Test_SpecialCharacters(t *testing.T) {
 			},
 		},
 		{
-			name:  "single quote token",
+			name:  "single quoted phrase",
 			input: "'hello'",
 			expected: []lexer.Token{
-				{Type: lexer.COMMA, Literal: "'"},
-				{Type: lexer.LITERAL, Literal: "hello"},
-				{Type: lexer.COMMA, Literal: "'"},
+				{Type: lexer.PHRASE, Literal: "hello"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -320,11 +318,10 @@ func Test_BoundaryConditions(t *testing.T) {
 		},
 		{
 			name:  "only special characters",
-			input: ":$'()",
+			input: ":$()",
 			expected: []lexer.Token{
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.DOLLAR, Literal: "$"},
-				{Type: lexer.COMMA, Literal: "'"},
 				{Type: lexer.LPAREN, Literal: "("},
 				{Type: lexer.RPAREN, Literal: ")"},
 				{Type: lexer.EOL, Literal: ""},
@@ -562,15 +559,7 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 			expected: []lexer.Token{
 				{Type: lexer.REMEMBER, Literal: "remember"},
 				{Type: lexer.LITERAL, Literal: "anna"},
-				{Type: lexer.COMMA, Literal: "'"},
-				{Type: lexer.LITERAL, Literal: "worked"},
-				{Type: lexer.LITERAL, Literal: "at"},
-				{Type: lexer.LITERAL, Literal: "Google"},
-				{Type: lexer.LITERAL, Literal: "from"},
-				{Type: lexer.LITERAL, Literal: "2020"},
-				{Type: lexer.LITERAL, Literal: "to"},
-				{Type: lexer.LITERAL, Literal: "2023"},
-				{Type: lexer.COMMA, Literal: "'"},
+				{Type: lexer.PHRASE, Literal: "worked at Google from 2020 to 2023"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "job"},
@@ -598,10 +587,7 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 			expected: []lexer.Token{
 				{Type: lexer.UPDATE, Literal: "update"},
 				{Type: lexer.LITERAL, Literal: "anna"},
-				{Type: lexer.COMMA, Literal: "'"},
-				{Type: lexer.LITERAL, Literal: "new"},
-				{Type: lexer.LITERAL, Literal: "information"},
-				{Type: lexer.COMMA, Literal: "'"},
+				{Type: lexer.PHRASE, Literal: "new information"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "job"},
@@ -768,5 +754,47 @@ top:10 depth:5`,
 				}
 			}
 		})
+	}
+}
+
+// TestScanPhrase covers the opaque single-quoted phrase scanner: everything
+// between the quotes is one PHRASE token taken verbatim (reserved words and
+// symbols included), ” is an escaped quote, and an unclosed quote yields an
+// ILLEGAL token so the parser can report an unterminated phrase.
+func TestScanPhrase(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantTyp lexer.TokenType
+		wantLit string
+	}{
+		{"reserved words inside", "'remember the topic since'", lexer.PHRASE, "remember the topic since"},
+		{"colon / time", "'meeting at 3:30pm'", lexer.PHRASE, "meeting at 3:30pm"},
+		{"symbols inside", "'$ @ ( ) :'", lexer.PHRASE, "$ @ ( ) :"},
+		{"escaped apostrophe", "'alice''s laptop'", lexer.PHRASE, "alice's laptop"},
+		{"empty phrase", "''", lexer.PHRASE, ""},
+		{"only an escaped quote", "''''", lexer.PHRASE, "'"},
+		{"interior spacing preserved", "'a   b'", lexer.PHRASE, "a   b"},
+		{"unterminated", "'oops no close", lexer.ILLEGAL, "oops no close"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lexer.New(tc.input).Next()
+			if got.Type != tc.wantTyp || got.Literal != tc.wantLit {
+				t.Errorf("Next() = {%v %q}, want {%v %q}",
+					got.Type, got.Literal, tc.wantTyp, tc.wantLit)
+			}
+		})
+	}
+}
+
+// TestScanPhraseUnterminatedRecordsPosition checks that an unterminated phrase
+// reports the position of its opening quote (used by the parser's error).
+func TestScanPhraseUnterminatedRecordsPosition(t *testing.T) {
+	// opening quote is the 5th rune (0-indexed column 4): "foo <'>bar"
+	got := lexer.New("foo 'bar").Next() // first token is the bare word "foo"
+	if got.Type != lexer.LITERAL || got.Literal != "foo" {
+		t.Fatalf("first token = {%v %q}, want LITERAL \"foo\"", got.Type, got.Literal)
 	}
 }

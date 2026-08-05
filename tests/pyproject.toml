@@ -1,0 +1,39 @@
+[project]
+name = "tests"
+version = "0.1.0"
+description = "e2e tests"
+readme = "README.md"
+authors = [
+    { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.1",
+    "pytest>=9.0.1",
+    "requests>=2.32.5",
+]
+
+# Optional: only needed for the `embeddings`-marked test, which loads a real
+# HuggingFace model through the vanilla transformers API. Kept out of the base
+# deps so the default e2e image stays torch-free; install with
+# `uv sync --extra embeddings`.
+[project.optional-dependencies]
+embeddings = [
+    "transformers>=4.44.0",
+    "torch>=2.3.0",
+]
+
+# Pull torch from PyTorch's CPU wheel index on Linux so the e2e image gets the
+# ~200MB CPU build instead of the default PyPI wheel, which drags in ~2GB of
+# CUDA libraries. macOS torch is already CPU-only, so it stays on PyPI there.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pytest]
+minversion = "8.0"
+addopts = ["-ra", "-q", "--capture=no", "-vvv"]

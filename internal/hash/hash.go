@@ -22,6 +22,8 @@
 
 package hash
 
+import "github.com/RonsenbergVI/fraise/internal/config"
+
 // Hasher maps a value of type T to a comparable key of type K. Implementations
 // such as XxHash provide a concrete hashing algorithm.
 type Hasher[K comparable, T any] interface {
@@ -33,4 +35,13 @@ type Hasher[K comparable, T any] interface {
 // provided Hasher, returning the resulting comparable key of type K.
 type Hashable[K comparable, T any] interface {
 	Hash(h Hasher[K, T]) K
+}
+
+func NewHasher[K ~uint64](cfg *config.ConfigSet) Hasher[K, string] {
+	switch cfg.DB.HashingFunction.Name {
+	case "t1ha":
+		return T1haHash[K]{seed: cfg.DB.HashingFunction.Seed}
+	default:
+		return XxHash[K]{seed: cfg.DB.HashingFunction.Seed}
+	}
 }

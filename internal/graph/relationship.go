@@ -22,11 +22,52 @@
 
 package graph
 
+import (
+	"time"
+
+	"github.com/RonsenbergVI/fraise/internal/hash"
+)
+
 // Fact mentions NamedEntity relationship
 type Mentions[K comparable] struct {
 	Fact        *Fact[K]
 	NamedEntity *NamedEntity[K]
 	NodeAttributes
+
+	Hasher hash.Hasher[K, string]
+}
+
+func (m Mentions[K]) Key() K {
+	return m.Hash(m.Hasher)
+}
+
+func (m Mentions[K]) GetAttributes() *NodeAttributes {
+	return &m.NodeAttributes
+}
+
+func (m Mentions[K]) GetTimestamp() time.Time {
+	return m.Timestamp
+}
+
+func (m Mentions[K]) GetValue() string {
+	return m.Value
+}
+
+func (m Mentions[K]) Source() *Entity[K] {
+	var e Entity[K] = m.Fact
+	return &e
+}
+
+func (m Mentions[K]) Target() *Entity[K] {
+	var e Entity[K] = m.NamedEntity
+	return &e
+}
+
+// Hash identifies the edge by the (fact, entity) pair it connects. Hashing the
+// (empty) attribute value instead would collapse every Mentions edge onto one
+// key, so Set would keep only the first and drop the rest.
+func (m Mentions[K]) Hash(h hash.Hasher[K, string]) K {
+	return h.Hash("mentions:" + m.Fact.Value + "\x00" + m.NamedEntity.Value)
 }
 
 // Fact is about Topic relationship
@@ -34,4 +75,39 @@ type IsAbout[K comparable] struct {
 	Fact  *Fact[K]
 	Topic *Topic[K]
 	NodeAttributes
+
+	Hasher hash.Hasher[K, string]
+}
+
+func (a IsAbout[K]) Key() K {
+	return a.Hash(a.Hasher)
+}
+
+func (a IsAbout[K]) GetAttributes() *NodeAttributes {
+	return &a.NodeAttributes
+}
+
+func (a IsAbout[K]) GetTimestamp() time.Time {
+	return a.Timestamp
+}
+
+func (a IsAbout[K]) GetValue() string {
+	return a.Value
+}
+
+func (a IsAbout[K]) Source() *Entity[K] {
+	var e Entity[K] = a.Fact
+	return &e
+}
+
+func (a IsAbout[K]) Target() *Entity[K] {
+	var e Entity[K] = a.Topic
+	return &e
+}
+
+// Hash identifies the edge by the (fact, topic) pair it connects. Hashing the
+// (empty) attribute value instead would collapse every IsAbout edge onto one
+// key, so Set would keep only the first and drop the rest.
+func (a IsAbout[K]) Hash(h hash.Hasher[K, string]) K {
+	return h.Hash("isabout:" + a.Fact.Value + "\x00" + a.Topic.Value)
 }

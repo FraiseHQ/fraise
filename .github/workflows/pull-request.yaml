@@ -1,0 +1,155 @@
+name: PR checks
+
+on:
+  # Title/branch conventions need the token to comment on fork PRs, hence
+  # pull_request_target. The lint job runs untrusted PR code, so it stays on
+  # the plain pull_request event (no write token).
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          sync-labels: true
+          configuration-path: .github/labeler.yaml
+
+      - uses: bcoe/conventional-release-labels@v1
+        with:
+          type_labels: >-
+            {"feat": "feature", "fix": "fix", "perf": "performance",
+             "refactor": "maintenance", "chore": "maintenance", "build": "maintenance",
+             "deps": "maintenance", "ci": "maintenance", "upgrade": "upgrade",
+             "docs": "docs", "test": "test", "style": "maintenance",
+             "revert": "maintenance", "release": "release",
+             "breaking": "breaking-change"}
+          ignored_types: "[]"
+
+
+  lint:
+    name: General pre-commit hooks
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Runs untrusted PR code — read-only, no token to write comments/contents.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version-file: "pyproject.toml"
+      - name: Lint
+        # Language- and docker-specific hooks run in their own workflows.
+        env:
+          SKIP: golangci-lint-full,ruff,ruff-format,ty,biome-check,hadolint-docker
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
+  validate:
+    name: Validate branch name and PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Writes the conventions sticky comment on the PR.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Must match the changelog groups in .goreleaser.yaml
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            chore
+            build
+            deps
+            ci
+            docs
+            test
+            upgrade
+            release
+          requireScope: false
+          # Allow breaking-change marker: feat!: or feat(scope)!:
+          headerPattern: '^(\w+)(?:\(([\w\-\.]+)\))?(!)?: (.+)$'
+          headerPatternCorrespondence: type, scope, breaking, subject
+
+     # https://github.com/finleyfamily/action-enforce-branch-name
+      - name: Validate branch name
+        id: branch
+        # Skip bot and release branches.
+        if: >-
+          !startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
+          !startsWith(github.event.pull_request.head.ref, 'renovate/') &&
+          !startsWith(github.event.pull_request.head.ref, 'release/') &&
+          !startsWith(github.event.pull_request.head.ref, 'revert-')
+        uses: finleyfamily/action-enforce-branch-name@v1.0.4
+        continue-on-error: true
+        with:
+          regex: '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\/[a-z0-9]+([-.][a-z0-9]+)*$'
+          exclude: main,master,develop
+
+      # https://github.com/marocchino/sticky-pull-request-comment
+      - name: Comment on failure
+        if: always() && (steps.title.outcome == 'failure' || steps.branch.outcome == 'failure')
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: pr-conventions
+          skip_unchanged: true
+          message: |
+            ### ❌ PR conventions check failed
+
+            | Check | Value | Result |
+            | --- | --- | --- |
+            | PR title | `${{ github.event.pull_request.title }}` | ${{ steps.title.outcome == 'failure' && '❌ invalid' || '✅' }} |
+            | Branch name | `${{ github.event.pull_request.head.ref }}` | ${{ steps.branch.outcome == 'failure' && '❌ invalid' || steps.branch.outcome == 'skipped' && '⏭️ exempt' || '✅' }} |
+
+            **Details**
+
+            ```
+            ${{ steps.title.outputs.error_message || 'The PR title is fine — fix the branch name.' }}
+            ```
+
+            <details><summary>The rules</summary>
+
+            **Title** — `type(optional-scope): subject`
+
+            ```
+            feat(api): add request rate limiting
+            fix: handle empty response body
+            refactor(auth)!: drop legacy session cookies
+            ```
+
+            Lowercase subject, no trailing period, 3-60 characters.
+
+            **Branch** — `type/short-description`
+
+            ```
+            feat/rate-limiting
+            fix/empty-response-body
+            ```
+
+            Allowed types: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`
+
+            Editing the PR title re-runs this check. To rename a branch:
+            `git branch -m <new-name> && git push origin -u <new-name>`, then retarget the PR.
+            </details>
+
+      - name: Remove comment once fixed
+        if: always() && steps.title.outcome != 'failure' && steps.branch.outcome != 'failure'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: pr-conventions
+          delete: true
+
+      - name: Fail the job
+        if: steps.title.outcome == 'failure' || steps.branch.outcome == 'failure'
+        run: exit 1

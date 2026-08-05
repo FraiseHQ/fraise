@@ -26,7 +26,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -76,23 +75,80 @@ type EngineConfig struct {
 	// Half life for time decay (used to score facts)
 	Halflife time.Duration `toml:"half-life"`
 
-	// How many seeds to pull from each source (keywords and vector)
-	SeedSize uint `toml:"seed-size"`
-
-	// Score attenuation for graph walk
-	HopAttenuation float32 `toml:"hop-attenuation"`
-
 	// Query cache size
 	CacheCapacity int `toml:"cache-capacity"`
 }
 
 type DBConfig struct {
-	DefaultTop uint `toml:"default-top"`
+	// Floating-point precision for embeddings and scores: "float32" or
+	// "float64". Selects which generic instantiation of the server is built at
+	// startup (see cmd/server).
+	Precision string `toml:"precision"`
 
-	DefaultDepth uint `toml:"default-depth"`
+	// How many independent graphs the store allocates (selectors 0..n-1)
+	NumGraphs int `toml:"num-graphs"`
 
-	// database hashing function (xxhash, murmur3, t1ha)
-	HashingFunction string `toml:"hashing-function"`
+	// default top
+	DefaultTop int `toml:"default-top"`
+
+	// default depth
+	DefaultDepth int `toml:"default-depth"`
+
+	// How many seeds to pull from each source (keywords and vector)
+	SeedSize int `toml:"seed-size"`
+
+	// Score attenuation for graph walk
+	HopAttenuation float64 `toml:"hop-attenuation"`
+
+	// database hashing function
+	HashingFunction HashingFunction `toml:"hashing-function"`
+
+	// graph search traversal algorithm
+	SearchAlgorithm SearchAlgorithm `toml:"search-algorithm"`
+
+	// graph search ranking boost (none, pagerank)
+	RankingAlgorithm RankingAlgorithm `toml:"ranking-algorithm"`
+
+	VectorSearch VectorSearch `toml:"vector-search"`
+}
+
+type HashingFunction struct {
+	// (xxhash, t1ha)
+	Name string `toml:"name"`
+
+	// hashing function seed
+	Seed uint64 `toml:"seed"`
+}
+
+type SearchAlgorithm struct {
+	// name (bfs)
+	Name string `toml:"name"`
+}
+type RankingAlgorithm struct {
+	// only pagerank supported (if no ranking none is accepted)
+	Name string `toml:"name"`
+
+	// PageRank probability of following an edge (used when
+	// ranking-algorithm is pagerank)
+	PageRankDamping float64 `toml:"pagerank-damping"`
+
+	// PageRank iteration cap
+	PageRankMaxIter int `toml:"pagerank-max-iter"`
+
+	// PageRank convergence threshold on the score delta
+	PageRankTol float64 `toml:"pagerank-tol"`
+}
+
+type VectorSearch struct {
+	ProjectionDimension int `toml:"projection-dimension"`
+
+	NumberTrees int `toml:"number-trees"`
+
+	Seed uint64 `toml:"seed"`
+
+	// Forest garbage compaction threshold: entries per live vector before
+	// the forest is rebuilt from the live set.
+	FlushFactor int `toml:"flush-factor"`
 }
 
 // Instanciates new configset
@@ -102,6 +158,9 @@ func New() *ConfigSet {
 	config.FlagSet = flag.NewFlagSet("flags", flag.PanicOnError)
 
 	flagSet := config.FlagSet
+
+	// config file (path to the TOML config Parse reads before applying flags)
+	flagSet.StringVar(&config.configFile, "config", DefaultConfigFile, "Path to the TOML config file")
 
 	// scheduler
 	flagSet.IntVar(&config.Scheduler.Workers, "workers", DefaultWorkersCount, "Default worker count.")
@@ -118,22 +177,28 @@ func New() *ConfigSet {
 	// engine
 	flagSet.BoolVar(&config.Engine.AllowUnanchoredRecall, "allow-unanchored-recall", DefaultAllowUnanchoredRecall, "Allow unanchored recalls")
 	flagSet.DurationVar(&config.Engine.Halflife, "half-life", DefaultHalflife, "Half life for time decay")
-	flagSet.UintVar(&config.Engine.SeedSize, "seed-size", DefaultSeedSize, "Seeds to pull from each source")
-	config.Engine.HopAttenuation = DefaultHopAttenuation
-	flagSet.Func("hop-attenuation", "Score attenuation for graph walk", func(s string) error {
-		v, err := strconv.ParseFloat(s, 32)
-		if err != nil {
-			return err
-		}
-		config.Engine.HopAttenuation = float32(v)
-		return nil
-	})
 	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
 
 	// db
-	flagSet.StringVar(&config.DB.HashingFunction, "hashing-function", DefaultHashingFunction, "Default Hashing function")
-	flagSet.UintVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
-	flagSet.UintVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
+	flagSet.IntVar(&config.DB.NumGraphs, "num-graphs", DefaultNumGraph, "Number of independent graphs the store allocates")
+	flagSet.IntVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
+	flagSet.IntVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
+	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
+	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Seeds to pull from each source")
+	flagSet.Float64Var(&config.DB.HopAttenuation, "hop-attenuation", float64(DefaultHopAttenuation), "Score attenuation for graph walk")
+	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
+	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
+	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
+	flagSet.StringVar(&config.DB.RankingAlgorithm.Name, "ranking-algorithm", DefaultRankingAlgorithm, "Graph search ranking boost")
+	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankDamping, "pagerank-damping", DefaultPageRankDamping, "PageRank damping factor")
+	flagSet.IntVar(&config.DB.RankingAlgorithm.PageRankMaxIter, "pagerank-max-iter", DefaultPageRankMaxIter, "PageRank iteration cap")
+	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankTol, "pagerank-tol", DefaultPageRankTol, "PageRank convergence threshold")
+
+	// vector search
+	flagSet.IntVar(&config.DB.VectorSearch.ProjectionDimension, "rptree-projection-dimension", DefaultProjectionDimention, "RP Tree Projection dimension")
+	flagSet.IntVar(&config.DB.VectorSearch.NumberTrees, "rptree-n-trees", DefaultNumberTrees, "RP Tree Number Trees")
+	flagSet.Uint64Var(&config.DB.VectorSearch.Seed, "rptree-seed", DefaultRPSeed, "RP Tree seed")
+	flagSet.IntVar(&config.DB.VectorSearch.FlushFactor, "rptree-flush-factor", DefaultFlushFactor, "RP forest compaction threshold (entries per live vector)")
 
 	return config
 }
@@ -181,8 +246,8 @@ func (c *ConfigSet) Parse(arguments []string) error {
 		return err
 	}
 
-	if len(c.FlagSet.Args()) != 0 {
-		return fmt.Errorf("'%s' is an invalid flag", c.FlagSet.Arg(0))
+	if len(c.Args()) != 0 {
+		return fmt.Errorf("%w: %q", ErrInvalidFlag, c.Arg(0))
 	}
 
 	err = c.adjust(meta)
@@ -215,14 +280,28 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// engine
 	Adjust(&c.Engine.AllowUnanchoredRecall, DefaultAllowUnanchoredRecall)
 	Adjust(&c.Engine.Halflife, DefaultHalflife)
-	Adjust(&c.Engine.SeedSize, DefaultSeedSize)
-	Adjust(&c.Engine.HopAttenuation, DefaultHopAttenuation)
 	Adjust(&c.Engine.CacheCapacity, DefaultCacheCapacity)
 
 	// db
+	Adjust(&c.DB.NumGraphs, DefaultNumGraph)
 	Adjust(&c.DB.DefaultTop, DefaultTop)
 	Adjust(&c.DB.DefaultDepth, DefaultDepth)
-	Adjust(&c.DB.HashingFunction, DefaultHashingFunction)
+	Adjust(&c.DB.Precision, DefaultPrecision)
+	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
+	Adjust(&c.DB.HopAttenuation, float64(DefaultHopAttenuation))
+	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
+	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
+	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)
+	Adjust(&c.DB.RankingAlgorithm.Name, DefaultRankingAlgorithm)
+	Adjust(&c.DB.RankingAlgorithm.PageRankDamping, DefaultPageRankDamping)
+	Adjust(&c.DB.RankingAlgorithm.PageRankMaxIter, DefaultPageRankMaxIter)
+	Adjust(&c.DB.RankingAlgorithm.PageRankTol, DefaultPageRankTol)
+
+	// vector search
+	Adjust(&c.DB.VectorSearch.ProjectionDimension, DefaultProjectionDimention)
+	Adjust(&c.DB.VectorSearch.NumberTrees, DefaultNumberTrees)
+	Adjust(&c.DB.VectorSearch.Seed, DefaultRPSeed)
+	Adjust(&c.DB.VectorSearch.FlushFactor, DefaultFlushFactor)
 
 	return nil
 }

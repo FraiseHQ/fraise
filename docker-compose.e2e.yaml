@@ -1,0 +1,22 @@
+services:
+  fraise:
+    build:
+      context: .
+      dockerfile: Dockerfile.fraise
+    ports:
+      - "${FRAISE_PORT:-9876}:9876"
+    volumes:
+      - ./tests/e2e/fraise.config.toml:/etc/fraise/fraise.config.toml:ro
+    command: ["-config", "/etc/fraise/fraise.config.toml"]
+
+  # End-to-end test runner: talks to the fraise service over the compose
+  # network. Behind a profile so a plain `docker compose up` never runs it;
+  # invoke it with `make test-e2e` (or `docker compose --profile e2e run e2e`).
+  e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e
+    command: ["uv", "run", "pytest", "e2e"]
+    profiles: ["e2e"]
+    environment:
+      FRAISE_URL: http://fraise:9876

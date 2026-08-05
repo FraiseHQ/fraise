@@ -26,14 +26,20 @@ import (
 	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/RonsenbergVI/fraise/internal/hash"
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
 // GraphStats is a point-in-time snapshot of a graph's shape.
 type GraphStats struct {
-	Order int // number of entities (vertices)
-	Size  int // number of relationships (edges)
-	Nodes int // total stored nodes
+	Order   int `json:"order"`   // number of entities (vertices)
+	Size    int `json:"size"`    // number of relationships (edges)
+	Nodes   int `json:"nodes"`   // total stored nodes
+	Vectors int `json:"vectors"` // total vectors indexed
+	// ForestEntries is how many entries the vector forest holds (live vectors
+	// plus garbage awaiting compaction); bounded by the index's flush factor
+	// times Vectors. 0 for index implementations without a forest.
+	ForestEntries int `json:"forest_entries"`
 }
 
 // Graph is a temporal memory graph: the storage atomic component of the
@@ -47,27 +53,28 @@ type GraphStats struct {
 // callers are responsible for acquiring the appropriate lock around the
 // operations they compose (see the locking section below).
 type Graph[K comparable, P float32 | float64] interface {
+	GetHasher() hash.Hasher[K, string]
 
 	// Get returns the node stored under key, or nil if absent.
-	Get(key K) *Node[K]
+	Get(key K) Node[K]
 
 	// Set inserts a new node, deriving its key via the graph's hash
 	// function.
-	Set(node *Node[K]) error
+	Set(node Node[K]) error
 
 	// Put replaces the node stored under key with the given node.
-	Put(key K, node *Node[K]) error
+	Put(key K, node Node[K]) error
 
 	// Delete removes the node (and, by extension, its index entries and
 	// incident relationships).
-	Delete(node *Node[K]) error
+	Delete(node Node[K]) error
 
 	// GetVectorIndex returns the graph's vector (semantic) index, keyed
 	// by node key and storing embedding vectors of precision P.
 	GetVectorIndex() index.VectorIndex[K, P]
 
 	// GetTextIndex returns the graph's full-text search index.
-	GetTextIndex() index.TextIndex[K]
+	GetTextIndex() index.TextIndex[K, P]
 
 	// MergeFrom merges the contents of g into this graph: nodes,
 	// relationships and index entries. Nodes with colliding keys are
@@ -78,21 +85,16 @@ type Graph[K comparable, P float32 | float64] interface {
 	// original: mutating one never affects the other.
 	Copy() Graph[K, P]
 
-	// Entities returns every entity (vertex) currently in the graph.
-	Entities() []*Entity[K]
-
-	// Relationships returns every relationship (edge) currently in the
-	// graph.
-	Relationships() []*Relationship[K]
+	Nodes() map[K]Node[K]
 
 	// AdjacencyMap returns the outgoing-edge view of the graph:
 	// AdjacencyMap()[from][to] is the relationship from -> to.
-	AdjacencyMap() map[K]map[K]*Relationship[K]
+	AdjacencyMap() map[K]map[K]K
 
 	// PredecessorMap returns the incoming-edge view of the graph:
 	// PredecessorMap()[to][from] is the relationship from -> to. It is
 	// the transpose of AdjacencyMap and serves reverse traversal.
-	PredecessorMap() map[K]map[K]*Relationship[K]
+	PredecessorMap() map[K]map[K]K
 
 	// Order returns the number of entities (vertices) in the graph.
 	Order() int
@@ -117,7 +119,7 @@ type Graph[K comparable, P float32 | float64] interface {
 	//   - top:      maximum number of results returned
 	//   - since:    inclusive lower time bound; zero value = unbounded
 	//   - until:    exclusive upper time bound; zero value = unbounded
-	Search(keywords []string, vector containers.Vector[P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P)
+	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P)
 
 	// Graphs expose their read-write lock so callers can hold a single
 	// lock across a sequence of calls (e.g. Get-then-Put) instead of

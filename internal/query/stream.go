@@ -23,10 +23,13 @@
 package query
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
 // data structure representing a stream: language of the scheduler
@@ -42,23 +45,120 @@ type Stream[K comparable, P float32 | float64] struct {
 	once    sync.Once
 }
 
-func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
-	defer s.finish()
-	defer s.release(g)
+// NewStream returns a stream ready to be scheduled for q: Done() blocks until
+// the scheduler commits or rolls the stream back.
+func NewStream[K comparable, P float32 | float64](q Query[K, P]) *Stream[K, P] {
+	return &Stream[K, P]{Query: q, done: make(chan struct{})}
+}
 
-	if s.staging == nil {
-		return ErrStreamClosed
-	}
+func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 	// Write stream
 	if s.Query.IsWrite() {
-		g.MergeFrom(s.staging)
-		s.staging = nil
+
+		if s.staging == nil {
+			return ErrStreamClosed
+		}
+
+		remember := s.Query.(*Remember[K, P])
+
+		logger.Debug("Committing write stream",
+			"entities", len(remember.Entities),
+			"topics", len(remember.Topics),
+			"vector", !remember.Vector.Empty())
+
+		// TODO: Implement stream query write logic
+
+		fact := graph.Fact[K]{
+			NodeAttributes: graph.NodeAttributes{
+				Value:     remember.Value,
+				Timestamp: time.Now(),
+			},
+			Hasher: g.GetHasher(),
+		}
+
+		g.Set(fact)
+		if !remember.Vector.Empty() {
+			if err := g.GetVectorIndex().Insert(fact.Key(), remember.Vector); err != nil {
+				logger.Error("Failed to index fact vector",
+					"value", remember.Value, "error", err)
+				return fmt.Errorf("indexing vector for fact %q: %w", remember.Value, err)
+			}
+		}
+
+		for _, e := range remember.Entities {
+
+			entity := graph.NamedEntity[K]{NodeAttributes: graph.NodeAttributes{
+				Value:     e,
+				Timestamp: time.Now(),
+			},
+				Hasher: g.GetHasher(),
+			}
+
+			// Store the entity node itself: anchored recalls resolve a fact's
+			// tags through its neighbours in idToNodes, so an edge to a
+			// never-stored node makes every entity: filter miss. Entities are
+			// shared across facts (keyed by value), so an already-stored node
+			// is the normal upsert case, not an error.
+			if err := g.Set(&entity); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
+				logger.Error("Failed to store entity node", "entity", e, "error", err)
+				return fmt.Errorf("storing entity %q: %w", e, err)
+			}
+
+			mentions := graph.Mentions[K]{NodeAttributes: graph.NodeAttributes{
+				Timestamp: time.Now(),
+			},
+				Fact:        &fact,
+				NamedEntity: &entity,
+				Hasher:      g.GetHasher(),
+			}
+
+			g.Set(mentions)
+		}
+
+		for _, t := range remember.Topics {
+
+			topic := graph.Topic[K]{NodeAttributes: graph.NodeAttributes{
+				Value:     t,
+				Timestamp: time.Now(),
+			},
+				Hasher: g.GetHasher(),
+			}
+
+			// Same as entities above: the topic node must exist for topic:
+			// filters to resolve; re-storing a shared topic is the upsert case.
+			if err := g.Set(&topic); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
+				logger.Error("Failed to store topic node", "topic", t, "error", err)
+				return fmt.Errorf("storing topic %q: %w", t, err)
+			}
+
+			about := graph.IsAbout[K]{NodeAttributes: graph.NodeAttributes{
+				Timestamp: time.Now(),
+			},
+				Fact:   &fact,
+				Topic:  &topic,
+				Hasher: g.GetHasher(),
+			}
+
+			g.Set(about)
+		}
+
+		r := QueryResult[K, P]{
+			Count: 0,
+			Hits:  make([]Hit[K, P], 0),
+		}
+		s.Result = &r
+		logger.Debug("Write stream committed", "value", remember.Value)
 		return nil
 	}
 
 	// Read stream
 	recall := s.Query.(*Recall[K, P])
+	logger.Debug("Committing read stream",
+		"keywords", len(recall.Keywords),
+		"vector", !recall.Vector.Empty(),
+		"depth", recall.Parameters.Depth,
+		"top", recall.Parameters.Top)
 	nodes, scores := g.Search(
 		recall.Keywords,
 		recall.Vector,
@@ -81,19 +181,12 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		r.Hits[i].Score = scores[i]
 	}
 
-	s.staging = nil
 	s.Result = &r
+	logger.Debug("Read stream committed", "hits", n)
 	return nil
 }
 
 func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) error {
-
-	defer s.finish()
-	defer s.release(g)
-
-	if s.staging == nil {
-		return ErrStreamClosed
-	}
 
 	if s.Query.IsWrite() {
 		s.staging = nil
@@ -103,14 +196,20 @@ func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) error {
 	return nil
 }
 
-func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) error {
-	s.acquire(g)
-
-	s.staging = g.Copy()
+func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) (graph.Graph[K, P], error) {
 	if s.Query.IsWrite() {
-		// remember logic
+		s.staging = g.Copy()
+		err := s.Commit(s.staging)
+		if err != nil {
+			return nil, ErrCommitFailed
+		}
+		return s.staging, nil
 	}
-	return nil
+	err := s.Commit(g)
+	if err != nil {
+		return nil, ErrCommitFailed
+	}
+	return g, nil
 }
 
 func (s *Stream[K, P]) GraphID() uint8 {
@@ -121,11 +220,11 @@ func (s *Stream[K, P]) Done() <-chan struct{} {
 	return s.done
 }
 
-func (s *Stream[K, P]) finish() {
+func (s *Stream[K, P]) Finish() {
 	s.once.Do(func() { close(s.done) })
 }
 
-func (s *Stream[K, P]) acquire(g graph.Graph[K, P]) {
+func (s *Stream[K, P]) Acquire(g graph.Graph[K, P]) {
 	if s.Query.IsWrite() {
 		g.Lock()
 	} else {
@@ -133,7 +232,7 @@ func (s *Stream[K, P]) acquire(g graph.Graph[K, P]) {
 	}
 }
 
-func (s *Stream[K, P]) release(g graph.Graph[K, P]) {
+func (s *Stream[K, P]) Release(g graph.Graph[K, P]) {
 	if s.Query.IsWrite() {
 		g.Unlock()
 	} else {

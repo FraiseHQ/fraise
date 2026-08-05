@@ -26,20 +26,20 @@ import "testing"
 
 // TestSeedChangesOutput verifies the (unexported) seed actually perturbs the
 // digest for both hashers. It is white-box because the seed has no exported
-// setter, matching MurmurHash's unexported seed field.
+// setter.
 func TestSeedChangesOutput(t *testing.T) {
 	const in = "the same input"
-	if (T1haHash{seed: 0}).Hash(in) == (T1haHash{seed: 1}).Hash(in) {
+	if (T1haHash[uint64]{seed: 0}).Hash(in) == (T1haHash[uint64]{seed: 1}).Hash(in) {
 		t.Error("T1haHash: different seeds produced the same hash")
 	}
-	if (XxHash{seed: 0}).Hash(in) == (XxHash{seed: 1}).Hash(in) {
+	if (XxHash[uint64]{seed: 0}).Hash(in) == (XxHash[uint64]{seed: 1}).Hash(in) {
 		t.Error("XxHash: different seeds produced the same hash")
 	}
 }
 
 // TestT1haSeededVector locks a seeded t1ha1 value as a regression anchor.
 func TestT1haSeededVector(t *testing.T) {
-	if got := t1ha1LE([]byte("abc"), 42); got != 0x90f18c6ab3c1c1de {
+	if got := (T1haHash[uint64]{}).t1ha1LE([]byte("abc"), 42); got != 0x90f18c6ab3c1c1de {
 		t.Errorf("t1ha1LE(\"abc\", 42) = %#016x, want 0x90f18c6ab3c1c1de", got)
 	}
 }
@@ -48,10 +48,10 @@ func TestT1haSeededVector(t *testing.T) {
 // Hash method agree, and re-checks a canonical seed-0 vector at the function level.
 func TestXXH64InternalMatchesMethod(t *testing.T) {
 	const in = "The quick brown fox jumps over the lazy dog"
-	if got := xxh64([]byte(in), 0); got != 0x0b242d361fda71bc {
+	if got := (XxHash[uint64]{}).xxh64([]byte(in), 0); got != 0x0b242d361fda71bc {
 		t.Errorf("xxh64(%q, 0) = %#016x, want 0x0b242d361fda71bc", in, got)
 	}
-	if xxh64([]byte(in), 0) != (XxHash{}).Hash(in) {
+	if (XxHash[uint64]{}).xxh64([]byte(in), 0) != (XxHash[uint64]{}).Hash(in) {
 		t.Error("xxh64 and XxHash.Hash disagree at seed 0")
 	}
 }
@@ -65,7 +65,7 @@ func TestTail64LE(t *testing.T) {
 		for i := 0; i < n; i++ {
 			want |= uint64(full[i]) << (8 * i)
 		}
-		if got := tail64LE(full, n); got != want {
+		if got := (T1haHash[uint64]{}).tail64LE(full, n); got != want {
 			t.Errorf("tail64LE(len=%d) = %#016x, want %#016x", n, got, want)
 		}
 	}

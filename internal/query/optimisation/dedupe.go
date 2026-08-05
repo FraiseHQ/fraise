@@ -28,8 +28,7 @@ type Dedupe[K comparable, P float32 | float64] struct{}
 
 func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
 
-	switch v := q.(type) {
-	case *query.Recall[K, P]:
+	if v, ok := q.(*query.Recall[K, P]); ok {
 		v.Keywords = dedupeStrings(v.Keywords)
 		v.Entities = dedupeStrings(v.Entities)
 		v.Topics = dedupeStrings(v.Topics)

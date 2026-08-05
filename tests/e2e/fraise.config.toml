@@ -1,0 +1,26 @@
+[scheduler]
+workers = 4
+buffer-size = 128
+
+[server]
+port = 9876
+
+[log]
+level = "DEBUG"
+format = "json"
+disable-timestamp = true
+
+[engine]
+allow-unanchored-recall = true
+half-life = "168h"
+cache-capacity = 1024
+
+[db]
+precision = "float64"
+default-top = 10
+default-depth = 3
+seed-size = 64
+hop-attenuation = 0.5
+
+[db.hashing-function]
+name = "xxhash"

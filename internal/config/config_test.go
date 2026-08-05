@@ -48,14 +48,17 @@ disable-timestamp = true
 [engine]
 allow-unanchored-recall = true
 half-life = "168h"
-seed-size = 64
-hop-attenuation = 0.5
 cache-capacity = 1024
 
 [db]
+precision = "float32"
 default-top = 10
 default-depth = 3
-hashing-function = "xxhash"
+seed-size = 64
+hop-attenuation = 0.5
+
+[db.hashing-function]
+name = "xxhash"
 `
 
 	dir := t.TempDir()
@@ -93,11 +96,14 @@ hashing-function = "xxhash"
 	if c.Engine.Halflife != 168*time.Hour {
 		t.Errorf("Engine.Halflife: got %v, want %v", c.Engine.Halflife, 168*time.Hour)
 	}
-	if c.Engine.SeedSize != 64 {
-		t.Errorf("Engine.SeedSize: got %d, want 64", c.Engine.SeedSize)
+	if c.DB.Precision != "float32" {
+		t.Errorf("DB.Precision: got %q, want %q", c.DB.Precision, "float32")
 	}
-	if c.Engine.HopAttenuation != 0.5 {
-		t.Errorf("Engine.HopAttenuation: got %v, want 0.5", c.Engine.HopAttenuation)
+	if c.DB.SeedSize != 64 {
+		t.Errorf("DB.SeedSize: got %d, want 64", c.DB.SeedSize)
+	}
+	if c.DB.HopAttenuation != 0.5 {
+		t.Errorf("DB.HopAttenuation: got %v, want 0.5", c.DB.HopAttenuation)
 	}
 	if c.Engine.CacheCapacity != 1024 {
 		t.Errorf("Engine.CacheCapacity: got %d, want 1024", c.Engine.CacheCapacity)
@@ -108,8 +114,8 @@ hashing-function = "xxhash"
 	if c.DB.DefaultDepth != 3 {
 		t.Errorf("DB.DefaultDepth: got %d, want 3", c.DB.DefaultDepth)
 	}
-	if c.DB.HashingFunction != "xxhash" {
-		t.Errorf("DB.HashingFunction: got %q, want %q", c.DB.HashingFunction, "xxhash")
+	if c.DB.HashingFunction.Name != "xxhash" {
+		t.Errorf("DB.HashingFunction.Name: got %q, want %q", c.DB.HashingFunction.Name, "xxhash")
 	}
 }
 

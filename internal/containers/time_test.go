@@ -65,7 +65,7 @@ func TestRelativeTimeResolve(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := RelativeTime{Dur: tt.dur}
+			r := RelativeTime[string]{Dur: tt.dur}
 			if got := r.Resolve(tt.now); !got.Equal(tt.want) {
 				t.Errorf("Resolve(%v) = %v, want %v", tt.now, got, tt.want)
 			}
@@ -75,7 +75,7 @@ func TestRelativeTimeResolve(t *testing.T) {
 
 func TestAbsoluteTimeResolve(t *testing.T) {
 	target := time.Date(2020, time.January, 2, 3, 4, 5, 0, time.UTC)
-	a := AbsoluteTime{T: target}
+	a := AbsoluteTime[string]{T: target}
 
 	// Resolve must ignore "now" entirely and return the wrapped instant.
 	for _, now := range []time.Time{reference, target, time.Time{}} {
@@ -87,7 +87,7 @@ func TestAbsoluteTimeResolve(t *testing.T) {
 
 func TestAbsoluteTimeString(t *testing.T) {
 	target := time.Date(2020, time.January, 2, 3, 4, 5, 0, time.UTC)
-	a := AbsoluteTime{T: target}
+	a := AbsoluteTime[string]{T: target}
 
 	want := target.Format(time.RFC822)
 	if got := a.String(); got != want {
@@ -100,25 +100,25 @@ func TestTimeFilterResolve(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		filter TimeFilter
+		filter TimeFilter[string]
 		now    time.Time
 		want   time.Time
 	}{
 		{
 			name:   "absolute filter returns Abs and ignores now",
-			filter: TimeFilter{Abs: abs, IsAbs: true, Dur: time.Hour},
+			filter: TimeFilter[string]{Abs: abs, IsAbs: true, Dur: time.Hour},
 			now:    reference,
 			want:   abs,
 		},
 		{
 			name:   "relative filter subtracts duration from now",
-			filter: TimeFilter{Dur: 2 * time.Hour, IsAbs: false},
+			filter: TimeFilter[string]{Dur: 2 * time.Hour, IsAbs: false},
 			now:    reference,
 			want:   reference.Add(-2 * time.Hour),
 		},
 		{
 			name:   "relative filter with zero duration returns now",
-			filter: TimeFilter{Dur: 0, IsAbs: false},
+			filter: TimeFilter[string]{Dur: 0, IsAbs: false},
 			now:    reference,
 			want:   reference,
 		},
@@ -140,13 +140,13 @@ func TestTimeValueInterface(t *testing.T) {
 
 	values := []struct {
 		name string
-		tv   TimeValue
+		tv   TimeValue[string]
 		want time.Time
 	}{
-		{"RelativeTime", RelativeTime{Dur: time.Hour}, reference.Add(-time.Hour)},
-		{"AbsoluteTime", AbsoluteTime{T: abs}, abs},
-		{"TimeFilter relative", TimeFilter{Dur: time.Minute}, reference.Add(-time.Minute)},
-		{"TimeFilter absolute", TimeFilter{Abs: abs, IsAbs: true}, abs},
+		{"RelativeTime", RelativeTime[string]{Dur: time.Hour}, reference.Add(-time.Hour)},
+		{"AbsoluteTime", AbsoluteTime[string]{T: abs}, abs},
+		{"TimeFilter relative", TimeFilter[string]{Dur: time.Minute}, reference.Add(-time.Minute)},
+		{"TimeFilter absolute", TimeFilter[string]{Abs: abs, IsAbs: true}, abs},
 	}
 
 	for _, v := range values {
@@ -155,6 +155,39 @@ func TestTimeValueInterface(t *testing.T) {
 				t.Errorf("Resolve(%v) = %v, want %v", reference, got, v.want)
 			}
 		})
+	}
+}
+
+// TestTimeValueHash pins the cache-key forms: each implementation carries a
+// distinct prefix so no two kinds of bound can render alike.
+func TestTimeValueHash(t *testing.T) {
+	abs := time.Date(2022, time.July, 8, 9, 10, 11, 0, time.UTC)
+
+	tests := []struct {
+		name string
+		tv   TimeValue[string]
+		want string
+	}{
+		{"RelativeTime", RelativeTime[string]{Dur: time.Hour}, "H(r1h0m0s)"},
+		{"AbsoluteTime", AbsoluteTime[string]{T: abs}, "H(a2022-07-08T09:10:11Z)"},
+		{"TimeFilter relative", TimeFilter[string]{Dur: time.Minute}, "H(fr1m0s)"},
+		{"TimeFilter absolute", TimeFilter[string]{Abs: abs, IsAbs: true}, "H(fa2022-07-08T09:10:11Z)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.tv.Hash(fakeHasher{}); got != tt.want {
+				t.Errorf("Hash() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	// Unlike String() (RFC822, minute precision), the hash material keeps full
+	// precision: two absolute bounds a second apart must not collide.
+	a := AbsoluteTime[string]{T: abs}
+	b := AbsoluteTime[string]{T: abs.Add(time.Second)}
+	if a.Hash(fakeHasher{}) == b.Hash(fakeHasher{}) {
+		t.Errorf("Hash collision: bounds a second apart both produced %q", a.Hash(fakeHasher{}))
 	}
 }
 
@@ -175,11 +208,11 @@ func TestParseTimeValueRelative(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			got, err := ParseTimeValue(tt.in)
+			got, err := ParseTimeValue[string](tt.in)
 			if err != nil {
 				t.Fatalf("ParseTimeValue(%q) unexpected error: %v", tt.in, err)
 			}
-			rel, ok := got.(RelativeTime)
+			rel, ok := got.(RelativeTime[string])
 			if !ok {
 				t.Fatalf("ParseTimeValue(%q) = %T, want RelativeTime", tt.in, got)
 			}
@@ -202,11 +235,11 @@ func TestParseTimeValueAbsolute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseTimeValue(tt.in)
+			got, err := ParseTimeValue[string](tt.in)
 			if err != nil {
 				t.Fatalf("ParseTimeValue(%q) unexpected error: %v", tt.in, err)
 			}
-			abs, ok := got.(AbsoluteTime)
+			abs, ok := got.(AbsoluteTime[string])
 			if !ok {
 				t.Fatalf("ParseTimeValue(%q) = %T, want AbsoluteTime", tt.in, got)
 			}
@@ -234,7 +267,7 @@ func TestParseTimeValueErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseTimeValue(tt.in)
+			got, err := ParseTimeValue[string](tt.in)
 			if err == nil {
 				t.Fatalf("ParseTimeValue(%q) = %#v, want error", tt.in, got)
 			}

@@ -25,5 +25,10 @@ package config
 import "errors"
 
 var (
-	ErrParsingFailed = errors.New("Error while parsing config file.")
+	// ErrParsingFailed is returned when the config file cannot be parsed or
+	// contains keys that map to no known field.
+	ErrParsingFailed = errors.New("config: error while parsing config file")
+	// ErrInvalidFlag is returned when the command line carries an unexpected
+	// positional argument (i.e. an unknown/invalid flag).
+	ErrInvalidFlag = errors.New("config: invalid flag")
 )
