@@ -24,6 +24,7 @@ package parser
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
@@ -326,8 +327,8 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 	if err != nil {
 		return lexer.Token{}, 0, p.errf(tok.Pos, "invalid graph selector %q: expected a whole number", tok.Literal)
 	}
-	if i < 0 || i > 255 {
-		return lexer.Token{}, 0, p.errf(tok.Pos, "graph selector %d out of range (0-255)", i)
+	if i < 0 || i > math.MaxUint8 {
+		return lexer.Token{}, 0, p.errf(tok.Pos, "graph selector %d out of range (0-%d)", i, math.MaxUint8)
 	}
 
 	return key, uint8(i), nil
