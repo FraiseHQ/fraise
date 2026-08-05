@@ -196,15 +196,12 @@ func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 
 	stream.Acquire(g)
 
-	stg, err := stream.Stage(g)
-
-	if err != nil {
-		stream.Rollback(g)
+	// Commit executes in place against the live graph: Acquire already holds
+	// the exclusive lock for writes, so no staging copy is needed and the write
+	// costs O(fact) rather than O(graph) (copy + merge-back did the latter).
+	if err := stream.Commit(g); err != nil {
 		stream.Err = ErrStreamCommit
 		return ErrStreamCommit
-	}
-	if stream.Query.IsWrite() {
-		g.MergeFrom(stg)
 	}
 	return nil
 }
