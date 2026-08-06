@@ -23,10 +23,45 @@
 package parser_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 )
+
+// TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned
+// error reaches the caller as-is. The call sites used to re-wrap with a bad
+// %e verb, turning a clean "invalid since value ..." into
+// `&{%!e(string=...)}` in the 400 body — the message an agent needs to
+// self-correct was garbled at the last step.
+func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string // substring of the inner, positioned error
+	}{
+		{"recall x since:soon", "invalid since value"},
+		{"recall x until:later", "invalid until value"},
+		{"recall x depth:abc", "invalid depth value"},
+		{"recall x top:abc", "invalid top value"},
+		{"recall x topic:", "expected a word or quoted phrase"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, tc.want) {
+				t.Errorf("error %q does not contain the inner message %q", msg, tc.want)
+			}
+			if strings.Contains(msg, "%!e") || strings.Contains(msg, "Error while parsing") {
+				t.Errorf("error %q is re-wrapped/mangled, want the inner error as-is", msg)
+			}
+		})
+	}
+}
 
 func TestRememberParser(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne vec:$v"
