@@ -217,6 +217,40 @@ func TestSubmitCancelledContextDoesNotBlock(t *testing.T) {
 	}
 }
 
+// TestSubmitFullQueueTimesOut checks that Submit sheds load instead of blocking
+// without bound: with no worker to drain a full queue and a live context, the
+// send gives up after the configured enqueue timeout and reports ErrQueueFull.
+func TestSubmitFullQueueTimesOut(t *testing.T) {
+	cfg := config.New()
+	cfg.Scheduler.Workers = 0 // no drain, so the buffer stays full
+	cfg.Scheduler.BufferSize = 1
+	cfg.Scheduler.EnqueueTimeout = 50 * time.Millisecond
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer s.Stop() // drains the buffered stream
+
+	// Fill the single buffer slot.
+	if err := s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna")); err != nil {
+		t.Fatalf("first Submit returned error: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna")) }()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, scheduler.ErrQueueFull) {
+			t.Fatalf("Submit on a saturated queue = %v, want ErrQueueFull", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Submit did not give up on a saturated queue within the enqueue timeout")
+	}
+}
+
 // TestStopDrainsBufferedWrite checks that a graceful Stop executes work already
 // accepted into the buffer rather than dropping it: with no worker running, the
 // only chance for the buffered write to run is Stop's drain.

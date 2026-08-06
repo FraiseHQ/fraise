@@ -138,6 +138,9 @@ func TestConfigSet_LimitsAndTimeouts(t *testing.T) {
 	if c.Server.MaxBodyBytes != config.DefaultMaxBodyBytes {
 		t.Errorf("Server.MaxBodyBytes default: got %d, want %d", c.Server.MaxBodyBytes, config.DefaultMaxBodyBytes)
 	}
+	if c.Scheduler.EnqueueTimeout != config.DefaultEnqueueTimeout {
+		t.Errorf("Scheduler.EnqueueTimeout default: got %v, want %v", c.Scheduler.EnqueueTimeout, config.DefaultEnqueueTimeout)
+	}
 	if c.DB.MaxTop != config.DefaultMaxTop {
 		t.Errorf("DB.MaxTop default: got %d, want %d", c.DB.MaxTop, config.DefaultMaxTop)
 	}

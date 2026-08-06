@@ -135,6 +135,13 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 				c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "server shutting down"})
 				return
 			}
+			// The queue stayed full past the enqueue timeout: shed load with a
+			// 429 so clients back off instead of piling up blocked requests.
+			if errors.Is(err, scheduler.ErrQueueFull) {
+				logger.Warn("Rejecting query, scheduler queue full", "query", req.Query)
+				c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: "server overloaded, retry later"})
+				return
+			}
 			// The request context was cancelled (client gone or write timeout)
 			// before the stream could be enqueued; there is no live connection
 			// left to answer.
