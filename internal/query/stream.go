@@ -94,9 +94,13 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 			}
 		}
 
-		// Facts are keyed by value, so re-remembering one is the idempotent
-		// upsert case (the original node and timestamp win), not an error.
-		if err := g.Set(fact); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
+		// Facts are content-addressed (keyed by value), so re-remembering one
+		// is the temporal "touch": the fresh-timestamp fact replaces the
+		// stored one and recency decay restarts — an agent re-asserting a
+		// memory strengthens it rather than leaving it decaying from its
+		// first write. The embedding refreshes the same way (a changed vector
+		// overwrites its index entry above), keeping the two consistent.
+		if err := g.Put(fact.Key(), fact); err != nil {
 			logger.Error("Failed to store fact", "value", remember.Value, "error", err)
 			return fmt.Errorf("storing fact %q: %w", remember.Value, err)
 		}

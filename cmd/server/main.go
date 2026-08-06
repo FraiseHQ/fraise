@@ -45,7 +45,21 @@ func PrintBanner() {
 	`)
 }
 
+// main is the only place that exits: run owns every defer, so os.Exit here
+// cannot skip one (gocritic exitAfterDefer). A non-zero exit lets a
+// supervisor (docker/k8s on-failure restart policy) see the startup failure;
+// exiting 0 would mark a dead server as a clean shutdown.
 func main() {
+	if err := run(); err != nil {
+		logger.Error("Failed to start server", "error", err)
+		os.Exit(1)
+	}
+}
+
+// run wires up config, signals and the server, and blocks until the server
+// stops. It returns an error instead of exiting so its deferred signal stop
+// runs and main can translate failure into the process exit code.
+func run() error {
 	PrintBanner()
 
 	// A context cancelled on SIGINT/SIGTERM drives graceful shutdown: an
@@ -70,26 +84,16 @@ func main() {
 	// P (embedding/score precision) is a compile-time type parameter, so the
 	// config value selects which instantiation to build and run here. Both are
 	// compiled in; the whole stack below is generic over P.
-	var err error
 	switch c.DB.Precision {
 	case "float32":
 		logger.Info("Using single precision", "precision", "float32")
-		err = runServer[float32](ctx, c)
+		return runServer[float32](ctx, c)
 	case "float64":
 		logger.Info("Using double precision", "precision", "float64")
-		err = runServer[float64](ctx, c)
+		return runServer[float64](ctx, c)
 	default:
 		logger.Warn("Unknown precision, falling back to float64", "precision", c.DB.Precision)
-		err = runServer[float64](ctx, c)
-	}
-
-	if err != nil {
-		// NOTE: Exit non-zero so a supervisor (docker/k8s on-failure restart policy)
-		// sees the startup failure; exiting 0 here would mark a dead server as
-		// a clean shutdown. os.Exit skips the deferred signal stop, which is
-		// irrelevant when the process is terminating anyway.
-		logger.Error("Failed to start server", "error", err)
-		os.Exit(1)
+		return runServer[float64](ctx, c)
 	}
 }
 

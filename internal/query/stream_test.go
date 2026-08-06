@@ -46,6 +46,7 @@ type fakeGraph struct {
 	rlocks, runlocks int
 	copied, merged   bool
 	sets             int
+	puts             int
 	searchCalled     bool
 
 	searchNodes  []*graph.Node[string]
@@ -59,9 +60,10 @@ func (g *fakeGraph) Unlock()  { g.unlocks++ }
 func (g *fakeGraph) RLock()   { g.rlocks++ }
 func (g *fakeGraph) RUnlock() { g.runlocks++ }
 
-func (g *fakeGraph) Copy() graph.Graph[string, float32]        { g.copied = true; return g }
-func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32]) { g.merged = true }
-func (g *fakeGraph) Set(node graph.Node[string]) error         { g.sets++; return nil }
+func (g *fakeGraph) Copy() graph.Graph[string, float32]            { g.copied = true; return g }
+func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32])     { g.merged = true }
+func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
+func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
 func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
 	g.searchCalled = true
@@ -70,9 +72,10 @@ func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, f
 
 // --- inert stubs (unused by Stream) ----------------------------------------
 
-func (g *fakeGraph) GetHasher() hash.Hasher[string, string]             { return nil }
+// GetHasher returns a real (fake) hasher rather than nil: the write path
+// derives the fact's key (fact.Key() -> Hash) before storing it.
+func (g *fakeGraph) GetHasher() hash.Hasher[string, string]             { return &fakeHasher{} }
 func (g *fakeGraph) Get(key string) graph.Node[string]                  { return nil }
-func (g *fakeGraph) Put(key string, node graph.Node[string]) error      { return nil }
 func (g *fakeGraph) Delete(node graph.Node[string]) error               { return nil }
 func (g *fakeGraph) GetVectorIndex() index.VectorIndex[string, float32] { return nil }
 func (g *fakeGraph) GetTextIndex() index.TextIndex[string, float32]     { return nil }
@@ -152,8 +155,8 @@ func TestStreamCommitWriteInPlace(t *testing.T) {
 		t.Fatalf("Commit() err = %v", err)
 	}
 
-	if g.sets == 0 {
-		t.Error("Commit did not write the fact on a write query")
+	if g.puts == 0 {
+		t.Error("Commit did not upsert the fact on a write query")
 	}
 	if g.copied {
 		t.Error("Commit copied the graph on a write query, want in-place")
@@ -166,6 +169,51 @@ func TestStreamCommitWriteInPlace(t *testing.T) {
 	}
 	if s.Result == nil {
 		t.Fatal("Commit left Result nil on a write query")
+	}
+}
+
+// TestStreamCommitReassertRefreshesRecency pins the temporal "touch"
+// semantics: re-remembering an identical fact replaces the stored node with a
+// fresh timestamp (no duplicate node), so recency decay restarts and a
+// since:-window covering only the re-assertion finds the fact. Regression for
+// the silent first-write-wins behavior, where an agent reinforcing a memory
+// left it decaying from its original write.
+func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+	remember := func() *Remember[uint64, float32] {
+		return &Remember[uint64, float32]{Value: "the deploy key lives in vault"}
+	}
+
+	if err := NewStream[uint64, float32](remember()).Commit(g); err != nil {
+		t.Fatalf("first Commit = %v, want nil", err)
+	}
+	key := graph.Fact[uint64]{
+		NodeAttributes: graph.NodeAttributes{Value: "the deploy key lives in vault"},
+		Hasher:         g.GetHasher(),
+	}.Key()
+	ts1 := g.Get(key).GetTimestamp()
+	nodesBefore := g.Stats().Nodes
+
+	// A window opening strictly after the first write: only a refreshed
+	// timestamp can land inside it.
+	windowStart := ts1.Add(time.Nanosecond)
+
+	if err := NewStream[uint64, float32](remember()).Commit(g); err != nil {
+		t.Fatalf("second Commit = %v, want nil", err)
+	}
+
+	ts2 := g.Get(key).GetTimestamp()
+	if !ts2.After(ts1) {
+		t.Errorf("re-assert timestamp = %v, want after the original %v (touch)", ts2, ts1)
+	}
+	if got := g.Stats().Nodes; got != nodesBefore {
+		t.Errorf("re-assert changed node count %d -> %d, want an in-place replace", nodesBefore, got)
+	}
+
+	// The report's repro: recall with since covering only the re-assertion.
+	nodes, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
+	if len(nodes) != 1 {
+		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(nodes))
 	}
 }
 

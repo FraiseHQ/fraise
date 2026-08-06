@@ -140,7 +140,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		case lexer.ENTITY, lexer.TOPIC:
 			key, value, err := p.parseAnchorField()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+				return nil, err
 			}
 			var field FieldNode[string]
 			if key.Type == lexer.TOPIC {
@@ -203,37 +203,37 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		case lexer.ENTITY:
 			key, value, err := p.parseAnchorField()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+				return nil, err
 			}
 			r.entities = append(r.entities, AnchorFieldNode{field: EntityFieldNode{key: key, value: value}})
 		case lexer.TOPIC:
 			key, value, err := p.parseAnchorField()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+				return nil, err
 			}
 			r.topics = append(r.topics, AnchorFieldNode{field: TopicFieldNode{key: key, value: value}})
 		case lexer.UNTIL:
 			key, t, err := p.parseTimeValue()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing until clause %e", err)
+				return nil, err
 			}
 			r.until = UntilFieldNode[K]{key: key, value: t}
 		case lexer.SINCE:
 			key, t, err := p.parseTimeValue()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing since clause %e", err)
+				return nil, err
 			}
 			r.since = SinceFieldNode[K]{key: key, value: t}
 		case lexer.DEPTH:
 			key, value, err := p.parseDepth()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing depth clause %e", err)
+				return nil, err
 			}
 			r.depth = DepthFieldNode{key: key, value: value}
 		case lexer.TOP:
 			key, value, err := p.parseTop()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing top clause %e", err)
+				return nil, err
 			}
 			r.top = TopFieldNode{key: key, value: value}
 		case lexer.VEC:
