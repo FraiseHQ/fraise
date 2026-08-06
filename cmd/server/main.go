@@ -84,7 +84,12 @@ func main() {
 	}
 
 	if err != nil {
+		// NOTE: Exit non-zero so a supervisor (docker/k8s on-failure restart policy)
+		// sees the startup failure; exiting 0 here would mark a dead server as
+		// a clean shutdown. os.Exit skips the deferred signal stop, which is
+		// irrelevant when the process is terminating anyway.
 		logger.Error("Failed to start server", "error", err)
+		os.Exit(1)
 	}
 }
 
