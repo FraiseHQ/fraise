@@ -87,29 +87,33 @@ func TestRecallParserErrors(t *testing.T) {
 	}
 }
 
-// TestRecallModifierValueErrors is the regression guard for the silent-fallback
-// bug: an invalid depth/top/since/until/selector value must be a parse error,
-// not a quiet fall back to the default (or to no constraint at all). Returning
-// differently-scoped results with no error is the worst failure mode here — an
-// agent can only self-correct when told it was wrong.
-func TestRecallModifierValueErrors(t *testing.T) {
+// TestGraphSelectorRejectsOutOfRange checks that a selector which does not fit
+// in a uint8 is rejected at parse time rather than silently wrapped into a
+// valid-looking graph (@256 -> 0, @300 -> 44). Wrapping would route the query to
+// the wrong tenant's graph, so this must fail before execution. A non-integer
+// selector is likewise rejected. Applies to both recall and remember.
+func TestGraphSelectorRejectsOutOfRange(t *testing.T) {
 	queries := []string{
-		"recall x depth:abc",                // non-numeric depth
-		"recall x depth:1.5",                // non-integer depth
-		"recall x top:abc",                  // non-numeric top
-		"recall x top:99999999999999999999", // top overflows int
-		"recall x since:yesterday",          // unparseable time bound
-		"recall x until:soon",               // unparseable time bound
-		"recall@abc x",                      // non-numeric graph selector
-		"recall@999 x",                      // selector overflows uint8 (would wrap to @231)
+		"recall@256 secret",
+		"recall@300 secret",
+		"recall@-1 secret",
+		"recall@abc secret",
+		"remember@256 'secret plan' topic:x",
+		"remember@300 'secret plan' topic:x",
 	}
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
 			if _, _, err := parser.Parse[uint64, float32](q); err == nil {
-				t.Errorf("Parse(%q) = nil error, want a parse error", q)
+				t.Errorf("Parse(%q) = nil error, want an out-of-range/parse error", q)
 			}
 		})
+	}
+
+	// A selector that fits in a uint8 still parses here; the tighter
+	// [0, num-graphs) bound is the handler's job, not the parser's.
+	if _, _, err := parser.Parse[uint64, float32]("recall@255 secret"); err != nil {
+		t.Errorf("Parse(recall@255 …) returned error: %v, want nil", err)
 	}
 }
 

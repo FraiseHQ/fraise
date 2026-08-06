@@ -61,6 +61,63 @@ def test_query_rejects_out_of_range_graph(query):
     assert body.get("error"), "expected an out-of-range error message"
 
 
+# Graph selector validation is layered, and each layer has its own error:
+# the parser rejects anything that does not faithfully fit the uint8 selector
+# type (otherwise uint8 narrowing would wrap @256 to graph 0 — a tenant
+# isolation hole), and the handler rejects selectors that fit the type but
+# name a graph the store never allocated. The tests below pin each layer's
+# error separately, by message, so a regression in one cannot hide behind the
+# other still firing.
+
+
+def test_query_rejects_selector_that_would_wrap(query):
+    """The parser must reject a selector above the uint8 range before it is
+    narrowed: @256 would wrap to graph 0 and @300 to graph 44, silently
+    executing against another tenant's graph."""
+    for q in ("remember@256 'secret plan' topic:x", "recall@300 anything"):
+        status, body = query(q)
+
+        assert status == 400, f"{q!r}: expected 400, got {status}"
+        assert "out of range" in body.get("error", ""), (
+            f"{q!r}: expected the parser's out-of-range error, got {body.get('error')!r}"
+        )
+
+
+def test_query_rejects_non_integer_selector(query):
+    """A non-numeric selector is a parse error, not a silent fallback to a
+    default graph."""
+    status, body = query("recall@abc anything")
+
+    assert status == 400
+    assert body.get("error"), "expected a parse error message"
+
+
+def test_query_rejects_valid_uint8_selector_above_num_graphs(query):
+    """@255 fits the selector type, so the parser passes it — the handler must
+    then reject it against the allocated graph count with its own distinct
+    error. This is the layer boundary: type consistency in the parser,
+    allocation policy in the handler."""
+    status, body = query("recall@255 anything")
+
+    assert status == 400
+    assert "does not exist" in body.get("error", ""), (
+        f"expected the handler's does-not-exist error, got {body.get('error')!r}"
+    )
+
+
+def test_wrapping_selector_write_does_not_leak_to_graph_zero(query):
+    """Regression guard for the wrap itself: a rejected remember@256 must leave
+    no trace on graph 0 (the graph @256 used to wrap to). Read-only on graph 0
+    apart from the probe recall, so it does not disturb that graph's facts."""
+    status, _ = query("remember@256 'wrapprobe should never land' topic:wrapprobe")
+    assert status == 400
+
+    status, body = query("recall@0 wrapprobe")
+    assert status == 200
+    assert body["results"]["count"] == 0, (
+        "a rejected @256 write leaked onto graph 0 — uint8 wrap regression"
+    )
+
 @pytest.mark.parametrize(
     "text",
     [

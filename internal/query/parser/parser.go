@@ -24,6 +24,7 @@ package parser
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
@@ -118,7 +119,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
-			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
+			return nil, err
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
@@ -174,7 +175,10 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
-			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
+			// parseGraphSelector already returns a positioned parse error with a
+			// clear message; surface it as-is rather than re-wrapping (which lost
+			// the column and mangled the message via a bad %e verb).
+			return nil, err
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
@@ -322,13 +326,18 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	// ParseUint with bitSize 8 rejects both non-numeric selectors and values
-	// past 255 in one step, so a selector can never silently wrap into a
-	// different graph (e.g. @999 truncating to @231). The handler still checks
-	// it against the number of graphs actually allocated.
-	i, err := strconv.ParseUint(tok.Literal, 10, 8)
+	// Validate the full integer before narrowing to uint8. A blind uint8(i)
+	// wraps an out-of-range selector into a valid-looking graph (@256 -> 0,
+	// @300 -> 44), so it would silently execute against the wrong graph — a
+	// tenant-isolation break, since a graph is a user/session. Reject a
+	// non-integer or anything outside the uint8 range here; the handler still
+	// enforces the tighter [0, num-graphs) bound on what survives.
+	i, err := strconv.Atoi(tok.Literal)
 	if err != nil {
-		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid graph selector %q: expected an integer in range 0-255", tok.Literal)
+		return lexer.Token{}, 0, p.errf(tok.Pos, "invalid graph selector %q: expected a whole number", tok.Literal)
+	}
+	if i < 0 || i > math.MaxUint8 {
+		return lexer.Token{}, 0, p.errf(tok.Pos, "graph selector %d out of range (0-%d)", i, math.MaxUint8)
 	}
 
 	return key, uint8(i), nil

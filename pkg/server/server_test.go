@@ -131,6 +131,26 @@ func TestQueryOutOfRangeGraph(t *testing.T) {
 	}
 }
 
+// TestQueryWrappingGraphSelectorRejected guards the tenant-isolation fix: a
+// selector past the uint8 range used to wrap into a valid-looking graph
+// (@256 -> 0, @300 -> 44), silently executing against the wrong graph instead
+// of being rejected. Each must now return 400 before execution.
+func TestQueryWrappingGraphSelectorRejected(t *testing.T) {
+	s := newTestServer(t)
+
+	for _, body := range []string{
+		`{"query":"remember@256 'secret plan' topic:x"}`, // would wrap to graph 0
+		`{"query":"remember@300 'secret plan' topic:x"}`, // would wrap to graph 44
+		`{"query":"recall@256 secret"}`,
+	} {
+		w := s.do(http.MethodPost, "/api/v1/q", body)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("body %s: status = %d, want %d (%s)",
+				body, w.Code, http.StatusBadRequest, w.Body.String())
+		}
+	}
+}
+
 // TestQueryBodyTooLarge checks that a request body over the configured cap is
 // rejected with 400 before it is buffered and bound.
 func TestQueryBodyTooLarge(t *testing.T) {
