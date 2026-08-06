@@ -124,8 +124,7 @@ FRAISE_E2E_PORT ?= 9876
 
 test-e2e: ## Run end-to-end tests (python) as a docker compose service
 	@echo "$(CYAN)Running end-to-end tests with docker compose...$(RESET)"
-	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.e2e.yaml --profile e2e up --build --exit-code-from e2e --force-recreate --attach-dependencies; \
-	status=$$?; \
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.e2e.yaml --profile e2e up --build --exit-code-from e2e --force-recreate --attach-dependencies;
 
 test-ts: ## Run TypeScript tests
 	@echo "$(CYAN)Running TypeScript tests...$(RESET)"

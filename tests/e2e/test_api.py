@@ -118,6 +118,7 @@ def test_wrapping_selector_write_does_not_leak_to_graph_zero(query):
         "a rejected @256 write leaked onto graph 0 — uint8 wrap regression"
     )
 
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -139,3 +140,32 @@ def test_query_rejects_invalid_modifier_value(query, text):
 
     assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
     assert body.get("error"), f"expected a parse error message for {text!r}"
+
+
+@pytest.mark.parametrize(
+    ("text", "detail"),
+    [
+        ("recall x since:soon", 'invalid since value "soon"'),
+        ("recall x until:later", 'invalid until value "later"'),
+        ("recall x depth:abc", 'invalid depth value "abc"'),
+        ("recall x top:abc", 'invalid top value "abc"'),
+    ],
+)
+def test_query_parse_error_message_is_unmangled(query, text, detail):
+    """The clause helpers' positioned errors must reach the client verbatim.
+    The parser's call sites used to re-wrap them with a bad %e verb, turning a
+    clean 'invalid since value "soon"' into `&{%!e(string=...)}` in the 400
+    body — garbling, at the last step, exactly the message an agent needs to
+    self-correct."""
+    status, body = query(text)
+    error = body.get("error", "")
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert detail in error, f"{text!r}: expected {detail!r} in the body, got {error!r}"
+    assert "%!e" not in error, f"{text!r}: mangled error surfaced: {error!r}"
+    assert "Error while parsing" not in error, (
+        f"{text!r}: re-wrapped error surfaced: {error!r}"
+    )
+    assert "parse error at column" in error, (
+        f"{text!r}: position lost from the error: {error!r}"
+    )
