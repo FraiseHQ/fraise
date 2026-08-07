@@ -33,6 +33,10 @@ This document describes how maintainers cut a release. The process is:
 Open a PR titled `release: vX.Y.Z` containing only:
 
 - `CHANGELOG.md` — move items from `Unreleased` into a new `vX.Y.Z — YYYY-MM-DD` section.
+- `pkg/version/version.go` — set `Major`/`Minor`/`Patch` to the version being
+  cut (`Patch` carries any pre-release suffix, e.g. `"0-rc.1"` for `v0.1.0-rc.1`).
+  It is what builds outside GoReleaser report, and the publish job fails if it
+  doesn't match the tag.
 - Any version references in docs (install snippets, etc.).
 
 The PR is the review gate: a second maintainer approves it. Merging the PR does
