@@ -62,7 +62,7 @@ LDFLAGS        := -X '$(VERSION_PKG).Version=$(BUILD_VERSION)' \
                   -X '$(VERSION_PKG).Commit=$(BUILD)' \
                   -X '$(VERSION_PKG).Date=$(BUILD_DATE)'
 
-.PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py publish-npm version-check
+.PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py publish-npm
 .DEFAULT_GOAL := help
 
 ##@ General
@@ -263,12 +263,6 @@ quick: build-go test-go-short ## Quick development cycle: build and test Go (sho
 
 ci: install lint test ## CI pipeline: install, lint, and test
 	@echo "$(GREEN)✓ CI pipeline completed$(RESET)"
-
-version-check: ## Check pkg/version matches a release tag: make version-check TAG=vX.Y.Z
-	@if [ -z "$(TAG)" ]; then \
-		echo "$(YELLOW)usage: make version-check TAG=vX.Y.Z$(RESET)"; exit 2; \
-	fi
-	@$(GO_CMD) run ./internal/releasegate "$(TAG)"
 
 release: clean build-go test-go lint-go ## Prepare release build
 	@echo "$(GREEN)✓ Release build ready: $(BIN_DIR)/$(BINARY_NAME)$(RESET)"

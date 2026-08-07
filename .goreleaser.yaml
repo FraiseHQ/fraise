@@ -5,6 +5,14 @@ project_name: fraise
 before:
   hooks:
     - go mod tidy
+    # Refuse to release if pkg/version drifted from the tag. Builds that skip
+    # the ldflags below — `go install ...@vX.Y.Z`, the docker image — report
+    # those constants instead, so a stale value ships as the reported version.
+    # The expected values come from GoReleaser's own parse of the tag
+    # (.Major/.Minor/.Patch/.Prerelease), so there is no version parsing here;
+    # Patch carries the pre-release suffix, e.g. 0-alpha.3 for v0.1.0-alpha.3.
+    # Skipped for snapshots, whose version is not a tag.
+    - sh -c "{{ if .IsSnapshot }}true{{ else }}grep -q 'Major = {{ .Major }}[[:space:]]*$' pkg/version/version.go && grep -q 'Minor = {{ .Minor }}[[:space:]]*$' pkg/version/version.go && grep -q 'Patch = \"{{ .Patch }}{{ with .Prerelease }}-{{ . }}{{ end }}\"' pkg/version/version.go || { echo 'pkg/version/version.go does not match {{ .Tag }} — bump Major/Minor/Patch before tagging'; exit 1; }{{ end }}"
 
 builds:
   - id: fraise

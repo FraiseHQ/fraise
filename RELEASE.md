@@ -35,9 +35,8 @@ Open a PR titled `release: vX.Y.Z` containing only:
 - `CHANGELOG.md` — move items from `Unreleased` into a new `vX.Y.Z — YYYY-MM-DD` section.
 - `pkg/version/version.go` — set `Major`/`Minor`/`Patch` to the version being
   cut (`Patch` carries any pre-release suffix, e.g. `"0-rc.1"` for `v0.1.0-rc.1`).
-  This is the version reported by builds that don't go through GoReleaser —
-  `go install ...@vX.Y.Z`, the docker image — and the publish job refuses to
-  release if it doesn't match the tag.
+  It is what builds outside GoReleaser report, and the publish job fails if it
+  doesn't match the tag.
 - Any version references in docs (install snippets, etc.).
 
 The PR is the review gate: a second maintainer approves it. Merging the PR does
@@ -49,7 +48,6 @@ Once the release PR is merged, the release captain tags that commit:
 
 ```sh
 git checkout main && git pull
-make version-check TAG=vX.Y.Z   # same gate the publish job runs; check before tagging
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
 ```
