@@ -101,6 +101,15 @@ with a footer on any commit:
 Release-As: 0.1.0-beta.1
 ```
 
+> **The footer must survive the squash.** We squash-merge, and when a PR has
+> more than one commit GitHub builds the squash message from the commit
+> *subjects* — the bodies, and therefore the footer, are dropped, and the
+> release PR silently comes out with the wrong version. Put the change in a
+> single commit (GitHub then defaults the squash body to that commit's body),
+> or paste the `Release-As:` line into the squash body by hand before
+> confirming the merge. Verify with
+> `git log origin/main -1 --format=%B | grep Release-As` after merging.
+
 The next release PR then targets that version. Update `prerelease-type` in
 `release-please-config.json` in the same change so subsequent releases continue
 in the new phase.
