@@ -3,6 +3,9 @@
 bin
 node_modules
 sdk
+# Dockerfile.python builds the SDK from source, so it needs this path in the
+# build context; the rest of sdk/ (node_modules, dist) stays excluded.
+!sdk/python
 docs
 assets
 examples
