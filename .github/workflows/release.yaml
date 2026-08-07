@@ -1,0 +1,33 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: Release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write # release-please labels its PR (autorelease:*) via the Issues API
+      pull-requests: write
+    steps:
+      # Maintains an open "chore(main): release X.Y.Z" PR that bumps the
+      # Version constant in pkg/version/version.go and CHANGELOG.md. Merging
+      # that PR tags the release and creates the GitHub Release — the tag can
+      # therefore never disagree with the version compiled into the binary.
+      #
+      # token MUST be a PAT (or GitHub App token), not the default
+      # GITHUB_TOKEN: a tag pushed with GITHUB_TOKEN does not trigger other
+      # workflows, so the publish job in go.yaml would never fire and the
+      # release would ship with no binaries attached.
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

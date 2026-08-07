@@ -5,14 +5,15 @@ project_name: fraise
 before:
   hooks:
     - go mod tidy
-    # Refuse to release if pkg/version drifted from the tag. Builds that skip
-    # the ldflags below — `go install ...@vX.Y.Z`, the docker image — report
-    # those constants instead, so a stale value ships as the reported version.
-    # The expected values come from GoReleaser's own parse of the tag
-    # (.Major/.Minor/.Patch/.Prerelease), so there is no version parsing here;
-    # Patch carries the pre-release suffix, e.g. 0-alpha.3 for v0.1.0-alpha.3.
+    # Refuse to release if pkg/version disagrees with the tag. release-please
+    # rewrites that constant in the same commit it tags, so this should never
+    # fire — its job is to catch the one silent failure left: if the
+    # x-release-please-version annotation is broken or moved off the literal's
+    # line, release-please stops updating the file without erroring, and the
+    # version would quietly go stale again for builds that skip the ldflags
+    # below (go install ...@vX.Y.Z, the docker image).
     # Skipped for snapshots, whose version is not a tag.
-    - sh -c "{{ if .IsSnapshot }}true{{ else }}grep -q 'Major = {{ .Major }}[[:space:]]*$' pkg/version/version.go && grep -q 'Minor = {{ .Minor }}[[:space:]]*$' pkg/version/version.go && grep -q 'Patch = \"{{ .Patch }}{{ with .Prerelease }}-{{ . }}{{ end }}\"' pkg/version/version.go || { echo 'pkg/version/version.go does not match {{ .Tag }} — bump Major/Minor/Patch before tagging'; exit 1; }{{ end }}"
+    - sh -c "{{ if .IsSnapshot }}true{{ else }}grep -q 'Version = \"{{ .Version }}\"' pkg/version/version.go || { echo 'pkg/version/version.go does not declare {{ .Version }} (tag {{ .Tag }}) — check the x-release-please-version annotation'; exit 1; }{{ end }}"
 
 builds:
   - id: fraise
@@ -68,6 +69,10 @@ release:
   github:
     owner: RonsenbergVI
     name: fraise
+  # release-please creates the GitHub Release and owns its notes; GoReleaser
+  # only attaches binaries to it. Any other mode would overwrite those notes,
+  # and the header/footer/changelog blocks below are unused as a result.
+  mode: append
   draft: false
   prerelease: auto # vX.Y.Z-alpha.N / -beta.N / -rc.N auto-marked as pre-release
   header: |

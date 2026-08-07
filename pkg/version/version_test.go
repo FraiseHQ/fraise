@@ -23,11 +23,15 @@
 package version_test
 
 import (
-	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/RonsenbergVI/fraise/pkg/version"
 )
+
+// semverPattern is MAJOR.MINOR.PATCH with an optional dot-numbered pre-release
+// suffix — the only shapes the release process produces (see RELEASE.md).
+var semverPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$`)
 
 // setVersion overrides version.Version for one test and restores it afterwards,
 // so tests that exercise the version-derived helpers don't leak into each other.
@@ -38,13 +42,20 @@ func setVersion(t *testing.T, v string) {
 	t.Cleanup(func() { version.Version = prev })
 }
 
-// TestDefaultVersion covers the dev-build path: with no -ldflags injection,
-// init() must fall back to the compiled Major.Minor.Patch. Tests run without the
-// release ldflags, so this is the value the package resolves to here.
-func TestDefaultVersion(t *testing.T) {
-	want := fmt.Sprintf("%d.%d.%s", version.Major, version.Minor, version.Patch)
-	if got := version.FullVersion(); got != want {
-		t.Errorf("FullVersion() = %q, want %q (init fallback from Major.Minor.Patch)", got, want)
+// TestCompiledVersionIsWellFormed covers the dev-build path: with no -ldflags
+// injection the compiled literal is reported verbatim, so a malformed value
+// ships as the reported version. It pins the shape, not the number — the number
+// changes every release, and release-please owns it.
+func TestCompiledVersionIsWellFormed(t *testing.T) {
+	if version.Version == "" {
+		t.Fatal("Version is empty: dev builds report this literal directly")
+	}
+	if !semverPattern.MatchString(version.Version) {
+		t.Errorf("Version = %q, want MAJOR.MINOR.PATCH with an optional -alpha.N/-beta.N/-rc.N suffix",
+			version.Version)
+	}
+	if got := version.FullVersion(); got != version.Version {
+		t.Errorf("FullVersion() = %q, want the compiled literal %q", got, version.Version)
 	}
 }
 
