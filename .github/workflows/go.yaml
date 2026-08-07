@@ -72,10 +72,27 @@ jobs:
           CGO_ENABLED: "0"
         run: make build-go
 
+  version-gate:
+    name: Version Gate
+    # Tag pushes only: this never runs on a merge to main or a PR.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Verify pkg/version matches the tag
+        # The compiled fallback in pkg/version must equal the tag being cut, or
+        # builds that skip GoReleaser's ldflags (go install m@tag, the docker
+        # image) would ship reporting a stale version. Its own job so a
+        # mismatch fails before a maintainer is asked to approve the release.
+        run: go run ./internal/releasegate "$GITHUB_REF_NAME"
+
   publish:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [cross-compile, test]
+    needs: [cross-compile, test, version-gate]
     runs-on: ubuntu-latest
     environment: release # manual approval gate
     permissions:

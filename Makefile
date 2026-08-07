@@ -22,7 +22,7 @@
 
 BUILD          ?= $(shell git rev-parse --short HEAD)
 BUILD_CODENAME ?= dgraph
-BUILD_DATE     ?= $(shell git log -1 --format=%ci)
+BUILD_DATE     ?= $(shell git log -1 --format=%cI)
 BUILD_BRANCH   ?= $(shell git rev-parse --abbrev-ref HEAD)
 BUILD_VERSION  ?= $(shell git describe --always --tags)
 
@@ -55,13 +55,14 @@ GREEN          := \033[0;32m
 YELLOW         := \033[0;33m
 RESET          := \033[0m
 
-# Build flags
-LDFLAGS        := -X 'main.Version=$(BUILD_VERSION)' \
-                  -X 'main.Build=$(BUILD)' \
-                  -X 'main.BuildDate=$(BUILD_DATE)' \
-                  -X 'main.Branch=$(BUILD_BRANCH)'
+# Build flags. Injects the same pkg/version symbols GoReleaser sets on a
+# release (see .goreleaser.yaml), so every build path reports its real version.
+VERSION_PKG    := github.com/RonsenbergVI/fraise/pkg/version
+LDFLAGS        := -X '$(VERSION_PKG).Version=$(BUILD_VERSION)' \
+                  -X '$(VERSION_PKG).Commit=$(BUILD)' \
+                  -X '$(VERSION_PKG).Date=$(BUILD_DATE)'
 
-.PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py publish-npm
+.PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py publish-npm version-check
 .DEFAULT_GOAL := help
 
 ##@ General
@@ -262,6 +263,12 @@ quick: build-go test-go-short ## Quick development cycle: build and test Go (sho
 
 ci: install lint test ## CI pipeline: install, lint, and test
 	@echo "$(GREEN)✓ CI pipeline completed$(RESET)"
+
+version-check: ## Check pkg/version matches a release tag: make version-check TAG=vX.Y.Z
+	@if [ -z "$(TAG)" ]; then \
+		echo "$(YELLOW)usage: make version-check TAG=vX.Y.Z$(RESET)"; exit 2; \
+	fi
+	@$(GO_CMD) run ./internal/releasegate "$(TAG)"
 
 release: clean build-go test-go lint-go ## Prepare release build
 	@echo "$(GREEN)✓ Release build ready: $(BIN_DIR)/$(BINARY_NAME)$(RESET)"

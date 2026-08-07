@@ -34,7 +34,7 @@ var (
 	Minor = 1
 	// Patch is the current patched version of the main branch. It is a string
 	// so it can also carry a pre-release suffix, e.g. "0-rc.1" -> 0.1.0-rc.1.
-	Patch = "0-alpha.1"
+	Patch = "0-alpha.3"
 )
 
 // Version, Commit and Date are the build-time release identity. On a release
