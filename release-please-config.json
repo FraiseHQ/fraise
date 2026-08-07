@@ -1,5 +1,17 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "refactor", "section": "Maintenance" },
+    { "type": "build", "section": "Maintenance" },
+    { "type": "ci", "section": "Maintenance" },
+    { "type": "chore", "section": "Maintenance" },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true }
+  ],
   "packages": {
     ".": {
       "release-type": "go",
@@ -10,23 +22,21 @@
       "prerelease": true,
       "prerelease-type": "beta",
       "bump-minor-pre-major": true,
+      "exclude-paths": ["sdk"],
       "extra-files": [
         {
           "type": "generic",
           "path": "pkg/version/version.go"
         }
-      ],
-      "changelog-sections": [
-        { "type": "feat", "section": "Features" },
-        { "type": "fix", "section": "Bug fixes" },
-        { "type": "perf", "section": "Performance" },
-        { "type": "refactor", "section": "Maintenance" },
-        { "type": "build", "section": "Maintenance" },
-        { "type": "ci", "section": "Maintenance" },
-        { "type": "chore", "section": "Maintenance" },
-        { "type": "docs", "section": "Documentation", "hidden": true },
-        { "type": "test", "section": "Tests", "hidden": true }
       ]
+    },
+    "sdk/python": {
+      "release-type": "python",
+      "package-name": "fraise-sdk",
+      "component": "python",
+      "tag-separator": "/",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
     }
   }
 }
