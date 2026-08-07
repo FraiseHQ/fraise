@@ -8,7 +8,7 @@
       "changelog-path": "CHANGELOG.md",
       "versioning": "prerelease",
       "prerelease": true,
-      "prerelease-type": "alpha",
+      "prerelease-type": "beta",
       "bump-minor-pre-major": true,
       "extra-files": [
         {

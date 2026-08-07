@@ -77,7 +77,7 @@ jobs:
     # Fired by the tag release-please creates when its release PR is merged.
     # That requires release-please to push the tag with a PAT: a tag pushed
     # with the default GITHUB_TOKEN does not trigger workflows, so this job
-    # would never run (see .github/workflows/release-please.yaml).
+    # would never run (see .github/workflows/release.yaml).
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [cross-compile, test]
     runs-on: ubuntu-latest

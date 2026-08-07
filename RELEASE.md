@@ -80,8 +80,8 @@ commit and another release PR — there is no tag to delete and re-push.
 
 ### Choosing the version
 
-While `prerelease-type` is `alpha`, every release increments the pre-release
-counter (`0.1.0-alpha.3` → `0.1.0-alpha.4`), including breaking changes —
+While `prerelease-type` is `beta`, every release increments the pre-release
+counter (`0.1.0-beta.1` → `0.1.0-beta.2`), including breaking changes —
 `bump-minor-pre-major` keeps pre-1.0 breaking changes on the same minor rather
 than jumping to `1.0.0`.
 
