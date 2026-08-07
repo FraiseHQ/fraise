@@ -23,7 +23,7 @@
 package query
 
 import (
-	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -35,15 +35,18 @@ import (
 )
 
 // fakeGraph is a controllable graph.Graph used to observe how Stream drives the
-// graph: which lock Acquire/Release take, whether Stage copies, whether the
-// write path writes and the read path searches, and what Search returns. Only
-// the methods Stream touches carry behaviour; the rest are inert stubs present
-// to satisfy the interface.
+// graph: which lock Acquire/Release take, whether the write path writes and the
+// read path searches, and what Search returns. copied/merged record calls to
+// Copy/MergeFrom, which Commit must never make — the in-place tests pin that a
+// staging copy (O(graph) per write) is not reintroduced. Only the methods
+// Stream touches carry behaviour; the rest are inert stubs present to satisfy
+// the interface.
 type fakeGraph struct {
 	locks, unlocks   int
 	rlocks, runlocks int
 	copied, merged   bool
 	sets             int
+	puts             int
 	searchCalled     bool
 
 	searchNodes  []*graph.Node[string]
@@ -57,9 +60,10 @@ func (g *fakeGraph) Unlock()  { g.unlocks++ }
 func (g *fakeGraph) RLock()   { g.rlocks++ }
 func (g *fakeGraph) RUnlock() { g.runlocks++ }
 
-func (g *fakeGraph) Copy() graph.Graph[string, float32]        { g.copied = true; return g }
-func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32]) { g.merged = true }
-func (g *fakeGraph) Set(node graph.Node[string]) error         { g.sets++; return nil }
+func (g *fakeGraph) Copy() graph.Graph[string, float32]            { g.copied = true; return g }
+func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32])     { g.merged = true }
+func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
+func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
 func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
 	g.searchCalled = true
@@ -68,9 +72,10 @@ func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, f
 
 // --- inert stubs (unused by Stream) ----------------------------------------
 
-func (g *fakeGraph) GetHasher() hash.Hasher[string, string]             { return nil }
+// GetHasher returns a real (fake) hasher rather than nil: the write path
+// derives the fact's key (fact.Key() -> Hash) before storing it.
+func (g *fakeGraph) GetHasher() hash.Hasher[string, string]             { return &fakeHasher{} }
 func (g *fakeGraph) Get(key string) graph.Node[string]                  { return nil }
-func (g *fakeGraph) Put(key string, node graph.Node[string]) error      { return nil }
 func (g *fakeGraph) Delete(node graph.Node[string]) error               { return nil }
 func (g *fakeGraph) GetVectorIndex() index.VectorIndex[string, float32] { return nil }
 func (g *fakeGraph) GetTextIndex() index.TextIndex[string, float32]     { return nil }
@@ -104,53 +109,6 @@ func isClosed(ch <-chan struct{}) bool {
 	}
 }
 
-// --- Stage -----------------------------------------------------------------
-
-func TestStreamStageReadCommitsInPlace(t *testing.T) {
-	g := &fakeGraph{}
-	s := newStream(readQuery())
-
-	staged, err := s.Stage(g)
-	if err != nil {
-		t.Fatalf("Stage() err = %v", err)
-	}
-	// The read path commits against the live graph: no copy, no staging.
-	if g.copied {
-		t.Error("read Stage copied the graph, want in-place")
-	}
-	if s.staging != nil {
-		t.Error("read Stage set staging, want nil")
-	}
-	if !g.searchCalled {
-		t.Error("read Stage did not run the query's Search")
-	}
-	if staged != graph.Graph[string, float32](g) {
-		t.Error("read Stage returned a different graph than the one passed")
-	}
-}
-
-func TestStreamStageWriteCopiesAndWrites(t *testing.T) {
-	g := &fakeGraph{}
-	s := newStream(&Remember[string, float32]{Value: "alice"})
-
-	staged, err := s.Stage(g)
-	if err != nil {
-		t.Fatalf("Stage() err = %v", err)
-	}
-	if !g.copied {
-		t.Error("write Stage did not Copy the graph into staging")
-	}
-	if s.staging == nil {
-		t.Error("staging is nil after write Stage")
-	}
-	if g.sets == 0 {
-		t.Error("write Stage did not write the fact into staging")
-	}
-	if staged == nil {
-		t.Error("write Stage returned a nil graph")
-	}
-}
-
 // --- Commit (read path) ----------------------------------------------------
 
 func TestStreamCommitReadBuildsResult(t *testing.T) {
@@ -167,8 +125,8 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 	if !g.searchCalled {
 		t.Error("Commit did not call Search on a read query")
 	}
-	if g.merged {
-		t.Error("Commit called MergeFrom on a read query")
+	if g.copied || g.merged {
+		t.Error("Commit copied or merged the graph on a read query, want in-place")
 	}
 	if s.Result == nil {
 		t.Fatal("Commit left Result nil")
@@ -185,17 +143,26 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 
 // --- Commit (write path) ---------------------------------------------------
 
-func TestStreamCommitWriteWrites(t *testing.T) {
+// TestStreamCommitWriteInPlace is the O(graph)-per-write regression pin: a
+// write commit must mutate the given graph directly — never Copy it into a
+// staging graph or MergeFrom one back. Reintroducing either makes every
+// single-fact write cost O(total graph size) under the exclusive lock.
+func TestStreamCommitWriteInPlace(t *testing.T) {
 	g := &fakeGraph{}
 	s := newStream(&Remember[string, float32]{Value: "alice"})
-	s.staging = g // a staged write stream
 
 	if err := s.Commit(g); err != nil {
 		t.Fatalf("Commit() err = %v", err)
 	}
 
-	if g.sets == 0 {
-		t.Error("Commit did not write the fact on a write query")
+	if g.puts == 0 {
+		t.Error("Commit did not upsert the fact on a write query")
+	}
+	if g.copied {
+		t.Error("Commit copied the graph on a write query, want in-place")
+	}
+	if g.merged {
+		t.Error("Commit merged a staging graph, want in-place")
 	}
 	if g.searchCalled {
 		t.Error("Commit called Search on a write query")
@@ -205,28 +172,80 @@ func TestStreamCommitWriteWrites(t *testing.T) {
 	}
 }
 
-func TestStreamCommitWriteRequiresStaging(t *testing.T) {
-	s := newStream(&Remember[string, float32]{}) // no Stage -> staging is nil
-	if err := s.Commit(&fakeGraph{}); !errors.Is(err, ErrStreamClosed) {
-		t.Errorf("Commit() on unstaged write stream = %v, want ErrStreamClosed", err)
+// TestStreamCommitReassertRefreshesRecency pins the temporal "touch"
+// semantics: re-remembering an identical fact replaces the stored node with a
+// fresh timestamp (no duplicate node), so recency decay restarts and a
+// since:-window covering only the re-assertion finds the fact. Regression for
+// the silent first-write-wins behavior, where an agent reinforcing a memory
+// left it decaying from its original write.
+func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+	remember := func() *Remember[uint64, float32] {
+		return &Remember[uint64, float32]{Value: "the deploy key lives in vault"}
+	}
+
+	if err := NewStream[uint64, float32](remember()).Commit(g); err != nil {
+		t.Fatalf("first Commit = %v, want nil", err)
+	}
+	key := graph.Fact[uint64]{
+		NodeAttributes: graph.NodeAttributes{Value: "the deploy key lives in vault"},
+		Hasher:         g.GetHasher(),
+	}.Key()
+	ts1 := g.Get(key).GetTimestamp()
+	nodesBefore := g.Stats().Nodes
+
+	// A window opening strictly after the first write: only a refreshed
+	// timestamp can land inside it.
+	windowStart := ts1.Add(time.Nanosecond)
+
+	if err := NewStream[uint64, float32](remember()).Commit(g); err != nil {
+		t.Fatalf("second Commit = %v, want nil", err)
+	}
+
+	ts2 := g.Get(key).GetTimestamp()
+	if !ts2.After(ts1) {
+		t.Errorf("re-assert timestamp = %v, want after the original %v (touch)", ts2, ts1)
+	}
+	if got := g.Stats().Nodes; got != nodesBefore {
+		t.Errorf("re-assert changed node count %d -> %d, want an in-place replace", nodesBefore, got)
+	}
+
+	// The report's repro: recall with since covering only the re-assertion.
+	nodes, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
+	if len(nodes) != 1 {
+		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(nodes))
 	}
 }
 
-// --- Rollback --------------------------------------------------------------
+// TestStreamCommitVectorMismatchLeavesGraphClean pins the failure ordering of
+// the in-place write: the vector insert runs before any graph mutation, so the
+// one realistic commit failure — a vector-dimension mismatch — rejects the
+// write with the graph untouched (no fact node, no index entry).
+func TestStreamCommitVectorMismatchLeavesGraphClean(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
 
-func TestStreamRollbackClearsStaging(t *testing.T) {
-	g := &fakeGraph{}
-	s := newStream(&Remember[string, float32]{})
-	s.staging = g
+	// First write fixes the vector index dimension at 3.
+	first := &Remember[uint64, float32]{
+		Value:  "first fact",
+		Vector: containers.NewVector[uint64]([]float32{1, 2, 3}),
+	}
+	if err := NewStream[uint64, float32](first).Commit(g); err != nil {
+		t.Fatalf("first Commit = %v, want nil", err)
+	}
+	before := g.Stats()
 
-	if err := s.Rollback(g); err != nil {
-		t.Fatalf("Rollback() err = %v", err)
+	// Second write carries a dim-4 vector: must fail and change nothing.
+	second := &Remember[uint64, float32]{
+		Value:  "second fact",
+		Vector: containers.NewVector[uint64]([]float32{1, 2, 3, 4}),
 	}
-	if s.staging != nil {
-		t.Error("Rollback did not clear staging")
+	if err := NewStream[uint64, float32](second).Commit(g); err == nil {
+		t.Fatal("Commit with mismatched vector dimension = nil error, want error")
 	}
-	if g.merged {
-		t.Error("Rollback merged staging into the graph")
+
+	after := g.Stats()
+	if after != before {
+		t.Errorf("failed commit mutated the graph: before %+v, after %+v", before, after)
 	}
 }
 
@@ -281,11 +300,12 @@ func TestStreamFinishIsIdempotent(t *testing.T) {
 }
 
 // TestCommitStoresAnchorNodesForFilteredRecall drives the exact production
-// write path (Stage -> Commit on staging -> MergeFrom) and checks the written
-// fact is recallable through its topic:/entity: anchors. Regression test for
-// anchored recalls returning nothing: Commit created the Mentions/IsAbout
-// edges but never stored the NamedEntity/Topic nodes themselves, so the
-// filter could not resolve the anchor values and dropped every fact.
+// write path (an in-place Commit against the live graph) and checks the
+// written fact is recallable through its topic:/entity: anchors. Regression
+// test for anchored recalls returning nothing: Commit created the
+// Mentions/IsAbout edges but never stored the NamedEntity/Topic nodes
+// themselves, so the filter could not resolve the anchor values and dropped
+// every fact.
 func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	g := graph.NewGraph[uint64, float32](config.New())
 
@@ -296,11 +316,9 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 	s := NewStream[uint64, float32](remember)
 
-	stg, err := s.Stage(g)
-	if err != nil {
-		t.Fatalf("Stage = %v, want nil", err)
+	if err := s.Commit(g); err != nil {
+		t.Fatalf("Commit = %v, want nil", err)
 	}
-	g.MergeFrom(stg)
 
 	cases := []struct {
 		name     string
@@ -321,6 +339,38 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 			if len(nodes) != 1 || got[0] != "alice moved to paris" {
 				t.Errorf("Search(paris, topics=%v entities=%v) = %v, want [alice moved to paris]",
 					tc.topics, tc.entities, got)
+			}
+		})
+	}
+}
+
+// BenchmarkRememberCommit measures a single-fact write commit against graphs
+// of different sizes. The in-place write is O(fact + incremental index
+// updates), so ns/op must stay flat as the pre-populated graph grows — the
+// old staging path (Copy + MergeFrom) was O(total graph size) per write and
+// showed up here as ns/op scaling with the size subtest.
+func BenchmarkRememberCommit(b *testing.B) {
+	for _, size := range []int{100, 10_000} {
+		b.Run(fmt.Sprintf("size-%d", size), func(b *testing.B) {
+			g := graph.NewGraph[uint64, float32](config.New())
+			for i := 0; i < size; i++ {
+				pre := &Remember[uint64, float32]{
+					Value:  fmt.Sprintf("pre-existing fact number %d", i),
+					Topics: []string{fmt.Sprintf("topic%d", i%13)},
+				}
+				if err := NewStream[uint64, float32](pre).Commit(g); err != nil {
+					b.Fatalf("prepopulate Commit = %v", err)
+				}
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				w := &Remember[uint64, float32]{
+					Value:  fmt.Sprintf("bench fact %d", i),
+					Topics: []string{"bench"},
+				}
+				if err := NewStream[uint64, float32](w).Commit(g); err != nil {
+					b.Fatalf("Commit = %v", err)
+				}
 			}
 		})
 	}

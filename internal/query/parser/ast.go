@@ -131,11 +131,24 @@ func (r RecallCommandNode[K, P]) Top(v int) int {
 	return r.top.value
 }
 
+// HasTop reports whether the recall carried an explicit top clause, as opposed
+// to falling back to the configured default. Ceiling checks apply only to a
+// client-supplied value, never to the trusted default.
+func (r RecallCommandNode[K, P]) HasTop() bool {
+	return r.top.value != 0
+}
+
 func (r RecallCommandNode[K, P]) Depth(v int) int {
 	if r.depth.value == 0 {
 		return v
 	}
 	return r.depth.value
+}
+
+// HasDepth reports whether the recall carried an explicit depth clause, as
+// opposed to falling back to the configured default.
+func (r RecallCommandNode[K, P]) HasDepth() bool {
+	return r.depth.value != 0
 }
 
 func (r RecallCommandNode[K, P]) Since() containers.TimeValue[K] {

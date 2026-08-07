@@ -1,44 +1,44 @@
 {
   "categories": [
     {
-      "title": "### Upgrades",
+      "title": "### ⚠️ Upgrades",
       "labels": [
         "breaking-change",
         "upgrade"
       ]
     },
     {
-      "title": "### Features",
+      "title": "### ✨ Features",
       "labels": [
         "feature"
       ]
     },
     {
-      "title": "### Bug fixes",
+      "title": "### 🐛 Bug fixes",
       "labels": [
         "fix"
       ]
     },
     {
-      "title": "### Performance",
+      "title": "### ⚡ Performance",
       "labels": [
         "performance"
       ]
     },
     {
-      "title": "### Maintenance",
+      "title": "### 🔧 Maintenance",
       "labels": [
         "maintenance"
       ]
     },
     {
-      "title": "### Docs",
+      "title": "### 📚 Docs",
       "labels": [
         "docs"
       ]
     },
     {
-      "title": "### Tests",
+      "title": "### 🧪 Tests",
       "labels": [
         "test"
       ]
@@ -54,7 +54,7 @@
       "flags": "gu"
     }
   },
-  "template": "#{{CHANGELOG}}\n### Other changes\n\n#{{UNCATEGORIZED}}\n\n**Full changelog**: https://github.com/RonsenbergVI/fraise/compare/#{{FROM_TAG}}...#{{TO_TAG}}",
+  "template": "#{{CHANGELOG}}\n### 🔀 Other changes\n\n#{{UNCATEGORIZED}}\n\n**Full changelog**: https://github.com/RonsenbergVI/fraise/compare/#{{FROM_TAG}}...#{{TO_TAG}}",
   "pr_template": "- #{{TITLE}} (##{{NUMBER}})",
   "empty_template": "_No changes since #{{FROM_TAG}}._"
 }

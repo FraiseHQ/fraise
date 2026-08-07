@@ -290,6 +290,81 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphSearchRecencyDecayFactor pins the decay formula the README
+// promises ("recent memories outrank older ones"): a fact's score is
+// multiplied by 0.5^(age/half-life). A single fact is a rank-0 text seed with
+// no walk attenuation, so its pre-decay score is exactly 1.0 and the decay
+// factor is observable directly.
+func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
+	halflife := testConfig().Engine.Halflife // default 7d
+
+	cases := []struct {
+		name string
+		age  time.Duration
+		want float64
+	}{
+		{"fresh fact keeps its relevance", 0, 1.0},
+		{"one half-life halves the score", halflife, 0.5},
+		{"two half-lives quarter it", 2 * halflife, 0.25},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newGraph()
+			mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now().Add(-tc.age)))
+
+			_, scores := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+			if len(scores) != 1 {
+				t.Fatalf("Search returned %d scores, want 1", len(scores))
+			}
+			// The fact ages a hair between Set and Search, so allow a small
+			// tolerance around the exact factor.
+			if diff := scores[0] - tc.want; diff > 1e-3 || diff < -1e-3 {
+				t.Errorf("score = %v, want ~%v (0.5^(age/half-life))", scores[0], tc.want)
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchRecencyOrdersTies checks the user-visible promise:
+// of two facts matching the same term, the recent one outranks the much older
+// one. The old fact is aged ten half-lives so decay dominates whatever seed
+// ranks the text index assigns — the ordering cannot depend on index
+// tie-breaking.
+func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
+	g := newGraph()
+	halflife := testConfig().Engine.Halflife
+	mustSet(t, g, mkFact(g, "comet sighted in march", time.Now().Add(-10*halflife)))
+	mustSet(t, g, mkFact(g, "comet sighted today", time.Now()))
+
+	nodes, scores := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(nodes) != 2 {
+		t.Fatalf("Search(comet) returned %d nodes, want 2", len(nodes))
+	}
+	if (*nodes[0]).GetValue() != "comet sighted today" {
+		t.Errorf("Search(comet) ranked %q first, want the recent fact", (*nodes[0]).GetValue())
+	}
+	if scores[0] <= scores[1] {
+		t.Errorf("recent fact score %v not above old fact score %v", scores[0], scores[1])
+	}
+}
+
+// TestInMemoryGraphSearchDecayDisabled checks that a non-positive half-life
+// switches decay off: an old fact keeps its full relevance score.
+func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, float64](cfg)
+	mustSet(t, g, mkFact(g, "glacier survey notes", time.Now().Add(-365*24*time.Hour)))
+
+	_, scores := g.Search([]string{"glacier"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(scores) != 1 {
+		t.Fatalf("Search returned %d scores, want 1", len(scores))
+	}
+	if scores[0] != 1.0 {
+		t.Errorf("score with decay disabled = %v, want exactly 1.0", scores[0])
+	}
+}
+
 func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 	g := newGraph()
 	now := time.Now()

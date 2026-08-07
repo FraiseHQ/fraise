@@ -23,6 +23,7 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
+dist/
 
 # env file
 .env
@@ -56,3 +57,5 @@ __pycache__/
 # fraise artifacts
 
 bin/
+
+dist/

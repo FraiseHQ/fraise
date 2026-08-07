@@ -89,7 +89,7 @@ jobs:
         if: >-
           !startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
           !startsWith(github.event.pull_request.head.ref, 'renovate/') &&
-          !startsWith(github.event.pull_request.head.ref, 'release/') &&
+          !startsWith(github.event.pull_request.head.ref, 'release-please') &&
           !startsWith(github.event.pull_request.head.ref, 'revert-')
         uses: finleyfamily/action-enforce-branch-name@v1.0.4
         continue-on-error: true

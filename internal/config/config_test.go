@@ -125,3 +125,82 @@ func TestConfigSet_FromFile_Missing(t *testing.T) {
 		t.Fatal("expected error for missing file, got nil")
 	}
 }
+
+// TestConfigSet_LimitsAndTimeouts checks that the robustness knobs (HTTP
+// timeouts, body cap, and the top/depth/vector ceilings) decode from the config
+// file, and that config.New seeds them with their documented defaults.
+func TestConfigSet_LimitsAndTimeouts(t *testing.T) {
+	// Defaults come from config.New (flag defaults are applied on definition).
+	c := config.New()
+	if c.Server.ReadTimeout != config.DefaultReadTimeout {
+		t.Errorf("Server.ReadTimeout default: got %v, want %v", c.Server.ReadTimeout, config.DefaultReadTimeout)
+	}
+	if c.Server.MaxBodyBytes != config.DefaultMaxBodyBytes {
+		t.Errorf("Server.MaxBodyBytes default: got %d, want %d", c.Server.MaxBodyBytes, config.DefaultMaxBodyBytes)
+	}
+	if c.Scheduler.EnqueueTimeout != config.DefaultEnqueueTimeout {
+		t.Errorf("Scheduler.EnqueueTimeout default: got %v, want %v", c.Scheduler.EnqueueTimeout, config.DefaultEnqueueTimeout)
+	}
+	if c.DB.MaxTop != config.DefaultMaxTop {
+		t.Errorf("DB.MaxTop default: got %d, want %d", c.DB.MaxTop, config.DefaultMaxTop)
+	}
+	if c.DB.MaxDepth != config.DefaultMaxDepth {
+		t.Errorf("DB.MaxDepth default: got %d, want %d", c.DB.MaxDepth, config.DefaultMaxDepth)
+	}
+	if c.DB.MaxVectorDimension != config.DefaultMaxVectorDimension {
+		t.Errorf("DB.MaxVectorDimension default: got %d, want %d", c.DB.MaxVectorDimension, config.DefaultMaxVectorDimension)
+	}
+
+	const contents = `
+[server]
+read-timeout = "5s"
+read-header-timeout = "2s"
+write-timeout = "7s"
+idle-timeout = "30s"
+shutdown-grace = "3s"
+max-body-bytes = 4096
+
+[db]
+max-top = 50
+max-depth = 4
+max-vector-dimension = 128
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, config.DefaultConfigFile)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	f := config.New()
+	if _, err := f.FromFile(path); err != nil {
+		t.Fatalf("FromFile returned error: %v", err)
+	}
+
+	if f.Server.ReadTimeout != 5*time.Second {
+		t.Errorf("Server.ReadTimeout: got %v, want 5s", f.Server.ReadTimeout)
+	}
+	if f.Server.ReadHeaderTimeout != 2*time.Second {
+		t.Errorf("Server.ReadHeaderTimeout: got %v, want 2s", f.Server.ReadHeaderTimeout)
+	}
+	if f.Server.WriteTimeout != 7*time.Second {
+		t.Errorf("Server.WriteTimeout: got %v, want 7s", f.Server.WriteTimeout)
+	}
+	if f.Server.IdleTimeout != 30*time.Second {
+		t.Errorf("Server.IdleTimeout: got %v, want 30s", f.Server.IdleTimeout)
+	}
+	if f.Server.ShutdownGrace != 3*time.Second {
+		t.Errorf("Server.ShutdownGrace: got %v, want 3s", f.Server.ShutdownGrace)
+	}
+	if f.Server.MaxBodyBytes != 4096 {
+		t.Errorf("Server.MaxBodyBytes: got %d, want 4096", f.Server.MaxBodyBytes)
+	}
+	if f.DB.MaxTop != 50 {
+		t.Errorf("DB.MaxTop: got %d, want 50", f.DB.MaxTop)
+	}
+	if f.DB.MaxDepth != 4 {
+		t.Errorf("DB.MaxDepth: got %d, want 4", f.DB.MaxDepth)
+	}
+	if f.DB.MaxVectorDimension != 128 {
+		t.Errorf("DB.MaxVectorDimension: got %d, want 128", f.DB.MaxVectorDimension)
+	}
+}

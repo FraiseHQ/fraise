@@ -22,7 +22,7 @@
 
 BUILD          ?= $(shell git rev-parse --short HEAD)
 BUILD_CODENAME ?= dgraph
-BUILD_DATE     ?= $(shell git log -1 --format=%ci)
+BUILD_DATE     ?= $(shell git log -1 --format=%cI)
 BUILD_BRANCH   ?= $(shell git rev-parse --abbrev-ref HEAD)
 BUILD_VERSION  ?= $(shell git describe --always --tags)
 
@@ -55,11 +55,12 @@ GREEN          := \033[0;32m
 YELLOW         := \033[0;33m
 RESET          := \033[0m
 
-# Build flags
-LDFLAGS        := -X 'main.Version=$(BUILD_VERSION)' \
-                  -X 'main.Build=$(BUILD)' \
-                  -X 'main.BuildDate=$(BUILD_DATE)' \
-                  -X 'main.Branch=$(BUILD_BRANCH)'
+# Build flags. Injects the same pkg/version symbols GoReleaser sets on a
+# release (see .goreleaser.yaml), so every build path reports its real version.
+VERSION_PKG    := github.com/RonsenbergVI/fraise/pkg/version
+LDFLAGS        := -X '$(VERSION_PKG).Version=$(BUILD_VERSION)' \
+                  -X '$(VERSION_PKG).Commit=$(BUILD)' \
+                  -X '$(VERSION_PKG).Date=$(BUILD_DATE)'
 
 .PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py publish-npm
 .DEFAULT_GOAL := help
@@ -124,8 +125,7 @@ FRAISE_E2E_PORT ?= 9876
 
 test-e2e: ## Run end-to-end tests (python) as a docker compose service
 	@echo "$(CYAN)Running end-to-end tests with docker compose...$(RESET)"
-	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.e2e.yaml --profile e2e up --build --exit-code-from e2e --force-recreate --attach-dependencies; \
-	status=$$?; \
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.e2e.yaml --profile e2e up --build --exit-code-from e2e --force-recreate --attach-dependencies;
 
 test-ts: ## Run TypeScript tests
 	@echo "$(CYAN)Running TypeScript tests...$(RESET)"

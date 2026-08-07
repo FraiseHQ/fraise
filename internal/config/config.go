@@ -50,10 +50,32 @@ type SchedulerConfig struct {
 
 	// Buffer size is the scheduler channel buffer size.
 	BufferSize uint `toml:"buffer-size"`
+
+	// Maximum time a submit waits for space in a full queue before the
+	// request is rejected so clients can back off.
+	EnqueueTimeout time.Duration `toml:"enqueue-timeout"`
 }
 
 type ServerConfig struct {
 	Port int `toml:"port"`
+
+	// Maximum time to read an entire request (headers + body).
+	ReadTimeout time.Duration `toml:"read-timeout"`
+
+	// Maximum time to read request headers alone (Slowloris protection).
+	ReadHeaderTimeout time.Duration `toml:"read-header-timeout"`
+
+	// Maximum time to write a response.
+	WriteTimeout time.Duration `toml:"write-timeout"`
+
+	// Maximum time a kept-alive connection may sit idle between requests.
+	IdleTimeout time.Duration `toml:"idle-timeout"`
+
+	// How long a graceful shutdown waits for in-flight requests to drain.
+	ShutdownGrace time.Duration `toml:"shutdown-grace"`
+
+	// Maximum request body size, in bytes, accepted by the query endpoint.
+	MaxBodyBytes int64 `toml:"max-body-bytes"`
 }
 
 type LogConfig struct {
@@ -93,6 +115,16 @@ type DBConfig struct {
 
 	// default depth
 	DefaultDepth int `toml:"default-depth"`
+
+	// Ceiling on a recall's top clause (rejected past this at parse time).
+	MaxTop int `toml:"max-top"`
+
+	// Ceiling on a recall's depth clause (rejected past this at parse time).
+	MaxDepth int `toml:"max-depth"`
+
+	// Ceiling on the length of a bound vector parameter (rejected past this at
+	// parse time).
+	MaxVectorDimension int `toml:"max-vector-dimension"`
 
 	// How many seeds to pull from each source (keywords and vector)
 	SeedSize int `toml:"seed-size"`
@@ -165,9 +197,16 @@ func New() *ConfigSet {
 	// scheduler
 	flagSet.IntVar(&config.Scheduler.Workers, "workers", DefaultWorkersCount, "Default worker count.")
 	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Default Buffer size")
+	flagSet.DurationVar(&config.Scheduler.EnqueueTimeout, "enqueue-timeout", DefaultEnqueueTimeout, "Max wait for queue space before rejecting a query")
 
 	// server
 	flagSet.IntVar(&config.Server.Port, "port", DefaultPort, "Server port")
+	flagSet.DurationVar(&config.Server.ReadTimeout, "read-timeout", DefaultReadTimeout, "Max time to read a whole request")
+	flagSet.DurationVar(&config.Server.ReadHeaderTimeout, "read-header-timeout", DefaultReadHeaderTimeout, "Max time to read request headers")
+	flagSet.DurationVar(&config.Server.WriteTimeout, "write-timeout", DefaultWriteTimeout, "Max time to write a response")
+	flagSet.DurationVar(&config.Server.IdleTimeout, "idle-timeout", DefaultIdleTimeout, "Max idle time on a kept-alive connection")
+	flagSet.DurationVar(&config.Server.ShutdownGrace, "shutdown-grace", DefaultShutdownGrace, "Grace period for in-flight requests on shutdown")
+	flagSet.Int64Var(&config.Server.MaxBodyBytes, "max-body-bytes", DefaultMaxBodyBytes, "Max request body size in bytes")
 
 	// log
 	flagSet.StringVar(&config.Log.Level, "log-level", DefaultLogLevel, "Log level")
@@ -183,6 +222,9 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.NumGraphs, "num-graphs", DefaultNumGraph, "Number of independent graphs the store allocates")
 	flagSet.IntVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
 	flagSet.IntVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
+	flagSet.IntVar(&config.DB.MaxTop, "max-top", DefaultMaxTop, "Ceiling on a recall's top clause")
+	flagSet.IntVar(&config.DB.MaxDepth, "max-depth", DefaultMaxDepth, "Ceiling on a recall's depth clause")
+	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Seeds to pull from each source")
 	flagSet.Float64Var(&config.DB.HopAttenuation, "hop-attenuation", float64(DefaultHopAttenuation), "Score attenuation for graph walk")
@@ -267,9 +309,16 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// scheduler
 	Adjust(&c.Scheduler.Workers, DefaultWorkersCount)
 	Adjust(&c.Scheduler.BufferSize, DefaultBufferSize)
+	Adjust(&c.Scheduler.EnqueueTimeout, DefaultEnqueueTimeout)
 
 	// server
 	Adjust(&c.Server.Port, DefaultPort)
+	Adjust(&c.Server.ReadTimeout, DefaultReadTimeout)
+	Adjust(&c.Server.ReadHeaderTimeout, DefaultReadHeaderTimeout)
+	Adjust(&c.Server.WriteTimeout, DefaultWriteTimeout)
+	Adjust(&c.Server.IdleTimeout, DefaultIdleTimeout)
+	Adjust(&c.Server.ShutdownGrace, DefaultShutdownGrace)
+	Adjust(&c.Server.MaxBodyBytes, DefaultMaxBodyBytes)
 
 	// log
 	Adjust(&c.Log.Level, DefaultLogLevel)
@@ -286,6 +335,9 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.NumGraphs, DefaultNumGraph)
 	Adjust(&c.DB.DefaultTop, DefaultTop)
 	Adjust(&c.DB.DefaultDepth, DefaultDepth)
+	Adjust(&c.DB.MaxTop, DefaultMaxTop)
+	Adjust(&c.DB.MaxDepth, DefaultMaxDepth)
+	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
 	Adjust(&c.DB.HopAttenuation, float64(DefaultHopAttenuation))

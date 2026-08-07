@@ -23,6 +23,9 @@
 package engine
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/RonsenbergVI/fraise/internal/cache"
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/hash"
@@ -51,12 +54,15 @@ func NewEngine[K ~uint64, P float32 | float64](c *config.ConfigSet, hasher hash.
 	return e
 }
 
-func (e *Engine[K, P]) Start() {
+// Start allocates the plan cache and starts the scheduler workers. It returns
+// an error if either fails, so a caller never brings up a live server backed by
+// a nil cache: the cache is assigned only once it is known good.
+func (e *Engine[K, P]) Start() error {
 	// allocate cache memory
 	c, err := cache.NewLRUCache[K, query.Query[K, P]](e.Config.Engine.CacheCapacity)
 	if err != nil {
 		logger.Error("Error while initialising cache", "error", err)
-		return
+		return fmt.Errorf("%w: %w", ErrCacheInit, err)
 	}
 	e.Cache = c
 	logger.Info("Engine cache initialised", "capacity", e.Config.Engine.CacheCapacity)
@@ -64,7 +70,9 @@ func (e *Engine[K, P]) Start() {
 	// start the scheduler workers that execute planned streams
 	if err := e.Scheduler.Start(); err != nil {
 		logger.Error("Error while starting scheduler", "error", err)
+		return err
 	}
+	return nil
 }
 
 func (e *Engine[K, P]) Stop() {
@@ -94,6 +102,10 @@ func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 	return stream, nil
 }
 
-func (e *Engine[K, P]) Apply(s *query.Stream[K, P]) {
-	e.Scheduler.Submit(s)
+// Apply hands a planned stream to the scheduler for execution. It returns the
+// scheduler's error (e.g. ErrShutdown, ErrQueueFull, or a wrapped context
+// cancellation) so a caller knows the stream was never enqueued and must not
+// wait on its completion.
+func (e *Engine[K, P]) Apply(ctx context.Context, s *query.Stream[K, P]) error {
+	return e.Scheduler.Submit(ctx, s)
 }

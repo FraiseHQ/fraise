@@ -23,6 +23,9 @@
 package scheduler_test
 
 import (
+	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,7 +100,9 @@ func TestSubmitExecutesReadStream(t *testing.T) {
 	defer s.Stop()
 
 	stream := planStream(t, cfg, "recall@0 anna")
-	s.Submit(stream)
+	if err := s.Submit(context.Background(), stream); err != nil {
+		t.Fatalf("Submit returned error: %v", err)
+	}
 
 	select {
 	case <-stream.Done():
@@ -129,7 +134,9 @@ func TestSubmitOutOfRangeGraph(t *testing.T) {
 	// Selector past the last valid graph index.
 	stream := planStream(t, cfg, "recall@0 anna")
 	stream.Query.SetGraphID(uint8(s.DB.NumGraphs()))
-	s.Submit(stream)
+	if err := s.Submit(context.Background(), stream); err != nil {
+		t.Fatalf("Submit returned error: %v", err)
+	}
 
 	select {
 	case <-stream.Done():
@@ -140,4 +147,182 @@ func TestSubmitOutOfRangeGraph(t *testing.T) {
 	if stream.Err == nil {
 		t.Error("stream.Err = nil, want an out-of-range error")
 	}
+}
+
+// TestSubmitNeverStartedReturnsShutdown checks that submitting to a scheduler
+// that never started returns ErrShutdown instead of hanging on a nil queue.
+func TestSubmitNeverStartedReturnsShutdown(t *testing.T) {
+	cfg := config.New()
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	stream := planStream(t, cfg, "recall@0 anna")
+	if err := s.Submit(context.Background(), stream); !errors.Is(err, scheduler.ErrShutdown) {
+		t.Fatalf("Submit before Start = %v, want ErrShutdown", err)
+	}
+}
+
+// TestSubmitAfterStopReturnsShutdown checks that submitting after Stop returns
+// ErrShutdown rather than panicking on a closed queue or hanging on a nil one.
+func TestSubmitAfterStopReturnsShutdown(t *testing.T) {
+	cfg := config.New()
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	s.Stop()
+
+	stream := planStream(t, cfg, "recall@0 anna")
+	if err := s.Submit(context.Background(), stream); !errors.Is(err, scheduler.ErrShutdown) {
+		t.Fatalf("Submit after Stop = %v, want ErrShutdown", err)
+	}
+}
+
+// TestSubmitCancelledContextDoesNotBlock checks that Submit is context-aware:
+// with no worker to drain a full queue, a submit whose context is already
+// cancelled returns promptly with an error rather than blocking forever.
+func TestSubmitCancelledContextDoesNotBlock(t *testing.T) {
+	cfg := config.New()
+	cfg.Scheduler.Workers = 0 // no drain, so the buffer stays full
+	cfg.Scheduler.BufferSize = 1
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer s.Stop() // drains the buffered stream
+
+	// Fill the single buffer slot.
+	if err := s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna")); err != nil {
+		t.Fatalf("first Submit returned error: %v", err)
+	}
+
+	// The queue is now full; a cancelled context must unblock the send.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- s.Submit(ctx, planStream(t, cfg, "recall@0 anna")) }()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, scheduler.ErrEnqueueStream) {
+			t.Fatalf("Submit with cancelled context = %v, want ErrEnqueueStream", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Submit did not return after its context was cancelled")
+	}
+}
+
+// TestSubmitFullQueueTimesOut checks that Submit sheds load instead of blocking
+// without bound: with no worker to drain a full queue and a live context, the
+// send gives up after the configured enqueue timeout and reports ErrQueueFull.
+func TestSubmitFullQueueTimesOut(t *testing.T) {
+	cfg := config.New()
+	cfg.Scheduler.Workers = 0 // no drain, so the buffer stays full
+	cfg.Scheduler.BufferSize = 1
+	cfg.Scheduler.EnqueueTimeout = 50 * time.Millisecond
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer s.Stop() // drains the buffered stream
+
+	// Fill the single buffer slot.
+	if err := s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna")); err != nil {
+		t.Fatalf("first Submit returned error: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna")) }()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, scheduler.ErrQueueFull) {
+			t.Fatalf("Submit on a saturated queue = %v, want ErrQueueFull", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Submit did not give up on a saturated queue within the enqueue timeout")
+	}
+}
+
+// TestStopDrainsBufferedWrite checks that a graceful Stop executes work already
+// accepted into the buffer rather than dropping it: with no worker running, the
+// only chance for the buffered write to run is Stop's drain.
+func TestStopDrainsBufferedWrite(t *testing.T) {
+	cfg := config.New()
+	cfg.Scheduler.Workers = 0
+	cfg.Scheduler.BufferSize = 4
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+
+	stream := planStream(t, cfg, "remember@0 'the sky is blue' topic:color")
+	if err := s.Submit(context.Background(), stream); err != nil {
+		t.Fatalf("Submit returned error: %v", err)
+	}
+
+	s.Stop() // must drain and execute the buffered write
+
+	select {
+	case <-stream.Done():
+	default:
+		t.Fatal("Stop did not execute the buffered stream (Done never closed)")
+	}
+	if stream.Err != nil {
+		t.Errorf("stream.Err = %v, want nil", stream.Err)
+	}
+
+	// The write must have landed in the live graph — commits are in place, so
+	// a fact that only ever reached a discarded staging copy is a regression.
+	g, err := s.DB.Select(0)
+	if err != nil {
+		t.Fatalf("Select(0) returned error: %v", err)
+	}
+	g.RLock()
+	nodes := g.Stats().Nodes
+	g.RUnlock()
+	if nodes == 0 {
+		t.Error("committed write left the live graph empty, want the fact stored in place")
+	}
+}
+
+// TestConcurrentSubmitStop is a race-detector guard: many submits racing a Stop
+// must never panic (send on a closed queue) or hang (send on a nil queue). Any
+// per-submit outcome is acceptable; the invariant is that the scheduler tears
+// down cleanly. Run with -race.
+func TestConcurrentSubmitStop(t *testing.T) {
+	cfg := config.New()
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+
+	const n = 64
+	streams := make([]*query.Stream[uint64, float32], n)
+	for i := range streams {
+		streams[i] = planStream(t, cfg, "recall@0 anna")
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(st *query.Stream[uint64, float32]) {
+			defer wg.Done()
+			_ = s.Submit(context.Background(), st)
+		}(streams[i])
+	}
+
+	s.Stop()
+	wg.Wait()
 }

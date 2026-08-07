@@ -23,8 +23,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/hash"
@@ -34,14 +37,36 @@ import (
 
 func PrintBanner() {
 	fmt.Print(`
+
 	██████ ▄▄▄▄   ▄▄▄  ▄▄  ▄▄▄▄ ▄▄▄▄▄
 	██▄▄   ██▄█▄ ██▀██ ██ ███▄▄ ██▄▄
 	██     ██ ██ ██▀██ ██ ▄▄██▀ ██▄▄▄
+
 	`)
 }
 
+// main is the only place that exits: run owns every defer, so os.Exit here
+// cannot skip one (gocritic exitAfterDefer). A non-zero exit lets a
+// supervisor (docker/k8s on-failure restart policy) see the startup failure;
+// exiting 0 would mark a dead server as a clean shutdown.
 func main() {
+	if err := run(); err != nil {
+		logger.Error("Failed to start server", "error", err)
+		os.Exit(1)
+	}
+}
+
+// run wires up config, signals and the server, and blocks until the server
+// stops. It returns an error instead of exiting so its deferred signal stop
+// runs and main can translate failure into the process exit code.
+func run() error {
 	PrintBanner()
+
+	// A context cancelled on SIGINT/SIGTERM drives graceful shutdown: an
+	// operator's `docker stop`/Ctrl-C lets in-flight writes finish instead of
+	// being dropped. stop restores default signal handling on return.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	c := config.New()
 	cfgErr := c.Parse(os.Args[1:]) // load config file, then override via CLI flags
@@ -59,30 +84,27 @@ func main() {
 	// P (embedding/score precision) is a compile-time type parameter, so the
 	// config value selects which instantiation to build and run here. Both are
 	// compiled in; the whole stack below is generic over P.
-	var err error
 	switch c.DB.Precision {
 	case "float32":
 		logger.Info("Using single precision", "precision", "float32")
-		err = runServer[float32](c)
+		return runServer[float32](ctx, c)
 	case "float64":
 		logger.Info("Using double precision", "precision", "float64")
-		err = runServer[float64](c)
+		return runServer[float64](ctx, c)
 	default:
 		logger.Warn("Unknown precision, falling back to float64", "precision", c.DB.Precision)
-		err = runServer[float64](c)
-	}
-
-	if err != nil {
-		logger.Error("Failed to start server", "error", err)
+		return runServer[float64](ctx, c)
 	}
 }
 
 // run builds a server at the requested floating-point precision and starts it.
-// K is fixed to uint64 (the hasher's key type); only P varies with config.
-func runServer[P float32 | float64](c *config.ConfigSet) error {
+// K is fixed to uint64 (the hasher's key type); only P varies with config. The
+// context drives graceful shutdown: Start returns once it is cancelled and the
+// stack has drained.
+func runServer[P float32 | float64](ctx context.Context, c *config.ConfigSet) error {
 	srv, err := server.New[uint64, P](c, hash.NewHasher[uint64](c))
 	if err != nil {
 		return err
 	}
-	return srv.Start()
+	return srv.Start(ctx)
 }

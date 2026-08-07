@@ -40,9 +40,8 @@ type Stream[K comparable, P float32 | float64] struct {
 	Result *QueryResult[K, P]
 	Err    error
 
-	staging graph.Graph[K, P]
-	done    chan struct{}
-	once    sync.Once
+	done chan struct{}
+	once sync.Once
 }
 
 // NewStream returns a stream ready to be scheduled for q: Done() blocks until
@@ -51,14 +50,22 @@ func NewStream[K comparable, P float32 | float64](q Query[K, P]) *Stream[K, P] {
 	return &Stream[K, P]{Query: q, done: make(chan struct{})}
 }
 
+// Commit executes the stream's query against g directly. The caller must hold
+// the appropriate lock (the write lock for writes, a read lock for reads — see
+// Acquire): the lock is already exclusive for writes, so mutating g in place
+// exposes no intermediate state, and the write costs O(fact + incremental
+// index updates) regardless of graph size. Copying the graph here (as staging
+// once did) would make every single-fact write O(total graph) and lock readers
+// out for the duration — that is the failure mode, not the safety mechanism.
+//
+// Failure ordering: the vector insert runs before any graph mutation, so the
+// one realistic commit failure (a vector-dimension mismatch) rejects the write
+// with g untouched. Later index errors are pathological; they surface in the
+// returned error with the write partially applied.
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 	// Write stream
 	if s.Query.IsWrite() {
-
-		if s.staging == nil {
-			return ErrStreamClosed
-		}
 
 		remember := s.Query.(*Remember[K, P])
 
@@ -66,8 +73,6 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 			"entities", len(remember.Entities),
 			"topics", len(remember.Topics),
 			"vector", !remember.Vector.Empty())
-
-		// TODO: Implement stream query write logic
 
 		fact := graph.Fact[K]{
 			NodeAttributes: graph.NodeAttributes{
@@ -77,13 +82,27 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 			Hasher: g.GetHasher(),
 		}
 
-		g.Set(fact)
+		// Index the vector before touching the graph: the fact's key is
+		// derived from its value alone, and a dimension mismatch is the one
+		// commit failure a client can realistically trigger — failing here
+		// leaves the graph exactly as it was.
 		if !remember.Vector.Empty() {
 			if err := g.GetVectorIndex().Insert(fact.Key(), remember.Vector); err != nil {
 				logger.Error("Failed to index fact vector",
 					"value", remember.Value, "error", err)
 				return fmt.Errorf("indexing vector for fact %q: %w", remember.Value, err)
 			}
+		}
+
+		// Facts are content-addressed (keyed by value), so re-remembering one
+		// is the temporal "touch": the fresh-timestamp fact replaces the
+		// stored one and recency decay restarts — an agent re-asserting a
+		// memory strengthens it rather than leaving it decaying from its
+		// first write. The embedding refreshes the same way (a changed vector
+		// overwrites its index entry above), keeping the two consistent.
+		if err := g.Put(fact.Key(), fact); err != nil {
+			logger.Error("Failed to store fact", "value", remember.Value, "error", err)
+			return fmt.Errorf("storing fact %q: %w", remember.Value, err)
 		}
 
 		for _, e := range remember.Entities {
@@ -184,32 +203,6 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	s.Result = &r
 	logger.Debug("Read stream committed", "hits", n)
 	return nil
-}
-
-func (s *Stream[K, P]) Rollback(g graph.Graph[K, P]) error {
-
-	if s.Query.IsWrite() {
-		s.staging = nil
-	}
-
-	s.staging = nil
-	return nil
-}
-
-func (s *Stream[K, P]) Stage(g graph.Graph[K, P]) (graph.Graph[K, P], error) {
-	if s.Query.IsWrite() {
-		s.staging = g.Copy()
-		err := s.Commit(s.staging)
-		if err != nil {
-			return nil, ErrCommitFailed
-		}
-		return s.staging, nil
-	}
-	err := s.Commit(g)
-	if err != nil {
-		return nil, ErrCommitFailed
-	}
-	return g, nil
 }
 
 func (s *Stream[K, P]) GraphID() uint8 {

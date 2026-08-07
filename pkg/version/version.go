@@ -22,43 +22,27 @@
 
 package version
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
-var (
-	// Major is the current major version of main branch.
-	Major = 0
-	// Minor is the current minor version of main branch.
-	Minor = 1
-	// Patch is the current patched version of the main branch. It is a string
-	// so it can also carry a pre-release suffix, e.g. "0-rc.1" -> 0.1.0-rc.1.
-	Patch = "0-alpha.1"
-)
-
-// Version, Commit and Date are the build-time release identity. On a release
-// they are injected by GoReleaser via -ldflags -X (see .goreleaser.yaml); the
-// linker can only set string variables that are uninitialized or set to a
-// constant, so these are plain strings — never computed with fmt.Sprintf.
+// Version is the release identity compiled into every binary, and the single
+// place the version number lives in the tree.
 //
-// In a dev build Version is empty and init() falls back to the compiled
-// Major.Minor.Patch above, so the numbers in this file remain the source of
-// truth off a release.
+// The trailing annotation is release-please's marker: when it opens a release
+// PR it rewrites the literal on this line to the version being cut, in the same
+// commit that updates CHANGELOG.md, and tags that commit on merge. The tag and
+// this constant therefore cannot drift — do not edit it by hand.
+//
+// GoReleaser additionally overrides it via -ldflags -X on a release build. The
+// linker only rewrites string variables that are uninitialized or set to a
+// constant expression, so this must stay a plain literal — never computed.
+var Version = "0.1.0-beta.1" // x-release-please-version
+
 var (
-	// Version is the full semantic version, e.g. "1.2.3" or "1.2.3-rc.1".
-	Version string
 	// Commit is the short git commit the binary was built from.
 	Commit = "none"
 	// Date is the commit/build date (RFC3339) of the release.
 	Date = "unknown"
 )
-
-func init() {
-	if Version == "" {
-		Version = fmt.Sprintf("%d.%d.%s", Major, Minor, Patch)
-	}
-}
 
 // FullVersion returns the full version string, e.g. "1.2.3".
 func FullVersion() string { return Version }

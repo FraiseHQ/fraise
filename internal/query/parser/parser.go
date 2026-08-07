@@ -24,6 +24,7 @@ package parser
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
@@ -118,7 +119,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
-			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
+			return nil, err
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
@@ -139,7 +140,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		case lexer.ENTITY, lexer.TOPIC:
 			key, value, err := p.parseAnchorField()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+				return nil, err
 			}
 			var field FieldNode[string]
 			if key.Type == lexer.TOPIC {
@@ -174,7 +175,10 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
-			return nil, p.errf(p.l.CurrentPos, "Error while parsing graph selector %e", err)
+			// parseGraphSelector already returns a positioned parse error with a
+			// clear message; surface it as-is rather than re-wrapping (which lost
+			// the column and mangled the message via a bad %e verb).
+			return nil, err
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
@@ -199,37 +203,37 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		case lexer.ENTITY:
 			key, value, err := p.parseAnchorField()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+				return nil, err
 			}
 			r.entities = append(r.entities, AnchorFieldNode{field: EntityFieldNode{key: key, value: value}})
 		case lexer.TOPIC:
 			key, value, err := p.parseAnchorField()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing anchor %e", err)
+				return nil, err
 			}
 			r.topics = append(r.topics, AnchorFieldNode{field: TopicFieldNode{key: key, value: value}})
 		case lexer.UNTIL:
 			key, t, err := p.parseTimeValue()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing until clause %e", err)
+				return nil, err
 			}
 			r.until = UntilFieldNode[K]{key: key, value: t}
 		case lexer.SINCE:
 			key, t, err := p.parseTimeValue()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing since clause %e", err)
+				return nil, err
 			}
 			r.since = SinceFieldNode[K]{key: key, value: t}
 		case lexer.DEPTH:
 			key, value, err := p.parseDepth()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing depth clause %e", err)
+				return nil, err
 			}
 			r.depth = DepthFieldNode{key: key, value: value}
 		case lexer.TOP:
 			key, value, err := p.parseTop()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing top clause %e", err)
+				return nil, err
 			}
 			r.top = TopFieldNode{key: key, value: value}
 		case lexer.VEC:
@@ -260,7 +264,10 @@ func (p *parser[K, P]) parseDepth() (lexer.Token, int, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	i, err := strconv.Atoi(tok.Literal)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid depth value %q: expected a non-negative integer", tok.Literal)
+	}
 
 	return key, i, nil
 }
@@ -280,7 +287,10 @@ func (p *parser[K, P]) parseTop() (lexer.Token, int, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	i, err := strconv.Atoi(tok.Literal)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid top value %q: expected a non-negative integer", tok.Literal)
+	}
 
 	return key, i, nil
 }
@@ -297,7 +307,10 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	t, _ := containers.ParseTimeValue[K](tok.Literal)
+	t, err := containers.ParseTimeValue[K](tok.Literal)
+	if err != nil {
+		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "invalid %s value %q: expected a duration like 7d or a date like 2026-01-15", key.Literal, tok.Literal)
+	}
 
 	return key, t, nil
 }
@@ -313,11 +326,20 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
-	i, _ := strconv.Atoi(tok.Literal)
+	// Validate the full integer before narrowing to uint8. A blind uint8(i)
+	// wraps an out-of-range selector into a valid-looking graph (@256 -> 0,
+	// @300 -> 44), so it would silently execute against the wrong graph — a
+	// tenant-isolation break, since a graph is a user/session. Reject a
+	// non-integer or anything outside the uint8 range here; the handler still
+	// enforces the tighter [0, num-graphs) bound on what survives.
+	i, err := strconv.Atoi(tok.Literal)
+	if err != nil {
+		return lexer.Token{}, 0, p.errf(tok.Pos, "invalid graph selector %q: expected a whole number", tok.Literal)
+	}
+	if i < 0 || i > math.MaxUint8 {
+		return lexer.Token{}, 0, p.errf(tok.Pos, "graph selector %d out of range (0-%d)", i, math.MaxUint8)
+	}
 
-	// NOTE: probably not the safest way to do this (panic if you can't convert or casts anyway?).
-	// Maybe just store the graph id as a int and check that value doesn't exceed number of graphs
-	/// a bit awkwards but maybe better than having to do this.
 	return key, uint8(i), nil
 }
 

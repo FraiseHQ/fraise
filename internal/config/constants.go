@@ -32,6 +32,30 @@ const (
 	// DefaultPort is the TCP port the HTTP API listens on.
 	DefaultPort = 9876
 
+	// DefaultReadTimeout bounds how long the server will spend reading a whole
+	// request (headers + body). It stops a slow client from pinning a worker.
+	DefaultReadTimeout time.Duration = 15 * time.Second
+
+	// DefaultReadHeaderTimeout bounds how long the server waits for request
+	// headers alone; it caps slow-header (Slowloris-style) connections.
+	DefaultReadHeaderTimeout time.Duration = 5 * time.Second
+
+	// DefaultWriteTimeout bounds how long a response may take to write before the
+	// connection is torn down.
+	DefaultWriteTimeout time.Duration = 15 * time.Second
+
+	// DefaultIdleTimeout bounds how long a kept-alive connection may sit idle
+	// between requests before it is closed.
+	DefaultIdleTimeout time.Duration = 60 * time.Second
+
+	// DefaultShutdownGrace is how long a graceful shutdown waits for in-flight
+	// requests (and the writes they triggered) to finish before forcing exit.
+	DefaultShutdownGrace time.Duration = 10 * time.Second
+
+	// DefaultMaxBodyBytes caps the size of a request body the query endpoint will
+	// read. A larger body is rejected before it is buffered, bounding memory.
+	DefaultMaxBodyBytes int64 = 1 << 20 // 1 MiB
+
 	// DefaultNumGraph is how many independent graphs the store allocates; valid
 	// selectors are 0..DefaultNumGraph-1. Graph selectors are uint8, so values
 	// above 256 leave the extra graphs unreachable.
@@ -43,6 +67,11 @@ const (
 
 	// DefaultBufferSize is the capacity of the scheduler's stream queue.
 	DefaultBufferSize uint = 200
+
+	// DefaultEnqueueTimeout bounds how long a submit waits for space in a full
+	// stream queue before the request is rejected, so a saturated scheduler
+	// sheds load instead of parking handler goroutines without bound.
+	DefaultEnqueueTimeout time.Duration = 2 * time.Second
 
 	// DefaultLogLevel is the minimum log level emitted (DEBUG, INFO, WARN, ERROR).
 	DefaultLogLevel string = "INFO"
@@ -81,6 +110,20 @@ const (
 	// DefaultDepth is how many hops a recall walk leaves the seed when no depth
 	// clause is given.
 	DefaultDepth int = 2
+
+	// DefaultMaxTop is the ceiling on a recall's top clause. A request asking for
+	// more than this many results is rejected at parse time, so a single query
+	// cannot force an unbounded result set.
+	DefaultMaxTop int = 1000
+
+	// DefaultMaxDepth is the ceiling on a recall's depth clause. Walk cost grows
+	// with depth, so a request past this many hops is rejected at parse time.
+	DefaultMaxDepth int = 6
+
+	// DefaultMaxVectorDimension is the ceiling on the length of a bound vector
+	// parameter. A longer vector is rejected at parse time, bounding the work an
+	// index insert or search can be asked to do.
+	DefaultMaxVectorDimension int = 4096
 
 	// DefaultAllowUnanchoredRecall controls whether a recall with no anchor
 	// (entity/topic) is permitted.

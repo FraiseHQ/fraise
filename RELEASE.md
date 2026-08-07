@@ -28,44 +28,91 @@ This document describes how maintainers cut a release. The process is:
 
 ## Process
 
-### 1. Release PR
+Releases are driven by [release-please](https://github.com/googleapis/release-please)
+(`release-please-config.json`, `.release-please-manifest.json`). Nobody tags by
+hand: the version in the tree and the tag are written by the same commit, so
+they cannot disagree.
 
-Open a PR titled `release: vX.Y.Z` containing only:
+### 1. The release PR maintains itself
 
-- `CHANGELOG.md` — move items from `Unreleased` into a new `vX.Y.Z — YYYY-MM-DD` section.
-- Any version references in docs (install snippets, etc.).
+Every push to `main` updates an open PR titled `chore(main): release X.Y.Z`.
+release-please derives the next version from the conventional-commit messages
+since the last release and writes, in that PR:
 
-The PR is the review gate: a second maintainer approves it. Merging the PR does
-**not** release anything — it only prepares main.
+- `CHANGELOG.md` — the grouped commit list for the new version.
+- `pkg/version/version.go` — the `Version` constant on the
+  `x-release-please-version` annotated line. **Never edit this by hand.**
+- `.release-please-manifest.json` — the new current version.
 
-### 2. Tag the release (the captain's manual step)
+Nothing is released while the PR sits open; it just tracks what the next
+release would be.
 
-Once the release PR is merged, the release captain tags that commit:
+### 2. Merge the release PR
 
-```sh
-git checkout main && git pull
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin vX.Y.Z
+Merging it **is** the release. release-please tags the merge commit `vX.Y.Z`
+and creates the GitHub Release with the changelog as its notes. That tag push
+then fires the `publish` job in `.github/workflows/go.yaml`, exactly as a
+hand-pushed tag used to:
+
+1. **test / cross-compile** — the full suite runs against the tagged commit.
+2. **Manual approval** — `publish` pauses on the `release` environment. A
+   maintainer clicks **Approve** in the Actions UI. This is the last human gate
+   before artifacts exist.
+3. **publish** — GoReleaser cross-compiles all targets and *appends* binaries +
+   checksums to the release release-please already created, then announces on
+   Discord/Slack. It builds no changelog: the notes are release-please's.
+
+Because merging is the trigger, a bad release is fixed forward with another
+commit and another release PR — there is no tag to delete and re-push.
+
+> **One-time setup:**
+>
+> - **Settings → Environments → New environment** named `release`, enable
+>   **Required reviewers**, add the maintainers. Move the
+>   `DISCORD_WEBHOOK_ID` / `DISCORD_WEBHOOK_TOKEN` secrets into this
+>   environment for extra hygiene (only approved runs can read them).
+> - **Settings → Actions → General → Allow GitHub Actions to create and
+>   approve pull requests**, or release-please cannot open its PR.
+> - A `RELEASE_PLEASE_TOKEN` secret holding a PAT. Fine-grained, on this repo:
+>   **Contents: Read and write** (branch, commit, tag, release),
+>   **Pull requests: Read and write** (open and update the release PR), and
+>   **Issues: Read and write** (release-please labels the PR `autorelease:*`,
+>   and PR labels go through the Issues API). Metadata: Read-only comes along
+>   automatically. A classic PAT needs the single `repo` scope; a GitHub App
+>   token works too.
+>
+>   This is **not optional**: a tag pushed with the default `GITHUB_TOKEN` does
+>   not trigger other workflows, so the release would be created with no
+>   binaries attached.
+
+### Choosing the version
+
+While `prerelease-type` is `beta`, every release increments the pre-release
+counter (`0.1.0-beta.1` → `0.1.0-beta.2`), including breaking changes —
+`bump-minor-pre-major` keeps pre-1.0 breaking changes on the same minor rather
+than jumping to `1.0.0`.
+
+Moving between phases is the one manual step: release-please will not switch
+`alpha` → `beta` → `rc` → stable on its own
+([#2447](https://github.com/googleapis/release-please/issues/2447)). Force it
+with a footer on any commit:
+
+```text
+Release-As: 0.1.0-beta.1
 ```
 
-Pushing the tag **is** the trigger. The workflow fires automatically:
+> **The footer must survive the squash.** We squash-merge, and when a PR has
+> more than one commit GitHub builds the squash message from the commit
+> *subjects* — the bodies, and therefore the footer, are dropped, and the
+> release PR silently comes out with the wrong version. Put the change in a
+> single commit (GitHub then defaults the squash body to that commit's body),
+> or paste the `Release-As:` line into the squash body by hand before
+> confirming the merge. Verify with
+> `git log origin/main -1 --format=%B | grep Release-As` after merging.
 
-1. **test** job — verifies the tag points at a commit on `main`, runs the full
-   test suite (with race detector).
-2. **Manual approval** — the workflow pauses on the `release` environment.
-   A maintainer reviews the run and clicks **Approve** in the Actions UI.
-   This is the last human gate before anything is published.
-3. **publish** job — GoReleaser cross-compiles all targets, generates release
-   notes, publishes the GitHub Release with binaries + checksums, and
-   announces on Discord/Slack via webhook.
-
-> **One-time setup:** repo **Settings → Environments → New environment**
-> named `release`, enable **Required reviewers**, add the maintainers. Move
-> the `DISCORD_WEBHOOK_ID` / `DISCORD_WEBHOOK_TOKEN` secrets into this
-> environment for extra hygiene (only approved runs can read them).
-
-If the workflow fails before publishing, fix the problem on main, delete the
-tag (`git push origin :refs/tags/vX.Y.Z`), and re-tag.
+The next release PR then targets that version. Update `prerelease-type` in
+`release-please-config.json` in the same change so subsequent releases continue
+in the new phase.
 
 ### 3. Post-release checks
 
