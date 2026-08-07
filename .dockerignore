@@ -9,6 +9,11 @@ sdk
 docs
 assets
 examples
+# The example images build from the repo root and copy their agent script in,
+# so those two files must stay in the context (the rest of examples/ — configs,
+# __pycache__, compose files — stays excluded).
+!examples/openai-agents/agent.py
+!examples/claude-agent-sdk/agent.py
 coverage.out
 coverage.html
 *.md
