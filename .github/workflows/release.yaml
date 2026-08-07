@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write # release-please labels its PR (autorelease:*) via the Issues API
       pull-requests: write
     steps:
       # Maintains an open "chore(main): release X.Y.Z" PR that bumps the

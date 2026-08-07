@@ -73,10 +73,17 @@ commit and another release PR — there is no tag to delete and re-push.
 >   environment for extra hygiene (only approved runs can read them).
 > - **Settings → Actions → General → Allow GitHub Actions to create and
 >   approve pull requests**, or release-please cannot open its PR.
-> - A `RELEASE_PLEASE_TOKEN` secret holding a PAT with `contents: write` and
->   `pull-requests: write` (a GitHub App token works too). This is **not
->   optional**: a tag pushed with the default `GITHUB_TOKEN` does not trigger
->   other workflows, so the release would be created with no binaries attached.
+> - A `RELEASE_PLEASE_TOKEN` secret holding a PAT. Fine-grained, on this repo:
+>   **Contents: Read and write** (branch, commit, tag, release),
+>   **Pull requests: Read and write** (open and update the release PR), and
+>   **Issues: Read and write** (release-please labels the PR `autorelease:*`,
+>   and PR labels go through the Issues API). Metadata: Read-only comes along
+>   automatically. A classic PAT needs the single `repo` scope; a GitHub App
+>   token works too.
+>
+>   This is **not optional**: a tag pushed with the default `GITHUB_TOKEN` does
+>   not trigger other workflows, so the release would be created with no
+>   binaries attached.
 
 ### Choosing the version
 
