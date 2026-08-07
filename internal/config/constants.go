@@ -68,6 +68,11 @@ const (
 	// DefaultBufferSize is the capacity of the scheduler's stream queue.
 	DefaultBufferSize uint = 200
 
+	// DefaultEnqueueTimeout bounds how long a submit waits for space in a full
+	// stream queue before the request is rejected, so a saturated scheduler
+	// sheds load instead of parking handler goroutines without bound.
+	DefaultEnqueueTimeout time.Duration = 2 * time.Second
+
 	// DefaultLogLevel is the minimum log level emitted (DEBUG, INFO, WARN, ERROR).
 	DefaultLogLevel string = "INFO"
 

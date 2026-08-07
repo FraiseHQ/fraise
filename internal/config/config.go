@@ -50,6 +50,10 @@ type SchedulerConfig struct {
 
 	// Buffer size is the scheduler channel buffer size.
 	BufferSize uint `toml:"buffer-size"`
+
+	// Maximum time a submit waits for space in a full queue before the
+	// request is rejected so clients can back off.
+	EnqueueTimeout time.Duration `toml:"enqueue-timeout"`
 }
 
 type ServerConfig struct {
@@ -193,6 +197,7 @@ func New() *ConfigSet {
 	// scheduler
 	flagSet.IntVar(&config.Scheduler.Workers, "workers", DefaultWorkersCount, "Default worker count.")
 	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Default Buffer size")
+	flagSet.DurationVar(&config.Scheduler.EnqueueTimeout, "enqueue-timeout", DefaultEnqueueTimeout, "Max wait for queue space before rejecting a query")
 
 	// server
 	flagSet.IntVar(&config.Server.Port, "port", DefaultPort, "Server port")
@@ -304,6 +309,7 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// scheduler
 	Adjust(&c.Scheduler.Workers, DefaultWorkersCount)
 	Adjust(&c.Scheduler.BufferSize, DefaultBufferSize)
+	Adjust(&c.Scheduler.EnqueueTimeout, DefaultEnqueueTimeout)
 
 	// server
 	Adjust(&c.Server.Port, DefaultPort)

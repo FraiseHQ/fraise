@@ -26,6 +26,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/query"
@@ -34,9 +35,8 @@ import (
 	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
 
-// The scheduler decides when to run a stream.
-// one concurrent write stream is supported at a time
-// The scheduler decides when to wait for a write operation to finish
+// The scheduler executes planned query streams on a pool of workers fed by a
+// bounded queue; per-graph locking during execution serialises writes.
 type Scheduler[K ~uint64, P float32 | float64] struct {
 	Config *config.ConfigSet
 	Queue  chan *query.Stream[K, P]
@@ -53,14 +53,12 @@ type Scheduler[K ~uint64, P float32 | float64] struct {
 	// scheduler (a send on a nil channel would otherwise hang forever).
 	mu sync.RWMutex
 
-	writeInFlight bool
-	wg            sync.WaitGroup
+	wg sync.WaitGroup
 }
 
 func NewScheduler[K ~uint64, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
 	s := &Scheduler[K, P]{
-		Config:        config,
-		writeInFlight: false,
+		Config: config,
 	}
 	return s
 }
@@ -148,10 +146,11 @@ func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struc
 }
 
 // Submit enqueues a stream for execution. It is bounded and context-aware: it
-// blocks only until the queue has room, the context is cancelled, or the
-// scheduler shuts down. It returns ErrShutdown if the scheduler is not running
-// (never started, or stopped), so a caller is never left blocked on a full,
-// nil, or closed queue.
+// blocks only until the queue has room, the configured enqueue timeout lapses,
+// the context is cancelled, or the scheduler shuts down. It returns ErrShutdown
+// if the scheduler is not running (never started, or stopped) and ErrQueueFull
+// if the queue stays saturated past the timeout, so a caller is never left
+// blocked on a full, nil, or closed queue and can shed load instead.
 func (s *Scheduler[K, P]) Submit(ctx context.Context, stream *query.Stream[K, P]) error {
 	s.mu.RLock()
 	queue, quit := s.Queue, s.quit
@@ -168,6 +167,9 @@ func (s *Scheduler[K, P]) Submit(ctx context.Context, stream *query.Stream[K, P]
 	default:
 	}
 
+	timeout := time.NewTimer(s.Config.Scheduler.EnqueueTimeout)
+	defer timeout.Stop()
+
 	select {
 	case queue <- stream:
 		return nil
@@ -175,6 +177,8 @@ func (s *Scheduler[K, P]) Submit(ctx context.Context, stream *query.Stream[K, P]
 		return ErrShutdown
 	case <-ctx.Done():
 		return fmt.Errorf("%w: %w", ErrEnqueueStream, ctx.Err())
+	case <-timeout.C:
+		return ErrQueueFull
 	}
 }
 

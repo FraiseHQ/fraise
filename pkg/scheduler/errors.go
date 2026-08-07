@@ -30,6 +30,10 @@ var (
 	ErrShutdown = errors.New("scheduler: shut down")
 	// ErrEnqueueStream is returned when a stream cannot be added to the queue.
 	ErrEnqueueStream = errors.New("scheduler: could not add stream to queue")
+	// ErrQueueFull is returned when the queue stays saturated past the
+	// configured enqueue timeout, so callers can shed load (e.g. answer 429)
+	// instead of blocking without bound.
+	ErrQueueFull = errors.New("scheduler: queue full")
 	// ErrStreamExecution is returned when a stream fails while being executed.
 	ErrStreamExecution = errors.New("scheduler: error while executing stream")
 	// ErrStreamCommit is returned when a stream fails while being committed.

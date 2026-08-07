@@ -103,9 +103,9 @@ func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 }
 
 // Apply hands a planned stream to the scheduler for execution. It returns the
-// scheduler's error (e.g. ErrShutdown, or a wrapped context cancellation) so a
-// caller knows the stream was never enqueued and must not wait on its
-// completion.
+// scheduler's error (e.g. ErrShutdown, ErrQueueFull, or a wrapped context
+// cancellation) so a caller knows the stream was never enqueued and must not
+// wait on its completion.
 func (e *Engine[K, P]) Apply(ctx context.Context, s *query.Stream[K, P]) error {
 	return e.Scheduler.Submit(ctx, s)
 }
