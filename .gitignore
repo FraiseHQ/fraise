@@ -56,3 +56,5 @@ __pycache__/
 # fraise artifacts
 
 bin/
+
+dist/
