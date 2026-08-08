@@ -4,7 +4,7 @@
 # The base is a plain minimal Ubuntu, not a python image: uv supplies both the
 # interpreter and the resolver, so nothing here needs a preinstalled Python or
 # pip. uv itself ships as a static binary, copied from its published image.
-FROM ubuntu:24.04
+FROM ubuntu:sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /uvx /usr/local/bin/
 
