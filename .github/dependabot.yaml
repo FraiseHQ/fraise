@@ -11,7 +11,7 @@ updates:
       interval: daily
     commit-message:
       prefix: "deps: "
-      prefix-development: "deps "
+      prefix-development: "deps: "
 
   # NOTE: The Python SDK is a member of the root uv workspace, which resolves every
   # member against the single top-level uv.lock — so this is rooted at / rather
@@ -22,7 +22,7 @@ updates:
       interval: daily
     commit-message:
       prefix: "deps: "
-      prefix-development: "deps "
+      prefix-development: "deps: "
 
   - package-ecosystem: github-actions
     directory: /
@@ -30,7 +30,7 @@ updates:
       interval: daily
     commit-message:
       prefix: "deps: "
-      prefix-development: "deps "
+      prefix-development: "deps: "
 
   # NOTE: Dockerfiles are not discovered recursively, so every directory holding
   # one is listed: Dockerfile.fraise at the root, plus the example images.
@@ -43,4 +43,4 @@ updates:
       interval: daily
     commit-message:
       prefix: "deps: "
-      prefix-development: "deps "
+      prefix-development: "deps: "
