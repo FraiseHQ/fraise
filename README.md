@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="https://github.com/RonsenbergVI/fraise/actions/workflows/go.yaml"><img src="https://github.com/RonsenbergVI/fraise/actions/workflows/go.yaml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/RonsenbergVI/fraise/actions/workflows/python.yaml"><img src="https://github.com/RonsenbergVI/fraise/actions/workflows/python.yaml/badge.svg" alt="Python SDK"></a>
   <a href="https://codecov.io/gh/RonsenbergVI/fraise"><img src="https://codecov.io/gh/RonsenbergVI/fraise/branch/main/graph/badge.svg" alt="codecov"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/RonsenbergVI/fraise"><img src="https://api.scorecard.dev/projects/github.com/RonsenbergVI/fraise/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://github.com/RonsenbergVI/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/RonsenbergVI/fraise?sort=semver" alt="Release"></a>
