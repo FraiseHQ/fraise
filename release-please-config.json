@@ -76,7 +76,7 @@
         {
           "type": "toml",
           "path": "/uv.lock",
-          "jsonpath": "$.package[?(@.name=='fraise-sdk')].version"
+          "jsonpath": "$.package[?(@.name.value=='fraise-sdk')].version"
         }
       ]
     }
