@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.0-beta.2](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.1...v0.1.0-beta.2) (2026-08-08)
+
+
+### Features
+
+* add python SDK ([#84](https://github.com/RonsenbergVI/fraise/issues/84)) ([3509036](https://github.com/RonsenbergVI/fraise/commit/35090360620d28321cbc004cd58ce1fe0536d148))
+
+
+### Maintenance
+
+* **deps:** bump actions/checkout from 4.2.2 to 7.0.1 ([#130](https://github.com/RonsenbergVI/fraise/issues/130)) ([ee1dee0](https://github.com/RonsenbergVI/fraise/commit/ee1dee037ed1700ca1d5bb592b4946e6f28c9108))
+* **deps:** bump actions/upload-artifact from 4.6.1 to 7.0.1 ([#125](https://github.com/RonsenbergVI/fraise/issues/125)) ([9e650c2](https://github.com/RonsenbergVI/fraise/commit/9e650c210dbac6ea1791f0357a7d109a7f7b99c7))
+* **deps:** bump alpine from 3.20 to 3.24 ([#120](https://github.com/RonsenbergVI/fraise/issues/120)) ([2f95d14](https://github.com/RonsenbergVI/fraise/commit/2f95d148e8d992e1eb6fe31a803cbff4bd6a0a24))
+* **deps:** bump github/codeql-action/upload-sarif from 3.37.6 to 4.37.6 ([#129](https://github.com/RonsenbergVI/fraise/issues/129)) ([913226d](https://github.com/RonsenbergVI/fraise/commit/913226dcdcc7f95a6adf48c20ab985c941598219))
+* **deps:** bump ossf/scorecard-action from 2.4.1 to 2.4.4 ([#123](https://github.com/RonsenbergVI/fraise/issues/123)) ([1a3e58d](https://github.com/RonsenbergVI/fraise/commit/1a3e58d0d5982f8a88f779b3550270bb9511eafb))
+* repository hygiene ([#119](https://github.com/RonsenbergVI/fraise/issues/119)) ([06aed0c](https://github.com/RonsenbergVI/fraise/commit/06aed0c5af69b42e16bd738e029f825002f7c828))
+
 ## [0.1.0-beta.1](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-alpha.3...v0.1.0-beta.1) (2026-08-07)
 
 

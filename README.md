@@ -88,10 +88,81 @@ addressed with `@N` — one per user, per session, per agent, however you like.
 
 ## Get Started
 
-### Run with Docker
+Fraise is a single binary — no database to provision, nothing to configure. Every
+route below leaves you with a server listening on `127.0.0.1:9876`.
+
+> Fraise is pre-`v0.1.0`, so every published version is a pre-release. Two
+> consequences for the commands below: Docker's `:latest` tag and GitHub's
+> `/releases/latest/` URL don't resolve yet, so each one pins a version.
+
+### With Go
 
 ```sh
-docker run -p 127.0.0.1:9876:9876 ghcr.io/ronsenbergvi/fraise:latest
+go install github.com/RonsenbergVI/fraise/cmd/server@latest
+"$(go env GOPATH)/bin/server"
+```
+
+`@latest` resolves to the highest pre-release (`v0.1.0-beta.2` today); pin with
+`@v0.1.0-beta.2` to be explicit. The binary installs as `server`, after its
+package path — rename it to `fraise` if that reads better.
+
+Nothing further is needed to trust this: the Go toolchain checks every module
+download against the public checksum transparency log, and your own machine
+compiles the result.
+
+### From a release binary
+
+```sh
+VERSION=0.1.0-beta.2
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')                # linux | darwin
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')  # amd64 | arm64
+ASSET="fraise_${VERSION}_${OS}_${ARCH}.tar.gz"
+BASE="https://github.com/RonsenbergVI/fraise/releases/download/v${VERSION}"
+
+curl -sSfLO "${BASE}/${ASSET}"
+tar xzf "$ASSET"
+./fraise
+```
+
+Windows builds ship as `.zip` under the same naming scheme.
+
+### Verify a release
+
+Releases after `v0.1.0-beta.2` carry a [cosign](https://docs.sigstore.dev/)
+signature over `checksums.txt`, using the same `VERSION` and `BASE` as above:
+
+```sh
+curl -sSfLO "${BASE}/checksums.txt"
+curl -sSfLO "${BASE}/checksums.txt.sig"
+curl -sSfLO "${BASE}/checksums.txt.pem"
+
+# 1. the signature proves checksums.txt came from this repo's release workflow
+cosign verify-blob \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-identity-regexp 'https://github.com/RonsenbergVI/fraise/.github/workflows/go.yaml@refs/tags/v.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+
+# 2. checksums.txt proves your archive is the one it covers
+sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c
+```
+
+### With Docker
+
+```sh
+docker run -p 127.0.0.1:9876:9876 ghcr.io/ronsenbergvi/fraise:0.1.0-beta.2
+```
+
+Published tags: one per release (`0.1.0-beta.2`), `edge` for the tip of `main`,
+and an immutable full-commit-SHA tag for every merge. `latest` starts appearing
+at the first stable release.
+
+Images are built with SLSA provenance, verifiable without pulling:
+
+```sh
+gh attestation verify oci://ghcr.io/ronsenbergvi/fraise:0.1.0-beta.2 \
+  --repo RonsenbergVI/fraise
 ```
 
 ### Run from source
