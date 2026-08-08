@@ -34,6 +34,6 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
-[tool.pytest]
+[tool.pytest.ini_options]
 minversion = "8.0"
 addopts = ["-ra", "-q", "--capture=no", "-vvv"]
