@@ -23,5 +23,5 @@ dev = [
     "pytest-cov>=7.0.0",
 ]
 openai = [
-    "openai-agents>=0.18.3",
+    "openai-agents>=0.19.4",
 ]
