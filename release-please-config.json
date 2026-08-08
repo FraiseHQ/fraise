@@ -22,7 +22,40 @@
       "prerelease": true,
       "prerelease-type": "beta",
       "bump-minor-pre-major": true,
-      "exclude-paths": ["sdk"],
+      "exclude-paths": [
+        ".dockerignore",
+        ".github",
+        ".gitignore",
+        ".golangci.yaml",
+        ".goreleaser.yaml",
+        ".nvmrc",
+        ".pre-commit-config.yaml",
+        ".python-version",
+        ".release-please-manifest.json",
+        "AGENTS.md",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "CODE_OF_CONDUCT.md",
+        "COMPATIBILITY.md",
+        "CONTRIBUTING.md",
+        "Dockerfile.fraise",
+        "LICENSE",
+        "Makefile",
+        "README.md",
+        "RELEASE.md",
+        "SECURITY.md",
+        "assets",
+        "biome.json",
+        "codecov.yaml",
+        "docker-compose.yaml",
+        "docs",
+        "examples",
+        "pyproject.toml",
+        "release-please-config.json",
+        "sdk",
+        "tests",
+        "uv.lock"
+      ],
       "extra-files": [
         {
           "type": "generic",
@@ -36,7 +69,16 @@
       "component": "python",
       "tag-separator": "/",
       "changelog-path": "CHANGELOG.md",
-      "bump-minor-pre-major": true
+      "bump-minor-pre-major": true,
+      "prerelease": true,
+      "prerelease-type": "beta",
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "/uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='fraise-sdk')].version"
+        }
+      ]
     }
   }
 }
