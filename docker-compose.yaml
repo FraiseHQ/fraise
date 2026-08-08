@@ -1,0 +1,15 @@
+# The fraise server as it ships, for the test suites to drive.
+#
+# Both `make test-e2e` and `make test-integration-py` bring this up detached and
+# run their pytest locally against the published port, so neither suite needs a
+# test-runner image of its own.
+services:
+  fraise:
+    build:
+      context: .
+      dockerfile: Dockerfile.fraise
+    ports:
+      - "${FRAISE_PORT:-9876}:9876"
+    volumes:
+      - ./tests/fraise.config.toml:/etc/fraise/fraise.config.toml:ro
+    command: ["-config", "/etc/fraise/fraise.config.toml"]

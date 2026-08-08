@@ -1,6 +1,22 @@
 codecov:
   require_ci_to_pass: no
 
+# One flag per component so the Go server and the Python SDK are reported
+# separately instead of averaging into a single misleading number.
+# carryforward matters because python.yaml is path-filtered: on a Go-only PR it
+# never runs, and without it the SDK's coverage would read as a drop to zero.
+flags:
+  go:
+    paths:
+      - cmd/
+      - internal/
+      - pkg/
+    carryforward: true
+  python:
+    paths:
+      - sdk/python/
+    carryforward: true
+
 comment:
   layout: "diff, flags, files"
   behavior: default

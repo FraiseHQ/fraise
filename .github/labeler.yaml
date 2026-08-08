@@ -35,7 +35,6 @@ area:ci:
           - Makefile
           - .pre-commit-config.yaml
           - docker-compose*
-          - Dockerfile.e2e
           - tests/**
           - biome.json
           - codecov.yaml

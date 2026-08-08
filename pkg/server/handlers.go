@@ -31,6 +31,7 @@ import (
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 	"github.com/RonsenbergVI/fraise/pkg/logger"
 	"github.com/RonsenbergVI/fraise/pkg/scheduler"
+	"github.com/RonsenbergVI/fraise/pkg/version"
 	"github.com/gin-gonic/gin"
 )
 
@@ -58,9 +59,17 @@ func errorToResponse(err error) (int, string) {
 
 // handleHealthCheck returns a handler that reports the server is alive,
 // responding with HTTP 200 and a simple status payload.
+//
+// The payload carries the running version because it is the SDKs' only
+// handshake: they read this field to check the server falls inside the range
+// they support (see COMPATIBILITY.md), so the key must not be renamed or
+// dropped without a matching SDK release.
 func (s *Server[K, P]) handleHealthCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"version": version.FullVersion(),
+		})
 	}
 }
 

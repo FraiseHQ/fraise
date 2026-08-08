@@ -20,9 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Fraise SDK."""
+"""Integration test: the Python SDK client can connect to a live Fraise server."""
 
-__all__ = ["FraiseAPIError", "FraiseClient", "FraiseError"]
 
-from fraise_sdk.client import FraiseClient
-from fraise_sdk.errors import FraiseAPIError, FraiseError
+def test_client_connects(client):
+    """The client reaches the server and reads back a version string."""
+    assert client.health() is True
+    assert client.server_version() is not None

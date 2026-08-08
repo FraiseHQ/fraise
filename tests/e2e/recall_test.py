@@ -22,7 +22,8 @@
 
 """Remember/recall semantics: the store-then-find round trip, how depth and
 top shape a recall's results, text-index matching across facts, and recall
-through topic:/entity: anchors."""
+through topic:/entity: anchors.
+"""
 
 import pytest
 
@@ -97,7 +98,7 @@ def _recall_count(query, text):
 
 
 def test_recall_depth_controls_reach(planets_graph, query):
-    """depth bounds how far the walk leaves the seed, and thus the count.
+    """Depth bounds how far the walk leaves the seed, and thus the count.
 
     Note: depth:0 is not exercised — the query parser treats a 0 as "unset" and
     substitutes the configured default, so it cannot be expressed.
@@ -118,7 +119,7 @@ def test_recall_depth_controls_reach(planets_graph, query):
 
 
 def test_recall_top_truncates_results(planets_graph, query):
-    """top caps the number of ranked results returned, never pads."""
+    """Top caps the number of ranked results returned, never pads."""
     g = planets_graph
     n = len(PLANET_FACTS)
 
@@ -203,7 +204,8 @@ def test_recall_with_anchor_filters_returns_tagged_fact(query):
     """A fact written with topic:/entity: anchors must be recallable through
     those anchors — the ticket repro. Regression: Commit created the anchor
     edges but never stored the Topic/NamedEntity nodes, so every anchored
-    recall filtered everything out and returned count 0."""
+    recall filtered everything out and returned count 0.
+    """
     graph = 5
     status, body = query(
         f"remember@{graph} 'ulysse moved to quimper' topic:relocation entity:ulysse"

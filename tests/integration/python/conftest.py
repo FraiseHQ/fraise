@@ -20,9 +20,38 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Fraise SDK."""
+"""Fixtures for the Python SDK integration suite.
 
-__all__ = ["FraiseAPIError", "FraiseClient", "FraiseError"]
+Exercises the real ``fraise_sdk`` client against a live server named by
+FRAISE_URL — inside the docker compose network that is http://fraise:9876 —
+waiting for its health check before any test runs.
+"""
 
+import os
+import time
+
+import pytest
 from fraise_sdk.client import FraiseClient
-from fraise_sdk.errors import FraiseAPIError, FraiseError
+
+FRAISE_URL = os.environ.get("FRAISE_URL", "http://localhost:9876")
+WAIT_TIMEOUT_SECONDS = 30
+
+
+@pytest.fixture(scope="session")
+def client():
+    """A FraiseClient pointed at a server confirmed to be up.
+
+    Yields:
+            FraiseClient: fraise client.
+    """
+    fraise = FraiseClient(FRAISE_URL)
+    deadline = time.monotonic() + WAIT_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if fraise.health():
+            break
+        time.sleep(0.5)
+    else:
+        fraise.close()
+        pytest.fail(f"fraise server not reachable at {FRAISE_URL}")
+    yield fraise
+    fraise.close()

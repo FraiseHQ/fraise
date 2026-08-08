@@ -137,7 +137,8 @@ def vector_dim():
 def vector():
     """Callable building a flat embedding of `dim` floats — the shape the API
     expects for a parameter. (np.full(dim, ...) is 1-D; .tolist() keeps it
-    flat, not nested.)"""
+    flat, not nested.)
+    """
 
     def _vector(dim: int = VECTOR_DIM, value: float = 1.0) -> list[float]:
         return np.full(dim, value, dtype=float).tolist()

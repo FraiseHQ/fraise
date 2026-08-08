@@ -42,6 +42,10 @@ CMD_DIR        := ./cmd/server
 TS_DIR         := sdk/typescript
 PY_DIR         := sdk/python
 
+# The agent-framework integrations import their SDK at module scope, so their
+# tests skip entirely unless these optional groups are installed.
+PY_GROUPS      := --group openai --group anthropic
+
 # Binary name
 BINARY_NAME    := fraise
 
@@ -98,7 +102,7 @@ build-py: ## Build Python SDK
 
 test: test-go ## Run all Go tests
 
-coverage: coverage-go
+coverage: coverage-go coverage-py
 
 test-all: test-go test-ts test-py ## Run tests for Go and all SDKs
 
@@ -111,6 +115,12 @@ coverage-go: ## Run Go tests with coverage report
 	$(GO_TEST) -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 	@echo "$(GREEN)✓ Coverage report: coverage.txt$(RESET)"
 
+coverage-py: ## Run Python SDK unit tests with coverage report
+	@echo "$(CYAN)Running Python SDK tests with coverage...$(RESET)"
+	@$(UV_CMD) run --package fraise-sdk $(PY_GROUPS) pytest $(PY_DIR)/src/tests \
+		--cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term
+	@echo "$(GREEN)✓ Coverage report: coverage-py.xml$(RESET)"
+
 test-go-short: ## Run Go tests in short mode
 	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
 	$(GO_TEST) -short ./...
@@ -119,13 +129,23 @@ test-go-bench: ## Run Go benchmarks
 	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
 	$(GO_TEST) -bench=. -benchmem ./...
 
-# Host port the e2e compose stack binds fraise to (override if 9876 is taken;
-# the tests themselves talk to fraise over the compose network, not this port)
+# Host port fraise binds to for the test suites (override if 9876 is taken).
+# Both suites run pytest locally and reach the container through this port.
 FRAISE_E2E_PORT ?= 9876
 
-test-e2e: ## Run end-to-end tests (python) as a docker compose service
-	@echo "$(CYAN)Running end-to-end tests with docker compose...$(RESET)"
-	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.e2e.yaml --profile e2e up --build --exit-code-from e2e --force-recreate --attach-dependencies;
+COMPOSE        := docker compose -f docker-compose.yaml
+
+test-e2e: ## Run end-to-end tests against fraise in Docker
+	@echo "$(CYAN)Starting fraise (docker) for end-to-end tests...$(RESET)"
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
+	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
+	  $(UV_CMD) run --package tests pytest tests/e2e -v
+
+test-integration-py: ## Run Python SDK integration tests against fraise in Docker
+	@echo "$(CYAN)Starting fraise (docker) for Python SDK integration tests...$(RESET)"
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
+	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
+	  $(UV_CMD) run --package fraise-sdk pytest tests/integration/python -v
 
 test-ts: ## Run TypeScript tests
 	@echo "$(CYAN)Running TypeScript tests...$(RESET)"
@@ -133,7 +153,7 @@ test-ts: ## Run TypeScript tests
 
 test-py: ## Run Python tests with pytest
 	@echo "$(CYAN)Running Python tests...$(RESET)"
-	@cd $(PY_DIR) && $(UV_CMD) run pytest || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
+	@$(UV_CMD) run --package fraise-sdk $(PY_GROUPS) pytest $(PY_DIR)/src/tests || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
 
 test-watch: ## Run Go tests in watch mode (requires reflex)
 	@echo "$(CYAN)Running Go tests in watch mode...$(RESET)"

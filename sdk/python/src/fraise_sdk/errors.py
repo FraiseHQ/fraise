@@ -20,9 +20,32 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Fraise SDK."""
+"""Exceptions raised by the Fraise SDK."""
 
-__all__ = ["FraiseAPIError", "FraiseClient", "FraiseError"]
+from __future__ import annotations
 
-from fraise_sdk.client import FraiseClient
-from fraise_sdk.errors import FraiseAPIError, FraiseError
+
+class FraiseError(Exception):
+    """Base class for every error raised by the SDK."""
+
+
+class FraiseQueryError(FraiseError):
+    """A query could not be built from the given arguments.
+
+    Raised before any request leaves the client — e.g. a fact value containing a
+    single quote, or a keyword with embedded whitespace, which the server's query
+    grammar cannot represent.
+    """
+
+
+class FraiseAPIError(FraiseError):
+    """The server rejected a request or failed to execute it.
+
+    Carries the HTTP status code and the server-supplied error message (the
+    ``error`` field of the JSON body, when present).
+    """
+
+    def __init__(self, status_code: int, message: str) -> None:
+        self.status_code = status_code
+        self.message = message
+        super().__init__(f"fraise request failed [{status_code}]: {message}")

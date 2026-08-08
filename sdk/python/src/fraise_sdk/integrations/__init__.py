@@ -20,9 +20,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Fraise SDK."""
+"""Integrations that expose Fraise memory as tools for agent libraries.
 
-__all__ = ["FraiseAPIError", "FraiseClient", "FraiseError"]
-
-from fraise_sdk.client import FraiseClient
-from fraise_sdk.errors import FraiseAPIError, FraiseError
+Each submodule targets one library and depends on its optional extra:
+``fraise-sdk[openai]`` for :mod:`fraise_sdk.integrations.openai_agents` and
+``fraise-sdk[anthropic]`` for :mod:`fraise_sdk.integrations.claude_agents`, with
+LangChain, Pydantic AI, CrewAI and others to follow. They are intentionally
+*not* imported by the top-level package, so ``import fraise_sdk`` stays free of
+those heavy, optional dependencies.
+"""

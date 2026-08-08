@@ -21,12 +21,14 @@
 # SOFTWARE.
 
 """The stats endpoint: per-graph shape snapshots, and the gauges as a window
-into storage invariants that queries alone cannot observe."""
+into storage invariants that queries alone cannot observe.
+"""
 
 
 def test_stats_reports_per_graph_snapshots(get):
     """GET /api/v1/stats returns one snapshot per graph with the shape gauges
-    (nodes, edges, vectors, forest entries)."""
+    (nodes, edges, vectors, forest entries).
+    """
     response = get("/api/v1/stats")
 
     assert response.status_code == 200

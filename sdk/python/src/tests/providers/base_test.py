@@ -20,9 +20,36 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Fraise SDK."""
+"""Tests for the embedder resolver and the Embedder base class."""
 
-__all__ = ["FraiseAPIError", "FraiseClient", "FraiseError"]
+import pytest
+from fraise_sdk.providers.base import Embedder, resolve_embedder
 
-from fraise_sdk.client import FraiseClient
-from fraise_sdk.errors import FraiseAPIError, FraiseError
+
+def test_resolve_none():
+    assert resolve_embedder(None) is None
+
+
+def test_resolve_callable():
+    fn = lambda text: [1.0]
+    assert resolve_embedder(fn) is fn
+
+
+def test_resolve_embedder_prefers_embed_method():
+    class E(Embedder):
+        def embed(self, text):
+            return [len(text)]
+
+    e = E()
+    resolved = resolve_embedder(e)
+    assert resolved("abc") == [3]  # bound .embed, not __call__ recursion
+
+
+def test_resolve_rejects_non_embedder():
+    with pytest.raises(TypeError):
+        resolve_embedder(object())
+
+
+def test_embedder_abc_cannot_be_instantiated():
+    with pytest.raises(TypeError):
+        Embedder()  # abstract

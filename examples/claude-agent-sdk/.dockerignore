@@ -1,0 +1,21 @@
+# Ignore-file for this example's image build (build context is the repo root).
+# BuildKit uses this in place of the repo-root .dockerignore, which excludes
+# sdk/ and examples/ — both of which this image needs. Patterns are relative to
+# the build context root. Trim everything the agent image never copies.
+.git
+.claude
+node_modules
+bin
+internal
+pkg
+cmd
+go.mod
+go.sum
+coverage.out
+coverage.html
+coverage.txt
+docs
+assets
+tests
+Dockerfile*
+docker-compose*
