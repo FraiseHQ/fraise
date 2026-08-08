@@ -32,7 +32,8 @@ def test_health_check(get):
     response = get("/")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
+    assert response.json().get("version") is not None
 
 
 def test_query_rejects_malformed_json(base_url, request_timeout):
