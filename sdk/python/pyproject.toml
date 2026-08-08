@@ -1,6 +1,6 @@
 [project]
 name = "fraise-sdk"
-version = "0.0.1"
+version = "0.1.0-alpha.0"
 description = "Fraise SDK"
 authors = [
     { name = "Rene Jean Corneille", email = "14303619+RonsenbergVI@users.noreply.github.com" }
@@ -16,12 +16,12 @@ build-backend = "uv_build"
 
 [dependency-groups]
 anthropic = [
-    "claude-agent-sdk>=0.2.128",
+    "claude-agent-sdk>=0.2.130",
 ]
 dev = [
     "pytest>=9.0.3",
     "pytest-cov>=7.0.0",
 ]
 openai = [
-    "openai-agents>=0.18.3",
+    "openai-agents>=0.19.4",
 ]

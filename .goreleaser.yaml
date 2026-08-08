@@ -40,6 +40,25 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# Keyless cosign signing of checksums.txt only — that file already covers every
+# archive, so one signature transitively covers the set and there are two extra
+# assets per release instead of twenty-four. Produces checksums.txt.sig and
+# checksums.txt.pem; the .sig is what OpenSSF Scorecard's Signed-Releases check
+# looks for. Requires cosign on PATH and id-token: write on the publishing job
+# (see .github/workflows/go.yaml) — without the OIDC token, signing fails the
+# release rather than silently shipping it unsigned.
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
 changelog:
   sort: asc
   groups:
