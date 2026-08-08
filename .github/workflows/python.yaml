@@ -29,11 +29,12 @@ jobs:
       - name: Lint
         run: make lint-py
 
-  test:
-    name: Test Python SDK
+  unit:
+    name: Unit tests (py${{ matrix.python }})
     runs-on: ubuntu-latest
     needs: lint
     strategy:
+      fail-fast: false
       matrix:
         python: ["3.12", "3.13", "3.14"]
     steps:
@@ -44,12 +45,13 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Test with python ${{ matrix.python }}
+      # No server involved: the pure builder/client unit tests in sdk/python.
+      - name: Unit tests
         run: make test-py
 
   integration:
     name: Integration tests (${{ matrix.runner }}, py${{ matrix.python }})
-    needs: test
+    needs: unit
     # The SDK must work against the server image whichever architecture a user
     # runs it on, so every published architecture is crossed with every Python
     # the SDK supports (same version list as the unit-test job above). The
