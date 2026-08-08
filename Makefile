@@ -119,21 +119,23 @@ test-go-bench: ## Run Go benchmarks
 	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
 	$(GO_TEST) -bench=. -benchmem ./...
 
-# Host port the e2e compose stack binds fraise to (override if 9876 is taken;
-# the tests themselves talk to fraise over the compose network, not this port)
+# Host port fraise binds to for the test suites (override if 9876 is taken).
+# Both suites run pytest locally and reach the container through this port.
 FRAISE_E2E_PORT ?= 9876
 
-test-e2e: ## Run end-to-end tests (python) as a docker compose service
-	@echo "$(CYAN)Running end-to-end tests with docker compose...$(RESET)"
-	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.e2e.yaml --profile e2e up --build --exit-code-from e2e --force-recreate --attach-dependencies;
+COMPOSE        := docker compose -f docker-compose.yaml
 
-# Runs fraise as a daemon in Docker (the image as shipped) and drives it with a
-# locally-run pytest, so the test runner needs no image of its own.
+test-e2e: ## Run end-to-end tests against fraise in Docker
+	@echo "$(CYAN)Starting fraise (docker) for end-to-end tests...$(RESET)"
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
+	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
+	  $(UV_CMD) run --package tests pytest tests/e2e -v
+
 test-integration-py: ## Run Python SDK integration tests against fraise in Docker
 	@echo "$(CYAN)Starting fraise (docker) for Python SDK integration tests...$(RESET)"
-	@FRAISE_PORT=$(FRAISE_E2E_PORT) docker compose -f docker-compose.tests.yaml up --build --detach fraise
-	@trap 'docker compose -f $(CURDIR)/docker-compose.tests.yaml down --remove-orphans' EXIT INT TERM; \
-	  cd $(PY_DIR) && $(UV_CMD) run pytest ../../tests/integration/python -v
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
+	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
+	  $(UV_CMD) run --package fraise-sdk pytest tests/integration/python -v
 
 test-ts: ## Run TypeScript tests
 	@echo "$(CYAN)Running TypeScript tests...$(RESET)"
@@ -141,7 +143,7 @@ test-ts: ## Run TypeScript tests
 
 test-py: ## Run Python tests with pytest
 	@echo "$(CYAN)Running Python tests...$(RESET)"
-	@cd $(PY_DIR) && $(UV_CMD) run pytest || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
+	@$(UV_CMD) run --package fraise-sdk pytest $(PY_DIR)/src/tests || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
 
 test-watch: ## Run Go tests in watch mode (requires reflex)
 	@echo "$(CYAN)Running Go tests in watch mode...$(RESET)"
