@@ -24,8 +24,8 @@ jobs:
     name: Lint Python SDK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
       - name: Lint
         run: make lint-py
 
@@ -38,10 +38,10 @@ jobs:
       matrix:
         python: ["3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install the latest version of uv and set the python version
-        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
         with:
           python-version: ${{ matrix.python }}
 
@@ -52,7 +52,7 @@ jobs:
       # Uploaded under the `python` flag so the SDK's coverage is reported
       # separately from the Go server's (see codecov.yaml).
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-py.xml
@@ -72,11 +72,11 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
         python: ["3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       # fraise runs as a docker daemon (Go builds inside the image), so only
       # uv is needed here to run pytest against it.
-      - uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
         with:
           python-version: ${{ matrix.python }}
 
@@ -97,10 +97,10 @@ jobs:
       run:
         working-directory: sdk/python
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
 
       - name: Version must match tag
         run: |
