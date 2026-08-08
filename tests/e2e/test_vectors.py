@@ -35,7 +35,8 @@ import pytest
 
 def test_remember_with_vector_is_accepted(query, vector):
     """A remember carrying a vector parameter is accepted and exercises the
-    write path's vector-index insert (stream.Commit -> VectorIndex.Insert)."""
+    write path's vector-index insert (stream.Commit -> VectorIndex.Insert).
+    """
     status, body = query(
         "remember@6 'the parrot is turquoise' vec:$v topic:color",
         parameters={"v": vector()},
@@ -51,7 +52,8 @@ def test_remember_vector_then_recall_by_vector(query, vector):
     The recall term is a keyword that appears in no stored fact, so the text
     index yields no seeds. The fact can only surface if the vector index seeds
     the search from `vec:$v` — this is what proves vector search actually works
-    end to end, not just that the write was accepted."""
+    end to end, not just that the write was accepted.
+    """
     graph = 6
     phrase = "the kingfisher is electric blue"
     embedding = vector(value=0.5)
@@ -76,7 +78,8 @@ def test_remember_vector_then_recall_by_vector(query, vector):
 def test_recall_missing_vector_parameter_is_rejected(query):
     """A query references `vec:$v` but supplies no matching parameter. Binding
     fails at parse time, so the request is a 400 naming the missing placeholder,
-    not a 500 or a silent empty result."""
+    not a 500 or a silent empty result.
+    """
     status, body = query("recall@6 parrot vec:$v")
 
     assert status == 400
@@ -99,7 +102,8 @@ def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim
     "Error while comitting stream." message — the Commit error (which does name
     the expected vs actual dimension) is flattened into ErrCommitFailed by the
     scheduler's Stage step before it reaches the handler. This asserts today's
-    behavior; tighten to 400 with the dimension detail if that path is fixed."""
+    behavior; tighten to 400 with the dimension detail if that path is fixed.
+    """
     # Establish the graph's dimension.
     status, body = query(
         "remember@4 'establish the vector dimension' vec:$v topic:size",

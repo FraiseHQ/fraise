@@ -39,7 +39,7 @@ repos:
     - id: ruff
       args: [ --fix, --config=pyproject.toml, --show-fixes ]
     - id: ruff-format
-      args: [--config=pyproject.toml, --verbose ]
+      args: [--config=pyproject.toml]
 
   - repo: https://github.com/astral-sh/ty-pre-commit
     # ty version.

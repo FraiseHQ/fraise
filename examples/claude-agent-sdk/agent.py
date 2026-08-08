@@ -44,7 +44,6 @@ from claude_agent_sdk import (
     ClaudeSDKClient,
     TextBlock,
 )
-
 from fraise_sdk import FraiseClient
 from fraise_sdk.integrations.claude_agents import allowed_tools, memory_server
 
@@ -61,6 +60,7 @@ async def ask(options: ClaudeAgentOptions, prompt: str) -> None:
 
 
 async def main() -> None:
+    """Example runner."""
     fraise = FraiseClient(os.environ.get("FRAISE_URL", "http://localhost:9876"))
 
     # This example is keyword-only. To vectorise, pass an embedder to

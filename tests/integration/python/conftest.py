@@ -39,7 +39,11 @@ WAIT_TIMEOUT_SECONDS = 30
 
 @pytest.fixture(scope="session")
 def client():
-    """A FraiseClient pointed at a server confirmed to be up."""
+    """A FraiseClient pointed at a server confirmed to be up.
+
+    Yields:
+            FraiseClient: fraise client.
+    """
     fraise = FraiseClient(FRAISE_URL)
     deadline = time.monotonic() + WAIT_TIMEOUT_SECONDS
     while time.monotonic() < deadline:

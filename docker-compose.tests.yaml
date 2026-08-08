@@ -33,4 +33,3 @@ services:
       FRAISE_URL: http://fraise:9876
     depends_on:
       - fraise
-

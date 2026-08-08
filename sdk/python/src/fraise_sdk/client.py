@@ -29,10 +29,10 @@ from collections.abc import Sequence
 
 import requests
 
-from . import query as _query
-from .errors import FraiseAPIError, FraiseError
-from .models import RecallResult
-from .providers import Embedder, EmbedderLike, resolve_embedder
+from fraise_sdk import query as _query
+from fraise_sdk.errors import FraiseAPIError, FraiseError
+from fraise_sdk.models import RecallResult
+from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
 DEFAULT_BASE_URL = "http://localhost:9876"
 DEFAULT_TIMEOUT_SECONDS = 10.0
@@ -101,10 +101,11 @@ class FraiseClient:
     # -- lifecycle ---------------------------------------------------------
 
     def close(self) -> None:
+        """Close context manager."""
         if self._owns_session:
             self._session.close()
 
-    def __enter__(self) -> "FraiseClient":
+    def __enter__(self) -> FraiseClient:
         return self
 
     def __exit__(self, *_exc) -> None:
@@ -148,6 +149,10 @@ class FraiseClient:
         raise :class:`FraiseError` instead. This makes no automatic network calls
         of its own beyond the single health request; call it explicitly when you
         want the guarantee.
+
+        Raises:
+            FraiseError: if server is not compatible in strict mode
+
         """
         version = self.server_version()
         if version is None:
@@ -260,6 +265,9 @@ class FraiseClient:
         ``embed`` is a three-way switch: ``True`` requires an embedder and always
         encodes, ``False`` never encodes, ``None`` encodes only if an embedder is
         configured and ``text`` is non-empty.
+
+        Raises:
+            FraiseError: if embedding mode is active with no valid embedder
         """
         if vector is not None:
             return [float(x) for x in vector]
@@ -286,6 +294,10 @@ class FraiseClient:
         This is the low-level escape hatch behind :meth:`remember` and
         :meth:`recall`; reach for it when you need a query the typed helpers do
         not yet cover. Raises :class:`FraiseAPIError` on any non-2xx response.
+
+        Raises:
+            FraiseError: if database is unreachable
+            FraiseAPIError: if API call to fraise fails
         """
         payload: dict[str, object] = {"query": text}
         if parameters:
@@ -298,7 +310,9 @@ class FraiseClient:
                 timeout=self.timeout if timeout is None else timeout,
             )
         except requests.RequestException as exc:
-            raise FraiseError(f"could not reach fraise at {self.base_url}: {exc}") from exc
+            raise FraiseError(
+                f"could not reach fraise at {self.base_url}: {exc}"
+            ) from exc
 
         # Every response the server produces is JSON — decode first so an error
         # body's ``error`` field can be surfaced verbatim.
@@ -309,6 +323,8 @@ class FraiseClient:
 
         if not response.ok:
             message = body.get("error") if isinstance(body, dict) else None
-            raise FraiseAPIError(response.status_code, message or response.text or "unknown error")
+            raise FraiseAPIError(
+                response.status_code, message or response.text or "unknown error"
+            )
 
         return body if isinstance(body, dict) else {}

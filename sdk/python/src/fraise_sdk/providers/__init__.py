@@ -39,7 +39,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .openai import OpenAIEmbedder
+    from fraise_sdk.providers.openai import OpenAIEmbedder
 
 # For callers who would rather pass a plain function than subclass Embedder.
 EmbedderLike = Callable[[str], Sequence[float]]
@@ -57,7 +57,7 @@ class Embedder(ABC):
         """Encode ``text`` into a fixed-length sequence of floats."""
         raise NotImplementedError
 
-    def __call__(self, text: str) -> Sequence[float]:
+    def __call__(self, text: str) -> Sequence[float]:  # noqa: D102
         return self.embed(text)
 
 
@@ -66,6 +66,9 @@ def resolve_embedder(embedder: Embedder | EmbedderLike | None) -> EmbedderLike |
 
     Prefers an ``.embed`` method (an :class:`Embedder`) over calling the object
     directly, so an embedder exposing both stays on its named method.
+
+    Raises:
+        TypeError: if method is not of type Embedder or EmbbederLike
     """
     if embedder is None:
         return None
@@ -84,7 +87,7 @@ def __getattr__(name: str) -> object:
     # Lazy re-export so `from fraise_sdk.providers import OpenAIEmbedder` works
     # without importing the openai SDK until it is actually referenced.
     if name == "OpenAIEmbedder":
-        from .openai import OpenAIEmbedder
+        from fraise_sdk.providers.openai import OpenAIEmbedder
 
         return OpenAIEmbedder
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

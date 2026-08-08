@@ -27,3 +27,50 @@ members = [
 [tool.pytest]
 minversion = "8.0"
 addopts = ["-ra", "-q", "--capture=no", "-vvv"]
+
+[tool.ruff.lint]
+preview = true
+select = [
+    "E",
+    "I",
+    "F",
+    "W",
+    "N",
+    "I001",
+    "I002",
+    "ANN",
+    "D",
+    "DOC",
+    "AIR",
+    "UP",
+    "S102",
+    "TID252", # relative imports only allowed for siblings
+    "PT"
+]
+ignore = [
+    "E501", # over-length lines, formatter should handle it
+    "E741", # ambigous variable name
+    "ANN401",
+    "D401",
+    "D211",
+    "D213",
+    "DOC201",
+    "D203",
+    "D107", # no docstring for __init__
+    "D415", # duplicate of D400
+    "ANN002", # args type hint
+    "ANN003", # kwargs type hint
+    "PT006",
+    "D105", # docstrings for magic methods
+    "UP017",
+    "E731"
+]
+
+
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "D"]
+"**/tests/**" = ["ANN", "D"]

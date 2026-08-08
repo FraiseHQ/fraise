@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from .errors import FraiseQueryError
+from fraise_sdk.errors import FraiseQueryError
 
 # Name bound to the out-of-band vector in the request parameters. A query carries
 # at most one vector, so a single fixed placeholder keeps client and builder in
@@ -52,6 +52,9 @@ def _token(kind: str, value: str) -> str:
 
     The grammar splits on whitespace, so a token may not contain any — a stray
     space would be parsed as two tokens (or fail), silently changing the query.
+
+    Raises:
+        FraiseQueryError: if query is not valid
     """
     value = value.strip()
     if not value:
@@ -73,6 +76,9 @@ def _quote_value(value: str) -> str:
     The grammar has no escape sequence inside a single-quoted phrase, so an
     embedded apostrophe would close the phrase early. Reject it here with a clear
     error rather than letting the server return an opaque parse failure.
+
+    Raises:
+        FraiseQueryError: if query is not valid
     """
     if not value.strip():
         raise FraiseQueryError("fact value must not be empty")
@@ -128,6 +134,9 @@ def build_recall(
     A recall needs at least one seed: keywords, a vector, or a topic/entity
     filter. Building one with no seed at all is a programming error and is
     rejected here.
+
+    Raises:
+        FraiseQueryError: if query is not valid
     """
     parts = [f"recall{_selector(graph)}"]
     parts += [_token("keyword", k) for k in (keywords or [])]

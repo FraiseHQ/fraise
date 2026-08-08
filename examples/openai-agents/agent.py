@@ -36,13 +36,13 @@ Run it with Docker (brings up Fraise too):
 import os
 
 from agents import Agent, Runner
-
 from fraise_sdk import FraiseClient
 from fraise_sdk.integrations.openai_agents import memory_tools
 from fraise_sdk.providers import OpenAIEmbedder
 
 
 def main() -> None:
+    """Example runner."""
     fraise = FraiseClient(os.environ.get("FRAISE_URL", "http://localhost:9876"))
 
     # Passing an embedder makes the memory tools vectorise implicitly: remember
@@ -58,7 +58,7 @@ def main() -> None:
             "question, first recall relevant facts from memory."
         ),
         model="gpt-5-nano",
-        tools=memory_tools(fraise, embedder=embedder),
+        tools=memory_tools(fraise, embedder=embedder),  # ty: ignore[invalid-argument-type]
     )
 
     print("turn 1 > My favourite colour is orange.")

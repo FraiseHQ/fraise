@@ -25,7 +25,6 @@
 import json
 
 import pytest
-
 from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError
 
 
@@ -80,8 +79,16 @@ def test_recall_parses_hits():
         "results": {
             "count": 2,
             "hits": [
-                {"value": "mars is the red planet", "score": 1.0, "timestamp": "2026-01-01T00:00:00Z"},
-                {"value": "venus is hot", "score": 0.42, "timestamp": "2026-01-01T00:00:00Z"},
+                {
+                    "value": "mars is the red planet",
+                    "score": 1.0,
+                    "timestamp": "2026-01-01T00:00:00Z",
+                },
+                {
+                    "value": "venus is hot",
+                    "score": 0.42,
+                    "timestamp": "2026-01-01T00:00:00Z",
+                },
             ],
         }
     }
@@ -127,17 +134,23 @@ def _fixed_embedder(dim=4):
 
 def test_configured_embedder_encodes_remember_value():
     embed, calls = _fixed_embedder()
-    client = _client(_FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed)
+    client = _client(
+        _FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed
+    )
     client.remember("the parrot is turquoise", graph=6)
     sent = client._session.last_post["json"]
     assert sent["query"] == "remember@6 'the parrot is turquoise' vec:$v"
-    assert sent["parameters"] == {"v": [23.0, 23.0, 23.0, 23.0]}  # len("the parrot is turquoise")
+    assert sent["parameters"] == {
+        "v": [23.0, 23.0, 23.0, 23.0]
+    }  # len("the parrot is turquoise")
     assert calls == ["the parrot is turquoise"]
 
 
 def test_configured_embedder_encodes_recall_keywords():
     embed, calls = _fixed_embedder()
-    client = _client(_FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed)
+    client = _client(
+        _FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed
+    )
     client.recall("kingfisher", "blue", graph=6)
     sent = client._session.last_post["json"]
     assert sent["query"] == "recall@6 kingfisher blue vec:$v"
@@ -147,14 +160,18 @@ def test_configured_embedder_encodes_recall_keywords():
 
 def test_recall_query_phrase_overrides_keywords_for_embedding():
     embed, calls = _fixed_embedder()
-    client = _client(_FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed)
+    client = _client(
+        _FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed
+    )
     client.recall("zzznomatch", graph=6, query="a sleepy kitten in the sun")
     assert calls == ["a sleepy kitten in the sun"]
 
 
 def test_explicit_vector_wins_over_embedder():
     embed, calls = _fixed_embedder()
-    client = _client(_FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed)
+    client = _client(
+        _FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed
+    )
     client.remember("x is y", graph=6, vector=[0.1, 0.2])
     assert client._session.last_post["json"]["parameters"] == {"v": [0.1, 0.2]}
     assert calls == []  # embedder not consulted
@@ -162,7 +179,9 @@ def test_explicit_vector_wins_over_embedder():
 
 def test_embed_false_skips_a_configured_embedder():
     embed, calls = _fixed_embedder()
-    client = _client(_FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed)
+    client = _client(
+        _FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=embed
+    )
     client.remember("x is y", graph=6, embed=False)
     assert "parameters" not in client._session.last_post["json"]
     assert calls == []
@@ -187,6 +206,8 @@ def test_embedder_abc_subclass_is_accepted():
         def embed(self, text):
             return [1.0, 2.0, 3.0]
 
-    client = _client(_FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=Const())
+    client = _client(
+        _FakeResponse(200, {"results": {"count": 0, "hits": []}}), embedder=Const()
+    )
     client.remember("hello world", graph=6)
     assert client._session.last_post["json"]["parameters"] == {"v": [1.0, 2.0, 3.0]}

@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 """HTTP surface and request validation: the health check, malformed request
-bodies, and query strings the parser must reject as client errors."""
+bodies, and query strings the parser must reject as client errors.
+"""
 
 import pytest
 import requests
@@ -54,7 +55,8 @@ def test_query_rejects_unparsable_query(query):
 
 def test_query_rejects_out_of_range_graph(query):
     """A selector past the allocated graph range is a fast client error, not a
-    hang. Graph 9 is above the eight graphs the store allocates."""
+    hang. Graph 9 is above the eight graphs the store allocates.
+    """
     status, body = query("recall@9 anything")
 
     assert status == 400
@@ -73,7 +75,8 @@ def test_query_rejects_out_of_range_graph(query):
 def test_query_rejects_selector_that_would_wrap(query):
     """The parser must reject a selector above the uint8 range before it is
     narrowed: @256 would wrap to graph 0 and @300 to graph 44, silently
-    executing against another tenant's graph."""
+    executing against another tenant's graph.
+    """
     for q in ("remember@256 'secret plan' topic:x", "recall@300 anything"):
         status, body = query(q)
 
@@ -85,7 +88,8 @@ def test_query_rejects_selector_that_would_wrap(query):
 
 def test_query_rejects_non_integer_selector(query):
     """A non-numeric selector is a parse error, not a silent fallback to a
-    default graph."""
+    default graph.
+    """
     status, body = query("recall@abc anything")
 
     assert status == 400
@@ -96,7 +100,8 @@ def test_query_rejects_valid_uint8_selector_above_num_graphs(query):
     """@255 fits the selector type, so the parser passes it — the handler must
     then reject it against the allocated graph count with its own distinct
     error. This is the layer boundary: type consistency in the parser,
-    allocation policy in the handler."""
+    allocation policy in the handler.
+    """
     status, body = query("recall@255 anything")
 
     assert status == 400
@@ -108,7 +113,8 @@ def test_query_rejects_valid_uint8_selector_above_num_graphs(query):
 def test_wrapping_selector_write_does_not_leak_to_graph_zero(query):
     """Regression guard for the wrap itself: a rejected remember@256 must leave
     no trace on graph 0 (the graph @256 used to wrap to). Read-only on graph 0
-    apart from the probe recall, so it does not disturb that graph's facts."""
+    apart from the probe recall, so it does not disturb that graph's facts.
+    """
     status, _ = query("remember@256 'wrapprobe should never land' topic:wrapprobe")
     assert status == 400
 
@@ -135,7 +141,8 @@ def test_query_rejects_invalid_modifier_value(query, text):
     """An invalid depth/top/since/until/selector value is a 400 with a message,
     not a silent fall back to the default or to no constraint at all. Agents
     self-correct from the error; a differently-scoped result with no error is
-    the worst failure mode for this product."""
+    the worst failure mode for this product.
+    """
     status, body = query(text)
 
     assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
@@ -156,7 +163,8 @@ def test_query_parse_error_message_is_unmangled(query, text, detail):
     The parser's call sites used to re-wrap them with a bad %e verb, turning a
     clean 'invalid since value "soon"' into `&{%!e(string=...)}` in the 400
     body — garbling, at the last step, exactly the message an agent needs to
-    self-correct."""
+    self-correct.
+    """
     status, body = query(text)
     error = body.get("error", "")
 

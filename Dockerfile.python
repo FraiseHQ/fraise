@@ -10,6 +10,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 # ca-certificates is the one thing Ubuntu lacks that uv needs: without it the
 # TLS fetch of the standalone interpreter fails.
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -33,5 +34,3 @@ COPY sdk/python/ ./
 RUN uv sync
 
 COPY tests/integration/python/ ./integration/
-
-# Runner command lives in docker-compose.tests.yaml (python-sdk-integration-tests service).

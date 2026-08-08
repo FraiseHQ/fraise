@@ -19,3 +19,10 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
+"""Fraise SDK."""
+
+__all__ = ["FraiseAPIError", "FraiseClient", "FraiseError"]
+
+from fraise_sdk.client import FraiseClient
+from fraise_sdk.errors import FraiseAPIError, FraiseError

@@ -23,13 +23,15 @@
 """Unit tests for the pure query-string builders."""
 
 import pytest
-
 from fraise_sdk.errors import FraiseQueryError
 from fraise_sdk.query import VECTOR_PARAM, build_recall, build_remember
 
 
 def test_remember_minimal():
-    assert build_remember("the parrot is turquoise") == "remember@0 'the parrot is turquoise'"
+    assert (
+        build_remember("the parrot is turquoise")
+        == "remember@0 'the parrot is turquoise'"
+    )
 
 
 def test_remember_with_graph_topics_and_entities():

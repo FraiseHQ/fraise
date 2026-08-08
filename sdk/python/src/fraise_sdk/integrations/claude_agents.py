@@ -47,9 +47,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..client import FraiseClient
-from ..errors import FraiseError
-from ..providers import Embedder, EmbedderLike, resolve_embedder
+from fraise_sdk.client import FraiseClient
+from fraise_sdk.errors import FraiseError
+from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
 try:
     from claude_agent_sdk import (
@@ -140,7 +140,11 @@ def recall_tool(
             return _err(f"memory lookup failed: {exc}")
         if not result.hits:
             return _ok("No stored facts matched those keywords.")
-        return _ok("\n".join(f"- {hit.value} (relevance {hit.score:.3f})" for hit in result.hits))
+        return _ok(
+            "\n".join(
+                f"- {hit.value} (relevance {hit.score:.3f})" for hit in result.hits
+            )
+        )
 
     return recall_memory
 
@@ -239,7 +243,9 @@ def memory_server(
     make the tools vectorise implicitly.
     """
     return create_sdk_mcp_server(
-        name=name, version=version, tools=memory_tools(client, graph=graph, embedder=embedder)
+        name=name,
+        version=version,
+        tools=memory_tools(client, graph=graph, embedder=embedder),
     )
 
 
@@ -249,4 +255,7 @@ def allowed_tools(server_name: str = DEFAULT_SERVER_NAME) -> list[str]:
     MCP tools are namespaced ``mcp__<server>__<tool>``; this returns both memory
     tools under ``server_name`` so the two never drift apart.
     """
-    return [f"mcp__{server_name}__{RECALL_TOOL}", f"mcp__{server_name}__{REMEMBER_TOOL}"]
+    return [
+        f"mcp__{server_name}__{RECALL_TOOL}",
+        f"mcp__{server_name}__{REMEMBER_TOOL}",
+    ]

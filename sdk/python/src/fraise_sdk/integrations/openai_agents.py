@@ -44,9 +44,9 @@ concern, not something the model should pick.
 
 from __future__ import annotations
 
-from ..client import FraiseClient
-from ..errors import FraiseError
-from ..providers import Embedder, EmbedderLike, resolve_embedder
+from fraise_sdk.client import FraiseClient
+from fraise_sdk.errors import FraiseError
+from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
 try:
     from agents import FunctionTool, function_tool
@@ -77,7 +77,9 @@ def recall_tool(
     """
     encode = resolve_embedder(embedder)
 
-    def recall_memory(keywords: list[str], top: int = _DEFAULT_TOP, depth: int = _DEFAULT_DEPTH) -> str:
+    def recall_memory(
+        keywords: list[str], top: int = _DEFAULT_TOP, depth: int = _DEFAULT_DEPTH
+    ) -> str:
         """Search long-term memory for facts related to the given keywords.
 
         Call this before answering when the user refers to something they may
@@ -89,6 +91,7 @@ def recall_tool(
             top: Maximum number of facts to return, most relevant first.
             depth: How far to follow links between related facts (1 keeps only
                 direct keyword matches; higher pulls in connected facts).
+
         """
         vector = encode(" ".join(keywords)) if encode and keywords else None
         try:
@@ -99,7 +102,9 @@ def recall_tool(
             return f"memory lookup failed: {exc}"
         if not result.hits:
             return "No stored facts matched those keywords."
-        return "\n".join(f"- {hit.value} (relevance {hit.score:.3f})" for hit in result.hits)
+        return "\n".join(
+            f"- {hit.value} (relevance {hit.score:.3f})" for hit in result.hits
+        )
 
     return function_tool(
         recall_memory,
@@ -140,11 +145,17 @@ def remember_tool(
                 "travel"); facts sharing a topic become reachable together.
             entities: Optional named things the fact is about — a person, place,
                 or object (e.g. "anne").
+
         """
         vector = encode(fact) if encode else None
         try:
             client.remember(
-                fact, graph=graph, topics=topics, entities=entities, vector=vector, embed=False
+                fact,
+                graph=graph,
+                topics=topics,
+                entities=entities,
+                vector=vector,
+                embed=False,
             )
         except FraiseError as exc:
             return f"could not store the fact: {exc}"

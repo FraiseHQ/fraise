@@ -28,6 +28,7 @@ services:
     depends_on:
       fraise:
         condition: service_healthy
+    command: ["uv", "python", "run", "agent.py"]
     environment:
       FRAISE_URL: http://fraise:9876
       # Taken from your shell; the run fails fast if it is unset.

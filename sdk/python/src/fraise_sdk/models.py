@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 
@@ -36,7 +37,7 @@ class Hit:
     timestamp: str | None = None
 
     @classmethod
-    def from_json(cls, data: dict) -> "Hit":
+    def from_json(cls, data: dict) -> Hit:  # noqa: D102
         return cls(
             value=data["value"],
             score=float(data["score"]),
@@ -46,14 +47,13 @@ class Hit:
 
 @dataclass(frozen=True)
 class RecallResult:
-    """The result set of a ``recall``: how many facts matched and, in ranked
-    order, what they were."""
+    """The result set of a ``recall``: how many facts matched and, in ranked order, what they were."""
 
     count: int
     hits: list[Hit]
 
     @classmethod
-    def from_json(cls, results: dict) -> "RecallResult":
+    def from_json(cls, results: dict) -> RecallResult:  # noqa: D102
         hits = [Hit.from_json(h) for h in results.get("hits") or []]
         # Prefer the server-reported count, falling back to the hit count so the
         # two never disagree if the field is ever omitted.
@@ -62,7 +62,7 @@ class RecallResult:
     def __bool__(self) -> bool:
         return bool(self.hits)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable:
         return iter(self.hits)
 
     def __len__(self) -> int:

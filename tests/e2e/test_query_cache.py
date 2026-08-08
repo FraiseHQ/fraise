@@ -60,14 +60,16 @@ def test_identical_recall_text_rebinds_vector(query, vector):
     status, body = query(text, parameters={"v": vec_a})
     assert status == 200, body.get("error")
     hits = body["results"]["hits"]
-    assert hits and hits[0]["value"] == fact_a, (
+    assert hits
+    assert hits[0]["value"] == fact_a, (
         f"recall with vector A should surface the alpha fact; got {hits}"
     )
 
     status, body = query(text, parameters={"v": vec_b})
     assert status == 200, body.get("error")
     hits = body["results"]["hits"]
-    assert hits and hits[0]["value"] == fact_b, (
+    assert hits
+    assert hits[0]["value"] == fact_b, (
         f"recall with vector B still seeded by vector A (stale cached plan); got {hits}"
     )
 
@@ -89,9 +91,7 @@ def test_recall_time_bound_not_reused_across_queries(query):
     status, body = query(f"recall@{graph} charlie until:0s")
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
-    assert fact in values, (
-        f"until:0s should include the fresh fact; got {values}"
-    )
+    assert fact in values, f"until:0s should include the fresh fact; got {values}"
 
     status, body = query(f"recall@{graph} charlie until:1w")
     assert status == 200, body.get("error")

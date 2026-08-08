@@ -23,7 +23,6 @@
 """Tests for the embedding providers and the embedder resolver."""
 
 import pytest
-
 from fraise_sdk.providers import Embedder, OpenAIEmbedder, resolve_embedder
 
 
@@ -32,7 +31,7 @@ def test_resolve_none():
 
 
 def test_resolve_callable():
-    fn = lambda text: [1.0]  # noqa: E731
+    fn = lambda text: [1.0]
     assert resolve_embedder(fn) is fn
 
 
@@ -81,7 +80,11 @@ def test_openai_embedder_calls_client_and_returns_vector():
     embedder = OpenAIEmbedder(model="text-embedding-3-small", client=fake, dimensions=3)
     vec = embedder.embed("hello")
     assert vec == [0.1, 0.2, 0.3]
-    assert fake.record == {"model": "text-embedding-3-small", "input": "hello", "dimensions": 3}
+    assert fake.record == {
+        "model": "text-embedding-3-small",
+        "input": "hello",
+        "dimensions": 3,
+    }
 
 
 def test_openai_embedder_is_callable_and_omits_dimensions_when_unset():

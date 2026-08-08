@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 """Parallel reads and writes against the request path, hunting scheduler
-deadlocks, races, and data corruption that single-threaded round trips hide."""
+deadlocks, races, and data corruption that single-threaded round trips hide.
+"""
 
 import random
 from concurrent.futures import ThreadPoolExecutor
@@ -29,7 +30,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 def test_concurrent_queries(query):
     """Hammer the endpoint with parallel reads and writes to shake out
-    scheduler deadlocks and races in the request path."""
+    scheduler deadlocks and races in the request path.
+    """
 
     def send(i: int):
         text = "recall anna"
