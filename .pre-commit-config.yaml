@@ -4,7 +4,7 @@ repos:
   # General
   # ================
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v6.0.0
     hooks:
       - id: check-added-large-files
         args: ['--maxkb=700']  # Increase the limit to 700 KB
@@ -14,6 +14,9 @@ repos:
       - id: debug-statements
       - id: end-of-file-fixer
       - id: trailing-whitespace
+      - id: mixed-line-ending
+        auto-correct: true
+        args: ['--fix=lf']
       - id: check-json
         name: Check JSON syntax
         exclude: sdk/typescript/tsconfig.json
