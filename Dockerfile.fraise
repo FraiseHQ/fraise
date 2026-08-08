@@ -10,7 +10,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /out/fraise ./cmd/server
 
 # Runtime stage
-FROM alpine:3.20
+FROM alpine:3.24
 
 # Run as an unprivileged user rather than root. -D: no password, -H: no home.
 RUN adduser -DHu 10001 fraise
