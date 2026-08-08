@@ -5,7 +5,7 @@
 # interpreter and the resolver, so nothing here needs a preinstalled Python or
 # pip. The Claude Agent SDK drives Claude through the Claude Code CLI, so this
 # image additionally needs Node.js and the `claude` binary.
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /uvx /usr/local/bin/
 
