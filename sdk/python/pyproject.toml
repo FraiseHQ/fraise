@@ -16,7 +16,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 anthropic = [
-    "claude-agent-sdk>=0.2.128",
+    "claude-agent-sdk>=0.2.130",
 ]
 dev = [
     "pytest>=9.0.3",
