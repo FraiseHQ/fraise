@@ -66,11 +66,21 @@ ignore = [
     "E731"
 ]
 
-
-
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "D"]
 "**/tests/**" = ["ANN", "D"]
+
+[tool.ty.rules]
+unused-ignore-comment = "warn"
+redundant-cast = "ignore"
+possibly-missing-attribute = "error"
+possibly-missing-import = "error"
+
+[tool.ty.src]
+include = [
+    "sdk/python",
+    "tests",
+]

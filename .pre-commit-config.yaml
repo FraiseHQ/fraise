@@ -46,6 +46,7 @@ repos:
     rev: v0.0.64
     hooks:
     - id: ty
+      args: [--no-default-groups]
 
   # ================
   # TypeScript
