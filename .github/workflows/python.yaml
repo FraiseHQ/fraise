@@ -46,8 +46,17 @@ jobs:
           python-version: ${{ matrix.python }}
 
       # No server involved: the pure builder/client unit tests in sdk/python.
-      - name: Unit tests
-        run: make test-py
+      - name: Unit tests with coverage
+        run: make coverage-py
+
+      # Uploaded under the `python` flag so the SDK's coverage is reported
+      # separately from the Go server's (see codecov.yaml).
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-py.xml
+          flags: python
 
   integration:
     name: Integration tests (${{ matrix.runner }}, py${{ matrix.python }})

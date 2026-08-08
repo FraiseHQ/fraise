@@ -20,42 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Tests for the embedding providers and the embedder resolver."""
+"""OpenAIEmbedder tests against an injected fake client — no network."""
 
-import pytest
-from fraise_sdk.providers import Embedder, OpenAIEmbedder, resolve_embedder
-
-
-def test_resolve_none():
-    assert resolve_embedder(None) is None
-
-
-def test_resolve_callable():
-    fn = lambda text: [1.0]
-    assert resolve_embedder(fn) is fn
-
-
-def test_resolve_embedder_prefers_embed_method():
-    class E(Embedder):
-        def embed(self, text):
-            return [len(text)]
-
-    e = E()
-    resolved = resolve_embedder(e)
-    assert resolved("abc") == [3]  # bound .embed, not __call__ recursion
-
-
-def test_resolve_rejects_non_embedder():
-    with pytest.raises(TypeError):
-        resolve_embedder(object())
-
-
-def test_embedder_abc_cannot_be_instantiated():
-    with pytest.raises(TypeError):
-        Embedder()  # abstract
-
-
-# -- OpenAIEmbedder with an injected fake client (no network) ----------------
+from fraise_sdk.providers.base import Embedder
+from fraise_sdk.providers.openai import OpenAIEmbedder
 
 
 class _FakeEmbeddings:

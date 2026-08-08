@@ -55,6 +55,8 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.txt
+          flags: go
 
   cross-compile:
     name: Cross Platform Compiling

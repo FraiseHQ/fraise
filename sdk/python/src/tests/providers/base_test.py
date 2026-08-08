@@ -20,16 +20,36 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Embedding providers — backends that turn text into vectors.
+"""Tests for the embedder resolver and the Embedder base class."""
 
-The contract lives in :mod:`fraise_sdk.providers.base`; concrete providers live
-in their own modules and depend on their own optional extras — currently
-:class:`OpenAIEmbedder` (``fraise-sdk[openai]``). Importing this package pulls
-in no vendor SDK: ``openai`` is imported inside
-:meth:`~fraise_sdk.providers.openai.OpenAIEmbedder.embed`, not at module scope.
-"""
+import pytest
+from fraise_sdk.providers.base import Embedder, resolve_embedder
 
-from fraise_sdk.providers.base import Embedder, EmbedderLike, resolve_embedder
-from fraise_sdk.providers.openai import OpenAIEmbedder
 
-__all__ = ["Embedder", "EmbedderLike", "OpenAIEmbedder", "resolve_embedder"]
+def test_resolve_none():
+    assert resolve_embedder(None) is None
+
+
+def test_resolve_callable():
+    fn = lambda text: [1.0]
+    assert resolve_embedder(fn) is fn
+
+
+def test_resolve_embedder_prefers_embed_method():
+    class E(Embedder):
+        def embed(self, text):
+            return [len(text)]
+
+    e = E()
+    resolved = resolve_embedder(e)
+    assert resolved("abc") == [3]  # bound .embed, not __call__ recursion
+
+
+def test_resolve_rejects_non_embedder():
+    with pytest.raises(TypeError):
+        resolve_embedder(object())
+
+
+def test_embedder_abc_cannot_be_instantiated():
+    with pytest.raises(TypeError):
+        Embedder()  # abstract

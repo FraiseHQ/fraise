@@ -42,6 +42,10 @@ CMD_DIR        := ./cmd/server
 TS_DIR         := sdk/typescript
 PY_DIR         := sdk/python
 
+# The agent-framework integrations import their SDK at module scope, so their
+# tests skip entirely unless these optional groups are installed.
+PY_GROUPS      := --group openai --group anthropic
+
 # Binary name
 BINARY_NAME    := fraise
 
@@ -98,7 +102,7 @@ build-py: ## Build Python SDK
 
 test: test-go ## Run all Go tests
 
-coverage: coverage-go
+coverage: coverage-go coverage-py
 
 test-all: test-go test-ts test-py ## Run tests for Go and all SDKs
 
@@ -110,6 +114,12 @@ coverage-go: ## Run Go tests with coverage report
 	@echo "$(CYAN)Running Go tests with coverage...$(RESET)"
 	$(GO_TEST) -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 	@echo "$(GREEN)✓ Coverage report: coverage.txt$(RESET)"
+
+coverage-py: ## Run Python SDK unit tests with coverage report
+	@echo "$(CYAN)Running Python SDK tests with coverage...$(RESET)"
+	@$(UV_CMD) run --package fraise-sdk $(PY_GROUPS) pytest $(PY_DIR)/src/tests \
+		--cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term
+	@echo "$(GREEN)✓ Coverage report: coverage-py.xml$(RESET)"
 
 test-go-short: ## Run Go tests in short mode
 	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
@@ -143,7 +153,7 @@ test-ts: ## Run TypeScript tests
 
 test-py: ## Run Python tests with pytest
 	@echo "$(CYAN)Running Python tests...$(RESET)"
-	@$(UV_CMD) run --package fraise-sdk pytest $(PY_DIR)/src/tests || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
+	@$(UV_CMD) run --package fraise-sdk $(PY_GROUPS) pytest $(PY_DIR)/src/tests || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
 
 test-watch: ## Run Go tests in watch mode (requires reflex)
 	@echo "$(CYAN)Running Go tests in watch mode...$(RESET)"

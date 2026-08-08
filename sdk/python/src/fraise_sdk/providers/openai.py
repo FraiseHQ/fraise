@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from fraise_sdk.providers import Embedder
+from fraise_sdk.providers.base import Embedder
 
 
 class OpenAIEmbedder(Embedder):
