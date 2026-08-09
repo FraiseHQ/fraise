@@ -106,6 +106,7 @@ func (l *Lexer) Next() Token {
 		}
 		tok = Token{Type: tokType, Literal: tokLiteral}
 	}
+	tok.Pos = l.CurrentPos
 	return tok
 }
 
