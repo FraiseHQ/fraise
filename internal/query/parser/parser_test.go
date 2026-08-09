@@ -218,6 +218,46 @@ func TestRememberPhraseErrors(t *testing.T) {
 	}
 }
 
+// TestFieldRequiresColonSeparator pins that every keyed field rejects a missing
+// ':' instead of advancing past whatever token sits in the separator's place.
+// The two unchecked advances this replaces did not merely accept a typo: they
+// shifted the remaining tokens one role to the left, so "since 7d 30d" parsed
+// clean and bounded the recall at 30d, and "topic food extra" returned results
+// filtered by nothing. A wrong answer with no error is the failure an agent
+// cannot detect, let alone correct from; the whole family (topic, entity,
+// since, until, top, depth) is listed here so no field can regress alone.
+func TestFieldRequiresColonSeparator(t *testing.T) {
+	queries := []string{
+		"recall zebras topic food",
+		"recall zebras topic food extra",
+		"recall zebras entity alice",
+		"recall zebras since 7d",
+		"recall zebras until 2026-01-15",
+		"recall zebras top 5",
+		"recall zebras depth 2",
+		"recall zebras topic:food entity alice",
+		"remember 'zebras eat grass' topic food",
+		"remember 'zebras eat grass' entity zebras",
+		// The token-shifting shapes: each one used to parse without error, with
+		// the second value silently winning the field and the first swallowed.
+		"recall zebras since 7d 30d",
+		"recall zebras until 7d 30d",
+		"recall zebras since:7d until 30d 60d",
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](q)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", q)
+			}
+			if !strings.Contains(err.Error(), "Expected colon") {
+				t.Errorf("error %q does not name the missing ':' separator", err)
+			}
+		})
+	}
+}
+
 // TestQuotedValues checks that quoting also works for anchor values and recall
 // terms, so a topic or a search term can itself contain spaces, symbols, or a
 // reserved word.

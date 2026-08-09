@@ -150,6 +150,87 @@ def test_query_rejects_invalid_modifier_value(query, text):
     assert body.get("error"), f"expected a parse error message for {text!r}"
 
 
+# A keyed field is `key:value`. The parser used to advance past the separator
+# without checking it was a ':', so a missing colon did not fail — it shifted
+# every following token one role to the left. "recall x since 7d 30d" answered
+# with a 30d bound and no error at all, and "recall x topic food extra" filtered
+# by nothing. The tests below cover the whole keyed-field family together,
+# because the bug was per-helper: parseTop and parseDepth checked the separator,
+# parseAnchorField and parseTimeValue did not, and nothing pinned the contract
+# across all of them.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall zebras topic food",
+        "recall zebras topic food extra",  # the ticket repro
+        "recall zebras entity alice",
+        "recall zebras since 7d",
+        "recall zebras until 2026-01-15",
+        "recall zebras top 5",
+        "recall zebras depth 2",
+        "recall zebras topic:food entity alice",  # one good field, one bad
+        "remember@5 'ulysse moved to quimper' topic relocation",
+        "remember@5 'ulysse moved to quimper' entity ulysse",
+    ],
+)
+def test_query_rejects_missing_field_separator(query, text):
+    """A keyed field written without its ':' is a 400 naming the separator.
+
+    Anything else is the silent-parse failure mode: the query runs, returns
+    200, and answers a question nobody asked.
+    """
+    status, body = query(text)
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert "colon" in body.get("error", "").lower(), (
+        f"{text!r}: expected an error naming the missing ':', got {body.get('error')!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall zebras since 7d 30d",
+        "recall zebras until 7d 30d",
+        "recall zebras since:7d until 30d 60d",
+    ],
+)
+def test_query_rejects_shifted_time_bound(query, text):
+    """The shapes that used to parse clean, and are the reason this is a bug and
+    not a typo.
+
+    With the separator skipped, `since 7d 30d` consumed `7d` as the separator
+    and took `30d` as the bound: a 200 carrying results scoped four times wider
+    than asked for. There is no signal an agent could use to notice that, which
+    is why these must be rejected rather than best-effort interpreted.
+    """
+    status, body = query(text)
+
+    assert status == 400, (
+        f"{text!r} parsed instead of failing — the token shift is back, and the "
+        f"result is scoped by the wrong bound: {body}"
+    )
+
+
+def test_missing_separator_write_does_not_land(query):
+    """A rejected remember must not have written anything.
+
+    The 400 covers the parse; this covers execution. A missing colon on a write
+    used to mis-assign the anchors rather than fail, so the fact was committed —
+    under the wrong topic, where no later recall would find it.
+    """
+    status, _ = query("remember@5 'colonprobe should never land' topic colonprobe")
+    assert status == 400
+
+    status, body = query("recall@5 colonprobe")
+    assert status == 200, body.get("error")
+    assert body["results"]["count"] == 0, (
+        "a rejected write landed on graph 5 — the parse error did not stop execution"
+    )
+
+
 @pytest.mark.parametrize(
     ("text", "detail"),
     [

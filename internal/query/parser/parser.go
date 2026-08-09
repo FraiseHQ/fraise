@@ -295,11 +295,19 @@ func (p *parser[K, P]) parseTop() (lexer.Token, int, error) {
 	return key, i, nil
 }
 
+// parseTimeValue consumes a since:/until: clause. The ':' must be present and
+// is checked, never skipped: advancing blindly past the separator shifts every
+// following token into the wrong role, so "since 7d 30d" parsed clean and
+// bounded the recall at 30d — a query silently answering a different question
+// than the one asked, which is worse than an error an agent can correct from.
 func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], error) {
 	key := p.cur
 
 	p.next()
-	p.next() // skip colon
+
+	if _, err := p.expect(lexer.COLON); err != nil {
+		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "Expected colon, but found %q", p.cur.Literal)
+	}
 
 	tok, err := p.expect(lexer.LITERAL)
 
@@ -373,19 +381,20 @@ func (p *parser[K, P]) expectValue() (lexer.Token, error) {
 	return p.cur, p.errf(p.l.CurrentPos, "expected a word or quoted phrase, but found %q", p.cur.Literal)
 }
 
+// parseAnchorField consumes a topic:/entity: clause. As in parseTimeValue, the
+// ':' is required: "topic food extra" used to shift tokens into the wrong roles
+// and return an unfiltered result set rather than a parse error.
 func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 	key := p.cur
 
 	p.next()
 
-	tok, err := p.expect(lexer.COLON)
-
-	if err != nil {
-		return lexer.Token{}, "", p.errf(p.l.CurrentPos, "Expected colon, but found %q", tok)
+	if _, err := p.expect(lexer.COLON); err != nil {
+		return lexer.Token{}, "", p.errf(p.l.CurrentPos, "Expected colon, but found %q", p.cur.Literal)
 	}
 
 	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my project').
-	tok, err = p.expectValue()
+	tok, err := p.expectValue()
 
 	if err != nil {
 		return lexer.Token{}, "", err
