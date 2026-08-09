@@ -22,6 +22,7 @@
       "prerelease": true,
       "prerelease-type": "beta",
       "bump-minor-pre-major": true,
+      "release-as": "0.1.0-beta.3",
       "exclude-paths": [
         ".dockerignore",
         ".github",
@@ -69,16 +70,11 @@
       "component": "python",
       "tag-separator": "/",
       "changelog-path": "CHANGELOG.md",
-      "bump-minor-pre-major": true,
+      "versioning": "prerelease",
       "prerelease": true,
       "prerelease-type": "beta",
-      "extra-files": [
-        {
-          "type": "toml",
-          "path": "/uv.lock",
-          "jsonpath": "$.package[?(@.name.value=='fraise-sdk')].version"
-        }
-      ]
+      "bump-minor-pre-major": true,
+      "release-as": "0.1.0-alpha.1"
     }
   }
 }
