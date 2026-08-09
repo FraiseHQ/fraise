@@ -377,10 +377,16 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 	key := p.cur
 
 	p.next()
-	p.next() // skip the ':' separator
+
+	tok, err := p.expect(lexer.COLON)
+
+	if err != nil {
+		return lexer.Token{}, "", p.errf(p.l.CurrentPos, "Expected colon, but found %q", tok)
+	}
 
 	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my project').
-	tok, err := p.expectValue()
+	tok, err = p.expectValue()
+
 	if err != nil {
 		return lexer.Token{}, "", err
 	}
