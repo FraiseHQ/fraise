@@ -67,7 +67,7 @@ func Parse[K comparable, P float32 | float64](q string) (cmd CommandNode, warns 
 	}
 
 	if p.cur.Type != lexer.EOL {
-		return nil, p.warns, p.errf(p.l.CurrentPos, "unexpected %q after end of query (one command per instruction)", p.cur.Literal)
+		return nil, p.warns, p.errf(p.cur.Pos, "unexpected %q after end of query (one command per instruction)", p.cur.Literal)
 	}
 
 	return command, p.warns, nil
@@ -83,13 +83,18 @@ func (p *parser[K, P]) next() {
 // returns an error pointing at it.
 func (p *parser[K, P]) expect(t lexer.TokenType) (lexer.Token, error) {
 	if p.cur.Type != t {
-		return p.cur, p.errf(p.l.CurrentPos, "expected %v, found %q", t, p.cur.Literal)
+		return p.cur, p.errf(p.cur.Pos, "expected %v, found %q", t, p.cur.Literal)
 	}
 	tok := p.cur
 	p.next()
 	return tok, nil
 }
 
+// errf builds a positioned parse error. pos must be the Pos of the token the
+// message blames — never p.l.CurrentPos, which sits a token further right
+// because cur/peek read ahead: an error quoting "food" would then point at the
+// end of whatever followed "food", sending a reader to the wrong word. Blaming
+// the token itself lands the column on its last character.
 func (p *parser[K, P]) errf(pos lexer.Position, format string, args ...any) error {
 	return &Error{
 		Pos: pos,
@@ -104,7 +109,7 @@ func (p *parser[K, P]) parseQuery() (CommandNode, error) {
 	case lexer.RECALL:
 		return (*p).parseRecall()
 	default:
-		return nil, p.errf(p.l.CurrentPos, "expected a command (recall, remember), found %q", p.cur.Literal)
+		return nil, p.errf(p.cur.Pos, "expected a command (recall, remember), found %q", p.cur.Literal)
 	}
 }
 
@@ -115,7 +120,6 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	r.key = p.cur
 
 	p.next()
-
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
@@ -123,7 +127,6 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
-
 	// Remember carries exactly one quoted phrase (the fact). The lexer returns
 	// the whole '...' as a single PHRASE token, so consuming it also consumes
 	// the closing quote — no separate delimiter handling here.
@@ -153,11 +156,11 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		case lexer.VEC:
 			vec, err := p.parseVecField()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
+				return nil, p.errf(p.cur.Pos, "Error while parsing vector ref field %q", p.cur.Literal)
 			}
 			r.vec = vec
 		default:
-			return nil, p.errf(p.l.CurrentPos, "Encountered unexpected token: %q", p.cur.Literal)
+			return nil, p.errf(p.cur.Pos, "Encountered unexpected token: %q", p.cur.Literal)
 		}
 	}
 
@@ -169,7 +172,6 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	r := RecallCommandNode[K, P]{}
 
 	r.key = p.cur
-
 	p.next()
 
 	if p.cur.Type == lexer.AT {
@@ -239,11 +241,11 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		case lexer.VEC:
 			vec, err := p.parseVecField()
 			if err != nil {
-				return nil, p.errf(p.l.CurrentPos, "Error while parsing vector ref field %q", p.cur.Literal)
+				return nil, p.errf(p.cur.Pos, "Error while parsing vector ref field %q", p.cur.Literal)
 			}
 			r.vec = vec
 		default:
-			return nil, p.errf(p.l.CurrentPos, "Encountered unexpected token: %q", p.cur.Literal)
+			return nil, p.errf(p.cur.Pos, "Encountered unexpected token: %q", p.cur.Literal)
 		}
 	}
 	return &r, nil
@@ -255,18 +257,18 @@ func (p *parser[K, P]) parseDepth() (lexer.Token, int, error) {
 	p.next()
 
 	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected colon, but found %q", p.cur.Literal)
+		return lexer.Token{}, 0, p.errf(p.cur.Pos, "Expected colon, but found %q", p.cur.Literal)
 	}
 
 	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
-		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+		return lexer.Token{}, 0, p.errf(p.cur.Pos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
 	i, err := strconv.Atoi(tok.Literal)
 	if err != nil {
-		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid depth value %q: expected a non-negative integer", tok.Literal)
+		return lexer.Token{}, 0, p.errf(tok.Pos, "invalid depth value %q: expected a non-negative integer", tok.Literal)
 	}
 
 	return key, i, nil
@@ -278,18 +280,18 @@ func (p *parser[K, P]) parseTop() (lexer.Token, int, error) {
 	p.next()
 
 	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected colon, but found %q", p.cur.Literal)
+		return lexer.Token{}, 0, p.errf(p.cur.Pos, "Expected colon, but found %q", p.cur.Literal)
 	}
 
 	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
-		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+		return lexer.Token{}, 0, p.errf(p.cur.Pos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
 	i, err := strconv.Atoi(tok.Literal)
 	if err != nil {
-		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "invalid top value %q: expected a non-negative integer", tok.Literal)
+		return lexer.Token{}, 0, p.errf(tok.Pos, "invalid top value %q: expected a non-negative integer", tok.Literal)
 	}
 
 	return key, i, nil
@@ -306,18 +308,18 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 	p.next()
 
 	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "Expected colon, but found %q", p.cur.Literal)
+		return lexer.Token{}, nil, p.errf(p.cur.Pos, "Expected colon, but found %q", p.cur.Literal)
 	}
 
 	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
-		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+		return lexer.Token{}, nil, p.errf(p.cur.Pos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
 	t, err := containers.ParseTimeValue[K](tok.Literal)
 	if err != nil {
-		return lexer.Token{}, nil, p.errf(p.l.CurrentPos, "invalid %s value %q: expected a duration like 7d or a date like 2026-01-15", key.Literal, tok.Literal)
+		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %q: expected a duration like 7d or a date like 2026-01-15", key.Literal, tok.Literal)
 	}
 
 	return key, t, nil
@@ -331,7 +333,7 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
-		return lexer.Token{}, 0, p.errf(p.l.CurrentPos, "Expected literal, but found %q", p.cur.Literal)
+		return lexer.Token{}, 0, p.errf(p.cur.Pos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
 	// Validate the full integer before narrowing to uint8. A blind uint8(i)
@@ -341,6 +343,7 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 	// non-integer or anything outside the uint8 range here; the handler still
 	// enforces the tighter [0, num-graphs) bound on what survives.
 	i, err := strconv.Atoi(tok.Literal)
+
 	if err != nil {
 		return lexer.Token{}, 0, p.errf(tok.Pos, "invalid graph selector %q: expected a whole number", tok.Literal)
 	}
@@ -361,7 +364,7 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 	}
 	tok, err := p.expect(lexer.PHRASE)
 	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "expected a quoted phrase, but found %q", p.cur.Literal)
+		return nil, p.errf(p.cur.Pos, "expected a quoted phrase, but found %q", p.cur.Literal)
 	}
 	return &PhraseNode{value: tok.Literal, pos: tok.Pos}, nil
 }
@@ -378,7 +381,7 @@ func (p *parser[K, P]) expectValue() (lexer.Token, error) {
 		p.next()
 		return tok, nil
 	}
-	return p.cur, p.errf(p.l.CurrentPos, "expected a word or quoted phrase, but found %q", p.cur.Literal)
+	return p.cur, p.errf(p.cur.Pos, "expected a word or quoted phrase, but found %q", p.cur.Literal)
 }
 
 // parseAnchorField consumes a topic:/entity: clause. As in parseTimeValue, the
@@ -390,7 +393,7 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 	p.next()
 
 	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, "", p.errf(p.l.CurrentPos, "Expected colon, but found %q", p.cur.Literal)
+		return lexer.Token{}, "", p.errf(p.cur.Pos, "Expected colon, but found %q", p.cur.Literal)
 	}
 
 	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my project').
@@ -409,7 +412,7 @@ func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {
 	tok, err := p.expect(lexer.VEC)
 
 	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "Expected vec field, but found %q", tok)
+		return nil, p.errf(p.cur.Pos, "Expected vec field, but found %q", p.cur.Literal)
 	}
 
 	r.key = tok
@@ -417,13 +420,13 @@ func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {
 	_, err = p.expect(lexer.COLON)
 
 	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "Expected colon, but found %q", tok)
+		return nil, p.errf(p.cur.Pos, "Expected colon, but found %q", p.cur.Literal)
 	}
 
 	_, err = p.expect(lexer.DOLLAR)
 
 	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "Expected param field operator $, but found %q", p.cur.Literal)
+		return nil, p.errf(p.cur.Pos, "Expected param field operator $, but found %q", p.cur.Literal)
 	}
 
 	tok, err = p.expect(lexer.LITERAL)
@@ -431,7 +434,7 @@ func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {
 	r.param = tok
 
 	if err != nil {
-		return nil, p.errf(p.l.CurrentPos, "Expected literal, but found %q", tok)
+		return nil, p.errf(p.cur.Pos, "Expected literal, but found %q", p.cur.Literal)
 	}
 
 	return &r, nil

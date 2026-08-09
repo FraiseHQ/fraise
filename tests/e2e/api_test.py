@@ -232,6 +232,43 @@ def test_missing_separator_write_does_not_land(query):
 
 
 @pytest.mark.parametrize(
+    ("text", "blame"),
+    [
+        ("recall zebras topic food extra", "food"),
+        ("recall zebras entity alice extra", "alice"),
+        ("recall zebras since 7d 30d", "7d"),
+        ("recall zebras top 5 depth:2", "5"),
+        ("recall zebras depth 2 top:3", "2"),
+        ("remember@5 'a colonprobe fact' topic food entity:x", "food"),
+        ("recall zebras since:soon top:3", "soon"),
+        ("recall zebras depth:abc top:3", "abc"),
+        ("recall@abc zebras top:3", "abc"),
+    ],
+)
+def test_parse_error_column_points_at_the_offending_token(query, text, blame):
+    """The 400 must point at the last character of the token it quotes.
+
+    The column is the only thing in the response that says *where* the query
+    went wrong, and a client's caret is drawn from it. It used to be taken from
+    the lexer's read cursor, which runs a token ahead of the parser, so an
+    error quoting `food` pointed at the end of the token after it — every case
+    here keeps a token to the right of the bad one, because that is the only
+    arrangement in which the two positions differ.
+    """
+    status, body = query(text)
+    error = body.get("error", "")
+    column = text.index(blame) + len(blame)
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert f"parse error at column {column}:" in error, (
+        f"{text!r}: want column {column} (end of {blame!r}), got {error!r}"
+    )
+    assert f'"{blame}"' in error, (
+        f"{text!r}: the message should quote the token it blames, got {error!r}"
+    )
+
+
+@pytest.mark.parametrize(
     ("text", "detail"),
     [
         ("recall x since:soon", 'invalid since value "soon"'),

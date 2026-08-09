@@ -504,6 +504,74 @@ func Test_PositionTracking(t *testing.T) {
 	}
 }
 
+// TestTokenPosIsLastCharacter pins the contract the parser's error positions
+// rest on: a token's Pos is the 1-based column of its last character. The
+// parser cannot compute this itself — cur/peek read a token ahead, so by the
+// time it rejects a token the lexer's CurrentPos has passed the following one
+// — so if this drifts, every "parse error at column N" silently points at the
+// wrong word while still reading like a precise message.
+func TestTokenPosIsLastCharacter(t *testing.T) {
+	// The columns below are the 1-based index of each token's final character:
+	// "recall" ends at 6, "@" at 7, "2" at 8, "anna" at 13, and so on.
+	input := "recall@2 anna topic:food top:10"
+	want := []struct {
+		literal string
+		column  int
+	}{
+		{"recall", 6},
+		{"@", 7},
+		{"2", 8},
+		{"anna", 13},
+		{"topic", 19},
+		{":", 20},
+		{"food", 24},
+		{"top", 28},
+		{":", 29},
+		{"10", 31},
+	}
+
+	l := lexer.New(input)
+	for _, w := range want {
+		tok := l.Next()
+		if tok.Literal != w.literal {
+			t.Fatalf("token stream diverged: got %q, want %q", tok.Literal, w.literal)
+		}
+		if tok.Pos.Column != w.column {
+			t.Errorf("%q: Pos.Column = %d, want %d (its last character)", w.literal, tok.Pos.Column, w.column)
+		}
+	}
+
+	// EOL carries the end of input, so an error about a clause cut short lands
+	// past the last character rather than at column 0.
+	if tok := l.Next(); tok.Type != lexer.EOL || tok.Pos.Column != len(input) {
+		t.Errorf("EOL Pos.Column = %d (type %v), want %d", tok.Pos.Column, tok.Type, len(input))
+	}
+}
+
+// TestPhrasePosIsLastCharacter pins that a phrase is no exception to the rule
+// above: its Pos is its closing quote, so the parser's one blaming rule holds
+// for every token type.
+//
+// NOTE: scanPhrase does record the *opening* quote (`Pos: start`), meaning to
+// report an unterminated phrase where it began, but Next() assigns tok.Pos
+// after the switch and overwrites it — so that position never reaches the
+// parser. If that assignment is ever made conditional, the phrase cases here
+// and in TestScanPhraseUnterminatedRecordsPosition are what should change,
+// together with the Token.Pos contract.
+func TestPhrasePosIsLastCharacter(t *testing.T) {
+	// "remember 'a fact' topic:x" — the closing quote is the 17th character.
+	l := lexer.New("remember 'a fact' topic:x")
+	l.Next() // remember
+
+	tok := l.Next()
+	if tok.Type != lexer.PHRASE {
+		t.Fatalf("got %v %q, want a PHRASE", tok.Type, tok.Literal)
+	}
+	if tok.Pos.Column != 17 {
+		t.Errorf("phrase Pos.Column = %d, want 17 (its closing quote)", tok.Pos.Column)
+	}
+}
+
 func Test_VeryLongQuery(t *testing.T) {
 	input := "recall $vec anna bob charlie +topic:personal ~topic:draft since:2024-01-01 until:2024-12-31 top:10 depth:5"
 

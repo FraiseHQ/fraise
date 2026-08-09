@@ -23,6 +23,8 @@
 package parser_test
 
 import (
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -253,6 +255,70 @@ func TestFieldRequiresColonSeparator(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "Expected colon") {
 				t.Errorf("error %q does not name the missing ':' separator", err)
+			}
+		})
+	}
+}
+
+// TestParseErrorBlamesTheOffendingToken pins where a parse error points: the
+// column is the last character of the token the message quotes.
+//
+// Errors used to be positioned at the lexer's CurrentPos, which is not where
+// the parser is — cur/peek read one token ahead, so CurrentPos sits at the end
+// of the token *after* the bad one. "recall zebras topic food extra" reported
+// column 30, the end of "extra", while the message quoted "food" (ending at
+// 24). Every case below therefore keeps a token after the offending one; with
+// the bad token last, a CurrentPos regression passes unnoticed, which is how
+// this survived.
+//
+// The column and the quoted literal are asserted together on purpose: either
+// alone can look right while the pair contradicts each other, and it is the
+// pair an agent (or a human squinting at a caret) uses to find the mistake.
+func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
+	cases := []struct {
+		query string
+		blame string // the token the error must quote and point at
+	}{
+		// Missing ':' — the whole keyed-field family.
+		{"recall zebras topic food extra", "food"},
+		{"recall zebras entity alice extra", "alice"},
+		{"recall zebras since 7d 30d", "7d"},
+		{"recall zebras until 7d 30d", "7d"},
+		{"recall zebras top 5 depth:2", "5"},
+		{"recall zebras depth 2 top:3", "2"},
+		{"remember 'zebras eat grass' topic food entity:x", "food"},
+		// Unparseable values: the blamed token is the value, not the key.
+		{"recall zebras since:soon top:3", "soon"},
+		{"recall zebras until:later top:3", "later"},
+		{"recall zebras depth:abc top:3", "abc"},
+		{"recall zebras top:abc depth:2", "abc"},
+		{"recall@abc zebras top:3", "abc"},
+		// A token in a position no clause can start.
+		{"recall zebras : topic:food", ":"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
+			}
+
+			var perr *parser.Error
+			if !errors.As(err, &perr) {
+				t.Fatalf("error %v is not a *parser.Error, so it carries no position", err)
+			}
+
+			// 1-based column of the offending token's last character.
+			want := strings.Index(tc.query, tc.blame) + len(tc.blame)
+			if perr.Pos.Column != want {
+				t.Errorf("%q: column %d, want %d (the end of %q)\n  %s\n  %*s\n  %v",
+					tc.query, perr.Pos.Column, want, tc.blame,
+					tc.query, perr.Pos.Column, "^", err)
+			}
+			if !strings.Contains(perr.Msg, strconv.Quote(tc.blame)) {
+				t.Errorf("%q: message %q does not quote the offending token %q",
+					tc.query, perr.Msg, tc.blame)
 			}
 		})
 	}
