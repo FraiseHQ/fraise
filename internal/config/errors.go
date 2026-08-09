@@ -31,4 +31,10 @@ var (
 	// ErrInvalidFlag is returned when the command line carries an unexpected
 	// positional argument (i.e. an unknown/invalid flag).
 	ErrInvalidFlag = errors.New("config: invalid flag")
+	// ErrInvalidValue is returned when a setting names something outside the
+	// values it accepts. It is deliberately distinct from ErrParsingFailed: a
+	// missing config file is survivable (the defaults are a valid
+	// configuration), but a value the server cannot honour is not, so the
+	// startup path stops on this one instead of warning and carrying on.
+	ErrInvalidValue = errors.New("config: invalid value")
 )

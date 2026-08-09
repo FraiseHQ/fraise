@@ -24,6 +24,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -71,7 +72,18 @@ func run() error {
 	c := config.New()
 	cfgErr := c.Parse(os.Args[1:]) // load config file, then override via CLI flags
 
+	// The logger is installed before the config error is acted on, so that the
+	// error has somewhere to go — main reports it through this logger.
 	logger.SetDefault(logger.NewLogger(c))
+
+	// A setting naming something the server cannot honour stops startup, before
+	// anything is announced: it was asked for explicitly, and running with a
+	// different value instead is a substitution an operator can only detect by
+	// noticing the behaviour they asked for is missing. The error lists what the
+	// setting accepts.
+	if errors.Is(cfgErr, config.ErrInvalidValue) {
+		return cfgErr
+	}
 
 	logger.Info("Starting server...")
 	if cfgErr != nil {
@@ -85,15 +97,19 @@ func run() error {
 	// config value selects which instantiation to build and run here. Both are
 	// compiled in; the whole stack below is generic over P.
 	switch c.DB.Precision {
-	case "float32":
-		logger.Info("Using single precision", "precision", "float32")
+	case config.PrecisionFloat32:
+		logger.Info("Using single precision", "precision", config.PrecisionFloat32)
 		return runServer[float32](ctx, c)
-	case "float64":
-		logger.Info("Using double precision", "precision", "float64")
+	case config.PrecisionFloat64:
+		logger.Info("Using double precision", "precision", config.PrecisionFloat64)
 		return runServer[float64](ctx, c)
 	default:
-		logger.Warn("Unknown precision, falling back to float64", "precision", c.DB.Precision)
-		return runServer[float64](ctx, c)
+		// Startup rejects any other value, so this is an unset config, and the
+		// documented default is what it means. It used to fall back to float64
+		// — not even the default — so a typo silently changed the precision of
+		// every score in the store.
+		logger.Warn("Precision unset, using the default", "precision", config.DefaultPrecision)
+		return runServer[float32](ctx, c)
 	}
 }
 

@@ -275,12 +275,13 @@ func (c *ConfigSet) Parse(arguments []string) error {
 		c.configFile = DefaultConfigFile
 	}
 
-	var meta *toml.MetaData
-	meta, err = c.FromFile(c.configFile)
-
-	if err != nil {
-		return err
-	}
+	// A missing or unreadable config file is survivable — the flags already
+	// parsed, plus the built-in defaults, are a complete configuration — so the
+	// failure is carried to the end instead of returned here. Returning early
+	// used to skip adjust and validate entirely, which is how `-log-level error`
+	// with no config file reached the logger unchecked: the very case an
+	// operator hits first.
+	meta, fileErr := c.FromFile(c.configFile)
 
 	// Parse again to replace with command line options
 	err = c.FlagSet.Parse(arguments)
@@ -292,9 +293,17 @@ func (c *ConfigSet) Parse(arguments []string) error {
 		return fmt.Errorf("%w: %q", ErrInvalidFlag, c.Arg(0))
 	}
 
-	err = c.adjust(meta)
+	if err = c.adjust(meta); err != nil {
+		return err
+	}
 
-	return err
+	// An invalid value outranks a missing file: it is the one the caller must
+	// stop on, so it is the one returned.
+	if err = c.validate(); err != nil {
+		return err
+	}
+
+	return fileErr
 }
 
 func (c *ConfigSet) adjust(meta *toml.MetaData) error {
