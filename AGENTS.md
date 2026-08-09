@@ -103,18 +103,136 @@ These apply to every component:
 
 ### Python
 
-- Test files are named `*_test.py` (not `test_*.py`), and the test tree mirrors
-  the package it covers, so a module's tests sit at the matching path:
+- Test files are named `*_test.py` (not `test_*.py`), and **every** suite that
+  tests the SDK mirrors the package one-to-one — the unit suite and the
+  integration suite alike. Both roots take the same relative path under
+  `fraise_sdk/`, so a module maps to one file per suite:
 
   ```text
-  sdk/python/src/fraise_sdk/query.py                      → sdk/python/src/tests/query_test.py
-  sdk/python/src/fraise_sdk/providers/openai.py           → sdk/python/src/tests/providers/openai_test.py
-  sdk/python/src/fraise_sdk/integrations/openai_agents.py → sdk/python/src/tests/integrations/openai_agents_test.py
+  sdk/python/src/fraise_sdk/  → sdk/python/src/tests/      (unit)
+                              → tests/integration/python/  (integration)
+
+  client.py                   → client_test.py
+  query.py                    → query_test.py
+  providers/openai.py         → providers/openai_test.py
+  integrations/openai_agents.py → integrations/openai_agents_test.py
   ```
 
+  **A test file is named after the module under test, never after the scenario
+  it exercises.** `connect_test.py`, `lifecycle_test.py`, `compatibility_test.py`,
+  `vectors_test.py` are all wrong names for tests of `client.py`: each describes
+  a concern, and a concern is a *section inside* the mirrored file, not a file of
+  its own. Mirror the source module's own banner comments
+  (`# -- lifecycle ---`, `# -- embedding ---`) to keep those sections findable.
+
   The point is that the tests for a given module are findable from its path
-  alone, without grepping. `tests/e2e/` is deliberately exempt: it tests the
-  running server over HTTP, so it mirrors no package.
+  alone, without grepping. Three consequences are intended, not accidents:
+
+  - The same basename recurs across suites — `client_test.py` exists twice.
+    `--import-mode=importlib` in the root `pyproject.toml` is what stops pytest
+    tripping over that. Never rename a file to dodge the collision.
+  - A module gets no file in a suite when it has nothing to test there:
+    `providers/base.py` resolves embedders without touching the network, so it
+    has no integration test. A missing file is fine; a misnamed one is not.
+  - `conftest.py` is fixture machinery and mirrors nothing.
+
+  `tests/e2e/` is deliberately exempt: it drives the running server over HTTP,
+  so it mirrors the server, not the SDK.
+- **Every fixture lives in `conftest.py`** — including one that a single test
+  file asks for. A test module is assertions; a `@pytest.fixture` in one is
+  setup hiding among them, and it splits "how did this graph get populated?"
+  across as many files as there are suites.
+- **Never import from a test module — a test tree is not a package.**
+  `from conftest import NO_MATCH` is banned, and so is importing from a
+  sibling `*_test.py`. Whether it resolves at all depends on how pytest put the
+  directory on `sys.path`, and it re-introduces the hidden coupling that moving
+  fixtures to `conftest.py` just removed. The only supported channel out of
+  `conftest.py` is a fixture, injected through a test's arguments.
+
+  This applies to plain values too, not just objects that need setup. Urls,
+  graph ids, seed facts, dimensions and helper callables are all fixtures:
+
+  ```python
+  # conftest.py — the value is private; the fixture is the interface
+  _NO_MATCH = "zzznomatchzzz"
+
+
+  @pytest.fixture(scope="session")
+  def no_match():
+      """A keyword no fact in any graph contains."""
+      return _NO_MATCH
+
+
+  # client_test.py
+  def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):
+      """A keyword no fact contains yields an empty, falsey result."""
+      assert client.recall(no_match, graph=round_trip_graph).count == 0
+  ```
+
+  A test that reads a long argument list is telling you what it depends on,
+  which is the point.
+- **Every test has a docstring.** One line is enough when the name already says
+  it; say more when the test pins something non-obvious — why this graph, why
+  this exact count, what breaks if the assertion flips. Same rule as everywhere
+  else in the tree: state the contract and the *why*, not the mechanics. A test
+  that documents a known defect says so in its docstring, with a `NOTE:` and
+  what should replace it once the defect is fixed.
+- **`parametrize` values are written inline, at the test that uses them.** A
+  literal list at the decorator, never a module-level `CASES` dict fed in as
+  `CASES.values()` with `ids=CASES.keys()` — that reads as indirection and you
+  have to scroll to find out what a case even is. Skip `pytest.param` unless a
+  case genuinely needs a marker; auto-generated ids are a fine price for seeing
+  the values at the point of use. If two tests want the same case list, they
+  are usually one parametrized test.
+
+  ```python
+  @pytest.mark.parametrize(
+      "kwargs",
+      [
+          {"keywords": ["barometer"]},
+          {"keywords": ["barometer"], "topics": ["weather"]},
+          {"keywords": ["barometer"], "top": 3, "depth": 2},
+      ],
+  )
+  def test_every_recall_the_builder_emits_parses(kwargs, client):
+      """Every keyword-seeded shape build_recall can produce is accepted."""
+  ```
+
+- **No hand-rolled fakes — mock with `unittest.mock`, and only with
+  `AsyncMock`, `MagicMock` and `patch`.** That import line is the whole
+  toolbox:
+
+  ```python
+  from unittest.mock import AsyncMock, MagicMock, patch
+  ```
+
+  (import only the names a file actually uses — `ruff` fails on the rest).
+  Nothing else from the module: no `create_autospec`, no `Mock`, no
+  `mock_open`, no `sentinel`. And a test never defines a `_FakeClient` /
+  `_FakeSession` / `_FakeResponse` class to impersonate a collaborator — a
+  hand-written stand-in silently keeps passing after the API it imitates has
+  changed shape, which is exactly the failure the test existed to catch.
+  `MagicMock()` for a collaborator, `AsyncMock()` when the unit awaits it,
+  `patch` when the unit constructs its collaborator itself rather than taking
+  it as an argument (`patch("fraise_sdk.client.requests.Session")` keeps the
+  client's own construction path under test).
+- **A unit test mocks every call that leaves the unit.** Anything that reaches
+  an external system — the HTTP session and the response it returns, a vendor
+  SDK client (`openai`, `huggingface_hub`, `claude_agent_sdk`), the fraise
+  server itself — is a `MagicMock`, so unit tests need no network and no
+  daemon. Isolation is the goal, not purity: mocking a *deterministic*
+  collaborator is fine and often right, because it pins what the unit under
+  test asked for instead of testing the collaborator a second time. Mocking an
+  embedder to return `[5.0]` is a better test of `recall_tool` than letting a
+  real one compute it. In-tree value objects (`Hit`, `RecallResult`) are cheap
+  and stable, so just build them.
+- **Assert on the mock, not on a bookkeeping structure.**
+  `assert_called_once_with`, `call_args.kwargs`, `assert_not_called`,
+  `await_args` — never a bespoke `record` dict or `calls` list. Since the mocks
+  accept any signature, the call assertion is what pins the contract: check the
+  arguments, not just that something was called. (The Go `fakeHasher`
+  convention above is unaffected — it is a real, deterministic implementation
+  of an in-tree interface, not a stand-in for a collaborator.)
 - **No code in `__init__.py` — imports are the only exception.** A package's
   `__init__.py` holds its docstring, re-export imports and `__all__`, nothing
   else. Classes, functions, constants and type aliases live in a named module

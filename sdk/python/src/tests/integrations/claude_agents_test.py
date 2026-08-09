@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Claude Agent SDK tool tests against a fake client — no server, no model calls.
+"""Claude Agent SDK tool tests against a mocked client — no server, no model calls.
 
 Unlike the OpenAI tools these return MCP content payloads rather than plain
 strings, and failures are flagged with ``is_error`` rather than raised, so the
@@ -28,6 +28,7 @@ assertions check that envelope as well as the text.
 """
 
 import asyncio
+from unittest.mock import MagicMock
 
 import pytest
 from fraise_sdk.errors import FraiseError
@@ -49,25 +50,27 @@ from fraise_sdk.integrations.claude_agents import (  # noqa: E402
 )
 
 
-class _FakeClient:
-    """Records recall/remember calls and replays a canned result."""
+def _client(hits=(), raises=None) -> MagicMock:
+    """A mock FraiseClient replaying one recall result."""
+    client = MagicMock()
+    client.recall.return_value = RecallResult(count=len(hits), hits=list(hits))
+    if raises is not None:
+        client.recall.side_effect = raises
+        client.remember.side_effect = raises
+    return client
 
-    def __init__(self, hits=None, raises=None):
-        self._hits = hits or []
-        self._raises = raises
-        self.recall_calls = []
-        self.remember_calls = []
 
-    def recall(self, *keywords, **kwargs):
-        self.recall_calls.append({"keywords": keywords, **kwargs})
-        if self._raises:
-            raise self._raises
-        return RecallResult(count=len(self._hits), hits=self._hits)
+def _encode(text: str) -> list[float]:
+    """A bare ``callable(text) -> vector`` embedder: the text's length."""
+    return [float(len(text))]
 
-    def remember(self, value, **kwargs):
-        self.remember_calls.append({"value": value, **kwargs})
-        if self._raises:
-            raise self._raises
+
+def _embedder() -> MagicMock:
+    """A mock of the bare ``callable(text) -> vector`` embedder shape."""
+    embedder = MagicMock(side_effect=_encode)
+    # No .embed, so resolve_embedder takes the plain-callable branch.
+    del embedder.embed
+    return embedder
 
 
 def _invoke(tool, **arguments):
@@ -80,7 +83,7 @@ def _text(payload):
 
 
 def test_memory_tools_returns_both_tools():
-    tools = memory_tools(_FakeClient())
+    tools = memory_tools(_client())
     assert [tool.name for tool in tools] == ["recall_memory", "remember_fact"]
 
 
@@ -101,25 +104,25 @@ def test_allowed_tools_follows_a_custom_server_name():
 
 
 def test_memory_server_builds_with_both_tools():
-    server = memory_server(_FakeClient())
+    server = memory_server(_client())
     assert server is not None
 
 
 def test_recall_schema_requires_only_keywords():
     # top/depth must stay optional: the shorthand schema form would mark every
     # property required and force the model to invent budgets.
-    schema = recall_tool(_FakeClient()).input_schema
+    schema = recall_tool(_client()).input_schema
     assert schema["required"] == ["keywords"]
     assert set(schema["properties"]) == {"keywords", "top", "depth"}
 
 
 def test_remember_schema_requires_only_fact():
-    schema = remember_tool(_FakeClient()).input_schema
+    schema = remember_tool(_client()).input_schema
     assert schema["required"] == ["fact"]
 
 
 def test_recall_formats_hits():
-    client = _FakeClient(
+    client = _client(
         hits=[
             Hit(value="the sky is blue", score=0.9),
             Hit(value="grass is green", score=0.5),
@@ -133,84 +136,90 @@ def test_recall_formats_hits():
 
 
 def test_recall_without_hits_says_so():
-    payload = _invoke(recall_tool(_FakeClient(hits=[])), keywords=["nothing"])
+    payload = _invoke(recall_tool(_client()), keywords=["nothing"])
     assert _text(payload) == "No stored facts matched those keywords."
     assert "is_error" not in payload
 
 
 def test_recall_flags_server_errors_with_is_error():
-    client = _FakeClient(raises=FraiseError("connection refused"))
+    client = _client(raises=FraiseError("connection refused"))
     payload = _invoke(recall_tool(client), keywords=["anything"])
     assert _text(payload) == "memory lookup failed: connection refused"
     assert payload["is_error"] is True
 
 
 def test_recall_defaults_budgets_when_the_model_omits_them():
-    client = _FakeClient(hits=[])
+    client = _client()
     _invoke(recall_tool(client), keywords=["a"])
-    call = client.recall_calls[0]
+    call = client.recall.call_args.kwargs
     assert call["top"] == 5
     assert call["depth"] == 2
 
 
 def test_recall_passes_graph_and_budgets_through():
-    client = _FakeClient(hits=[])
+    client = _client()
     _invoke(recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=4)
-    call = client.recall_calls[0]
-    assert call["keywords"] == ("a", "b")
-    assert call["graph"] == 3
-    assert call["top"] == 7
-    assert call["depth"] == 4
+    client.recall.assert_called_once_with(
+        "a", "b", graph=3, top=7, depth=4, vector=None, embed=False
+    )
 
 
 def test_recall_vectorises_through_the_embedder():
-    client = _FakeClient(hits=[])
-    _invoke(
-        recall_tool(client, embedder=lambda text: [len(text)]), keywords=["ab", "cd"]
-    )
-    call = client.recall_calls[0]
-    assert call["vector"] == [5]
+    client = _client()
+    embedder = _embedder()
+    _invoke(recall_tool(client, embedder=embedder), keywords=["ab", "cd"])
+    embedder.assert_called_once_with("ab cd")
+    call = client.recall.call_args.kwargs
+    assert call["vector"] == [5.0]
     assert call["embed"] is False
 
 
 def test_recall_without_keywords_sends_no_vector_even_with_an_embedder():
     # Encoding an empty string would seed the search with a meaningless vector.
-    client = _FakeClient(hits=[])
-    _invoke(recall_tool(client, embedder=lambda text: [1.0]), keywords=[])
-    assert client.recall_calls[0]["vector"] is None
+    client = _client()
+    embedder = _embedder()
+    _invoke(recall_tool(client, embedder=embedder), keywords=[])
+    embedder.assert_not_called()
+    assert client.recall.call_args.kwargs["vector"] is None
 
 
 def test_remember_confirms_what_it_stored():
-    client = _FakeClient()
+    client = _client()
     payload = _invoke(remember_tool(client), fact="the sky is blue")
     assert _text(payload) == "Stored: the sky is blue"
-    assert client.remember_calls[0]["value"] == "the sky is blue"
+    assert client.remember.call_args.args == ("the sky is blue",)
 
 
 def test_remember_passes_topics_entities_and_graph():
-    client = _FakeClient()
+    client = _client()
     _invoke(
         remember_tool(client, graph=2),
         fact="anne likes orange",
         topics=["colour"],
         entities=["anne"],
     )
-    call = client.remember_calls[0]
-    assert call["graph"] == 2
-    assert call["topics"] == ["colour"]
-    assert call["entities"] == ["anne"]
+    client.remember.assert_called_once_with(
+        "anne likes orange",
+        graph=2,
+        topics=["colour"],
+        entities=["anne"],
+        vector=None,
+        embed=False,
+    )
 
 
 def test_remember_flags_server_errors_with_is_error():
-    client = _FakeClient(raises=FraiseError("bad value"))
+    client = _client(raises=FraiseError("bad value"))
     payload = _invoke(remember_tool(client), fact="x")
     assert _text(payload) == "could not store the fact: bad value"
     assert payload["is_error"] is True
 
 
 def test_remember_vectorises_through_the_embedder():
-    client = _FakeClient()
-    _invoke(remember_tool(client, embedder=lambda text: [0.5]), fact="hello")
-    call = client.remember_calls[0]
-    assert call["vector"] == [0.5]
+    client = _client()
+    embedder = _embedder()
+    _invoke(remember_tool(client, embedder=embedder), fact="hello")
+    embedder.assert_called_once_with("hello")
+    call = client.remember.call_args.kwargs
+    assert call["vector"] == [5.0]
     assert call["embed"] is False
