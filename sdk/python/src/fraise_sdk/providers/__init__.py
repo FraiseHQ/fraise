@@ -24,12 +24,20 @@
 
 The contract lives in :mod:`fraise_sdk.providers.base`; concrete providers live
 in their own modules and depend on their own optional extras — currently
-:class:`OpenAIEmbedder` (``fraise-sdk[openai]``). Importing this package pulls
-in no vendor SDK: ``openai`` is imported inside
-:meth:`~fraise_sdk.providers.openai.OpenAIEmbedder.embed`, not at module scope.
+:class:`OpenAIEmbedder` (``fraise-sdk[openai]``) and
+:class:`HuggingFaceEmbedder` (``fraise-sdk[huggingface]``). Importing this
+package pulls in no vendor SDK: each provider imports its client inside
+``__init__``, not at module scope.
 """
 
 from fraise_sdk.providers.base import Embedder, EmbedderLike, resolve_embedder
+from fraise_sdk.providers.huggingface import HuggingFaceEmbedder
 from fraise_sdk.providers.openai import OpenAIEmbedder
 
-__all__ = ["Embedder", "EmbedderLike", "OpenAIEmbedder", "resolve_embedder"]
+__all__ = [
+    "Embedder",
+    "EmbedderLike",
+    "HuggingFaceEmbedder",
+    "OpenAIEmbedder",
+    "resolve_embedder",
+]

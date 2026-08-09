@@ -26,7 +26,11 @@ members = [
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = ["-ra", "-q", "--capture=no", "-vvv"]
+# importlib import mode: the test tree mirrors the package one-to-one in every
+# suite, so the same basename recurs (sdk/python/src/tests/client_test.py and
+# tests/integration/python/client_test.py). The default 'prepend' mode fails to
+# collect the second of any such pair; importlib imports each by full path.
+addopts = ["-ra", "-q", "--capture=no", "-vvv", "--import-mode=importlib"]
 
 [tool.ruff.lint]
 preview = true

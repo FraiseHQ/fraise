@@ -22,6 +22,8 @@
 
 """Tests for the embedder resolver and the Embedder base class."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from fraise_sdk.providers.base import Embedder, resolve_embedder
 
@@ -31,18 +33,21 @@ def test_resolve_none():
 
 
 def test_resolve_callable():
-    fn = lambda text: [1.0]
-    assert resolve_embedder(fn) is fn
+    embedder = MagicMock(return_value=[1.0])
+    # A plain callable has no .embed; deleting it is what makes this mock the
+    # bare-callable shape rather than the Embedder one.
+    del embedder.embed
+    assert resolve_embedder(embedder) is embedder
 
 
 def test_resolve_embedder_prefers_embed_method():
-    class E(Embedder):
-        def embed(self, text):
-            return [len(text)]
-
-    e = E()
-    resolved = resolve_embedder(e)
-    assert resolved("abc") == [3]  # bound .embed, not __call__ recursion
+    embedder = MagicMock()
+    resolved = resolve_embedder(embedder)
+    # The bound .embed, not __call__ — which would recurse back into embed.
+    assert resolved is embedder.embed
+    resolved("abc")
+    embedder.embed.assert_called_once_with("abc")
+    embedder.assert_not_called()
 
 
 def test_resolve_rejects_non_embedder():

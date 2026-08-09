@@ -121,10 +121,6 @@ coverage-py: ## Run Python SDK unit tests with coverage report
 		--cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term
 	@echo "$(GREEN)✓ Coverage report: coverage-py.xml$(RESET)"
 
-test-go-short: ## Run Go tests in short mode
-	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
-	$(GO_TEST) -short ./...
-
 test-go-bench: ## Run Go benchmarks
 	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
 	$(GO_TEST) -bench=. -benchmem ./...
@@ -135,17 +131,26 @@ FRAISE_E2E_PORT ?= 9876
 
 COMPOSE        := docker compose -f docker-compose.yaml
 
+# Dump the server's logs when a suite fails. pytest says which assertion broke;
+# only the container says why — a panic, a rejected write, a config it did not
+# like on boot. Printed before the trap tears the container down, since after
+# that the logs are gone.
+FRAISE_LOGS    = echo "$(YELLOW)--- fraise server logs ---$(RESET)"; \
+                 $(COMPOSE) logs --no-color --tail=200 fraise
+
 test-e2e: ## Run end-to-end tests against fraise in Docker
 	@echo "$(CYAN)Starting fraise (docker) for end-to-end tests...$(RESET)"
 	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
 	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
-	  $(UV_CMD) run --package tests pytest tests/e2e -v
+	  $(UV_CMD) run --package tests pytest tests/e2e -v \
+	    || ( $(FRAISE_LOGS); exit 1 )
 
 test-integration-py: ## Run Python SDK integration tests against fraise in Docker
 	@echo "$(CYAN)Starting fraise (docker) for Python SDK integration tests...$(RESET)"
 	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
 	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
-	  $(UV_CMD) run --package fraise-sdk pytest tests/integration/python -v
+	  $(UV_CMD) run --package fraise-sdk pytest tests/integration/python -v \
+	    || ( $(FRAISE_LOGS); exit 1 )
 
 test-ts: ## Run TypeScript tests
 	@echo "$(CYAN)Running TypeScript tests...$(RESET)"
