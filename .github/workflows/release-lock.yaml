@@ -1,0 +1,67 @@
+name: Release lock
+
+# release-please bumps sdk/python/pyproject.toml but cannot maintain uv.lock:
+# it writes the semver spelling it computed ("0.1.0-alpha.1") wherever it is
+# pointed, while uv writes the PEP 440 normalization ("0.1.0a1"). Pointed at
+# the lock, it produces a file uv would never generate and `uv lock --check`
+# fails. So the lock is left to uv and regenerated here, on the release PR's
+# own branch, once release-please has written the new version into pyproject.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    # The lock can only be stale if the SDK's version moved, and the only
+    # thing that moves it is release-please rewriting this file. The server's
+    # release PR touches no Python version, so it never needs a run.
+    paths:
+      - "sdk/python/pyproject.toml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    name: Sync uv.lock
+    # The path filter above also matches a human editing the SDK's pyproject,
+    # so narrow to release-please's own branches: every other PR carries
+    # whatever lock its author committed, and this must never rewrite that.
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.head_ref }}
+          # Push with the PAT, not GITHUB_TOKEN: a commit pushed with the
+          # default token triggers no workflows, so the release PR's required
+          # checks would stay "expected" forever against the new head and the
+          # PR could never be merged.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      # version-file honours [tool.uv] required-version in the root
+      # pyproject.toml, so the lock is written by the uv the repo pins rather
+      # than whatever is newest.
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          version-file: "pyproject.toml"
+
+      - name: Regenerate uv.lock
+        run: uv lock
+
+      # Two feedback loops meet here and both settle. Pushing with the PAT
+      # fires `synchronize`, re-running this job — the second run finds the
+      # lock already current and pushes nothing. And release-please force-
+      # pushes this branch whenever main moves, discarding the commit below;
+      # that force-push is itself a `synchronize`, so the lock is restored.
+      - name: Commit if the lock moved
+        run: |
+          if git diff --quiet uv.lock; then
+            echo "uv.lock already matches pyproject.toml"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: sync uv.lock with the released version" uv.lock
+          git push
