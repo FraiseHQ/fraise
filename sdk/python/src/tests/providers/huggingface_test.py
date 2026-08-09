@@ -26,7 +26,6 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from fraise_sdk.providers.base import Embedder
 from fraise_sdk.providers.huggingface import HuggingFaceEmbedder
 
