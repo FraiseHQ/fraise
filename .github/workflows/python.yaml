@@ -6,6 +6,9 @@ on:
     tags:
       - "python/v[0-9]+.[0-9]+.[0-9]+"
       - "python/v[0-9]+.[0-9]+.[0-9]+-*" # pre-releases: -alpha.N / -beta.N / -rc.N
+    paths:
+      - "sdk/python/**"
+      - ".github/workflows/python.yaml"
   pull_request:
     paths:
       - "sdk/python/**"
@@ -104,29 +107,19 @@ jobs:
 
       - name: Version must match tag
         run: |
-          RAW="${GITHUB_REF_NAME#python/v}"
+         RAW="${GITHUB_REF_NAME#python/v}"
           if [[ ! "$RAW" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
             echo "::error::bad tag '$GITHUB_REF_NAME' — expected python/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
           fi
-          # release-please writes the semver spelling it computed straight into
-          # pyproject.toml ("0.1.0-alpha.1"); PEP 440 normalizes that to the
-          # "0.1.0a1" the wheel and PyPI carry. Both name the same version, so
-          # compare parsed versions — comparing the strings would reject every
-          # pre-release tag.
-          uv run --with packaging python -c "
-          import tomllib
-          from packaging.version import Version
+          PKG_VERSION=$(uv run python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          [ "$RAW" = "$PKG_VERSION" ] || { echo "::error::tag maps to $TAG_VERSION != pyproject $PKG_VERSION"; exit 1; }
 
-          tag = Version('$RAW')
-          pkg = Version(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])
-          if tag != pkg:
-              print(f'::error::tag $GITHUB_REF_NAME is version {tag}, pyproject.toml has {pkg}')
-              raise SystemExit(1)
-          print(f'tag and pyproject.toml agree on {tag}')
-          "
-
+      # --out-dir is not optional here. This is a uv workspace, so a bare
+      # `uv build` writes to the *workspace root* dist/ no matter which member
+      # directory it runs from, while `uv publish` below globs dist/* relative
+      # to this job's working-directory (sdk/python) and finds nothing.
       - name: Build
-        run: uv build
+        run: uv build --out-dir dist
 
       - name: Release
         run: uv publish
