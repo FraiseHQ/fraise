@@ -106,8 +106,6 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		return nil, fmt.Errorf("%w: %w", ErrParsingFailed, err)
 	}
 
-	// qp := i.Evaluate(cmd)
-
 	switch n := cmd.(type) {
 	case *parser.RememberCommandNode[P]:
 		qo := &Remember[K, P]{
@@ -129,6 +127,7 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		}
 
 		logger.Debug("Parsed remember query", "graph", qo.GetGraphID(), "value", qo.Value)
+
 		return qo, nil
 
 	case *parser.RecallCommandNode[K, P]:

@@ -26,9 +26,12 @@ package lexer
 type Token struct {
 	Type    TokenType
 	Literal string
-	// Pos is the position of the token's first character. Currently set by the
-	// phrase scanner so an unterminated phrase can be reported at its opening
-	// quote; zero-valued for tokens that don't record it.
+	// Pos is where a parse error blaming this token is reported: the 1-based
+	// column of the token's *last* character, for every token type (a phrase's
+	// closing quote, EOL's end of input). The parser cannot derive this from
+	// the lexer's CurrentPos, because its one-token lookahead has already moved
+	// CurrentPos past the following token — an error quoting one word would
+	// point at the next one.
 	Pos Position
 }
 
