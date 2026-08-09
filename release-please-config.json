@@ -74,7 +74,14 @@
       "prerelease": true,
       "prerelease-type": "beta",
       "bump-minor-pre-major": true,
-      "release-as": "0.1.0-alpha.1"
+      "release-as": "0.1.0-alpha.1",
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "/uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='fraise-sdk')].version"
+        }
+      ]
     }
   }
 }
