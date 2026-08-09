@@ -73,25 +73,28 @@ const (
 	// sheds load instead of parking handler goroutines without bound.
 	DefaultEnqueueTimeout time.Duration = 2 * time.Second
 
-	// DefaultLogLevel is the minimum log level emitted (DEBUG, INFO, WARN, ERROR).
-	DefaultLogLevel string = "INFO"
+	// DefaultLogLevel is the minimum log level emitted. Named from the accepted
+	// spellings in validate.go rather than repeated as a literal: a default that
+	// is not itself an accepted value is the drift that left "text" out of the
+	// logger's switch.
+	DefaultLogLevel string = LogLevelInfo
 
-	// DefaultLogFormat is the log output format ("text" or "json").
-	DefaultLogFormat string = "text"
+	// DefaultLogFormat is the log output format.
+	DefaultLogFormat string = LogFormatText
 
 	// DefaultHashingFunction is the hash used to derive node keys from values.
-	DefaultHashingFunction string = "xxhash"
+	DefaultHashingFunction string = HashingXxhash
 
 	// DefaultHashingFunctionSeed seeds the node-key hashing function.
 	DefaultHashingFunctionSeed uint64 = 0
 
 	// DefaultSearchAlgorithm is the graph traversal used to expand seeds; "none"
 	// falls back to the built-in breadth-first walk.
-	DefaultSearchAlgorithm string = "none"
+	DefaultSearchAlgorithm string = SearchNone
 
 	// DefaultRankingAlgorithm is the global ranking boost applied to walk scores;
 	// "none" disables it (the alternative is "pagerank").
-	DefaultRankingAlgorithm string = "none"
+	DefaultRankingAlgorithm string = RankingNone
 
 	// DefaultPageRankDamping is the PageRank damping factor (used when ranking is
 	// "pagerank").
@@ -159,5 +162,5 @@ const (
 
 	// DefaultPrecision is the floating-point precision for embeddings and scores
 	// ("float32" or "float64"), selecting which server instantiation is built.
-	DefaultPrecision string = "float32"
+	DefaultPrecision string = PrecisionFloat32
 )

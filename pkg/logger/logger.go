@@ -37,33 +37,41 @@ type Logger struct {
 
 var defaultLogger *Logger
 
-func NewLogger(config *config.ConfigSet) *Logger {
+// NewLogger builds a logger from the level and format in cfg.
+//
+// It switches on config's canonical spellings, never on literals: a ConfigSet
+// that came through Parse has already been case-folded onto them and had
+// anything else rejected, so the only value that can miss here is the zero
+// value of a hand-built config. That is what the default arms are for — they
+// stand in for "unset", not for "unrecognised", which is a startup failure and
+// never reaches this far.
+func NewLogger(cfg *config.ConfigSet) *Logger {
 
 	var handler slog.Handler
 	var level slog.Level
 
 	// set logging level
-	switch config.Log.Level {
-	case "DEBUG":
+	switch cfg.Log.Level {
+	case config.LogLevelDebug:
 		level = slog.LevelDebug
-	case "INFO":
+	case config.LogLevelInfo:
 		level = slog.LevelInfo
-	case "WARN":
+	case config.LogLevelWarn:
 		level = slog.LevelWarn
-	case "ERROR":
+	case config.LogLevelError:
 		level = slog.LevelError
 	default:
 		level = slog.LevelInfo
 	}
 
 	// set logging handler
-	switch config.Log.Format {
-	case "console":
-		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	switch cfg.Log.Format {
+	case config.LogFormatJSON:
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			Level: level,
 		})
-	case "json":
-		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	case config.LogFormatText:
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 			Level: level,
 		})
 	default:
@@ -73,7 +81,7 @@ func NewLogger(config *config.ConfigSet) *Logger {
 	}
 
 	l := &Logger{
-		config: config,
+		config: cfg,
 		logger: slog.New(handler),
 	}
 

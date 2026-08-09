@@ -70,12 +70,14 @@ func (d *DB[K, P]) Start() error {
 	for i := range d.Graphs {
 		g := graph.NewGraph[K, P](d.Config)
 
-		// The search algorithms are injected from configuration; unknown
-		// names keep the graph's built-in defaults.
-		if d.Config.DB.SearchAlgorithm.Name == "bfs" {
+		// The search algorithms are injected from configuration. Only the names
+		// in config.SearchAlgorithms/RankingAlgorithms get here — startup
+		// rejects the rest — so a graph left on its built-in defaults means
+		// "none" was configured, not that a name went unrecognised.
+		if d.Config.DB.SearchAlgorithm.Name == config.SearchBFS {
 			g.SetTraversal(graph.NewBFSTraversal[K, P](graph.Both))
 		}
-		if d.Config.DB.RankingAlgorithm.Name == "pagerank" {
+		if d.Config.DB.RankingAlgorithm.Name == config.RankingPageRank {
 			g.SetRanking(graph.NewPageRank[K, P](
 				P(d.Config.DB.RankingAlgorithm.PageRankDamping),
 				d.Config.DB.RankingAlgorithm.PageRankMaxIter,
