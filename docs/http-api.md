@@ -29,10 +29,10 @@ parameters it references:
 }
 ```
 
-| Field        | Type                | Required | Notes                                          |
-|--------------|---------------------|----------|------------------------------------------------|
-| `query`      | string              | yes      | one command per request                        |
-| `parameters` | object of float arrays | no    | binds `$name` references, e.g. `vec:$v`        |
+| Field        | Type                   | Required | Notes                                   |
+|--------------|------------------------|----------|-----------------------------------------|
+| `query`      | string                 | yes      | one command per request                 |
+| `parameters` | object of float arrays | no       | binds `$name` references, e.g. `vec:$v` |
 
 Vectors stay out of the query string on purpose: the query is a cache key and a
 log line, and an inline embedding would ruin both.
@@ -69,12 +69,12 @@ One entry per graph, in selector order, computed on demand from the live graphs:
 }
 ```
 
-| Field            | Meaning                                                        |
-|------------------|----------------------------------------------------------------|
-| `order`          | entities (vertices)                                            |
-| `size`           | relationships (edges)                                          |
-| `nodes`          | total stored nodes                                             |
-| `vectors`        | vectors indexed                                                |
+| Field            | Meaning                                                                     |
+|------------------|-----------------------------------------------------------------------------|
+| `order`          | entities (vertices)                                                         |
+| `size`           | relationships (edges)                                                       |
+| `nodes`          | total stored nodes                                                          |
+| `vectors`        | vectors indexed                                                             |
 | `forest_entries` | entries in the vector forest: live vectors plus garbage awaiting compaction |
 
 `forest_entries` exists to make an internal invariant observable: it must stay
@@ -89,12 +89,12 @@ Every failure returns the same shape, with the status code carrying the category
 {"error": "parse error at column 24: Expected colon, but found \"food\""}
 ```
 
-| Status | When                                                                 |
-|--------|----------------------------------------------------------------------|
-| 400    | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a graph selector outside the allocated range |
+| Status | When                                                                                                                                  |
+|--------|---------------------------------------------------------------------------------------------------------------------------------------|
+| 400    | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a vector whose dimension does not match its graph, a graph selector outside the allocated range |
 | 429    | the scheduler queue stayed full past `enqueue-timeout` — back off and retry |
-| 503    | the server is shutting down                                          |
-| 500    | an internal failure                                                  |
+| 503    | the server is shutting down |
+| 500    | an internal failure |
 
 Two properties are deliberate:
 

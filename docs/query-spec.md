@@ -36,17 +36,17 @@ each one its own token, so none of them can be used as a bare term. `recall
 topic` is a parse error, not a search for the word "topic" — quote it (`recall
 'topic'`) to search for the word itself.
 
-|        Keyword        |           Usage           | Type      |
-|-----------------------|---------------------------|-----------|
-| remember              | remember_query            | Command   |
-| recall                | recall_query              | Command   |
-| topic                 | topic_field               | Field     |
-| entity                | entity_field              | Field     |
-| since                 | since_field               | Field     |
-| until                 | until_field               | Field     |
-| top                   | top_field                 | Field     |
-| depth                 | depth_field               | Field     |
-| vec                   | vec_field                 | Field     |
+| Keyword  | Usage          | Type    |
+|----------|----------------|---------|
+| remember | remember_query | Command |
+| recall   | recall_query   | Command |
+| topic    | topic_field    | Field   |
+| entity   | entity_field   | Field   |
+| since    | since_field    | Field   |
+| until    | until_field    | Field   |
+| top      | top_field      | Field   |
+| depth    | depth_field    | Field   |
+| vec      | vec_field      | Field   |
 
 `forget` and `update` are reserved by the lexer as well, but no command
 implements them: a query starting with either is rejected. They are listed here
@@ -62,12 +62,12 @@ Four characters carry meaning. Each one is a single token, and each one also
 ends the word before it — which is why they never need whitespace around them,
 and why a term cannot contain one.
 
-| Character | Meaning                                                        |
-|-----------|----------------------------------------------------------------|
-| `:`       | separates a field from its value (`topic:billing`)             |
-| `'`       | delimits a phrase; `''` inside one is an escaped apostrophe    |
-| `$`       | introduces a parameter reference (`vec:$v`)                    |
-| `@`       | selects the graph, glued to the command (`recall@3`)           |
+| Character | Meaning                                                     |
+|-----------|-------------------------------------------------------------|
+| `:`       | separates a field from its value (`topic:billing`)          |
+| `'`       | delimits a phrase; `''` inside one is an escaped apostrophe |
+| `$`       | introduces a parameter reference (`vec:$v`)                 |
+| `@`       | selects the graph, glued to the command (`recall@3`)        |
 
 `(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts
 them: a query containing one is rejected wherever it appears. `-` is the
@@ -95,13 +95,13 @@ escape hatch, and inside quotes nothing is reserved.
 
 ### Literals
 
-| Literal      | Form                                   | Notes                                                        |
-|--------------|----------------------------------------|--------------------------------------------------------------|
-| phrase       | `'...'`                                | opaque: every character is literal, `''` is one apostrophe   |
-| integer      | `0`, `10`, `1000`                      | non-negative only; a leading `-` is a separate token         |
-| duration     | `7d`, `30m`, `1w`                      | `<integer><unit>`, units `s` `m` `h` `d` `w`, read as "ago"  |
-| date         | `2026-01-15`                           | `YYYY-MM-DD`                                                 |
-| param ref    | `$v`                                   | see below                                                    |
+| Literal   | Form              | Notes                                                       |
+|-----------|-------------------|-------------------------------------------------------------|
+| phrase    | `'...'`           | opaque: every character is literal, `''` is one apostrophe  |
+| integer   | `0`, `10`, `1000` | non-negative only; a leading `-` is a separate token        |
+| duration  | `7d`, `30m`, `1w` | `<integer><unit>`, units `s` `m` `h` `d` `w`, read as "ago" |
+| date      | `2026-01-15`      | `YYYY-MM-DD`                                                |
+| param ref | `$v`              | see below                                                   |
 
 A date carries no time of day. `since:2026-01-15T10:00:00Z` does not parse — the
 first `:` ends the value, so the rest of the timestamp arrives as stray tokens.
@@ -145,14 +145,13 @@ query           = recall_query | remember_query ;
 recall_query    = recall_cmd recall_body ;
 recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
 
-(* Canonical order: terms, then anchors, then modifiers.         *)
-(* SEMANTIC RULE: a recall needs at least one term. Anchors and  *)
-(* modifiers narrow a search; they cannot start one, so neither  *)
-(* 'recall topic:billing' nor 'recall vec:$v' is a query.        *)
-(* Terms must come first, and there must be at least one; after the   *)
-(* first field, a bare term is an error. Fields themselves are free  *)
-(* to interleave in any order: repeating an anchor adds a filter,    *)
-(* repeating a modifier keeps the last value given.                  *)
+(* SEMANTIC RULE: a recall needs at least one term, and the terms  *)
+(* come first. Anchors and modifiers narrow a search, they cannot  *)
+(* start one, so neither 'recall topic:billing' nor 'recall        *)
+(* vec:$v' is a query — and after the first field, a bare term is  *)
+(* an error. The fields themselves are free to interleave in any   *)
+(* order: repeating an anchor adds a filter, while repeating a     *)
+(* modifier keeps the last value given.                            *)
 recall_body     = term+ field* ;
 field           = anchor | modifier ;
 
