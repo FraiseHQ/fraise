@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.4](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.3...v0.1.0-beta.4) (2026-08-10)
+
+
+### Bug fixes
+
+* remove fixed versions ([#152](https://github.com/RonsenbergVI/fraise/issues/152)) ([8b7f9f7](https://github.com/RonsenbergVI/fraise/commit/8b7f9f7ccbc7f2a0ed5d19be65732354514c7324))
+
 ## [0.1.0-beta.3](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.2...v0.1.0-beta.3) (2026-08-10)
 
 
