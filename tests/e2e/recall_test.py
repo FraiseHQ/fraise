@@ -222,3 +222,81 @@ def test_recall_with_anchor_filters_returns_tagged_fact(query):
         hits = body["results"]["hits"]
         assert len(hits) == 1, f"{q!r} -> {body['results']}"
         assert hits[0]["value"] == "ulysse moved to quimper"
+
+
+# Five facts that all contain "quasar" exactly once and carry no topic:/entity:
+# anchor at all, so each is an isolated node: nothing links them to each other,
+# and no walk from another graph-0 fact can reach them. The text index scores all
+# five identically — one keyword match each — which leaves their order decided
+# entirely by the tiebreak on fact key. They share graph 0 with the comet facts
+# above, which contain no "quasar".
+QUASAR_FACTS = (
+    "the quasar catalogue was revised",
+    "a quasar outshines its host galaxy",
+    "radio astronomers logged the quasar",
+    "the quasar sits behind a lensing cluster",
+    "the quasar faded from the survey",
+)
+
+
+def _recall_ranking(query, text):
+    """The hit values of a recall, best-ranked first.
+
+    Values, not scores: a score decays with the fact's age at the instant the
+    search runs, so two identical recalls a millisecond apart legitimately score
+    the same fact differently. It is the ranking those scores produce that has to
+    be reproducible.
+    """
+    status, body = query(text)
+    assert status == 200, body.get("error")
+    return [hit["value"] for hit in body["results"]["hits"]]
+
+
+def test_identical_recalls_return_identically_ranked_hits(query):
+    """The same recall, issued repeatedly, must rank the same facts the same way.
+
+    The facts tie on relevance, so the ranking is settled by the tiebreak on fact
+    key. Candidates are pooled out of maps, whose iteration order changes per
+    call, so before the tiebreak this query returned the same facts in a
+    different order each time. The expected order is deliberately not written
+    down: it follows from the configured hash function, and what callers are
+    promised is that it does not move.
+    """
+    graph = 0
+    for phrase in QUASAR_FACTS:
+        status, body = query(f"remember@{graph} '{phrase}'")
+        assert status == 200, body.get("error")
+
+    # depth:1 holds the walk to the seeded facts, so this is exactly the five.
+    text = f"recall@{graph} quasar depth:1"
+    ranking = _recall_ranking(query, text)
+    assert set(ranking) == set(QUASAR_FACTS), (
+        f"{text!r} must match every quasar fact and nothing else; got {ranking}"
+    )
+
+    for call in range(2, 11):
+        assert _recall_ranking(query, text) == ranking, (
+            f"call {call} of {text!r} ranked the same facts differently; "
+            "recall is not reproducible"
+        )
+
+
+@pytest.mark.parametrize("top", [1, 2, 3])
+def test_recall_top_keeps_the_head_of_the_ranking(top, query):
+    """`top` truncates the ranking; it must keep its head, not an arbitrary slice.
+
+    Truncation applied before the order is total drops whichever tied facts the
+    candidate map happened to yield last, so a top:1 answer need not name the
+    fact the untruncated recall ranked first — that was the user-visible symptom.
+    The untruncated recall is the reference the truncated one has to prefix.
+    """
+    graph = 0
+    for phrase in QUASAR_FACTS:
+        status, body = query(f"remember@{graph} '{phrase}'")
+        assert status == 200, body.get("error")
+
+    full = _recall_ranking(query, f"recall@{graph} quasar depth:1")
+    truncated = _recall_ranking(query, f"recall@{graph} quasar depth:1 top:{top}")
+    assert truncated == full[:top], (
+        f"top:{top} must be the first {top} of the full ranking {full}; got {truncated}"
+    )
