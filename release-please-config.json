@@ -22,7 +22,6 @@
       "prerelease": true,
       "prerelease-type": "beta",
       "bump-minor-pre-major": true,
-      "release-as": "0.1.0-beta.3",
       "exclude-paths": [
         ".dockerignore",
         ".github",
@@ -74,7 +73,6 @@
       "prerelease": true,
       "prerelease-type": "beta",
       "bump-minor-pre-major": true,
-      "release-as": "0.1.0-alpha.1",
       "extra-files": [
         {
           "type": "toml",
