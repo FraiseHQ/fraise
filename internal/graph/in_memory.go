@@ -184,25 +184,57 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	return nil
 }
 
+// dropRelationship removes an edge's own node, the counterpart of the store
+// call that recorded it. A relationship is never a vertex in the adjacency maps
+// and never carries a vector, so idToNodes and the text index are the only
+// places it occupies.
+func (g *InMemoryGraph[K, P]) dropRelationship(key K) {
+	delete(g.idToNodes, key)
+	_ = g.textIndex.Delete(key)
+}
+
 // Delete removes the node, its incident relationships and its index entries.
+// Whichever end of an edge is deleted, the edge leaves as a whole — its node and
+// both adjacency entries — because the two halves are one fact about the graph:
+// a Mentions left in idToNodes describes an edge that no longer exists (Nodes
+// and Stats keep reporting it, and it keeps its text-index entry), while an
+// adjacency entry left behind names a relationship node that is no longer
+// stored, so Size counts an edge AdjacencyMap cannot resolve.
 func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	if node == nil {
 		return ErrNilNode
 	}
 	key := node.Key()
-	if _, ok := g.idToNodes[key]; !ok {
+	stored, ok := g.idToNodes[key]
+	if !ok {
 		return ErrNodeNotFound
 	}
 
-	for target := range g.nodeToTargets[key] {
+	// Deleting an endpoint: the adjacency maps hold each edge's own key as their
+	// value, so the relationship nodes to prune are exactly what the walk over
+	// this node's rows yields.
+	for target, edge := range g.nodeToTargets[key] {
 		delete(g.nodeToSources[target], key)
+		g.dropRelationship(edge)
 	}
-	for source := range g.nodeToSources[key] {
+	for source, edge := range g.nodeToSources[key] {
 		delete(g.nodeToTargets[source], key)
+		g.dropRelationship(edge)
 	}
 	delete(g.nodeToTargets, key)
 	delete(g.nodeToSources, key)
 	delete(g.idToNodes, key)
+
+	// Deleting the edge itself: a relationship is not a vertex, so it owns no
+	// rows of its own — the pair of entries store wrote into its endpoints' rows
+	// is its whole presence in the graph. The stored node decides this, not the
+	// caller's copy, since the key is what the graph was asked to remove.
+	if r, isEdge := stored.(Relationship[K]); isEdge {
+		source := (*r.Source()).Key()
+		target := (*r.Target()).Key()
+		delete(g.nodeToTargets[source], target)
+		delete(g.nodeToSources[target], source)
+	}
 
 	// The node may legitimately be absent from either index.
 	_ = g.textIndex.Delete(key)

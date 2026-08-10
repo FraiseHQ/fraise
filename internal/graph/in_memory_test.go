@@ -74,6 +74,26 @@ func keys(nodes []*graph.Node[uint64]) []uint64 {
 	return out
 }
 
+// assertEdgesResolve checks the invariant tying the two halves of an edge
+// together: every key the adjacency maps report is a relationship node the graph
+// still stores. Both maps are walked because they mirror each other, and a
+// deletion that forgets one leaves the graph disagreeing with itself.
+func assertEdgesResolve(t *testing.T, g *graph.InMemoryGraph[uint64, float64]) {
+	t.Helper()
+	for name, edges := range map[string]map[uint64]map[uint64]uint64{
+		"AdjacencyMap":   g.AdjacencyMap(),
+		"PredecessorMap": g.PredecessorMap(),
+	} {
+		for from, tos := range edges {
+			for to, edge := range tos {
+				if g.Get(edge) == nil {
+					t.Errorf("%s()[%d][%d] = %d, which is no longer a stored node", name, from, to, edge)
+				}
+			}
+		}
+	}
+}
+
 func TestInMemoryGraphSetGetPutDelete(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
@@ -162,6 +182,103 @@ func TestInMemoryGraphRelationships(t *testing.T) {
 	if adj := g.AdjacencyMap(); len(adj[factKey]) != 0 {
 		t.Errorf("AdjacencyMap()[fact] = %v, want empty after endpoint delete", adj[factKey])
 	}
+}
+
+// TestInMemoryGraphStoresAFactAndATopicOfTheSameText is the ticket repro:
+// `remember 'billing' topic:billing`. With one content-hash namespace the fact
+// and the topic keyed alike, so Set refused the topic as an existing node and
+// the IsAbout edge ran from the fact to itself — one node where three belong.
+func TestInMemoryGraphStoresAFactAndATopicOfTheSameText(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+
+	fact := mkFact(g, "billing", now)
+	topic := mkTopic(g, "billing", now)
+	mustSet(t, g, fact)
+	mustSet(t, g, topic)
+	mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+
+	factKey, topicKey := fact.Key(), topic.Key()
+	if factKey == topicKey {
+		t.Fatalf("fact and topic of the same text share key %d, want distinct nodes", factKey)
+	}
+	if got, want := len(g.Nodes()), 3; got != want {
+		t.Errorf("len(Nodes()) = %d, want %d (fact, topic and the edge)", got, want)
+	}
+
+	adj := g.AdjacencyMap()
+	if _, self := adj[factKey][factKey]; self {
+		t.Errorf("AdjacencyMap()[fact][fact] exists, want no self-referential edge")
+	}
+	if _, ok := adj[factKey][topicKey]; !ok {
+		t.Errorf("AdjacencyMap()[fact][topic] missing, want the IsAbout edge")
+	}
+	// The topic node has to be reachable as a topic for anchored recalls to
+	// resolve it, which is what the collision took away.
+	if got := g.Get(topicKey); got == nil {
+		t.Errorf("Get(topic) = nil, want the stored topic node")
+	} else if _, isTopic := got.(*graph.Topic[uint64]); !isTopic {
+		t.Errorf("Get(topic) = %T, want *graph.Topic", got)
+	}
+}
+
+// TestInMemoryGraphDeletePrunesIncidentRelationshipNodes checks the whole of
+// Delete's contract — the node "and, by extension, its index entries and
+// incident relationships". Unlinking an edge from the adjacency maps is not
+// enough: a Mentions node left in idToNodes describes an edge that no longer
+// exists, and Nodes, Stats and the text index all keep reporting it.
+func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+
+	fact := mkFact(g, "alice works at acme", now)
+	entity := mkEntity(g, "alice", now)
+	topic := mkTopic(g, "work", now)
+	mentions := graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()}
+	about := graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()}
+	for _, node := range []graph.Node[uint64]{fact, entity, topic, mentions, about} {
+		mustSet(t, g, node)
+	}
+	if got, want := len(g.Nodes()), 5; got != want {
+		t.Fatalf("len(Nodes()) = %d, want %d (three entities and two relationships)", got, want)
+	}
+
+	// Deleting the far endpoint of one edge prunes that edge's node and nothing
+	// else: the fact's other relationship is not incident to the entity.
+	if err := g.Delete(entity); err != nil {
+		t.Fatalf("Delete(entity) = %v, want nil", err)
+	}
+	if g.Get(mentions.Key()) != nil {
+		t.Errorf("the Mentions node outlived the entity it pointed at, want it pruned")
+	}
+	if g.Get(about.Key()) == nil {
+		t.Errorf("the IsAbout node was pruned, want only edges incident to the deleted node to go")
+	}
+	if got, want := len(g.Nodes()), 3; got != want {
+		t.Errorf("len(Nodes()) after Delete(entity) = %d, want %d (fact, topic, IsAbout)", got, want)
+	}
+	if got, want := g.Size(), 1; got != want {
+		t.Errorf("Size() after Delete(entity) = %d, want %d (fact -> topic remains)", got, want)
+	}
+	assertEdgesResolve(t, g)
+
+	// Deleting the fact takes its remaining edge with it, index entry included.
+	if err := g.Delete(fact); err != nil {
+		t.Fatalf("Delete(fact) = %v, want nil", err)
+	}
+	if g.Get(about.Key()) != nil {
+		t.Errorf("the IsAbout node outlived its fact, want it pruned")
+	}
+	if _, err := g.GetTextIndex().Retrieve(about.Key()); !errors.Is(err, index.ErrIndexNotFound) {
+		t.Errorf("text index Retrieve(IsAbout) after pruning = %v, want ErrIndexNotFound", err)
+	}
+	if got, want := len(g.Nodes()), 1; got != want {
+		t.Errorf("len(Nodes()) after Delete(fact) = %d, want %d (the topic alone)", got, want)
+	}
+	if got := g.Size(); got != 0 {
+		t.Errorf("Size() = %d, want 0", got)
+	}
+	assertEdgesResolve(t, g)
 }
 
 func TestInMemoryGraphIndexes(t *testing.T) {
