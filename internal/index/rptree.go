@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/RonsenbergVI/fraise/internal/comparator"
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/containers/trees"
@@ -62,6 +63,8 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 	// keeps rebuild cost amortised O(1) per write while capping memory at
 	// twice the live set.
 	flushFactor int
+
+	compare comparator.Comparator[K] // vector key ordering
 }
 
 // NewRPTreeIndex returns an empty RPTreeIndex holding numTrees random-projection
@@ -70,8 +73,9 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 // independent projection. A dim of 0 defers forest construction until the
 // first Insert, whose vector fixes the index dimensionality. flushFactor is the
 // garbage compaction threshold (entries per live vector); a value <= 0 falls
-// back to the config default.
-func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees int, seed uint64, flushFactor int) *RPTreeIndex[K, P] {
+// back to the config default. compare orders vector keys, the tiebreak Search
+// ranks equidistant vectors by.
+func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees int, seed uint64, flushFactor int, compare comparator.Comparator[K]) *RPTreeIndex[K, P] {
 	if flushFactor <= 0 {
 		flushFactor = config.DefaultFlushFactor
 	}
@@ -82,6 +86,7 @@ func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees in
 		numTrees:    numTrees,
 		seed:        seed,
 		flushFactor: flushFactor,
+		compare:     compare,
 	}
 	if dim > 0 {
 		idx.forest = idx.newForest()
@@ -193,7 +198,10 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 
 // Search fans query out across the forest, pools the candidates, re-ranks them
 // by true distance and returns the keys of the k nearest vectors, nearest
-// first, together with their distances to the query.
+// first, together with their distances to the query. Equidistant vectors are
+// ordered by key: which of them the trees happen to surface first is an
+// artefact of insertion order, and the ranking SearchIndex promises is a total
+// order that survives truncation to k.
 func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K, []P, error) {
 	if len(idx.vectors) == 0 {
 		return nil, nil, ErrEmptyIndex
@@ -229,7 +237,12 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K,
 		}
 	}
 
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].d < candidates[j].d })
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].d != candidates[j].d {
+			return candidates[i].d < candidates[j].d
+		}
+		return idx.compare(candidates[i].key, candidates[j].key) < 0
+	})
 	if len(candidates) > k {
 		candidates = candidates[:k]
 	}

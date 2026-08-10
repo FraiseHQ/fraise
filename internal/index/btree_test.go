@@ -27,11 +27,12 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/RonsenbergVI/fraise/internal/comparator"
 	"github.com/RonsenbergVI/fraise/internal/index"
 )
 
 func TestBTreeIndexInsertAndRetrieve(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 
 	if err := idx.Insert(1, "the quick brown fox"); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
@@ -50,21 +51,21 @@ func TestBTreeIndexInsertAndRetrieve(t *testing.T) {
 }
 
 func TestBTreeIndexRetrieveMissing(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if _, err := idx.Retrieve(99); !errors.Is(err, index.ErrIndexNotFound) {
 		t.Errorf("Retrieve(99) = %v, want ErrIndexNotFound", err)
 	}
 }
 
 func TestBTreeIndexSearchEmpty(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if _, _, err := idx.Search("anything", 0); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search on empty index = %v, want ErrEmptyIndex", err)
 	}
 }
 
 func TestBTreeIndexSearchRanksByMatchCount(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	docs := map[int]string{
 		1: "the quick brown fox jumps over the lazy dog",
 		2: "the quick brown fox",
@@ -83,15 +84,56 @@ func TestBTreeIndexSearchRanksByMatchCount(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("Search returned %d keys, want 2: %v", len(got), got)
 	}
-	// Both docs 1 and 2 match all three terms equally; doc 3 matches none.
-	seen := map[int]bool{got[0]: true, got[1]: true}
-	if !seen[1] || !seen[2] {
-		t.Errorf("Search() = %v, want {1,2} in some order", got)
+	// Docs 1 and 2 match all three terms equally and doc 3 matches none, so the
+	// key tiebreak decides the order of the two winners.
+	if want := []int{1, 2}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Search() = %v, want %v", got, want)
+	}
+}
+
+// TestBTreeIndexSearchOrdersTiesByKey pins the tiebreak that makes the ranking a
+// total order: documents matching the same number of query terms are ranked by
+// key, not in the order the posting map happened to yield them. The search is
+// repeated because that map order changes between calls — one pass can agree
+// with the expected order by luck — and truncation to k makes the difference
+// user-visible, since it keeps the head of whatever order the sort produced.
+func TestBTreeIndexSearchOrdersTiesByKey(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	// Every document contains "sky" once, so the match count never separates
+	// them; the keys are inserted out of order so ascending order cannot come
+	// from insertion order.
+	for _, key := range []int{7, 3, 9, 1, 5} {
+		if err := idx.Insert(key, "sky"); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+
+	cases := []struct {
+		name string
+		k    int
+		want []int
+	}{
+		{"every match, in key order", 0, []int{1, 3, 5, 7, 9}},
+		{"truncation keeps the lowest key", 1, []int{1}},
+		{"truncation keeps the lowest keys", 3, []int{1, 3, 5}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < 20; i++ {
+				got, _, err := idx.Search("sky", tc.k)
+				if err != nil {
+					t.Fatalf("Search(sky, %d) = %v, want nil", tc.k, err)
+				}
+				if !reflect.DeepEqual(got, tc.want) {
+					t.Fatalf("Search(sky, %d) = %v on call %d, want %v every call", tc.k, got, i+1, tc.want)
+				}
+			}
+		})
 	}
 }
 
 func TestBTreeIndexSearchNoMatchOnNonEmptyIndex(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if err := idx.Insert(1, "apples and oranges"); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -106,7 +148,7 @@ func TestBTreeIndexSearchNoMatchOnNonEmptyIndex(t *testing.T) {
 }
 
 func TestBTreeIndexUpdateMovesPostings(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if err := idx.Insert(1, "apples"); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -124,14 +166,14 @@ func TestBTreeIndexUpdateMovesPostings(t *testing.T) {
 }
 
 func TestBTreeIndexUpdateMissing(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if err := idx.Update(1, "x"); !errors.Is(err, index.ErrIndexNotFound) {
 		t.Errorf("Update on missing key = %v, want ErrIndexNotFound", err)
 	}
 }
 
 func TestBTreeIndexDelete(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if err := idx.Insert(1, "shared term"); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -167,14 +209,14 @@ func TestBTreeIndexDelete(t *testing.T) {
 }
 
 func TestBTreeIndexDeleteMissing(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if err := idx.Delete(1); !errors.Is(err, index.ErrIndexNotFound) {
 		t.Errorf("Delete on missing key = %v, want ErrIndexNotFound", err)
 	}
 }
 
 func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if err := idx.Insert(1, "first version"); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -199,7 +241,7 @@ func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
 // float64. Doc 1 contains both query terms (score 2), doc 2 only one (score 1).
 func textScoresRankByMatchCount[P float32 | float64](t *testing.T) {
 	t.Helper()
-	idx := index.NewBTreeIndex[int, P]()
+	idx := index.NewBTreeIndex[int, P](comparator.OrderedComparator[int])
 	if err := idx.Insert(1, "red green"); err != nil {
 		t.Fatalf("Insert(1) = %v, want nil", err)
 	}
@@ -227,7 +269,7 @@ func TestBTreeIndexScoresByMatchCount_float32(t *testing.T) { textScoresRankByMa
 // same bound the graph now applies to text seeds (SeedSize), so text and vector
 // seeds are gathered symmetrically.
 func TestBTreeIndexSearchTopKBounds(t *testing.T) {
-	idx := index.NewBTreeIndex[int, float64]()
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	// Four documents, all matching "sky", plus a term that ranks one highest.
 	docs := map[int]string{
 		1: "sky",

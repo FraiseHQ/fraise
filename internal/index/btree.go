@@ -44,16 +44,19 @@ type BTreeIndex[K comparable, P float32 | float64] struct {
 	postings  map[string]map[K]struct{}  // term -> keys of documents containing it
 	documents map[K]string               // key -> raw document text
 	tokenizer Tokenizer
+	compare   comparator.Comparator[K] // document key ordering
 }
 
 // NewBTreeIndex returns an empty BTreeIndex whose term dictionary is an ordered
-// BTree over lexicographically sorted terms.
-func NewBTreeIndex[K comparable, P float32 | float64]() *BTreeIndex[K, P] {
+// BTree over lexicographically sorted terms. compare orders document keys, the
+// tiebreak Search ranks equally-matching documents by.
+func NewBTreeIndex[K comparable, P float32 | float64](compare comparator.Comparator[K]) *BTreeIndex[K, P] {
 	return &BTreeIndex[K, P]{
 		tree:      trees.NewBTree[K, string, P](32, comparator.OrderedComparator[string]),
 		postings:  make(map[string]map[K]struct{}),
 		documents: make(map[K]string),
 		tokenizer: SimpleTokenizer{},
+		compare:   compare,
 	}
 }
 
@@ -96,8 +99,12 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 
 // Search tokenizes query, combines the matching posting lists and returns the
 // document keys ranked by relevance (the number of query terms they contain),
-// best first, with a parallel slice of those match counts as scores. k bounds
-// the number of results; k <= 0 returns every match.
+// best first, with a parallel slice of those match counts as scores. Documents
+// matching the same number of terms are ordered by key, so the ranking is the
+// total order SearchIndex promises: the candidates come out of the posting maps
+// in an arbitrary order, and it is the whole ranking — not just the tied group —
+// that would otherwise vary between identical queries once k truncates it.
+// k bounds the number of results; k <= 0 returns every match.
 func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	if len(idx.documents) == 0 {
 		return nil, nil, ErrEmptyIndex
@@ -114,7 +121,12 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	for key := range counts {
 		keys = append(keys, key)
 	}
-	sort.Slice(keys, func(i, j int) bool { return counts[keys[i]] > counts[keys[j]] })
+	sort.Slice(keys, func(i, j int) bool {
+		if counts[keys[i]] != counts[keys[j]] {
+			return counts[keys[i]] > counts[keys[j]]
+		}
+		return idx.compare(keys[i], keys[j]) < 0
+	})
 	if k > 0 && len(keys) > k {
 		keys = keys[:k]
 	}

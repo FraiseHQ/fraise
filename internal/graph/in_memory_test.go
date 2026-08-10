@@ -24,6 +24,7 @@ package graph_test
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -61,6 +62,14 @@ func values(nodes []*graph.Node[uint64]) []string {
 	out := make([]string, len(nodes))
 	for i, n := range nodes {
 		out[i] = (*n).GetValue()
+	}
+	return out
+}
+
+func keys(nodes []*graph.Node[uint64]) []uint64 {
+	out := make([]uint64, len(nodes))
+	for i, n := range nodes {
+		out[i] = (*n).Key()
 	}
 	return out
 }
@@ -362,6 +371,63 @@ func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	}
 	if scores[0] != 1.0 {
 		t.Errorf("score with decay disabled = %v, want exactly 1.0", scores[0])
+	}
+}
+
+// TestInMemoryGraphSearchOrdersTiesByKey pins the total order Search ranks by:
+// score descending, then fact key. Two facts reached at the same hop from the
+// same seed and stamped at the same instant score identically — relevance and
+// decay cannot separate them — so without the key tiebreak they come back in
+// whatever order the score map was iterated in, and top truncates that
+// arbitrary order. Each case repeats the query because that map order changes
+// between calls: a single pass can agree by luck.
+func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+
+	seed := mkFact(g, "alice works at acme", now)
+	tied1 := mkFact(g, "alice lives in paris", now)
+	tied2 := mkFact(g, "alice plays tennis", now)
+	entity := mkEntity(g, "alice", now)
+	mustSet(t, g, seed)
+	mustSet(t, g, tied1)
+	mustSet(t, g, tied2)
+	mustSet(t, g, entity)
+	// Only the seed matches "acme"; the other two facts are two hops away
+	// through the shared entity, so both carry the same attenuation of the same
+	// seed score.
+	for _, fact := range []*graph.Fact[uint64]{&seed, &tied1, &tied2} {
+		mustSet(t, g, graph.Mentions[uint64]{Fact: fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	}
+
+	// The premise of the test: the two entity-linked facts score equally to the
+	// bit, so nothing but the key can order them.
+	if _, scores := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{}); len(scores) != 3 || scores[1] != scores[2] {
+		t.Fatalf("Search(acme, depth=2) scores = %v, want three hits whose last two tie", scores)
+	}
+
+	lower, higher := tied1.Key(), tied2.Key()
+	if higher < lower {
+		lower, higher = higher, lower
+	}
+
+	cases := []struct {
+		name string
+		top  int
+		want []uint64
+	}{
+		{"tied facts follow the seed in key order", 10, []uint64{seed.Key(), lower, higher}},
+		{"truncation keeps the lower tied key", 2, []uint64{seed.Key(), lower}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < 20; i++ {
+				nodes, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, tc.top, time.Time{}, time.Time{})
+				if got := keys(nodes); !reflect.DeepEqual(got, tc.want) {
+					t.Fatalf("Search(acme, top=%d) keys = %v on call %d, want %v every call (%v)", tc.top, got, i+1, tc.want, values(nodes))
+				}
+			}
+		})
 	}
 }
 

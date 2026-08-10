@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RonsenbergVI/fraise/internal/comparator"
 	"github.com/RonsenbergVI/fraise/internal/config"
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/hash"
@@ -81,13 +82,14 @@ func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemor
 		idToNodes:     make(map[K]Node[K]),
 		nodeToSources: make(map[K]map[K]K),
 		nodeToTargets: make(map[K]map[K]K),
-		textIndex:     index.NewBTreeIndex[K, P](),
+		textIndex:     index.NewBTreeIndex[K, P](comparator.OrderedComparator[K]),
 		vectorIndex: index.NewRPTreeIndex[K, P](
 			0,
 			config.DB.VectorSearch.ProjectionDimension,
 			config.DB.VectorSearch.NumberTrees,
 			config.DB.VectorSearch.Seed,
 			config.DB.VectorSearch.FlushFactor,
+			comparator.OrderedComparator[K],
 		),
 		hasher: hash.NewHasher[K](config),
 		config: config,
@@ -288,35 +290,38 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	// C. Time filtered (since or until)
 
-	filtered, ranked := g.timeFilter(neighbors, scores, since, until)
+	candidates, ranked := g.timeFilter(neighbors, scores, since, until)
 
-	// D. Truncate search results
+	// D. Rank the candidates and truncate to top
 	//
-	// filtered and ranked are parallel slices; sort an index permutation
-	// by score so both stay aligned, then truncate to top.
+	// The candidates arrive in the order the score map was iterated in, so the
+	// ranking has to be a total order for identical queries to return identical
+	// hits: score descending, then fact key. Facts of equal score are ordered
+	// by key rather than left as the map presented them, because truncation
+	// would otherwise keep an arbitrary subset of a tied group.
 
-	order := make([]int, len(filtered))
-	for i := range order {
-		order[i] = i
-	}
-	sort.Slice(order, func(i, j int) bool {
-		return ranked[order[i]] > ranked[order[j]]
+	sort.Slice(candidates, func(i, j int) bool {
+		if ranked[candidates[i]] != ranked[candidates[j]] {
+			return ranked[candidates[i]] > ranked[candidates[j]]
+		}
+		return candidates[i] < candidates[j]
 	})
 
 	limit := top
-	if limit <= 0 || limit > len(order) {
-		limit = len(order)
+	if limit <= 0 || limit > len(candidates) {
+		limit = len(candidates)
 	}
 
 	nodes := make([]*Node[K], limit)
 	scoresOut := make([]P, limit)
-	for i := 0; i < limit; i++ {
-		nodes[i] = filtered[order[i]]
-		scoresOut[i] = ranked[order[i]]
+	for i, key := range candidates[:limit] {
+		node := g.idToNodes[key]
+		nodes[i] = &node
+		scoresOut[i] = ranked[key]
 	}
 
 	logger.Debug("Graph search completed",
-		"seeds", len(seeds), "candidates", len(filtered), "returned", limit)
+		"seeds", len(seeds), "candidates", len(candidates), "returned", limit)
 	return nodes, scoresOut
 }
 
@@ -357,6 +362,11 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	for key := range scores {
 		seeds = append(seeds, key)
 	}
+	// Seeds are expanded in key order because findNeighbours pools their
+	// contributions by summing floats, which is not associative: walking them
+	// in map-iteration order perturbs the low bits of a shared neighbour's
+	// score, and two identical queries can then rank it differently.
+	sort.Slice(seeds, func(i, j int) bool { return seeds[i] < seeds[j] })
 	logger.Debug("Gathered search seeds",
 		"text", textSeeds, "vector", vectorSeeds, "unique", len(seeds))
 	return seeds, scores
@@ -491,47 +501,48 @@ func (g *InMemoryGraph[K, P]) matchesFilter(key K, values []string) bool {
 }
 
 // timeFilter drops nodes outside [since, until) — either bound is unbounded
-// when zero — and materialises the survivors alongside their scores, decayed
-// by recency: a fact's score is multiplied by 0.5^(age/half-life), so of two
+// when zero — and returns the surviving keys with their scores decayed by
+// recency: a fact's score is multiplied by 0.5^(age/half-life), so of two
 // equally relevant facts the more recent one outranks the older ("recent
 // memories outrank older ones"). The half-life comes from Engine.Halflife; a
 // non-positive value disables decay. A timestamp in the future decays as age
 // zero — recency never boosts a score above its relevance.
-func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Time, until time.Time) ([]*Node[K], []P) {
+func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Time, until time.Time) ([]K, map[K]P) {
 	now := time.Now()
 	halflife := g.config.Engine.Halflife
 
-	nodes := make([]*Node[K], 0, len(keys))
-	ranked := make([]P, 0, len(keys))
+	kept := make([]K, 0, len(keys))
 	for _, key := range keys {
 		node, ok := g.idToNodes[key]
 		if !ok {
+			delete(scores, key)
 			continue
 		}
 		// Only facts are memories: Topic/NamedEntity nodes exist to seed and
 		// filter searches (they are walked through and matched against), but
 		// they are never returned as hits themselves.
 		if _, isFact := node.(Fact[K]); !isFact {
+			delete(scores, key)
 			continue
 		}
 		ts := node.GetAttributes().Timestamp
 		if !since.IsZero() && ts.Before(since) {
+			delete(scores, key)
 			continue
 		}
 		if !until.IsZero() && !ts.Before(until) {
+			delete(scores, key)
 			continue
 		}
 
-		score := scores[key]
 		if halflife > 0 {
 			if age := now.Sub(ts); age > 0 {
-				score *= P(math.Pow(0.5, age.Seconds()/halflife.Seconds()))
+				scores[key] *= P(math.Pow(0.5, age.Seconds()/halflife.Seconds()))
 			}
 		}
-		nodes = append(nodes, &node)
-		ranked = append(ranked, score)
+		kept = append(kept, key)
 	}
-	return nodes, ranked
+	return kept, scores
 }
 
 // Copy returns a deep copy of the graph: nodes, relationships and both
