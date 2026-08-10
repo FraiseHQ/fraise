@@ -37,7 +37,8 @@ this map current when claiming a graph:
     2  union-across-keywords facts         (test_recall.py)
     3  real-embedding documents            (test_vectors.py)
     4  vector dimension + forest bound     (test_vectors.py, test_stats.py)
-    5  bird facts + anchored recall        (test_concurrency.py, test_recall.py)
+    5  bird facts + anchored recall
+       + the topic-named fact             (test_concurrency.py, test_recall.py)
     6  vector round trip + cache probes   (test_vectors.py, test_query_cache.py)
     7  planet star                         (test_recall.py)
 """

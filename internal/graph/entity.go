@@ -49,8 +49,10 @@ func (f Fact[K]) GetAttributes() *NodeAttributes {
 	return &f.NodeAttributes
 }
 
+// Hash keys the fact by its text in the fact namespace, so a topic or entity
+// reading the same text is a different node (see Node).
 func (f Fact[K]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(f.Value)
+	return h.Hash("fact:" + f.Value)
 }
 
 type NamedEntity[K comparable] struct {
@@ -75,8 +77,10 @@ func (n *NamedEntity[K]) GetAttributes() *NodeAttributes {
 	return &n.NodeAttributes
 }
 
+// Hash keys the entity by its name in the entity namespace, so a fact whose
+// whole text is that name is a different node (see Node).
 func (n NamedEntity[K]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(n.Value)
+	return h.Hash("entity:" + n.Value)
 }
 
 type Topic[K comparable] struct {
@@ -102,6 +106,8 @@ func (t *Topic[K]) GetAttributes() *NodeAttributes {
 	return &t.NodeAttributes
 }
 
+// Hash keys the topic by its name in the topic namespace, so a fact whose whole
+// text is that name is a different node (see Node).
 func (t Topic[K]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(t.Value)
+	return h.Hash("topic:" + t.Value)
 }
