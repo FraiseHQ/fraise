@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.5](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.4...v0.1.0-beta.5) (2026-08-10)
+
+
+### Maintenance
+
+* sign releases with a cosign bundle ([#154](https://github.com/RonsenbergVI/fraise/issues/154)) ([cdc03da](https://github.com/RonsenbergVI/fraise/commit/cdc03da3bbaefd8e0be38e177356a0e72a7aaa56))
+
 ## [0.1.0-beta.4](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.3...v0.1.0-beta.4) (2026-08-10)
 
 
