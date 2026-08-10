@@ -1,0 +1,107 @@
+# HTTP API
+
+Fraise exposes three endpoints. Everything an agent does goes through one of
+them; the query language ([`query-spec.md`](query-spec.md)) carries the rest.
+
+The surface is deliberately small: handlers bind the request, hand the query
+string to the parser, refuse what the client got wrong, and wait for the engine.
+Nothing that decides *what an answer is* lives here.
+
+## `GET /` — health check
+
+```json
+{"status": "ok", "version": "0.1.0-beta.2"}
+```
+
+`version` is the SDKs' only handshake: they read it to check the server falls in
+the range they support (see `COMPATIBILITY.md`), so the field is part of the
+contract rather than a convenience.
+
+## `POST /api/v1/q` — query
+
+The one endpoint that reads and writes. The body carries the query and any
+parameters it references:
+
+```json
+{
+  "query": "recall bird topic:garden vec:$v top:5",
+  "parameters": {"v": [0.10, 0.22, 0.87]}
+}
+```
+
+| Field        | Type                   | Required | Notes                                   |
+|--------------|------------------------|----------|-----------------------------------------|
+| `query`      | string                 | yes      | one command per request                 |
+| `parameters` | object of float arrays | no       | binds `$name` references, e.g. `vec:$v` |
+
+Vectors stay out of the query string on purpose: the query is a cache key and a
+log line, and an inline embedding would ruin both.
+
+A successful response carries ranked hits, newest-and-strongest first:
+
+```json
+{
+  "results": {
+    "count": 1,
+    "hits": [
+      {
+        "value": "the parrot is turquoise",
+        "timestamp": "2026-08-09T17:40:53.851+01:00",
+        "score": 1
+      }
+    ]
+  }
+}
+```
+
+`count` is how many hits were returned, not how many exist — a recall is capped
+by `top:` and by `default-top`. A write returns 200 with an empty result set.
+
+## `GET /api/v1/stats` — per-graph snapshot
+
+One entry per graph, in selector order, computed on demand from the live graphs:
+
+```json
+{
+  "graphs": [
+    {"id": 0, "order": 12, "size": 18, "nodes": 30, "vectors": 4, "forest_entries": 6}
+  ]
+}
+```
+
+| Field            | Meaning                                                                     |
+|------------------|-----------------------------------------------------------------------------|
+| `order`          | entities (vertices)                                                         |
+| `size`           | relationships (edges)                                                       |
+| `nodes`          | total stored nodes                                                          |
+| `vectors`        | vectors indexed                                                             |
+| `forest_entries` | entries in the vector forest: live vectors plus garbage awaiting compaction |
+
+`forest_entries` exists to make an internal invariant observable: it must stay
+within `flush-factor × vectors`, so a leak in the vector index shows up here
+before it shows up as memory.
+
+## Errors
+
+Every failure returns the same shape, with the status code carrying the category:
+
+```json
+{"error": "parse error at column 24: Expected colon, but found \"food\""}
+```
+
+| Status | When                                                                                                                                  |
+|--------|---------------------------------------------------------------------------------------------------------------------------------------|
+| 400    | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a vector whose dimension does not match its graph, a graph selector outside the allocated range |
+| 429    | the scheduler queue stayed full past `enqueue-timeout` — back off and retry |
+| 503    | the server is shutting down |
+| 500    | an internal failure |
+
+Two properties are deliberate:
+
+* **A client error says exactly what is wrong**, including the column a parse
+  failed at and the values a field accepts. The caller is usually a model, and
+  a model can correct itself from a precise message — that is the whole reason
+  the parser refuses to guess.
+* **A 500 never carries detail.** The body is a generic message and the specifics
+  go to the log, so an internal error cannot leak the shape of the store to a
+  client.

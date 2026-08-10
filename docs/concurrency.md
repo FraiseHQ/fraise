@@ -39,11 +39,19 @@ Partition your data across graphs when:
 
 All graphs within a database share the same underlying configuration and lifecycle (Start/Stop).
 
+A graph is also an isolation boundary, not only a lock domain: no query reads
+across graphs, and no walk traverses between them. That is why the graph
+selector is validated twice — the parser rejects a selector that would not fit
+`uint8` (unchecked, `@256` would wrap to graph 0 and read another tenant's
+memory), and the server rejects one past the allocated count. Concurrency is the
+reason to have several graphs; isolation is the reason to be careful which one a
+query names.
+
 ## Scheduler
 
 The `Scheduler` manages when and how streams are executed. It implements a work-queue pattern:
 
-```
+```text
 Submit(stream)
      ↓
 Queue (buffered channel)
@@ -55,47 +63,83 @@ execute(stream) → Acquire lock → Commit in place
 
 ### Configuration
 
-The scheduler is configured via `config.Scheduler`:
+The scheduler is configured under `[scheduler]` (see
+[`configuration.md`](configuration.md)):
 
-- **BufferSize**: Capacity of the work queue (default varies by config)
-- **Workers**: Number of concurrent worker goroutines (configurable)
+- **workers**: number of concurrent worker goroutines (default 2)
+- **buffer-size**: capacity of the work queue (default 200)
+- **enqueue-timeout**: how long `Submit` waits for room before shedding
+  (default 2s)
 
-Typical configuration:
+The three are one setting in three parts: `workers` bounds how much executes at
+once, `buffer-size` bounds how much waits, and `enqueue-timeout` bounds how long
+a caller is willing to wait to become one of the waiting. Raising the first two
+without the third just moves where requests pile up.
 
-```go
-Config.Scheduler.BufferSize = 1000   // queue depth
-Config.Scheduler.Workers = 4          // parallel workers
-```
+### Submitting Work
+
+`Submit` is bounded and context-aware, which is what turns overload into
+backpressure instead of an ever-growing pile of blocked goroutines. It returns:
+
+- `nil` once the stream is on the queue
+- `ErrQueueFull` if the queue stayed saturated for `enqueue-timeout` — the
+  server answers **429**, telling the client to back off
+- `ErrShutdown` if the scheduler is stopping or was never started — **503**
+- a wrapped `ctx.Err()` if the caller gave up first, in which case there is no
+  live request left to answer
+
+A caller is therefore never parked indefinitely on a full, nil, or closed queue.
 
 ### Worker Lifecycle
 
 When the scheduler starts:
 
-1. A buffered channel of size `BufferSize` is created
-2. `Workers` goroutines are spawned, each waiting on the channel
+1. A buffered channel of size `buffer-size` is created, alongside a `quit`
+   channel
+2. `workers` goroutines are spawned, each selecting on both
 3. Streams submitted via `Submit()` are placed on the queue
 4. Workers process streams in queue order (FIFO)
 
 When the scheduler stops:
 
-1. The queue channel is closed
-2. Remaining workers drain the queue and exit
+1. `quit` is closed — **the queue itself is never closed**. Closing it would
+   panic a `Submit` that is mid-send; closing a separate channel refuses new
+   work without that race, and unparks any `Submit` waiting on a full queue.
+2. Each worker drains what is already buffered, then exits
 3. All goroutines are waited on (via `sync.WaitGroup`)
+4. `Stop` drains any straggler a `Submit` raced into the buffer as `quit`
+   closed. This runs single-threaded once the workers are gone, so an accepted
+   write is executed rather than silently dropped
+
+The invariant across all four steps: work that `Submit` accepted is work that
+runs. A write acknowledged and then dropped by shutdown would be indistinguishable
+from data loss.
 
 ### Stream Execution
 
-Each worker processes a single stream at a time:
+Each worker processes a single stream at a time, taking whichever of queue or
+quit is ready:
 
 ```go
-func (s *Scheduler) worker() {
-    for stream := range s.Queue {
-        err := s.execute(stream)
-        if err != nil {
-            logger.Error("Failed to execute stream", "error:", err)
+func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struct{}) {
+    defer s.wg.Done()
+    for {
+        select {
+        case stream := <-queue:
+            if err := s.execute(stream); err != nil {
+                logger.Error("Failed to execute stream", "error", err)
+            }
+        case <-quit:
+            // drain what is already buffered, then return
+            return
         }
     }
 }
 ```
+
+Whatever happens, `execute` signals completion: `stream.Finish()` is deferred
+before anything that can fail, so a request waiting on `Done()` is never left
+hanging by an early error such as an out-of-range graph selector.
 
 The `execute()` method:
 

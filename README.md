@@ -58,15 +58,6 @@ Two verbs. Sub-millisecond recall. No infrastructure to run.
 Fraise is early and pre-`v0.1.0`. It runs, and the core loop works end to end —
 but the API and the query language may still change between minor versions.
 
-| | |
-|---|---|
-| Storage, `remember` / `recall`, graph traversal | working |
-| Full-text search, ranking, `top` / `depth` / time filters | working |
-| Python + TypeScript SDKs | in progress |
-| Vector / semantic search | in progress |
-| BM25 ranking, ANN index | planned for `v0.2.0` |
-| Persistence | not yet — Fraise is in-memory only |
-
 Not production-ready. Good for experimenting with agent memory today.
 
 ## How it works
