@@ -23,11 +23,14 @@
 package query_test
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/graph"
 	"github.com/RonsenbergVI/fraise/internal/query"
 )
 
@@ -195,5 +198,52 @@ func TestParseRejectsOverLimits(t *testing.T) {
 	// A request within every ceiling still parses cleanly.
 	if _, err := query.Parse[string, float32]("recall@0 anna top:5 depth:1", nil, cfg); err != nil {
 		t.Errorf("within-limit recall returned error: %v", err)
+	}
+}
+
+// marshalHit builds a Hit over a fact with a fixed timestamp and returns its
+// JSON. The fact needs no hasher: marshalling reads only value and timestamp.
+func marshalHit(t *testing.T, contributions []graph.Contribution[float32]) string {
+	t.Helper()
+	var node graph.Node[string] = graph.Fact[string]{NodeAttributes: graph.NodeAttributes{
+		Value:     "the parrot is turquoise",
+		Timestamp: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+	}}
+	h := query.Hit[string, float32]{Node: &node, Score: 0.5, Contributions: contributions}
+	out, err := json.Marshal(h)
+	if err != nil {
+		t.Fatalf("Marshal(Hit) = %v, want nil", err)
+	}
+	return string(out)
+}
+
+// TestHitMarshalOmitsContributionsByDefault pins the ordinary wire shape: a
+// hit without contributions serializes exactly as it did before explain
+// existed — no "contributions" key, so /q responses did not change byte for
+// byte when the explain endpoint landed.
+func TestHitMarshalOmitsContributionsByDefault(t *testing.T) {
+	got := marshalHit(t, nil)
+	want := `{"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5}`
+	if got != want {
+		t.Errorf("Marshal(Hit) = %s, want %s", got, want)
+	}
+}
+
+// TestHitMarshalSerializesContributions pins the explain wire shape: each
+// contribution carries its source by name — the payload documents ranking to
+// clients that never see the Go constants — with its raw score, rank and hop.
+func TestHitMarshalSerializesContributions(t *testing.T) {
+	got := marshalHit(t, []graph.Contribution[float32]{
+		{Src: graph.SrcText, Score: 1, Rank: 0},
+		{Src: graph.SrcVector, Score: 0.5, Rank: 1},
+		{Src: graph.SrcGraph, Score: 2, Rank: 3, Hop: 2},
+	})
+	want := `{"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5,` +
+		`"contributions":[` +
+		`{"source":"text","score":1,"rank":0,"hop":0},` +
+		`{"source":"vector","score":0.5,"rank":1,"hop":0},` +
+		`{"source":"graph","score":2,"rank":3,"hop":2}]}`
+	if got != want {
+		t.Errorf("Marshal(Hit) = %s, want %s", got, want)
 	}
 }

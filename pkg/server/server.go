@@ -192,7 +192,11 @@ func (s *Server[K, P]) setupRoutes() {
 
 	// Query endpoint: /q for queries. The body-size cap runs before the handler
 	// so an over-large body is rejected before it is buffered.
-	v1.POST("/q", limitBody(s.Config.Server.MaxBodyBytes), s.handleQuery())
+	v1.POST("/q", limitBody(s.Config.Server.MaxBodyBytes), s.handleQuery(false))
+
+	// Explain endpoint: the same body and pipeline as /q, recall-only, with
+	// each hit carrying its per-source contribution breakdown.
+	v1.POST("/explain", limitBody(s.Config.Server.MaxBodyBytes), s.handleQuery(true))
 
 	// Stats endpoint: per-graph snapshots (nodes, edges, vectors, forest).
 	v1.GET("/stats", s.handleStats())

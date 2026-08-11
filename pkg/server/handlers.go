@@ -87,7 +87,13 @@ func (s *Server[K, P]) handleStats() gin.HandlerFunc {
 // It binds the JSON request body, parses the query string, asks the engine
 // for an execution plan, applies it, and streams back the results. Any
 // failure along the way is reported as an HTTP error.
-func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
+//
+// explain selects the explain output mode served on /api/v1/explain: the same
+// pipeline, but each hit carries its per-source contribution breakdown, and
+// writes are rejected — only a recall has a ranking to explain. It is one
+// handler with a flag rather than two, so the two routes cannot drift apart
+// in how they parse, validate or schedule.
+func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Decode the request body; reject malformed JSON with 400.
 		var req HandleQueryRequest[P]
@@ -107,6 +113,17 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 			logger.Warn("Rejecting unparsable query", "query", req.Query, "error", err)
 			status, msg := errorToResponse(err)
 			c.JSON(status, ErrorResponse{Error: msg})
+			return
+		}
+
+		// Only reads have a ranking to explain; rejecting a remember here
+		// keeps explain side-effect free, so probing a ranking can never
+		// mutate a graph.
+		if explain && q.IsWrite() {
+			logger.Warn("Rejecting write query on explain endpoint", "query", req.Query)
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error: "explain applies to recall queries only",
+			})
 			return
 		}
 
@@ -132,6 +149,11 @@ func (s *Server[K, P]) handleQuery() gin.HandlerFunc {
 			c.JSON(status, ErrorResponse{Error: msg})
 			return
 		}
+
+		// Explain is a property of this execution, so it is set on the
+		// stream after planning: the plan cache substitutes query objects on
+		// a hash hit, and a flag there would leak between requests.
+		stream.Explain = explain
 
 		logger.Debug("Query planned, dispatching to engine",
 			"graph", q.GetGraphID(), "write", q.IsWrite())

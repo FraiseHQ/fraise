@@ -40,6 +40,14 @@ type Stream[K comparable, P float32 | float64] struct {
 	Result *QueryResult[K, P]
 	Err    error
 
+	// Explain asks the read path to attach each hit's contribution records to
+	// the result. It lives on the stream, not the query, on purpose: the
+	// engine caches query objects by hash and substitutes them on a hit, so a
+	// flag on the query would either leak one request's explain choice into
+	// another's or have to widen the cache key for a bit that never changes
+	// the plan. The stream is built per request and never cached.
+	Explain bool
+
 	done chan struct{}
 	once sync.Once
 }
@@ -178,7 +186,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		"vector", !recall.Vector.Empty(),
 		"depth", recall.Parameters.Depth,
 		"top", recall.Parameters.Top)
-	nodes, scores := g.Search(
+	nodes, scores, contributions := g.Search(
 		recall.Keywords,
 		recall.Vector,
 		recall.Topics,
@@ -198,10 +206,16 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	for i := 0; i < n; i++ {
 		r.Hits[i].Node = nodes[i]
 		r.Hits[i].Score = scores[i]
+		// Contributions ride on the hit only in explain mode: a nil slice is
+		// what keeps them out of the ordinary response (see Hit.MarshalJSON),
+		// so the plain query wire format does not change shape.
+		if s.Explain {
+			r.Hits[i].Contributions = contributions[i]
+		}
 	}
 
 	s.Result = &r
-	logger.Debug("Read stream committed", "hits", n)
+	logger.Debug("Read stream committed", "hits", n, "explain", s.Explain)
 	return nil
 }
 
