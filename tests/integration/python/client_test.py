@@ -182,13 +182,9 @@ def test_embed_false_stores_a_fact_without_a_vector(
 
 
 def test_a_mismatched_vector_dimension_is_rejected(vector_graph, vector_dim, client):
-    """A vector of the wrong width is refused by the server, not silently dropped.
-
-    NOTE: the server surfaces this as a 500, not a 400 — the Commit error naming
-    the expected and actual dimensions is flattened into ErrCommitFailed before
-    it reaches the handler (see the same note in tests/e2e/vectors_test.py). The
-    assertion is therefore on FraiseAPIError itself rather than the status;
-    tighten it if that path is fixed.
+    """A vector of the wrong width is a 400 naming the expected and supplied
+    dimensions: a client error the caller can correct, not a server fault to
+    retry.
     """
     with pytest.raises(FraiseAPIError) as excinfo:
         client.remember(
@@ -196,8 +192,8 @@ def test_a_mismatched_vector_dimension_is_rejected(vector_graph, vector_dim, cli
             graph=vector_graph,
             vector=[0.5] * (vector_dim // 2),
         )
-    assert excinfo.value.status_code >= 400
-    assert excinfo.value.message
+    assert excinfo.value.status_code == 400
+    assert f"expects {vector_dim}, got {vector_dim // 2}" in excinfo.value.message
 
 
 def test_query_returns_the_decoded_body(client, round_trip_graph, no_match):
