@@ -71,23 +71,20 @@ def _clauses(prefix: str, values: Iterable[str] | None) -> list[str]:
 
 
 def _quote_value(value: str) -> str:
-    """Wrap a fact value in the single quotes the grammar requires.
+    """Wrap a value (a fact, or a recall's query phrase) in the grammar's quotes.
 
-    The grammar has no escape sequence inside a single-quoted phrase, so an
-    embedded apostrophe would close the phrase early. Reject it here with a clear
-    error rather than letting the server return an opaque parse failure.
+    Inside a quoted phrase every character is literal and an apostrophe is
+    escaped by doubling it (``''``), so any text travels verbatim —
+    ``it's blue`` goes over the wire as ``'it''s blue'`` and comes back with
+    its apostrophe intact.
 
     Raises:
         FraiseQueryError: if query is not valid
     """
     if not value.strip():
-        raise FraiseQueryError("fact value must not be empty")
-    if "'" in value:
-        raise FraiseQueryError(
-            "fact value must not contain a single quote ('); the query grammar "
-            f"has no way to escape it: {value!r}"
-        )
-    return f"'{value}'"
+        raise FraiseQueryError("a quoted value must not be empty")
+    escaped = value.replace("'", "''")
+    return f"'{escaped}'"
 
 
 def _selector(graph: int) -> str:
@@ -123,6 +120,7 @@ def build_recall(
     keywords: Sequence[str] | None = None,
     *,
     graph: int = 0,
+    query: str | None = None,
     topics: Sequence[str] | None = None,
     entities: Sequence[str] | None = None,
     top: int | None = None,
@@ -131,14 +129,22 @@ def build_recall(
 ) -> str:
     """Build a ``recall`` query string over ``graph``.
 
-    A recall needs at least one seed: keywords, a vector, or a topic/entity
-    filter. Building one with no seed at all is a programming error and is
-    rejected here.
+    ``query`` is a whole question sent as one quoted phrase term — the grammar
+    keeps every character inside the quotes literal, so natural language
+    ("What topic has John been blogging about recently?") travels verbatim
+    instead of as bare words that would collide with the grammar's reserved
+    keywords. ``keywords`` remain individual bare terms and may accompany it.
+
+    A recall needs at least one seed: a query phrase, keywords, a vector, or a
+    topic/entity filter. Building one with no seed at all is a programming
+    error and is rejected here.
 
     Raises:
         FraiseQueryError: if query is not valid
     """
     parts = [f"recall{_selector(graph)}"]
+    if query is not None:
+        parts.append(_quote_value(query))
     parts += [_token("keyword", k) for k in (keywords or [])]
     parts += _clauses("topic", topics)
     parts += _clauses("entity", entities)

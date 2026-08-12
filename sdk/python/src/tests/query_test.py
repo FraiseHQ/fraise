@@ -49,14 +49,46 @@ def test_remember_with_vector_appends_placeholder():
     assert got == f"remember@6 'the parrot is turquoise' vec:${VECTOR_PARAM}"
 
 
-def test_remember_rejects_apostrophe():
-    with pytest.raises(FraiseQueryError, match="single quote"):
-        build_remember("it's turquoise")
+def test_remember_escapes_apostrophes():
+    """An apostrophe is doubled — the grammar's phrase escape — not rejected."""
+    assert build_remember("it's turquoise") == "remember@0 'it''s turquoise'"
 
 
 def test_remember_rejects_empty_value():
     with pytest.raises(FraiseQueryError):
         build_remember("   ")
+
+
+def test_remember_keeps_free_text_verbatim_inside_the_quotes():
+    """Ingestion feeds phrases arbitrary prose: newlines, tabs, emoji and
+    backslashes travel inside the quotes untouched — only apostrophes are
+    rewritten, by doubling.
+    """
+    value = 'line one\nline two\t— déjà vu 😀 C:\\temp "quoted"'
+    assert build_remember(value) == f"remember@0 '{value}'"
+
+
+def test_recall_query_phrase_is_one_quoted_term():
+    """A whole question travels as a single quoted phrase term, so natural
+    language never collides with the grammar's reserved keywords.
+    """
+    got = build_recall(
+        query="What topic has John been blogging about recently",
+        top=10,
+        with_vector=True,
+    )
+    assert got == (
+        "recall@0 'What topic has John been blogging about recently' "
+        f"top:10 vec:${VECTOR_PARAM}"
+    )
+
+
+def test_recall_query_phrase_escapes_apostrophes():
+    """The phrase escape covers the query too: John's travels as John''s."""
+    assert (
+        build_recall(query="what is John's blog about")
+        == "recall@0 'what is John''s blog about'"
+    )
 
 
 def test_recall_with_keywords_and_clauses():

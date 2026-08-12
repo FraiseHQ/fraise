@@ -193,6 +193,12 @@ def test_recall_query_phrase_overrides_keywords_for_embedding(session):
         "zzznomatch", graph=6, query="a sleepy kitten in the sun"
     )
     embedder.assert_called_once_with("a sleepy kitten in the sun")
+    # The question itself travels as one quoted phrase term, ahead of the
+    # bare keywords — never as unquoted words the grammar could claim.
+    assert (
+        _sent(session)["query"]
+        == "recall@6 'a sleepy kitten in the sun' zzznomatch vec:$v"
+    )
 
 
 def test_explicit_vector_wins_over_embedder(session):

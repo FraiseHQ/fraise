@@ -139,8 +139,7 @@ def remember_tool(
         preference, a name, a decision. Store one self-contained fact per call.
 
         Args:
-            fact: A single, self-contained statement to remember. Must not
-                contain an apostrophe (').
+            fact: A single, self-contained statement to remember.
             topics: Optional subject tags grouping related facts (e.g. "color",
                 "travel"); facts sharing a topic become reachable together.
             entities: Optional named things the fact is about — a person, place,

@@ -27,9 +27,90 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 )
+
+// FuzzRememberPhraseRoundTrip is the server-side guarantee that quoting is a
+// total encoding for free-flowing text: for any UTF-8 value, escaping
+// apostrophes by doubling and wrapping in quotes parses back to exactly that
+// value, and the String() reconstruction re-parses to it as well. Ingestion
+// may feed a phrase any JSON-transportable character — nothing between the
+// quotes may be lost, altered, or end the phrase early. (Invalid UTF-8 is
+// skipped: JSON decoding has already replaced it before a query reaches the
+// parser, so it cannot arrive here.)
+func FuzzRememberPhraseRoundTrip(f *testing.F) {
+	for _, seed := range []string{
+		"plain words",
+		"it's got an apostrophe",
+		"''",
+		"'",
+		"trailing quote '",
+		"line one\nline two",
+		"a\r\n\tb",
+		"déjà vu 😀 東京",
+		`C:\temp\new "quoted"`,
+		"a\x00b",
+		"remember recall topic:x vec:$v @3 (since)",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		if !utf8.ValidString(value) {
+			t.Skip("JSON transport never delivers invalid UTF-8")
+		}
+		quoted := "'" + strings.ReplaceAll(value, "'", "''") + "'"
+		q := "remember " + quoted + " topic:x"
+
+		cmd, _, err := parser.Parse[uint64, float32](q)
+		if err != nil {
+			t.Fatalf("Parse(%q) = %v, want the escaped phrase to parse", q, err)
+		}
+		rc, ok := cmd.(*parser.RememberCommandNode[float32])
+		if !ok {
+			t.Fatalf("Parse returned %T, want *RememberCommandNode", cmd)
+		}
+		if got := rc.Value(); got != value {
+			t.Fatalf("stored value = %q, want %q", got, value)
+		}
+
+		// The reconstruction must survive a second trip: String() re-escapes.
+		cmd2, _, err := parser.Parse[uint64, float32](cmd.String())
+		if err != nil {
+			t.Fatalf("re-Parse(String() = %q) = %v", cmd.String(), err)
+		}
+		if got := cmd2.(*parser.RememberCommandNode[float32]).Value(); got != value {
+			t.Fatalf("re-parsed value = %q, want %q", got, value)
+		}
+	})
+}
+
+// FuzzParseNeverPanics feeds the parser arbitrary wire input: raw queries come
+// from any HTTP client, not just the SDK, so on garbage the server's only
+// acceptable answers are a parsed query or a positioned error — never a panic.
+func FuzzParseNeverPanics(f *testing.F) {
+	for _, seed := range []string{
+		"",
+		"recall",
+		"recall x",
+		"remember 'a' topic:b",
+		"recall@0 'q' top:3 vec:$v",
+		"'",
+		"''",
+		"recall '",
+		"@@@:::$$$",
+		"remember remember remember",
+		"recall x topic:'y' since:7d until:2026-01-15 depth:2 top:5",
+		"recall x \x00 y",
+		"recall 'a\x00b'",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		_, _, _ = parser.Parse[uint64, float32](raw) // must return, not panic
+	})
+}
 
 // TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned
 // error reaches the caller as-is. The call sites used to re-wrap with a bad
