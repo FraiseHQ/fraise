@@ -90,6 +90,7 @@ A non-positive `half-life` disables decay.
 | `max-depth`            | `-max-depth`            | `6`       | ceiling on `depth:`                                       |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096`    | ceiling on a bound vector's length                        |
 | `seed-size`            | `-seed-size`            | `10`      | seeds pulled from each source (text, vector)              |
+| `rrf-k`                | `-rrf-k`                | `60`      | dampening constant k in the RRF score fold Σ 1/(k+rank)   |
 
 `precision` is a compile-time type parameter: both instantiations are built into
 the binary and this setting picks which one runs.
@@ -97,6 +98,11 @@ the binary and this setting picks which one runs.
 The three ceilings exist so one query cannot force unbounded work. They bound
 what a *client* may ask for; the defaults above them are what it gets when it
 asks for nothing.
+
+`rrf-k` shapes how a recall fuses each source's ranking: higher values flatten
+rank differences near the top of each list, so broad agreement between sources
+counts for more and any single source's favourite counts for less. The default
+of 60 is the empirical standard from the RRF literature.
 
 ### `[db.hashing-function]`
 

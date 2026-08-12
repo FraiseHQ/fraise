@@ -148,6 +148,9 @@ func TestConfigSet_LimitsAndTimeouts(t *testing.T) {
 	if c.DB.MaxVectorDimension != config.DefaultMaxVectorDimension {
 		t.Errorf("DB.MaxVectorDimension default: got %d, want %d", c.DB.MaxVectorDimension, config.DefaultMaxVectorDimension)
 	}
+	if c.DB.RRFK != config.DefaultRRFK {
+		t.Errorf("DB.RRFK default: got %d, want %d", c.DB.RRFK, config.DefaultRRFK)
+	}
 
 	const contents = `
 [server]
@@ -162,6 +165,7 @@ max-body-bytes = 4096
 max-top = 50
 max-depth = 4
 max-vector-dimension = 128
+rrf-k = 90
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, config.DefaultConfigFile)
@@ -200,6 +204,9 @@ max-vector-dimension = 128
 	}
 	if f.DB.MaxVectorDimension != 128 {
 		t.Errorf("DB.MaxVectorDimension: got %d, want 128", f.DB.MaxVectorDimension)
+	}
+	if f.DB.RRFK != 90 {
+		t.Errorf("DB.RRFK: got %d, want 90", f.DB.RRFK)
 	}
 }
 

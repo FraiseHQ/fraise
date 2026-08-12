@@ -103,7 +103,7 @@ func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemor
 			config.DB.VectorSearch.FlushFactor,
 			comparator.OrderedComparator[K],
 		),
-		scorer: NewRRFScorer[K, P](defaultRRFK),
+		scorer: NewRRFScorer[K, P](config.DB.RRFK),
 		hasher: hash.NewHasher[K](config),
 		config: config,
 	}

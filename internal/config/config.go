@@ -129,6 +129,10 @@ type DBConfig struct {
 	// How many seeds to pull from each source (keywords and vector)
 	SeedSize int `toml:"seed-size"`
 
+	// RRF dampening constant k in the score fold Σ 1/(k+rank): higher values
+	// flatten rank differences near the top of each source's list
+	RRFK int `toml:"rrf-k"`
+
 	// database hashing function
 	HashingFunction HashingFunction `toml:"hashing-function"`
 
@@ -224,6 +228,7 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Seeds to pull from each source")
+	flagSet.IntVar(&config.DB.RRFK, "rrf-k", DefaultRRFK, "RRF dampening constant k in the score fold")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
@@ -345,6 +350,7 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
+	Adjust(&c.DB.RRFK, DefaultRRFK)
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)

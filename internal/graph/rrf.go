@@ -22,13 +22,6 @@
 
 package graph
 
-// defaultRRFK is the RRF dampening constant k. 60 is the empirical standard
-// from Cormack, Clarke & Büttcher (SIGIR 2009), where it beat every individual
-// ranker and Condorcet fusion across TREC collections; it is large enough that
-// a handful of mid-list sightings can outweigh one top-of-list sighting, which
-// is the consensus behaviour fusion exists for.
-const defaultRRFK = 60
-
 // RRFScorer fuses a candidate's contributions by reciprocal rank,
 // Σ 1/(k+Rank). Rank is the only input on purpose: the sources score on
 // incomparable scales (match count, similarity, a fused seed score), and RRF
@@ -43,7 +36,8 @@ const defaultRRFK = 60
 type RRFScorer[K comparable, P float32 | float64] struct {
 	// k dampens the reciprocal so rank differences near the top do not
 	// dominate: at k=60 ranks 0 and 1 differ by ~1.6%, not the 50% a bare
-	// reciprocal rank would give.
+	// reciprocal rank would give. It comes from the `rrf-k` config setting
+	// (config.DefaultRRFK documents why 60 is the default).
 	k int
 }
 

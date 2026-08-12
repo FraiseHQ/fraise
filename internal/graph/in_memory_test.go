@@ -452,6 +452,26 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphSearchUsesConfiguredRRFK pins the wiring of the `rrf-k`
+// setting: the scorer NewGraph installs folds with the configured k, not a
+// hardcoded one. A single fresh fact is a lone rank-0 text sighting, so its
+// score is 1/(k+0) — observable directly, up to the hair of decay between Set
+// and Search.
+func TestInMemoryGraphSearchUsesConfiguredRRFK(t *testing.T) {
+	cfg := testConfig()
+	cfg.DB.RRFK = 30 // distinct from the default 60, so the wiring is provable
+	g := graph.NewGraph[uint64, float64](cfg)
+	mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now()))
+
+	_, scores, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(scores) != 1 {
+		t.Fatalf("Search returned %d scores, want 1", len(scores))
+	}
+	if diff := scores[0]*30 - 1.0; diff > 1e-3 || diff < -1e-3 {
+		t.Errorf("score = %v, want ~1/30 (the lone rank-0 sighting under k = 30)", scores[0])
+	}
+}
+
 // TestInMemoryGraphSearchRecencyOrdersTies checks the user-visible promise:
 // of two facts matching the same term, the recent one outranks the much older
 // one. The old fact is aged ten half-lives so decay dominates whatever seed

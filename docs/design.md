@@ -98,7 +98,8 @@ The two are seeds, not answers. A recall pulls a bounded number of candidates
 from each source it can use (`seed-size`), then walks the graph outward from
 those seeds up to `depth:` hops. Every sighting of a fact — by the text index,
 the vector index, or a walk — is ranked within its source, nearest first, and
-the fact's score fuses those ranks reciprocally (RRF, Σ 1/(60+rank)): a fact
+the fact's score fuses those ranks reciprocally (RRF, Σ 1/(k+rank) with k set
+by `rrf-k`, default 60): a fact
 several sources agree on outranks one source's favourite, and a fact reached
 deep in a walk ranks behind the ones reached before it. Text and vector search
 decide *where* to start; the graph walk decides what comes with it. This is
