@@ -25,6 +25,7 @@ package graph_test
 import (
 	"errors"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -418,9 +419,9 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 
 // TestInMemoryGraphSearchRecencyDecayFactor pins the decay formula the README
 // promises ("recent memories outrank older ones"): a fact's score is
-// multiplied by 0.5^(age/half-life). A single fact is a rank-0 text seed with
-// no walk attenuation, so its pre-decay score is exactly 1.0 and the decay
-// factor is observable directly.
+// multiplied by 0.5^(age/half-life). A single fact is a rank-0 text seed, so
+// its pre-decay score is exactly 1/60 — one sighting under the RRF fold
+// Σ 1/(60+rank) — and the decay factor is observable as the ratio to it.
 func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	halflife := testConfig().Engine.Halflife // default 7d
 
@@ -444,10 +445,30 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 			}
 			// The fact ages a hair between Set and Search, so allow a small
 			// tolerance around the exact factor.
-			if diff := scores[0] - tc.want; diff > 1e-3 || diff < -1e-3 {
-				t.Errorf("score = %v, want ~%v (0.5^(age/half-life))", scores[0], tc.want)
+			if diff := scores[0]*60 - tc.want; diff > 1e-3 || diff < -1e-3 {
+				t.Errorf("score = %v, want ~%v/60 (0.5^(age/half-life) of the lone rank-0 sighting)", scores[0], tc.want)
 			}
 		})
+	}
+}
+
+// TestInMemoryGraphSearchUsesConfiguredRRFK pins the wiring of the `rrf-k`
+// setting: the scorer NewGraph installs folds with the configured k, not a
+// hardcoded one. A single fresh fact is a lone rank-0 text sighting, so its
+// score is 1/(k+0) — observable directly, up to the hair of decay between Set
+// and Search.
+func TestInMemoryGraphSearchUsesConfiguredRRFK(t *testing.T) {
+	cfg := testConfig()
+	cfg.DB.RRFK = 30 // distinct from the default 60, so the wiring is provable
+	g := graph.NewGraph[uint64, float64](cfg)
+	mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now()))
+
+	_, scores, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(scores) != 1 {
+		t.Fatalf("Search returned %d scores, want 1", len(scores))
+	}
+	if diff := scores[0]*30 - 1.0; diff > 1e-3 || diff < -1e-3 {
+		t.Errorf("score = %v, want ~1/30 (the lone rank-0 sighting under k = 30)", scores[0])
 	}
 }
 
@@ -475,7 +496,8 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchDecayDisabled checks that a non-positive half-life
-// switches decay off: an old fact keeps its full relevance score.
+// switches decay off: an old fact keeps its full relevance score — exactly
+// the 1/60 its lone rank-0 sighting fuses to, untouched by age.
 func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -486,15 +508,17 @@ func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	if len(scores) != 1 {
 		t.Fatalf("Search returned %d scores, want 1", len(scores))
 	}
-	if scores[0] != 1.0 {
-		t.Errorf("score with decay disabled = %v, want exactly 1.0", scores[0])
+	if scores[0] != 1.0/60 {
+		t.Errorf("score with decay disabled = %v, want exactly 1/60", scores[0])
 	}
 }
 
 // TestInMemoryGraphSearchOrdersTiesByKey pins the total order Search ranks by:
-// score descending, then fact key. Two facts reached at the same hop from the
-// same seed and stamped at the same instant score identically — relevance and
-// decay cannot separate them — so without the key tiebreak they come back in
+// score descending, then fact key. Under rank fusion equal ranks fuse to equal
+// scores wherever they occur: the two components here are disjoint, so each
+// seed's walk reaches its own leaf at walk rank 1, and the rank-1 text seed
+// lands on the same 1/(60+1) — a three-way tie to the bit that relevance and
+// decay cannot separate. Without the key tiebreak the trio comes back in
 // whatever order the score map was iterated in, and top truncates that
 // arbitrary order. Each case repeats the query because that map order changes
 // between calls: a single pass can agree by luck.
@@ -502,39 +526,46 @@ func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
 
-	seed := mkFact(g, "alice works at acme", now)
-	tied1 := mkFact(g, "alice lives in paris", now)
-	tied2 := mkFact(g, "alice plays tennis", now)
-	entity := mkEntity(g, "alice", now)
-	mustSet(t, g, seed)
-	mustSet(t, g, tied1)
-	mustSet(t, g, tied2)
-	mustSet(t, g, entity)
-	// Only the seed matches "acme"; the other two facts are two hops away
-	// through the shared entity, so both carry the same attenuation of the same
-	// seed score.
-	for _, fact := range []*graph.Fact[uint64]{&seed, &tied1, &tied2} {
-		mustSet(t, g, graph.Mentions[uint64]{Fact: fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	seedA := mkFact(g, "acme builds rockets", now)
+	seedB := mkFact(g, "acme ships engines", now)
+	leafA := mkFact(g, "the assembly line hums", now)
+	leafB := mkFact(g, "the test stand fires", now)
+	entityA := mkEntity(g, "orion", now)
+	entityB := mkEntity(g, "vulcan", now)
+	for _, node := range []graph.Node[uint64]{seedA, seedB, leafA, leafB, entityA, entityB} {
+		mustSet(t, g, node)
+	}
+	// Two disjoint components: each seed reaches its own leaf two hops away
+	// through its own entity, and nothing links the components.
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &seedA, NamedEntity: entityA, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &leafA, NamedEntity: entityA, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &seedB, NamedEntity: entityB, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &leafB, NamedEntity: entityB, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+
+	// Both seeds match "acme" once, so the text index ranks them by key: the
+	// lower-key seed is rank 0 and scores 1/60 alone at the top; the other
+	// seed and both leaves tie at 1/61.
+	first, second := seedA, seedB
+	if second.Key() < first.Key() {
+		first, second = second, first
 	}
 
-	// The premise of the test: the two entity-linked facts score equally to the
-	// bit, so nothing but the key can order them.
-	if _, scores, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{}); len(scores) != 3 || scores[1] != scores[2] {
-		t.Fatalf("Search(acme, depth=2) scores = %v, want three hits whose last two tie", scores)
+	// The premise of the test: the rank-1 seed and the two leaves score
+	// equally to the bit, so nothing but the key can order them.
+	if _, scores, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{}); len(scores) != 4 || scores[1] != scores[2] || scores[2] != scores[3] {
+		t.Fatalf("Search(acme, depth=2) scores = %v, want four hits whose last three tie", scores)
 	}
 
-	lower, higher := tied1.Key(), tied2.Key()
-	if higher < lower {
-		lower, higher = higher, lower
-	}
+	tied := []uint64{second.Key(), leafA.Key(), leafB.Key()}
+	sort.Slice(tied, func(i, j int) bool { return tied[i] < tied[j] })
 
 	cases := []struct {
 		name string
 		top  int
 		want []uint64
 	}{
-		{"tied facts follow the seed in key order", 10, []uint64{seed.Key(), lower, higher}},
-		{"truncation keeps the lower tied key", 2, []uint64{seed.Key(), lower}},
+		{"tied facts follow the top seed in key order", 10, []uint64{first.Key(), tied[0], tied[1], tied[2]}},
+		{"truncation keeps the lowest tied key", 2, []uint64{first.Key(), tied[0]}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -36,7 +36,9 @@ import (
 )
 
 // collectGraph builds an empty graph with the same vector-search shape the
-// exported suite's testConfig uses.
+// exported suite's testConfig uses. It runs the production RRF scorer, so the
+// seed scores stamped on SrcGraph contributions below are Σ 1/(60+rank) folds
+// of each seed's own sightings.
 func collectGraph() *InMemoryGraph[uint64, float64] {
 	cfg := config.New()
 	cfg.DB.VectorSearch.ProjectionDimension = 8
@@ -79,7 +81,7 @@ func TestCollectPoolsSourcesPerCandidate(t *testing.T) {
 	}
 
 	// The query embedding equals the stored one, so the similarity is exactly
-	// 1/(1+0): the seed's fused score is 1 (text, rank 0) + 1 (vector) = 2.
+	// 1/(1+0); the seed's fused score is its two rank-0 sightings, 2/60.
 	got := g.collect([]string{"acme"}, containers.NewVector[uint64]([]float64{1, 0}), nil, nil, 2)
 
 	want := Candidates[uint64, float64]{
@@ -88,10 +90,10 @@ func TestCollectPoolsSourcesPerCandidate(t *testing.T) {
 			{Src: SrcVector, Score: 1, Rank: 0, Hop: 0},
 		},
 		entity.Key(): {
-			{Src: SrcGraph, Score: 2, Rank: 0, Hop: 1},
+			{Src: SrcGraph, Score: 1.0/60 + 1.0/60, Rank: 0, Hop: 1},
 		},
 		linked.Key(): {
-			{Src: SrcGraph, Score: 2, Rank: 1, Hop: 2},
+			{Src: SrcGraph, Score: 1.0/60 + 1.0/60, Rank: 1, Hop: 2},
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -151,8 +153,8 @@ func TestCollectAccumulatesASightingPerSource(t *testing.T) {
 	)
 
 	// Both facts match "comet" once, so text rank falls back to key order:
-	// the lower key seeds at rank 0 with fused score 1, the higher at rank 1
-	// with 1/2.
+	// the lower key seeds at rank 0 with fused score 1/60, the higher at
+	// rank 1 with 1/61.
 	first, second := factA, factB
 	if second.Key() < first.Key() {
 		first, second = second, first
@@ -163,15 +165,15 @@ func TestCollectAccumulatesASightingPerSource(t *testing.T) {
 	want := Candidates[uint64, float64]{
 		first.Key(): {
 			{Src: SrcText, Score: 1, Rank: 0, Hop: 0},
-			{Src: SrcGraph, Score: 0.5, Rank: 1, Hop: 2}, // second's walk
+			{Src: SrcGraph, Score: 1.0 / 61, Rank: 1, Hop: 2}, // second's walk
 		},
 		second.Key(): {
 			{Src: SrcText, Score: 1, Rank: 1, Hop: 0},
-			{Src: SrcGraph, Score: 1, Rank: 1, Hop: 2}, // first's walk
+			{Src: SrcGraph, Score: 1.0 / 60, Rank: 1, Hop: 2}, // first's walk
 		},
 		entity.Key(): {
-			{Src: SrcGraph, Score: 1, Rank: 0, Hop: 1},   // first's walk
-			{Src: SrcGraph, Score: 0.5, Rank: 0, Hop: 1}, // second's walk
+			{Src: SrcGraph, Score: 1.0 / 60, Rank: 0, Hop: 1}, // first's walk
+			{Src: SrcGraph, Score: 1.0 / 61, Rank: 0, Hop: 1}, // second's walk
 		},
 	}
 	if !reflect.DeepEqual(got, want) {

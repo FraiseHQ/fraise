@@ -32,7 +32,8 @@ fact is keyed by its value, so rewrites are idempotent). Files run in any
 order, so tests sharing a graph must not depend on each other's facts. Keep
 this map current when claiming a graph:
 
-    0  comet + quasar shared-keyword facts (test_recall.py)
+    0  comet + quasar shared-keyword facts
+       + monsoon/geyser ranking clusters  (test_recall.py, scoring_test.py)
     1  loose remembers + concurrent load   (test_recall.py, test_concurrency.py)
     2  union-across-keywords facts
        + pulsar explain probes             (test_recall.py, explain_test.py)
@@ -40,7 +41,8 @@ this map current when claiming a graph:
     4  vector dimension + forest bound     (test_vectors.py, test_stats.py)
     5  bird facts + anchored recall
        + the topic-named fact             (test_concurrency.py, test_recall.py)
-    6  vector round trip + cache probes   (test_vectors.py, test_query_cache.py)
+    6  vector round trip + cache probes
+       + krakatoa fusion cluster          (test_vectors.py, test_query_cache.py)
     7  planet star                         (test_recall.py)
 """
 

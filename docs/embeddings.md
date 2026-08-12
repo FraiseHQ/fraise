@@ -122,6 +122,6 @@ between runs.
 
 A recall still needs at least one term. The vector index contributes
 `seed-size` candidates, the text index contributes its own, and the graph walk
-expands from both — attenuating by `hop-attenuation` per hop, then decaying by
-age. Semantic similarity is one signal feeding a ranking, never the ranking
-itself.
+expands from both — each source ranking its own sightings, the ranks fusing
+reciprocally, and the fused score then decaying by age. Semantic similarity is
+one signal feeding a ranking, never the ranking itself.
