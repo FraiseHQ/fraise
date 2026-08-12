@@ -218,6 +218,31 @@ func TestQueryVectorTooLarge(t *testing.T) {
 	}
 }
 
+// TestQueryVectorDimensionMismatch checks that a write whose vector does not
+// match the graph's established dimension is a client error: 400 with the
+// expected and supplied dimensions, not an opaque 500. The mismatch is only
+// detectable at commit time (the first vector fixes the dimension), so this
+// pins the commit error surviving the scheduler intact.
+func TestQueryVectorDimensionMismatch(t *testing.T) {
+	s := newTestServer(t)
+
+	// First write fixes graph 0's vector dimension at 3.
+	w := s.do(http.MethodPost, "/api/v1/q",
+		`{"query":"remember@0 'vec one' vec:$v","parameters":{"v":[0.1,0.2,0.3]}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("first write status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	w = s.do(http.MethodPost, "/api/v1/q",
+		`{"query":"remember@0 'vec two' vec:$v","parameters":{"v":[0.1,0.2,0.3,0.4]}}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "expects 3, got 4") {
+		t.Errorf("body = %q, want the expected vs supplied dimensions", w.Body.String())
+	}
+}
+
 // TestQuerySuccess checks that a well-formed recall query is planned, executed,
 // and returns 200 with a results payload.
 func TestQuerySuccess(t *testing.T) {

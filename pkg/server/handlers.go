@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/RonsenbergVI/fraise/internal/index"
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/internal/query/parser"
 	"github.com/RonsenbergVI/fraise/pkg/logger"
@@ -40,7 +41,8 @@ import (
 // how an internal error is surfaced, so handlers never hand-pick status codes:
 //
 //   - a *parser.Error is a client mistake (400) and its position is safe to show;
-//   - known client sentinels (bad parse, missing parameter) are 400;
+//   - known client sentinels (bad parse, missing parameter, a vector whose
+//     dimension does not match its graph) are 400;
 //   - anything else is treated as an internal fault (500) with a generic
 //     message, so we never leak internal error detail to clients (we log it).
 func errorToResponse(err error) (int, string) {
@@ -50,7 +52,8 @@ func errorToResponse(err error) (int, string) {
 		return http.StatusBadRequest, perr.Error()
 	case errors.Is(err, query.ErrParsingFailed),
 		errors.Is(err, query.ErrMissingParameter),
-		errors.Is(err, query.ErrLimitExceeded):
+		errors.Is(err, query.ErrLimitExceeded),
+		errors.Is(err, index.ErrInvalidDimension):
 		return http.StatusBadRequest, err.Error()
 	default:
 		return http.StatusInternalServerError, "internal server error"

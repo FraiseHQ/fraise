@@ -203,9 +203,15 @@ func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 	// Commit executes in place against the live graph: Acquire already holds
 	// the exclusive lock for writes, so no staging copy is needed and the write
 	// costs O(fact) rather than O(graph) (copy + merge-back did the latter).
+	//
+	// The commit error is wrapped, not replaced: the cause must survive so the
+	// HTTP boundary can tell a client fault (a vector-dimension mismatch) from
+	// an internal one — collapsing it here turned every rejected write into an
+	// opaque 500.
 	if err := stream.Commit(g); err != nil {
-		stream.Err = ErrStreamCommit
-		return ErrStreamCommit
+		err = fmt.Errorf("%w: %w", ErrStreamCommit, err)
+		stream.Err = err
+		return err
 	}
 	return nil
 }

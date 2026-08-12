@@ -37,5 +37,9 @@ var (
 	// ErrStreamExecution is returned when a stream fails while being executed.
 	ErrStreamExecution = errors.New("scheduler: error while executing stream")
 	// ErrStreamCommit is returned when a stream fails while being committed.
+	// It always wraps the underlying commit error rather than replacing it, so
+	// the HTTP boundary can errors.Is the cause out (e.g. a vector-dimension
+	// mismatch, a client error) instead of reporting every failed commit as an
+	// internal fault.
 	ErrStreamCommit = errors.New("scheduler: error while committing stream")
 )
