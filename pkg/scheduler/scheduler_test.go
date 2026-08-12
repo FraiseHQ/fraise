@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/RonsenbergVI/fraise/internal/index"
 	"github.com/RonsenbergVI/fraise/internal/query"
 	"github.com/RonsenbergVI/fraise/pkg/db"
 	"github.com/RonsenbergVI/fraise/pkg/scheduler"
@@ -48,10 +49,11 @@ func newStartedDB(t *testing.T, cfg *config.ConfigSet) *db.DB[uint64, float32] {
 	return d
 }
 
-// planStream parses q and returns the executable stream the scheduler runs.
-func planStream(t *testing.T, cfg *config.ConfigSet, q string) *query.Stream[uint64, float32] {
+// planStream parses q, binding any vector placeholders from params, and
+// returns the executable stream the scheduler runs.
+func planStream(t *testing.T, cfg *config.ConfigSet, q string, params map[string][]float32) *query.Stream[uint64, float32] {
 	t.Helper()
-	parsed, err := query.Parse[uint64, float32](q, nil, cfg)
+	parsed, err := query.Parse[uint64, float32](q, params, cfg)
 	if err != nil {
 		t.Fatalf("Parse(%q) returned error: %v", q, err)
 	}
@@ -99,7 +101,7 @@ func TestSubmitExecutesReadStream(t *testing.T) {
 	}
 	defer s.Stop()
 
-	stream := planStream(t, cfg, "recall@0 anna")
+	stream := planStream(t, cfg, "recall@0 anna", nil)
 	if err := s.Submit(context.Background(), stream); err != nil {
 		t.Fatalf("Submit returned error: %v", err)
 	}
@@ -132,7 +134,7 @@ func TestSubmitOutOfRangeGraph(t *testing.T) {
 	defer s.Stop()
 
 	// Selector past the last valid graph index.
-	stream := planStream(t, cfg, "recall@0 anna")
+	stream := planStream(t, cfg, "recall@0 anna", nil)
 	stream.Query.SetGraphID(uint8(s.DB.NumGraphs()))
 	if err := s.Submit(context.Background(), stream); err != nil {
 		t.Fatalf("Submit returned error: %v", err)
@@ -149,6 +151,55 @@ func TestSubmitOutOfRangeGraph(t *testing.T) {
 	}
 }
 
+// TestSubmitCommitErrorPreservesCause checks that a failed commit records both
+// the scheduler's own sentinel and the underlying cause on the stream: the HTTP
+// boundary classifies errors with errors.Is, so if the scheduler collapsed the
+// chain to a bare ErrStreamCommit a client fault (here a vector-dimension
+// mismatch) would surface as an internal 500.
+func TestSubmitCommitErrorPreservesCause(t *testing.T) {
+	cfg := config.New()
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer s.Stop()
+
+	// The first vector fixes graph 0's dimension at 3; the second, at 4, can
+	// only fail at commit time.
+	for i, q := range []struct {
+		query  string
+		params map[string][]float32
+	}{
+		{"remember@0 'vec one' vec:$v", map[string][]float32{"v": {1, 2, 3}}},
+		{"remember@0 'vec two' vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
+	} {
+		stream := planStream(t, cfg, q.query, q.params)
+		if err := s.Submit(context.Background(), stream); err != nil {
+			t.Fatalf("Submit(%q) returned error: %v", q.query, err)
+		}
+		select {
+		case <-stream.Done():
+		case <-time.After(2 * time.Second):
+			t.Fatalf("stream %d did not finish within the timeout", i)
+		}
+
+		if i == 0 {
+			if stream.Err != nil {
+				t.Fatalf("first write stream.Err = %v, want nil", stream.Err)
+			}
+			continue
+		}
+		if !errors.Is(stream.Err, scheduler.ErrStreamCommit) {
+			t.Errorf("stream.Err = %v, want it to wrap ErrStreamCommit", stream.Err)
+		}
+		if !errors.Is(stream.Err, index.ErrInvalidDimension) {
+			t.Errorf("stream.Err = %v, want it to preserve ErrInvalidDimension", stream.Err)
+		}
+	}
+}
+
 // TestSubmitNeverStartedReturnsShutdown checks that submitting to a scheduler
 // that never started returns ErrShutdown instead of hanging on a nil queue.
 func TestSubmitNeverStartedReturnsShutdown(t *testing.T) {
@@ -156,7 +207,7 @@ func TestSubmitNeverStartedReturnsShutdown(t *testing.T) {
 	s := scheduler.NewScheduler[uint64, float32](cfg)
 	s.DB = newStartedDB(t, cfg)
 
-	stream := planStream(t, cfg, "recall@0 anna")
+	stream := planStream(t, cfg, "recall@0 anna", nil)
 	if err := s.Submit(context.Background(), stream); !errors.Is(err, scheduler.ErrShutdown) {
 		t.Fatalf("Submit before Start = %v, want ErrShutdown", err)
 	}
@@ -174,7 +225,7 @@ func TestSubmitAfterStopReturnsShutdown(t *testing.T) {
 	}
 	s.Stop()
 
-	stream := planStream(t, cfg, "recall@0 anna")
+	stream := planStream(t, cfg, "recall@0 anna", nil)
 	if err := s.Submit(context.Background(), stream); !errors.Is(err, scheduler.ErrShutdown) {
 		t.Fatalf("Submit after Stop = %v, want ErrShutdown", err)
 	}
@@ -196,7 +247,7 @@ func TestSubmitCancelledContextDoesNotBlock(t *testing.T) {
 	defer s.Stop() // drains the buffered stream
 
 	// Fill the single buffer slot.
-	if err := s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna")); err != nil {
+	if err := s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna", nil)); err != nil {
 		t.Fatalf("first Submit returned error: %v", err)
 	}
 
@@ -205,7 +256,7 @@ func TestSubmitCancelledContextDoesNotBlock(t *testing.T) {
 	cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- s.Submit(ctx, planStream(t, cfg, "recall@0 anna")) }()
+	go func() { done <- s.Submit(ctx, planStream(t, cfg, "recall@0 anna", nil)) }()
 
 	select {
 	case err := <-done:
@@ -234,12 +285,12 @@ func TestSubmitFullQueueTimesOut(t *testing.T) {
 	defer s.Stop() // drains the buffered stream
 
 	// Fill the single buffer slot.
-	if err := s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna")); err != nil {
+	if err := s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna", nil)); err != nil {
 		t.Fatalf("first Submit returned error: %v", err)
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna")) }()
+	go func() { done <- s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna", nil)) }()
 
 	select {
 	case err := <-done:
@@ -265,7 +316,7 @@ func TestStopDrainsBufferedWrite(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 
-	stream := planStream(t, cfg, "remember@0 'the sky is blue' topic:color")
+	stream := planStream(t, cfg, "remember@0 'the sky is blue' topic:color", nil)
 	if err := s.Submit(context.Background(), stream); err != nil {
 		t.Fatalf("Submit returned error: %v", err)
 	}
@@ -311,7 +362,7 @@ func TestConcurrentSubmitStop(t *testing.T) {
 	const n = 64
 	streams := make([]*query.Stream[uint64, float32], n)
 	for i := range streams {
-		streams[i] = planStream(t, cfg, "recall@0 anna")
+		streams[i] = planStream(t, cfg, "recall@0 anna", nil)
 	}
 
 	var wg sync.WaitGroup

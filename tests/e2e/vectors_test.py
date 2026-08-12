@@ -91,18 +91,14 @@ def test_recall_missing_vector_parameter_is_rejected(query):
 
 def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim):
     """The first vector inserted into a graph fixes that graph's embedding
-    dimension; a later vector of a different size is rejected.
+    dimension; a later vector of a different size is a 400 naming the expected
+    and supplied dimensions — a client error, not a 500, so callers can tell
+    their bad input from a server fault.
 
     Both writes go to graph 4, whose only other writes (the forest-bound test
     in test_stats.py) use the same suite-wide dimension, so the first insert
     here establishes the dimension deterministically even across reruns against
     a long-lived server.
-
-    NOTE: the current server surfaces this as a 500 with a generic
-    "Error while comitting stream." message — the Commit error (which does name
-    the expected vs actual dimension) is flattened into ErrCommitFailed by the
-    scheduler's Stage step before it reaches the handler. This asserts today's
-    behavior; tighten to 400 with the dimension detail if that path is fixed.
     """
     # Establish the graph's dimension.
     status, body = query(
@@ -116,10 +112,13 @@ def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim
         "remember@4 'a differently sized vector' vec:$v topic:size",
         parameters={"v": vector(vector_dim // 2)},
     )
-    assert status == 500, (
-        f"expected the mismatched-dimension write to fail, got {status}: {body}"
+    assert status == 400, (
+        f"expected the mismatched-dimension write to be a client error, got {status}: {body}"
     )
-    assert body.get("error"), "expected an error message on the rejected write"
+    error = body.get("error", "")
+    assert f"expects {vector_dim}, got {vector_dim // 2}" in error, (
+        f"expected the error to name the expected vs supplied dimension, got {error!r}"
+    )
 
 
 # Documents on three clearly distinct subjects. A real sentence embedding places

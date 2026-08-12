@@ -50,6 +50,25 @@ func NewStream[K comparable, P float32 | float64](q Query[K, P]) *Stream[K, P] {
 	return &Stream[K, P]{Query: q, done: make(chan struct{})}
 }
 
+// storeAnchor stores an anchor node (entity or topic) and the edge binding it
+// to its fact, treating "already stored" as the shared-anchor upsert for both:
+// anchors are keyed by value and edges by their endpoints, so a re-remember
+// finds them present. Any other failure means the anchor never became
+// reachable — anchored recalls resolve a fact's anchors through its stored
+// neighbours, so an edge to a half-stored pair makes every entity:/topic:
+// filter miss — and the write is rejected rather than committed half-linked.
+func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, edge graph.Node[K]) error {
+	if err := g.Set(node); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
+		logger.Error("Failed to store anchor node", "anchor", node.GetValue(), "error", err)
+		return fmt.Errorf("storing anchor %q: %w", node.GetValue(), err)
+	}
+	if err := g.Set(edge); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
+		logger.Error("Failed to store anchor edge", "anchor", node.GetValue(), "error", err)
+		return fmt.Errorf("linking anchor %q: %w", node.GetValue(), err)
+	}
+	return nil
+}
+
 // Commit executes the stream's query against g directly. The caller must hold
 // the appropriate lock (the write lock for writes, a read lock for reads — see
 // Acquire): the lock is already exclusive for writes, so mutating g in place
@@ -114,16 +133,6 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 				Hasher: g.GetHasher(),
 			}
 
-			// Store the entity node itself: anchored recalls resolve a fact's
-			// tags through its neighbours in idToNodes, so an edge to a
-			// never-stored node makes every entity: filter miss. Entities are
-			// shared across facts (keyed by value), so an already-stored node
-			// is the normal upsert case, not an error.
-			if err := g.Set(&entity); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
-				logger.Error("Failed to store entity node", "entity", e, "error", err)
-				return fmt.Errorf("storing entity %q: %w", e, err)
-			}
-
 			mentions := graph.Mentions[K]{NodeAttributes: graph.NodeAttributes{
 				Timestamp: time.Now(),
 			},
@@ -132,7 +141,9 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 				Hasher:      g.GetHasher(),
 			}
 
-			g.Set(mentions)
+			if err := storeAnchor(g, &entity, mentions); err != nil {
+				return err
+			}
 		}
 
 		for _, t := range remember.Topics {
@@ -144,13 +155,6 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 				Hasher: g.GetHasher(),
 			}
 
-			// Same as entities above: the topic node must exist for topic:
-			// filters to resolve; re-storing a shared topic is the upsert case.
-			if err := g.Set(&topic); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
-				logger.Error("Failed to store topic node", "topic", t, "error", err)
-				return fmt.Errorf("storing topic %q: %w", t, err)
-			}
-
 			about := graph.IsAbout[K]{NodeAttributes: graph.NodeAttributes{
 				Timestamp: time.Now(),
 			},
@@ -159,7 +163,9 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 				Hasher: g.GetHasher(),
 			}
 
-			g.Set(about)
+			if err := storeAnchor(g, &topic, about); err != nil {
+				return err
+			}
 		}
 
 		r := QueryResult[K, P]{
