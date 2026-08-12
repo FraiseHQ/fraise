@@ -66,9 +66,7 @@ def test_explain_breaks_down_each_hit_by_source(query, explain):
             f"want one text and one graph sighting, got {contributions}"
         )
         assert by_source["text"]["hop"] == 0, "a seed sighting is hop 0"
-        assert by_source["text"]["rank"] in (0, 1), (
-            "two tied text seeds rank 0 and 1"
-        )
+        assert by_source["text"]["rank"] in (0, 1), "two tied text seeds rank 0 and 1"
         assert by_source["graph"]["hop"] == 2, (
             "the sibling fact is two hops away through the shared entity"
         )

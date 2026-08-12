@@ -90,7 +90,6 @@ A non-positive `half-life` disables decay.
 | `max-depth`            | `-max-depth`            | `6`       | ceiling on `depth:`                                       |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096`    | ceiling on a bound vector's length                        |
 | `seed-size`            | `-seed-size`            | `10`      | seeds pulled from each source (text, vector)              |
-| `hop-attenuation`      | `-hop-attenuation`      | `0.5`     | score multiplier per hop away from a seed                 |
 
 `precision` is a compile-time type parameter: both instantiations are built into
 the binary and this setting picks which one runs.
@@ -161,7 +160,6 @@ precision = "float64"
 default-top = 10
 default-depth = 3
 seed-size = 64
-hop-attenuation = 0.5
 
 [db.hashing-function]
 name = "xxhash"

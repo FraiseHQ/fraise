@@ -55,7 +55,7 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	// breadth-first walk over both edge directions; ranking nil applies no
 	// structural boost. scorer folds each candidate's contributions into its
 	// relevance score and is never nil — the graph starts with the
-	// CompatibilityScorer, because unscored candidates have no rank at all.
+	// RRFScorer, because unscored candidates have no rank at all.
 	traversal Traversal[K, P]
 	ranking   Ranking[K, P]
 	scorer    Scorer[K, P]
@@ -103,7 +103,7 @@ func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemor
 			config.DB.VectorSearch.FlushFactor,
 			comparator.OrderedComparator[K],
 		),
-		scorer: NewCompatibilityScorer[K, P](config.DB.HopAttenuation),
+		scorer: NewRRFScorer[K, P](defaultRRFK),
 		hasher: hash.NewHasher[K](config),
 		config: config,
 	}

@@ -139,10 +139,6 @@ const (
 	// contributes to a search.
 	DefaultSeedSize uint = 10
 
-	// DefaultHopAttenuation is the factor a seed's score is multiplied by per hop
-	// as the walk moves away from it.
-	DefaultHopAttenuation float32 = 0.5
-
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
 

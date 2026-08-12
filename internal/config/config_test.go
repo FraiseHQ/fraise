@@ -57,7 +57,6 @@ precision = "float32"
 default-top = 10
 default-depth = 3
 seed-size = 64
-hop-attenuation = 0.5
 
 [db.hashing-function]
 name = "xxhash"
@@ -103,9 +102,6 @@ name = "xxhash"
 	}
 	if c.DB.SeedSize != 64 {
 		t.Errorf("DB.SeedSize: got %d, want 64", c.DB.SeedSize)
-	}
-	if c.DB.HopAttenuation != 0.5 {
-		t.Errorf("DB.HopAttenuation: got %v, want 0.5", c.DB.HopAttenuation)
 	}
 	if c.Engine.CacheCapacity != 1024 {
 		t.Errorf("Engine.CacheCapacity: got %d, want 1024", c.Engine.CacheCapacity)
