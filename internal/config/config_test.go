@@ -57,7 +57,6 @@ precision = "float32"
 default-top = 10
 default-depth = 3
 seed-size = 64
-hop-attenuation = 0.5
 
 [db.hashing-function]
 name = "xxhash"
@@ -104,9 +103,6 @@ name = "xxhash"
 	if c.DB.SeedSize != 64 {
 		t.Errorf("DB.SeedSize: got %d, want 64", c.DB.SeedSize)
 	}
-	if c.DB.HopAttenuation != 0.5 {
-		t.Errorf("DB.HopAttenuation: got %v, want 0.5", c.DB.HopAttenuation)
-	}
 	if c.Engine.CacheCapacity != 1024 {
 		t.Errorf("Engine.CacheCapacity: got %d, want 1024", c.Engine.CacheCapacity)
 	}
@@ -152,6 +148,9 @@ func TestConfigSet_LimitsAndTimeouts(t *testing.T) {
 	if c.DB.MaxVectorDimension != config.DefaultMaxVectorDimension {
 		t.Errorf("DB.MaxVectorDimension default: got %d, want %d", c.DB.MaxVectorDimension, config.DefaultMaxVectorDimension)
 	}
+	if c.DB.RRFK != config.DefaultRRFK {
+		t.Errorf("DB.RRFK default: got %d, want %d", c.DB.RRFK, config.DefaultRRFK)
+	}
 
 	const contents = `
 [server]
@@ -166,6 +165,7 @@ max-body-bytes = 4096
 max-top = 50
 max-depth = 4
 max-vector-dimension = 128
+rrf-k = 90
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, config.DefaultConfigFile)
@@ -204,6 +204,9 @@ max-vector-dimension = 128
 	}
 	if f.DB.MaxVectorDimension != 128 {
 		t.Errorf("DB.MaxVectorDimension: got %d, want 128", f.DB.MaxVectorDimension)
+	}
+	if f.DB.RRFK != 90 {
+		t.Errorf("DB.RRFK: got %d, want 90", f.DB.RRFK)
 	}
 }
 

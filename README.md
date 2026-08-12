@@ -124,13 +124,11 @@ signature over `checksums.txt`, using the same `VERSION` and `BASE` as above:
 
 ```sh
 curl -sSfLO "${BASE}/checksums.txt"
-curl -sSfLO "${BASE}/checksums.txt.sig"
-curl -sSfLO "${BASE}/checksums.txt.pem"
+curl -sSfLO "${BASE}/checksums.txt.sigstore.json"
 
-# 1. the signature proves checksums.txt came from this repo's release workflow
+# 1. the bundle proves checksums.txt came from this repo's release workflow
 cosign verify-blob \
-  --certificate checksums.txt.pem \
-  --signature checksums.txt.sig \
+  --bundle checksums.txt.sigstore.json \
   --certificate-identity-regexp 'https://github.com/RonsenbergVI/fraise/.github/workflows/go.yaml@refs/tags/v.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   checksums.txt

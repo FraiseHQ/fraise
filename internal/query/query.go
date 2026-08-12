@@ -62,20 +62,53 @@ type QueryResult[K comparable, P float32 | float64] struct {
 type Hit[K comparable, P float32 | float64] struct {
 	Node  *graph.Node[K]
 	Score P
+
+	// Contributions is the hit's per-source score breakdown, populated only
+	// when the stream ran in explain mode; nil otherwise. nil doubles as the
+	// serialization switch — a recall hit always has at least one
+	// contribution, so nil unambiguously means "not asked for", never
+	// "asked for and empty".
+	Contributions []graph.Contribution[P]
+}
+
+// hitContribution is the wire shape of one contribution: the source is
+// serialized by name, not by its Go constant, because the payload documents
+// ranking to clients that never see the enum.
+type hitContribution[P float32 | float64] struct {
+	Source string `json:"source"`
+	Score  P      `json:"score"`
+	Rank   uint16 `json:"rank"`
+	Hop    uint8  `json:"hop"`
 }
 
 // MarshalJSON flattens the node into the hit so the response carries only the
-// value, timestamp and score, with no nested Node object.
+// value, timestamp and score, with no nested Node object. The contribution
+// breakdown appears only when the hit carries one (explain mode), keeping the
+// ordinary query response byte-compatible with what it was before explain
+// existed.
 func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	node := *h.Node
+
+	var contributions []hitContribution[P]
+	for _, c := range h.Contributions {
+		contributions = append(contributions, hitContribution[P]{
+			Source: c.Src.String(),
+			Score:  c.Score,
+			Rank:   c.Rank,
+			Hop:    c.Hop,
+		})
+	}
+
 	return json.Marshal(struct {
-		Value     string    `json:"value"`
-		Timestamp time.Time `json:"timestamp"`
-		Score     P         `json:"score"`
+		Value         string               `json:"value"`
+		Timestamp     time.Time            `json:"timestamp"`
+		Score         P                    `json:"score"`
+		Contributions []hitContribution[P] `json:"contributions,omitempty"`
 	}{
-		Value:     node.GetValue(),
-		Timestamp: node.GetTimestamp(),
-		Score:     h.Score,
+		Value:         node.GetValue(),
+		Timestamp:     node.GetTimestamp(),
+		Score:         h.Score,
+		Contributions: contributions,
 	})
 }
 

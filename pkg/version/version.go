@@ -35,7 +35,7 @@ import "strings"
 // GoReleaser additionally overrides it via -ldflags -X on a release build. The
 // linker only rewrites string variables that are uninitialized or set to a
 // constant expression, so this must stay a plain literal — never computed.
-var Version = "0.1.0-beta.2" // x-release-please-version
+var Version = "0.1.0-beta.6" // x-release-please-version
 
 var (
 	// Commit is the short git commit the binary was built from.

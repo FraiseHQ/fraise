@@ -25,6 +25,7 @@ package graph_test
 import (
 	"errors"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -72,6 +73,26 @@ func keys(nodes []*graph.Node[uint64]) []uint64 {
 		out[i] = (*n).Key()
 	}
 	return out
+}
+
+// assertEdgesResolve checks the invariant tying the two halves of an edge
+// together: every key the adjacency maps report is a relationship node the graph
+// still stores. Both maps are walked because they mirror each other, and a
+// deletion that forgets one leaves the graph disagreeing with itself.
+func assertEdgesResolve(t *testing.T, g *graph.InMemoryGraph[uint64, float64]) {
+	t.Helper()
+	for name, edges := range map[string]map[uint64]map[uint64]uint64{
+		"AdjacencyMap":   g.AdjacencyMap(),
+		"PredecessorMap": g.PredecessorMap(),
+	} {
+		for from, tos := range edges {
+			for to, edge := range tos {
+				if g.Get(edge) == nil {
+					t.Errorf("%s()[%d][%d] = %d, which is no longer a stored node", name, from, to, edge)
+				}
+			}
+		}
+	}
 }
 
 func TestInMemoryGraphSetGetPutDelete(t *testing.T) {
@@ -164,6 +185,103 @@ func TestInMemoryGraphRelationships(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphStoresAFactAndATopicOfTheSameText is the ticket repro:
+// `remember 'billing' topic:billing`. With one content-hash namespace the fact
+// and the topic keyed alike, so Set refused the topic as an existing node and
+// the IsAbout edge ran from the fact to itself — one node where three belong.
+func TestInMemoryGraphStoresAFactAndATopicOfTheSameText(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+
+	fact := mkFact(g, "billing", now)
+	topic := mkTopic(g, "billing", now)
+	mustSet(t, g, fact)
+	mustSet(t, g, topic)
+	mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+
+	factKey, topicKey := fact.Key(), topic.Key()
+	if factKey == topicKey {
+		t.Fatalf("fact and topic of the same text share key %d, want distinct nodes", factKey)
+	}
+	if got, want := len(g.Nodes()), 3; got != want {
+		t.Errorf("len(Nodes()) = %d, want %d (fact, topic and the edge)", got, want)
+	}
+
+	adj := g.AdjacencyMap()
+	if _, self := adj[factKey][factKey]; self {
+		t.Errorf("AdjacencyMap()[fact][fact] exists, want no self-referential edge")
+	}
+	if _, ok := adj[factKey][topicKey]; !ok {
+		t.Errorf("AdjacencyMap()[fact][topic] missing, want the IsAbout edge")
+	}
+	// The topic node has to be reachable as a topic for anchored recalls to
+	// resolve it, which is what the collision took away.
+	if got := g.Get(topicKey); got == nil {
+		t.Errorf("Get(topic) = nil, want the stored topic node")
+	} else if _, isTopic := got.(*graph.Topic[uint64]); !isTopic {
+		t.Errorf("Get(topic) = %T, want *graph.Topic", got)
+	}
+}
+
+// TestInMemoryGraphDeletePrunesIncidentRelationshipNodes checks the whole of
+// Delete's contract — the node "and, by extension, its index entries and
+// incident relationships". Unlinking an edge from the adjacency maps is not
+// enough: a Mentions node left in idToNodes describes an edge that no longer
+// exists, and Nodes, Stats and the text index all keep reporting it.
+func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+
+	fact := mkFact(g, "alice works at acme", now)
+	entity := mkEntity(g, "alice", now)
+	topic := mkTopic(g, "work", now)
+	mentions := graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()}
+	about := graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()}
+	for _, node := range []graph.Node[uint64]{fact, entity, topic, mentions, about} {
+		mustSet(t, g, node)
+	}
+	if got, want := len(g.Nodes()), 5; got != want {
+		t.Fatalf("len(Nodes()) = %d, want %d (three entities and two relationships)", got, want)
+	}
+
+	// Deleting the far endpoint of one edge prunes that edge's node and nothing
+	// else: the fact's other relationship is not incident to the entity.
+	if err := g.Delete(entity); err != nil {
+		t.Fatalf("Delete(entity) = %v, want nil", err)
+	}
+	if g.Get(mentions.Key()) != nil {
+		t.Errorf("the Mentions node outlived the entity it pointed at, want it pruned")
+	}
+	if g.Get(about.Key()) == nil {
+		t.Errorf("the IsAbout node was pruned, want only edges incident to the deleted node to go")
+	}
+	if got, want := len(g.Nodes()), 3; got != want {
+		t.Errorf("len(Nodes()) after Delete(entity) = %d, want %d (fact, topic, IsAbout)", got, want)
+	}
+	if got, want := g.Size(), 1; got != want {
+		t.Errorf("Size() after Delete(entity) = %d, want %d (fact -> topic remains)", got, want)
+	}
+	assertEdgesResolve(t, g)
+
+	// Deleting the fact takes its remaining edge with it, index entry included.
+	if err := g.Delete(fact); err != nil {
+		t.Fatalf("Delete(fact) = %v, want nil", err)
+	}
+	if g.Get(about.Key()) != nil {
+		t.Errorf("the IsAbout node outlived its fact, want it pruned")
+	}
+	if _, err := g.GetTextIndex().Retrieve(about.Key()); !errors.Is(err, index.ErrIndexNotFound) {
+		t.Errorf("text index Retrieve(IsAbout) after pruning = %v, want ErrIndexNotFound", err)
+	}
+	if got, want := len(g.Nodes()), 1; got != want {
+		t.Errorf("len(Nodes()) after Delete(fact) = %d, want %d (the topic alone)", got, want)
+	}
+	if got := g.Size(); got != 0 {
+		t.Errorf("Size() = %d, want 0", got)
+	}
+	assertEdgesResolve(t, g)
+}
+
 func TestInMemoryGraphIndexes(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
@@ -214,7 +332,7 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact1, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact3, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
-	nodes, scores := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, scores, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
 		t.Fatalf("Search(acme) = %v, want [alice works at acme]", values(nodes))
 	}
@@ -225,7 +343,7 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	// With depth 2 the walk crosses the shared entity into the related fact,
 	// which joins at an attenuated score. Only facts are hits, so the entity
 	// node itself never appears in the results.
-	nodes, scores = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{})
+	nodes, scores, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 {
 		t.Fatalf("Search(acme, depth=2) = %v, want 2 nodes", values(nodes))
 	}
@@ -255,7 +373,7 @@ func TestInMemoryGraphSearchByVector(t *testing.T) {
 		t.Fatalf("vector Insert = %v, want nil", err)
 	}
 
-	nodes, _ := g.Search(nil, containers.NewVector[uint64]([]float64{0.9, 0.1}), nil, nil, 0, 1, time.Time{}, time.Time{})
+	nodes, _, _ := g.Search(nil, containers.NewVector[uint64]([]float64{0.9, 0.1}), nil, nil, 0, 1, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alpha" {
 		t.Errorf("Search(vector near alpha) = %v, want [alpha]", values(nodes))
 	}
@@ -274,7 +392,7 @@ func TestInMemoryGraphSearchTopicFilter(t *testing.T) {
 	mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact1, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
 	// Both facts match "alice", but only fact1 is tagged with topic "work".
-	nodes, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
 		t.Errorf("Search(alice, topic=work) = %v, want [alice works at acme]", values(nodes))
 	}
@@ -288,12 +406,12 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 	mustSet(t, g, mkFact(g, "alice ancient fact", old))
 	mustSet(t, g, mkFact(g, "alice recent fact", recent))
 
-	nodes, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{})
+	nodes, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice recent fact" {
 		t.Errorf("Search(alice, since=2025) = %v, want [alice recent fact]", values(nodes))
 	}
 
-	nodes, _ = g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+	nodes, _, _ = g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice ancient fact" {
 		t.Errorf("Search(alice, until=2025) = %v, want [alice ancient fact]", values(nodes))
 	}
@@ -301,9 +419,9 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 
 // TestInMemoryGraphSearchRecencyDecayFactor pins the decay formula the README
 // promises ("recent memories outrank older ones"): a fact's score is
-// multiplied by 0.5^(age/half-life). A single fact is a rank-0 text seed with
-// no walk attenuation, so its pre-decay score is exactly 1.0 and the decay
-// factor is observable directly.
+// multiplied by 0.5^(age/half-life). A single fact is a rank-0 text seed, so
+// its pre-decay score is exactly 1/60 — one sighting under the RRF fold
+// Σ 1/(60+rank) — and the decay factor is observable as the ratio to it.
 func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	halflife := testConfig().Engine.Halflife // default 7d
 
@@ -321,16 +439,36 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 			g := newGraph()
 			mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now().Add(-tc.age)))
 
-			_, scores := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+			_, scores, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 			if len(scores) != 1 {
 				t.Fatalf("Search returned %d scores, want 1", len(scores))
 			}
 			// The fact ages a hair between Set and Search, so allow a small
 			// tolerance around the exact factor.
-			if diff := scores[0] - tc.want; diff > 1e-3 || diff < -1e-3 {
-				t.Errorf("score = %v, want ~%v (0.5^(age/half-life))", scores[0], tc.want)
+			if diff := scores[0]*60 - tc.want; diff > 1e-3 || diff < -1e-3 {
+				t.Errorf("score = %v, want ~%v/60 (0.5^(age/half-life) of the lone rank-0 sighting)", scores[0], tc.want)
 			}
 		})
+	}
+}
+
+// TestInMemoryGraphSearchUsesConfiguredRRFK pins the wiring of the `rrf-k`
+// setting: the scorer NewGraph installs folds with the configured k, not a
+// hardcoded one. A single fresh fact is a lone rank-0 text sighting, so its
+// score is 1/(k+0) — observable directly, up to the hair of decay between Set
+// and Search.
+func TestInMemoryGraphSearchUsesConfiguredRRFK(t *testing.T) {
+	cfg := testConfig()
+	cfg.DB.RRFK = 30 // distinct from the default 60, so the wiring is provable
+	g := graph.NewGraph[uint64, float64](cfg)
+	mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now()))
+
+	_, scores, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(scores) != 1 {
+		t.Fatalf("Search returned %d scores, want 1", len(scores))
+	}
+	if diff := scores[0]*30 - 1.0; diff > 1e-3 || diff < -1e-3 {
+		t.Errorf("score = %v, want ~1/30 (the lone rank-0 sighting under k = 30)", scores[0])
 	}
 }
 
@@ -345,7 +483,7 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 	mustSet(t, g, mkFact(g, "comet sighted in march", time.Now().Add(-10*halflife)))
 	mustSet(t, g, mkFact(g, "comet sighted today", time.Now()))
 
-	nodes, scores := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, scores, _ := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 {
 		t.Fatalf("Search(comet) returned %d nodes, want 2", len(nodes))
 	}
@@ -358,26 +496,29 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchDecayDisabled checks that a non-positive half-life
-// switches decay off: an old fact keeps its full relevance score.
+// switches decay off: an old fact keeps its full relevance score — exactly
+// the 1/60 its lone rank-0 sighting fuses to, untouched by age.
 func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	g := graph.NewGraph[uint64, float64](cfg)
 	mustSet(t, g, mkFact(g, "glacier survey notes", time.Now().Add(-365*24*time.Hour)))
 
-	_, scores := g.Search([]string{"glacier"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	_, scores, _ := g.Search([]string{"glacier"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if len(scores) != 1 {
 		t.Fatalf("Search returned %d scores, want 1", len(scores))
 	}
-	if scores[0] != 1.0 {
-		t.Errorf("score with decay disabled = %v, want exactly 1.0", scores[0])
+	if scores[0] != 1.0/60 {
+		t.Errorf("score with decay disabled = %v, want exactly 1/60", scores[0])
 	}
 }
 
 // TestInMemoryGraphSearchOrdersTiesByKey pins the total order Search ranks by:
-// score descending, then fact key. Two facts reached at the same hop from the
-// same seed and stamped at the same instant score identically — relevance and
-// decay cannot separate them — so without the key tiebreak they come back in
+// score descending, then fact key. Under rank fusion equal ranks fuse to equal
+// scores wherever they occur: the two components here are disjoint, so each
+// seed's walk reaches its own leaf at walk rank 1, and the rank-1 text seed
+// lands on the same 1/(60+1) — a three-way tie to the bit that relevance and
+// decay cannot separate. Without the key tiebreak the trio comes back in
 // whatever order the score map was iterated in, and top truncates that
 // arbitrary order. Each case repeats the query because that map order changes
 // between calls: a single pass can agree by luck.
@@ -385,44 +526,51 @@ func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
 
-	seed := mkFact(g, "alice works at acme", now)
-	tied1 := mkFact(g, "alice lives in paris", now)
-	tied2 := mkFact(g, "alice plays tennis", now)
-	entity := mkEntity(g, "alice", now)
-	mustSet(t, g, seed)
-	mustSet(t, g, tied1)
-	mustSet(t, g, tied2)
-	mustSet(t, g, entity)
-	// Only the seed matches "acme"; the other two facts are two hops away
-	// through the shared entity, so both carry the same attenuation of the same
-	// seed score.
-	for _, fact := range []*graph.Fact[uint64]{&seed, &tied1, &tied2} {
-		mustSet(t, g, graph.Mentions[uint64]{Fact: fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	seedA := mkFact(g, "acme builds rockets", now)
+	seedB := mkFact(g, "acme ships engines", now)
+	leafA := mkFact(g, "the assembly line hums", now)
+	leafB := mkFact(g, "the test stand fires", now)
+	entityA := mkEntity(g, "orion", now)
+	entityB := mkEntity(g, "vulcan", now)
+	for _, node := range []graph.Node[uint64]{seedA, seedB, leafA, leafB, entityA, entityB} {
+		mustSet(t, g, node)
+	}
+	// Two disjoint components: each seed reaches its own leaf two hops away
+	// through its own entity, and nothing links the components.
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &seedA, NamedEntity: entityA, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &leafA, NamedEntity: entityA, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &seedB, NamedEntity: entityB, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &leafB, NamedEntity: entityB, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+
+	// Both seeds match "acme" once, so the text index ranks them by key: the
+	// lower-key seed is rank 0 and scores 1/60 alone at the top; the other
+	// seed and both leaves tie at 1/61.
+	first, second := seedA, seedB
+	if second.Key() < first.Key() {
+		first, second = second, first
 	}
 
-	// The premise of the test: the two entity-linked facts score equally to the
-	// bit, so nothing but the key can order them.
-	if _, scores := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{}); len(scores) != 3 || scores[1] != scores[2] {
-		t.Fatalf("Search(acme, depth=2) scores = %v, want three hits whose last two tie", scores)
+	// The premise of the test: the rank-1 seed and the two leaves score
+	// equally to the bit, so nothing but the key can order them.
+	if _, scores, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{}); len(scores) != 4 || scores[1] != scores[2] || scores[2] != scores[3] {
+		t.Fatalf("Search(acme, depth=2) scores = %v, want four hits whose last three tie", scores)
 	}
 
-	lower, higher := tied1.Key(), tied2.Key()
-	if higher < lower {
-		lower, higher = higher, lower
-	}
+	tied := []uint64{second.Key(), leafA.Key(), leafB.Key()}
+	sort.Slice(tied, func(i, j int) bool { return tied[i] < tied[j] })
 
 	cases := []struct {
 		name string
 		top  int
 		want []uint64
 	}{
-		{"tied facts follow the seed in key order", 10, []uint64{seed.Key(), lower, higher}},
-		{"truncation keeps the lower tied key", 2, []uint64{seed.Key(), lower}},
+		{"tied facts follow the top seed in key order", 10, []uint64{first.Key(), tied[0], tied[1], tied[2]}},
+		{"truncation keeps the lowest tied key", 2, []uint64{first.Key(), tied[0]}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			for i := 0; i < 20; i++ {
-				nodes, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, tc.top, time.Time{}, time.Time{})
+				nodes, _, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, tc.top, time.Time{}, time.Time{})
 				if got := keys(nodes); !reflect.DeepEqual(got, tc.want) {
 					t.Fatalf("Search(acme, top=%d) keys = %v on call %d, want %v every call (%v)", tc.top, got, i+1, tc.want, values(nodes))
 				}
@@ -438,7 +586,7 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 	mustSet(t, g, mkFact(g, "shared term two", now))
 	mustSet(t, g, mkFact(g, "shared term three", now))
 
-	nodes, scores := g.Search([]string{"shared"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 2, time.Time{}, time.Time{})
+	nodes, scores, _ := g.Search([]string{"shared"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 2, time.Time{}, time.Time{})
 	if len(nodes) != 2 || len(scores) != 2 {
 		t.Errorf("Search(top=2) returned %d nodes and %d scores, want 2 and 2", len(nodes), len(scores))
 	}
@@ -547,7 +695,7 @@ func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 	// The query sits nearest the "beta" embedding, so beta must rank first. No
 	// keywords: the vector index is the only seed source.
 	query := containers.NewVector[uint64]([]P{0.1, 0.9, 0.1})
-	nodes, scores := g.Search(nil, query, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, scores, _ := g.Search(nil, query, nil, nil, 1, 10, time.Time{}, time.Time{})
 
 	if len(nodes) == 0 {
 		t.Fatalf("Search returned no results, want the nearest fact")

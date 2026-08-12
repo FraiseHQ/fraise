@@ -139,9 +139,12 @@ const (
 	// contributes to a search.
 	DefaultSeedSize uint = 10
 
-	// DefaultHopAttenuation is the factor a seed's score is multiplied by per hop
-	// as the walk moves away from it.
-	DefaultHopAttenuation float32 = 0.5
+	// DefaultRRFK is the RRF dampening constant k. 60 is the empirical standard
+	// from Cormack, Clarke & Büttcher (SIGIR 2009), where it beat every
+	// individual ranker and Condorcet fusion across TREC collections; it is
+	// large enough that a handful of mid-list sightings can outweigh one
+	// top-of-list sighting, which is the consensus behaviour fusion exists for.
+	DefaultRRFK int = 60
 
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000

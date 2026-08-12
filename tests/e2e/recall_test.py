@@ -356,3 +356,34 @@ def test_recall_top_keeps_the_head_of_the_ranking(top, query):
     assert truncated == full[:top], (
         f"top:{top} must be the first {top} of the full ranking {full}; got {truncated}"
     )
+
+
+# A fact whose whole text is also the name of its topic, plus a bystander fact
+# carrying the same topic. Keys derived from value alone gave the fact and the
+# topic one key, so the topic node was never stored and the bystander's IsAbout
+# edge landed on the fact instead of on a topic hub. The bystander is what makes
+# that visible: the two facts have no word in common and belong together only
+# through the topic.
+LEDGER_TOPIC = "ledgerprobe"
+LEDGER_FACTS = ("ledgerprobe", "acme settles invoices quarterly")
+
+
+def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(query):
+    """A fact whose text equals its topic's name must not stand in for the topic.
+
+    Recall returns facts, never the hubs it walks through, so depth:1 is exactly
+    the seed here. When the "ledgerprobe" fact *was* the hub, the bystander sat
+    one hop from a fact rather than one hop from a topic, and this recall handed
+    back an unrelated memory as a second hit. Graph 5's other facts carry
+    different topics, so nothing else is one hop from the seed.
+    """
+    graph = 5
+    for phrase in LEDGER_FACTS:
+        status, body = query(f"remember@{graph} '{phrase}' topic:{LEDGER_TOPIC}")
+        assert status == 200, body.get("error")
+
+    hits = _recall_ranking(query, f"recall@{graph} quarterly depth:1")
+    assert hits == ["acme settles invoices quarterly"], (
+        f"depth:1 must return the seed alone; {LEDGER_FACTS[0]!r} reached it as a "
+        f"neighbour, so it is serving as the {LEDGER_TOPIC!r} topic node: {hits}"
+    )
