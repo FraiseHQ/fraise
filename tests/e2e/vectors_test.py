@@ -212,3 +212,59 @@ def test_vector_search_with_real_embeddings(query):
     assert any(isinstance(hit["score"], float) for hit in hits), (
         f"expected floating-point scores, got {[type(h['score']).__name__ for h in hits]}"
     )
+
+
+# Three facts engineered so the text and vector rankings disagree: the text
+# index's clear favourite has no embedding, the vector index's exact nearest
+# matches no query term, and one fact sits second in BOTH lists. The vector
+# values cluster around -0.5, away from every other embedding on graph 6
+# (1.0, 0.9, 0.5, -0.9), so the vector ranks below are fixed whatever else
+# the suite has written.
+KRAKATOA_TEXT = "krakatoa ash fell for days"  # both terms; no embedding
+KRAKATOA_BOTH = "the ash cloud crossed the ocean"  # one term; near embedding
+KRAKATOA_VEC = "sensors recorded the pressure wave"  # no terms; exact embedding
+
+
+def test_recall_fuses_disagreeing_text_and_vector_by_consensus(query, vector):
+    """When text and vector disagree, the fact both sources agree on wins.
+
+    Text ranks: KRAKATOA_TEXT matches both query terms (rank 0), KRAKATOA_BOTH
+    one (rank 1). Vector ranks: KRAKATOA_VEC is the query embedding exactly
+    (rank 0), KRAKATOA_BOTH is the next-nearest (rank 1). Under rank fusion
+    Σ 1/(60+rank) the consensus fact scores 1/61 + 1/61, above the 1/60 of
+    either source's favourite — the fused order is topped by a fact that leads
+    neither list. depth:1 keeps resident graph-6 facts from adding walk
+    sightings, and residents rank no better than 2 in the vector list, so they
+    score at most 1/62, below all three.
+    """
+    graph = 6
+    writes = (
+        (KRAKATOA_TEXT, None),
+        (KRAKATOA_BOTH, vector(value=-0.45)),
+        (KRAKATOA_VEC, vector(value=-0.5)),
+    )
+    for phrase, embedding in writes:
+        if embedding is None:
+            status, body = query(f"remember@{graph} '{phrase}'")
+        else:
+            status, body = query(
+                f"remember@{graph} '{phrase}' vec:$v", parameters={"v": embedding}
+            )
+        assert status == 200, body.get("error")
+
+    status, body = query(
+        f"recall@{graph} krakatoa ash vec:$v depth:1 top:10",
+        parameters={"v": vector(value=-0.5)},
+    )
+    assert status == 200, body.get("error")
+
+    values = [hit["value"] for hit in body["results"]["hits"]]
+    assert values[0] == KRAKATOA_BOTH, (
+        f"the fact text and vector agree on must top the fused order; got {values}"
+    )
+    # The two single-source favourites tie at 1/60 and land next, in either
+    # order (recency decay perturbs the tie by write timing).
+    assert set(values[1:3]) == {
+        KRAKATOA_TEXT,
+        KRAKATOA_VEC,
+    }, f"both single-source favourites should follow the consensus fact; got {values}"

@@ -150,18 +150,20 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 		return g
 	}
 
-	// Without a ranking the direct hit wins over the hub reached at hop 1.
+	// Without a ranking the direct hit and the hub tie: under rank fusion the
+	// text sighting at rank 0 and the walk sighting at rank 0 weigh the same,
+	// so nothing separates them until a ranking is installed.
 	g := build()
-	nodes, _ := g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
-	if len(nodes) != 2 || (*nodes[0]).GetValue() != "alpha query" {
-		t.Fatalf("Search without ranking = %d nodes, want the direct hit first", len(nodes))
+	nodes, scores, _ := g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	if len(nodes) != 2 || scores[0] != scores[1] {
+		t.Fatalf("Search without ranking = %d nodes, scores %v, want the direct hit and the hub tied", len(nodes), scores)
 	}
 
 	// The hub concentrates the star's PageRank mass, so its boost lifts it
 	// above the direct hit.
 	g = build()
 	g.SetRanking(graph.NewPageRank[uint64, float64](0.85, 100, 1e-9))
-	nodes, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, _, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 || (*nodes[0]).GetValue() != "hub" {
 		t.Errorf("Search with PageRank ranking did not put the hub first")
 	}

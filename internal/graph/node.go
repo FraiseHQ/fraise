@@ -33,6 +33,17 @@ type NodeAttributes struct {
 	Timestamp time.Time
 }
 
+// Node is anything the graph stores under a key: the entities (facts, topics,
+// named entities) and the relationships between them.
+//
+// A node's key is the hash of its own type tag followed by its material —
+// "fact:", "topic:", "entity:", "mentions:", "isabout:" — so identity is
+// (type, value), never value alone: a fact and a topic that read the same are
+// two different nodes. Without the tag, `remember 'billing' topic:billing`
+// hashes both to one key, and then the topic node is never stored (Set finds
+// the fact already there) while its IsAbout edge points from the fact back to
+// itself. A new participant takes a tag that no other one prefixes; the five
+// above differ in their first byte.
 type Node[K comparable] interface {
 	hash.Hashable[K, string]
 

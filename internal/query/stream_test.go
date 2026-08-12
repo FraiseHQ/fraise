@@ -24,6 +24,7 @@ package query
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -49,8 +50,9 @@ type fakeGraph struct {
 	puts             int
 	searchCalled     bool
 
-	searchNodes  []*graph.Node[string]
-	searchScores []float32
+	searchNodes    []*graph.Node[string]
+	searchScores   []float32
+	searchContribs [][]graph.Contribution[float32]
 }
 
 var _ graph.Graph[string, float32] = (*fakeGraph)(nil)
@@ -65,9 +67,9 @@ func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32])     { g.merged = 
 func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32, [][]graph.Contribution[float32]) {
 	g.searchCalled = true
-	return g.searchNodes, g.searchScores
+	return g.searchNodes, g.searchScores, g.searchContribs
 }
 
 // --- inert stubs (unused by Stream) ----------------------------------------
@@ -141,6 +143,46 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 	}
 }
 
+// TestStreamCommitExplainAttachesContributions pins the explain switch on the
+// read path: the same commit, run with Explain set, copies each hit's
+// contribution records onto the hit, and without it the hits stay bare — nil
+// is what keeps contributions out of the ordinary response. The flag lives on
+// the stream rather than the query because the plan cache shares query
+// objects across requests; this test drives it exactly where the handler
+// sets it.
+func TestStreamCommitExplainAttachesContributions(t *testing.T) {
+	contributions := [][]graph.Contribution[float32]{
+		{{Src: graph.SrcText, Score: 1, Rank: 0}},
+		{{Src: graph.SrcVector, Score: 0.5, Rank: 1}, {Src: graph.SrcGraph, Score: 2, Hop: 2}},
+	}
+
+	for _, explain := range []bool{true, false} {
+		t.Run(fmt.Sprintf("explain=%v", explain), func(t *testing.T) {
+			g := &fakeGraph{
+				searchNodes:    []*graph.Node[string]{nil, nil},
+				searchScores:   []float32{0.9, 0.8},
+				searchContribs: contributions,
+			}
+			s := newStream(readQuery())
+			s.Explain = explain
+
+			if err := s.Commit(g); err != nil {
+				t.Fatalf("Commit() err = %v", err)
+			}
+
+			for i, hit := range s.Result.Hits {
+				if explain {
+					if !reflect.DeepEqual(hit.Contributions, contributions[i]) {
+						t.Errorf("Hits[%d].Contributions = %+v, want %+v", i, hit.Contributions, contributions[i])
+					}
+				} else if hit.Contributions != nil {
+					t.Errorf("Hits[%d].Contributions = %+v without explain, want nil", i, hit.Contributions)
+				}
+			}
+		})
+	}
+}
+
 // --- Commit (write path) ---------------------------------------------------
 
 // TestStreamCommitWriteInPlace is the O(graph)-per-write regression pin: a
@@ -211,7 +253,7 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	}
 
 	// The report's repro: recall with since covering only the re-assertion.
-	nodes, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
+	nodes, _, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
 	if len(nodes) != 1 {
 		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(nodes))
 	}
@@ -331,7 +373,7 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			nodes, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			nodes, _, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
 				got = append(got, (*n).GetValue())

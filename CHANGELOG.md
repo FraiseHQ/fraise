@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.1.0-beta.5](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.4...v0.1.0-beta.5) (2026-08-10)
+
+
+### Maintenance
+
+* sign releases with a cosign bundle ([#154](https://github.com/RonsenbergVI/fraise/issues/154)) ([cdc03da](https://github.com/RonsenbergVI/fraise/commit/cdc03da3bbaefd8e0be38e177356a0e72a7aaa56))
+
+## [0.1.0-beta.4](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.3...v0.1.0-beta.4) (2026-08-10)
+
+
+### Bug fixes
+
+* remove fixed versions ([#152](https://github.com/RonsenbergVI/fraise/issues/152)) ([8b7f9f7](https://github.com/RonsenbergVI/fraise/commit/8b7f9f7ccbc7f2a0ed5d19be65732354514c7324))
+
+## [0.1.0-beta.3](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.2...v0.1.0-beta.3) (2026-08-10)
+
+
+### Bug fixes
+
+* deterministic result ranking ([#144](https://github.com/RonsenbergVI/fraise/issues/144)) ([b032957](https://github.com/RonsenbergVI/fraise/commit/b0329571b25106584e4dcf0d5449246330259988))
+* node lifecycle improvements ([#151](https://github.com/RonsenbergVI/fraise/issues/151)) ([535f736](https://github.com/RonsenbergVI/fraise/commit/535f736d991eba3bd9e3a39259e96208453b5d10))
+
+
+### Maintenance
+
+* add string config validation ([#142](https://github.com/RonsenbergVI/fraise/issues/142)) ([c1fd6bf](https://github.com/RonsenbergVI/fraise/commit/c1fd6bf31e6537c18c33266aaa2095a7c35413ac))
+* check for colon in anchors and time field ([#140](https://github.com/RonsenbergVI/fraise/issues/140)) ([4aaf848](https://github.com/RonsenbergVI/fraise/commit/4aaf8480b96ccef1119b629d6b59432acd134586))
+* CI workflow and Python SDK release improvements ([#137](https://github.com/RonsenbergVI/fraise/issues/137)) ([a6aa1ac](https://github.com/RonsenbergVI/fraise/commit/a6aa1acdfbcec21f211be1ece32eb1a3d7841900))
+* fix error column reporting bug ([#141](https://github.com/RonsenbergVI/fraise/issues/141)) ([6705ddd](https://github.com/RonsenbergVI/fraise/commit/6705ddd74b7088d772609649879e1a2c8a14ab54))
+* improve python SDK ([#135](https://github.com/RonsenbergVI/fraise/issues/135)) ([8a9e32e](https://github.com/RonsenbergVI/fraise/commit/8a9e32e37f06a58ae8ed435bee7d412fec5b089c))
+* **main:** release python 0.1.0-alpha.1 ([#139](https://github.com/RonsenbergVI/fraise/issues/139)) ([d0500c6](https://github.com/RonsenbergVI/fraise/commit/d0500c66d805033473436e823531a8cd578eb98d))
+* release please improvements ([#136](https://github.com/RonsenbergVI/fraise/issues/136)) ([4a9aec1](https://github.com/RonsenbergVI/fraise/commit/4a9aec1e2340f6002a3306ebb96899cd30dc454d))
+* supply-chain hardening (OpenSSF Scorecard) ([#131](https://github.com/RonsenbergVI/fraise/issues/131)) ([75fe9fd](https://github.com/RonsenbergVI/fraise/commit/75fe9fd1efd7f4fb0616b26a0027fdffdc636d2d))
+* update release config ([#132](https://github.com/RonsenbergVI/fraise/issues/132)) ([9948f0c](https://github.com/RonsenbergVI/fraise/commit/9948f0c528ddd01f25cdbd22f8b1e48035b3baaf))
+
 ## [0.1.0-beta.2](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.1...v0.1.0-beta.2) (2026-08-08)
 
 

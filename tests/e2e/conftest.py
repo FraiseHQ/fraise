@@ -32,13 +32,17 @@ fact is keyed by its value, so rewrites are idempotent). Files run in any
 order, so tests sharing a graph must not depend on each other's facts. Keep
 this map current when claiming a graph:
 
-    0  comet + quasar shared-keyword facts (test_recall.py)
+    0  comet + quasar shared-keyword facts
+       + monsoon/geyser ranking clusters  (test_recall.py, scoring_test.py)
     1  loose remembers + concurrent load   (test_recall.py, test_concurrency.py)
-    2  union-across-keywords facts         (test_recall.py)
+    2  union-across-keywords facts
+       + pulsar explain probes             (test_recall.py, explain_test.py)
     3  real-embedding documents            (test_vectors.py)
     4  vector dimension + forest bound     (test_vectors.py, test_stats.py)
-    5  bird facts + anchored recall        (test_concurrency.py, test_recall.py)
-    6  vector round trip + cache probes   (test_vectors.py, test_query_cache.py)
+    5  bird facts + anchored recall
+       + the topic-named fact             (test_concurrency.py, test_recall.py)
+    6  vector round trip + cache probes
+       + krakatoa fusion cluster          (test_vectors.py, test_query_cache.py)
     7  planet star                         (test_recall.py)
 """
 
@@ -125,6 +129,32 @@ def query(base_url):
         return response.status_code, response.json()
 
     return _query
+
+
+@pytest.fixture(scope="session")
+def explain(base_url):
+    """Callable posting a raw query string to /api/v1/explain.
+
+    Same request shape as the `query` fixture, different endpoint: the
+    response's hits carry a per-source contribution breakdown. Returns
+    (status_code, decoded JSON body).
+    """
+
+    def _explain(text: str, parameters: dict[str, object] | None = None):
+
+        data = {"query": text}
+
+        if parameters:
+            data["parameters"] = parameters
+
+        response = requests.post(
+            f"{base_url}/api/v1/explain",
+            json=data,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        return response.status_code, response.json()
+
+    return _explain
 
 
 @pytest.fixture(scope="session")

@@ -50,13 +50,15 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	textIndex   *index.BTreeIndex[K, P]
 	vectorIndex *index.RPTreeIndex[K, P]
 
-	// traversal and ranking are the pluggable search algorithms (see
-	// Traversal and Ranking, mirrored here by the
-	// unexported hook interfaces). traversal nil falls back to a built-in
+	// traversal, ranking and scorer are the pluggable search algorithms (see
+	// Traversal, Ranking and Scorer). traversal nil falls back to a built-in
 	// breadth-first walk over both edge directions; ranking nil applies no
-	// structural boost.
+	// structural boost. scorer folds each candidate's contributions into its
+	// relevance score and is never nil — the graph starts with the
+	// RRFScorer, because unscored candidates have no rank at all.
 	traversal Traversal[K, P]
 	ranking   Ranking[K, P]
+	scorer    Scorer[K, P]
 
 	hasher hash.Hasher[K, string]
 
@@ -77,6 +79,16 @@ func (g *InMemoryGraph[K, P]) SetRanking(r Ranking[K, P]) {
 	g.ranking = r
 }
 
+// SetScorer installs the scorer Search folds candidate contributions with.
+// nil is ignored rather than stored: unlike its peers, whose nil means "use
+// the fallback behaviour", a graph without a scorer cannot rank at all.
+func (g *InMemoryGraph[K, P]) SetScorer(s Scorer[K, P]) {
+	if s == nil {
+		return
+	}
+	g.scorer = s
+}
+
 func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemoryGraph[K, P] {
 	g := &InMemoryGraph[K, P]{
 		idToNodes:     make(map[K]Node[K]),
@@ -91,6 +103,7 @@ func NewGraph[K ~uint64, P float32 | float64](config *config.ConfigSet) *InMemor
 			config.DB.VectorSearch.FlushFactor,
 			comparator.OrderedComparator[K],
 		),
+		scorer: NewRRFScorer[K, P](config.DB.RRFK),
 		hasher: hash.NewHasher[K](config),
 		config: config,
 	}
@@ -184,25 +197,57 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	return nil
 }
 
+// dropRelationship removes an edge's own node, the counterpart of the store
+// call that recorded it. A relationship is never a vertex in the adjacency maps
+// and never carries a vector, so idToNodes and the text index are the only
+// places it occupies.
+func (g *InMemoryGraph[K, P]) dropRelationship(key K) {
+	delete(g.idToNodes, key)
+	_ = g.textIndex.Delete(key)
+}
+
 // Delete removes the node, its incident relationships and its index entries.
+// Whichever end of an edge is deleted, the edge leaves as a whole — its node and
+// both adjacency entries — because the two halves are one fact about the graph:
+// a Mentions left in idToNodes describes an edge that no longer exists (Nodes
+// and Stats keep reporting it, and it keeps its text-index entry), while an
+// adjacency entry left behind names a relationship node that is no longer
+// stored, so Size counts an edge AdjacencyMap cannot resolve.
 func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	if node == nil {
 		return ErrNilNode
 	}
 	key := node.Key()
-	if _, ok := g.idToNodes[key]; !ok {
+	stored, ok := g.idToNodes[key]
+	if !ok {
 		return ErrNodeNotFound
 	}
 
-	for target := range g.nodeToTargets[key] {
+	// Deleting an endpoint: the adjacency maps hold each edge's own key as their
+	// value, so the relationship nodes to prune are exactly what the walk over
+	// this node's rows yields.
+	for target, edge := range g.nodeToTargets[key] {
 		delete(g.nodeToSources[target], key)
+		g.dropRelationship(edge)
 	}
-	for source := range g.nodeToSources[key] {
+	for source, edge := range g.nodeToSources[key] {
 		delete(g.nodeToTargets[source], key)
+		g.dropRelationship(edge)
 	}
 	delete(g.nodeToTargets, key)
 	delete(g.nodeToSources, key)
 	delete(g.idToNodes, key)
+
+	// Deleting the edge itself: a relationship is not a vertex, so it owns no
+	// rows of its own — the pair of entries store wrote into its endpoints' rows
+	// is its whole presence in the graph. The stored node decides this, not the
+	// caller's copy, since the key is what the graph was asked to remove.
+	if r, isEdge := stored.(Relationship[K]); isEdge {
+		source := (*r.Source()).Key()
+		target := (*r.Target()).Key()
+		delete(g.nodeToTargets[source], target)
+		delete(g.nodeToSources[target], source)
+	}
 
 	// The node may legitimately be absent from either index.
 	_ = g.textIndex.Delete(key)
@@ -278,69 +323,92 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 	return g.textIndex
 }
 
-func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P) {
-	// A. Search starts with gathering seeds for the graph search.
-	// Seeds are found from
-	// 1. Vector search (top K - default = 10)
-	// 2. Matching keywords
-	seeds, seedScores := g.gatherSeeds(keywords, vector)
+func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]Contribution[P]) {
+	// A. Collection: the retrieval stages pool everything they observe about
+	// every candidate — text seeds, vector seeds, walk reachability — as
+	// Contribution records. No stage computes a final score.
+	candidates := g.collect(keywords, vector, topics, entities, depth)
 
-	// B. Walking the graph from all seeds and unioning the found facts
-	neighbors, scores := g.findNeighbours(seeds, seedScores, topics, entities, depth)
+	// B. Scoring: the scorer folds each candidate's contributions into one
+	// relevance score, and the installed ranker (if any) boosts the result.
+	scores := make(map[K]P, len(candidates))
+	keys := make([]K, 0, len(candidates))
+	for key, contributions := range candidates {
+		scores[key] = g.scorer.Score(contributions)
+		keys = append(keys, key)
+	}
+	g.boost(scores)
 
 	// C. Time filtered (since or until)
 
-	candidates, ranked := g.timeFilter(neighbors, scores, since, until)
+	kept, ranked := g.timeFilter(keys, scores, since, until)
 
 	// D. Rank the candidates and truncate to top
 	//
-	// The candidates arrive in the order the score map was iterated in, so the
-	// ranking has to be a total order for identical queries to return identical
-	// hits: score descending, then fact key. Facts of equal score are ordered
-	// by key rather than left as the map presented them, because truncation
-	// would otherwise keep an arbitrary subset of a tied group.
+	// The candidates arrive in the order the candidate map was iterated in, so
+	// the ranking has to be a total order for identical queries to return
+	// identical hits: score descending, then fact key. Facts of equal score are
+	// ordered by key rather than left as the map presented them, because
+	// truncation would otherwise keep an arbitrary subset of a tied group.
 
-	sort.Slice(candidates, func(i, j int) bool {
-		if ranked[candidates[i]] != ranked[candidates[j]] {
-			return ranked[candidates[i]] > ranked[candidates[j]]
+	sort.Slice(kept, func(i, j int) bool {
+		if ranked[kept[i]] != ranked[kept[j]] {
+			return ranked[kept[i]] > ranked[kept[j]]
 		}
-		return candidates[i] < candidates[j]
+		return kept[i] < kept[j]
 	})
 
 	limit := top
-	if limit <= 0 || limit > len(candidates) {
-		limit = len(candidates)
+	if limit <= 0 || limit > len(kept) {
+		limit = len(kept)
 	}
 
 	nodes := make([]*Node[K], limit)
 	scoresOut := make([]P, limit)
-	for i, key := range candidates[:limit] {
+	contributions := make([][]Contribution[P], limit)
+	for i, key := range kept[:limit] {
 		node := g.idToNodes[key]
 		nodes[i] = &node
 		scoresOut[i] = ranked[key]
+		contributions[i] = candidates[key]
 	}
 
 	logger.Debug("Graph search completed",
-		"seeds", len(seeds), "candidates", len(candidates), "returned", limit)
-	return nodes, scoresOut
+		"candidates", len(kept), "returned", limit)
+	return nodes, scoresOut, contributions
 }
 
-// gatherSeeds pools search seeds from the text index (keywords) and the
-// vector index (query embedding). Seeds are scored by source rank, 1/(1+rank),
-// and a key surfaced by both sources accumulates both scores.
-func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P]) ([]K, map[K]P) {
-	scores := make(map[K]P)
+// collect runs the retrieval stages and pools their sightings into one
+// candidate map: text and vector seeding, then the walk from every seed, then
+// the topic/entity filters. Stages record Contributions and compute no scores
+// — ranking policy lives entirely in the Scorer — with one exception: the
+// walk stamps each SrcGraph contribution with its seed's fused score, because
+// a Contribution names no seed, and that score is the only channel through
+// which "reached from a strong seed" can outrank "reached from a weak one".
+func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int) Candidates[K, P] {
+	candidates := make(Candidates[K, P])
+	seeds := g.gatherSeeds(keywords, vector, candidates)
+	g.findNeighbours(seeds, candidates, topics, entities, depth)
+	return candidates
+}
 
+// gatherSeeds seeds the candidate pool from the text index (keywords) and the
+// vector index (query embedding), appending one Contribution per sighting; a
+// key surfaced by both sources holds one from each. Text contributions carry
+// the raw match count; vector contributions carry the similarity
+// 1/(1+distance), converted here so Contribution.Score is bigger-is-better
+// for every source — the index reports distance, where smaller is nearer.
+// The seed keys return in ascending key order: scorers fold contribution
+// lists as floats, so the walk must append in a deterministic order or the
+// low bits of a shared neighbour's score drift between identical queries.
+func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates Candidates[K, P]) []K {
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
-		// Index errors (empty index) just mean no text seeds. Seeds are scored
-		// by rank rather than raw index score: the text and vector indices score
-		// on different scales (match count vs distance), so rank keeps them
-		// comparable when their seeds are pooled here.
-		if keys, _, err := g.textIndex.Search(strings.Join(keywords, " "), g.config.DB.SeedSize); err == nil {
+		// Index errors (empty index) just mean no text seeds.
+		if keys, scores, err := g.textIndex.Search(strings.Join(keywords, " "), g.config.DB.SeedSize); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
-				scores[key] += P(1) / P(1+rank)
+				candidates[key] = append(candidates[key], Contribution[P]{Src: SrcText, Score: scores[rank], Rank: clampRank(rank)})
 			}
 		} else {
 			logger.Debug("Text index yielded no seeds", "error", err)
@@ -348,69 +416,101 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 
 	if !vector.Empty() {
-		if keys, _, err := g.vectorIndex.Search(vector, g.config.DB.SeedSize); err == nil {
+		if keys, distances, err := g.vectorIndex.Search(vector, g.config.DB.SeedSize); err == nil {
 			vectorSeeds = len(keys)
 			for rank, key := range keys {
-				scores[key] += P(1) / P(1+rank)
+				candidates[key] = append(candidates[key], Contribution[P]{Src: SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: clampRank(rank)})
 			}
 		} else {
 			logger.Debug("Vector index yielded no seeds", "error", err)
 		}
 	}
 
-	seeds := make([]K, 0, len(scores))
-	for key := range scores {
+	seeds := make([]K, 0, len(candidates))
+	for key := range candidates {
 		seeds = append(seeds, key)
 	}
-	// Seeds are expanded in key order because findNeighbours pools their
-	// contributions by summing floats, which is not associative: walking them
-	// in map-iteration order perturbs the low bits of a shared neighbour's
-	// score, and two identical queries can then rank it differently.
 	sort.Slice(seeds, func(i, j int) bool { return seeds[i] < seeds[j] })
 	logger.Debug("Gathered search seeds",
 		"text", textSeeds, "vector", vectorSeeds, "unique", len(seeds))
-	return seeds, scores
+	return seeds
 }
 
 // findNeighbours expands every seed into its neighbourhood using the graph's
-// walker (or the built-in breadth-first walk when none is set). A node
-// discovered h hops from a seed contributes that seed's score attenuated by
-// hopAttenuation^h; contributions from multiple seeds accumulate. When a
-// ranker is installed its global scores boost the pooled walk scores. The
-// pooled nodes are then filtered by topics and entities.
-func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, seedScores map[K]P, topics []string, entities []string, depth int) ([]K, map[K]P) {
-	scores := make(map[K]P, len(seedScores))
+// walker (or the built-in breadth-first walk when none is set), appending a
+// SrcGraph contribution for every node a walk reaches: the seed's fused
+// score, the node's position in the walk's nearest-first order, and the raw
+// hop count. Attenuation is deliberately not applied here — it is a scorer
+// parameter. The pooled candidates are then filtered by topics and entities.
+func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates Candidates[K, P], topics []string, entities []string, depth int) {
+	// Every seed's fused score is fixed before any walk appends SrcGraph
+	// contributions: scoring seeds lazily would fold an earlier seed's graph
+	// contribution into a later seed's score, making scores depend on walk
+	// order.
+	seedScores := make(map[K]P, len(seeds))
 	for _, seed := range seeds {
-		for key, hop := range g.walk(seed, depth) {
-			scores[key] += seedScores[seed] * P(math.Pow(g.config.DB.HopAttenuation, float64(hop)))
-		}
+		seedScores[seed] = g.scorer.Score(candidates[seed])
 	}
 
-	if g.ranking != nil {
-		result, err := g.ranking.Run(g)
-		r, _ := result.(RankingResult[K, P])
-		if err == nil && len(r.Scores) > 0 {
-			// Boost by the mean-normalised global score: an average node is
-			// unchanged, central nodes gain, nodes unknown to the ranker
-			// (e.g. isolated ones) keep their walk score.
-			n := P(len(r.Scores))
-			for key := range scores {
-				if r, ok := r.Scores[key]; ok {
-					scores[key] *= 1 + r*n
-				}
+	for _, seed := range seeds {
+		walked := g.walk(seed, depth)
+
+		// The walk stores depths in a map, so its discovery order is gone by
+		// the time it returns; nearest-first with a key tiebreak reimposes a
+		// deterministic order to take ranks from. The seed itself is skipped:
+		// its hop-0 entry is already represented by its seeding
+		// contributions, and appending it again would double-count the seed
+		// under any scorer that sums.
+		reached := make([]K, 0, len(walked))
+		for key := range walked {
+			if key == seed {
+				continue
 			}
+			reached = append(reached, key)
+		}
+		sort.Slice(reached, func(i, j int) bool {
+			if walked[reached[i]] != walked[reached[j]] {
+				return walked[reached[i]] < walked[reached[j]]
+			}
+			return reached[i] < reached[j]
+		})
+
+		for rank, key := range reached {
+			candidates[key] = append(candidates[key], Contribution[P]{
+				Src:   SrcGraph,
+				Score: seedScores[seed],
+				Rank:  clampRank(rank),
+				Hop:   clampHop(walked[key]),
+			})
 		}
 	}
 
-	keys := make([]K, 0, len(scores))
-	for key := range scores {
+	for key := range candidates {
 		if !g.matchesFilter(key, topics) || !g.matchesFilter(key, entities) {
-			delete(scores, key)
-			continue
+			delete(candidates, key)
 		}
-		keys = append(keys, key)
 	}
-	return keys, scores
+}
+
+// boost multiplies each pooled score by the installed ranker's mean-normalised
+// global score: an average node is unchanged, central nodes gain, and nodes
+// unknown to the ranker (e.g. isolated ones) keep their pooled score. A nil
+// ranker boosts nothing.
+func (g *InMemoryGraph[K, P]) boost(scores map[K]P) {
+	if g.ranking == nil {
+		return
+	}
+	result, err := g.ranking.Run(g)
+	r, _ := result.(RankingResult[K, P])
+	if err != nil || len(r.Scores) == 0 {
+		return
+	}
+	n := P(len(r.Scores))
+	for key := range scores {
+		if s, ok := r.Scores[key]; ok {
+			scores[key] *= 1 + s*n
+		}
+	}
 }
 
 // walk expands source up to depth hops, delegating to the installed

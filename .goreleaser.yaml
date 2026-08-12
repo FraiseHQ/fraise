@@ -41,19 +41,24 @@ checksum:
   name_template: checksums.txt
 
 # Keyless cosign signing of checksums.txt only — that file already covers every
-# archive, so one signature transitively covers the set and there are two extra
-# assets per release instead of twenty-four. Produces checksums.txt.sig and
-# checksums.txt.pem; the .sig is what OpenSSF Scorecard's Signed-Releases check
+# archive, so one signature transitively covers the set and there is one extra
+# asset per release instead of twenty-four. Produces checksums.txt.sigstore.json,
+# a Sigstore bundle carrying the signature and the signing certificate together;
+# .sigstore.json is one of the suffixes OpenSSF Scorecard's Signed-Releases check
 # looks for. Requires cosign on PATH and id-token: write on the publishing job
 # (see .github/workflows/go.yaml) — without the OIDC token, signing fails the
 # release rather than silently shipping it unsigned.
+#
+# --bundle is the only output flag to use here. cosign 3 (what
+# sigstore/cosign-installer v4 installs) defaults to --new-bundle-format, under
+# which --output-signature and --output-certificate are ignored; with no bundle
+# path to write, cosign resolves an empty filename and aborts the release.
 signs:
   - cmd: cosign
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.sigstore.json"
     args:
       - sign-blob
-      - "--output-certificate=${certificate}"
-      - "--output-signature=${signature}"
+      - "--bundle=${signature}"
       - "${artifact}"
       - "--yes"
     artifacts: checksum
