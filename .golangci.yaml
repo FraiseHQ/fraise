@@ -7,7 +7,6 @@ linters:
   disable:
     - contextcheck
     - exhaustruct
-    - errcheck
   enable:
     - govet
     - bodyclose
