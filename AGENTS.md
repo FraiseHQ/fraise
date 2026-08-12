@@ -99,6 +99,12 @@ These apply to every component:
   established pair for anything hash-like is (1) an exact-format pin test and
   (2) a "distinguishes" contract test proving variants don't collide. Reuse
   `fakeHasher`-style fakes; keep them per-package, tiny, deterministic.
+- **No compile-time interface checks** — never add
+  `var _ SomeInterface = (*SomeType)(nil)`. In this project every implementor
+  is assigned to its interface at a real wiring site (`NewGraph`, `db.Start`),
+  and that assignment is the check: the build fails there if the method set
+  drifts. A type assigned to its interface nowhere would be dead code, which
+  is assumed never to exist here — delete the type, don't guard it.
 - `gofmt` is mandatory; `make lint-go` runs golangci-lint.
 
 ### Python
