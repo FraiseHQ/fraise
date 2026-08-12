@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.0-beta.6](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.5...v0.1.0-beta.6) (2026-08-12)
+
+
+### Features
+
+* add contribution and explain endpoint ([#185](https://github.com/RonsenbergVI/fraise/issues/185)) ([9844f1b](https://github.com/RonsenbergVI/fraise/commit/9844f1bb929a9c78005c2c04c75db8eafde9c4bd))
+* add RRF scorer ([#186](https://github.com/RonsenbergVI/fraise/issues/186)) ([0cf9108](https://github.com/RonsenbergVI/fraise/commit/0cf910825758375476ed0759dfb79e7d114bd85b))
+
+
+### Bug fixes
+
+* return 400 error code on vector dimension mismatch ([#188](https://github.com/RonsenbergVI/fraise/issues/188)) ([a3e3963](https://github.com/RonsenbergVI/fraise/commit/a3e3963c726e03cb34f41b8354f1de6543700102))
+
+
+### Maintenance
+
+* enable errcheck and fix failing pre-commit ([#145](https://github.com/RonsenbergVI/fraise/issues/145)) ([b4a9b6a](https://github.com/RonsenbergVI/fraise/commit/b4a9b6a4bb68770f05066da3a26798fd34f1ee16))
+
 ## [0.1.0-beta.5](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.4...v0.1.0-beta.5) (2026-08-10)
 
 
