@@ -226,10 +226,14 @@ class FraiseClient:
     ) -> RecallResult:
         """Search ``graph`` for facts and return them ranked by relevance.
 
-        Pass any number of ``keywords`` positionally. A recall needs at least one
-        seed — keywords, a vector, or a ``topics``/``entities`` filter — from
-        which the walk explores. ``top`` caps the number of results; ``depth``
-        bounds how far the walk leaves the seed.
+        ``query`` is a whole question, sent to the server as a single quoted
+        phrase term — natural language travels verbatim, never as bare words
+        that would collide with the grammar's reserved keywords. Pass any
+        number of ``keywords`` positionally as additional bare terms. A recall
+        needs at least one seed — a query, keywords, a vector, or a
+        ``topics``/``entities`` filter — from which the walk explores. ``top``
+        caps the number of results; ``depth`` bounds how far the walk leaves
+        the seed.
 
         For semantic search, a vector is attached the same way as in
         :meth:`remember`: an explicit ``vector`` wins; otherwise, if the client
@@ -241,6 +245,7 @@ class FraiseClient:
         text = _query.build_recall(
             keywords=list(keywords),
             graph=graph,
+            query=query,
             topics=topics,
             entities=entities,
             top=top,

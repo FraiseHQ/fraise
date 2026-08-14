@@ -115,20 +115,18 @@ def test_hit_values_come_back_exactly_as_written(client, models_graph):
     assert stored in [hit.value for hit in result]
 
 
-def test_scores_are_not_clamped_to_one(models_graph, client):
-    """Scores are positive, additive mass — BM25 text plus vector similarity —
-    on no fixed scale. A fact recalled by its own exact embedding carries
-    similarity 1/(1+0) = 1 on top of any text mass at all, so its score
-    exceeds 1.0 — which the obvious 0.0 <= score <= 1.0 assertion would get
-    wrong.
-    """
-    value = "the spring tide reached the old sea wall"
-    embedding = [0.5, -0.25, 0.75, 0.0, 0.5, -0.5]
-    client.remember(value, graph=models_graph, vector=embedding)
+def test_scores_are_raw_fused_quantities(tide_result):
+    """Scores are positive and arrive raw, on the scorer's own scale.
 
-    result = client.recall("tide", graph=models_graph, vector=embedding, embed=False)
-    assert all(hit.score > 0 for hit in result)
-    scores = {hit.value: hit.score for hit in result}
-    assert scores[value] > 1.0, (
-        f"text mass plus exact-vector similarity must exceed 1.0: {scores}"
+    Under the shipped reciprocal-rank fusion a score is a sum of 1/(k+rank)
+    terms, so every hit lands as a small fraction well below 1.0. The obvious
+    reading of a score as a similarity in [0, 1] is wrong in both directions:
+    nothing normalises the fused sums to that range on purpose, and nothing
+    caps what a differently-scaled scorer may return — clients must treat
+    scores as ordering, not probability.
+    """
+    assert all(hit.score > 0 for hit in tide_result)
+    assert all(hit.score < 1.0 for hit in tide_result), (
+        "reciprocal-rank sums are small fractions; a score at or above 1.0 "
+        "means the fold changed scale and this pin should be revisited"
     )

@@ -125,8 +125,6 @@ def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim
 # each far from the others, so a query close in meaning to one of them retrieves
 # that one by vector alone. Graph 3 carries no other vectors, so its embedding
 # dimension is fixed by this test.
-# No apostrophes: a single-quoted query phrase has no escaping, so an apostrophe
-# would close the phrase early and fail to parse.
 EMBEDDING_DOCS = {
     "cat": "the tabby cat curled up and slept on the warm windowsill",
     "space": "the mars rover drilled into red rock to collect samples",
