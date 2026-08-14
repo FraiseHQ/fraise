@@ -173,8 +173,7 @@ def remember_tool(
             "properties": {
                 "fact": {
                     "type": "string",
-                    "description": "A single, self-contained statement to remember. "
-                    "Must not contain an apostrophe (').",
+                    "description": "A single, self-contained statement to remember.",
                 },
                 "topics": {
                     "type": "array",

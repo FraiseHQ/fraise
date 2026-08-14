@@ -64,9 +64,7 @@ def test_matching_more_of_the_query_outranks_matching_less(query):
         assert status == 200, body.get("error")
 
     values, scores = _ranked_hits(query, f"recall@{graph} monsoon delta depth:1")
-    assert values == [both, one], (
-        f"two matching terms must beat one; got {values}"
-    )
+    assert values == [both, one], f"two matching terms must beat one; got {values}"
     assert scores[0] > scores[1], (
         f"the better match must win strictly, not by tiebreak: {scores}"
     )

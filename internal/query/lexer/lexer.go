@@ -143,15 +143,21 @@ f:
 // the decoded (unquoted, unescaped) text is returned. If the input ends before
 // a closing quote, an ILLEGAL token carrying the partial text is returned so the
 // parser can report an unterminated phrase.
+//
+// End of input is detected by position, not by peek() returning rune(0): JSON
+// may legally carry a NUL escape (\u0000) inside free-flowing text, and a
+// phrase must swallow it as data like any other character rather than
+// misreport the phrase as unterminated.
 func (l *Lexer) scanPhrase() Token {
 	start := l.CurrentPos
 	l.readCharacter() // consume the opening quote
 
 	var res []rune
 	for {
-		switch l.peek() {
-		case rune(0):
+		if l.CurrentPos.Column >= len(l.Input) {
 			return Token{Type: ILLEGAL, Literal: string(res), Pos: start}
+		}
+		switch l.peek() {
 		case rune('\''):
 			l.readCharacter() // consume the quote
 			if l.peek() == rune('\'') {

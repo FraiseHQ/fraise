@@ -81,7 +81,7 @@ _DEAD_URL = "http://127.0.0.1:1"
 # rather than hubs, so from any seed fact the hub is one hop away (invisible)
 # and its siblings are two — which makes result counts an exact function of
 # depth. Mirrors the star the e2e suite uses, through the SDK instead of raw
-# HTTP. No apostrophes: the grammar cannot escape one inside a quoted phrase.
+# HTTP.
 _INSTRUMENT_TOPIC = "instruments"
 _INSTRUMENT_FACTS = {
     "cello": "the cello is bowed and tuned in fifths",

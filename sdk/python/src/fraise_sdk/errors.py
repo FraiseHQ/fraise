@@ -32,9 +32,9 @@ class FraiseError(Exception):
 class FraiseQueryError(FraiseError):
     """A query could not be built from the given arguments.
 
-    Raised before any request leaves the client — e.g. a fact value containing a
-    single quote, or a keyword with embedded whitespace, which the server's query
-    grammar cannot represent.
+    Raised before any request leaves the client — e.g. an empty fact value, or
+    a keyword with embedded whitespace, which the server's query grammar cannot
+    represent.
     """
 
 

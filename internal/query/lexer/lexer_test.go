@@ -844,6 +844,16 @@ func TestScanPhrase(t *testing.T) {
 		{"only an escaped quote", "''''", lexer.PHRASE, "'"},
 		{"interior spacing preserved", "'a   b'", lexer.PHRASE, "a   b"},
 		{"unterminated", "'oops no close", lexer.ILLEGAL, "oops no close"},
+		// Free-flowing text: ingestion feeds phrases arbitrary prose, so every
+		// JSON-transportable character is data between the quotes.
+		{"newline inside", "'line one\nline two'", lexer.PHRASE, "line one\nline two"},
+		{"crlf and tab inside", "'a\r\n\tb'", lexer.PHRASE, "a\r\n\tb"},
+		{"emoji and cjk", "'déjà vu 😀 東京'", lexer.PHRASE, "déjà vu 😀 東京"},
+		{"backslashes stay literal", `'C:\temp\new'`, lexer.PHRASE, `C:\temp\new`},
+		{"double quotes stay literal", `'she said "hi"'`, lexer.PHRASE, `she said "hi"`},
+		{"nul is data, not end of input", "'a\x00b'", lexer.PHRASE, "a\x00b"},
+		{"apostrophe at both edges", "'''wow'''", lexer.PHRASE, "'wow'"},
+		{"apostrophe cluster", "'it''s ''fine'''", lexer.PHRASE, "it's 'fine'"},
 	}
 
 	for _, tc := range cases {

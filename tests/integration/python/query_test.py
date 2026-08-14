@@ -83,13 +83,35 @@ def test_every_recall_the_builder_emits_parses(kwargs, client, query_graph):
     assert "results" in body
 
 
+def test_a_query_phrase_recall_parses(client, query_graph):
+    """A whole question as one quoted phrase term is accepted by the server.
+
+    Reserved words inside the quotes ("topic") stay literal, and the trailing
+    top: clause still parses as a clause.
+    """
+    body = client.query(
+        build_recall(
+            query="what topic has john been blogging about recently",
+            graph=query_graph,
+            top=10,
+        )
+    )
+    assert "results" in body
+
+
 @pytest.mark.parametrize(
     "value",
     [
         "a plain sentence with spaces",
         "punctuation, semicolons; and dashes - like this",
         "digits 1234 and symbols @ # % mixed in",
+        "it's got an apostrophe, and rock 'n' roll has two",
         "le barometre chute avant la tempete",
+        "line one\nline two\r\n\tindented",
+        "déjà vu 😀 東京",
+        'C:\\temp\\new says "hi"',
+        "a nul\x00survives json transport",
+        '{"looks": ["like", "json"]} - [markdown](too)',
         "a" * 300,
     ],
 )
@@ -98,8 +120,8 @@ def test_awkward_values_still_parse(value, client, query_graph):
 
     Quoting is the builder's job and finding the phrase boundary is the
     server's; a value that makes the parser stumble means the two disagree
-    about where the phrase ends. No apostrophe here by design — the builder
-    rejects it up front, since the grammar has no escape for it.
+    about where the phrase ends — including over the doubled-quote escape
+    the builder applies to apostrophes.
     """
     client.query(build_remember(value, graph=query_graph, topics=["quoting"]))
 

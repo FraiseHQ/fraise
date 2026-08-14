@@ -112,9 +112,9 @@ complete, Docker-runnable script.
 
 ## Notes & limits
 
-- A fact value is stored inside a single-quoted phrase and the grammar has no
-  escape for an apostrophe, so `remember("it's blue")` raises `FraiseQueryError`.
-  Rephrase without the apostrophe.
+- A fact value is stored inside a single-quoted phrase where every character
+  is literal; the SDK escapes apostrophes for you, so `remember("it's blue")`
+  stores the text exactly as written.
 - Keywords, topics, and entities are single whitespace-free tokens.
 - The first vector written to a graph fixes that graph's embedding dimension;
   later writes to the same graph must match it.

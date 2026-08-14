@@ -115,11 +115,18 @@ def test_hit_values_come_back_exactly_as_written(client, models_graph):
     assert stored in [hit.value for hit in result]
 
 
-def test_scores_are_not_clamped_to_one(tide_result):
-    """Scores are positive and the seed hit exceeds 1.0.
+def test_scores_are_raw_fused_quantities(tide_result):
+    """Scores are positive and arrive raw, on the scorer's own scale.
 
-    Documents a real property of the engine's scoring that the obvious
-    assertion — 0.0 <= score <= 1.0 — would get wrong.
+    Under the shipped reciprocal-rank fusion a score is a sum of 1/(k+rank)
+    terms, so every hit lands as a small fraction well below 1.0. The obvious
+    reading of a score as a similarity in [0, 1] is wrong in both directions:
+    nothing normalises the fused sums to that range on purpose, and nothing
+    caps what a differently-scaled scorer may return — clients must treat
+    scores as ordering, not probability.
     """
     assert all(hit.score > 0 for hit in tide_result)
-    assert max(hit.score for hit in tide_result) > 1.0
+    assert all(hit.score < 1.0 for hit in tide_result), (
+        "reciprocal-rank sums are small fractions; a score at or above 1.0 "
+        "means the fold changed scale and this pin should be revisited"
+    )

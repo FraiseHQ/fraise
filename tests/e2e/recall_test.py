@@ -62,6 +62,62 @@ def test_remember_then_recall(query):
     )
 
 
+@pytest.mark.parametrize(
+    ("marker", "value"),
+    [
+        ("freeflowplain", "a plain sentence with spaces"),
+        ("freeflowpunct", "punctuation, semicolons; and dashes - like this"),
+        ("freeflowsymbols", "digits 1234 and symbols @ # % $ ( ) : mixed in"),
+        ("freeflowquotes", "it's got an apostrophe, and rock 'n' roll has two"),
+        ("freeflowaccents", "le barometre chute avant la tempete"),
+        ("freeflowlines", "line one\nline two\r\n\tindented"),
+        ("freeflowunicode", "déjà vu 😀 東京"),
+        ("freeflowbackslash", 'C:\\temp\\new says "hi"'),
+        ("freeflownul", "a nul\x00survives json transport"),
+        ("freeflowjson", '{"looks": ["like", "json"]} - [markdown](too)'),
+        ("freeflowreserved", "recall the top topic since until depth vec entity"),
+        ("freeflowlong", "a" * 300),
+    ],
+)
+def test_free_flowing_text_round_trips(query, marker, value):
+    """Ingested prose is stored and returned byte-for-byte over raw HTTP.
+
+    Inside a quoted phrase every character is literal: reserved words and
+    symbols carry no meaning, a doubled quote is the escape for an apostrophe,
+    and newlines, control characters (a NUL included — JSON delivers it as
+    \\u0000), emoji and backslashes are all data. The same battery the
+    integration suite parses is asserted harder here: each value is recalled
+    by the marker word stored beside it and must come back exactly as written.
+
+    Facts are keyed by their value, so the writes stay idempotent across
+    reruns against a long-lived server.
+    """
+    fact = f"{value} {marker}"
+    status, body = query(
+        "remember@1 '{}' topic:freeflow".format(fact.replace("'", "''"))
+    )
+    assert status == 200, body.get("error")
+
+    status, body = query(f"recall@1 {marker}")
+    assert status == 200, body.get("error")
+    values = [h["value"] for h in body["results"]["hits"]]
+    assert fact in values, f"want the text back verbatim, got {values}"
+
+
+def test_recall_question_travels_as_a_quoted_phrase(query):
+    """The wire shape for a natural-language question: the whole question is
+    one quoted phrase term — reserved words like "topic" stay literal inside
+    the quotes — with clauses following. Bare unquoted question words would
+    collide with the grammar's keywords and are rejected; the quoted form is
+    the supported shape.
+    """
+    status, body = query(
+        "recall@1 'what topic has jules been blogging about recently' top:10"
+    )
+    assert status == 200, body.get("error")
+    assert body["results"] is not None
+
+
 # Four facts sharing a single topic, each with a unique keyword. This is a
 # star: every fact hangs off the same "planets" hub. Recall returns facts, not
 # the hub, so from a seed fact the hub is one hop away (depth 1, invisible) and
