@@ -89,8 +89,7 @@ A non-positive `half-life` disables decay.
 | `max-top`              | `-max-top`              | `1000`    | ceiling on `top:`, rejected at parse time past it         |
 | `max-depth`            | `-max-depth`            | `6`       | ceiling on `depth:`                                       |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096`    | ceiling on a bound vector's length                        |
-| `seed-size`            | `-seed-size`            | `10`      | seeds pulled from each source (text, vector)              |
-| `rrf-k`                | `-rrf-k`                | `60`      | dampening constant k in the RRF score fold Σ 1/(k+rank)   |
+| `seed-size`            | `-seed-size`            | `10`      | minimum candidate budget per source; widened to `top:`    |
 
 `precision` is a compile-time type parameter: both instantiations are built into
 the binary and this setting picks which one runs.
@@ -98,11 +97,6 @@ the binary and this setting picks which one runs.
 The three ceilings exist so one query cannot force unbounded work. They bound
 what a *client* may ask for; the defaults above them are what it gets when it
 asks for nothing.
-
-`rrf-k` shapes how a recall fuses each source's ranking: higher values flatten
-rank differences near the top of each list, so broad agreement between sources
-counts for more and any single source's favourite counts for less. The default
-of 60 is the empirical standard from the RRF literature.
 
 ### `[db.hashing-function]`
 
@@ -115,18 +109,32 @@ This derives node keys from values. Changing either on a populated store means
 the same fact hashes to a different key — since nothing is persisted, that only
 matters across a restart with a changed config.
 
-### `[db.search-algorithm]` / `[db.ranking-algorithm]`
+### `[db.search-algorithm]` / `[db.ranking-algorithm]` / `[db.scoring-algorithm]`
 
-| Setting                               | Flag                 | Default | Accepts                          |
-|---------------------------------------|----------------------|---------|----------------------------------|
-| `search-algorithm.name`               | `-search-algorithm`  | `none`  | `none` `bfs`                     |
-| `ranking-algorithm.name`              | `-ranking-algorithm` | `none`  | `none` `pagerank`                |
-| `ranking-algorithm.pagerank-damping`  | `-pagerank-damping`  | `0.85`  | probability of following an edge |
-| `ranking-algorithm.pagerank-max-iter` | `-pagerank-max-iter` | `100`   | power-iteration cap              |
-| `ranking-algorithm.pagerank-tol`      | `-pagerank-tol`      | `1e-6`  | convergence threshold            |
+| Setting                               | Flag                 | Default  | Accepts                          |
+|---------------------------------------|----------------------|----------|----------------------------------|
+| `search-algorithm.name`               | `-search-algorithm`  | `excess` | `none` `bfs` `excess`            |
+| `ranking-algorithm.name`              | `-ranking-algorithm` | `none`   | `none` `pagerank`                |
+| `ranking-algorithm.pagerank-damping`  | `-pagerank-damping`  | `0.85`   | probability of following an edge |
+| `ranking-algorithm.pagerank-max-iter` | `-pagerank-max-iter` | `100`    | power-iteration cap              |
+| `ranking-algorithm.pagerank-tol`      | `-pagerank-tol`      | `1e-6`   | convergence threshold            |
+| `scoring-algorithm.name`              | `-scoring-algorithm` | `excess` | `excess` `rrf`                   |
+| `relevance-model.name`                | `-relevance-model`   | `bm25`   | `bm25` `matchcount`              |
 
-`none` leaves the graph on its built-in walk and applies no global ranking
-boost. The pagerank knobs are read only when `ranking-algorithm` is `pagerank`.
+`search-algorithm` selects the traversal moving seed evidence through the
+graph: `excess` is the shipped excess-transmission strategy, `bfs` remains
+available for comparison runs (tree-shaped incidence), and `none` turns the
+graph channel off — text/vector search only. `scoring-algorithm` selects the
+fold deriving relevance from the pooled evidence; `rrf` remains available for
+comparison runs (its dampening constant is fixed at 60, the literature
+standard — a comparison baseline is not tunable) but carries no null model,
+which is why `excess` is the default (see `docs/design.md`). `relevance-model`
+selects how the text index turns a match into a number: `bm25` (raw
+idf-weighted mass × query coverage, what the excess methodology consumes) or
+`matchcount` (one point per query-term occurrence, the pre-BM25 ranking, for
+comparison runs). The pagerank knobs are
+read only when `ranking-algorithm` is `pagerank`; `none` applies no global
+ranking boost.
 
 ### `[db.vector-search]`
 
@@ -166,7 +174,6 @@ precision = "float64"
 default-top = 10
 default-depth = 3
 seed-size = 64
-rrf-k = 60
 
 [db.hashing-function]
 name = "xxhash"

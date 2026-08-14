@@ -103,7 +103,7 @@ func TestValidateAcceptsTheDefaults(t *testing.T) {
 // test passing where it should fail — the whole point being that no setting
 // keeps a silent fallback while its neighbours are checked.
 //
-// The setting's dotted name is asserted too: with six of them going through one
+// The setting's dotted name is asserted too: with eight of them going through one
 // loop, "invalid value" alone would not tell an operator which line to fix.
 func TestValidateChecksEverySetting(t *testing.T) {
 	cases := []struct {
@@ -116,6 +116,8 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.hashing-function.name", func(c *ConfigSet, v string) { c.DB.HashingFunction.Name = v }},
 		{"db.search-algorithm.name", func(c *ConfigSet, v string) { c.DB.SearchAlgorithm.Name = v }},
 		{"db.ranking-algorithm.name", func(c *ConfigSet, v string) { c.DB.RankingAlgorithm.Name = v }},
+		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
+		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 	}
 
 	for _, tc := range cases {
@@ -134,7 +136,7 @@ func TestValidateChecksEverySetting(t *testing.T) {
 	}
 }
 
-// TestValidateCanonicalisesEverySetting pins the rewrite half for all six: a
+// TestValidateCanonicalisesEverySetting pins the rewrite half for all eight: a
 // value typed in any casing lands on the canonical spelling, which is what the
 // consumers' switches compare against.
 func TestValidateCanonicalisesEverySetting(t *testing.T) {
@@ -143,8 +145,10 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 	c.Log.Format = "JSON"
 	c.DB.Precision = "Float64"
 	c.DB.HashingFunction.Name = "T1HA"
-	c.DB.SearchAlgorithm.Name = "BFS"
+	c.DB.SearchAlgorithm.Name = "EXCESS"
 	c.DB.RankingAlgorithm.Name = "PageRank"
+	c.DB.ScoringAlgorithm.Name = "RRF"
+	c.DB.RelevanceModel.Name = "BM25"
 
 	if err := c.validate(); err != nil {
 		t.Fatalf("validate() returned error: %v", err)
@@ -155,8 +159,10 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 		{"log.format", c.Log.Format, LogFormatJSON},
 		{"db.precision", c.DB.Precision, PrecisionFloat64},
 		{"db.hashing-function.name", c.DB.HashingFunction.Name, HashingT1ha},
-		{"db.search-algorithm.name", c.DB.SearchAlgorithm.Name, SearchBFS},
+		{"db.search-algorithm.name", c.DB.SearchAlgorithm.Name, SearchExcess},
 		{"db.ranking-algorithm.name", c.DB.RankingAlgorithm.Name, RankingPageRank},
+		{"db.scoring-algorithm.name", c.DB.ScoringAlgorithm.Name, ScoringRRF},
+		{"db.relevance-model.name", c.DB.RelevanceModel.Name, RelevanceBM25},
 	} {
 		if got.have != got.want {
 			t.Errorf("%s = %q, want the canonical %q", got.name, got.have, got.want)

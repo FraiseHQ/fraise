@@ -214,28 +214,18 @@ def test_vector_search_with_real_embeddings(query):
     )
 
 
-# Three facts engineered so the text and vector rankings disagree: the text
-# index's clear favourite has no embedding, the vector index's exact nearest
-# matches no query term, and one fact sits second in BOTH lists. The vector
-# values cluster around -0.5, away from every other embedding on graph 6
-# (1.0, 0.9, 0.5, -0.9), so the vector ranks below are fixed whatever else
-# the suite has written.
 KRAKATOA_TEXT = "krakatoa ash fell for days"  # both terms; no embedding
 KRAKATOA_BOTH = "the ash cloud crossed the ocean"  # one term; near embedding
 KRAKATOA_VEC = "sensors recorded the pressure wave"  # no terms; exact embedding
 
 
-def test_recall_fuses_disagreeing_text_and_vector_by_consensus(query, vector):
-    """When text and vector disagree, the fact both sources agree on wins.
-
-    Text ranks: KRAKATOA_TEXT matches both query terms (rank 0), KRAKATOA_BOTH
-    one (rank 1). Vector ranks: KRAKATOA_VEC is the query embedding exactly
-    (rank 0), KRAKATOA_BOTH is the next-nearest (rank 1). Under rank fusion
-    Σ 1/(60+rank) the consensus fact scores 1/61 + 1/61, above the 1/60 of
-    either source's favourite — the fused order is topped by a fact that leads
-    neither list. depth:1 keeps resident graph-6 facts from adding walk
-    sightings, and residents rank no better than 2 in the vector list, so they
-    score at most 1/62, below all three.
+def test_recall_fuses_text_and_vector_additively(query, vector, explain):
+    """Channels fuse by adding mass, not by counting rank votes: a fact seen
+    by both channels scores exactly the sum of what each observed, and a fact
+    seen by one scores that channel's mass alone. (The RRF-era opinion — a
+    fact leading neither list tops both leaders by consensus votes — is
+    deliberately retired: rank votes were how mega-hubs manufactured
+    consensus from size.)
     """
     graph = 6
     writes = (
@@ -252,19 +242,23 @@ def test_recall_fuses_disagreeing_text_and_vector_by_consensus(query, vector):
             )
         assert status == 200, body.get("error")
 
-    status, body = query(
+    status, body = explain(
         f"recall@{graph} krakatoa ash vec:$v depth:1 top:10",
         parameters={"v": vector(value=-0.5)},
     )
     assert status == 200, body.get("error")
+    hits = {h["value"]: h for h in body["results"]["hits"]}
 
-    values = [hit["value"] for hit in body["results"]["hits"]]
-    assert values[0] == KRAKATOA_BOTH, (
-        f"the fact text and vector agree on must top the fused order; got {values}"
+    both = hits[KRAKATOA_BOTH]
+    sources = sorted(c["source"] for c in both["contributions"])
+    assert sources == ["text", "vector"], (
+        f"the two-channel fact must carry both observations: {both['contributions']}"
     )
-    # The two single-source favourites tie at 1/60 and land next, in either
-    # order (recency decay perturbs the tie by write timing).
-    assert set(values[1:3]) == {
-        KRAKATOA_TEXT,
-        KRAKATOA_VEC,
-    }, f"both single-source favourites should follow the consensus fact; got {values}"
+    assert abs(both["score"] - sum(c["score"] for c in both["contributions"])) < 1e-3, (
+        f"fusion is additive: {both}"
+    )
+
+    text_only = hits[KRAKATOA_TEXT]
+    assert [c["source"] for c in text_only["contributions"]] == ["text"], text_only
+    vec_only = hits[KRAKATOA_VEC]
+    assert [c["source"] for c in vec_only["contributions"]] == ["vector"], vec_only

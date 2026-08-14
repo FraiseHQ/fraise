@@ -28,10 +28,11 @@ responses stay free of it.
 import pytest
 
 # Two facts sharing a keyword and an entity, written idempotently to graph 2.
-# Each is a text seed for "pulsar" AND is reached by the other seed's walk
-# through the shared entity at hop 2, so every hit's breakdown carries exactly
-# one text contribution and one graph contribution — both retrieval sources in
-# one deterministic query, with no embedding model needed.
+# Both are text seeds for "pulsar"; their shared entity is the query's only
+# touched anchor, so it sits exactly at the background rate and transmits
+# nothing — every hit's breakdown is a single text contribution. (Anchors are
+# heard only when their members matched better than their size predicts; see
+# test_explain_shows_transmitted_surplus for the funded case.)
 PULSAR_FACTS = (
     "the pulsar spins thirty times a second",
     "the pulsar emits radio beams",
@@ -46,9 +47,11 @@ def _seed_pulsar_facts(query):
 
 
 def test_explain_breaks_down_each_hit_by_source(query, explain):
-    """Every explained hit carries its contribution records: the seed sighting
-    from the text index (hop 0) and the walk sighting through the shared
-    entity (hop 2), each with a source name, raw score, and rank.
+    """Every explained hit carries its contribution records: here each hit is
+    a pure text seed — source name, raw BM25 mass, rank in the text list, and
+    count (1 for a seed sighting). The shared entity is the only touched
+    anchor, so it holds no surplus and no graph contribution appears; hop is
+    gone from the wire with the walk that produced it.
     """
     _seed_pulsar_facts(query)
 
@@ -62,16 +65,95 @@ def test_explain_breaks_down_each_hit_by_source(query, explain):
         assert contributions, f"explained hit carries no contributions: {hit}"
 
         by_source = {c["source"]: c for c in contributions}
-        assert set(by_source) == {"text", "graph"}, (
-            f"want one text and one graph sighting, got {contributions}"
+        assert set(by_source) == {"text"}, (
+            f"a lone fair-share anchor must transmit nothing, got {contributions}"
         )
-        assert by_source["text"]["hop"] == 0, "a seed sighting is hop 0"
-        assert by_source["text"]["rank"] in (0, 1), "two tied text seeds rank 0 and 1"
-        assert by_source["graph"]["hop"] == 2, (
-            "the sibling fact is two hops away through the shared entity"
-        )
+        assert by_source["text"]["rank"] in (0, 1), "two text seeds rank 0 and 1"
+        assert by_source["text"]["count"] == 1, "a seed sighting counts once"
+        assert "hop" not in by_source["text"], "hop left the wire with the walk"
         for c in contributions:
             assert isinstance(c["score"], (int, float)), c
+
+
+# The surplus fixture: a small "weather" cluster concentrates the query's mass
+# while a larger "archive" hub holds a fair share of it, so exactly one anchor
+# speaks and its silent member is funded by transmission alone.
+STORM_CLUSTER = (
+    "the barometer falls before the storm",
+    "storm clouds gather at sea",
+    "the harbour is calm tonight",  # no query term: funded or invisible
+)
+STORM_HUB = ("a storm of paperwork",) + tuple(
+    f"unrelated archive memo {i}" for i in range(7)
+)
+
+ALPHA = 0.5  # the server's per-edge attenuation; α² on the two-edge path
+
+
+def _seed_storm_facts(query):
+    for phrase in STORM_CLUSTER:
+        status, body = query(f"remember@2 '{phrase}' topic:weather")
+        assert status == 200, body.get("error")
+    for phrase in STORM_HUB:
+        status, body = query(f"remember@2 '{phrase}' topic:archive")
+        assert status == 200, body.get("error")
+
+
+def test_explain_shows_transmitted_surplus(query, explain):
+    """The funded case: the cluster's silent member surfaces carrying a graph
+    contribution that names its funding anchor — via "weather", the anchor's
+    degree, its observed mass and funding-seed count — proving surplus, not
+    reachability, is what an anchor passes on. The archive hub's memos stay
+    out: at fair share it transmits nothing.
+    """
+    _seed_storm_facts(query)
+
+    status, body = explain("recall@2 barometer storm top:20")
+    assert status == 200, body.get("error")
+    hits = {h["value"]: h for h in body["results"]["hits"]}
+
+    calm = hits.get("the harbour is calm tonight")
+    assert calm is not None, (
+        f"want the cluster's silent member funded, got {list(hits)}"
+    )
+    [contribution] = calm["contributions"]
+    assert contribution["source"] == "graph"
+    assert contribution["via"] == "weather", contribution
+    assert contribution["degree"] == 3, contribution
+    assert contribution["count"] == 2, "two seeds fund the weather cluster"
+    assert contribution["score"] > 0, "the observation carries the anchor's mass"
+
+    for memo in STORM_HUB[1:]:
+        assert memo not in hits, f"fair-share hub memo {memo!r} rode in on size alone"
+
+
+def test_explain_score_recomputes_from_payload(query, explain):
+    """The recompute pin: with the query-level background rate, every hit's
+    score equals the formula applied to its own payload — S = m + α²·Σ max(0,
+    M_A − m − d_A·ρ₀) — within float tolerance (the hair of recency decay
+    between write and read). The payload is therefore a complete explanation,
+    not a summary.
+    """
+    _seed_storm_facts(query)
+
+    status, body = explain("recall@2 barometer storm top:20")
+    assert status == 200, body.get("error")
+    background = body["results"].get("background", 0)
+    assert background > 0, "two anchors are touched; the null rate must be positive"
+
+    for hit in body["results"]["hits"]:
+        contributions = hit["contributions"]
+        m = sum(c["score"] for c in contributions if c["source"] in ("text", "vector"))
+        surplus = sum(
+            max(0.0, c["score"] - m - c["degree"] * background)
+            for c in contributions
+            if c["source"] == "graph"
+        )
+        want = m + ALPHA * ALPHA * surplus
+        assert abs(hit["score"] - want) < 1e-3, (
+            f"{hit['value']!r}: score {hit['score']} != recomputed {want} "
+            f"from {contributions} at background {background}"
+        )
 
 
 def test_plain_query_carries_no_contributions(query):

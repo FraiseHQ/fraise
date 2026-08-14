@@ -146,45 +146,42 @@ func TestBFSTraverse(t *testing.T) {
 	}
 }
 
-// TestSearchWithConfiguredTraversal shows the traversal algorithm changing
-// what Search returns: with an outgoing-only BFS a seed with no outgoing
-// edges expands to nothing, while the default (both directions) pulls in the
-// fact pointing at it.
+// TestSearchWithConfiguredTraversal shows the traversal seam changing what
+// Search returns. BFS remains available as a tree-shaped strategy: it
+// observes the same anchors as the excess traversal but discovers each member
+// through a single parent, and the collection layer accepts both shapes. The
+// storm fixture's silent cluster member is funded under either installed
+// strategy; with no traversal at all the graph channel is off and only text
+// matches surface.
 func TestSearchWithConfiguredTraversal(t *testing.T) {
-	build := func() *graph.InMemoryGraph[uint64, float64] {
-		g := graph.NewGraph[uint64, float64](testConfig())
-		now := time.Now()
-		h := g.GetHasher()
-		fact := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: "acme makes things", Timestamp: now}, Hasher: h}
-		entity := &graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: "gizmo", Timestamp: now}, Hasher: h}
-		if err := g.Set(fact); err != nil {
-			t.Fatalf("Set(fact) = %v, want nil", err)
+	find := func(values []string, want string) bool {
+		for _, v := range values {
+			if v == want {
+				return true
+			}
 		}
-		if err := g.Set(entity); err != nil {
-			t.Fatalf("Set(entity) = %v, want nil", err)
-		}
-		mentions := graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: h}
-		if err := g.Set(mentions); err != nil {
-			t.Fatalf("Set(mentions) = %v, want nil", err)
-		}
-		return g
+		return false
 	}
 
-	// The default traversal follows both directions: seeding on the entity's
-	// value walks the incoming Mentions edge to the fact. The entity itself is
-	// not a fact, so the fact is the only hit.
-	g := build()
-	nodes, _, _ := g.Search([]string{"gizmo"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "acme makes things" {
-		t.Errorf("Search with default traversal = %d nodes, want just the linked fact", len(nodes))
+	// No traversal: text-only, the silent member cannot surface. NewGraph
+	// installs none — the traversal arrives from configuration at db.Start —
+	// so a bare graph is exactly the channel-off case.
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	bare := graph.NewGraph[uint64, float64](cfg)
+	calm, _ := stormGraph(t, bare)
+	nodes, _, _, _ := bare.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	if find(values(nodes), calm) {
+		t.Errorf("Search with no traversal surfaced %q — the graph channel should be off", calm)
 	}
 
-	// Outgoing-only BFS: the entity has no outgoing edges, so the walk never
-	// reaches the fact and nothing (fact-typed) remains to return.
-	g = build()
-	g.SetTraversal(graph.NewBFSTraversal[uint64, float64](graph.Outgoing))
-	nodes, _, _ = g.Search([]string{"gizmo"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
-	if len(nodes) != 0 {
-		t.Errorf("Search with outgoing BFS returned %d nodes, want none", len(nodes))
+	// BFS installed: tree-shaped incidence still observes the weather
+	// cluster and funds its silent member.
+	g := noDecayGraph()
+	g.SetTraversal(graph.NewBFSTraversal[uint64, float64](graph.Both))
+	calm, _ = stormGraph(t, g)
+	nodes, _, _, _ = g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	if !find(values(nodes), calm) {
+		t.Errorf("Search with BFS installed did not fund %q — a tree traversal still observes anchors", calm)
 	}
 }

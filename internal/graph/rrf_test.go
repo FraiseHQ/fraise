@@ -35,11 +35,11 @@ import (
 func TestRRFConsensusBeatsASingleFavourite(t *testing.T) {
 	scorer := graph.NewRRFScorer[uint64, float64](60)
 
-	twoAtThree := scorer.Score([]graph.Contribution[float64]{
+	twoAtThree := scorer.Score([]graph.Contribution[uint64, float64]{
 		{Src: graph.SrcText, Rank: 3},
 		{Src: graph.SrcVector, Rank: 3},
 	})
-	oneAtOne := scorer.Score([]graph.Contribution[float64]{
+	oneAtOne := scorer.Score([]graph.Contribution[uint64, float64]{
 		{Src: graph.SrcText, Rank: 1},
 	})
 
@@ -57,13 +57,13 @@ func rrfScoresExactly[P float32 | float64](t *testing.T) {
 	cases := []struct {
 		name          string
 		k             int
-		contributions []graph.Contribution[P]
+		contributions []graph.Contribution[uint64, P]
 		want          P
 	}{
 		{
 			"a rank-0 sighting is 1/k",
 			60,
-			[]graph.Contribution[P]{{Src: graph.SrcText, Rank: 0}},
+			[]graph.Contribution[uint64, P]{{Src: graph.SrcText, Rank: 0}},
 			P(1) / P(60),
 		},
 		{
@@ -73,13 +73,13 @@ func rrfScoresExactly[P float32 | float64](t *testing.T) {
 			// calibration RRF exists to avoid.
 			"score and hop are deliberately ignored",
 			60,
-			[]graph.Contribution[P]{{Src: graph.SrcGraph, Score: 999, Rank: 0, Hop: 200}},
+			[]graph.Contribution[uint64, P]{{Src: graph.SrcGraph, Score: 999, Rank: 0, }},
 			P(1) / P(60),
 		},
 		{
 			"sightings sum across sources",
 			60,
-			[]graph.Contribution[P]{
+			[]graph.Contribution[uint64, P]{
 				{Src: graph.SrcText, Rank: 0},
 				{Src: graph.SrcVector, Rank: 1},
 				{Src: graph.SrcGraph, Rank: 2},
@@ -89,7 +89,7 @@ func rrfScoresExactly[P float32 | float64](t *testing.T) {
 		{
 			"k is the scorer's parameter",
 			1,
-			[]graph.Contribution[P]{{Src: graph.SrcText, Rank: 1}},
+			[]graph.Contribution[uint64, P]{{Src: graph.SrcText, Rank: 1}},
 			P(1) / P(2),
 		},
 		{

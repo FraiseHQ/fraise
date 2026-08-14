@@ -96,7 +96,7 @@ func TestRunAcceptsAnyCasingOfAValueThatIsAccepted(t *testing.T) {
 		{"-log-format", "Json"},
 		{"-precision", "Float64"},
 		{"-hashing-function", "T1ha"},
-		{"-search-algorithm", "BFS"},
+		{"-search-algorithm", "EXCESS"},
 		{"-ranking-algorithm", "PageRank"},
 	}
 

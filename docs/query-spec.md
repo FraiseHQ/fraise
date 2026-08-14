@@ -166,7 +166,7 @@ anchor_value    = identifier | quoted_identifier ;
 modifier        = since_field | until_field | depth_field | top_field | vec_field ;
 since_field     = 'since' ':' time_value ;     (* lower time bound; duration read as "ago" *)
 until_field     = 'until' ':' time_value ;     (* upper time bound; duration read as "ago" *)
-depth_field     = 'depth' ':' integer ;        (* graph fact-hops, default 2 *)
+depth_field     = 'depth' ':' integer ;        (* accepted, currently inert: reserved for iterated transmission *)
 top_field       = 'top'   ':' integer ;        (* result limit, default 10 *)
 vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 

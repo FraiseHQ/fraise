@@ -38,10 +38,16 @@ func TestClampsSaturateInsteadOfWrapping(t *testing.T) {
 	if got := clampRank(math.MaxUint16 + 1); got != math.MaxUint16 {
 		t.Errorf("clampRank(MaxUint16+1) = %d, want %d", got, math.MaxUint16)
 	}
-	if got := clampHop(2); got != 2 {
-		t.Errorf("clampHop(2) = %d, want 2", got)
+	if got := clampCount(2); got != 2 {
+		t.Errorf("clampCount(2) = %d, want 2", got)
 	}
-	if got := clampHop(math.MaxUint8 + 1); got != math.MaxUint8 {
-		t.Errorf("clampHop(MaxUint8+1) = %d, want %d", got, math.MaxUint8)
+	if got := clampCount(math.MaxUint16 + 1); got != math.MaxUint16 {
+		t.Errorf("clampCount(MaxUint16+1) = %d, want %d", got, math.MaxUint16)
+	}
+	if got := clampDegree(7); got != 7 {
+		t.Errorf("clampDegree(7) = %d, want 7", got)
+	}
+	if got := clampDegree(math.MaxUint32 + 1); got != math.MaxUint32 {
+		t.Errorf("clampDegree(MaxUint32+1) = %d, want %d", got, uint32(math.MaxUint32))
 	}
 }

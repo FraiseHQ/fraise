@@ -98,34 +98,41 @@ def test_remember_then_recall_returns_the_fact(client, round_trip_graph):
     assert "the kettle whistles when the water boils" in [h.value for h in result]
 
 
-def test_a_topic_makes_sibling_facts_reachable(
-    instrument_graph, instrument_facts, client
-):
-    """Facts sharing a topic reach each other at depth 2 but not depth 1.
+def test_a_lone_seed_hub_stays_silent(instrument_graph, client):
+    """A single seed's topic hub holds exactly the background rate, so its
+    siblings never surface on reachability alone — at any depth, since depth
+    is inert (one anchor-mediated step; larger values reserved).
 
-    This is the behaviour ``topics=`` exists for, asserted on results rather
-    than on the substring the unit suite checks in the query string.
+    This is the excess-transmission contract through the SDK: an anchor is
+    heard only when its members matched better than its size predicts.
     """
-    seeded = client.recall("cello", graph=instrument_graph, depth=1)
-    assert seeded.count == 1
-    whole_star = client.recall("cello", graph=instrument_graph, depth=2)
-    assert whole_star.count == len(instrument_facts)
+    assert client.recall("cello", graph=instrument_graph, depth=1).count == 1
+    assert client.recall("cello", graph=instrument_graph, depth=2).count == 1
 
 
-def test_top_caps_the_number_of_results(instrument_graph, client):
-    """``top`` truncates a recall that would otherwise return the whole star."""
-    capped = client.recall("cello", graph=instrument_graph, depth=2, top=2)
+def test_top_caps_the_number_of_results(instrument_graph, instrument_facts, client):
+    """``top`` truncates a recall that would otherwise return every match.
+
+    Every instrument fact contains "is", so the text index matches all of
+    them directly.
+    """
+    capped = client.recall("is", graph=instrument_graph, top=2)
     assert capped.count == 2
+    assert client.recall("is", graph=instrument_graph, top=10).count == len(
+        instrument_facts
+    )
 
 
 def test_a_topic_filter_narrows_a_keyword_recall(
-    instrument_graph, instrument_topic, instrument_facts, client
+    instrument_graph, instrument_topic, client
 ):
-    """A topic filter alongside a keyword is accepted and returns the star."""
+    """A topic filter alongside a keyword is accepted and narrows the result
+    to the tagged match itself.
+    """
     filtered = client.recall(
         "cello", graph=instrument_graph, topics=[instrument_topic], depth=2
     )
-    assert filtered.count == len(instrument_facts)
+    assert filtered.count == 1
 
 
 def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):

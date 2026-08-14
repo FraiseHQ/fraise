@@ -94,17 +94,42 @@ score. Bounds are written as a duration read as "ago" (`since:7d`) or as a date
 Each temporal memory graph indexes all data ingested into a full-text search
 index and a vector index (when embeddings are provided).
 
-The two are seeds, not answers. A recall pulls a bounded number of candidates
-from each source it can use (`seed-size`), then walks the graph outward from
-those seeds up to `depth:` hops. Every sighting of a fact — by the text index,
-the vector index, or a walk — is ranked within its source, nearest first, and
-the fact's score fuses those ranks reciprocally (RRF, Σ 1/(k+rank) with k set
-by `rrf-k`, default 60): a fact
-several sources agree on outranks one source's favourite, and a fact reached
-deep in a walk ranks behind the ones reached before it. Text and vector search
-decide *where* to start; the graph walk decides what comes with it. This is
-why a recall needs at least one term: without a seed there is nowhere to start
-walking.
+The two are seeds, not answers, and retrieval scores are **BM25 plus
+transmitted surplus**. A recall pulls a bounded number of candidates from each
+source it can use (at least `seed-size`, widened to `top:` when more results
+are asked for), each carrying its raw retrieval mass: BM25 × query coverage
+from the text index, `1/(1+distance)` similarity from the vector index. That
+mass then flows into the fact–anchor graph: every anchor (topic or entity
+node) the query touches observes the total seed mass on its members and
+compares it to a **background rate** — the mass a size-proportional smear
+across the query's touched anchors would predict for an anchor of its degree.
+Only the excess above background is transmitted to the anchor's members,
+attenuated per edge (α = 0.5, α² over the two-edge seed→anchor→fact path),
+with the member's own mass excluded so a fact never funds its own boost. A
+fact's relevance is its own mass plus everything transmitted to it.
+
+One sentence of intuition: *an anchor may only speak when its members matched
+better than its size alone predicts — hubs are heard exactly when they are
+surprising, and silent when they are merely large.* Four consequences are the
+contract, each pinned by the test suite:
+
+* **BM25 floor.** Transmission only ever adds, so anchored search can never
+  fall below the plain text index's ranking by scoring alone; with no surplus
+  anywhere the two are identical.
+* **Hub silence.** An anchor at its fair share of the background transmits
+  nothing — a mega-hub cannot flood the tail on size alone, structurally.
+* **Earned preemption.** A fact with no match of its own outranks a match
+  only through anchors carrying genuine above-background evidence, never
+  through mere reachability.
+* **No normalization, no knobs.** Scores stay in raw seed units end to end
+  (relevance is homogeneous in the mass scale, so normalizing is a provable
+  ordering no-op that only breaks the channels' commensurability), and the
+  methodology carries zero dataset-tuned constants.
+
+This is why a recall needs at least one term: without a seed there is no mass
+to transmit. `depth:` parses and is currently inert — the methodology uses
+exactly one anchor-mediated step; larger values are reserved for an iterated
+generalization.
 
 The vector index is a forest of random-projection trees (`rptree-n-trees`, each
 projecting to `rptree-projection-dimension`). Deleting or overwriting a vector

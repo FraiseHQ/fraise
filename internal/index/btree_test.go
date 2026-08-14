@@ -23,6 +23,7 @@
 package index_test
 
 import (
+	"math"
 	"errors"
 	"reflect"
 	"testing"
@@ -64,8 +65,13 @@ func TestBTreeIndexSearchEmpty(t *testing.T) {
 	}
 }
 
-func TestBTreeIndexSearchRanksByMatchCount(t *testing.T) {
+// TestBTreeIndexSearchRanksByRelevance pins the BM25 ranking behaviours a
+// match count cannot express: of two documents matching every query term, the
+// shorter one ranks first (length normalization — the long document dilutes
+// its terms), and a document matching nothing is not a result at all.
+func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetRelevance(index.NewBM25[int]())
 	docs := map[int]string{
 		1: "the quick brown fox jumps over the lazy dog",
 		2: "the quick brown fox",
@@ -77,17 +83,16 @@ func TestBTreeIndexSearchRanksByMatchCount(t *testing.T) {
 		}
 	}
 
-	got, _, err := idx.Search("quick brown fox", 0)
+	got, scores, err := idx.Search("quick brown fox", 0)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("Search returned %d keys, want 2: %v", len(got), got)
+	// Both matching documents cover the whole query; the shorter one wins.
+	if want := []int{2, 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Search() = %v, want %v (shorter full match first)", got, want)
 	}
-	// Docs 1 and 2 match all three terms equally and doc 3 matches none, so the
-	// key tiebreak decides the order of the two winners.
-	if want := []int{1, 2}; !reflect.DeepEqual(got, want) {
-		t.Errorf("Search() = %v, want %v", got, want)
+	if scores[0] <= scores[1] || scores[1] <= 0 {
+		t.Errorf("scores = %v, want strictly decreasing and positive", scores)
 	}
 }
 
@@ -235,13 +240,17 @@ func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
 	}
 }
 
-// textScoresRankByMatchCount checks that Search ranks documents by how many
-// query terms they contain and returns those counts as the P-typed score. It is
-// generic over P so the score type and values are exercised for both float32 and
-// float64. Doc 1 contains both query terms (score 2), doc 2 only one (score 1).
-func textScoresRankByMatchCount[P float32 | float64](t *testing.T) {
+// textScoresAreBM25TimesCoverage pins the exact score formula at precision P:
+// BM25 (idf-weighted, length-normalized term frequency) scaled by the fraction
+// of distinct query terms the document matched. The two-document fixture is
+// small enough to derive by hand — both documents have length 2, exactly the
+// corpus average, so every length norm is exactly 1 and the score reduces to
+// the idf sum times coverage: doc 1 matches "red" (df 1) and "green" (df 2)
+// with full coverage; doc 2 matches only "green" at half coverage.
+func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 	t.Helper()
 	idx := index.NewBTreeIndex[int, P](comparator.OrderedComparator[int])
+	idx.SetRelevance(index.NewBM25[int]())
 	if err := idx.Insert(1, "red green"); err != nil {
 		t.Fatalf("Insert(1) = %v, want nil", err)
 	}
@@ -254,15 +263,21 @@ func textScoresRankByMatchCount[P float32 | float64](t *testing.T) {
 		t.Fatalf("Search = %v, want nil", err)
 	}
 	if want := []int{1, 2}; !reflect.DeepEqual(keys, want) {
-		t.Errorf("Search keys = %v, want %v (doc 1 matches both terms, doc 2 one)", keys, want)
+		t.Errorf("Search keys = %v, want %v (doc 1 covers the query, doc 2 half)", keys, want)
 	}
-	if want := []P{2, 1}; !reflect.DeepEqual(scores, want) {
-		t.Errorf("Search scores = %v, want %v (match counts as %T)", scores, want, *new(P))
+	// idf(red) = ln(1 + (2-1+0.5)/(1+0.5)) = ln 2; idf(green) = ln(1 + 0.5/2.5).
+	want := []P{P(math.Log(2) + math.Log(1.2)), P(math.Log(1.2) * (1.0 / 2.0))}
+	if !reflect.DeepEqual(scores, want) {
+		t.Errorf("Search scores = %v, want %v (BM25 × coverage at %T)", scores, want, *new(P))
 	}
 }
 
-func TestBTreeIndexScoresByMatchCount_float64(t *testing.T) { textScoresRankByMatchCount[float64](t) }
-func TestBTreeIndexScoresByMatchCount_float32(t *testing.T) { textScoresRankByMatchCount[float32](t) }
+func TestBTreeIndexScoresAreBM25TimesCoverage_float64(t *testing.T) {
+	textScoresAreBM25TimesCoverage[float64](t)
+}
+func TestBTreeIndexScoresAreBM25TimesCoverage_float32(t *testing.T) {
+	textScoresAreBM25TimesCoverage[float32](t)
+}
 
 // TestBTreeIndexSearchTopKBounds checks the k parameter: k <= 0 returns every
 // match, a positive k caps the result to the top-k best matches. This is the

@@ -115,11 +115,20 @@ def test_hit_values_come_back_exactly_as_written(client, models_graph):
     assert stored in [hit.value for hit in result]
 
 
-def test_scores_are_not_clamped_to_one(tide_result):
-    """Scores are positive and the seed hit exceeds 1.0.
-
-    Documents a real property of the engine's scoring that the obvious
-    assertion — 0.0 <= score <= 1.0 — would get wrong.
+def test_scores_are_not_clamped_to_one(models_graph, client):
+    """Scores are positive, additive mass — BM25 text plus vector similarity —
+    on no fixed scale. A fact recalled by its own exact embedding carries
+    similarity 1/(1+0) = 1 on top of any text mass at all, so its score
+    exceeds 1.0 — which the obvious 0.0 <= score <= 1.0 assertion would get
+    wrong.
     """
-    assert all(hit.score > 0 for hit in tide_result)
-    assert max(hit.score for hit in tide_result) > 1.0
+    value = "the spring tide reached the old sea wall"
+    embedding = [0.5, -0.25, 0.75, 0.0, 0.5, -0.5]
+    client.remember(value, graph=models_graph, vector=embedding)
+
+    result = client.recall("tide", graph=models_graph, vector=embedding, embed=False)
+    assert all(hit.score > 0 for hit in result)
+    scores = {hit.value: hit.score for hit in result}
+    assert scores[value] > 1.0, (
+        f"text mass plus exact-vector similarity must exceed 1.0: {scores}"
+    )

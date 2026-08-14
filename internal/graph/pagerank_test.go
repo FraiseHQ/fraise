@@ -114,57 +114,58 @@ func (l factLink) Hash(h hash.Hasher[uint64, string]) uint64 {
 func (l factLink) Source() *graph.Entity[uint64] { var e graph.Entity[uint64] = l.src; return &e }
 func (l factLink) Target() *graph.Entity[uint64] { var e graph.Entity[uint64] = l.dst; return &e }
 
-// TestSearchWithPageRankRanking shows the ranking boost re-ordering results:
-// the hub fact of a star out-ranks the direct text hit once PageRank is
-// installed. Only facts are eligible hits, so the star is built from facts.
+// TestSearchWithPageRankRanking pins the boost stage: the installed ranking
+// multiplies relevance by graph centrality. Two facts match the query with
+// bit-identical text mass (same term frequency, same length, decay off), so
+// without a ranking only the key tiebreak orders them; with PageRank
+// installed, the fact the star concentrates its mass on comes out first
+// regardless of its key.
 func TestSearchWithPageRankRanking(t *testing.T) {
 	now := time.Now()
 
 	build := func() *graph.InMemoryGraph[uint64, float64] {
-		g := graph.NewGraph[uint64, float64](testConfig())
+		cfg := testConfig()
+		cfg.Engine.Halflife = 0
+		g := graph.NewGraph[uint64, float64](cfg)
 		h := g.GetHasher()
 
-		// A star of five spoke facts all linking to the same hub fact.
-		hub := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: "hub", Timestamp: now}, Hasher: h}
-		if err := g.Set(hub); err != nil {
-			t.Fatalf("Set(hub) = %v, want nil", err)
+		plain := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: "alpha plain note", Timestamp: now}, Hasher: h}
+		if err := g.Set(plain); err != nil {
+			t.Fatalf("Set(plain) = %v, want nil", err)
 		}
+		central := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: "alpha central note", Timestamp: now}, Hasher: h}
+		if err := g.Set(central); err != nil {
+			t.Fatalf("Set(central) = %v, want nil", err)
+		}
+
+		// A star of spokes all linking to the central fact concentrates the
+		// graph's PageRank mass on it.
 		for _, v := range []string{"spoke fact two", "spoke fact three", "spoke fact four", "spoke fact five", "spoke fact six"} {
 			fact := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: v, Timestamp: now}, Hasher: h}
 			if err := g.Set(fact); err != nil {
 				t.Fatalf("Set(%q) = %v, want nil", v, err)
 			}
-			if err := g.Set(factLink{src: &fact, dst: &hub, NodeAttributes: graph.NodeAttributes{Timestamp: now}, h: h}); err != nil {
+			if err := g.Set(factLink{src: &fact, dst: &central, NodeAttributes: graph.NodeAttributes{Timestamp: now}, h: h}); err != nil {
 				t.Fatalf("Set(link) = %v, want nil", err)
 			}
-		}
-
-		// The seed fact is the direct text hit; it too links to the hub.
-		seed := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: "alpha query", Timestamp: now}, Hasher: h}
-		if err := g.Set(seed); err != nil {
-			t.Fatalf("Set(seed) = %v, want nil", err)
-		}
-		if err := g.Set(factLink{src: &seed, dst: &hub, NodeAttributes: graph.NodeAttributes{Timestamp: now}, h: h}); err != nil {
-			t.Fatalf("Set(seed link) = %v, want nil", err)
 		}
 		return g
 	}
 
-	// Without a ranking the direct hit and the hub tie: under rank fusion the
-	// text sighting at rank 0 and the walk sighting at rank 0 weigh the same,
-	// so nothing separates them until a ranking is installed.
+	// Without a ranking the two matches tie to the bit: same term frequency,
+	// same document length, no decay — nothing separates them.
 	g := build()
-	nodes, scores, _ := g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _ := g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 || scores[0] != scores[1] {
-		t.Fatalf("Search without ranking = %d nodes, scores %v, want the direct hit and the hub tied", len(nodes), scores)
+		t.Fatalf("Search without ranking = %d nodes, scores %v, want the two matches tied", len(nodes), scores)
 	}
 
-	// The hub concentrates the star's PageRank mass, so its boost lifts it
-	// above the direct hit.
+	// The central fact concentrates the star's PageRank mass, so its boost
+	// lifts it above the equally-relevant plain fact.
 	g = build()
 	g.SetRanking(graph.NewPageRank[uint64, float64](0.85, 100, 1e-9))
-	nodes, _, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
-	if len(nodes) != 2 || (*nodes[0]).GetValue() != "hub" {
-		t.Errorf("Search with PageRank ranking did not put the hub first")
+	nodes, _, _, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	if len(nodes) != 2 || (*nodes[0]).GetValue() != "alpha central note" {
+		t.Errorf("Search with PageRank ranking did not put the central fact first")
 	}
 }
