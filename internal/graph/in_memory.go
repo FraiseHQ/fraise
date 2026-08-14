@@ -91,11 +91,14 @@ func (g *InMemoryGraph[K, P]) SetScorer(s Scorer[K, P]) {
 }
 
 func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGraph[K, P] {
-	// The relevance model is installed at the index's construction site,
-	// before any insert, per the Relevance mid-corpus contract. The excess
-	// methodology needs BM25's raw retrieval mass; "matchcount" — the
-	// index's own default — remains selectable for comparison runs.
+	// The tokenizer and relevance model are installed at the index's
+	// construction site, before any insert, per their mid-corpus contracts.
+	// Stemming makes morphological variants find each other — recall
+	// keywords rarely arrive in the fact's exact inflection — and the excess
+	// methodology needs BM25's raw retrieval mass; "matchcount", the index's
+	// own default, remains selectable for comparison runs.
 	textIndex := index.NewBTreeIndex[K, P](comparator.OrderedComparator[K])
+	textIndex.SetTokenizer(index.StemmingTokenizer{})
 	if cfg.DB.RelevanceModel.Name == config.RelevanceBM25 {
 		textIndex.SetRelevance(index.NewBM25[K]())
 	}

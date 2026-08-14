@@ -62,6 +62,17 @@ func NewBTreeIndex[K comparable, P float32 | float64](compare comparator.Compara
 	}
 }
 
+// SetTokenizer installs the tokenizer, mirroring SetRelevance. It must be
+// called before the first Insert and never after: postings tokenized under
+// the old scheme would be unreachable under the new one. nil is ignored
+// rather than stored: an index without a tokenizer cannot index.
+func (idx *BTreeIndex[K, P]) SetTokenizer(t Tokenizer) {
+	if t == nil {
+		return
+	}
+	idx.tokenizer = t
+}
+
 // SetRelevance installs the relevance model, mirroring the graph's Set*
 // precedent. It must be called before the first Insert and never after: the
 // model maintains its own corpus statistics through the lifecycle hooks, so

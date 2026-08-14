@@ -458,6 +458,20 @@ func (s constScorer) Score([]graph.Contribution[uint64, float64]) float64 { retu
 
 func (s constScorer) WithBackground(float64) graph.Scorer[uint64, float64] { return s }
 
+// TestNewGraphInstallsStemmingTokenizer pins the tokenizer wiring: recall
+// keywords rarely arrive in the fact's exact inflection, so NewGraph installs
+// the stemming tokenizer and a query for "blogging" finds the fact written
+// with "blogs".
+func TestNewGraphInstallsStemmingTokenizer(t *testing.T) {
+	g := newGraph()
+	mustSet(t, g, mkFact(g, "jules blogs about lighthouses", time.Now()))
+
+	nodes, _, _, _ := g.Search([]string{"blogging"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(nodes) != 1 || (*nodes[0]).GetValue() != "jules blogs about lighthouses" {
+		t.Fatalf("Search(blogging) = %v, want the blogs fact — inflections must unify", values(nodes))
+	}
+}
+
 // TestNewGraphSelectsConfiguredRelevanceModel pins the relevance-model
 // wiring: under "matchcount" a lone single-term match scores exactly 1 — one
 // point per query-term occurrence, the pre-BM25 ranking — where the default

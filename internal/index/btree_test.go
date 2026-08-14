@@ -321,3 +321,27 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 		}
 	}
 }
+
+
+// TestBTreeIndexStemmingUnifiesInflections pins the one-tokenizer contract
+// end to end: with the stemming tokenizer installed, a document indexed as
+// "running" is found by the query "runs", because both sides pass through
+// the same stemmer. This is what SetTokenizer exists for.
+func TestBTreeIndexStemmingUnifiesInflections(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetTokenizer(index.StemmingTokenizer{})
+	if err := idx.Insert(1, "the marathon runner was running at dawn"); err != nil {
+		t.Fatalf("Insert = %v, want nil", err)
+	}
+	if err := idx.Insert(2, "an unrelated note about harbours"); err != nil {
+		t.Fatalf("Insert = %v, want nil", err)
+	}
+
+	keys, _, err := idx.Search("runs", 0)
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	if len(keys) != 1 || keys[0] != 1 {
+		t.Fatalf("Search(runs) = %v, want the running document alone", keys)
+	}
+}

@@ -21,3 +21,33 @@
 // SOFTWARE.
 
 package index_test
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/RonsenbergVI/fraise/internal/index"
+)
+
+// TestStemmingTokenizerReducesInflections pins the stemmer's contract: the
+// split and casing are SimpleTokenizer's, and every English inflection lands
+// on its Snowball stem, so "running", "runs" and "RUN" become one term.
+func TestStemmingTokenizerReducesInflections(t *testing.T) {
+	got := index.StemmingTokenizer{}.Tokenize("The runner was RUNNING; she runs easily!")
+	want := []string{"the", "runner", "was", "run", "she", "run", "easili"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Tokenize = %v, want %v", got, want)
+	}
+}
+
+// TestStemmingTokenizerPassesUnstemmableTermsThrough pins the safety half:
+// numbers, non-English words and CJK text pass through the stemmer intact —
+// stemming rewrites, it never drops, so every term the plain split would
+// index still exists under some spelling.
+func TestStemmingTokenizerPassesUnstemmableTermsThrough(t *testing.T) {
+	got := index.StemmingTokenizer{}.Tokenize("v2 café 東京 1234")
+	want := []string{"v2", "café", "東京", "1234"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Tokenize = %v, want %v", got, want)
+	}
+}
