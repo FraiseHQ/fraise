@@ -126,12 +126,11 @@ type DBConfig struct {
 	// parse time).
 	MaxVectorDimension int `toml:"max-vector-dimension"`
 
-	// How many seeds to pull from each source (keywords and vector)
+	// The *minimum* candidate budget pulled from each source (keywords and
+	// vector). Search widens it to the requested result size — the effective
+	// budget is max(seed-size, top) — so a recall asking for more results
+	// than this can never be silently starved of candidates.
 	SeedSize int `toml:"seed-size"`
-
-	// RRF dampening constant k in the score fold Σ 1/(k+rank): higher values
-	// flatten rank differences near the top of each source's list
-	RRFK int `toml:"rrf-k"`
 
 	// database hashing function
 	HashingFunction HashingFunction `toml:"hashing-function"`
@@ -141,6 +140,12 @@ type DBConfig struct {
 
 	// graph search ranking boost (none, pagerank)
 	RankingAlgorithm RankingAlgorithm `toml:"ranking-algorithm"`
+
+	// relevance fold (excess, rrf)
+	ScoringAlgorithm ScoringAlgorithm `toml:"scoring-algorithm"`
+
+	// text-index relevance model (bm25, matchcount)
+	RelevanceModel RelevanceModel `toml:"relevance-model"`
 
 	VectorSearch VectorSearch `toml:"vector-search"`
 }
@@ -154,7 +159,20 @@ type HashingFunction struct {
 }
 
 type SearchAlgorithm struct {
-	// name (bfs)
+	// name (none, bfs, excess): the traversal moving seed evidence through
+	// the graph; "none" turns the graph channel off (text/vector only)
+	Name string `toml:"name"`
+}
+
+type ScoringAlgorithm struct {
+	// name (excess, rrf): the fold deriving each candidate's relevance from
+	// its pooled contributions
+	Name string `toml:"name"`
+}
+
+type RelevanceModel struct {
+	// name (bm25, matchcount): the text index's relevance model — how a
+	// document's match against the query becomes a number
 	Name string `toml:"name"`
 }
 type RankingAlgorithm struct {
@@ -227,12 +245,13 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.MaxDepth, "max-depth", DefaultMaxDepth, "Ceiling on a recall's depth clause")
 	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
-	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Seeds to pull from each source")
-	flagSet.IntVar(&config.DB.RRFK, "rrf-k", DefaultRRFK, "RRF dampening constant k in the score fold")
+	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
 	flagSet.StringVar(&config.DB.RankingAlgorithm.Name, "ranking-algorithm", DefaultRankingAlgorithm, "Graph search ranking boost")
+	flagSet.StringVar(&config.DB.ScoringAlgorithm.Name, "scoring-algorithm", DefaultScoringAlgorithm, "Relevance fold (excess, rrf)")
+	flagSet.StringVar(&config.DB.RelevanceModel.Name, "relevance-model", DefaultRelevanceModel, "Text-index relevance model (bm25, matchcount)")
 	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankDamping, "pagerank-damping", DefaultPageRankDamping, "PageRank damping factor")
 	flagSet.IntVar(&config.DB.RankingAlgorithm.PageRankMaxIter, "pagerank-max-iter", DefaultPageRankMaxIter, "PageRank iteration cap")
 	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankTol, "pagerank-tol", DefaultPageRankTol, "PageRank convergence threshold")
@@ -350,11 +369,12 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
-	Adjust(&c.DB.RRFK, DefaultRRFK)
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)
 	Adjust(&c.DB.RankingAlgorithm.Name, DefaultRankingAlgorithm)
+	Adjust(&c.DB.ScoringAlgorithm.Name, DefaultScoringAlgorithm)
+	Adjust(&c.DB.RelevanceModel.Name, DefaultRelevanceModel)
 	Adjust(&c.DB.RankingAlgorithm.PageRankDamping, DefaultPageRankDamping)
 	Adjust(&c.DB.RankingAlgorithm.PageRankMaxIter, DefaultPageRankMaxIter)
 	Adjust(&c.DB.RankingAlgorithm.PageRankTol, DefaultPageRankTol)

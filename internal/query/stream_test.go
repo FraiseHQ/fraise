@@ -50,9 +50,10 @@ type fakeGraph struct {
 	puts             int
 	searchCalled     bool
 
-	searchNodes    []*graph.Node[string]
-	searchScores   []float32
-	searchContribs [][]graph.Contribution[float32]
+	searchNodes      []*graph.Node[string]
+	searchScores     []float32
+	searchContribs   [][]graph.Contribution[string, float32]
+	searchBackground float32
 }
 
 var _ graph.Graph[string, float32] = (*fakeGraph)(nil)
@@ -67,9 +68,9 @@ func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32])     { g.merged = 
 func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32, [][]graph.Contribution[float32]) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32, [][]graph.Contribution[string, float32], float32) {
 	g.searchCalled = true
-	return g.searchNodes, g.searchScores, g.searchContribs
+	return g.searchNodes, g.searchScores, g.searchContribs, g.searchBackground
 }
 
 // --- inert stubs (unused by Stream) ----------------------------------------
@@ -151,17 +152,25 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 // objects across requests; this test drives it exactly where the handler
 // sets it.
 func TestStreamCommitExplainAttachesContributions(t *testing.T) {
-	contributions := [][]graph.Contribution[float32]{
-		{{Src: graph.SrcText, Score: 1, Rank: 0}},
-		{{Src: graph.SrcVector, Score: 0.5, Rank: 1}, {Src: graph.SrcGraph, Score: 2, Hop: 2}},
+	contributions := [][]graph.Contribution[string, float32]{
+		{{Src: graph.SrcText, Score: 1, Rank: 0, Count: 1}},
+		{{Src: graph.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: graph.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2}},
+	}
+	// The wire form: sources by name, the graph entry's anchor key resolved
+	// via Get — the fake stores no nodes, so via falls back to empty, which
+	// is the contract for a vanished anchor.
+	want := [][]HitContribution[float32]{
+		{{Source: "text", Score: 1, Rank: 0, Count: 1}},
+		{{Source: "vector", Score: 0.5, Rank: 1, Count: 1}, {Source: "graph", Score: 2, Degree: 3, Count: 2}},
 	}
 
 	for _, explain := range []bool{true, false} {
 		t.Run(fmt.Sprintf("explain=%v", explain), func(t *testing.T) {
 			g := &fakeGraph{
-				searchNodes:    []*graph.Node[string]{nil, nil},
-				searchScores:   []float32{0.9, 0.8},
-				searchContribs: contributions,
+				searchNodes:      []*graph.Node[string]{nil, nil},
+				searchScores:     []float32{0.9, 0.8},
+				searchContribs:   contributions,
+				searchBackground: 0.25,
 			}
 			s := newStream(readQuery())
 			s.Explain = explain
@@ -170,10 +179,16 @@ func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 				t.Fatalf("Commit() err = %v", err)
 			}
 
+			if explain && s.Result.Background != 0.25 {
+				t.Errorf("Result.Background = %v, want the search's 0.25", s.Result.Background)
+			}
+			if !explain && s.Result.Background != 0 {
+				t.Errorf("Result.Background = %v without explain, want 0 (omitted on the wire)", s.Result.Background)
+			}
 			for i, hit := range s.Result.Hits {
 				if explain {
-					if !reflect.DeepEqual(hit.Contributions, contributions[i]) {
-						t.Errorf("Hits[%d].Contributions = %+v, want %+v", i, hit.Contributions, contributions[i])
+					if !reflect.DeepEqual(hit.Contributions, want[i]) {
+						t.Errorf("Hits[%d].Contributions = %+v, want the wire form %+v", i, hit.Contributions, want[i])
 					}
 				} else if hit.Contributions != nil {
 					t.Errorf("Hits[%d].Contributions = %+v without explain, want nil", i, hit.Contributions)
@@ -253,7 +268,7 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	}
 
 	// The report's repro: recall with since covering only the re-assertion.
-	nodes, _, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
+	nodes, _, _, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
 	if len(nodes) != 1 {
 		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(nodes))
 	}
@@ -373,7 +388,7 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			nodes, _, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			nodes, _, _, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
 				got = append(got, (*n).GetValue())

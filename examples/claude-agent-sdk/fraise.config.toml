@@ -22,7 +22,6 @@ precision = "float32"
 default-top = 10
 default-depth = 3
 seed-size = 64
-rrf-k = 30
 
 [db.hashing-function]
 name = "xxhash"

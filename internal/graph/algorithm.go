@@ -56,6 +56,13 @@ type TraversalResult[K comparable] struct {
 	// forming the traversal tree. The source maps to its own key.
 	Parent map[K]K
 
+	// Parents maps each visited vertex to every vertex it was reached through
+	// at the previous depth. Parent keeps the canonical (first-in-Order) entry
+	// for tree-shaped consumers; Parents carries the full incidence, because a
+	// member reached through two of the source's anchors is two observations,
+	// not one. Tree-shaped traversals may leave it nil.
+	Parents map[K][]K
+
 	// Depth maps each visited vertex to its hop distance from the source.
 	Depth map[K]int
 }

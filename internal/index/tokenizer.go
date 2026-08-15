@@ -25,12 +25,19 @@ package index
 import (
 	"strings"
 	"unicode"
+
+	"github.com/blevesearch/snowballstem"
+	"github.com/blevesearch/snowballstem/english"
 )
 
 // Tokenizer splits raw document text into the sequence of normalized terms that
 // get indexed and queried. Implementations decide casing, stemming, stop-word
 // removal, n-gramming, etc. The same Tokenizer must be used at index and query
-// time so terms line up.
+// time so terms line up — the index owns one instance and runs it on both
+// sides, which is what makes a stemmed posting findable by a stemmed query.
+// Like the Relevance model, a tokenizer is installed before the first insert
+// and never swapped mid-corpus: postings tokenized under the old scheme would
+// be unreachable under the new one.
 type Tokenizer interface {
 	Tokenize(text string) []string
 }
@@ -47,4 +54,29 @@ func (SimpleTokenizer) Tokenize(text string) []string {
 	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
+}
+
+// StemmingTokenizer is SimpleTokenizer's split with Snowball (Porter2)
+// English stemming over each term: "running", "runs" and "run" all index and
+// query as "run", so morphological variants of a word find each other —
+// natural-language recall keywords rarely arrive in the exact inflection the
+// fact was written with. Terms the stemmer does not recognise (numbers,
+// non-English words, CJK text) pass through unchanged: stemming only ever
+// rewrites, never drops, so every term SimpleTokenizer would index still
+// exists under some spelling.
+type StemmingTokenizer struct{}
+
+// compile-time check that StemmingTokenizer is a Tokenizer.
+var _ Tokenizer = StemmingTokenizer{}
+
+// Tokenize returns the lowercased alphanumeric terms found in text, each
+// reduced to its Snowball English stem.
+func (StemmingTokenizer) Tokenize(text string) []string {
+	tokens := SimpleTokenizer{}.Tokenize(text)
+	for i, token := range tokens {
+		env := snowballstem.NewEnv(token)
+		english.Stem(env)
+		tokens[i] = env.Current()
+	}
+	return tokens
 }

@@ -74,8 +74,14 @@ func (d *DB[K, P]) Start() error {
 		// in config.SearchAlgorithms/RankingAlgorithms get here — startup
 		// rejects the rest — so a graph left on its built-in defaults means
 		// "none" was configured, not that a name went unrecognised.
-		if d.Config.DB.SearchAlgorithm.Name == config.SearchBFS {
+		switch d.Config.DB.SearchAlgorithm.Name {
+		case config.SearchExcess:
+			g.SetTraversal(graph.NewExcessTraversal[K, P]())
+		case config.SearchBFS:
 			g.SetTraversal(graph.NewBFSTraversal[K, P](graph.Both))
+		}
+		if d.Config.DB.ScoringAlgorithm.Name == config.ScoringRRF {
+			g.SetScorer(graph.NewRRFScorer[K, P](graph.DefaultRRFK))
 		}
 		if d.Config.DB.RankingAlgorithm.Name == config.RankingPageRank {
 			g.SetRanking(graph.NewPageRank[K, P](

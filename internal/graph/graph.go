@@ -108,9 +108,10 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Search runs a hybrid query over the graph and returns matching
 	// nodes alongside their ranking scores and the contribution records
 	// the scores were folded from (parallel slices, ordered best-first,
-	// at most top entries). The contributions are what the explain
-	// output mode serializes; a caller that only wants ranked hits
-	// discards them.
+	// at most top entries), plus the query's background rate — the one
+	// query-global observation the scoring fold used, which explain
+	// serializes so a client can recompute every score from its payload.
+	// A caller that only wants ranked hits discards both.
 	//
 	// All criteria are optional and combine to narrow the result:
 	//   - keywords: full-text terms matched against the text index
@@ -118,11 +119,13 @@ type Graph[K comparable, P float32 | float64] interface {
 	//               (or empty) skips the vector index
 	//   - topics:   restrict results to facts tagged with these topics
 	//   - entities: restrict results to facts involving these entities
-	//   - depth:    maximum graph-hop distance explored from direct hits
+	//   - depth:    accepted and currently inert — the shipped traversal
+	//               uses one anchor-mediated step; larger values are
+	//               reserved for iterated transmission
 	//   - top:      maximum number of results returned
 	//   - since:    inclusive lower time bound; zero value = unbounded
 	//   - until:    exclusive upper time bound; zero value = unbounded
-	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]Contribution[P])
+	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]Contribution[K, P], P)
 
 	// Graphs expose their read-write lock so callers can hold a single
 	// lock across a sequence of calls (e.g. Get-then-Put) instead of

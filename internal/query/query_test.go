@@ -203,7 +203,7 @@ func TestParseRejectsOverLimits(t *testing.T) {
 
 // marshalHit builds a Hit over a fact with a fixed timestamp and returns its
 // JSON. The fact needs no hasher: marshalling reads only value and timestamp.
-func marshalHit(t *testing.T, contributions []graph.Contribution[float32]) string {
+func marshalHit(t *testing.T, contributions []query.HitContribution[float32]) string {
 	t.Helper()
 	var node graph.Node[string] = graph.Fact[string]{NodeAttributes: graph.NodeAttributes{
 		Value:     "the parrot is turquoise",
@@ -231,18 +231,21 @@ func TestHitMarshalOmitsContributionsByDefault(t *testing.T) {
 
 // TestHitMarshalSerializesContributions pins the explain wire shape: each
 // contribution carries its source by name — the payload documents ranking to
-// clients that never see the Go constants — with its raw score, rank and hop.
+// clients that never see the Go constants — with its raw score and rank, and,
+// for a graph entry, the funding anchor's value under via, its degree, and
+// its funding-seed count. via and degree are omitted for seed sources, where
+// they mean nothing.
 func TestHitMarshalSerializesContributions(t *testing.T) {
-	got := marshalHit(t, []graph.Contribution[float32]{
-		{Src: graph.SrcText, Score: 1, Rank: 0},
-		{Src: graph.SrcVector, Score: 0.5, Rank: 1},
-		{Src: graph.SrcGraph, Score: 2, Rank: 3, Hop: 2},
+	got := marshalHit(t, []query.HitContribution[float32]{
+		{Source: "text", Score: 1, Rank: 0, Count: 1},
+		{Source: "vector", Score: 0.5, Rank: 1, Count: 1},
+		{Source: "graph", Score: 2, Via: "weather", Degree: 3, Count: 2},
 	})
 	want := `{"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5,` +
 		`"contributions":[` +
-		`{"source":"text","score":1,"rank":0,"hop":0},` +
-		`{"source":"vector","score":0.5,"rank":1,"hop":0},` +
-		`{"source":"graph","score":2,"rank":3,"hop":2}]}`
+		`{"source":"text","score":1,"rank":0,"count":1},` +
+		`{"source":"vector","score":0.5,"rank":1,"count":1},` +
+		`{"source":"graph","score":2,"rank":0,"via":"weather","degree":3,"count":2}]}`
 	if got != want {
 		t.Errorf("Marshal(Hit) = %s, want %s", got, want)
 	}

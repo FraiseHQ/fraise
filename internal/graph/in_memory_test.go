@@ -24,6 +24,7 @@ package graph_test
 
 import (
 	"errors"
+	"math"
 	"reflect"
 	"sort"
 	"testing"
@@ -332,7 +333,7 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact1, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact3, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
-	nodes, scores, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
 		t.Fatalf("Search(acme) = %v, want [alice works at acme]", values(nodes))
 	}
@@ -340,21 +341,14 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 		t.Errorf("Search(acme) scores = %v, want one positive score", scores)
 	}
 
-	// With depth 2 the walk crosses the shared entity into the related fact,
-	// which joins at an attenuated score. Only facts are hits, so the entity
-	// node itself never appears in the results.
-	nodes, scores, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{})
-	if len(nodes) != 2 {
-		t.Fatalf("Search(acme, depth=2) = %v, want 2 nodes", values(nodes))
-	}
-	if (*nodes[0]).GetValue() != "alice works at acme" {
-		t.Errorf("Search(acme, depth=2) best hit = %q, want the direct hit", (*nodes[0]).GetValue())
-	}
-	if (*nodes[1]).GetValue() != "alice lives in paris" {
-		t.Errorf("Search(acme, depth=2) second hit = %q, want the entity-linked fact", (*nodes[1]).GetValue())
-	}
-	if scores[1] >= scores[0] {
-		t.Errorf("neighbour score %v not attenuated below seed score %v", scores[1], scores[0])
+	// The shared entity is the query's only touched anchor, so its observed
+	// mass IS the background: it holds no surplus, transmits nothing, and the
+	// entity-linked fact does not ride in on mere reachability. depth is
+	// inert, so asking for 2 changes nothing.
+	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
+	nodes, _, _, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{})
+	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
+		t.Errorf("Search(acme, depth=2) = %v, want only the direct hit — a lone anchor has no surplus to transmit", values(nodes))
 	}
 }
 
@@ -373,7 +367,7 @@ func TestInMemoryGraphSearchByVector(t *testing.T) {
 		t.Fatalf("vector Insert = %v, want nil", err)
 	}
 
-	nodes, _, _ := g.Search(nil, containers.NewVector[uint64]([]float64{0.9, 0.1}), nil, nil, 0, 1, time.Time{}, time.Time{})
+	nodes, _, _, _ := g.Search(nil, containers.NewVector[uint64]([]float64{0.9, 0.1}), nil, nil, 0, 1, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alpha" {
 		t.Errorf("Search(vector near alpha) = %v, want [alpha]", values(nodes))
 	}
@@ -392,7 +386,7 @@ func TestInMemoryGraphSearchTopicFilter(t *testing.T) {
 	mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact1, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
 	// Both facts match "alice", but only fact1 is tagged with topic "work".
-	nodes, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
 		t.Errorf("Search(alice, topic=work) = %v, want [alice works at acme]", values(nodes))
 	}
@@ -406,12 +400,12 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 	mustSet(t, g, mkFact(g, "alice ancient fact", old))
 	mustSet(t, g, mkFact(g, "alice recent fact", recent))
 
-	nodes, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{})
+	nodes, _, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice recent fact" {
 		t.Errorf("Search(alice, since=2025) = %v, want [alice recent fact]", values(nodes))
 	}
 
-	nodes, _, _ = g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+	nodes, _, _, _ = g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice ancient fact" {
 		t.Errorf("Search(alice, until=2025) = %v, want [alice ancient fact]", values(nodes))
 	}
@@ -419,9 +413,9 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 
 // TestInMemoryGraphSearchRecencyDecayFactor pins the decay formula the README
 // promises ("recent memories outrank older ones"): a fact's score is
-// multiplied by 0.5^(age/half-life). A single fact is a rank-0 text seed, so
-// its pre-decay score is exactly 1/60 — one sighting under the RRF fold
-// Σ 1/(60+rank) — and the decay factor is observable as the ratio to it.
+// multiplied by 0.5^(age/half-life). A lone fact in a one-document corpus has
+// a hand-derivable BM25 mass — idf ln(1 + 0.5/1.5) at length norm 1 with full
+// coverage — and the decay factor is observable as the ratio to it.
 func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	halflife := testConfig().Engine.Halflife // default 7d
 
@@ -439,36 +433,76 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 			g := newGraph()
 			mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now().Add(-tc.age)))
 
-			_, scores, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+			_, scores, _, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 			if len(scores) != 1 {
 				t.Fatalf("Search returned %d scores, want 1", len(scores))
 			}
 			// The fact ages a hair between Set and Search, so allow a small
 			// tolerance around the exact factor.
-			if diff := scores[0]*60 - tc.want; diff > 1e-3 || diff < -1e-3 {
-				t.Errorf("score = %v, want ~%v/60 (0.5^(age/half-life) of the lone rank-0 sighting)", scores[0], tc.want)
+			preDecay := math.Log(1 + 0.5/1.5)
+			if diff := scores[0]/preDecay - tc.want; diff > 1e-3 || diff < -1e-3 {
+				t.Errorf("score = %v, want ~%v of the BM25 mass %v (0.5^(age/half-life))", scores[0], tc.want, preDecay)
 			}
 		})
 	}
 }
 
-// TestInMemoryGraphSearchUsesConfiguredRRFK pins the wiring of the `rrf-k`
-// setting: the scorer NewGraph installs folds with the configured k, not a
-// hardcoded one. A single fresh fact is a lone rank-0 text sighting, so its
-// score is 1/(k+0) — observable directly, up to the hair of decay between Set
-// and Search.
-func TestInMemoryGraphSearchUsesConfiguredRRFK(t *testing.T) {
+// constScorer is a minimal alternative fold: every candidate scores the same
+// constant, whatever the background. It exists to prove the Scorer seam — a
+// new fold is an implementation installed with SetScorer, never a Search
+// rewrite — and it is a real, deterministic implementation of the in-tree
+// interface, in the same spirit as fakeHasher.
+type constScorer struct{ score float64 }
+
+func (s constScorer) Score([]graph.Contribution[uint64, float64]) float64 { return s.score }
+
+func (s constScorer) WithBackground(float64) graph.Scorer[uint64, float64] { return s }
+
+// TestNewGraphInstallsStemmingTokenizer pins the tokenizer wiring: recall
+// keywords rarely arrive in the fact's exact inflection, so NewGraph installs
+// the stemming tokenizer and a query for "blogging" finds the fact written
+// with "blogs".
+func TestNewGraphInstallsStemmingTokenizer(t *testing.T) {
+	g := newGraph()
+	mustSet(t, g, mkFact(g, "jules blogs about lighthouses", time.Now()))
+
+	nodes, _, _, _ := g.Search([]string{"blogging"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(nodes) != 1 || (*nodes[0]).GetValue() != "jules blogs about lighthouses" {
+		t.Fatalf("Search(blogging) = %v, want the blogs fact — inflections must unify", values(nodes))
+	}
+}
+
+// TestNewGraphSelectsConfiguredRelevanceModel pins the relevance-model
+// wiring: under "matchcount" a lone single-term match scores exactly 1 — one
+// point per query-term occurrence, the pre-BM25 ranking — where the default
+// "bm25" gives the same fact its idf mass (pinned by the decay tests). Decay
+// is off so the score is the model's alone.
+func TestNewGraphSelectsConfiguredRelevanceModel(t *testing.T) {
 	cfg := testConfig()
-	cfg.DB.RRFK = 30 // distinct from the default 60, so the wiring is provable
+	cfg.Engine.Halflife = 0
+	cfg.DB.RelevanceModel.Name = "matchcount"
 	g := graph.NewGraph[uint64, float64](cfg)
 	mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now()))
 
-	_, scores, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
-	if len(scores) != 1 {
-		t.Fatalf("Search returned %d scores, want 1", len(scores))
+	_, scores, _, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(scores) != 1 || scores[0] != 1 {
+		t.Fatalf("Search scores under matchcount = %v, want exactly [1]", scores)
 	}
-	if diff := scores[0]*30 - 1.0; diff > 1e-3 || diff < -1e-3 {
-		t.Errorf("score = %v, want ~1/30 (the lone rank-0 sighting under k = 30)", scores[0])
+}
+
+// TestSetScorerInstallsFold pins the scoring seam: the fold Search derives
+// relevance with is the installed Scorer. With decay disabled the constant
+// fold's output reaches the caller untouched.
+func TestSetScorerInstallsFold(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, float64](cfg)
+	g.SetScorer(constScorer{score: 7})
+	mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now()))
+
+	_, scores, _, _ := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if len(scores) != 1 || scores[0] != 7 {
+		t.Fatalf("Search scores = %v, want the installed fold's [7]", scores)
 	}
 }
 
@@ -483,7 +517,7 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 	mustSet(t, g, mkFact(g, "comet sighted in march", time.Now().Add(-10*halflife)))
 	mustSet(t, g, mkFact(g, "comet sighted today", time.Now()))
 
-	nodes, scores, _ := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _ := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 {
 		t.Fatalf("Search(comet) returned %d nodes, want 2", len(nodes))
 	}
@@ -497,66 +531,49 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 
 // TestInMemoryGraphSearchDecayDisabled checks that a non-positive half-life
 // switches decay off: an old fact keeps its full relevance score — exactly
-// the 1/60 its lone rank-0 sighting fuses to, untouched by age.
+// its BM25 mass in a one-document corpus, untouched by age.
 func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	g := graph.NewGraph[uint64, float64](cfg)
 	mustSet(t, g, mkFact(g, "glacier survey notes", time.Now().Add(-365*24*time.Hour)))
 
-	_, scores, _ := g.Search([]string{"glacier"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	_, scores, _, _ := g.Search([]string{"glacier"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if len(scores) != 1 {
 		t.Fatalf("Search returned %d scores, want 1", len(scores))
 	}
-	if scores[0] != 1.0/60 {
-		t.Errorf("score with decay disabled = %v, want exactly 1/60", scores[0])
+	if want := math.Log(1 + 0.5/1.5); scores[0] != want {
+		t.Errorf("score with decay disabled = %v, want exactly the BM25 mass %v", scores[0], want)
 	}
 }
 
 // TestInMemoryGraphSearchOrdersTiesByKey pins the total order Search ranks by:
-// score descending, then fact key. Under rank fusion equal ranks fuse to equal
-// scores wherever they occur: the two components here are disjoint, so each
-// seed's walk reaches its own leaf at walk rank 1, and the rank-1 text seed
-// lands on the same 1/(60+1) — a three-way tie to the bit that relevance and
-// decay cannot separate. Without the key tiebreak the trio comes back in
-// whatever order the score map was iterated in, and top truncates that
-// arbitrary order. Each case repeats the query because that map order changes
-// between calls: a single pass can agree by luck.
+// score descending, then fact key. Three facts match the query term once each
+// with identical term frequency and length, so their BM25 masses — and their
+// decay, all sharing one timestamp — tie to the bit; a fourth matches twice
+// and ranks first. Without the key tiebreak the trio comes back in whatever
+// order the score map was iterated in, and top truncates that arbitrary
+// order. Each case repeats the query because that map order changes between
+// calls: a single pass can agree by luck.
 func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
 
-	seedA := mkFact(g, "acme builds rockets", now)
-	seedB := mkFact(g, "acme ships engines", now)
-	leafA := mkFact(g, "the assembly line hums", now)
-	leafB := mkFact(g, "the test stand fires", now)
-	entityA := mkEntity(g, "orion", now)
-	entityB := mkEntity(g, "vulcan", now)
-	for _, node := range []graph.Node[uint64]{seedA, seedB, leafA, leafB, entityA, entityB} {
+	first := mkFact(g, "acme acme prime", now)
+	tiedA := mkFact(g, "acme alpha line", now)
+	tiedB := mkFact(g, "acme beta line", now)
+	tiedC := mkFact(g, "acme gamma line", now)
+	for _, node := range []graph.Node[uint64]{first, tiedA, tiedB, tiedC} {
 		mustSet(t, g, node)
 	}
-	// Two disjoint components: each seed reaches its own leaf two hops away
-	// through its own entity, and nothing links the components.
-	mustSet(t, g, graph.Mentions[uint64]{Fact: &seedA, NamedEntity: entityA, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
-	mustSet(t, g, graph.Mentions[uint64]{Fact: &leafA, NamedEntity: entityA, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
-	mustSet(t, g, graph.Mentions[uint64]{Fact: &seedB, NamedEntity: entityB, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
-	mustSet(t, g, graph.Mentions[uint64]{Fact: &leafB, NamedEntity: entityB, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
-	// Both seeds match "acme" once, so the text index ranks them by key: the
-	// lower-key seed is rank 0 and scores 1/60 alone at the top; the other
-	// seed and both leaves tie at 1/61.
-	first, second := seedA, seedB
-	if second.Key() < first.Key() {
-		first, second = second, first
+	// The premise of the test: the three single-match facts score equally to
+	// the bit, so nothing but the key can order them.
+	if _, scores, _, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{}); len(scores) != 4 || scores[1] != scores[2] || scores[2] != scores[3] {
+		t.Fatalf("Search(acme) scores = %v, want four hits whose last three tie", scores)
 	}
 
-	// The premise of the test: the rank-1 seed and the two leaves score
-	// equally to the bit, so nothing but the key can order them.
-	if _, scores, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{}); len(scores) != 4 || scores[1] != scores[2] || scores[2] != scores[3] {
-		t.Fatalf("Search(acme, depth=2) scores = %v, want four hits whose last three tie", scores)
-	}
-
-	tied := []uint64{second.Key(), leafA.Key(), leafB.Key()}
+	tied := []uint64{tiedA.Key(), tiedB.Key(), tiedC.Key()}
 	sort.Slice(tied, func(i, j int) bool { return tied[i] < tied[j] })
 
 	cases := []struct {
@@ -564,13 +581,13 @@ func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
 		top  int
 		want []uint64
 	}{
-		{"tied facts follow the top seed in key order", 10, []uint64{first.Key(), tied[0], tied[1], tied[2]}},
+		{"tied facts follow the top hit in key order", 10, []uint64{first.Key(), tied[0], tied[1], tied[2]}},
 		{"truncation keeps the lowest tied key", 2, []uint64{first.Key(), tied[0]}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			for i := 0; i < 20; i++ {
-				nodes, _, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, tc.top, time.Time{}, time.Time{})
+				nodes, _, _, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 1, tc.top, time.Time{}, time.Time{})
 				if got := keys(nodes); !reflect.DeepEqual(got, tc.want) {
 					t.Fatalf("Search(acme, top=%d) keys = %v on call %d, want %v every call (%v)", tc.top, got, i+1, tc.want, values(nodes))
 				}
@@ -586,12 +603,191 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 	mustSet(t, g, mkFact(g, "shared term two", now))
 	mustSet(t, g, mkFact(g, "shared term three", now))
 
-	nodes, scores, _ := g.Search([]string{"shared"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 2, time.Time{}, time.Time{})
+	nodes, scores, _, _ := g.Search([]string{"shared"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 2, time.Time{}, time.Time{})
 	if len(nodes) != 2 || len(scores) != 2 {
 		t.Errorf("Search(top=2) returned %d nodes and %d scores, want 2 and 2", len(nodes), len(scores))
 	}
 	if scores[0] < scores[1] {
 		t.Errorf("scores not descending: %v", scores)
+	}
+}
+
+// noDecayGraph builds a graph whose scores are pure relevance — decay off,
+// excess traversal installed — so the floor and determinism pins can assert
+// exact equalities.
+func noDecayGraph() *graph.InMemoryGraph[uint64, float64] {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, float64](cfg)
+	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
+	return g
+}
+
+// stormGraph is the behavioural transmission fixture (the barometer/storm
+// probe): a small "weather" cluster holding most of the query's seed mass
+// next to a large "archive" hub holding a little. Querying "barometer storm"
+// touches both anchors; only the cluster runs above background.
+//
+//	weather (degree 3): "the barometer falls before the storm",
+//	                    "storm clouds gather at sea",
+//	                    "the harbour is calm tonight"      <- no query term
+//	archive (degree 8): "a storm of paperwork" + 7 unrelated memos
+func stormGraph(t *testing.T, g *graph.InMemoryGraph[uint64, float64]) (calm string, memos []string) {
+	t.Helper()
+	now := time.Now()
+	calm = "the harbour is calm tonight"
+
+	link := func(topic *graph.Topic[uint64], value string) {
+		fact := mkFact(g, value, now)
+		if err := g.Set(fact); err != nil {
+			t.Fatalf("Set(%q) = %v, want nil", value, err)
+		}
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	}
+
+	weather := mkTopic(g, "weather", now)
+	mustSet(t, g, weather)
+	link(weather, "the barometer falls before the storm")
+	link(weather, "storm clouds gather at sea")
+	link(weather, calm)
+
+	archive := mkTopic(g, "archive", now)
+	mustSet(t, g, archive)
+	link(archive, "a storm of paperwork")
+	for i := 0; i < 7; i++ {
+		memo := "unrelated archive memo " + string(rune('a'+i))
+		memos = append(memos, memo)
+		link(archive, memo)
+	}
+	return calm, memos
+}
+
+// TestSearchBM25Floor is Property 5.2 through the public surface: when the
+// query touches a single anchor, no anchor can hold surplus (its share IS the
+// background), so the ranking and the scores are exactly the text index's —
+// anchored mode can add signal but can never fall below the plain-text
+// baseline by scoring alone.
+func TestSearchBM25Floor(t *testing.T) {
+	g := noDecayGraph()
+	now := time.Now()
+	topic := mkTopic(g, "harbour", now)
+	mustSet(t, g, topic)
+	for _, value := range []string{
+		"the comet streaked past the mast",
+		"a comet is drawn in the log",
+		"children watched the comet at dawn from the pier deck",
+	} {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	}
+
+	nodes, scores, _, _ := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	textKeys, textScores, err := g.GetTextIndex().Search("comet", 10)
+	if err != nil {
+		t.Fatalf("text Search = %v, want nil", err)
+	}
+	if got := keys(nodes); !reflect.DeepEqual(got, textKeys) {
+		t.Errorf("Search ranking %v differs from the text index's %v with no surplus anywhere", got, textKeys)
+	}
+	if !reflect.DeepEqual(scores, textScores) {
+		t.Errorf("Search scores %v differ from the text index's %v — a silent anchor added mass", scores, textScores)
+	}
+}
+
+// TestSearchScoresNeverBelowTextMass is the floor's other half: where
+// transmission does happen, it only ever adds — every hit's relevance is at
+// least its own text mass.
+func TestSearchScoresNeverBelowTextMass(t *testing.T) {
+	g := noDecayGraph()
+	stormGraph(t, g)
+
+	nodes, scores, _, _ := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	textKeys, textScores, err := g.GetTextIndex().Search("barometer storm", 20)
+	if err != nil {
+		t.Fatalf("text Search = %v, want nil", err)
+	}
+	textMass := make(map[uint64]float64, len(textKeys))
+	for i, key := range textKeys {
+		textMass[key] = textScores[i]
+	}
+	for i, node := range nodes {
+		if m := textMass[(*node).Key()]; scores[i] < m {
+			t.Errorf("hit %q scored %v below its own text mass %v", (*node).GetValue(), scores[i], m)
+		}
+	}
+}
+
+// TestSearchHubSilenceAndEarnedPreemption is Properties 5.3 and 5.4 through
+// the public surface. The weather cluster concentrates the query's mass, so
+// its silent member surfaces on transmitted surplus alone — earned by
+// above-background evidence, not reachability. The archive hub also holds a
+// matching fact, but at its size that mass is fair share: its seven memos
+// must not ride in behind it.
+func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
+	g := noDecayGraph()
+	calm, memos := stormGraph(t, g)
+
+	nodes, _, contributions, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	if background <= 0 {
+		t.Fatalf("background = %v, want positive: two anchors are touched", background)
+	}
+	got := values(nodes)
+
+	found := -1
+	for i, value := range got {
+		if value == calm {
+			found = i
+		}
+		for _, memo := range memos {
+			if value == memo {
+				t.Errorf("hub memo %q surfaced — a fair-share hub transmitted", value)
+			}
+		}
+	}
+	if found == -1 {
+		t.Fatalf("Search = %v, want the cluster's silent member %q funded by surplus", got, calm)
+	}
+	// The funded member carries exactly one observation: its cluster's mass,
+	// through the weather anchor.
+	list := contributions[found]
+	if len(list) != 1 || list[0].Src != graph.SrcGraph || list[0].Score <= 0 || list[0].Degree != 3 {
+		t.Errorf("silent member's contributions = %+v, want a single weather-cluster observation", list)
+	}
+}
+
+// TestSearchFairSeeding is Property 5.1: the text candidate budget tracks the
+// requested result size. Fifteen facts match; with seed-size at its default
+// of 10, top:15 must still return all fifteen — a build that caps seeds at
+// seed-size silently flatlines every ranking past it.
+func TestSearchFairSeeding(t *testing.T) {
+	g := noDecayGraph()
+	now := time.Now()
+	for i := 0; i < 15; i++ {
+		mustSet(t, g, mkFact(g, "lighthouse entry "+string(rune('a'+i)), now))
+	}
+
+	nodes, _, _, _ := g.Search([]string{"lighthouse"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 15, time.Time{}, time.Time{})
+	if len(nodes) != 15 {
+		t.Fatalf("Search(top=15) returned %d hits, want all 15 — the seed budget must widen to top", len(nodes))
+	}
+}
+
+// TestSearchDeterminism is Property 5.6: no randomness, no iteration to
+// convergence — two identical queries on an identical graph return
+// byte-identical rankings and, with decay off, byte-identical scores and
+// background.
+func TestSearchDeterminism(t *testing.T) {
+	g := noDecayGraph()
+	stormGraph(t, g)
+
+	firstNodes, firstScores, _, firstBackground := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	for i := 0; i < 20; i++ {
+		nodes, scores, _, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+		if !reflect.DeepEqual(keys(nodes), keys(firstNodes)) || !reflect.DeepEqual(scores, firstScores) || background != firstBackground {
+			t.Fatalf("call %d returned a different ranking, scores or background: %v %v %v vs %v %v %v",
+				i+1, keys(nodes), scores, background, keys(firstNodes), firstScores, firstBackground)
+		}
 	}
 }
 
@@ -695,7 +891,7 @@ func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 	// The query sits nearest the "beta" embedding, so beta must rank first. No
 	// keywords: the vector index is the only seed source.
 	query := containers.NewVector[uint64]([]P{0.1, 0.9, 0.1})
-	nodes, scores, _ := g.Search(nil, query, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _ := g.Search(nil, query, nil, nil, 1, 10, time.Time{}, time.Time{})
 
 	if len(nodes) == 0 {
 		t.Fatalf("Search returned no results, want the nearest fact")

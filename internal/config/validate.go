@@ -62,11 +62,25 @@ const (
 	HashingT1ha   string = "t1ha"
 )
 
-// db.search-algorithm.name — the traversal that expands seeds; "none" leaves
-// the graph on its built-in walk.
+// db.search-algorithm.name — the traversal moving seed evidence through the
+// graph; "none" turns the graph channel off (text/vector search only).
 const (
-	SearchNone string = "none"
-	SearchBFS  string = "bfs"
+	SearchNone   string = "none"
+	SearchBFS    string = "bfs"
+	SearchExcess string = "excess"
+)
+
+// db.scoring-algorithm.name — the fold deriving relevance from pooled
+// contributions.
+const (
+	ScoringExcess string = "excess"
+	ScoringRRF    string = "rrf"
+)
+
+// db.relevance-model.name — the text index's relevance model.
+const (
+	RelevanceBM25       string = "bm25"
+	RelevanceMatchCount string = "matchcount"
 )
 
 // db.ranking-algorithm.name — the global boost applied to walk scores; "none"
@@ -89,7 +103,11 @@ var (
 
 	HashingFunctions = []string{HashingXxhash, HashingT1ha}
 
-	SearchAlgorithms = []string{SearchNone, SearchBFS}
+	SearchAlgorithms = []string{SearchNone, SearchBFS, SearchExcess}
+
+	ScoringAlgorithms = []string{ScoringExcess, ScoringRRF}
+
+	RelevanceModels = []string{RelevanceBM25, RelevanceMatchCount}
 
 	RankingAlgorithms = []string{RankingNone, RankingPageRank}
 )
@@ -138,6 +156,8 @@ func (c *ConfigSet) validate() error {
 		{&c.DB.HashingFunction.Name, "db.hashing-function.name", HashingFunctions},
 		{&c.DB.SearchAlgorithm.Name, "db.search-algorithm.name", SearchAlgorithms},
 		{&c.DB.RankingAlgorithm.Name, "db.ranking-algorithm.name", RankingAlgorithms},
+		{&c.DB.ScoringAlgorithm.Name, "db.scoring-algorithm.name", ScoringAlgorithms},
+		{&c.DB.RelevanceModel.Name, "db.relevance-model.name", RelevanceModels},
 	}
 
 	for _, s := range settings {

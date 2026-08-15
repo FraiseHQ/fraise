@@ -148,9 +148,6 @@ func TestConfigSet_LimitsAndTimeouts(t *testing.T) {
 	if c.DB.MaxVectorDimension != config.DefaultMaxVectorDimension {
 		t.Errorf("DB.MaxVectorDimension default: got %d, want %d", c.DB.MaxVectorDimension, config.DefaultMaxVectorDimension)
 	}
-	if c.DB.RRFK != config.DefaultRRFK {
-		t.Errorf("DB.RRFK default: got %d, want %d", c.DB.RRFK, config.DefaultRRFK)
-	}
 
 	const contents = `
 [server]
@@ -165,7 +162,6 @@ max-body-bytes = 4096
 max-top = 50
 max-depth = 4
 max-vector-dimension = 128
-rrf-k = 90
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, config.DefaultConfigFile)
@@ -204,9 +200,6 @@ rrf-k = 90
 	}
 	if f.DB.MaxVectorDimension != 128 {
 		t.Errorf("DB.MaxVectorDimension: got %d, want 128", f.DB.MaxVectorDimension)
-	}
-	if f.DB.RRFK != 90 {
-		t.Errorf("DB.RRFK: got %d, want 90", f.DB.RRFK)
 	}
 }
 
@@ -292,6 +285,8 @@ func TestParseRejectsUnknownDBFlags(t *testing.T) {
 		{"-hashing-function", "murmur"},
 		{"-search-algorithm", "dfs"},
 		{"-ranking-algorithm", "hits"},
+		{"-scoring-algorithm", "tfidf"},
+		{"-relevance-model", "tfidf"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			c := config.New()
@@ -315,7 +310,7 @@ func TestParseCanonicalisesDBFlags(t *testing.T) {
 		"-config", missingConfig(t),
 		"-precision", "Float64",
 		"-hashing-function", "T1ha",
-		"-search-algorithm", "BFS",
+		"-search-algorithm", "EXCESS",
 		"-ranking-algorithm", "PAGERANK",
 	}
 
@@ -329,8 +324,8 @@ func TestParseCanonicalisesDBFlags(t *testing.T) {
 	if c.DB.HashingFunction.Name != config.HashingT1ha {
 		t.Errorf("DB.HashingFunction.Name = %q, want %q", c.DB.HashingFunction.Name, config.HashingT1ha)
 	}
-	if c.DB.SearchAlgorithm.Name != config.SearchBFS {
-		t.Errorf("DB.SearchAlgorithm.Name = %q, want %q", c.DB.SearchAlgorithm.Name, config.SearchBFS)
+	if c.DB.SearchAlgorithm.Name != config.SearchExcess {
+		t.Errorf("DB.SearchAlgorithm.Name = %q, want %q", c.DB.SearchAlgorithm.Name, config.SearchExcess)
 	}
 	if c.DB.RankingAlgorithm.Name != config.RankingPageRank {
 		t.Errorf("DB.RankingAlgorithm.Name = %q, want %q", c.DB.RankingAlgorithm.Name, config.RankingPageRank)

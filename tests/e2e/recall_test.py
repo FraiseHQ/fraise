@@ -20,9 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Remember/recall semantics: the store-then-find round trip, how depth and
-top shape a recall's results, text-index matching across facts, and recall
-through topic:/entity: anchors.
+"""Remember/recall semantics: the store-then-find round trip, how anchors
+transmit (and stay silent), how top shapes a recall's results, text-index
+matching across facts, and recall through topic:/entity: anchors.
 """
 
 import pytest
@@ -153,44 +153,39 @@ def _recall_count(query, text):
     return body["results"]["count"]
 
 
-def test_recall_depth_controls_reach(planets_graph, query):
-    """Depth bounds how far the walk leaves the seed, and thus the count.
+def test_recall_depth_is_inert(planets_graph, query):
+    """depth parses and is accepted, and changes nothing: the methodology uses
+    exactly one anchor-mediated step (larger values are reserved for iterated
+    transmission). A lone seed's topic hub sits exactly at the background rate,
+    so its siblings never ride in — at any depth.
+    """
+    g = planets_graph
+    for clause in ("depth:1", "depth:2", "depth:3", ""):
+        assert _recall_count(query, f"recall@{g} mercury {clause}".strip()) == 1, (
+            f"recall mercury {clause}: a fair-share hub must not transmit"
+        )
 
-    Note: depth:0 is not exercised — the query parser treats a 0 as "unset" and
-    substitutes the configured default, so it cannot be expressed.
+
+def test_recall_top_truncates_results(planets_graph, query):
+    """Top caps the number of ranked results returned, never pads. All four
+    facts contain "planet", so the text index matches every one directly.
     """
     g = planets_graph
     n = len(PLANET_FACTS)
 
-    # depth 1: only the seed fact. The shared topic hub is one hop away, but the
-    # hub is graph structure, not a result, so nothing else surfaces.
-    assert _recall_count(query, f"recall@{g} mercury depth:1") == 1
-    # depth 2: the walk crosses the hub and reaches every sibling fact.
-    assert _recall_count(query, f"recall@{g} mercury depth:2") == n
-    # A single-topic star has nothing beyond two hops, so deeper adds nothing.
-    assert _recall_count(query, f"recall@{g} mercury depth:3") == n
-    # With no depth clause the configured default (2) applies, so a bare recall
-    # already reaches the whole star. This guards the default-depth wiring.
-    assert _recall_count(query, f"recall@{g} mercury") == n
-
-
-def test_recall_top_truncates_results(planets_graph, query):
-    """Top caps the number of ranked results returned, never pads."""
-    g = planets_graph
-    n = len(PLANET_FACTS)
-
-    # At depth 2 all facts are reachable; top decides how many come back.
-    assert _recall_count(query, f"recall@{g} mercury depth:2 top:1") == 1
-    assert _recall_count(query, f"recall@{g} mercury depth:2 top:2") == 2
-    assert _recall_count(query, f"recall@{g} mercury depth:2 top:3") == 3
+    assert _recall_count(query, f"recall@{g} planet top:1") == 1
+    assert _recall_count(query, f"recall@{g} planet top:2") == 2
+    assert _recall_count(query, f"recall@{g} planet top:3") == 3
     # top larger than the number available returns everything, not padding.
-    assert _recall_count(query, f"recall@{g} mercury depth:2 top:10") == n
+    assert _recall_count(query, f"recall@{g} planet top:10") == n
 
 
-def test_recall_depth_one_returns_only_the_seed(planets_graph, query):
-    """The depth:1 result is exactly the seed fact, by value."""
+def test_recall_unique_keyword_returns_only_its_fact(planets_graph, query):
+    """The recall for one fact's unique keyword is exactly that fact, by
+    value — its silent hub adds nothing and its siblings stay out.
+    """
     g = planets_graph
-    status, body = query(f"recall@{g} mercury depth:1")
+    status, body = query(f"recall@{g} mercury")
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
     assert values == [PLANET_FACTS["mercury"]]

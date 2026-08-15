@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/blevesearch/snowballstem v0.9.0
 	github.com/gin-gonic/gin v1.12.0
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9
 )

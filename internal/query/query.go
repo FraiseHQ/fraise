@@ -57,28 +57,44 @@ type QueryContext struct {
 type QueryResult[K comparable, P float32 | float64] struct {
 	Count int         `json:"count"`
 	Hits  []Hit[K, P] `json:"hits"`
+
+	// Background is the query's background rate ρ₀ — the average seed mass
+	// per unit of anchor degree the traversal observed — attached only in
+	// explain mode. Together with each hit's contribution breakdown it lets a
+	// client recompute every score: S = m + α²·Σ max(0, M_A − m − d_A·ρ₀).
+	// omitempty doubles as the mode switch: a plain query never carries it.
+	Background P `json:"background,omitempty"`
 }
 
 type Hit[K comparable, P float32 | float64] struct {
 	Node  *graph.Node[K]
 	Score P
 
-	// Contributions is the hit's per-source score breakdown, populated only
-	// when the stream ran in explain mode; nil otherwise. nil doubles as the
+	// Contributions is the hit's per-source breakdown, populated only when
+	// the stream ran in explain mode; nil otherwise. nil doubles as the
 	// serialization switch — a recall hit always has at least one
 	// contribution, so nil unambiguously means "not asked for", never
-	// "asked for and empty".
-	Contributions []graph.Contribution[P]
+	// "asked for and empty". The entries are wire-shaped (anchor identities
+	// already resolved to their values) because resolution needs the graph,
+	// which only the commit site holds.
+	Contributions []HitContribution[P]
 }
 
-// hitContribution is the wire shape of one contribution: the source is
+// HitContribution is the wire form of one contribution: the source is
 // serialized by name, not by its Go constant, because the payload documents
-// ranking to clients that never see the enum.
-type hitContribution[P float32 | float64] struct {
+// ranking to clients that never see the enum. A text or vector entry carries
+// its raw mass and list position; a graph entry — one per funding anchor —
+// carries the anchor's full observed mass, the anchor's value under via, its
+// degree, and how many seeds funded it. With the query-level background rate,
+// these are exactly the inputs of the scoring fold, so a client can recompute
+// the hit's score from its own payload.
+type HitContribution[P float32 | float64] struct {
 	Source string `json:"source"`
 	Score  P      `json:"score"`
 	Rank   uint16 `json:"rank"`
-	Hop    uint8  `json:"hop"`
+	Via    string `json:"via,omitempty"`
+	Degree uint32 `json:"degree,omitempty"`
+	Count  uint16 `json:"count"`
 }
 
 // MarshalJSON flattens the node into the hit so the response carries only the
@@ -89,26 +105,16 @@ type hitContribution[P float32 | float64] struct {
 func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	node := *h.Node
 
-	var contributions []hitContribution[P]
-	for _, c := range h.Contributions {
-		contributions = append(contributions, hitContribution[P]{
-			Source: c.Src.String(),
-			Score:  c.Score,
-			Rank:   c.Rank,
-			Hop:    c.Hop,
-		})
-	}
-
 	return json.Marshal(struct {
 		Value         string               `json:"value"`
 		Timestamp     time.Time            `json:"timestamp"`
 		Score         P                    `json:"score"`
-		Contributions []hitContribution[P] `json:"contributions,omitempty"`
+		Contributions []HitContribution[P] `json:"contributions,omitempty"`
 	}{
 		Value:         node.GetValue(),
 		Timestamp:     node.GetTimestamp(),
 		Score:         h.Score,
-		Contributions: contributions,
+		Contributions: h.Contributions,
 	})
 }
 

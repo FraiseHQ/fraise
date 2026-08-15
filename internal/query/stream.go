@@ -192,7 +192,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		"vector", !recall.Vector.Empty(),
 		"depth", recall.Parameters.Depth,
 		"top", recall.Parameters.Top)
-	nodes, scores, contributions := g.Search(
+	nodes, scores, contributions, background := g.Search(
 		recall.Keywords,
 		recall.Vector,
 		recall.Topics,
@@ -209,20 +209,53 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		Count: n,
 		Hits:  make([]Hit[K, P], n),
 	}
+	if s.Explain {
+		// Explain explains through the anchors, so the payload carries the
+		// query-level background rate alongside each hit's breakdown.
+		r.Background = background
+	}
 	for i := 0; i < n; i++ {
 		r.Hits[i].Node = nodes[i]
 		r.Hits[i].Score = scores[i]
 		// Contributions ride on the hit only in explain mode: a nil slice is
 		// what keeps them out of the ordinary response (see Hit.MarshalJSON),
-		// so the plain query wire format does not change shape.
+		// so the plain query wire format does not change shape. Resolution to
+		// the wire form happens here — under the graph lock — because the
+		// anchor a graph contribution arrived via is a key, and only the
+		// graph can turn it into the topic/entity value a client can read.
 		if s.Explain {
-			r.Hits[i].Contributions = contributions[i]
+			r.Hits[i].Contributions = resolveContributions(g, contributions[i])
 		}
 	}
 
 	s.Result = &r
 	logger.Debug("Read stream committed", "hits", n, "explain", s.Explain)
 	return nil
+}
+
+// resolveContributions maps a hit's collected contributions to their wire
+// form: sources serialized by name and, for graph entries, the funding
+// anchor's key resolved to its stored value — the topic or entity name a
+// client can actually read. A vanished anchor falls back to an empty via
+// rather than inventing one.
+func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P], contributions []graph.Contribution[K, P]) []HitContribution[P] {
+	out := make([]HitContribution[P], len(contributions))
+	for i, c := range contributions {
+		wire := HitContribution[P]{
+			Source: c.Src.String(),
+			Score:  c.Score,
+			Rank:   c.Rank,
+			Degree: c.Degree,
+			Count:  c.Count,
+		}
+		if c.Src == graph.SrcGraph {
+			if node := g.Get(c.Via); node != nil {
+				wire.Via = node.GetValue()
+			}
+		}
+		out[i] = wire
+	}
+	return out
 }
 
 func (s *Stream[K, P]) GraphID() uint8 {

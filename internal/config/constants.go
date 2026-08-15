@@ -88,9 +88,21 @@ const (
 	// DefaultHashingFunctionSeed seeds the node-key hashing function.
 	DefaultHashingFunctionSeed uint64 = 0
 
-	// DefaultSearchAlgorithm is the graph traversal used to expand seeds; "none"
-	// falls back to the built-in breadth-first walk.
-	DefaultSearchAlgorithm string = SearchNone
+	// DefaultSearchAlgorithm is the traversal moving seed evidence through the
+	// graph; excess transmission is the shipped methodology, "bfs" remains
+	// available for comparison runs, and "none" turns the graph channel off
+	// entirely (text/vector search only).
+	DefaultSearchAlgorithm string = SearchExcess
+
+	// DefaultScoringAlgorithm selects graph.ExcessScorer, the shipped
+	// scoring methodology; "rrf" selects graph.RRFScorer, kept for
+	// comparison runs.
+	DefaultScoringAlgorithm string = ScoringExcess
+
+	// DefaultRelevanceModel is the text index's relevance model; the excess
+	// methodology needs BM25's raw retrieval mass, and "matchcount" — the
+	// pre-BM25 ranking — remains available for comparison runs.
+	DefaultRelevanceModel string = RelevanceBM25
 
 	// DefaultRankingAlgorithm is the global ranking boost applied to walk scores;
 	// "none" disables it (the alternative is "pagerank").
@@ -135,16 +147,10 @@ const (
 	// DefaultHalflife is the time-decay half-life applied to fact scores.
 	DefaultHalflife time.Duration = 7 * 24 * time.Hour
 
-	// DefaultSeedSize is how many seeds each source (text and vector index)
-	// contributes to a search.
+	// DefaultSeedSize is the minimum candidate budget each source (text and
+	// vector index) contributes to a search; the effective budget is
+	// max(seed-size, top), so a large recall is never starved of candidates.
 	DefaultSeedSize uint = 10
-
-	// DefaultRRFK is the RRF dampening constant k. 60 is the empirical standard
-	// from Cormack, Clarke & Büttcher (SIGIR 2009), where it beat every
-	// individual ranker and Condorcet fusion across TREC collections; it is
-	// large enough that a handful of mid-list sightings can outweigh one
-	// top-of-list sighting, which is the consensus behaviour fusion exists for.
-	DefaultRRFK int = 60
 
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
