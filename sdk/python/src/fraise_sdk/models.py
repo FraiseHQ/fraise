@@ -24,8 +24,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -47,17 +47,42 @@ class Hit:
 
 @dataclass(frozen=True)
 class RecallResult:
-    """The result set of a ``recall``: how many facts matched and, in ranked order, what they were."""
+    """The result set of a ``recall``: how many facts matched and, in ranked order, what they were.
+
+    ``warnings`` carries any parse warnings the server attached: the query ran
+    and the hits are valid, but it was one typo away from meaning something
+    else (e.g. a leading term that spells a grammar keyword). Empty on the
+    common, unambiguous path.
+    """
 
     count: int
     hits: list[Hit]
+    warnings: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_json(cls, results: dict) -> RecallResult:  # noqa: D102
+    def from_json(
+        cls, results: dict, warnings: Sequence[str] | None = None
+    ) -> RecallResult:
+        """Parse the server's ``results`` object, with any response warnings.
+
+        Args:
+            results: the ``results`` member of the response body.
+            warnings: the response's ``warnings`` list, which sits beside
+                ``results`` rather than inside it — the caller holding the
+                whole body passes it through here. ``None`` (a clean response,
+                or a pre-warnings server) parses to an empty list.
+
+        Returns:
+            The typed result, warnings included.
+        """
         hits = [Hit.from_json(h) for h in results.get("hits") or []]
         # Prefer the server-reported count, falling back to the hit count so the
         # two never disagree if the field is ever omitted.
-        return cls(count=results.get("count", len(hits)), hits=hits)
+        return cls(
+            count=results.get("count", len(hits)),
+            hits=hits,
+            warnings=list(warnings or []),
+        )
 
     def __bool__(self) -> bool:
         return bool(self.hits)

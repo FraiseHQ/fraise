@@ -32,7 +32,7 @@ import warnings
 
 import pytest
 import requests
-from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError
+from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
 
 
 def test_client_works_as_a_context_manager(fraise_url):
@@ -140,6 +140,35 @@ def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):
     result = client.recall(no_match, graph=round_trip_graph)
     assert result.count == 0
     assert bool(result) is False
+
+
+def test_a_keyword_spelled_term_recalls_with_a_warning(client, round_trip_graph):
+    """recall("since", "7d") runs, and the server's parse warning surfaces on
+    both channels the SDK offers.
+
+    The leading term "since" is legal data but one ':' from a since clause,
+    so the live server answers the search and attaches a warning naming both
+    readings. The SDK lists it on ``result.warnings`` and re-emits it as a
+    :class:`FraiseWarning` — this is the whole warning pipeline, wire to
+    caller, in one round trip. Read-only: recalls write nothing.
+    """
+    with pytest.warns(FraiseWarning, match="also a keyword"):
+        result = client.recall("since", "7d", graph=round_trip_graph)
+
+    assert len(result.warnings) == 1
+    assert "since:<value>" in result.warnings[0]
+
+
+def test_an_unambiguous_recall_carries_no_warnings(client, round_trip_graph, no_match):
+    """A recall with nothing keyword-shaped in it warns about nothing: the
+    list is empty and no FraiseWarning is emitted, so callers who escalate
+    warnings to errors pass clean queries untouched.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FraiseWarning)
+        result = client.recall(no_match, graph=round_trip_graph)
+
+    assert result.warnings == []
 
 
 def test_a_configured_embedder_stores_and_finds_a_fact_by_vector(

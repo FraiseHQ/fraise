@@ -140,6 +140,33 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 	}
 }
 
+// TestIsKeyword pins the reserved-word set IsKeyword reports. Every type in
+// KeywordsMap must answer true — the parser relies on this to read a reserved
+// word as data in value position, so a keyword missing here regresses to the
+// entity:top 400. Every other type must answer false; LITERAL especially,
+// since calling the bare-word type itself a keyword would re-reserve every
+// word.
+func TestIsKeyword(t *testing.T) {
+	for literal, tokenType := range lexer.KeywordsMap {
+		t.Run(literal, func(t *testing.T) {
+			if !tokenType.IsKeyword() {
+				t.Errorf("IsKeyword(%v) = false, want true for reserved word %q", tokenType, literal)
+			}
+		})
+	}
+
+	nonKeywords := []lexer.TokenType{
+		lexer.ILLEGAL, lexer.EOL, lexer.LITERAL, lexer.PHRASE,
+		lexer.PLUS, lexer.TILDE, lexer.MINUS,
+		lexer.AT, lexer.COLON, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR, lexer.NEWLINE,
+	}
+	for _, tokenType := range nonKeywords {
+		if tokenType.IsKeyword() {
+			t.Errorf("IsKeyword(%v) = true, want false", tokenType)
+		}
+	}
+}
+
 func TestKeyLITERALsMapCaseSensitivity(t *testing.T) {
 	caseSensitiveTests := []string{"RECALL", "Recall", "ReCaLl", "REMEMBER", "Update"}
 

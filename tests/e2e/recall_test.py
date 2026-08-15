@@ -22,7 +22,9 @@
 
 """Remember/recall semantics: the store-then-find round trip, how anchors
 transmit (and stay silent), how top shapes a recall's results, text-index
-matching across facts, and recall through topic:/entity: anchors.
+matching across facts, and recall through topic:/entity: anchors — including
+anchors whose value is a grammar keyword, and the case-folding of terms and
+anchor values.
 """
 
 import pytest
@@ -273,6 +275,99 @@ def test_recall_with_anchor_filters_returns_tagged_fact(query):
         hits = body["results"]["hits"]
         assert len(hits) == 1, f"{q!r} -> {body['results']}"
         assert hits[0]["value"] == "ulysse moved to quimper"
+
+
+# A fact whose anchors are grammar keywords. "top" is also an ordinary English
+# word, and an LLM extracting entities from prose will eventually emit it bare
+# ("she reached the top" -> entities=["top"]) — a certainty at corpus size.
+# It used to kill the whole ingestion run with a 400 the client could not
+# anticipate, because the parser typed the anchor value by spelling alone. The
+# invented marker "cairnprobe" is this fact's only link to the recalls below,
+# so each assertion is scoped to exactly this fact whatever else graph 5 holds.
+CAIRN_FACT = "the cairnprobe marks the top of the pass"
+
+
+def test_keyword_anchor_values_round_trip(query):
+    """A fact filed under entity:top and topic:top is reachable through both
+    anchors — the bug-report repro, taken all the way through the store.
+
+    The remember alone proves the parse; the anchored recalls prove the
+    anchors actually landed as the word "top" rather than being dropped or
+    misread as a result-limit clause. Each filter must narrow the marker
+    recall to exactly this fact.
+    """
+    status, body = query(f"remember@5 '{CAIRN_FACT}' topic:top entity:top")
+    assert status == 200, body.get("error")
+
+    for q in (
+        "recall@5 cairnprobe entity:top",
+        "recall@5 cairnprobe topic:top",
+    ):
+        status, body = query(q)
+        assert status == 200, body.get("error")
+        hits = body["results"]["hits"]
+        assert len(hits) == 1, f"{q!r} -> {body['results']}"
+        assert hits[0]["value"] == CAIRN_FACT
+
+
+def test_keyword_recalls_as_a_leading_term(query):
+    """In `recall top top:10`, the first "top" is a search term and the second
+    is the result-limit clause.
+
+    The leading term is the one position where a bare keyword reads as a
+    word: a recall must start with a term, so no clause can begin there. What
+    tells the two "top"s apart is the ':' — a keyword immediately followed by
+    ':' is always a field. The term must then reach the cairnprobe fact
+    through the text index like any other word, since its text contains "top".
+    """
+    status, body = query(f"remember@5 '{CAIRN_FACT}' topic:top entity:top")
+    assert status == 200, body.get("error")
+
+    status, body = query("recall@5 top top:10")
+    assert status == 200, body.get("error")
+    values = [hit["value"] for hit in body["results"]["hits"]]
+    assert CAIRN_FACT in values, (
+        f"the leading term 'top' should match the cairnprobe fact; got {values}"
+    )
+
+
+# Case folding. Terms and anchor values are identity, not prose: the parser
+# folds them to lower case on the way in, so however a client capitalises an
+# anchor, a single node accrues in the graph. The quoted fact is prose and is
+# the one exception — it comes back spelled exactly as written.
+CASEPROBE_FACT = "The Caseprobe Expedition Reached the Summit in April."
+
+
+def test_anchor_case_folds_while_the_fact_keeps_its_spelling(query):
+    """topic:Mountaineering, topic:MOUNTAINEERING and topic:mountaineering are
+    one anchor, and the stored fact keeps its capitalisation.
+
+    The write uses mixed-case anchors; the recalls each use a different
+    casing of the term, the topic and the entity, and every one must land on
+    the same single fact. If the fold regressed, one anchor would exist under
+    as many nodes as clients have capitalisations, and an anchored recall
+    would silently miss facts filed under another spelling — no error, just
+    absent memories.
+    """
+    status, body = query(
+        f"remember@5 '{CASEPROBE_FACT}' topic:Mountaineering entity:Karakoram"
+    )
+    assert status == 200, body.get("error")
+
+    for q in (
+        "recall@5 caseprobe topic:mountaineering",
+        "recall@5 Caseprobe topic:MOUNTAINEERING",
+        "recall@5 CASEPROBE entity:karakoram",
+        "recall@5 caseprobe entity:Karakoram",
+    ):
+        status, body = query(q)
+        assert status == 200, body.get("error")
+        hits = body["results"]["hits"]
+        assert len(hits) == 1, f"{q!r} -> {body['results']}"
+        assert hits[0]["value"] == CASEPROBE_FACT, (
+            f"{q!r}: the fact must come back spelled exactly as written; "
+            f"got {hits[0]['value']!r}"
+        )
 
 
 # Five facts that all contain "quasar" exactly once and carry no topic:/entity:

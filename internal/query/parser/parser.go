@@ -26,14 +26,27 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/query/lexer"
 )
 
+// Warning is a parse-time observation about a query that ran anyway: the
+// query is valid, but it is close enough to a different, also-valid query
+// that a typo would change its meaning with no error to correct from. It
+// rides the return path, never the query object — the plan cache substitutes
+// query objects on a hash hit, so anything attached there would leak between
+// requests.
 type Warning struct {
 	Msg string
 	Pos lexer.Position
+}
+
+// String renders the warning as clients receive it, mirroring Error's
+// "parse error at column N" shape so a position reads the same either way.
+func (w Warning) String() string {
+	return fmt.Sprintf("parse warning at column %d: %s", w.Pos.Column, w.Msg)
 }
 
 // Error is a parse failure at a specific position in the query. It is returned
@@ -186,16 +199,45 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	}
 
 	// parse terms — a recall requires at least one term (a bare word or a quoted
-	// phrase); fields (topic:, since:, ...) follow.
+	// phrase); fields (topic:, since:, ...) follow. Terms are folded to lower
+	// case: query data is matched without regard to case everywhere, and folding
+	// at the edge keeps every downstream spelling of the query (index lookup,
+	// plan-cache key) agreeing on one form.
 	tok, err := p.expectValue()
 	if err != nil {
 		return nil, err
 	}
 
-	r.terms = append(r.terms, TermNode{token: tok, value: tok.Literal})
+	// A leading term that spells a keyword (in any casing) is legal data — but
+	// it is also what a mistyped clause looks like: "recall since 7d" is one
+	// ':' from "recall since:7d", and the wrong reading silently answers a
+	// differently-scoped question. The ambiguity cannot be resolved here, so it
+	// is surfaced: the query runs as the term search and carries a warning
+	// naming both readings. A quoted phrase never warns — quoting is the
+	// deliberate form.
+	if _, reserved := lexer.KeywordsMap[strings.ToLower(tok.Literal)]; reserved && tok.Type != lexer.PHRASE {
+		p.warns = append(p.warns, Warning{
+			Msg: fmt.Sprintf("term %q is also a keyword: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
+				tok.Literal, strings.ToLower(tok.Literal), tok.Literal),
+			Pos: tok.Pos,
+		})
+	}
+
+	r.terms = append(r.terms, TermNode{token: tok, value: strings.ToLower(tok.Literal)})
 
 	for p.cur.Type == lexer.LITERAL || p.cur.Type == lexer.PHRASE {
-		r.terms = append(r.terms, TermNode{token: p.cur, value: p.cur.Literal})
+		// From the second term on, a clause could start instead, so a mis-cased
+		// keyword (Since, TOP) is rejected here — not folded into a term. Folding
+		// it would let "recall x Since 7d" read as three terms: the silent
+		// token-shift parseTimeValue guards against, back through the casing
+		// door. Only a LITERAL can be mis-cased — a lower-case keyword lexes as
+		// its own token type, and a quoted phrase is always data.
+		if p.cur.Type == lexer.LITERAL {
+			if _, reserved := lexer.KeywordsMap[strings.ToLower(p.cur.Literal)]; reserved {
+				return nil, p.errf(p.cur.Pos, "mis-cased keyword %q: keywords are lower case — quote it ('%s') to search for the word", p.cur.Literal, p.cur.Literal)
+			}
+		}
+		r.terms = append(r.terms, TermNode{token: p.cur, value: strings.ToLower(p.cur.Literal)})
 		p.next()
 	}
 
@@ -371,12 +413,17 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 
 // expectValue consumes a value that may be either a bare word (LITERAL) or a
 // quoted phrase (PHRASE) — the two forms a recall term or an anchor value can
-// take. Quoting lets a value contain reserved words or symbols verbatim.
+// take. A reserved word also counts as a bare word here unless a ':' follows
+// it: in value position a keyword is just data (entity:top files under the
+// word "top"), but keyword-colon is always a field, so a clause mistyped into
+// value position stays an error instead of being swallowed as data. Quoting
+// remains the escape hatch for anything this rule cannot express.
 func (p *parser[K, P]) expectValue() (lexer.Token, error) {
 	if p.cur.Type == lexer.ILLEGAL {
 		return p.cur, p.errf(p.cur.Pos, "unterminated quoted phrase")
 	}
-	if p.cur.Type == lexer.LITERAL || p.cur.Type == lexer.PHRASE {
+	if p.cur.Type == lexer.LITERAL || p.cur.Type == lexer.PHRASE ||
+		(p.cur.Type.IsKeyword() && p.peek.Type != lexer.COLON) {
 		tok := p.cur
 		p.next()
 		return tok, nil
@@ -396,14 +443,18 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 		return lexer.Token{}, "", p.errf(p.cur.Pos, "Expected colon, but found %q", p.cur.Literal)
 	}
 
-	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my project').
+	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my
+	// project'), folded to lower case: an anchor is an identity, not prose —
+	// topic:Billing and topic:billing must select the same anchor, and folding
+	// at the edge is what stops the graph growing two spellings of one anchor.
+	// Only the quoted fact of a remember keeps the case it was written with.
 	tok, err := p.expectValue()
 
 	if err != nil {
 		return lexer.Token{}, "", err
 	}
 
-	return key, tok.Literal, nil
+	return key, strings.ToLower(tok.Literal), nil
 }
 
 func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {

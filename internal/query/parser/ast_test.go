@@ -136,9 +136,9 @@ func TestTermNode(t *testing.T) {
 
 func TestTerms(t *testing.T) {
 	terms := Terms{
-		{token: tok(lexer.LITERAL, "quick"), pos: pos(0), end: pos(5)},
-		{token: tok(lexer.LITERAL, "brown"), pos: pos(6), end: pos(11)},
-		{token: tok(lexer.LITERAL, "fox"), pos: pos(12), end: pos(15)},
+		{token: tok(lexer.LITERAL, "quick"), value: "quick", pos: pos(0), end: pos(5)},
+		{token: tok(lexer.LITERAL, "brown"), value: "brown", pos: pos(6), end: pos(11)},
+		{token: tok(lexer.LITERAL, "fox"), value: "fox", pos: pos(12), end: pos(15)},
 	}
 
 	if got, want := terms.Literal(), "quickbrownfox"; got != want {

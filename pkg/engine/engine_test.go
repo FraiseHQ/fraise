@@ -106,7 +106,7 @@ func TestApplyAfterStopReturnsShutdown(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 
-	q, err := query.Parse[uint64, float32]("recall@0 anna", nil, cfg)
+	q, _, err := query.Parse[uint64, float32]("recall@0 anna", nil, cfg)
 	if err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestPlanReturnsStream(t *testing.T) {
 	}
 	defer e.Stop()
 
-	q, err := query.Parse[uint64, float32]("recall@0 anna", nil, cfg)
+	q, _, err := query.Parse[uint64, float32]("recall@0 anna", nil, cfg)
 	if err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestPlanCachesQuery(t *testing.T) {
 	}
 	defer e.Stop()
 
-	q, err := query.Parse[uint64, float32]("recall@0 anna topic:color", nil, cfg)
+	q, _, err := query.Parse[uint64, float32]("recall@0 anna topic:color", nil, cfg)
 	if err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}

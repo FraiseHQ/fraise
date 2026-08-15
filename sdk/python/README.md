@@ -37,6 +37,22 @@ hits = fraise.recall("zzznomatch", graph=6, vector=embedding)  # seeded only by 
 Anything the typed helpers do not cover is reachable through the raw
 `fraise.query("recall@3 ...")` escape hatch.
 
+Some queries run but read like a near-miss of a different query — a recall
+whose first keyword is also a grammar keyword, e.g. `fraise.recall("since", "7d")`,
+one `:` away from a `since:7d` time filter. The server answers them and
+attaches a warning; the SDK lists it on `result.warnings` and re-emits it as
+a `FraiseWarning`:
+
+```python
+import warnings
+from fraise_sdk import FraiseWarning
+
+warnings.filterwarnings("ignore", category=FraiseWarning)  # silence wholesale
+```
+
+The query shapes that warn (and the neighbouring ones that stay silent) are
+catalogued in the query spec, `docs/query-spec.md` § Warnings.
+
 ## Embeddings (optional)
 
 Give the client an **embedder** and it encodes text to a vector automatically —
