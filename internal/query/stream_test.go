@@ -85,6 +85,7 @@ func (g *fakeGraph) GetTextIndex() index.TextIndex[string, float32]     { return
 func (g *fakeGraph) Nodes() map[string]graph.Node[string]               { return nil }
 func (g *fakeGraph) AdjacencyMap() map[string]map[string]string         { return nil }
 func (g *fakeGraph) PredecessorMap() map[string]map[string]string       { return nil }
+func (g *fakeGraph) Neighbours(key string) []string                     { return nil }
 func (g *fakeGraph) Order() int                                         { return 0 }
 func (g *fakeGraph) Size() int                                          { return 0 }
 func (g *fakeGraph) Stats() graph.GraphStats                            { return graph.GraphStats{} }

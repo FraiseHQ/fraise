@@ -96,6 +96,13 @@ type Graph[K comparable, P float32 | float64] interface {
 	// the transpose of AdjacencyMap and serves reverse traversal.
 	PredecessorMap() map[K]map[K]K
 
+	// Neighbours returns the keys adjacent to key in either direction
+	// (successors and predecessors), in unspecified order. Unlike
+	// AdjacencyMap/PredecessorMap it copies no more than one node's edge
+	// rows, so a source-rooted traversal can read a single node's
+	// neighbourhood without cloning the entire edge set on every call.
+	Neighbours(key K) []K
+
 	// Order returns the number of entities (vertices) in the graph.
 	Order() int
 
