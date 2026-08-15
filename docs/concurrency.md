@@ -66,7 +66,10 @@ execute(stream) → Acquire lock → Commit in place
 The scheduler is configured under `[scheduler]` (see
 [`configuration.md`](configuration.md)):
 
-- **workers**: number of concurrent worker goroutines (default 2)
+- **workers**: number of concurrent worker goroutines (default
+  `max(2, GOMAXPROCS(0))` — reads take `RLock` and run concurrently, so
+  tracking the machine's core count avoids a queueing penalty; `-workers`
+  still overrides it)
 - **buffer-size**: capacity of the work queue (default 200)
 - **enqueue-timeout**: how long `Submit` waits for room before shedding
   (default 2s)

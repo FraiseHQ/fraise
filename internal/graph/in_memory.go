@@ -371,31 +371,28 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	// identical hits: score descending, then fact key. Facts of equal score are
 	// ordered by key rather than left as the map presented them, because
 	// truncation would otherwise keep an arbitrary subset of a tied group.
+	// TopK keeps only the top best under that order without sorting every
+	// candidate, so a query that returns few results out of many candidates
+	// pays O(n log top) instead of O(n log n).
 
-	sort.Slice(kept, func(i, j int) bool {
-		if ranked[kept[i]] != ranked[kept[j]] {
-			return ranked[kept[i]] > ranked[kept[j]]
-		}
-		return kept[i] < kept[j]
-	})
-
-	limit := top
-	if limit <= 0 || limit > len(kept) {
-		limit = len(kept)
+	ranker := containers.NewTopK[K, P](top, comparator.OrderedComparator[K])
+	for _, key := range kept {
+		ranker.Offer(key, ranked[key])
 	}
+	rankedKeys, rankedScores := ranker.Drain()
 
-	nodes := make([]*Node[K], limit)
-	scoresOut := make([]P, limit)
-	contributions := make([][]Contribution[K, P], limit)
-	for i, key := range kept[:limit] {
+	nodes := make([]*Node[K], len(rankedKeys))
+	scoresOut := make([]P, len(rankedKeys))
+	contributions := make([][]Contribution[K, P], len(rankedKeys))
+	for i, key := range rankedKeys {
 		node := g.idToNodes[key]
 		nodes[i] = &node
-		scoresOut[i] = ranked[key]
+		scoresOut[i] = rankedScores[i]
 		contributions[i] = candidates[key]
 	}
 
 	logger.Debug("Graph search completed",
-		"candidates", len(kept), "returned", limit)
+		"candidates", len(kept), "returned", len(rankedKeys))
 	return nodes, scoresOut, contributions, background
 }
 

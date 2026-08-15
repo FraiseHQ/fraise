@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -214,7 +215,8 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.configFile, "config", DefaultConfigFile, "Path to the TOML config file")
 
 	// scheduler
-	flagSet.IntVar(&config.Scheduler.Workers, "workers", DefaultWorkersCount, "Default worker count.")
+	defaultWorkers := max(MinWorkersCount, runtime.GOMAXPROCS(0))
+	flagSet.IntVar(&config.Scheduler.Workers, "workers", defaultWorkers, "Default worker count.")
 	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Default Buffer size")
 	flagSet.DurationVar(&config.Scheduler.EnqueueTimeout, "enqueue-timeout", DefaultEnqueueTimeout, "Max wait for queue space before rejecting a query")
 
@@ -336,7 +338,7 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	}
 
 	// scheduler
-	Adjust(&c.Scheduler.Workers, DefaultWorkersCount)
+	Adjust(&c.Scheduler.Workers, max(MinWorkersCount, runtime.GOMAXPROCS(0)))
 	Adjust(&c.Scheduler.BufferSize, DefaultBufferSize)
 	Adjust(&c.Scheduler.EnqueueTimeout, DefaultEnqueueTimeout)
 

@@ -35,7 +35,7 @@ from fraise_sdk.models import RecallResult
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
 DEFAULT_BASE_URL = "http://localhost:9876"
-DEFAULT_TIMEOUT_SECONDS = 10.0
+DEFAULT_TIMEOUT_SECONDS = 30.0
 
 # Server versions this SDK is verified against. Keep in sync with COMPATIBILITY.md
 # and bump when a release starts relying on newer server behaviour.
@@ -301,19 +301,26 @@ class FraiseClient:
         not yet cover. Raises :class:`FraiseAPIError` on any non-2xx response.
 
         Raises:
-            FraiseError: if database is unreachable
+            FraiseError: if the request times out or the server is unreachable
             FraiseAPIError: if API call to fraise fails
         """
         payload: dict[str, object] = {"query": text}
         if parameters:
             payload["parameters"] = parameters
 
+        effective_timeout = self.timeout if timeout is None else timeout
         try:
             response = self._session.post(
                 f"{self.base_url}/api/v1/q",
                 json=payload,
-                timeout=self.timeout if timeout is None else timeout,
+                timeout=effective_timeout,
             )
+        except requests.Timeout as exc:
+            raise FraiseError(
+                f"fraise at {self.base_url} timed out after {effective_timeout}s — "
+                f"large graphs may need a higher timeout (pass timeout=... to "
+                f"FraiseClient() or to this call)"
+            ) from exc
         except requests.RequestException as exc:
             raise FraiseError(
                 f"could not reach fraise at {self.base_url}: {exc}"
