@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.0-beta.1](https://github.com/RonsenbergVI/fraise/compare/python/v0.1.0-alpha.1...python/v0.1.0-beta.1) (2026-08-15)
+
+
+### Bug fixes
+
+* improve query parsing special characters ([#189](https://github.com/RonsenbergVI/fraise/issues/189)) ([b658867](https://github.com/RonsenbergVI/fraise/commit/b658867c0162722dca592debb8450b3f3625dd6f))
+
+
+### Performance
+
+* server performance improvements ([#194](https://github.com/RonsenbergVI/fraise/issues/194)) ([affd9ac](https://github.com/RonsenbergVI/fraise/commit/affd9acf50a0c88134ffcd21f446207ac8d2fd37))
+
+
+### Maintenance
+
+* query parser improvements ([#195](https://github.com/RonsenbergVI/fraise/issues/195)) ([1c2760b](https://github.com/RonsenbergVI/fraise/commit/1c2760bd85d7cf087d65c46ff4a2f1f5a53c1c33))
+
 ## [0.1.0-alpha.1](https://github.com/RonsenbergVI/fraise/compare/python/v0.1.0-alpha.0...python/v0.1.0-alpha.1) (2026-08-09)
 
 
