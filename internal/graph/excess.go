@@ -80,15 +80,13 @@ func (t *ExcessTraversal[K, P]) traverse(g Graph[K, P], source K) (TraversalResu
 		return TraversalResult[K]{}, ErrSourceNotFound
 	}
 
-	adjacency, predecessors := g.AdjacencyMap(), g.PredecessorMap()
+	// Single-node neighbour access via the non-copying Neighbours accessor.
+	// The prior code built adjacency/predecessor views with AdjacencyMap()/
+	// PredecessorMap(), each of which deep-copies the ENTIRE edge set on every
+	// call — and traverse runs once per seed, so a query cloned the whole graph
+	// ~2x per seed (exportEdges: 61% of CPU, 213MB/query on a 60k fat hub).
 	neighbours := func(key K) []K {
-		out := make([]K, 0, len(adjacency[key])+len(predecessors[key]))
-		for neighbour := range adjacency[key] {
-			out = append(out, neighbour)
-		}
-		for neighbour := range predecessors[key] {
-			out = append(out, neighbour)
-		}
+		out := g.Neighbours(key)
 		sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 		return out
 	}

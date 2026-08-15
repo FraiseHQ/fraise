@@ -93,6 +93,16 @@ func (g *fakeGraph) Get(key uint64) graph.Node[uint64] {
 
 func (g *fakeGraph) AdjacencyMap() map[uint64]map[uint64]uint64   { return g.adj }
 func (g *fakeGraph) PredecessorMap() map[uint64]map[uint64]uint64 { return g.pred }
+func (g *fakeGraph) Neighbours(key uint64) []uint64 {
+	out := make([]uint64, 0, len(g.adj[key])+len(g.pred[key]))
+	for n := range g.adj[key] {
+		out = append(out, n)
+	}
+	for n := range g.pred[key] {
+		out = append(out, n)
+	}
+	return out
+}
 
 func (g *fakeGraph) Order() int { return len(g.vertices) }
 

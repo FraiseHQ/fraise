@@ -285,6 +285,22 @@ func (g *InMemoryGraph[K, P]) PredecessorMap() map[K]map[K]K {
 	return exportEdges(g.nodeToSources)
 }
 
+// Neighbours returns the keys adjacent to key in either direction without
+// copying the whole edge set: it allocates one slice sized to that node's
+// own degree. This is the read a source-rooted traversal needs — the
+// per-seed ExcessTraversal uses it instead of AdjacencyMap/PredecessorMap,
+// which each deep-copy every edge in the graph on every call.
+func (g *InMemoryGraph[K, P]) Neighbours(key K) []K {
+	out := make([]K, 0, len(g.nodeToTargets[key])+len(g.nodeToSources[key]))
+	for neighbour := range g.nodeToTargets[key] {
+		out = append(out, neighbour)
+	}
+	for neighbour := range g.nodeToSources[key] {
+		out = append(out, neighbour)
+	}
+	return out
+}
+
 // exportEdges converts the internal edge maps to the pointer-valued shape the
 // Graph interface exposes.
 func exportEdges[K comparable](edges map[K]map[K]K) map[K]map[K]K {
