@@ -119,6 +119,20 @@ var KeywordsMap = map[string]TokenType{
 	"vec":      VEC,
 }
 
+// IsKeyword reports whether t is a reserved word — a type the lexer assigns by
+// spelling alone. Spelling alone must not make a word syntax: the parser asks
+// this in value position (the right-hand side of a field's ':', the leading
+// term of a recall) to read a reserved word back as ordinary data, so a stored
+// word that happens to be "top" or "entity" needs no quoting there.
+func (t TokenType) IsKeyword() bool {
+	switch t {
+	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC:
+		return true
+	default:
+		return false
+	}
+}
+
 func (t TokenType) String() string {
 	return TokenMap[t]
 }

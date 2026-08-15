@@ -96,6 +96,13 @@ def test_an_empty_result_set_parses(client, models_graph, no_match):
     assert bool(empty) is False
 
 
+def test_a_clean_response_parses_to_empty_warnings(tide_result):
+    """An unambiguous recall parses with an empty warnings list — a list, not
+    None, so iterating ``result.warnings`` never needs a guard.
+    """
+    assert tide_result.warnings == []
+
+
 def test_a_vector_recall_parses_the_same_shape(vector_tide_result):
     """A vector-seeded result arrives in the envelope models.py knows to read.
 

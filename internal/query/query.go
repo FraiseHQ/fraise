@@ -138,11 +138,17 @@ func bindVector[P float32 | float64](params map[string][]P, name string, maxDim 
 // passed out-of-band in params, keyed by the placeholder name used in the query
 // (e.g. `vec:$v` binds to params["v"]). This keeps the parser lightweight: it
 // only records the placeholder, and the real vector is injected here.
-func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c *config.ConfigSet) (Query[K, P], error) {
-	cmd, _, err := parser.Parse[K, P](q)
+//
+// Warnings accompany a query that parsed and will run: they flag a reading the
+// client may not have meant (see parser.Warning) and must travel to the client
+// alongside the results, never attached to the query itself — the plan cache
+// substitutes query objects on a hash hit, so state on the query would leak
+// between requests.
+func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c *config.ConfigSet) (Query[K, P], []parser.Warning, error) {
+	cmd, warns, err := parser.Parse[K, P](q)
 	if err != nil {
 		logger.Debug("Query parsing failed", "query", q, "error", err)
-		return nil, fmt.Errorf("%w: %w", ErrParsingFailed, err)
+		return nil, nil, fmt.Errorf("%w: %w", ErrParsingFailed, err)
 	}
 
 	switch n := cmd.(type) {
@@ -160,14 +166,14 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 			data, err := bindVector(params, name, c.DB.MaxVectorDimension)
 			if err != nil {
 				logger.Warn("Rejecting vector parameter for remember", "parameter", name, "error", err)
-				return nil, err
+				return nil, nil, err
 			}
 			qo.Vector = containers.NewVector[K](data)
 		}
 
 		logger.Debug("Parsed remember query", "graph", qo.GetGraphID(), "value", qo.Value)
 
-		return qo, nil
+		return qo, warns, nil
 
 	case *parser.RecallCommandNode[K, P]:
 		// Enforce the top/depth ceilings before building the query: a
@@ -179,12 +185,12 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		top := n.Top(c.DB.DefaultTop)
 		if n.HasTop() && top > c.DB.MaxTop {
 			logger.Warn("Rejecting recall over top ceiling", "top", top, "max", c.DB.MaxTop)
-			return nil, fmt.Errorf("%w: top:%d exceeds max %d", ErrLimitExceeded, top, c.DB.MaxTop)
+			return nil, nil, fmt.Errorf("%w: top:%d exceeds max %d", ErrLimitExceeded, top, c.DB.MaxTop)
 		}
 		depth := n.Depth(c.DB.DefaultDepth)
 		if n.HasDepth() && depth > c.DB.MaxDepth {
 			logger.Warn("Rejecting recall over depth ceiling", "depth", depth, "max", c.DB.MaxDepth)
-			return nil, fmt.Errorf("%w: depth:%d exceeds max %d", ErrLimitExceeded, depth, c.DB.MaxDepth)
+			return nil, nil, fmt.Errorf("%w: depth:%d exceeds max %d", ErrLimitExceeded, depth, c.DB.MaxDepth)
 		}
 
 		qo := &Recall[K, P]{
@@ -203,16 +209,16 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 			data, err := bindVector(params, name, c.DB.MaxVectorDimension)
 			if err != nil {
 				logger.Warn("Rejecting vector parameter for recall", "parameter", name, "error", err)
-				return nil, err
+				return nil, nil, err
 			}
 			qo.Vector = containers.NewVector[K](data)
 		}
 
 		logger.Debug("Parsed recall query", "graph", qo.GetGraphID(), "keywords", len(qo.Keywords))
-		return qo, nil
+		return qo, warns, nil
 
 	default:
 		logger.Debug("Unsupported query command", "query", q)
-		return nil, ErrParsingFailed
+		return nil, nil, ErrParsingFailed
 	}
 }

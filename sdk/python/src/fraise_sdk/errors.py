@@ -20,13 +20,26 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Exceptions raised by the Fraise SDK."""
+"""Exceptions raised by the Fraise SDK, and the warning category it emits."""
 
 from __future__ import annotations
 
 
 class FraiseError(Exception):
     """Base class for every error raised by the SDK."""
+
+
+class FraiseWarning(UserWarning):
+    """A warning the server attached to a successful response.
+
+    The query ran and its results are valid; the server is flagging a reading
+    the caller may not have meant — e.g. a leading recall term that spells a
+    grammar keyword, where ``recall since 7d`` is one ``:`` away from
+    ``recall since:7d``. Emitted through :mod:`warnings` so it is visible by
+    default and silenceable by category::
+
+        warnings.filterwarnings("ignore", category=FraiseWarning)
+    """
 
 
 class FraiseQueryError(FraiseError):

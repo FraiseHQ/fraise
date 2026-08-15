@@ -109,8 +109,10 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 		logger.Debug("Query received", "query", req.Query, "parameters", len(req.Parameters))
 
 		// Parse the raw query string into an executable query, binding any
-		// vector placeholders (vec:$v) from the request parameters.
-		q, err := query.Parse[K, P](req.Query, req.Parameters, s.Config)
+		// vector placeholders (vec:$v) from the request parameters. Warnings
+		// ride alongside a query that runs anyway (e.g. a leading term that
+		// spells a keyword) and are returned with the results below.
+		q, warns, err := query.Parse[K, P](req.Query, req.Parameters, s.Config)
 
 		if err != nil {
 			logger.Warn("Rejecting unparsable query", "query", req.Query, "error", err)
@@ -194,9 +196,17 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 				return
 			}
 			logger.Info("Query executed", "query", req.Query, "graph", q.GetGraphID())
-			c.JSON(http.StatusOK, gin.H{
-				"results": stream.Result,
-			})
+			// The warnings key appears only when there is something to say, so
+			// the response shape for a clean query is unchanged.
+			resp := gin.H{"results": stream.Result}
+			if len(warns) > 0 {
+				msgs := make([]string, len(warns))
+				for i, w := range warns {
+					msgs[i] = w.String()
+				}
+				resp["warnings"] = msgs
+			}
+			c.JSON(http.StatusOK, resp)
 		case <-c.Request.Context().Done():
 			logger.Warn("Client disconnected before query completed", "query", req.Query)
 			return

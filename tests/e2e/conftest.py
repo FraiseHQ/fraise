@@ -40,7 +40,8 @@ this map current when claiming a graph:
     3  real-embedding documents            (test_vectors.py)
     4  vector dimension + forest bound     (test_vectors.py, test_stats.py)
     5  bird facts + anchored recall
-       + the topic-named fact             (test_concurrency.py, test_recall.py)
+       + the topic-named fact
+       + keyword-anchor + case-fold probes (test_concurrency.py, test_recall.py)
     6  vector round trip + cache probes
        + krakatoa fusion cluster          (test_vectors.py, test_query_cache.py)
     7  planet star                         (test_recall.py)
@@ -115,7 +116,6 @@ def query(base_url):
     """
 
     def _query(text: str, parameters: dict[str, object] | None = None):
-
         data = {"query": text}
 
         if parameters:
@@ -141,7 +141,6 @@ def explain(base_url):
     """
 
     def _explain(text: str, parameters: dict[str, object] | None = None):
-
         data = {"query": text}
 
         if parameters:

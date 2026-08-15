@@ -53,7 +53,7 @@ func newStartedDB(t *testing.T, cfg *config.ConfigSet) *db.DB[uint64, float32] {
 // returns the executable stream the scheduler runs.
 func planStream(t *testing.T, cfg *config.ConfigSet, q string, params map[string][]float32) *query.Stream[uint64, float32] {
 	t.Helper()
-	parsed, err := query.Parse[uint64, float32](q, params, cfg)
+	parsed, _, err := query.Parse[uint64, float32](q, params, cfg)
 	if err != nil {
 		t.Fatalf("Parse(%q) returned error: %v", q, err)
 	}

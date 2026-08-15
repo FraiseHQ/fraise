@@ -249,9 +249,10 @@ def test_recall_fuses_text_and_vector_additively(query, vector, explain):
 
     both = hits[KRAKATOA_BOTH]
     sources = sorted(c["source"] for c in both["contributions"])
-    assert sources == ["text", "vector"], (
-        f"the two-channel fact must carry both observations: {both['contributions']}"
-    )
+    assert sources == [
+        "text",
+        "vector",
+    ], f"the two-channel fact must carry both observations: {both['contributions']}"
     assert abs(both["score"] - sum(c["score"] for c in both["contributions"])) < 1e-3, (
         f"fusion is additive: {both}"
     )

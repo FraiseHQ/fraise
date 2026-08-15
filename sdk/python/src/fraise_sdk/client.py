@@ -30,7 +30,7 @@ from collections.abc import Sequence
 import requests
 
 from fraise_sdk import query as _query
-from fraise_sdk.errors import FraiseAPIError, FraiseError
+from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
 from fraise_sdk.models import RecallResult
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
@@ -239,6 +239,10 @@ class FraiseClient:
         :meth:`remember`: an explicit ``vector`` wins; otherwise, if the client
         has an embedder, the ``query`` phrase (or, absent that, the space-joined
         ``keywords``) is encoded. ``embed`` overrides per call.
+
+        Any parse warnings the server attached — the query ran, but reads like
+        a near-miss of a different one — are listed on the result's
+        ``warnings`` and emitted as :class:`FraiseWarning` (see :meth:`query`).
         """
         embed_text = query if query is not None else " ".join(keywords)
         resolved = self._resolve_vector(vector, embed_text, embed)
@@ -255,7 +259,7 @@ class FraiseClient:
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
         body = self.query(text, parameters=parameters, timeout=timeout)
         results = body.get("results") or {}
-        return RecallResult.from_json(results)
+        return RecallResult.from_json(results, warnings=body.get("warnings"))
 
     # -- embedding ---------------------------------------------------------
 
@@ -300,6 +304,11 @@ class FraiseClient:
         :meth:`recall`; reach for it when you need a query the typed helpers do
         not yet cover. Raises :class:`FraiseAPIError` on any non-2xx response.
 
+        Any ``warnings`` the server attached to a successful response are
+        emitted as :class:`FraiseWarning` — every operation funnels through
+        here, so the typed helpers inherit that. Silence them by category with
+        ``warnings.filterwarnings("ignore", category=FraiseWarning)``.
+
         Raises:
             FraiseError: if the request times out or the server is unreachable
             FraiseAPIError: if API call to fraise fails
@@ -339,4 +348,13 @@ class FraiseClient:
                 response.status_code, message or response.text or "unknown error"
             )
 
-        return body if isinstance(body, dict) else {}
+        body = body if isinstance(body, dict) else {}
+
+        # Surface server-attached warnings through Python's own channel: the
+        # query ran and the results are valid, but the server flagged a reading
+        # the caller may not have meant. Emitted per message, category-scoped,
+        # so a caller can react to one or silence them all.
+        for message in body.get("warnings") or []:
+            warnings.warn(message, FraiseWarning, stacklevel=2)
+
+        return body

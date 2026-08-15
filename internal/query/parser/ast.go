@@ -475,8 +475,12 @@ func (n AnchorFieldNode) Value() string {
 
 // term node impl
 
+// Literal returns the term as the parser interpreted it: folded to lower case.
+// The token keeps the source spelling for positions and error text; matching
+// and cache keys must see only this folded form, or one search would exist
+// under as many plan-cache entries as it has capitalisations.
 func (n TermNode) Literal() string {
-	return n.token.Literal
+	return n.value
 }
 
 func (n TermNode) Pos() lexer.Position {
@@ -497,7 +501,7 @@ type Terms []TermNode
 func (n Terms) Literal() string {
 	var s string
 	for _, t := range n {
-		s += t.token.Literal
+		s += t.Literal()
 	}
 	return s
 }

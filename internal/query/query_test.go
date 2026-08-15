@@ -43,7 +43,7 @@ import (
 func TestParseRemember(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
 
-	got, err := query.Parse[string, float32](q, nil, config.New())
+	got, _, err := query.Parse[string, float32](q, nil, config.New())
 	if err != nil {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
@@ -77,7 +77,7 @@ func TestParseRemember(t *testing.T) {
 func TestParseRecall(t *testing.T) {
 	q := "recall@2 anna bob entity:alice topic:job"
 
-	got, err := query.Parse[string, float32](q, nil, config.New())
+	got, _, err := query.Parse[string, float32](q, nil, config.New())
 	if err != nil {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
@@ -116,7 +116,7 @@ func TestParseErrors(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			got, err := query.Parse[string, float32](q, nil, config.New())
+			got, _, err := query.Parse[string, float32](q, nil, config.New())
 			if !errors.Is(err, query.ErrParsingFailed) {
 				t.Errorf("Parse(%q) err = %v, want it to wrap ErrParsingFailed", q, err)
 			}
@@ -134,7 +134,7 @@ func TestParseRecallBindsVector(t *testing.T) {
 	q := "recall@0 amelia entity:amelia topic:preferences vec:$v"
 	params := map[string][]float32{"v": {0.1, 0.2, 0.3}}
 
-	got, err := query.Parse[string, float32](q, params, config.New())
+	got, _, err := query.Parse[string, float32](q, params, config.New())
 	if err != nil {
 		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
@@ -154,7 +154,7 @@ func TestParseRecallBindsVector(t *testing.T) {
 func TestParseRecallMissingParameter(t *testing.T) {
 	q := "recall@0 amelia vec:$v"
 
-	got, err := query.Parse[string, float32](q, nil, config.New())
+	got, _, err := query.Parse[string, float32](q, nil, config.New())
 	if !errors.Is(err, query.ErrMissingParameter) {
 		t.Errorf("Parse(%q) err = %v, want ErrMissingParameter", q, err)
 	}
@@ -185,7 +185,7 @@ func TestParseRejectsOverLimits(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := query.Parse[string, float32](tc.query, tc.params, cfg)
+			got, _, err := query.Parse[string, float32](tc.query, tc.params, cfg)
 			if !errors.Is(err, query.ErrLimitExceeded) {
 				t.Errorf("Parse(%q) err = %v, want ErrLimitExceeded", tc.query, err)
 			}
@@ -196,7 +196,7 @@ func TestParseRejectsOverLimits(t *testing.T) {
 	}
 
 	// A request within every ceiling still parses cleanly.
-	if _, err := query.Parse[string, float32]("recall@0 anna top:5 depth:1", nil, cfg); err != nil {
+	if _, _, err := query.Parse[string, float32]("recall@0 anna top:5 depth:1", nil, cfg); err != nil {
 		t.Errorf("within-limit recall returned error: %v", err)
 	}
 }

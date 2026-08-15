@@ -23,15 +23,25 @@
 """Client tests with requests.Session patched out — no server required."""
 
 import json
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError
+from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
 from fraise_sdk.client import DEFAULT_BASE_URL, DEFAULT_TIMEOUT_SECONDS
 
 QUERY_URL = f"{DEFAULT_BASE_URL}/api/v1/q"
 NO_HITS = {"results": {"count": 0, "hits": []}}
+
+# The shape the server sends for the grammar's one surviving ambiguity: a
+# leading recall term that spells a keyword ran as a term search, and the
+# warning names the clause it nearly is.
+SERVER_WARNING = (
+    'parse warning at column 15: term "since" is also a keyword: write '
+    "since:<value> if a clause was meant, or quote it ('since') to search "
+    "for the word"
+)
 
 
 @pytest.fixture
@@ -135,6 +145,60 @@ def test_recall_empty_results(session):
     assert result.count == 0
     assert list(result) == []
     assert bool(result) is False
+
+
+def test_recall_surfaces_server_warnings(session):
+    """A server warning reaches the caller on both channels: listed on the
+    result for programmatic use, and emitted as a FraiseWarning so it is
+    visible by default without any code changes.
+
+    The armed response mimics ``recall since 7d``: the query ran — hits and
+    all — while the server flagged that it is one ':' away from a since
+    clause. Warnings ride beside the results, they do not replace them.
+    """
+    _respond(
+        session,
+        {
+            "results": {
+                "count": 1,
+                "hits": [{"value": "since the storm", "score": 1.0}],
+            },
+            "warnings": [SERVER_WARNING],
+        },
+    )
+
+    with pytest.warns(FraiseWarning, match="also a keyword"):
+        result = FraiseClient().recall("since", "7d")
+
+    assert result.warnings == [SERVER_WARNING]
+    assert result.count == 1
+
+
+def test_recall_without_warnings_is_silent(session):
+    """A response with no warnings field yields an empty list and emits
+    nothing — the common, unambiguous path must stay quiet, so a caller who
+    escalates warnings to errors is not tripped by clean queries.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = FraiseClient().recall("zebras")
+
+    assert result.warnings == []
+
+
+def test_raw_query_emits_server_warnings(session):
+    """The raw query() escape hatch emits FraiseWarning too: every operation
+    funnels through it, so remember() and any future typed helper inherit the
+    channel without plumbing of their own.
+    """
+    _respond(
+        session, {"results": {"count": 0, "hits": []}, "warnings": [SERVER_WARNING]}
+    )
+
+    with pytest.warns(FraiseWarning, match="also a keyword"):
+        body = FraiseClient().query("recall@0 since 7d")
+
+    assert body["warnings"] == [SERVER_WARNING]
 
 
 def test_api_error_surfaces_server_message(session):

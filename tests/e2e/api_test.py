@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 """HTTP surface and request validation: the health check, malformed request
-bodies, and query strings the parser must reject as client errors.
+bodies, query strings the parser must reject as client errors, and the
+grammar boundary that keeps reserved words usable as ordinary data.
 """
 
 import pytest
@@ -228,6 +229,168 @@ def test_missing_separator_write_does_not_land(query):
     assert status == 200, body.get("error")
     assert body["results"]["count"] == 0, (
         "a rejected write landed on graph 5 — the parse error did not stop execution"
+    )
+
+
+# A reserved word is only syntax where a clause can start. In value position —
+# the right-hand side of a field's ':', or the leading term a recall must
+# begin with — it reads as an ordinary word, so an entity that happens to be
+# called "top" needs no quoting. Two rules hold that line: a keyword
+# immediately followed by ':' is always a field, and a keyword is lower-case
+# only — written with any upper case where a clause could start, it is an
+# error naming the casing, never a term. One ambiguity survives — a leading
+# term that spells a keyword is legal data but one ':' from a clause — and it
+# is answered with a warning beside the results rather than a guess. The tests
+# below pin every side: the shapes that now parse, the keyword-colon shapes
+# that must stay rejected, the mis-cased shapes that must never be silently
+# swallowed as data, and the warning that covers the ambiguity no rule can
+# close.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall@0 top",  # keyword as the leading term: a search for the word "top"
+        "recall@0 Top",  # upper case is legal in data position, and folds to the same word
+        "recall@0 top top:3",  # same spelling as term and clause, told apart by the ':'
+        "recall@0 shelf entity:top",  # the bug-report repro, on the read side
+        "recall@0 shelf topic:top",
+        "recall@0 shelf entity:Top",  # an anchor value may carry any casing, keyword spelling or not
+        "recall@0 shelf entity:since topic:recall",  # every keyword, not just "top"
+    ],
+)
+def test_query_accepts_keyword_in_value_position(query, text):
+    """A keyword on the right of a field's ':', or as the leading recall term,
+    is data — the query parses and runs.
+
+    `remember 'x' entity:top` used to die with `parse error ... expected a
+    word or quoted phrase, but found "top"`, because the parser typed "top"
+    by spelling alone. An LLM extracting entities from prose will eventually
+    emit exactly that word bare ("she reached the top"), so one unlucky
+    extraction killed a whole ingestion run with a 400 the client could not
+    anticipate. These probes are recalls of the same shapes, chosen because
+    they are read-only: acceptance is proven without writing anything.
+    """
+    status, body = query(text)
+
+    assert status == 200, f"{text!r} should parse, got {status}: {body.get('error')!r}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall@0 top:3",  # keyword+':' is the top clause — and a recall still needs a term first
+        "recall@0 shelf top",  # clause position: a bare keyword is a clause missing its ':'
+        "remember@5 'x' entity:top:3",  # keyword+':' after the anchor's ':' is a field, not a value
+        "remember@5 'x' entity:since:7d",  # ditto for a time field
+    ],
+)
+def test_query_keeps_keyword_colon_as_a_field(query, text):
+    """A keyword immediately followed by ':' still reads as a field — never as
+    a value that happens to precede a stray ':'.
+
+    This boundary is what makes accepting keywords as values safe: without
+    it, `entity:top:3` would need a guess, and a bare keyword in clause
+    position quietly becoming a search term would revive the silent-shift
+    family the separator tests above exist to prevent. An error an agent can
+    correct from beats a 200 answering a question nobody asked.
+    """
+    status, body = query(text)
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert body.get("error"), f"expected a parse error message for {text!r}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Recall zebras",  # command position: commands are lower case
+        "REMEMBER 'a shouted fact' topic:x",
+        "recall zebras Since 7d",  # parsed clean as a three-term search before the check
+        "recall zebras Since 7d 30d",  # the shifted time-bound shape, through the casing door
+        "recall zebras TOP:3",  # mis-cased clause: rejected for its casing, not its stray ':'
+        "recall zebras Topic:food",
+        "remember@5 'a caseprobe fact' Entity:bob",  # mis-cased field on the write side
+    ],
+)
+def test_query_rejects_miscased_keyword(query, text):
+    """A keyword written with any upper case is a 400 wherever it would read
+    as syntax — casing does not un-reserve a word.
+
+    Keywords are lower-case syntax; upper case is only legal where a token is
+    unambiguously data (a term, a phrase, an anchor value). The dangerous
+    shapes are the middle two: case folding of terms would happily read
+    `recall zebras Since 7d` as a three-term search — a 200 scoped by nothing,
+    with no signal to correct from — reviving the silent-shift family above
+    through the casing door.
+    """
+    status, body = query(text)
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert body.get("error"), f"expected a parse error message for {text!r}"
+
+
+def test_miscased_keyword_error_names_the_casing(query):
+    """The 400 for a mis-cased clause keyword tells the agent what is wrong
+    and how to get the word instead: lower-case the keyword, or quote the
+    word. Without the hint, `Since` blamed a stray ':' or nothing at all,
+    and the one thing the error must enable is self-correction.
+    """
+    status, body = query("recall zebras Since 7d")
+
+    assert status == 400
+    error = body.get("error", "")
+    assert "lower case" in error, f"want the casing named, got {error!r}"
+    assert "'Since'" in error, f"want the quoted escape shown, got {error!r}"
+
+
+def test_leading_keyword_term_warns_but_runs(query):
+    """`recall since 7d` runs as a two-term search and the response carries a
+    warning naming the clause it nearly is.
+
+    The leading term is the one position where a bare keyword legally reads
+    as a word — which makes it the one position where a mistyped clause can
+    slip through as data: `recall since 7d` is one ':' away from
+    `recall since:7d`, and the two answer differently-scoped questions. The
+    server cannot know which was meant, so it answers the query as written
+    and says what else it could have meant, naming the clause syntax and the
+    quoting escape so an agent can resolve the ambiguity from the response
+    alone. Neither erroring (which would reject legitimate one-word searches
+    like `recall top`) nor staying silent (a typo with no signal) is
+    acceptable here.
+    """
+    status, body = query("recall@0 since 7d")
+
+    assert status == 200, body.get("error")
+    warnings = body.get("warnings", [])
+    assert len(warnings) == 1, f"want exactly one warning, got {warnings}"
+    assert "since:<value>" in warnings[0], warnings[0]
+    assert "('since')" in warnings[0], warnings[0]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall@0 zebras",  # nothing keyword-shaped anywhere
+        "recall@0 'since' 7d",  # quoting the term states the intent
+        "recall@0 zebras entity:top",  # anchor values are unambiguous, never warned about
+        "recall@0 zebras since:7d",  # an actual clause is what it says it is
+    ],
+)
+def test_unambiguous_query_carries_no_warnings_key(query, text):
+    """A query with nothing to warn about has no warnings key at all.
+
+    The key appears only when there is something to say, so the response
+    shape for the common case is unchanged and a client checking
+    `"warnings" in body` gets a real signal, not a constant empty list.
+    Quoting is the documented way to silence the leading-term warning, so
+    the quoted shape must genuinely be silent.
+    """
+    status, body = query(text)
+
+    assert status == 200, body.get("error")
+    assert "warnings" not in body, (
+        f"{text!r} should be warning-free, got {body['warnings']}"
     )
 
 
