@@ -60,11 +60,11 @@ Logs go to stdout; file logging is not supported.
 
 ### `[scheduler]`
 
-| Setting           | Flag               | Default | Meaning                                       |
-|-------------------|--------------------|---------|-----------------------------------------------|
-| `workers`         | `-workers`         | `2`     | worker goroutines executing streams           |
-| `buffer-size`     | `-buffer-size`     | `200`   | queue depth                                   |
-| `enqueue-timeout` | `-enqueue-timeout` | `2s`    | how long a submit waits for room before a 429 |
+| Setting           | Flag               | Default                 | Meaning                                       |
+|-------------------|--------------------|-------------------------|-----------------------------------------------|
+| `workers`         | `-workers`         | `max(2, GOMAXPROCS(0))` | worker goroutines executing streams           |
+| `buffer-size`     | `-buffer-size`     | `200`                   | queue depth                                   |
+| `enqueue-timeout` | `-enqueue-timeout` | `2s`                    | how long a submit waits for room before a 429 |
 
 See [`concurrency.md`](concurrency.md) for how these three interact.
 

@@ -52,8 +52,19 @@ type Relevance[K comparable] interface {
 	// corpus size; called once per term with a non-empty posting.
 	Weight(df, docs int) float64
 
-	// Increment is one document's gain for matching one term.
-	Increment(weight float64, key K, tf int) float64
+	// Prepare folds whatever corpus-wide statistic Increment needs into one
+	// value, computed once per query from live state. It is called exactly
+	// once, before the first Increment, and its result is threaded through
+	// every Increment call for that query rather than cached on the model:
+	// Relevance methods run under the index's readers' lock, so concurrent
+	// queries can share one model instance, and a value cached on the
+	// receiver would race across them. Models with nothing to precompute
+	// return 0.
+	Prepare() float64
+
+	// Increment is one document's gain for matching one term. prepared is
+	// this query's Prepare() result.
+	Increment(weight float64, key K, tf int, prepared float64) float64
 
 	// Finalize folds the accumulated score and match breadth into the final
 	// relevance; coverage lives here.
@@ -78,9 +89,12 @@ func (MatchCount[K]) Terms(tokens []string) []string { return tokens }
 // Weight prices every term at one point.
 func (MatchCount[K]) Weight(int, int) float64 { return 1 }
 
+// Prepare returns 0: a match count has no per-query statistic to fold.
+func (MatchCount[K]) Prepare() float64 { return 0 }
+
 // Increment awards the term's weight regardless of term frequency: matching
-// is binary per (document, term-occurrence).
-func (MatchCount[K]) Increment(weight float64, _ K, _ int) float64 { return weight }
+// is binary per (document, term-occurrence). prepared is unused.
+func (MatchCount[K]) Increment(weight float64, _ K, _ int, _ float64) float64 { return weight }
 
 // Finalize is the identity: the count is the relevance.
 func (MatchCount[K]) Finalize(score float64, _, _ int) float64 { return score }
@@ -96,6 +110,10 @@ const (
 	// bm25B is document-length normalization: 0 ignores length, 1 fully
 	// penalizes long documents; 0.75 is the standard operating point.
 	bm25B = 0.75
+	// bm25N1 is the length-norm term's corpus-independent half,
+	// bm25K1*(1-bm25B). It needs no per-query recomputation, unlike the
+	// avgdl-dependent half Prepare folds into n2.
+	bm25N1 = bm25K1 * (1 - bm25B)
 )
 
 // BM25 is the Robertson–Walker relevance model scaled by query coverage:
@@ -150,14 +168,21 @@ func (b *BM25[K]) Weight(df, docs int) float64 {
 	return math.Log(1 + (n-float64(df)+0.5)/(float64(df)+0.5))
 }
 
-// Increment is the idf-weighted, length-normalized term-frequency gain.
-// avgdl is derived from the model's own fields on every call — caching it
-// would make the query side stateful.
-func (b *BM25[K]) Increment(weight float64, key K, tf int) float64 {
+// Prepare folds the corpus's current avgdl into n2 = bm25K1*bm25B/avgdl, the
+// length-norm term's avgdl-dependent half: computed once here from live
+// state rather than cached on the model, so it stays safe under concurrent
+// queries sharing this instance, and Increment turns it into one multiply
+// per posting entry instead of a division.
+func (b *BM25[K]) Prepare() float64 {
 	avgdl := float64(b.totalLen) / float64(len(b.lengths))
+	return bm25K1 * bm25B / avgdl
+}
+
+// Increment is the idf-weighted, length-normalized term-frequency gain. n2
+// is this query's Prepare() result.
+func (b *BM25[K]) Increment(weight float64, key K, tf int, n2 float64) float64 {
 	freq := float64(tf)
-	return weight * freq * (bm25K1 + 1) /
-		(freq + bm25K1*(1-bm25B+bm25B*float64(b.lengths[key])/avgdl))
+	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*float64(b.lengths[key]))
 }
 
 // Finalize scales by coverage: the fraction of distinct query terms the

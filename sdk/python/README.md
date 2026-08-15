@@ -118,3 +118,7 @@ complete, Docker-runnable script.
 - Keywords, topics, and entities are single whitespace-free tokens.
 - The first vector written to a graph fixes that graph's embedding dimension;
   later writes to the same graph must match it.
+- `FraiseClient` defaults to a 30s request timeout (`timeout=` on the
+  constructor or on individual `query`/`remember`/`recall` calls overrides
+  it); a request that exceeds it raises `FraiseError` naming the timeout,
+  distinct from the error raised when the server can't be reached at all.

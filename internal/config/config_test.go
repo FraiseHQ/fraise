@@ -26,6 +26,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -374,5 +375,10 @@ func TestParseAppliesDefaultsWithoutAConfigFile(t *testing.T) {
 	}
 	if c.Server.Port != config.DefaultPort {
 		t.Errorf("Server.Port = %d, want the default %d", c.Server.Port, config.DefaultPort)
+	}
+
+	wantWorkers := max(config.MinWorkersCount, runtime.GOMAXPROCS(0))
+	if c.Scheduler.Workers != wantWorkers {
+		t.Errorf("Scheduler.Workers = %d, want max(MinWorkersCount, GOMAXPROCS) = %d", c.Scheduler.Workers, wantWorkers)
 	}
 }

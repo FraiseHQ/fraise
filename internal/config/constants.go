@@ -61,9 +61,11 @@ const (
 	// above 256 leave the extra graphs unreachable.
 	DefaultNumGraph int = 8
 
-	// DefaultWorkersCount is the number of scheduler worker goroutines that
-	// execute query streams.
-	DefaultWorkersCount int = 2
+	// MinWorkersCount is the floor for scheduler worker goroutines; the
+	// default is max(MinWorkersCount, runtime.GOMAXPROCS(0)) — reads take
+	// RLock and run concurrently, so workers below cores is a queueing
+	// penalty, while workers above cores buys nothing.
+	MinWorkersCount int = 2
 
 	// DefaultBufferSize is the capacity of the scheduler's stream queue.
 	DefaultBufferSize uint = 200

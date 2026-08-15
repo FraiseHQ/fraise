@@ -24,9 +24,9 @@ package index
 
 import (
 	"errors"
-	"sort"
 
 	"github.com/RonsenbergVI/fraise/internal/comparator"
+	"github.com/RonsenbergVI/fraise/internal/containers"
 	"github.com/RonsenbergVI/fraise/internal/containers/trees"
 	"github.com/RonsenbergVI/fraise/pkg/logger"
 )
@@ -139,9 +139,21 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		return nil, nil, ErrEmptyIndex
 	}
 
-	scores := make(map[K]float64)
-	matched := make(map[K]int)
 	terms := idx.relevance.Terms(idx.tokenizer.Tokenize(query))
+
+	// scores/matched are sized to the query's largest posting list up front:
+	// every key that can possibly appear in either map comes from one of
+	// these postings, so this is the exact worst case, not a guess.
+	var maxPosting int
+	for _, term := range terms {
+		if n := len(idx.postings[term]); n > maxPosting {
+			maxPosting = n
+		}
+	}
+
+	scores := make(map[K]float64, maxPosting)
+	matched := make(map[K]int, maxPosting)
+	prepared := idx.relevance.Prepare()
 	for _, term := range terms {
 		posting := idx.postings[term]
 		if len(posting) == 0 {
@@ -149,7 +161,7 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		}
 		weight := idx.relevance.Weight(len(posting), len(idx.documents))
 		for key, tf := range posting {
-			scores[key] += idx.relevance.Increment(weight, key, tf)
+			scores[key] += idx.relevance.Increment(weight, key, tf, prepared)
 			matched[key]++
 		}
 	}
@@ -157,23 +169,15 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		scores[key] = idx.relevance.Finalize(scores[key], matched[key], len(terms))
 	}
 
-	keys := make([]K, 0, len(scores))
-	for key := range scores {
-		keys = append(keys, key)
+	top := containers.NewTopK[K, float64](k, idx.compare)
+	for key, score := range scores {
+		top.Offer(key, score)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		if scores[keys[i]] != scores[keys[j]] {
-			return scores[keys[i]] > scores[keys[j]]
-		}
-		return idx.compare(keys[i], keys[j]) < 0
-	})
-	if k > 0 && len(keys) > k {
-		keys = keys[:k]
-	}
+	keys, ranked := top.Drain()
 
-	out := make([]P, len(keys))
-	for i, key := range keys {
-		out[i] = P(scores[key])
+	out := make([]P, len(ranked))
+	for i, score := range ranked {
+		out[i] = P(score)
 	}
 	logger.Debug("Text search matched documents", "matches", len(keys), "k", k)
 	return keys, out, nil

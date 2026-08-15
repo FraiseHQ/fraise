@@ -151,6 +151,18 @@ def test_unreachable_server_raises_fraise_error(session):
         FraiseClient().recall("anything")
 
 
+def test_timed_out_server_raises_a_distinct_fraise_error(session):
+    """A timeout gets its own message, naming the timeout, so it reads
+    differently from a plain connection failure and points at the fix
+    (raise ``timeout=``) instead of "could not reach fraise".
+    """
+    session.post.side_effect = requests.Timeout("timed out")
+    with pytest.raises(FraiseError, match="timed out") as excinfo:
+        FraiseClient(timeout=5.0).recall("anything")
+    assert "could not reach fraise" not in str(excinfo.value)
+    assert "5.0s" in str(excinfo.value)
+
+
 def test_closing_closes_the_session_the_client_owns(session):
     with FraiseClient():
         pass
