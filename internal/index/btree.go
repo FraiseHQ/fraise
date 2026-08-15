@@ -149,14 +149,6 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		if n := len(idx.postings[term]); n > maxPosting {
 			maxPosting = n
 		}
-		weight := idx.relevance.Weight(len(posting), len(idx.documents))
-		for key, tf := range posting {
-			scores[key] += idx.relevance.Increment(weight, key, tf)
-			matched[key]++
-		}
-	}
-	for key := range scores {
-		scores[key] = idx.relevance.Finalize(scores[key], matched[key], len(terms))
 	}
 
 	scores := make(map[K]float64, maxPosting)
