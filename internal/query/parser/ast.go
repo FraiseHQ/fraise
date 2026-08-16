@@ -139,16 +139,18 @@ func (r RecallCommandNode[K, P]) HasTop() bool {
 }
 
 func (r RecallCommandNode[K, P]) Depth(v int) int {
-	if r.depth.value == 0 {
+	if !r.HasDepth() {
 		return v
 	}
 	return r.depth.value
 }
 
 // HasDepth reports whether the recall carried an explicit depth clause, as
-// opposed to falling back to the configured default.
+// opposed to falling back to the configured default. Presence is the parsed
+// depth key, not a nonzero value, so an explicit depth:0 is honoured as the
+// floor lane instead of collapsing to the default.
 func (r RecallCommandNode[K, P]) HasDepth() bool {
-	return r.depth.value != 0
+	return r.depth.key.Type == lexer.DEPTH
 }
 
 func (r RecallCommandNode[K, P]) Since() containers.TimeValue[K] {

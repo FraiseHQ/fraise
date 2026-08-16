@@ -20,98 +20,39 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Client tests with requests.Session patched out — no server required."""
+"""Client tests with requests.Session patched out — no server required.
 
-import json
+Setup lives in conftest.py; this file is assertions.
+"""
+
 import warnings
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import requests
 from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
-from fraise_sdk.client import DEFAULT_BASE_URL, DEFAULT_TIMEOUT_SECONDS
-
-QUERY_URL = f"{DEFAULT_BASE_URL}/api/v1/q"
-NO_HITS = {"results": {"count": 0, "hits": []}}
-
-# The shape the server sends for the grammar's one surviving ambiguity: a
-# leading recall term that spells a keyword ran as a term search, and the
-# warning names the clause it nearly is.
-SERVER_WARNING = (
-    'parse warning at column 15: term "since" is also a keyword: write '
-    "since:<value> if a clause was meant, or quote it ('since') to search "
-    "for the word"
-)
+from fraise_sdk.client import DEFAULT_TIMEOUT_SECONDS
 
 
-@pytest.fixture
-def session():
-    """The session the client builds for itself, patched at its import site.
-
-    Patching rather than injecting keeps the client's own construction path —
-    the one every caller takes — under test.
-
-    Yields:
-        The mock session every FraiseClient built in the test will use, armed
-        to answer with an empty recall result.
-    """
-    with patch("fraise_sdk.client.requests.Session") as session_class:
-        session = session_class.return_value
-        _respond(session, NO_HITS)
-        yield session
-
-
-def _respond(session, body: dict, status_code: int = 200) -> MagicMock:
-    """Arm the session to answer the next POST with ``body``."""
-    response = MagicMock(
-        status_code=status_code,
-        ok=200 <= status_code < 300,
-        text=json.dumps(body),
-    )
-    response.json.return_value = body
-    session.post.return_value = response
-    return response
-
-
-def _sent(session) -> dict:
-    """The JSON payload of the single POST the client made."""
-    session.post.assert_called_once()
-    return session.post.call_args.kwargs["json"]
-
-
-def _encode(text: str) -> list[float]:
-    """A bare ``callable(text) -> vector`` embedder: the text's length, 4 times."""
-    return [float(len(text))] * 4
-
-
-def _callable_embedder() -> MagicMock:
-    """A mock of the bare ``callable(text) -> vector`` embedder shape."""
-    embedder = MagicMock(side_effect=_encode)
-    # A plain callable has no .embed — deleting it is what sends
-    # resolve_embedder down the callable branch instead of the Embedder one.
-    del embedder.embed
-    return embedder
-
-
-def test_remember_posts_expected_query(session):
+def test_remember_posts_expected_query(session, query_url):
     FraiseClient().remember("the parrot is turquoise", graph=3, topics=["color"])
     session.post.assert_called_once_with(
-        QUERY_URL,
+        query_url,
         json={"query": "remember@3 'the parrot is turquoise' topic:color"},
         timeout=DEFAULT_TIMEOUT_SECONDS,
     )
 
 
-def test_remember_with_vector_sends_parameters(session):
+def test_remember_with_vector_sends_parameters(session, sent):
     FraiseClient().remember("kingfisher is blue", graph=6, vector=[0.5, 0.5])
-    assert _sent(session) == {
+    assert sent(session) == {
         "query": "remember@6 'kingfisher is blue' vec:$v",
         "parameters": {"v": [0.5, 0.5]},
     }
 
 
-def test_recall_parses_hits(session):
-    _respond(
+def test_recall_parses_hits(session, respond, sent):
+    respond(
         session,
         {
             "results": {
@@ -133,7 +74,7 @@ def test_recall_parses_hits(session):
     )
     result = FraiseClient().recall("mars", "venus", graph=7, top=10)
 
-    assert _sent(session)["query"] == "recall@7 mars venus top:10"
+    assert sent(session)["query"] == "recall@7 mars venus top:10"
     assert result.count == 2
     assert [h.value for h in result] == ["mars is the red planet", "venus is hot"]
     assert result.hits[0].score == 1.0
@@ -147,7 +88,7 @@ def test_recall_empty_results(session):
     assert bool(result) is False
 
 
-def test_recall_surfaces_server_warnings(session):
+def test_recall_surfaces_server_warnings(session, respond, server_warning):
     """A server warning reaches the caller on both channels: listed on the
     result for programmatic use, and emitted as a FraiseWarning so it is
     visible by default without any code changes.
@@ -156,21 +97,21 @@ def test_recall_surfaces_server_warnings(session):
     all — while the server flagged that it is one ':' away from a since
     clause. Warnings ride beside the results, they do not replace them.
     """
-    _respond(
+    respond(
         session,
         {
             "results": {
                 "count": 1,
                 "hits": [{"value": "since the storm", "score": 1.0}],
             },
-            "warnings": [SERVER_WARNING],
+            "warnings": [server_warning],
         },
     )
 
     with pytest.warns(FraiseWarning, match="also a keyword"):
         result = FraiseClient().recall("since", "7d")
 
-    assert result.warnings == [SERVER_WARNING]
+    assert result.warnings == [server_warning]
     assert result.count == 1
 
 
@@ -186,23 +127,23 @@ def test_recall_without_warnings_is_silent(session):
     assert result.warnings == []
 
 
-def test_raw_query_emits_server_warnings(session):
+def test_raw_query_emits_server_warnings(session, respond, server_warning):
     """The raw query() escape hatch emits FraiseWarning too: every operation
     funnels through it, so remember() and any future typed helper inherit the
     channel without plumbing of their own.
     """
-    _respond(
-        session, {"results": {"count": 0, "hits": []}, "warnings": [SERVER_WARNING]}
+    respond(
+        session, {"results": {"count": 0, "hits": []}, "warnings": [server_warning]}
     )
 
     with pytest.warns(FraiseWarning, match="also a keyword"):
         body = FraiseClient().query("recall@0 since 7d")
 
-    assert body["warnings"] == [SERVER_WARNING]
+    assert body["warnings"] == [server_warning]
 
 
-def test_api_error_surfaces_server_message(session):
-    _respond(session, {"error": "could not parse query"}, status_code=400)
+def test_api_error_surfaces_server_message(session, respond):
+    respond(session, {"error": "could not parse query"}, status_code=400)
     with pytest.raises(FraiseAPIError) as excinfo:
         FraiseClient().recall("bogus")
     assert excinfo.value.status_code == 400
@@ -233,10 +174,10 @@ def test_closing_closes_the_session_the_client_owns(session):
     session.close.assert_called_once_with()
 
 
-def test_an_injected_session_is_left_open():
+def test_an_injected_session_is_left_open(respond, no_hits):
     # The caller owns what the caller passed in; closing it would be rude.
     injected = MagicMock()
-    _respond(injected, NO_HITS)
+    respond(injected, no_hits)
     with FraiseClient(session=injected):
         pass
     injected.close.assert_not_called()
@@ -245,26 +186,28 @@ def test_an_injected_session_is_left_open():
 # -- embedding --------------------------------------------------------------
 
 
-def test_configured_embedder_encodes_remember_value(session):
-    embedder = _callable_embedder()
+def test_configured_embedder_encodes_remember_value(session, sent, callable_embedder):
+    embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("the parrot is turquoise", graph=6)
-    assert _sent(session) == {
+    assert sent(session) == {
         "query": "remember@6 'the parrot is turquoise' vec:$v",
         "parameters": {"v": [23.0] * 4},  # len("the parrot is turquoise")
     }
     embedder.assert_called_once_with("the parrot is turquoise")
 
 
-def test_configured_embedder_encodes_recall_keywords(session):
-    embedder = _callable_embedder()
+def test_configured_embedder_encodes_recall_keywords(session, sent, callable_embedder):
+    embedder = callable_embedder()
     FraiseClient(embedder=embedder).recall("kingfisher", "blue", graph=6)
-    assert _sent(session)["query"] == "recall@6 kingfisher blue vec:$v"
+    assert sent(session)["query"] == "recall@6 kingfisher blue vec:$v"
     # Defaults to the space-joined keywords when no explicit query phrase is given.
     embedder.assert_called_once_with("kingfisher blue")
 
 
-def test_recall_query_phrase_overrides_keywords_for_embedding(session):
-    embedder = _callable_embedder()
+def test_recall_query_phrase_overrides_keywords_for_embedding(
+    session, sent, callable_embedder
+):
+    embedder = callable_embedder()
     FraiseClient(embedder=embedder).recall(
         "zzznomatch", graph=6, query="a sleepy kitten in the sun"
     )
@@ -272,22 +215,22 @@ def test_recall_query_phrase_overrides_keywords_for_embedding(session):
     # The question itself travels as one quoted phrase term, ahead of the
     # bare keywords — never as unquoted words the grammar could claim.
     assert (
-        _sent(session)["query"]
+        sent(session)["query"]
         == "recall@6 'a sleepy kitten in the sun' zzznomatch vec:$v"
     )
 
 
-def test_explicit_vector_wins_over_embedder(session):
-    embedder = _callable_embedder()
+def test_explicit_vector_wins_over_embedder(session, sent, callable_embedder):
+    embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("x is y", graph=6, vector=[0.1, 0.2])
-    assert _sent(session)["parameters"] == {"v": [0.1, 0.2]}
+    assert sent(session)["parameters"] == {"v": [0.1, 0.2]}
     embedder.assert_not_called()
 
 
-def test_embed_false_skips_a_configured_embedder(session):
-    embedder = _callable_embedder()
+def test_embed_false_skips_a_configured_embedder(session, sent, callable_embedder):
+    embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("x is y", graph=6, embed=False)
-    assert "parameters" not in _sent(session)
+    assert "parameters" not in sent(session)
     embedder.assert_not_called()
 
 
@@ -296,17 +239,17 @@ def test_embed_true_without_embedder_raises(session):
         FraiseClient().remember("x is y", embed=True)
 
 
-def test_no_embedder_sends_no_vector(session):
+def test_no_embedder_sends_no_vector(session, sent):
     FraiseClient().remember("x is y", graph=6)
-    assert "parameters" not in _sent(session)
+    assert "parameters" not in sent(session)
 
 
-def test_embedder_object_is_called_through_its_embed_method(session):
+def test_embedder_object_is_called_through_its_embed_method(session, sent):
     # An Embedder exposes both .embed and __call__; the client must take the
     # named method, or __call__ would recurse straight back into it.
     embedder = MagicMock()
     embedder.embed.return_value = [1.0, 2.0, 3.0]
     FraiseClient(embedder=embedder).remember("hello world", graph=6)
-    assert _sent(session)["parameters"] == {"v": [1.0, 2.0, 3.0]}
+    assert sent(session)["parameters"] == {"v": [1.0, 2.0, 3.0]}
     embedder.embed.assert_called_once_with("hello world")
     embedder.assert_not_called()

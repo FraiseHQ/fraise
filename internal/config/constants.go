@@ -124,22 +124,22 @@ const (
 	// is given.
 	DefaultTop int = 10
 
-	// DefaultDepth is the depth a recall uses when no depth clause is given: 1,
-	// the BM25-floor lane — fast and text-only, the anchor traversal skipped.
-	// Callers opt into the graph (the excess scorer, one anchor-mediated round)
-	// with depth:2, the ceiling.
-	DefaultDepth int = 1
+	// DefaultDepth is the depth a recall uses when no depth clause is given: 0,
+	// the floor lane — fast and text-only, the anchor traversal skipped.
+	// Callers opt into the graph with depth:1 (the precision lane, only
+	// strongly above-chance anchors transmit) or depth:2 (max recall).
+	DefaultDepth int = 0
 
 	// DefaultMaxTop is the ceiling on a recall's top clause. A request asking for
 	// more than this many results is rejected at parse time, so a single query
 	// cannot force an unbounded result set.
 	DefaultMaxTop int = 1000
 
-	// DefaultMaxDepth is the ceiling on a recall's depth clause. The two
-	// meaningful lanes are depth 1 (BM25 floor) and depth 2 (excess); the
-	// scorer does not iterate past one anchor-mediated round, so 2 is the
-	// ceiling — a request past it is rejected at parse time rather than
-	// silently behaving like depth 2.
+	// DefaultMaxDepth is the ceiling on a recall's depth clause. The three
+	// lanes are depth 0 (floor), depth 1 (the precision round) and depth 2 (the
+	// max-recall round); the scorer does not iterate past one anchor-mediated
+	// round, so 2 is the ceiling — a request past it is rejected at parse time
+	// rather than silently behaving like depth 2.
 	DefaultMaxDepth int = 2
 
 	// DefaultMaxVectorDimension is the ceiling on the length of a bound vector

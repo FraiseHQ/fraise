@@ -44,7 +44,8 @@ this map current when claiming a graph:
        + keyword-anchor + case-fold probes (test_concurrency.py, test_recall.py)
     6  vector round trip + cache probes
        + krakatoa fusion cluster          (test_vectors.py, test_query_cache.py)
-    7  planet star                         (test_recall.py)
+    7  planet star
+       + lantern/almanac depth-lane probe  (test_recall.py)
 """
 
 import os
@@ -173,3 +174,93 @@ def vector():
         return np.full(dim, value, dtype=float).tolist()
 
     return _vector
+
+
+# Four facts sharing a single topic, each with a unique keyword. This is a
+# star: every fact hangs off the same "planets" hub. Recall returns facts, not
+# the hub, so from a seed fact the hub is one hop away (depth 1, invisible) and
+# the sibling facts are two hops away (depth 2). That makes the exact result
+# counts a clean function of depth and top.
+_PLANET_GRAPH = 7
+_PLANET_TOPIC = "planets"
+_PLANET_FACTS = {
+    "mercury": "mercury is the smallest planet",
+    "venus": "venus is the hottest planet",
+    "mars": "mars is the red planet",
+    "jupiter": "jupiter is the largest planet",
+}
+
+# The depth-lane probe. Transmission needs two touched anchors of different
+# concentration: a lone anchor's observed mass IS the background, so it holds
+# no surplus and stays silent (which is what the planet star above shows). Here
+# a tight "lanterns" cluster holds two of the query's three seeds while a
+# larger "almanac" hub holds one of eight members, so the cluster clears the
+# background and the hub does not. The cluster's third fact carries no query
+# term at all: it can only be returned if an anchor transmitted to it, which
+# makes it the probe that tells the two retrieval lanes apart.
+#
+# Shares graph 7 with the planet star: no fact here contains "mercury" or
+# "planet" and no planet fact contains "lantern", so neither set can appear in
+# the other's recalls.
+_LANTERN_TOPIC = "lanterns"
+_LANTERN_SILENT = "the quay is silent at dawn"
+_LANTERN_CLUSTER = (
+    "the lantern glows on the quay",
+    "lantern light guides the ferry",
+    _LANTERN_SILENT,
+)
+_ALMANAC_TOPIC = "almanac"
+_ALMANAC_HUB = ("a lantern in the old almanac",) + tuple(
+    f"unrelated almanac entry {i}" for i in range(7)
+)
+
+
+@pytest.fixture(scope="session")
+def planet_facts():
+    """The planet star's facts, keyed by the unique keyword each contains."""
+    return dict(_PLANET_FACTS)
+
+
+@pytest.fixture(scope="module")
+def planets_graph(query):
+    """Populate a graph with the planet star and return its id.
+
+    A fact is keyed by its value, so these writes are idempotent: re-running
+    the suite against a long-lived server leaves the counts unchanged.
+    """
+    for phrase in _PLANET_FACTS.values():
+        status, body = query(
+            f"remember@{_PLANET_GRAPH} '{phrase}' topic:{_PLANET_TOPIC}"
+        )
+        assert status == 200, body.get("error")
+    return _PLANET_GRAPH
+
+
+@pytest.fixture(scope="session")
+def lantern_silent():
+    """The cluster fact containing no query term.
+
+    It can only be recalled if an anchor transmitted mass to it, so it is what
+    separates the floor lane from the excess lane in a result set.
+    """
+    return _LANTERN_SILENT
+
+
+@pytest.fixture(scope="module")
+def lantern_graph(query):
+    """Seed the depth-lane cluster and its diluting hub, returning the graph id.
+
+    Idempotent for the same reason as the planet star: facts are keyed by
+    value.
+    """
+    for phrase in _LANTERN_CLUSTER:
+        status, body = query(
+            f"remember@{_PLANET_GRAPH} '{phrase}' topic:{_LANTERN_TOPIC}"
+        )
+        assert status == 200, body.get("error")
+    for phrase in _ALMANAC_HUB:
+        status, body = query(
+            f"remember@{_PLANET_GRAPH} '{phrase}' topic:{_ALMANAC_TOPIC}"
+        )
+        assert status == 200, body.get("error")
+    return _PLANET_GRAPH

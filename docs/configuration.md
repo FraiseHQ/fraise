@@ -85,9 +85,9 @@ A non-positive `half-life` disables decay.
 | `precision`            | `-precision`            | `float32` | float width of embeddings and scores: `float32` `float64` |
 | `num-graphs`           | `-num-graphs`           | `8`       | independent graphs allocated; selectors are `0..n-1`      |
 | `default-top`          | `-default-top`          | `10`      | results returned when a recall omits `top:`               |
-| `default-depth`        | `-default-depth`        | `1`       | retrieval lane when a recall omits `depth:` (1 = BM25 floor) |
+| `default-depth`        | `-default-depth`        | `0`       | retrieval lane when a recall omits `depth:` (0 = floor)   |
 | `max-top`              | `-max-top`              | `1000`    | ceiling on `top:`, rejected at parse time past it         |
-| `max-depth`            | `-max-depth`            | `2`       | ceiling on `depth:` (2 = excess, the only other lane)     |
+| `max-depth`            | `-max-depth`            | `2`       | ceiling on `depth:` (lanes are 0, 1 and 2)                |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096`    | ceiling on a bound vector's length                        |
 | `seed-size`            | `-seed-size`            | `10`      | minimum candidate budget per source; widened to `top:`    |
 

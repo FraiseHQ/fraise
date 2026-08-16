@@ -193,7 +193,7 @@ anchor_value    = identifier | quoted_identifier ; (* a reserved word qualifies,
 modifier        = since_field | until_field | depth_field | top_field | vec_field ;
 since_field     = 'since' ':' time_value ;     (* lower time bound; duration read as "ago" *)
 until_field     = 'until' ':' time_value ;     (* upper time bound; duration read as "ago" *)
-depth_field     = 'depth' ':' integer ;        (* retrieval lane: <2 BM25 floor, >=2 excess; ceiling 2 *)
+depth_field     = 'depth' ':' integer ;        (* retrieval lane: 0 floor, 1 precision, 2 max recall *)
 top_field       = 'top'   ':' integer ;        (* result limit, default 10 *)
 vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 

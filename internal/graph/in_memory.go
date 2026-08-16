@@ -477,6 +477,14 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	return seeds
 }
 
+// depthOneAdmission is the depth-1 precision lane's multiplier on an anchor's
+// fair share of the background null: at depth 1 an anchor must clear this many
+// times its null-expected mass before it transmits, so only strongly
+// above-chance anchors pass (higher precision, lower recall). depth >= 2
+// admits at the plain fair share (× 1). A methodology constant, not
+// configuration — tune it here.
+const depthOneAdmission = 2
+
 // findNeighbours runs the installed traversal from every seed and pools what
 // it observes, in two passes. Pass 1 observes: each seed's mass — the
 // scorer's fold of the seed's own contributions, fixed before any traversal
@@ -491,22 +499,22 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 // not O(degree) — append one SrcGraph contribution per (member, anchor):
 // the anchor's full observed mass, its identity, degree and seed count. The
 // hinge, the fair-share subtraction and the attenuation stay in the Scorer;
-// this layer records observations. depth selects the lane: below 2 the
-// traversal is skipped and only seed mass scores (the BM25 floor); 2 or more
-// runs the single anchor-mediated round. The pooled candidates are then
-// filtered by topics and entities regardless of the lane.
+// this layer records observations. depth selects the lane: 0 skips the
+// traversal and only seed mass scores (the floor); 1 and 2 both run the
+// single anchor-mediated round, depth 1 admitting anchors only above
+// depthOneAdmission * fair share (the precision lane) and depth 2 at plain
+// fair share (max recall). The pooled candidates are then filtered by
+// topics and entities regardless of the lane.
 func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates Candidates[K, P], topics []string, entities []string, depth int) P {
-	// depth counts edges left of the seed, and anchor transmission is a
-	// two-edge path (fact -> anchor -> fact): depth < 2 completes no
-	// transmission, so the candidates are the text/vector seeds alone, scored
-	// by their own mass (the BM25 floor) with the expensive anchor expansion
-	// skipped entirely — the fast, text-only lane. depth >= 2 runs the one
-	// anchor-mediated round (the excess scorer). Larger values do not iterate:
-	// a second round re-observes the first round's own concentrated mass
-	// through sibling anchors and collapses recall (measured), so iterated
-	// transmission stays reserved and every depth >= 2 is the single round.
+	// depth 0 completes no transmission: the candidates are the text/vector
+	// seeds alone, scored by their own mass (the floor), the anchor expansion
+	// skipped entirely — the fast, text-only lane. depth 1 and 2 both run the
+	// one anchor-mediated round (the excess scorer); they differ only in pass
+	// 2's admission bar (see depthOneAdmission). Neither iterates — a second
+	// round re-observes the first round's concentrated mass through sibling
+	// anchors and collapses recall (measured), so depth is capped at 2.
 	var background P
-	if depth >= 2 && g.traversal != nil && len(seeds) > 0 {
+	if depth >= 1 && g.traversal != nil && len(seeds) > 0 {
 		// Every seed's fused mass is fixed before any traversal appends
 		// SrcGraph contributions; seed fusion runs the unbound scorer — no
 		// traversal has observed anything yet, so there is no null to bind.
@@ -585,9 +593,16 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates Candidates[K,
 			background = totalMass / P(totalDegree)
 		}
 
-		// Pass 2 (expand): above-background anchors only.
+		// Pass 2 (expand): anchors above their admitted share. depth 1 is the
+		// precision lane — it raises the bar to depthOneAdmission × fair share,
+		// so only strongly-above-chance anchors transmit; depth 2 admits at the
+		// plain fair share.
+		admitRate := background
+		if depth == 1 {
+			admitRate *= depthOneAdmission
+		}
 		for _, anchor := range touched {
-			if anchorMass[anchor] <= P(degree[anchor])*background {
+			if anchorMass[anchor] <= P(degree[anchor])*admitRate {
 				continue
 			}
 			for _, member := range members[anchor] {

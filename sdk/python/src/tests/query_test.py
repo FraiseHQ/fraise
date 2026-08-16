@@ -115,11 +115,22 @@ def test_recall_rejects_whitespace_in_keyword():
 
 
 @pytest.mark.parametrize("bad", [0, -1])
-def test_recall_rejects_non_positive_top_and_depth(bad):
+def test_recall_rejects_non_positive_top(bad):
+    """top must be positive — a recall that can return nothing is a caller bug."""
     with pytest.raises(FraiseQueryError):
         build_recall(["x"], top=bad)
+
+
+@pytest.mark.parametrize("bad", [-1, -2])
+def test_recall_rejects_negative_depth(bad):
+    """depth must be non-negative; a negative walk length is meaningless."""
     with pytest.raises(FraiseQueryError):
         build_recall(["x"], depth=bad)
+
+
+def test_recall_emits_depth_zero():
+    """depth:0 is the explicit floor lane (text/vector only) and travels verbatim."""
+    assert build_recall(["x"], depth=0) == "recall@0 x depth:0"
 
 
 def test_negative_graph_is_rejected():
