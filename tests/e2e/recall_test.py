@@ -40,7 +40,7 @@ def test_recall_on_empty_graph(query):
 
 
 def test_recall_with_clauses(query):
-    status, body = query("recall@2 anna bob entity:alice topic:job top:10 depth:5")
+    status, body = query("recall@2 anna bob entity:alice topic:job top:10 depth:2")
     assert status == 200
     assert body["results"] is not None
 
@@ -155,17 +155,36 @@ def _recall_count(query, text):
     return body["results"]["count"]
 
 
-def test_recall_depth_is_inert(planets_graph, query):
-    """depth parses and is accepted, and changes nothing: the methodology uses
-    exactly one anchor-mediated step (larger values are reserved for iterated
-    transmission). A lone seed's topic hub sits exactly at the background rate,
-    so its siblings never ride in — at any depth.
+def test_recall_depth_selects_a_lane(planets_graph, query):
+    """depth picks the retrieval lane, and both lanes answer this query the
+    same way — for different reasons.
+
+    depth:1 is the BM25 floor: the anchor traversal never runs, so only the
+    seed itself can be returned. depth:2 runs the excess round, and returns
+    the seed alone anyway because a lone seed's topic hub sits exactly at the
+    background rate and transmits nothing. Omitting the clause is depth:1 (the
+    default lane). Asserting both is what separates "the hub was silent" from
+    "the graph channel was never consulted" — a regression that broke
+    transmission entirely would still pass a depth:1-only test.
     """
     g = planets_graph
-    for clause in ("depth:1", "depth:2", "depth:3", ""):
+    for clause in ("depth:1", "depth:2", ""):
         assert _recall_count(query, f"recall@{g} mercury {clause}".strip()) == 1, (
             f"recall mercury {clause}: a fair-share hub must not transmit"
         )
+
+
+def test_recall_rejects_depth_past_the_ceiling(query):
+    """depth:3 is refused rather than silently treated as depth:2.
+
+    The scorer does not iterate past one anchor-mediated round, so a depth
+    above 2 has no meaning. Answering it as though it did would tell an agent
+    its request was honoured when it was quietly downgraded; the error names
+    the ceiling so the agent can correct.
+    """
+    status, body = query("recall@7 mercury depth:3")
+    assert status == 400, f"expected a ceiling error, got {status}: {body}"
+    assert "exceeds max 2" in body.get("error", ""), body.get("error")
 
 
 def test_recall_top_truncates_results(planets_graph, query):

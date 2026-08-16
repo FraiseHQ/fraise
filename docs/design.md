@@ -127,9 +127,16 @@ contract, each pinned by the test suite:
   methodology carries zero dataset-tuned constants.
 
 This is why a recall needs at least one term: without a seed there is no mass
-to transmit. `depth:` parses and is currently inert — the methodology uses
-exactly one anchor-mediated step; larger values are reserved for an iterated
-generalization.
+to transmit. `depth:` selects which of the two lanes above a recall takes:
+`depth:1` — the default — stops at the seed mass, which *is* the BM25 floor,
+and skips the anchor traversal entirely, so it is the fast, text-only lane;
+`depth:2` runs the one anchor-mediated round described here. Depth counts
+edges, and transmission is a two-edge path (fact → anchor → fact), so those
+are the only two meaningful values: 2 is the ceiling, and a larger depth is
+rejected rather than silently answered as 2. The methodology does not iterate
+— a second round re-observes the first round's own concentrated mass through
+sibling anchors and collapses recall — so iterated transmission stays
+reserved for a future generalization.
 
 The vector index is a forest of random-projection trees (`rptree-n-trees`, each
 projecting to `rptree-projection-dimension`). Deleting or overwriting a vector

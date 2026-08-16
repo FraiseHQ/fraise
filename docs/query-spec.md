@@ -193,7 +193,7 @@ anchor_value    = identifier | quoted_identifier ; (* a reserved word qualifies,
 modifier        = since_field | until_field | depth_field | top_field | vec_field ;
 since_field     = 'since' ':' time_value ;     (* lower time bound; duration read as "ago" *)
 until_field     = 'until' ':' time_value ;     (* upper time bound; duration read as "ago" *)
-depth_field     = 'depth' ':' integer ;        (* accepted, currently inert: reserved for iterated transmission *)
+depth_field     = 'depth' ':' integer ;        (* retrieval lane: <2 BM25 floor, >=2 excess; ceiling 2 *)
 top_field       = 'top'   ':' integer ;        (* result limit, default 10 *)
 vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 
@@ -295,7 +295,7 @@ settle is settled — as a parse, or as an error.
 ```text
 recall billing entity:acme since:7d top:5
 recall billing topic:billing
-recall 'annual contract' topic:billing entity:acme depth:3
+recall 'annual contract' topic:billing entity:acme depth:1
 recall@3 auth topic:auth entity:okta
 remember 'acme moved to annual billing' topic:billing topic:contracts
 remember 'acme signed with okta' topic:auth entity:okta

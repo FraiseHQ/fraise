@@ -18,7 +18,7 @@ cache-capacity = 1024
 [db]
 precision = "float64"
 default-top = 10
-default-depth = 3
+default-depth = 2
 seed-size = 64
 
 [db.hashing-function]

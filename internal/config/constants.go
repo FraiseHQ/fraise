@@ -124,18 +124,23 @@ const (
 	// is given.
 	DefaultTop int = 10
 
-	// DefaultDepth is how many hops a recall walk leaves the seed when no depth
-	// clause is given.
-	DefaultDepth int = 2
+	// DefaultDepth is the depth a recall uses when no depth clause is given: 1,
+	// the BM25-floor lane — fast and text-only, the anchor traversal skipped.
+	// Callers opt into the graph (the excess scorer, one anchor-mediated round)
+	// with depth:2, the ceiling.
+	DefaultDepth int = 1
 
 	// DefaultMaxTop is the ceiling on a recall's top clause. A request asking for
 	// more than this many results is rejected at parse time, so a single query
 	// cannot force an unbounded result set.
 	DefaultMaxTop int = 1000
 
-	// DefaultMaxDepth is the ceiling on a recall's depth clause. Walk cost grows
-	// with depth, so a request past this many hops is rejected at parse time.
-	DefaultMaxDepth int = 6
+	// DefaultMaxDepth is the ceiling on a recall's depth clause. The two
+	// meaningful lanes are depth 1 (BM25 floor) and depth 2 (excess); the
+	// scorer does not iterate past one anchor-mediated round, so 2 is the
+	// ceiling — a request past it is rejected at parse time rather than
+	// silently behaving like depth 2.
+	DefaultMaxDepth int = 2
 
 	// DefaultMaxVectorDimension is the ceiling on the length of a bound vector
 	// parameter. A longer vector is rejected at parse time, bounding the work an

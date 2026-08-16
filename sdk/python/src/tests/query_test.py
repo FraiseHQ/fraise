@@ -92,8 +92,8 @@ def test_recall_query_phrase_escapes_apostrophes():
 
 
 def test_recall_with_keywords_and_clauses():
-    got = build_recall(["anna", "bob"], graph=2, top=10, depth=5)
-    assert got == "recall@2 anna bob top:10 depth:5"
+    got = build_recall(["anna", "bob"], graph=2, top=10, depth=2)
+    assert got == "recall@2 anna bob top:10 depth:2"
 
 
 def test_recall_with_vector_only():

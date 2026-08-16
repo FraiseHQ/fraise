@@ -110,7 +110,7 @@ func newCollectFixture(t *testing.T) *collectFixture {
 		fx.h[0]: {{Src: SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	fx.seeds = []uint64{fx.f1, fx.f2, fx.h[0]}
-	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, nil, nil, 1)
+	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, nil, nil, 2)
 	return fx
 }
 
@@ -233,7 +233,7 @@ func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 		s2: {{Src: SrcText, Score: 16, Rank: 1, Count: 1}},
 		s3: {{Src: SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
-	g.findNeighbours([]uint64{s1, s2, s3}, candidates, nil, nil, 1)
+	g.findNeighbours([]uint64{s1, s2, s3}, candidates, nil, nil, 2)
 
 	got := graphContributions(candidates, shared)
 	if len(got) != 2 {

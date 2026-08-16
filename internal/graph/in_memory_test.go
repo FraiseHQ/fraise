@@ -343,8 +343,8 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 
 	// The shared entity is the query's only touched anchor, so its observed
 	// mass IS the background: it holds no surplus, transmits nothing, and the
-	// entity-linked fact does not ride in on mere reachability. depth is
-	// inert, so asking for 2 changes nothing.
+	// entity-linked fact does not ride in on mere reachability. depth 2 is
+	// the excess lane, so the traversal genuinely ran and still funded nothing.
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
 	nodes, _, _, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
@@ -728,7 +728,7 @@ func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	g := noDecayGraph()
 	calm, memos := stormGraph(t, g)
 
-	nodes, _, contributions, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	nodes, _, contributions, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 20, time.Time{}, time.Time{})
 	if background <= 0 {
 		t.Fatalf("background = %v, want positive: two anchors are touched", background)
 	}
@@ -753,6 +753,49 @@ func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	list := contributions[found]
 	if len(list) != 1 || list[0].Src != graph.SrcGraph || list[0].Score <= 0 || list[0].Degree != 3 {
 		t.Errorf("silent member's contributions = %+v, want a single weather-cluster observation", list)
+	}
+}
+
+// TestSearchDepthLanes pins the depth knob's two lanes. depth < 2 is the
+// BM25-floor lane: the anchor traversal is skipped, so the background is 0, no
+// SrcGraph contribution is recorded, and the silent member the excess lane
+// would fund is not surfaced. The same query at depth 2 (excess) funds it. One
+// parameter, two distinct behaviours.
+func TestSearchDepthLanes(t *testing.T) {
+	g := noDecayGraph()
+	calm, _ := stormGraph(t, g)
+	contains := func(vals []string, want string) bool {
+		for _, v := range vals {
+			if v == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	// depth 1: floor — traversal skipped, graph channel off.
+	nodes1, _, contribs1, bg1 := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	if bg1 != 0 {
+		t.Errorf("depth 1 background = %v, want 0: the floor lane runs no traversal", bg1)
+	}
+	for _, list := range contribs1 {
+		for _, c := range list {
+			if c.Src == graph.SrcGraph {
+				t.Errorf("depth 1 recorded a graph contribution %+v: the floor lane funds nothing", c)
+			}
+		}
+	}
+	if contains(values(nodes1), calm) {
+		t.Errorf("depth 1 surfaced silent member %q: the floor lane transmits no mass", calm)
+	}
+
+	// depth 2: excess — the silent member is funded by surplus.
+	nodes2, _, _, bg2 := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 20, time.Time{}, time.Time{})
+	if bg2 <= 0 {
+		t.Errorf("depth 2 background = %v, want positive: the excess lane observes anchors", bg2)
+	}
+	if !contains(values(nodes2), calm) {
+		t.Errorf("depth 2 did not fund silent member %q: the excess lane should", calm)
 	}
 }
 

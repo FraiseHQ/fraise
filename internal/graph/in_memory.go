@@ -491,15 +491,22 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 // not O(degree) — append one SrcGraph contribution per (member, anchor):
 // the anchor's full observed mass, its identity, degree and seed count. The
 // hinge, the fair-share subtraction and the attenuation stay in the Scorer;
-// this layer records observations. depth is accepted and currently inert
-// (one anchor-mediated step; larger values reserved for iterated
-// transmission). The pooled candidates are then filtered by topics and
-// entities.
+// this layer records observations. depth selects the lane: below 2 the
+// traversal is skipped and only seed mass scores (the BM25 floor); 2 or more
+// runs the single anchor-mediated round. The pooled candidates are then
+// filtered by topics and entities regardless of the lane.
 func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates Candidates[K, P], topics []string, entities []string, depth int) P {
-	_ = depth
-
+	// depth counts edges left of the seed, and anchor transmission is a
+	// two-edge path (fact -> anchor -> fact): depth < 2 completes no
+	// transmission, so the candidates are the text/vector seeds alone, scored
+	// by their own mass (the BM25 floor) with the expensive anchor expansion
+	// skipped entirely — the fast, text-only lane. depth >= 2 runs the one
+	// anchor-mediated round (the excess scorer). Larger values do not iterate:
+	// a second round re-observes the first round's own concentrated mass
+	// through sibling anchors and collapses recall (measured), so iterated
+	// transmission stays reserved and every depth >= 2 is the single round.
 	var background P
-	if g.traversal != nil && len(seeds) > 0 {
+	if depth >= 2 && g.traversal != nil && len(seeds) > 0 {
 		// Every seed's fused mass is fixed before any traversal appends
 		// SrcGraph contributions; seed fusion runs the unbound scorer — no
 		// traversal has observed anything yet, so there is no null to bind.
