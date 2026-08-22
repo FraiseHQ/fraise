@@ -919,3 +919,158 @@ func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
 		})
 	}
 }
+
+// TestEmptyDataIsRejected pins that a quoted empty value is refused wherever it
+// can be written. Quoting is the only way to produce one, and it is never what
+// a caller meant: an empty fact can never be retrieved and an empty anchor is an
+// identity nobody can name a second time, so both would corrupt a graph quietly
+// rather than fail where the mistake was made. Whitespace-only is the same case
+// — it survives folding and produces an anchor nobody can type twice.
+func TestEmptyDataIsRejected(t *testing.T) {
+	queries := []string{
+		"remember ''",
+		"remember '' topic:harbour",
+		"remember '   '",
+		"recall ''",
+		"recall '   '",
+		"recall ferry ''",       // blank second term, past the leading position
+		"recall ferry topic:''", // blank anchor value
+		"recall ferry entity:'   '",
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](q)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want an empty-value error", q)
+			}
+			if !strings.Contains(err.Error(), "must not be empty") {
+				t.Errorf("error %q does not say the value was empty", err)
+			}
+		})
+	}
+}
+
+// TestRejectedTokensNameTheirOwnMistake pins that a token no production accepts
+// is diagnosed, not merely reported. The caller is an agent: it can only repair
+// a query the message tells it how to repair, so each shape a caller actually
+// produces has to arrive with its own repair instruction rather than a shared
+// "unexpected token". The last case is the fallback, kept for the shapes that
+// have no better diagnosis.
+func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+	}{
+		// Grouping: the tokens lex but no rule accepts them, so the message
+		// says the feature is absent rather than blaming the character.
+		{"recall (zebras)", "grouping is not supported"},
+		{"recall zebras (food)", "grouping is not supported"},
+		{"recall zebras topic:(food)", "grouping is not supported"},
+		{"recall zebras )food(", "grouping is not supported"},
+		// A second command is one instruction too many, not a stray word.
+		{"recall zebras recall food", "one command per instruction"},
+		{"recall zebras remember 'x'", "one command per instruction"},
+		{"remember 'a' remember 'b'", "one command per instruction"},
+		// A keyword with nothing after it can never finish a clause, so it is
+		// the word the caller forgot to quote.
+		{"recall zebras top", "quote it"},
+		{"recall zebras since", "quote it"},
+		{"remember 'a' topic", "quote it"},
+		// Casing still matters where a clause could start.
+		{"recall zebras Depth 2", "lower case"},
+		// No better diagnosis exists for a stray '@'.
+		{"recall@3@5 zebras", "unexpected"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), `found ""`) {
+				t.Errorf("error %q reports end of input as an empty literal", err)
+			}
+		})
+	}
+}
+
+// TestNewlineEndsTheInstruction pins that a newline separates instructions
+// rather than blending into the whitespace around it. Folded into blank, "recall
+// ferry\nbridge" read as one two-term recall — a second line silently joining
+// the first. Trailing blank lines are not a second instruction and must still
+// parse, or every client that ends its payload with a newline would break.
+func TestNewlineEndsTheInstruction(t *testing.T) {
+	accepted := []string{
+		"recall zebras\n",
+		"recall zebras\n\n",
+		"recall zebras \n  \n\t",
+		"remember 'a fact'\n",
+	}
+
+	for _, q := range accepted {
+		t.Run("accepted:"+strconv.Quote(q), func(t *testing.T) {
+			if _, _, err := parser.Parse[uint64, float32](q); err != nil {
+				t.Errorf("Parse(%q) = %v, want a trailing newline to be ignored", q, err)
+			}
+		})
+	}
+
+	rejected := []string{
+		"recall zebras\nfood",
+		"recall zebras\nrecall food",
+		"remember 'a'\nremember 'b'",
+	}
+
+	for _, q := range rejected {
+		t.Run("rejected:"+strconv.Quote(q), func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](q)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a second-instruction error", q)
+			}
+			if !strings.Contains(err.Error(), "one command per instruction") {
+				t.Errorf("error %q does not say one command per instruction", err)
+			}
+		})
+	}
+}
+
+// TestIntegerValueTooLargeIsReportedAsOutOfRange pins that a number too large to
+// hold is reported apart from text that is not a number at all. An agent told
+// only "invalid" retries with another huge number; one told the value is out of
+// range knows to shrink it. Both messages still name the clause that rejected it.
+func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+	}{
+		{"recall zebras depth:99999999999999999999", "invalid depth value"},
+		{"recall zebras depth:99999999999999999999", "out of range"},
+		{"recall zebras top:99999999999999999999", "invalid top value"},
+		{"recall zebras top:99999999999999999999", "out of range"},
+		// Not a number at all: named, but not as a range problem.
+		{"recall zebras depth:abc", "expected a non-negative whole number"},
+		{"recall zebras top:top", "invalid top value"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query+"/"+tc.want, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a value error", tc.query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+
+	if _, _, err := parser.Parse[uint64, float32]("recall zebras depth:abc"); err == nil ||
+		strings.Contains(err.Error(), "out of range") {
+		t.Errorf("depth:abc = %v, want it reported as not-a-number rather than out of range", err)
+	}
+}

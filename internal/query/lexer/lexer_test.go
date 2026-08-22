@@ -112,6 +112,20 @@ func Test_SpecialCharacters(t *testing.T) {
 			},
 		},
 		{
+			// The three anchor-clause markers are lexed but no production
+			// accepts them, so they exist only to be rejected by name. A term
+			// may still contain '-' and '+' — only a leading one is a token.
+			name:  "anchor markers are their own tokens",
+			input: "+~- foo-bar",
+			expected: []lexer.Token{
+				{Type: lexer.PLUS, Literal: "+"},
+				{Type: lexer.TILDE, Literal: "~"},
+				{Type: lexer.MINUS, Literal: "-"},
+				{Type: lexer.LITERAL, Literal: "foo-bar"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
 			name:  "nested parentheses",
 			input: "(())",
 			expected: []lexer.Token{
