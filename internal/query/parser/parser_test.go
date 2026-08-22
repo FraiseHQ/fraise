@@ -128,6 +128,14 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 		{"recall x depth:abc", "invalid depth value"},
 		{"recall x top:abc", "invalid top value"},
 		{"recall x topic:", "expected a word or quoted phrase"},
+		// vec: is the clause this test was written for and never covered: both
+		// call sites discarded parseVecField's positioned error for a generic
+		// wrap, which is the exact mangling the rest of these forbid.
+		{"recall x vec:v", "expected param field operator $"},
+		{"recall x vec$:v", "Expected colon"},
+		{"recall x vec:$", "expected literal"},
+		{"remember 'a fact' vec:v", "expected param field operator $"},
+		{"remember 'a fact' vec:$", "expected literal"},
 	}
 
 	for _, tc := range cases {
@@ -979,6 +987,12 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		{"remember 'a' topic", "quote it"},
 		// Casing still matters where a clause could start.
 		{"recall zebras Depth 2", "lower case"},
+		// A modifier is not a clause a remember has: the message names the
+		// keyword rather than complaining about the token after it.
+		{"remember 'a fact' top:3", "is a keyword"},
+		{"remember 'a fact' since:7d", "is a keyword"},
+		// A newline in a value slot is a second instruction starting early.
+		{"recall zebras topic:\nfood", "one command per instruction"},
 		// No better diagnosis exists for a stray '@'.
 		{"recall@3@5 zebras", "unexpected"},
 	}
