@@ -222,6 +222,25 @@ func (p *parser[K, P]) errDuplicate(tok lexer.Token) error {
 	return p.errf(tok.Pos, "duplicate %s clause: %s may be given only once — drop one", clause, clause)
 }
 
+// warnMisCasedKeyword flags a clause whose keyword was not written in lower
+// case. The colon leaves the clause exactly one reading, which is why it runs
+// rather than erroring — but the language is lower case, and accepting the
+// spelling in silence makes that rule unlearnable from the responses. The
+// warning says which spelling ran, so a caller can correct the habit without
+// having to re-read the spec. Only the clause key is checked: an anchor's value
+// is data, and `entity:Top` is deliberately the same anchor as `entity:top`.
+func (p *parser[K, P]) warnMisCasedKeyword(tok lexer.Token) {
+	lower := strings.ToLower(tok.Literal)
+	if !tok.Type.IsKeyword() || tok.Literal == lower {
+		return
+	}
+	p.warns = append(p.warns, Warning{
+		Msg: fmt.Sprintf("keyword %q is not lower case: it ran as the %s clause, but keywords are syntax and are written lower case",
+			tok.Literal, lower),
+		Pos: tok.Pos,
+	})
+}
+
 // errEmpty builds the error for an empty or whitespace-only value, and returns
 // nil for any other. Quoting is the only way to write one and it is never what a
 // caller meant: an empty fact can never be retrieved, and an empty anchor is an
@@ -280,6 +299,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		if p.isDanglingKeyword() {
 			return nil, p.errKeywordAsClause(p.cur)
 		}
+		p.warnMisCasedKeyword(p.cur)
 		switch p.cur.Type {
 		case lexer.ENTITY, lexer.TOPIC:
 			key, value, err := p.parseAnchorField()
@@ -343,6 +363,7 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		if p.isDanglingKeyword() {
 			return nil, p.errKeywordAsClause(p.cur)
 		}
+		p.warnMisCasedKeyword(p.cur)
 		switch p.cur.Type {
 		case lexer.ENTITY:
 			key, value, err := p.parseAnchorField()

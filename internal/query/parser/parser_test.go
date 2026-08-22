@@ -1088,3 +1088,62 @@ func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
 		t.Errorf("depth:abc = %v, want it reported as not-a-number rather than out of range", err)
 	}
 }
+
+// TestMiscasedClauseWarns pins the second thing a response can say without
+// rejecting: the query ran, and a keyword in it was not lower case.
+//
+// The colon leaves a mis-cased clause exactly one reading, which is why it is
+// not an error (see TestMiscasedKeywordBeforeColonIsTheClause — erroring there
+// would report the casing instead of the duplicate it may be hiding). But this
+// language is lower case, and accepting `Depth:2` in silence teaches the caller
+// the opposite. The warning is the middle answer: the clause runs, and the
+// response says which spelling it ran as.
+//
+// Anchor values are excluded deliberately, not by oversight: `entity:Top` is
+// data, folded to the same anchor as `entity:top`, and warning about it would
+// contradict the rule that an agent never has to remember how it capitalised
+// something.
+func TestMiscasedClauseWarns(t *testing.T) {
+	cases := []struct {
+		name  string
+		query string
+		warns bool
+	}{
+		{"mis-cased modifier", "recall zebras TOP:3", true},
+		{"mis-cased anchor key", "recall zebras Topic:food", true},
+		{"mis-cased time bound", "recall zebras Since:7d", true},
+		{"mis-cased on a write", "remember 'a fact' Entity:bob", true},
+		{"one warning per mis-cased clause", "recall zebras Topic:food Depth:2", true},
+		{"lower case is silent", "recall zebras top:3 topic:food", false},
+		{"an anchor value is data, not syntax", "recall zebras entity:Top", false},
+		{"a mis-cased value on a write is data too", "remember 'a fact' topic:Food", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+			}
+			if got := len(warns) > 0; got != tc.warns {
+				t.Fatalf("Parse(%q) warnings = %v, want warned=%v", tc.query, warns, tc.warns)
+			}
+		})
+	}
+
+	// Every mis-cased clause is named, so a query with two gets two warnings
+	// and the caller can fix both in one pass.
+	_, warns, err := parser.Parse[uint64, float32]("recall zebras Topic:food Depth:2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warns) != 2 {
+		t.Fatalf("got %d warnings %v, want one per mis-cased clause", len(warns), warns)
+	}
+	joined := warns[0].String() + " " + warns[1].String()
+	for _, want := range []string{`"Topic"`, "topic clause", `"Depth"`, "depth clause", "lower case"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("warnings %q do not mention %q", joined, want)
+		}
+	}
+}

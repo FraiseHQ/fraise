@@ -369,6 +369,45 @@ def test_miscased_clause_before_a_colon_is_that_clause(query, text):
     assert status == 200, f"{text!r} should parse, got {status}: {body}"
 
 
+@pytest.mark.parametrize(
+    "text,keyword",
+    [
+        ("recall@0 zebras TOP:3", "TOP"),
+        ("recall@0 zebras Topic:food", "Topic"),
+        ("recall@0 zebras Since:7d", "Since"),
+    ],
+)
+def test_a_miscased_clause_runs_but_warns(query, text, keyword):
+    """Forgiven is not unremarked: the clause runs and the response says so.
+
+    The colon leaves one reading, so rejecting it would report the casing
+    instead of whatever the casing is hiding — but this language is lower case,
+    and a 200 with nothing attached teaches the opposite. The warning names the
+    spelling that ran so a caller can correct the habit from the response alone.
+    """
+    status, body = query(text)
+
+    assert status == 200, f"{text!r} should parse, got {status}: {body}"
+    warnings = body.get("warnings") or []
+    assert warnings, f"{text!r}: expected a casing warning, got none"
+    joined = " ".join(str(w) for w in warnings)
+    assert "lower case" in joined, joined
+    assert f'"{keyword}"' in joined, joined
+
+
+def test_a_miscased_anchor_value_is_data_and_stays_silent(query):
+    """An anchor value is folded by design, so its casing is not remarked on.
+
+    `entity:Top` and `entity:top` are the same anchor — the point being that an
+    agent never has to remember how it capitalised something. Warning here would
+    contradict that, so the casing warning is scoped to the clause key alone.
+    """
+    status, body = query("recall@0 zebras entity:Top topic:Food")
+
+    assert status == 200, body
+    assert "warnings" not in body, body.get("warnings")
+
+
 def test_a_miscased_repeat_is_still_a_duplicate(query):
     """`depth:2 DEPTH:5` is a duplicate, not a casing complaint.
 

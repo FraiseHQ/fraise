@@ -35,7 +35,7 @@ Keywords are specific query instructions. They are reserved by position, not by 
 
 Keywords are written in lower case only, and casing does not un-reserve one: where a clause could start, a mis-cased keyword is an error naming the casing — `recall x Since 7d` is rejected, never read as a three-term search. Folding `Since` into a term there would let a mis-typed clause silently become data, scoping the query by nothing with no error to correct from.
 
-The tie-breaker above is the one place casing is forgiven. A word glued to a `:` has exactly one reading — no production puts a bare word before a colon — so `Depth:2` is the depth clause, and `recall x depth:2 DEPTH:5` is reported as the duplicate it is rather than as a casing mistake. Blaming the casing there would name the shallower of the two problems, and an agent that dutifully lower-cased it would get a silently rescoped query back. Away from a colon the spelling must still match exactly, so `RECALL x` is not a command.
+The tie-breaker above is the one place casing is forgiven. A word glued to a `:` has exactly one reading — no production puts a bare word before a colon — so `Depth:2` is the depth clause, and `recall x depth:2 DEPTH:5` is reported as the duplicate it is rather than as a casing mistake. Forgiven is not the same as unremarked: the clause runs and the response carries a warning naming the casing (see [Warnings](#warnings)). Blaming the casing there would name the shallower of the two problems, and an agent that dutifully lower-cased it would get a silently rescoped query back. Away from a colon the spelling must still match exactly, so `RECALL x` is not a command.
 
 One ambiguity survives, at the leading term, and it is surfaced rather than guessed at: `recall since 7d` is a valid search for the words "since" and "7d", and also one `:` away from `recall since:7d`. The query runs as the term search, and the response carries a warning naming both readings. The shapes that warn — and the neighbouring ones that stay silent — are catalogued in [Warnings](#warnings).
 
@@ -214,13 +214,25 @@ Each entry is positioned like a parse error — `parse warning at column N:`, th
 
 ### Queries that warn
 
-One shape warns: **a recall whose leading term spells a reserved keyword** (any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`), in any casing. The leading term is the one position where a bare reserved word legally reads as data — a recall must start with a term, so no clause can begin there — which also makes it the one position where a mistyped clause slips through as a search instead of an error.
+Two shapes warn.
+
+**1. A recall whose leading term spells a reserved keyword** (any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`), in any casing. The leading term is the one position where a bare reserved word legally reads as data — a recall must start with a term, so no clause can begin there — which also makes it the one position where a mistyped clause slips through as a search instead of an error.
 
 | query              | reading that runs              | near-miss it warns about        |
 |--------------------|--------------------------------|---------------------------------|
 | `recall since 7d`  | a search for "since" and "7d"  | `recall since:7d`, a time bound |
 | `recall top`       | a search for "top"             | an unfinished `top:<n>` clause  |
 | `recall Top shelf` | a search for "top" and "shelf" | the same, mis-cased             |
+
+**2. A clause whose keyword is not lower case.** A word glued to a `:` has exactly one reading, so the clause runs (see [Keywords](#keywords) for why erroring there would report the shallower of two problems) — but this language is lower case, and accepting the spelling in silence teaches the opposite. The warning names the clause that ran, and there is one per mis-cased clause so a query with several can be fixed in a single pass.
+
+| query                      | reading that runs        | what it warns about                    |
+|----------------------------|--------------------------|----------------------------------------|
+| `recall x TOP:3`           | `top:3`                  | `TOP` is syntax, and syntax is lower case |
+| `recall x Topic:food`      | `topic:food`             | the same, on an anchor key             |
+| `remember 'a' Entity:bob`  | `entity:bob`             | the same, on a write                   |
+
+An anchor *value* is data, not syntax, so `entity:Top` is silent: it is the same anchor as `entity:top` by design, and an agent never has to remember how it capitalised something.
 
 ### Queries that stay silent
 
