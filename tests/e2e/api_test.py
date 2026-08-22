@@ -394,6 +394,65 @@ def test_unambiguous_query_carries_no_warnings_key(query, text):
     )
 
 
+# depth selects the retrieval lane: 0 and 1 are the BM25 floor (no anchor
+# traversal), 2 is the one anchor-mediated round the scorer performs. Those are
+# the only meaningful values, so the grammar accepts exactly 0-2 and rejects
+# everything else — malformed values as parse errors, over-ceiling values as
+# limit errors. The lane *semantics* live in recall_test.py; these are the
+# rejections.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall x depth:",  # the clause with no value at all
+        "recall x depth:-1",  # '-' is its own token, so a negative cannot be written
+        "recall x depth:1.5",  # a lane selector is an integer, not a distance
+        "recall x depth:99999999999999999999",  # overflows int
+    ],
+)
+def test_query_rejects_malformed_depth(query, text):
+    """A depth that is not a non-negative integer is a parse error.
+
+    Complements the ceiling test below: this family never reaches the limit
+    check, because there is no number to compare.
+    """
+    status, body = query(text)
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert body.get("error"), f"expected a parse error message for {text!r}"
+
+
+@pytest.mark.parametrize("text", ["recall x depth:3", "recall x depth:99"])
+def test_query_rejects_depth_past_the_ceiling(query, text):
+    """A depth above 2 is refused rather than silently treated as depth:2.
+
+    The scorer does not iterate past one anchor-mediated round, so a larger
+    depth has no meaning. Answering it anyway would tell an agent its request
+    was honoured when it was quietly downgraded — the same silent-reinterpretation
+    failure the missing-separator tests above exist to prevent. The message
+    names the ceiling so the agent can correct.
+    """
+    status, body = query(text)
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert "exceeds max 2" in body.get("error", ""), body.get("error")
+
+
+@pytest.mark.parametrize(
+    "text", ["recall x depth:0", "recall x depth:1", "recall x depth:2"]
+)
+def test_query_accepts_every_valid_depth(query, text):
+    """0, 1 and 2 are the whole accepted range, and each parses.
+
+    Pinned alongside the rejections so the boundary is visible in one place:
+    2 is accepted, 3 is not.
+    """
+    status, body = query(text)
+
+    assert status == 200, f"{text!r} should parse, got {status}: {body.get('error')!r}"
+
+
 @pytest.mark.parametrize(
     ("text", "blame"),
     [

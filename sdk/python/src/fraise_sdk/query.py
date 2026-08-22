@@ -153,8 +153,8 @@ def build_recall(
             raise FraiseQueryError(f"top must be positive, got {top}")
         parts.append(f"top:{top}")
     if depth is not None:
-        if depth <= 0:
-            raise FraiseQueryError(f"depth must be positive, got {depth}")
+        if depth < 0:
+            raise FraiseQueryError(f"depth must be non-negative, got {depth}")
         parts.append(f"depth:{depth}")
     if with_vector:
         parts.append(f"vec:${VECTOR_PARAM}")

@@ -100,11 +100,13 @@ def test_remember_then_recall_returns_the_fact(client, round_trip_graph):
 
 def test_a_lone_seed_hub_stays_silent(instrument_graph, client):
     """A single seed's topic hub holds exactly the background rate, so its
-    siblings never surface on reachability alone — at any depth, since depth
-    is inert (one anchor-mediated step; larger values reserved).
+    siblings never surface on reachability alone — in either retrieval lane.
 
     This is the excess-transmission contract through the SDK: an anchor is
-    heard only when its members matched better than its size predicts.
+    heard only when its members matched better than its size predicts. The
+    two depths are asserted for different reasons: depth=1 is the BM25 floor,
+    where no traversal runs at all, while depth=2 runs the excess round and
+    the hub declines to transmit on its own merits.
     """
     assert client.recall("cello", graph=instrument_graph, depth=1).count == 1
     assert client.recall("cello", graph=instrument_graph, depth=2).count == 1

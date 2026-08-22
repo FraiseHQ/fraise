@@ -738,3 +738,42 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 		}
 	})
 }
+
+// TestExplicitDepthIsHonouredIncludingZero pins that the *presence* of a depth
+// clause, not a nonzero value, decides whether the configured default applies.
+//
+// depth:0 is the floor lane — text and vector seeds only, no anchor traversal.
+// Reading presence off the value collapsed it into the default, so a client
+// that explicitly turned the graph channel off silently got it back, and
+// wherever the default is 2 that is the full excess round: the query answered
+// was not the query asked. Both the flag and the resolved value are asserted,
+// because Depth's fallback is what a caller actually receives.
+func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
+	cases := []struct {
+		query    string
+		explicit bool
+		want     int // Depth(7) — 7 stands in for the configured default
+	}{
+		{"recall x depth:0", true, 0},
+		{"recall x depth:1", true, 1},
+		{"recall x depth:2", true, 2},
+		{"recall x", false, 7},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+			}
+			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
+
+			if got := rc.HasDepth(); got != tc.explicit {
+				t.Errorf("HasDepth() = %v, want %v", got, tc.explicit)
+			}
+			if got := rc.Depth(7); got != tc.want {
+				t.Errorf("Depth(7) = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

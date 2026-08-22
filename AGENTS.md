@@ -142,12 +142,18 @@ These apply to every component:
     has no integration test. A missing file is fine; a misnamed one is not.
   - `conftest.py` is fixture machinery and mirrors nothing.
 
-  `tests/e2e/` is deliberately exempt: it drives the running server over HTTP,
-  so it mirrors the server, not the SDK.
-- **Every fixture lives in `conftest.py`** — including one that a single test
-  file asks for. A test module is assertions; a `@pytest.fixture` in one is
-  setup hiding among them, and it splits "how did this graph get populated?"
-  across as many files as there are suites.
+  `tests/e2e/` is exempt **from this naming rule only**: it drives the running
+  server over HTTP, so it mirrors the server, not the SDK. Every other rule in
+  this section — fixtures, imports, docstrings, `parametrize`, mocking — applies
+  to it in full.
+- **Every fixture lives in `conftest.py`. This holds for every pytest suite in
+  the repo — the SDK unit suite, the integration suite and `tests/e2e/`
+  alike** — including a fixture that a single test file asks for, and including
+  the seed data it is built from. A test module is assertions; a
+  `@pytest.fixture` in one is setup hiding among them, and it splits "how did
+  this graph get populated?" across as many files as there are suites. A
+  `@pytest.fixture` outside a `conftest.py` is always wrong, however local it
+  looks: "only this file uses it" is the reason it drifts, not an exemption.
 - **Never import from a test module — a test tree is not a package.**
   `from conftest import NO_MATCH` is banned, and so is importing from a
   sibling `*_test.py`. Whether it resolves at all depends on how pytest put the

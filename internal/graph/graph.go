@@ -126,9 +126,13 @@ type Graph[K comparable, P float32 | float64] interface {
 	//               (or empty) skips the vector index
 	//   - topics:   restrict results to facts tagged with these topics
 	//   - entities: restrict results to facts involving these entities
-	//   - depth:    accepted and currently inert — the shipped traversal
-	//               uses one anchor-mediated step; larger values are
-	//               reserved for iterated transmission
+	//   - depth:    selects the retrieval lane. 0 skips the anchor
+	//               traversal and ranks by seed mass alone (the floor; the
+	//               fast, text-only lane). 1 and 2 both run the one
+	//               anchor-mediated round and differ only in how much
+	//               above-chance evidence an anchor needs to transmit: 1 is
+	//               the precision lane, 2 admits at the plain fair share for
+	//               maximum recall. It does not iterate
 	//   - top:      maximum number of results returned
 	//   - since:    inclusive lower time bound; zero value = unbounded
 	//   - until:    exclusive upper time bound; zero value = unbounded
