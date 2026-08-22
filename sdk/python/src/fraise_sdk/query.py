@@ -46,6 +46,31 @@ from fraise_sdk.errors import FraiseQueryError
 # lock-step without threading a name through every call.
 VECTOR_PARAM = "v"
 
+# The highest graph a query can name. A selector travels as a uint8, so 256 does
+# not fail — it wraps to graph 0 unless the server catches it, which is why this
+# is a hard edge rather than a hint. Which selectors below it exist is the
+# server's business, and only it can answer that.
+MAX_GRAPH = 255
+
+# The grammar's reserved words, mirroring the server's keyword table. A bare term
+# spelling one of these reads as the start of a clause everywhere except the
+# first term of a recall, so the builder has to know them to quote around them.
+_KEYWORDS = frozenset(
+    {
+        "recall",
+        "remember",
+        "forget",
+        "update",
+        "topic",
+        "entity",
+        "since",
+        "until",
+        "top",
+        "depth",
+        "vec",
+    }
+)
+
 
 def _token(kind: str, value: str) -> str:
     """Validate and return a bare grammar token (a keyword, topic or entity).
@@ -87,11 +112,33 @@ def _quote_value(value: str) -> str:
     return f"'{escaped}'"
 
 
+def _term(value: str, *, leading: bool) -> str:
+    """Render a recall term, quoting it when a bare word would read as syntax.
+
+    A reserved word is data only in the leading term position, where no clause
+    can begin; after it the grammar reads ``top`` as the start of a ``top:``
+    clause and rejects the query. The caller passed a search word, so the
+    builder writes the form that means one — quoting is the grammar's own escape
+    for exactly this.
+
+    The leading term is left bare deliberately. It parses either way, and
+    quoting it would suppress the server's keyword-ambiguity warning, which is
+    the caller's only signal that ``recall("since", "7d")`` sits one ``:`` away
+    from a time bound.
+    """
+    token = _token("keyword", value)
+    if leading or token.lower() not in _KEYWORDS:
+        return token
+    return _quote_value(token)
+
+
 def _selector(graph: int) -> str:
     if not isinstance(graph, int) or isinstance(graph, bool):
         raise FraiseQueryError(f"graph must be an int, got {type(graph).__name__}")
     if graph < 0:
         raise FraiseQueryError(f"graph must be non-negative, got {graph}")
+    if graph > MAX_GRAPH:
+        raise FraiseQueryError(f"graph must be at most {MAX_GRAPH}, got {graph}")
     return f"@{graph}"
 
 
@@ -133,7 +180,8 @@ def build_recall(
     keeps every character inside the quotes literal, so natural language
     ("What topic has John been blogging about recently?") travels verbatim
     instead of as bare words that would collide with the grammar's reserved
-    keywords. ``keywords`` remain individual bare terms and may accompany it.
+    keywords. ``keywords`` accompany it as individual terms, quoted only where a
+    bare one would read as a clause instead of a word (see :func:`_term`).
 
     A recall needs at least one seed: a query phrase, keywords, a vector, or a
     topic/entity filter. Building one with no seed at all is a programming
@@ -145,7 +193,10 @@ def build_recall(
     parts = [f"recall{_selector(graph)}"]
     if query is not None:
         parts.append(_quote_value(query))
-    parts += [_token("keyword", k) for k in (keywords or [])]
+    # len(parts) == 1 is the leading term slot: nothing but the command has been
+    # written yet, so this keyword is the one the grammar reads as data.
+    for keyword in keywords or []:
+        parts.append(_term(keyword, leading=len(parts) == 1))
     parts += _clauses("topic", topics)
     parts += _clauses("entity", entities)
     if top is not None:

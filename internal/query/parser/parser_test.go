@@ -128,6 +128,14 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 		{"recall x depth:abc", "invalid depth value"},
 		{"recall x top:abc", "invalid top value"},
 		{"recall x topic:", "expected a word or quoted phrase"},
+		// vec: is the clause this test was written for and never covered: both
+		// call sites discarded parseVecField's positioned error for a generic
+		// wrap, which is the exact mangling the rest of these forbid.
+		{"recall x vec:v", "expected param field operator $"},
+		{"recall x vec$:v", "Expected colon"},
+		{"recall x vec:$", "expected literal"},
+		{"remember 'a fact' vec:v", "expected param field operator $"},
+		{"remember 'a fact' vec:$", "expected literal"},
 	}
 
 	for _, tc := range cases {
@@ -193,14 +201,45 @@ func TestRecallParser(t *testing.T) {
 // TestRecallParserErrors checks that malformed recall queries are rejected.
 func TestRecallParserErrors(t *testing.T) {
 	queries := []string{
-		"recall",           // a recall must carry at least one term
-		"recall topic:job", // fields may only follow a term
+		"recall",          // no seed at all
+		"recall top:3",    // modifiers scope a search; they cannot start one
+		"recall since:7d", // ditto for a time bound
+		"recall depth:2 top:5",
 	}
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			if _, _, err := parser.Parse[uint64, float32](q); err == nil {
-				t.Errorf("Parse(%q) = nil error, want an error", q)
+			_, _, err := parser.Parse[uint64, float32](q)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want an error", q)
+			}
+			if !strings.Contains(err.Error(), "at least one seed") {
+				t.Errorf("error %q does not say what the recall is missing", err)
+			}
+		})
+	}
+}
+
+// TestAnchorSeededRecallParses pins that a recall needs a seed, not a *term*:
+// an anchor and a vector are seeds too, so "everything about billing" is a
+// question the grammar can express. Requiring a text term made it unreachable —
+// callers reached for a nonsense keyword to get past the parser, which seeded
+// the search with a word they did not mean.
+func TestAnchorSeededRecallParses(t *testing.T) {
+	queries := []string{
+		"recall topic:job",
+		"recall entity:alice",
+		"recall topic:job entity:alice",
+		"recall@2 topic:job",
+		"recall topic:job top:5 depth:2",
+		"recall topic:job since:7d",
+		"recall vec:$v",
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			if _, _, err := parser.Parse[uint64, float32](q); err != nil {
+				t.Errorf("Parse(%q) = %v, want it to parse", q, err)
 			}
 		})
 	}
@@ -525,8 +564,8 @@ func TestKeywordAsValue(t *testing.T) {
 // a bare keyword still reads as a clause and still errors without its ':'.
 func TestKeywordAsValueDisambiguation(t *testing.T) {
 	queries := []string{
-		"recall top:3",                         // a recall still requires a term first
-		"recall shelf top",                     // clause position: bare keyword is a clause missing its value
+		"recall top:3",                         // a modifier is not a seed
+		"recall shelf top",                     // clause position: a bare keyword is not a term
 		"remember 'x' entity:top:3",            // keyword-colon after the anchor's ':' is a field, not a value
 		"remember 'x' entity:since:7d topic:x", // ditto for a time field
 	}
@@ -541,13 +580,14 @@ func TestKeywordAsValueDisambiguation(t *testing.T) {
 }
 
 // TestMiscasedKeywordIsRejected pins that a keyword written with any upper
-// case is a parse error wherever it would read as syntax. Case folding applies
-// to data only; letting it reach a keyword would fold "recall x Since 7d" into
-// a three-term search — the silent token-shift the separator tests guard
-// against, re-entered through the casing door. The whole family is listed
-// (command position, field position on both commands, clause position in the
-// term stream) so no position can regress alone. The first four cases parsed
-// clean before the term-stream check existed.
+// case is a parse error wherever it could still be something else. Case folding
+// applies to data only; letting it reach a keyword would fold "recall x Since
+// 7d" into a three-term search — the silent token-shift the separator tests
+// guard against, re-entered through the casing door.
+//
+// The exception is a keyword glued to a ':', which has its own test below: the
+// colon leaves nothing for it to be mistaken for, so there casing is forgiven
+// rather than reported.
 func TestMiscasedKeywordIsRejected(t *testing.T) {
 	cases := []struct {
 		query string
@@ -557,17 +597,11 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 		{"recall zebras Since 7d", "lower case"},
 		{"recall zebras Since 7d 30d", "lower case"},
 		{"recall zebras Until 2026-01-15", "lower case"},
-		{"recall zebras Vec:$v", "lower case"},
-		// Clause position followed by ':': used to error, but blaming the ':'.
-		{"recall zebras TOP:3", "lower case"},
-		{"recall zebras Topic:food", "lower case"},
-		{"recall zebras Depth:2", "lower case"},
-		// Command and field positions: already errors, pinned so the contract
-		// covers every position a keyword can be mis-cased in.
+		{"recall zebras Depth 2", "lower case"},
+		// Command position: a command is never inferred from a mis-spelling,
+		// because the verb decides whether the query writes.
 		{"Recall zebras", "expected a command"},
 		{"REMEMBER 'x' topic:y", "expected a command"},
-		{"remember 'x' Entity:bob", "unexpected token"},
-		{"remember 'x' Topic:food", "unexpected token"},
 	}
 
 	for _, tc := range cases {
@@ -578,6 +612,122 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestMiscasedKeywordBeforeColonIsTheClause pins the one place casing is
+// forgiven: a word glued to a ':' can only be a field, because no production
+// puts a bare word in front of a colon. Reading "DEPTH:5" as the depth clause
+// is what lets a repeated clause be caught as a duplicate — blaming the casing
+// instead would report the shallower of the two mistakes, and an agent that
+// fixes the casing would then get a silently rescoped query.
+//
+// It stays narrow on purpose: away from a ':' the spelling must still match, so
+// "Recall x" is not a command and "recall x Since 7d" is not a time bound (see
+// TestMiscasedKeywordIsRejected).
+func TestMiscasedKeywordBeforeColonIsTheClause(t *testing.T) {
+	recalls := []struct {
+		query string
+		check func(*testing.T, *parser.RecallCommandNode[uint64, float32])
+	}{
+		{"recall zebras TOP:3", func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
+			if got := r.Top(0); got != 3 {
+				t.Errorf("Top() = %d, want 3", got)
+			}
+		}},
+		{"recall zebras Depth:2", func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
+			if !r.HasDepth() || r.Depth(0) != 2 {
+				t.Errorf("Depth() = %d (has %v), want 2", r.Depth(0), r.HasDepth())
+			}
+		}},
+		{"recall zebras Topic:food", func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
+			if got := r.Topics(); !slices.Equal(got, []string{"food"}) {
+				t.Errorf("Topics() = %v, want [food]", got)
+			}
+		}},
+	}
+
+	for _, tc := range recalls {
+		t.Run(tc.query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) = %v, want the clause it spells", tc.query, err)
+			}
+			r, ok := cmd.(*parser.RecallCommandNode[uint64, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *RecallCommandNode", tc.query, cmd)
+			}
+			tc.check(t, r)
+		})
+	}
+
+	remembers := []struct {
+		query string
+		want  []string
+		got   func(*parser.RememberCommandNode[float32]) []string
+	}{
+		{"remember 'x' Entity:bob", []string{"bob"}, (*parser.RememberCommandNode[float32]).Entities},
+		{"remember 'x' Topic:food", []string{"food"}, (*parser.RememberCommandNode[float32]).Topics},
+	}
+
+	for _, tc := range remembers {
+		t.Run(tc.query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) = %v, want the clause it spells", tc.query, err)
+			}
+			r, ok := cmd.(*parser.RememberCommandNode[float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *RememberCommandNode", tc.query, cmd)
+			}
+			if got := tc.got(r); !slices.Equal(got, tc.want) {
+				t.Errorf("anchors = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDuplicateModifierIsRejected pins that a single-valued clause given twice
+// is an error, not a last-wins overwrite. Last-wins is the failure an agent
+// cannot detect: the query runs, the results are real, and they answer a
+// differently-scoped question than the one asked. Anchors are excluded — a
+// repeated topic:/entity: is a list by design, and the last two cases pin that
+// the stricter rule did not swallow them.
+func TestDuplicateModifierIsRejected(t *testing.T) {
+	rejected := []string{
+		"recall zebras depth:1 depth:2",
+		"recall zebras top:3 top:10",
+		"recall zebras since:7d since:30d",
+		"recall zebras until:1d until:2d",
+		"recall zebras since:7d until:30d since:1d",
+		"recall zebras vec:$a vec:$b",
+		"recall zebras depth:2 DEPTH:5",
+		"remember 'x' vec:$a vec:$b",
+	}
+
+	for _, q := range rejected {
+		t.Run(q, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](q)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a duplicate-clause error", q)
+			}
+			if !strings.Contains(err.Error(), "duplicate") {
+				t.Errorf("error %q does not name the repeat as a duplicate", err)
+			}
+		})
+	}
+
+	accepted := []string{
+		"recall zebras topic:food topic:drink",
+		"recall zebras entity:alice entity:bob",
+	}
+
+	for _, q := range accepted {
+		t.Run(q, func(t *testing.T) {
+			if _, _, err := parser.Parse[uint64, float32](q); err != nil {
+				t.Errorf("Parse(%q) = %v, want repeated anchors to parse", q, err)
 			}
 		})
 	}
@@ -775,5 +925,225 @@ func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
 				t.Errorf("Depth(7) = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestEmptyDataIsRejected pins that a quoted empty value is refused wherever it
+// can be written. Quoting is the only way to produce one, and it is never what
+// a caller meant: an empty fact can never be retrieved and an empty anchor is an
+// identity nobody can name a second time, so both would corrupt a graph quietly
+// rather than fail where the mistake was made. Whitespace-only is the same case
+// — it survives folding and produces an anchor nobody can type twice.
+func TestEmptyDataIsRejected(t *testing.T) {
+	queries := []string{
+		"remember ''",
+		"remember '' topic:harbour",
+		"remember '   '",
+		"recall ''",
+		"recall '   '",
+		"recall ferry ''",       // blank second term, past the leading position
+		"recall ferry topic:''", // blank anchor value
+		"recall ferry entity:'   '",
+	}
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](q)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want an empty-value error", q)
+			}
+			if !strings.Contains(err.Error(), "must not be empty") {
+				t.Errorf("error %q does not say the value was empty", err)
+			}
+		})
+	}
+}
+
+// TestRejectedTokensNameTheirOwnMistake pins that a token no production accepts
+// is diagnosed, not merely reported. The caller is an agent: it can only repair
+// a query the message tells it how to repair, so each shape a caller actually
+// produces has to arrive with its own repair instruction rather than a shared
+// "unexpected token". The last case is the fallback, kept for the shapes that
+// have no better diagnosis.
+func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+	}{
+		// Grouping: the tokens lex but no rule accepts them, so the message
+		// says the feature is absent rather than blaming the character.
+		{"recall (zebras)", "grouping is not supported"},
+		{"recall zebras (food)", "grouping is not supported"},
+		{"recall zebras topic:(food)", "grouping is not supported"},
+		{"recall zebras )food(", "grouping is not supported"},
+		// A second command is one instruction too many, not a stray word.
+		{"recall zebras recall food", "one command per instruction"},
+		{"recall zebras remember 'x'", "one command per instruction"},
+		{"remember 'a' remember 'b'", "one command per instruction"},
+		// A keyword with nothing after it can never finish a clause, so it is
+		// the word the caller forgot to quote.
+		{"recall zebras top", "quote it"},
+		{"recall zebras since", "quote it"},
+		{"remember 'a' topic", "quote it"},
+		// Casing still matters where a clause could start.
+		{"recall zebras Depth 2", "lower case"},
+		// A modifier is not a clause a remember has: the message names the
+		// keyword rather than complaining about the token after it.
+		{"remember 'a fact' top:3", "is a keyword"},
+		{"remember 'a fact' since:7d", "is a keyword"},
+		// A newline in a value slot is a second instruction starting early.
+		{"recall zebras topic:\nfood", "one command per instruction"},
+		// No better diagnosis exists for a stray '@'.
+		{"recall@3@5 zebras", "unexpected"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), `found ""`) {
+				t.Errorf("error %q reports end of input as an empty literal", err)
+			}
+		})
+	}
+}
+
+// TestNewlineEndsTheInstruction pins that a newline separates instructions
+// rather than blending into the whitespace around it. Folded into blank, "recall
+// ferry\nbridge" read as one two-term recall — a second line silently joining
+// the first. Trailing blank lines are not a second instruction and must still
+// parse, or every client that ends its payload with a newline would break.
+func TestNewlineEndsTheInstruction(t *testing.T) {
+	accepted := []string{
+		"recall zebras\n",
+		"recall zebras\n\n",
+		"recall zebras \n  \n\t",
+		"remember 'a fact'\n",
+	}
+
+	for _, q := range accepted {
+		t.Run("accepted:"+strconv.Quote(q), func(t *testing.T) {
+			if _, _, err := parser.Parse[uint64, float32](q); err != nil {
+				t.Errorf("Parse(%q) = %v, want a trailing newline to be ignored", q, err)
+			}
+		})
+	}
+
+	rejected := []string{
+		"recall zebras\nfood",
+		"recall zebras\nrecall food",
+		"remember 'a'\nremember 'b'",
+	}
+
+	for _, q := range rejected {
+		t.Run("rejected:"+strconv.Quote(q), func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](q)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a second-instruction error", q)
+			}
+			if !strings.Contains(err.Error(), "one command per instruction") {
+				t.Errorf("error %q does not say one command per instruction", err)
+			}
+		})
+	}
+}
+
+// TestIntegerValueTooLargeIsReportedAsOutOfRange pins that a number too large to
+// hold is reported apart from text that is not a number at all. An agent told
+// only "invalid" retries with another huge number; one told the value is out of
+// range knows to shrink it. Both messages still name the clause that rejected it.
+func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+	}{
+		{"recall zebras depth:99999999999999999999", "invalid depth value"},
+		{"recall zebras depth:99999999999999999999", "out of range"},
+		{"recall zebras top:99999999999999999999", "invalid top value"},
+		{"recall zebras top:99999999999999999999", "out of range"},
+		// Not a number at all: named, but not as a range problem.
+		{"recall zebras depth:abc", "expected a non-negative whole number"},
+		{"recall zebras top:top", "invalid top value"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query+"/"+tc.want, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a value error", tc.query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+
+	if _, _, err := parser.Parse[uint64, float32]("recall zebras depth:abc"); err == nil ||
+		strings.Contains(err.Error(), "out of range") {
+		t.Errorf("depth:abc = %v, want it reported as not-a-number rather than out of range", err)
+	}
+}
+
+// TestMiscasedClauseWarns pins the second thing a response can say without
+// rejecting: the query ran, and a keyword in it was not lower case.
+//
+// The colon leaves a mis-cased clause exactly one reading, which is why it is
+// not an error (see TestMiscasedKeywordBeforeColonIsTheClause — erroring there
+// would report the casing instead of the duplicate it may be hiding). But this
+// language is lower case, and accepting `Depth:2` in silence teaches the caller
+// the opposite. The warning is the middle answer: the clause runs, and the
+// response says which spelling it ran as.
+//
+// Anchor values are excluded deliberately, not by oversight: `entity:Top` is
+// data, folded to the same anchor as `entity:top`, and warning about it would
+// contradict the rule that an agent never has to remember how it capitalised
+// something.
+func TestMiscasedClauseWarns(t *testing.T) {
+	cases := []struct {
+		name  string
+		query string
+		warns bool
+	}{
+		{"mis-cased modifier", "recall zebras TOP:3", true},
+		{"mis-cased anchor key", "recall zebras Topic:food", true},
+		{"mis-cased time bound", "recall zebras Since:7d", true},
+		{"mis-cased on a write", "remember 'a fact' Entity:bob", true},
+		{"one warning per mis-cased clause", "recall zebras Topic:food Depth:2", true},
+		{"lower case is silent", "recall zebras top:3 topic:food", false},
+		{"an anchor value is data, not syntax", "recall zebras entity:Top", false},
+		{"a mis-cased value on a write is data too", "remember 'a fact' topic:Food", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+			}
+			if got := len(warns) > 0; got != tc.warns {
+				t.Fatalf("Parse(%q) warnings = %v, want warned=%v", tc.query, warns, tc.warns)
+			}
+		})
+	}
+
+	// Every mis-cased clause is named, so a query with two gets two warnings
+	// and the caller can fix both in one pass.
+	_, warns, err := parser.Parse[uint64, float32]("recall zebras Topic:food Depth:2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warns) != 2 {
+		t.Fatalf("got %d warnings %v, want one per mis-cased clause", len(warns), warns)
+	}
+	joined := warns[0].String() + " " + warns[1].String()
+	for _, want := range []string{`"Topic"`, "topic clause", `"Depth"`, "depth clause", "lower case"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("warnings %q do not mention %q", joined, want)
+		}
 	}
 }

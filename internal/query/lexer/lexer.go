@@ -22,6 +22,8 @@
 
 package lexer
 
+import "strings"
+
 type Position struct {
 	Column int
 }
@@ -59,9 +61,11 @@ func (l *Lexer) readCharacter() {
 	l.NextPos.Column++
 }
 
-// checks if rune is white space
+// checks if rune is white space. A newline is deliberately absent: it separates
+// instructions, and swallowing it as blank is what let "recall ferry\nbridge"
+// read as one two-term recall instead of the two commands it looks like.
 func isBlank(ch rune) bool {
-	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r') || ch == rune('\n')
+	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r')
 }
 
 func (l *Lexer) Next() Token {
@@ -96,13 +100,28 @@ func (l *Lexer) Next() Token {
 	case rune('@'):
 		l.readCharacter()
 		tok = Token{Type: AT, Literal: string(l.Character)}
+	case rune('\n'):
+		l.readCharacter()
+		tok = Token{Type: NEWLINE, Literal: string(l.Character)}
 	case rune(0):
 		tok = Token{Type: EOL}
 	default:
 		tokLiteral := l.scanString()
-		tokType, err := KeywordsMap[tokLiteral]
-		if !err {
-			tokType = LITERAL
+		tokType, reserved := KeywordsMap[tokLiteral]
+		if !reserved {
+			// Casing un-reserves a keyword everywhere except immediately before
+			// a ':', where nothing else it could be exists: no production puts a
+			// bare word in front of a colon, so "DEPTH:5" can only be the depth
+			// clause, and reading it as one is what lets a repeated clause be
+			// caught as a duplicate instead of blamed on the casing. Away from a
+			// colon the spelling still has to match — "RECALL x" stays a parse
+			// error rather than a command silently rewritten on the way in.
+			if l.peek() == rune(':') {
+				tokType, reserved = KeywordsMap[strings.ToLower(tokLiteral)]
+			}
+			if !reserved {
+				tokType = LITERAL
+			}
 		}
 		tok = Token{Type: tokType, Literal: tokLiteral}
 	}

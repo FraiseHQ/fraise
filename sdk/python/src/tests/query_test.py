@@ -136,3 +136,41 @@ def test_recall_emits_depth_zero():
 def test_negative_graph_is_rejected():
     with pytest.raises(FraiseQueryError, match="non-negative"):
         build_remember("x", graph=-1)
+
+
+@pytest.mark.parametrize("bad", [256, 300, 99999])
+def test_graph_above_the_uint8_range_is_rejected(bad):
+    """A selector travels as a uint8, so 256 is not "too big" — it is graph 0.
+
+    Refusing it here means a mistyped graph id fails in the caller's own stack
+    trace rather than reading or writing somebody else's memory.
+    """
+    with pytest.raises(FraiseQueryError, match="at most 255"):
+        build_remember("x", graph=bad)
+
+
+def test_a_keyword_spelled_term_is_quoted_after_the_first():
+    """A search word that spells a keyword is quoted where a bare one is syntax.
+
+    ``recall@0 ferry top`` is a parse error — after the first term the grammar
+    reads ``top`` as an unfinished ``top:`` clause — so a caller passing "top"
+    as a search word gets the quoted form that means the word.
+    """
+    assert build_recall(["ferry", "top"]) == "recall@0 ferry 'top'"
+
+
+def test_a_leading_keyword_spelled_term_stays_bare():
+    """The first term is left bare so the server's ambiguity warning survives.
+
+    ``recall since 7d`` parses as a two-term search and warns that it is one
+    ``:`` from ``since:7d``. Quoting it here would silence the only signal the
+    caller gets that their two search words read like a time bound.
+    """
+    assert build_recall(["since", "7d"]) == "recall@0 since 7d"
+
+
+def test_a_query_phrase_takes_the_leading_slot_so_keywords_are_quoted():
+    """With a phrase first, no keyword is in the position that reads as data."""
+    assert build_recall(["top"], query="what is at the top") == (
+        "recall@0 'what is at the top' 'top'"
+    )

@@ -308,9 +308,7 @@ def test_query_keeps_keyword_colon_as_a_field(query, text):
         "REMEMBER 'a shouted fact' topic:x",
         "recall zebras Since 7d",  # parsed clean as a three-term search before the check
         "recall zebras Since 7d 30d",  # the shifted time-bound shape, through the casing door
-        "recall zebras TOP:3",  # mis-cased clause: rejected for its casing, not its stray ':'
-        "recall zebras Topic:food",
-        "remember@5 'a caseprobe fact' Entity:bob",  # mis-cased field on the write side
+        "recall zebras Depth 2",  # the same shape on a modifier
     ],
 )
 def test_query_rejects_miscased_keyword(query, text):
@@ -319,10 +317,14 @@ def test_query_rejects_miscased_keyword(query, text):
 
     Keywords are lower-case syntax; upper case is only legal where a token is
     unambiguously data (a term, a phrase, an anchor value). The dangerous
-    shapes are the middle two: case folding of terms would happily read
+    shapes are the last two: case folding of terms would happily read
     `recall zebras Since 7d` as a three-term search — a 200 scoped by nothing,
     with no signal to correct from — reviving the silent-shift family above
     through the casing door.
+
+    A keyword glued to a ':' is the exception and is not listed here: nothing
+    else a word before a colon could be, so the casing is forgiven rather than
+    reported (see test_miscased_clause_before_a_colon_is_that_clause).
     """
     status, body = query(text)
 
@@ -342,6 +344,82 @@ def test_miscased_keyword_error_names_the_casing(query):
     error = body.get("error", "")
     assert "lower case" in error, f"want the casing named, got {error!r}"
     assert "'Since'" in error, f"want the quoted escape shown, got {error!r}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall@0 zebras TOP:3",
+        "recall@0 zebras Topic:food",
+        "recall@0 zebras Depth:2",
+        "recall@0 zebras Since:7d",
+        "recall@0 zebras Entity:bob",
+    ],
+)
+def test_miscased_clause_before_a_colon_is_that_clause(query, text):
+    """A keyword glued to a ':' is that clause whatever its casing.
+
+    This is the one place casing is forgiven, and it is forgiven because there
+    is nothing else to forgive it as: no production puts a bare word in front
+    of a colon, so `TOP:3` has exactly one reading. Reads only — a mis-cased
+    write would add a fact the graph-5 counts elsewhere depend on.
+    """
+    status, body = query(text)
+
+    assert status == 200, f"{text!r} should parse, got {status}: {body}"
+
+
+@pytest.mark.parametrize(
+    "text,keyword",
+    [
+        ("recall@0 zebras TOP:3", "TOP"),
+        ("recall@0 zebras Topic:food", "Topic"),
+        ("recall@0 zebras Since:7d", "Since"),
+    ],
+)
+def test_a_miscased_clause_runs_but_warns(query, text, keyword):
+    """Forgiven is not unremarked: the clause runs and the response says so.
+
+    The colon leaves one reading, so rejecting it would report the casing
+    instead of whatever the casing is hiding — but this language is lower case,
+    and a 200 with nothing attached teaches the opposite. The warning names the
+    spelling that ran so a caller can correct the habit from the response alone.
+    """
+    status, body = query(text)
+
+    assert status == 200, f"{text!r} should parse, got {status}: {body}"
+    warnings = body.get("warnings") or []
+    assert warnings, f"{text!r}: expected a casing warning, got none"
+    joined = " ".join(str(w) for w in warnings)
+    assert "lower case" in joined, joined
+    assert f'"{keyword}"' in joined, joined
+
+
+def test_a_miscased_anchor_value_is_data_and_stays_silent(query):
+    """An anchor value is folded by design, so its casing is not remarked on.
+
+    `entity:Top` and `entity:top` are the same anchor — the point being that an
+    agent never has to remember how it capitalised something. Warning here would
+    contradict that, so the casing warning is scoped to the clause key alone.
+    """
+    status, body = query("recall@0 zebras entity:Top topic:Food")
+
+    assert status == 200, body
+    assert "warnings" not in body, body.get("warnings")
+
+
+def test_a_miscased_repeat_is_still_a_duplicate(query):
+    """`depth:2 DEPTH:5` is a duplicate, not a casing complaint.
+
+    This is why the casing is forgiven above rather than reported: blaming the
+    casing would name the shallower of the two mistakes, and an agent that
+    dutifully lower-cased it would get a silently rescoped query back. The
+    duplicate error is also the proof the clause was recognised at all.
+    """
+    status, body = query("recall@0 zebras depth:2 DEPTH:5")
+
+    assert status == 400, body
+    assert "duplicate" in body.get("error", "").lower(), body.get("error")
 
 
 def test_leading_keyword_term_warns_but_runs(query):
@@ -436,7 +514,7 @@ def test_query_rejects_depth_past_the_ceiling(query, text):
     status, body = query(text)
 
     assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
-    assert "exceeds max 2" in body.get("error", ""), body.get("error")
+    assert "out of range (0-2)" in body.get("error", ""), body.get("error")
 
 
 @pytest.mark.parametrize(

@@ -178,7 +178,7 @@ func TestQueryTopOverCeiling(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "exceeds max") {
+	if !strings.Contains(w.Body.String(), "out of range") {
 		t.Errorf("body = %q, want a limit message", w.Body.String())
 	}
 }
@@ -195,7 +195,7 @@ func TestQueryDepthOverCeiling(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "exceeds max") {
+	if !strings.Contains(w.Body.String(), "out of range") {
 		t.Errorf("body = %q, want a limit message", w.Body.String())
 	}
 }
