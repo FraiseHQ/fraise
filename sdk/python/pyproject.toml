@@ -2,6 +2,7 @@
 name = "fraise-sdk"
 version = "0.1.0-beta.1"
 description = "Fraise SDK"
+readme = "README.md"
 authors = [
     { name = "Rene Jean Corneille", email = "14303619+RonsenbergVI@users.noreply.github.com" }
 ]
