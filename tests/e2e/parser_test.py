@@ -49,9 +49,7 @@ import pytest
 
 def _reject(status, body, expected, query_text):
     """Assert a 400 whose message contains `expected` (case-insensitively)."""
-    assert status == 400, (
-        f"{query_text!r}: expected 400, got {status} — body {body!r}"
-    )
+    assert status == 400, f"{query_text!r}: expected 400, got {status} — body {body!r}"
     message = (body.get("error") or "").lower()
     assert message, f"{query_text!r}: 400 with an empty error message"
     assert expected.lower() in message, (
@@ -600,8 +598,7 @@ def test_second_command_is_rejected_as_one_per_instruction(query, text):
     )
     message = (body.get("error") or "").lower()
     assert "one command" in message or "end of query" in message, (
-        f"{text!r}: error {body.get('error')!r} should say one command per "
-        "instruction"
+        f"{text!r}: error {body.get('error')!r} should say one command per instruction"
     )
 
 
