@@ -2,8 +2,7 @@
 
 ## Introduction
 
-Fraise is designed to be queried by agents over and over again. The main decision was to create a simple query language allowing to retrieve information. The FQL is
-designed for token economy while being LLM-friendly.
+Fraise is designed to be queried by agents over and over again. The main decision was to create a simple query language allowing to retrieve information. The FQL is designed for token economy while being LLM-friendly.
 
 ### Principles
 
@@ -32,37 +31,13 @@ Tokens form the vocabulary of the fraise query language. The classes of token ar
 
 ### Keywords
 
-Keywords are specific query instructions. They are reserved by position, not
-by spelling alone: where a clause can start, a keyword reads as syntax, and
-`recall food topic` is a parse error rather than a search including the word
-"topic". Where only a value can appear — the right-hand side of a field's `:`,
-or the leading term a recall must start with — a keyword is ordinary data:
-`entity:top` files under the word "top", and `recall top` searches for it.
-One tie-breaker resolves the boundary: a keyword immediately followed by `:`
-is always a field, so `top:3` never means the word "top", and `entity:top:3`
-is an error rather than a guess. Quoting (`recall food 'topic'`) remains the
-escape hatch wherever a bare keyword still reads as syntax.
+Keywords are specific query instructions. They are reserved by position, not by spelling alone: where a clause can start, a keyword reads as syntax, and `recall food topic` is a parse error rather than a search including the word "topic". Where only a value can appear — the right-hand side of a field's `:`, or the leading term a recall must start with — a keyword is ordinary data: `entity:top` files under the word "top", and `recall top` searches for it. One tie-breaker resolves the boundary: a keyword immediately followed by `:` is always a field, so `top:3` never means the word "top", and `entity:top:3` is an error rather than a guess. Quoting (`recall food 'topic'`) remains the escape hatch wherever a bare keyword still reads as syntax.
 
-Keywords are written in lower case only, and casing does not un-reserve one:
-where a clause could start, a mis-cased keyword is an error naming the casing
-— `recall x Since 7d` is rejected, never read as a three-term search. Folding
-`Since` into a term there would let a mis-typed clause silently become data,
-scoping the query by nothing with no error to correct from.
+Keywords are written in lower case only, and casing does not un-reserve one: where a clause could start, a mis-cased keyword is an error naming the casing — `recall x Since 7d` is rejected, never read as a three-term search. Folding `Since` into a term there would let a mis-typed clause silently become data, scoping the query by nothing with no error to correct from.
 
-The tie-breaker above is the one place casing is forgiven. A word glued to a
-`:` has exactly one reading — no production puts a bare word before a colon —
-so `Depth:2` is the depth clause, and `recall x depth:2 DEPTH:5` is reported
-as the duplicate it is rather than as a casing mistake. Blaming the casing
-there would name the shallower of the two problems, and an agent that
-dutifully lower-cased it would get a silently rescoped query back. Away from a
-colon the spelling must still match exactly, so `RECALL x` is not a command.
+The tie-breaker above is the one place casing is forgiven. A word glued to a `:` has exactly one reading — no production puts a bare word before a colon — so `Depth:2` is the depth clause, and `recall x depth:2 DEPTH:5` is reported as the duplicate it is rather than as a casing mistake. Blaming the casing there would name the shallower of the two problems, and an agent that dutifully lower-cased it would get a silently rescoped query back. Away from a colon the spelling must still match exactly, so `RECALL x` is not a command.
 
-One ambiguity survives, at the leading term, and it is surfaced rather than
-guessed at: `recall since 7d` is a valid search for the words "since" and
-"7d", and also one `:` away from `recall since:7d`. The query runs as the
-term search, and the response carries a warning naming both readings. The
-shapes that warn — and the neighbouring ones that stay silent — are
-catalogued in [Warnings](#warnings).
+One ambiguity survives, at the leading term, and it is surfaced rather than guessed at: `recall since 7d` is a valid search for the words "since" and "7d", and also one `:` away from `recall since:7d`. The query runs as the term search, and the response carries a warning naming both readings. The shapes that warn — and the neighbouring ones that stay silent — are catalogued in [Warnings](#warnings).
 
 | Keyword  | Usage          | Type    |
 |----------|----------------|---------|
@@ -76,19 +51,13 @@ catalogued in [Warnings](#warnings).
 | depth    | depth_field    | Field   |
 | vec      | vec_field      | Field   |
 
-`forget` and `update` are reserved by the lexer as well, but no command
-implements them: a query starting with either is rejected. In value position
-they behave like every other keyword — `entity:update` is the word "update".
+`forget` and `update` are reserved by the lexer as well, but no command implements them: a query starting with either is rejected. In value position they behave like every other keyword — `entity:update` is the word "update".
 
-There are no boolean operators. Several terms in one recall are a union (any
-match seeds the search), and there is no way to write a conjunction or a
-negation.
+There are no boolean operators. Several terms in one recall are a union (any match seeds the search), and there is no way to write a conjunction or a negation.
 
 ### Punctuation
 
-Four characters carry meaning. Each one is a single token, and each one also
-ends the word before it — which is why they never need whitespace around them,
-and why a term cannot contain one.
+Four characters carry meaning. Each one is a single token, and each one also ends the word before it — which is why they never need whitespace around them, and why a term cannot contain one.
 
 | Character | Meaning                                                     |
 |-----------|-------------------------------------------------------------|
@@ -97,37 +66,18 @@ and why a term cannot contain one.
 | `$`       | introduces a parameter reference (`vec:$v`)                 |
 | `@`       | selects the graph, glued to the command (`recall@3`)        |
 
-`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts
-them: a query containing one is rejected wherever it appears. `-` is the
-exception worth knowing, since it is ordinary inside a word — `foo-bar` is a
-single term, while a leading `-` starts a token nothing can consume.
+`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears. `-` is the exception worth knowing, since it is ordinary inside a word — `foo-bar` is a single term, while a leading `-` starts a token nothing can consume.
 
 ### Identifiers
 
-An identifier is a bare word: a run of characters ending at whitespace or at one
-of the punctuation characters above. Terms, anchor values, and field values are
-all identifiers unless they are quoted.
+An identifier is a bare word: a run of characters ending at whitespace or at one of the punctuation characters above. Terms, anchor values, and field values are all identifiers unless they are quoted.
 
-* Letters, digits, `_` and `-` are ordinary. `foo-bar`, `foo_bar` and `123` are
-  each a single identifier.
-* Case is folded: an identifier is an identity, not prose, so `topic:Billing`,
-  `topic:billing` and `topic:BILLING` are one anchor, stored as `billing`.
-  Only the quoted fact of a remember keeps the case it was written with. An
-  agent never has to remember how it capitalised something.
-* A reserved keyword is a valid identifier in value position, unless a `:`
-  follows it (see Keywords), and in any case there: `entity:Top` and
-  `entity:top` are the same anchor. Where a keyword still reads as syntax — a
-  non-leading recall term — no casing makes it an identifier: `Topic` is a
-  mis-cased keyword and an error, and quoting (`recall food 'topic'`) is the
-  escape.
-* An identifier cannot be empty — `topic:` with nothing after it is an error,
-  not an empty anchor. Quoting does not create one either: `topic:''` and
-  `topic:'   '` are the same error, and so are `recall ''` and `remember ''`.
-  An empty fact can never be retrieved and an empty anchor is an identity no
-  caller can name a second time, so both are rejected rather than stored.
+* Letters, digits, `_` and `-` are ordinary. `foo-bar`, `foo_bar` and `123` are each a single identifier.
+* Case is folded: an identifier is an identity, not prose, so `topic:Billing`, `topic:billing` and `topic:BILLING` are one anchor, stored as `billing`. Only the quoted fact of a remember keeps the case it was written with. An agent never has to remember how it capitalised something.
+* A reserved keyword is a valid identifier in value position, unless a `:` follows it (see Keywords), and in any case there: `entity:Top` and `entity:top` are the same anchor. Where a keyword still reads as syntax — a non-leading recall term — no casing makes it an identifier: `Topic` is a mis-cased keyword and an error, and quoting (`recall food 'topic'`) is the escape.
+* An identifier cannot be empty — `topic:` with nothing after it is an error, not an empty anchor. Quoting does not create one either: `topic:''` and `topic:'   '` are the same error, and so are `recall ''` and `remember ''`. An empty fact can never be retrieved and an empty anchor is an identity no caller can name a second time, so both are rejected rather than stored.
 
-Anything a bare word cannot express, a quoted phrase can: quoting is the single
-escape hatch, and inside quotes nothing is reserved.
+Anything a bare word cannot express, a quoted phrase can: quoting is the single escape hatch, and inside quotes nothing is reserved.
 
 ### Literals
 
@@ -139,16 +89,11 @@ escape hatch, and inside quotes nothing is reserved.
 | date      | `2026-01-15`      | `YYYY-MM-DD`                                                |
 | param ref | `$v`              | see below                                                   |
 
-A date carries no time of day. `since:2026-01-15T10:00:00Z` does not parse — the
-first `:` ends the value, so the rest of the timestamp arrives as stray tokens.
-Whole days are the finest an absolute bound can be written to; use a duration
-when finer is needed.
+A date carries no time of day. `since:2026-01-15T10:00:00Z` does not parse — the first `:` ends the value, so the rest of the timestamp arrives as stray tokens. Whole days are the finest an absolute bound can be written to; use a duration when finer is needed.
 
 ### Bounds
 
-Every integer a query can write is bounded, and a value past its bound is
-rejected with the range in the message — an agent told only "invalid" retries
-with another large number:
+Every integer a query can write is bounded, and a value past its bound is rejected with the range in the message — an agent told only "invalid" retries with another large number:
 
 | Value          | Range                    | Set by                          |
 |----------------|--------------------------|---------------------------------|
@@ -157,31 +102,21 @@ with another large number:
 | `top`          | `1`–`max-top` (1000)     | operator config                 |
 | `vec` length   | `max-vector-dimension`   | operator config                 |
 
-A selector inside `0`–`255` that names no allocated graph is a separate error
-from the server, naming the graphs that do exist: the two bounds are checked in
-different layers on purpose, so a regression in one cannot hide behind the
-other. See [configuration](configuration.md) for the operator-set ceilings.
+A selector inside `0`–`255` that names no allocated graph is a separate error from the server, naming the graphs that do exist: the two bounds are checked in different layers on purpose, so a regression in one cannot hide behind the other. See [configuration](configuration.md) for the operator-set ceilings.
 
 ### Field reference
 
-A field reference binds a value the query does not carry inline. It is written
-`$name` and resolved against the `parameters` object of the request:
+A field reference binds a value the query does not carry inline. It is written `$name` and resolved against the `parameters` object of the request:
 
 ```json
 {"query": "recall bird vec:$v top:5", "parameters": {"v": [0.1, 0.2, 0.3]}}
 ```
 
-`vec` is the only field that takes one, and it accepts nothing else — the `$` is
-required, so `vec:v` is an error. It is valid on both commands: on `recall` the
-vector is a semantic seed, on `remember` it is the embedding stored with the
-fact.
+`vec` is the only field that takes one, and it accepts nothing else — the `$` is required, so `vec:v` is an error. It is valid on both commands: on `recall` the vector is a semantic seed, on `remember` it is the embedding stored with the fact.
 
-Keeping vectors out of the query string is the point. A query is a cache key and
-a log line; an inline embedding would make both unusable, and would put a few
-thousand floats through the lexer on every call.
+Keeping vectors out of the query string is the point. A query is a cache key and a log line; an inline embedding would make both unusable, and would put a few thousand floats through the lexer on every call.
 
-A query naming a parameter the request does not carry is rejected as a client
-error, rather than running as though the field had been omitted.
+A query naming a parameter the request does not carry is rejected as a client error, rather than running as though the field had been omitted.
 
 ## Grammar
 
@@ -264,16 +199,9 @@ param_ref         = '$' identifier ;
 
 ## Warnings
 
-An error rejects a query; a warning accompanies one that ran. The bar for a
-warning is deliberately high: the query must be valid with exactly one
-reading, *and* sit one typo away from a different valid query — close enough
-that a slip of a colon would change the results without changing the status
-code. The hits are real and complete either way; the warning only says what
-else the query could have meant.
+An error rejects a query; a warning accompanies one that ran. The bar for a warning is deliberately high: the query must be valid with exactly one reading, *and* sit one typo away from a different valid query — close enough that a slip of a colon would change the results without changing the status code. The hits are real and complete either way; the warning only says what else the query could have meant.
 
-Warnings travel beside the results, never instead of them, and the key is
-absent when there is nothing to say — the response shape of a clean query is
-unchanged:
+Warnings travel beside the results, never instead of them, and the key is absent when there is nothing to say — the response shape of a clean query is unchanged:
 
 ```json
 {
@@ -282,20 +210,11 @@ unchanged:
 }
 ```
 
-Each entry is positioned like a parse error — `parse warning at column N:`,
-the column naming the last character of the token it is about — and names
-both readings with the syntax that selects each one, so it can be resolved
-from the message alone.
+Each entry is positioned like a parse error — `parse warning at column N:`, the column naming the last character of the token it is about — and names both readings with the syntax that selects each one, so it can be resolved from the message alone.
 
 ### Queries that warn
 
-One shape warns: **a recall whose leading term spells a reserved keyword**
-(any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`,
-`since`, `until`, `top`, `depth`, `vec`), in any casing. The leading term is
-the one position where a bare reserved word legally reads as data — a recall
-must start with a term, so no clause can begin there — which also makes it
-the one position where a mistyped clause slips through as a search instead
-of an error.
+One shape warns: **a recall whose leading term spells a reserved keyword** (any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`), in any casing. The leading term is the one position where a bare reserved word legally reads as data — a recall must start with a term, so no clause can begin there — which also makes it the one position where a mistyped clause slips through as a search instead of an error.
 
 | query              | reading that runs              | near-miss it warns about        |
 |--------------------|--------------------------------|---------------------------------|
@@ -305,23 +224,15 @@ of an error.
 
 ### Queries that stay silent
 
-Every neighbouring shape resolves without ambiguity, so it carries no
-warning — the grammar either runs it silently or rejects it outright:
+Every neighbouring shape resolves without ambiguity, so it carries no warning — the grammar either runs it silently or rejects it outright:
 
-* `recall 'since' 7d` — quoting the term states the intent, and is the way
-  to silence the warning above.
+* `recall 'since' 7d` — quoting the term states the intent, and is the way to silence the warning above.
 * `recall x since:7d` — an actual clause is what it says it is.
-* `entity:top`, `entity:Top` — value position: after a field's `:` only a
-  value can appear, so there is nothing to mistake it for.
-* `recall x since 7d` — clause position: a missing `:` is an error, not a
-  warning; results scoped by nothing would be worse than either.
-* `recall x Since 7d` — clause position, mis-cased: an error naming the
-  casing.
+* `entity:top`, `entity:Top` — value position: after a field's `:` only a value can appear, so there is nothing to mistake it for.
+* `recall x since 7d` — clause position: a missing `:` is an error, not a warning; results scoped by nothing would be worse than either.
+* `recall x Since 7d` — clause position, mis-cased: an error naming the casing.
 
-The bar is meant to keep warnings rare and the list short: a shape joins it
-only when it is a valid query one typo from a different valid query *and*
-the grammar has no way to resolve which was meant. Anything the grammar can
-settle is settled — as a parse, or as an error.
+The bar is meant to keep warnings rare and the list short: a shape joins it only when it is a valid query one typo from a different valid query *and* the grammar has no way to resolve which was meant. Anything the grammar can settle is settled — as a parse, or as an error.
 
 ## Examples
 
