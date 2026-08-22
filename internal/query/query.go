@@ -185,12 +185,12 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		top := n.Top(c.DB.DefaultTop)
 		if n.HasTop() && top > c.DB.MaxTop {
 			logger.Warn("Rejecting recall over top ceiling", "top", top, "max", c.DB.MaxTop)
-			return nil, nil, fmt.Errorf("%w: top:%d exceeds max %d", ErrLimitExceeded, top, c.DB.MaxTop)
+			return nil, nil, fmt.Errorf("%w: top:%d out of range (1-%d)", ErrLimitExceeded, top, c.DB.MaxTop)
 		}
 		depth := n.Depth(c.DB.DefaultDepth)
 		if n.HasDepth() && depth > c.DB.MaxDepth {
 			logger.Warn("Rejecting recall over depth ceiling", "depth", depth, "max", c.DB.MaxDepth)
-			return nil, nil, fmt.Errorf("%w: depth:%d exceeds max %d", ErrLimitExceeded, depth, c.DB.MaxDepth)
+			return nil, nil, fmt.Errorf("%w: depth:%d out of range (0-%d)", ErrLimitExceeded, depth, c.DB.MaxDepth)
 		}
 
 		qo := &Recall[K, P]{

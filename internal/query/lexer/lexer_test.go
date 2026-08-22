@@ -678,18 +678,25 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 	}
 }
 
-func Test_MultiLineQueries(t *testing.T) {
+// Test_NewlineIsItsOwnToken pins that a newline ends an instruction instead of
+// blending into the whitespace around it. Folded into blank, "recall anna\nbob"
+// lexed as one two-term recall — a second line silently joining the first, which
+// is exactly the multi-command shape the grammar forbids. Spaces, tabs and CR
+// stay blank; only the newline is a token, and the parser decides whether a
+// trailing one is a second instruction or just the end of the text.
+func Test_NewlineIsItsOwnToken(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		expected []lexer.Token
 	}{
 		{
-			name:  "query with single newline",
+			name:  "a newline separates the lines it sits between",
 			input: "recall anna\ntopic:job",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.LITERAL, Literal: "anna"},
+				{Type: lexer.NEWLINE, Literal: "\n"},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "job"},
@@ -697,115 +704,43 @@ func Test_MultiLineQueries(t *testing.T) {
 			},
 		},
 		{
-			name:  "query with multiple newlines",
-			input: "recall\n$vec\n(anna or bob)\nand topic:job",
-			expected: []lexer.Token{
-				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.DOLLAR, Literal: "$"},
-				{Type: lexer.VEC, Literal: "vec"},
-				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.LITERAL, Literal: "anna"},
-				{Type: lexer.LITERAL, Literal: "or"},
-				{Type: lexer.LITERAL, Literal: "bob"},
-				{Type: lexer.RPAREN, Literal: ")"},
-				{Type: lexer.LITERAL, Literal: "and"},
-				{Type: lexer.TOPIC, Literal: "topic"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "job"},
-				{Type: lexer.EOL, Literal: ""},
-			},
-		},
-		{
-			name: "long multi-line query",
-			input: `recall $vec
-(anna or bob or charlie)
-and (topic:personal or topic:draft)
-since:2024-01-01
-until:2024-12-31
-top:10 depth:5`,
-			expected: []lexer.Token{
-				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.DOLLAR, Literal: "$"},
-				{Type: lexer.VEC, Literal: "vec"},
-				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.LITERAL, Literal: "anna"},
-				{Type: lexer.LITERAL, Literal: "or"},
-				{Type: lexer.LITERAL, Literal: "bob"},
-				{Type: lexer.LITERAL, Literal: "or"},
-				{Type: lexer.LITERAL, Literal: "charlie"},
-				{Type: lexer.RPAREN, Literal: ")"},
-				{Type: lexer.LITERAL, Literal: "and"},
-				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.TOPIC, Literal: "topic"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "personal"},
-				{Type: lexer.LITERAL, Literal: "or"},
-				{Type: lexer.TOPIC, Literal: "topic"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "draft"},
-				{Type: lexer.RPAREN, Literal: ")"},
-				{Type: lexer.SINCE, Literal: "since"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "2024-01-01"},
-				{Type: lexer.UNTIL, Literal: "until"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "2024-12-31"},
-				{Type: lexer.TOP, Literal: "top"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "10"},
-				{Type: lexer.DEPTH, Literal: "depth"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "5"},
-				{Type: lexer.EOL, Literal: ""},
-			},
-		},
-		{
-			name:  "consecutive newlines treated as whitespace",
+			name:  "consecutive newlines are consecutive tokens",
 			input: "recall\n\n\nanna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.NEWLINE, Literal: "\n"},
+				{Type: lexer.NEWLINE, Literal: "\n"},
+				{Type: lexer.NEWLINE, Literal: "\n"},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
 		{
-			name:  "mixed newlines and spaces",
-			input: "recall  \n  anna  \n  topic:job",
+			name:  "spaces and tabs around a newline stay blank",
+			input: "recall  \n\t  anna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.NEWLINE, Literal: "\n"},
 				{Type: lexer.LITERAL, Literal: "anna"},
-				{Type: lexer.TOPIC, Literal: "topic"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
 		{
-			name:  "newlines with tabs",
-			input: "recall\n\tanna\n\t\ttopic:job",
+			name:  "a CRLF is one newline, the CR being blank",
+			input: "recall\r\nanna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.NEWLINE, Literal: "\n"},
 				{Type: lexer.LITERAL, Literal: "anna"},
-				{Type: lexer.TOPIC, Literal: "topic"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
 		{
-			name:  "newlines in complex boolean expression",
-			input: "recall (\n  anna\n  or\n  bob\n) and\ntopic:job",
+			name:  "a newline inside a phrase is data, not a separator",
+			input: "remember 'line one\nline two'",
 			expected: []lexer.Token{
-				{Type: lexer.RECALL, Literal: "recall"},
-				{Type: lexer.LPAREN, Literal: "("},
-				{Type: lexer.LITERAL, Literal: "anna"},
-				{Type: lexer.LITERAL, Literal: "or"},
-				{Type: lexer.LITERAL, Literal: "bob"},
-				{Type: lexer.RPAREN, Literal: ")"},
-				{Type: lexer.LITERAL, Literal: "and"},
-				{Type: lexer.TOPIC, Literal: "topic"},
-				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "job"},
+				{Type: lexer.REMEMBER, Literal: "remember"},
+				{Type: lexer.PHRASE, Literal: "line one\nline two"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},

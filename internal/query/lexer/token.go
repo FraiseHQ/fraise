@@ -133,6 +133,20 @@ func (t TokenType) IsKeyword() bool {
 	}
 }
 
+// IsCommand reports whether t is one of the verbs a query can open with. A
+// query is one instruction, so a command token anywhere but the first position
+// is a second command rather than a stray word — the parser asks this to say so
+// instead of blaming the token, which is the only form of the message a caller
+// can act on.
+func (t TokenType) IsCommand() bool {
+	switch t {
+	case RECALL, REMEMBER, FORGET, UPDATE:
+		return true
+	default:
+		return false
+	}
+}
+
 func (t TokenType) String() string {
 	return TokenMap[t]
 }

@@ -12,7 +12,8 @@ Human DSL design optimizes for expressiveness and aestetic flexibility, this que
 * commands and field names are written in lower case. They are syntax, matched exactly, so `RECALL x` is a parse error rather than a query — nothing is silently rewritten on the way in.
 * everything else is data. A remembered fact — the quoted phrase — is **stored** exactly as written and **matched** without regard to case: `remember 'MiXeD Case'` comes back spelled that way, and `recall mixed` finds it. Terms and anchor values are identity rather than prose, so the parser folds them to lower case on the way in — `topic:Billing` and `topic:billing` are the same anchor. An agent should not have to remember how it capitalised something a hundred turns ago.
 * the query language only allows to run one command at a time. Multiple commands in a single instructions leads to a runtime error.
-* the query language only allows for single line instructions. New line characters are processed as whitespace and the query is executed if valid.
+* the query language only allows for single line instructions. A new line ends the instruction: anything after it is a second one and is rejected, so `recall ferry\nbridge` is an error rather than a two-term search silently spanning both lines. Trailing blank lines are not an instruction and are ignored.
+* a clause that takes one value may be given once. Repeating it is an error, not a last-one-wins overwrite: a query that silently answers a differently-scoped question is the failure an agent cannot detect. Anchors are the exception — repeating `topic:`/`entity:` is a list by design.
 
 The principle of removing ambiguity is one that remains central to new versions of the DSL. As much as possible we'll avoid introducing features that allow to express the same concept in multiple ways.
 
@@ -47,6 +48,14 @@ where a clause could start, a mis-cased keyword is an error naming the casing
 — `recall x Since 7d` is rejected, never read as a three-term search. Folding
 `Since` into a term there would let a mis-typed clause silently become data,
 scoping the query by nothing with no error to correct from.
+
+The tie-breaker above is the one place casing is forgiven. A word glued to a
+`:` has exactly one reading — no production puts a bare word before a colon —
+so `Depth:2` is the depth clause, and `recall x depth:2 DEPTH:5` is reported
+as the duplicate it is rather than as a casing mistake. Blaming the casing
+there would name the shallower of the two problems, and an agent that
+dutifully lower-cased it would get a silently rescoped query back. Away from a
+colon the spelling must still match exactly, so `RECALL x` is not a command.
 
 One ambiguity survives, at the leading term, and it is surfaced rather than
 guessed at: `recall since 7d` is a valid search for the words "since" and
@@ -112,7 +121,10 @@ all identifiers unless they are quoted.
   mis-cased keyword and an error, and quoting (`recall food 'topic'`) is the
   escape.
 * An identifier cannot be empty — `topic:` with nothing after it is an error,
-  not an empty anchor.
+  not an empty anchor. Quoting does not create one either: `topic:''` and
+  `topic:'   '` are the same error, and so are `recall ''` and `remember ''`.
+  An empty fact can never be retrieved and an empty anchor is an identity no
+  caller can name a second time, so both are rejected rather than stored.
 
 Anything a bare word cannot express, a quoted phrase can: quoting is the single
 escape hatch, and inside quotes nothing is reserved.
@@ -131,6 +143,24 @@ A date carries no time of day. `since:2026-01-15T10:00:00Z` does not parse — t
 first `:` ends the value, so the rest of the timestamp arrives as stray tokens.
 Whole days are the finest an absolute bound can be written to; use a duration
 when finer is needed.
+
+### Bounds
+
+Every integer a query can write is bounded, and a value past its bound is
+rejected with the range in the message — an agent told only "invalid" retries
+with another large number:
+
+| Value          | Range                    | Set by                          |
+|----------------|--------------------------|---------------------------------|
+| graph selector | `0`–`255`                | the wire form (a `uint8`)       |
+| `depth`        | `0`–`max-depth` (2)      | operator config                 |
+| `top`          | `1`–`max-top` (1000)     | operator config                 |
+| `vec` length   | `max-vector-dimension`   | operator config                 |
+
+A selector inside `0`–`255` that names no allocated graph is a separate error
+from the server, naming the graphs that do exist: the two bounds are checked in
+different layers on purpose, so a regression in one cannot hide behind the
+other. See [configuration](configuration.md) for the operator-set ceilings.
 
 ### Field reference
 
@@ -169,18 +199,21 @@ query           = recall_query | remember_query ;
 recall_query    = recall_cmd recall_body ;
 recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
 
-(* SEMANTIC RULE: a recall needs at least one term, and the terms  *)
-(* come first. Anchors and modifiers narrow a search, they cannot  *)
-(* start one, so neither 'recall topic:billing' nor 'recall        *)
-(* vec:$v' is a query — and after the first field, a bare term is  *)
-(* an error. The fields themselves are free to interleave in any   *)
-(* order: repeating an anchor adds a filter, while repeating a     *)
-(* modifier keeps the last value given.                            *)
+(* SEMANTIC RULE: a recall needs at least one *seed*, and the      *)
+(* terms come first. A term, an anchor and a vector are all seeds, *)
+(* so 'recall topic:billing' and 'recall vec:$v' are questions —   *)
+(* expand from here and rank what you reach. A modifier is not a   *)
+(* seed: it scopes a search, so 'recall top:3' and 'recall         *)
+(* since:7d' start nothing and are errors. After the first field a *)
+(* bare term is an error. The fields themselves interleave in any  *)
+(* order, but only anchors may repeat: a repeated anchor adds a    *)
+(* filter, a repeated modifier is a duplicate-clause error.        *)
 (* The leading term is the one place a bare reserved word reads as *)
 (* a term — no clause can start there. After it, a keyword starts  *)
 (* a clause; quote it ('top') to search for the word itself.       *)
-recall_body     = term+ field* ;
+recall_body     = ( term+ field* ) | seeding_field+ field* ;
 field           = anchor | modifier ;
+seeding_field   = anchor | vec_field ;   (* enough on its own to start a search *)
 
 term            = bare_word | phrase ;        (* soft ranking seed (SHOULD) *)
 
@@ -194,7 +227,7 @@ modifier        = since_field | until_field | depth_field | top_field | vec_fiel
 since_field     = 'since' ':' time_value ;     (* lower time bound; duration read as "ago" *)
 until_field     = 'until' ':' time_value ;     (* upper time bound; duration read as "ago" *)
 depth_field     = 'depth' ':' integer ;        (* retrieval lane: 0 floor, 1 precision, 2 max recall *)
-top_field       = 'top'   ':' integer ;        (* result limit, default 10 *)
+top_field       = 'top'   ':' integer ;        (* result limit, default 10; both are bounded — see below *)
 vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 
 (* ------------------------------------------------------------ *)

@@ -137,6 +137,35 @@ def test_a_topic_filter_narrows_a_keyword_recall(
     assert filtered.count == 1
 
 
+def test_recall_is_reachable_with_an_anchor_and_no_keyword(
+    instrument_graph, instrument_topic, client
+):
+    """``client.recall(topics=[...])`` — "everything about X" — reaches the
+    server instead of failing in the parser.
+
+    The typed helper has always documented an anchor as a seed of its own, but
+    the grammar demanded a text term before any clause, so this call answered
+    400 and callers padded it with a keyword they did not mean. The count is
+    deliberately not asserted: what an anchor-seeded walk *returns* is the
+    retrieval model's business, and this pins only that the question can be
+    asked at all.
+    """
+    result = client.recall(graph=instrument_graph, topics=[instrument_topic])
+    assert result.count >= 0
+
+
+def test_a_keyword_spelled_search_word_is_not_a_clause(client, round_trip_graph):
+    """A search word that spells a keyword is a word, wherever it is passed.
+
+    ``recall("kettle", "top")`` used to build ``recall@0 kettle top``, which the
+    grammar reads as an unfinished ``top:`` clause and rejects. The builder
+    quotes it now, so the position a caller happens to pass a word in no longer
+    decides whether their query parses.
+    """
+    result = client.recall("kettle", "top", graph=round_trip_graph)
+    assert result.count >= 0
+
+
 def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):
     """A keyword no fact contains yields an empty, falsey result."""
     result = client.recall(no_match, graph=round_trip_graph)

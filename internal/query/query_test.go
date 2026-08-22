@@ -108,10 +108,10 @@ func TestParseRecall(t *testing.T) {
 // ErrParsingFailed and a nil query.
 func TestParseErrors(t *testing.T) {
 	queries := []string{
-		"",                 // empty input
-		"recall",           // a recall must carry at least one term
-		"recall topic:job", // fields may only follow a term
-		"forget anna",      // unknown command keyword
+		"",             // empty input
+		"recall",       // a recall must carry at least one seed
+		"recall top:3", // a modifier scopes a search; it cannot start one
+		"forget anna",  // unknown command keyword
 	}
 
 	for _, q := range queries {
