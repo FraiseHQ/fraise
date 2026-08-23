@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.0-beta.3](https://github.com/RonsenbergVI/fraise/compare/python/v0.1.0-beta.2...python/v0.1.0-beta.3) (2026-08-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* actionable fql errors and anchor-seeded recall ([#218](https://github.com/RonsenbergVI/fraise/issues/218))
+
+### Bug fixes
+
+* actionable fql errors and anchor-seeded recall ([#218](https://github.com/RonsenbergVI/fraise/issues/218)) ([31af72a](https://github.com/RonsenbergVI/fraise/commit/31af72ac1f3f0b15f21f5fb337f15e337a0094ec))
+
 ## [0.1.0-beta.2](https://github.com/RonsenbergVI/fraise/compare/python/v0.1.0-beta.1...python/v0.1.0-beta.2) (2026-08-22)
 
 
