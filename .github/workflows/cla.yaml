@@ -15,9 +15,11 @@ permissions:
 jobs:
   cla:
     runs-on: ubuntu-latest
-    # release-please's release PRs carry no contribution to license.
+    # release-please's release PRs and dependabot's bumps carry no
+    # contribution to license.
     if: >-
       !startsWith(github.event.pull_request.head.ref, 'release-please') &&
+      !startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
       (github.event.comment.body == 'recheck' ||
       github.event.comment.body == 'I have read the CLA and I hereby agree to its terms' ||
       github.event_name == 'pull_request_target')
@@ -31,11 +33,11 @@ jobs:
           path-to-signatures: 'signatures/v1/cla.json'
           branch: 'cla-signatures'
           # the document contributors are agreeing to
-          path-to-document: 'https://github.com/RonsenbergVI/agent-memory-benchmarks/blob/main/CLA.md'
+          path-to-document: 'https://github.com/FraiseHQ/cla/blob/main/cla.md'
           # exact phrase a contributor comments to sign (must match the `if` above)
           custom-notsigned-prcomment: >-
             Thanks for the contribution! Before it can be merged, please read the
-            [CLA](https://github.com/RonsenbergVI/agent-memory-benchmarks/blob/main/CLA.md)
+            [CLA](https://github.com/FraiseHQ/cla/blob/main/cla.md)
             and comment exactly:
           custom-pr-sign-comment: 'I have read the CLA and I hereby agree to its terms'
           custom-allsigned-prcomment: 'All contributors have signed the CLA. ✅'
