@@ -48,4 +48,4 @@ jobs:
             and comment exactly:
           custom-pr-sign-comment: 'I have read the CLA and I hereby agree to its terms'
           custom-allsigned-prcomment: 'All contributors have signed the CLA. ✅'
-          allowlist: dependabot[bot],renovate[bot],github-actions[bot]
+          allowlist: RonsenbergVI,dependabot[bot],renovate[bot],github-actions[bot]
