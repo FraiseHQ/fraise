@@ -31,8 +31,12 @@ over the hits). Vector search is supported by passing an embedding:
 
 ```python
 fraise.remember("the kingfisher is electric blue", graph=6, vector=embedding)
-hits = fraise.recall("zzznomatch", graph=6, vector=embedding)  # seeded only by the vector
+hits = fraise.recall(graph=6, vector=embedding)  # seeded only by the vector
 ```
+
+A recall needs a seed, not a keyword: a vector or a `topics`/`entities` filter
+is one on its own, so `fraise.recall(topics=["birds"])` — everything about a
+topic — is a query in its own right.
 
 Anything the typed helpers do not cover is reachable through the raw
 `fraise.query("recall@3 ...")` escape hatch.

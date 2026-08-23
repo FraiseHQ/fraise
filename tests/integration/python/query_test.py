@@ -157,35 +157,75 @@ def test_the_vector_placeholder_is_really_bound_not_ignored(client, query_graph)
         {"topics": ["weather"]},
         {"entities": ["barometer"]},
         {"with_vector": True},
+        {"topics": ["weather"], "entities": ["barometer"]},
+        {"topics": ["weather"], "top": 3, "depth": 2},
     ],
 )
-def test_a_recall_without_keywords_does_not_parse(kwargs, client, query_graph, encode):
-    """Every keyword-free seed the builder allows is rejected by the grammar.
+def test_a_recall_seeded_without_keywords_parses(kwargs, client, query_graph, encode):
+    """Every keyword-free seed the builder allows is accepted by the grammar.
 
-    NOTE: this pins a defect, not an intended contract. ``build_recall``
-    documents "a recall needs at least one seed: keywords, a vector, or a
-    topic/entity filter" and builds ``recall@2 topic:weather`` (or ``vec:$v``,
-    or ``entity:...``) accordingly — but the parser wants a word or quoted
-    phrase before any clause and answers 400. So ``client.recall(topics=[...])``
-    and ``client.recall(vector=[...])`` — pure semantic search — do not work end
-    to end; only a keyword-seeded recall reaches the engine.
-
-    Nothing caught this before because both suites sidestep it: the unit tests
-    stop at the generated string, and the e2e vector tests seed with a keyword
-    that matches no fact ("zzznomatch") without noting that the grammar leaves
-    them no choice.
-
-    Replace this with the working behaviour once the builder and the grammar
-    agree — whichever side moves.
+    ``build_recall`` documents "a recall needs at least one seed: keywords, a
+    vector, or a topic/entity filter" and builds ``recall@2 topic:weather`` (or
+    ``vec:$v``, or ``entity:...``) accordingly. The grammar used to want a word
+    or quoted phrase before any clause and answered 400, so
+    ``client.recall(topics=[...])`` and ``client.recall(vector=[...])`` — pure
+    anchor and pure semantic search — were unreachable, and callers seeded with
+    a keyword matching nothing ("zzznomatch") to get past the parser. The two
+    agree now, and this is what says so.
     """
     text = build_recall(graph=query_graph, **kwargs)
     parameters = (
         {VECTOR_PARAM: encode("anything at all")} if kwargs.get("with_vector") else None
     )
+    body = client.query(text, parameters=parameters)
+    assert "results" in body
+
+
+@pytest.mark.parametrize(
+    "keywords",
+    [
+        ["barometer", "top"],
+        ["barometer", "since"],
+        ["barometer", "depth", "entity"],
+        ["storm", "recall"],
+    ],
+)
+def test_a_keyword_spelled_search_word_survives_the_grammar(
+    keywords, client, query_graph
+):
+    """A search word that spells a keyword reaches the engine as a word.
+
+    The builder quotes these because a bare one reads as a clause after the
+    first term — ``recall@2 barometer top`` is a parse error. Only a live parser
+    can prove the quoting is the right escape, which is what this file is for.
+    """
+    body = client.query(build_recall(keywords, graph=query_graph))
+    assert "results" in body
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        ({"keywords": ["barometer"], "depth": 3}, "out of range"),
+        ({"keywords": ["barometer"], "depth": 99}, "out of range"),
+        ({"keywords": ["barometer"], "top": 100000}, "out of range"),
+    ],
+)
+def test_a_bound_past_the_servers_ceiling_names_the_range(
+    kwargs, expected, client, query_graph
+):
+    """The builder's floor and the server's ceiling are different jobs.
+
+    ``build_recall`` refuses a negative depth or a non-positive top because
+    those are meaningless at any configuration; how deep or how many a *server*
+    will go is operator-set, so only the server can refuse these — and its
+    message has to carry the range, or an agent retries with another large
+    number.
+    """
     with pytest.raises(FraiseAPIError) as excinfo:
-        client.query(text, parameters=parameters)
+        client.query(build_recall(graph=query_graph, **kwargs))
     assert excinfo.value.status_code == 400
-    assert "expected a word or quoted phrase" in excinfo.value.message
+    assert expected in excinfo.value.message
 
 
 def test_the_builders_agree_with_the_graphs_vector_dimension(

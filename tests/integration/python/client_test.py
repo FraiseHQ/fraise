@@ -100,11 +100,13 @@ def test_remember_then_recall_returns_the_fact(client, round_trip_graph):
 
 def test_a_lone_seed_hub_stays_silent(instrument_graph, client):
     """A single seed's topic hub holds exactly the background rate, so its
-    siblings never surface on reachability alone — at any depth, since depth
-    is inert (one anchor-mediated step; larger values reserved).
+    siblings never surface on reachability alone — in either retrieval lane.
 
     This is the excess-transmission contract through the SDK: an anchor is
-    heard only when its members matched better than its size predicts.
+    heard only when its members matched better than its size predicts. The
+    two depths are asserted for different reasons: depth=1 is the BM25 floor,
+    where no traversal runs at all, while depth=2 runs the excess round and
+    the hub declines to transmit on its own merits.
     """
     assert client.recall("cello", graph=instrument_graph, depth=1).count == 1
     assert client.recall("cello", graph=instrument_graph, depth=2).count == 1
@@ -133,6 +135,35 @@ def test_a_topic_filter_narrows_a_keyword_recall(
         "cello", graph=instrument_graph, topics=[instrument_topic], depth=2
     )
     assert filtered.count == 1
+
+
+def test_recall_is_reachable_with_an_anchor_and_no_keyword(
+    instrument_graph, instrument_topic, client
+):
+    """``client.recall(topics=[...])`` — "everything about X" — reaches the
+    server instead of failing in the parser.
+
+    The typed helper has always documented an anchor as a seed of its own, but
+    the grammar demanded a text term before any clause, so this call answered
+    400 and callers padded it with a keyword they did not mean. The count is
+    deliberately not asserted: what an anchor-seeded walk *returns* is the
+    retrieval model's business, and this pins only that the question can be
+    asked at all.
+    """
+    result = client.recall(graph=instrument_graph, topics=[instrument_topic])
+    assert result.count >= 0
+
+
+def test_a_keyword_spelled_search_word_is_not_a_clause(client, round_trip_graph):
+    """A search word that spells a keyword is a word, wherever it is passed.
+
+    ``recall("kettle", "top")`` used to build ``recall@0 kettle top``, which the
+    grammar reads as an unfinished ``top:`` clause and rejects. The builder
+    quotes it now, so the position a caller happens to pass a word in no longer
+    decides whether their query parses.
+    """
+    result = client.recall("kettle", "top", graph=round_trip_graph)
+    assert result.count >= 0
 
 
 def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):

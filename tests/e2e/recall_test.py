@@ -40,7 +40,7 @@ def test_recall_on_empty_graph(query):
 
 
 def test_recall_with_clauses(query):
-    status, body = query("recall@2 anna bob entity:alice topic:job top:10 depth:5")
+    status, body = query("recall@2 anna bob entity:alice topic:job top:10 depth:2")
     assert status == 200
     assert body["results"] is not None
 
@@ -120,60 +120,92 @@ def test_recall_question_travels_as_a_quoted_phrase(query):
     assert body["results"] is not None
 
 
-# Four facts sharing a single topic, each with a unique keyword. This is a
-# star: every fact hangs off the same "planets" hub. Recall returns facts, not
-# the hub, so from a seed fact the hub is one hop away (depth 1, invisible) and
-# the sibling facts are two hops away (depth 2). That makes the exact result
-# counts a clean function of depth and top.
-PLANET_TOPIC = "planets"
-PLANET_FACTS = {
-    "mercury": "mercury is the smallest planet",
-    "venus": "venus is the hottest planet",
-    "mars": "mars is the red planet",
-    "jupiter": "jupiter is the largest planet",
-}
-
-
-@pytest.fixture(scope="module")
-def planets_graph(query):
-    """Populate a dedicated graph with the planet star and return its id.
-
-    A fact is keyed by its value, so these writes are idempotent: re-running the
-    suite against a long-lived server leaves the counts unchanged. Graph 7 is
-    used by no other test, so its contents are fully known here.
-    """
-    graph = 7
-    for phrase in PLANET_FACTS.values():
-        status, body = query(f"remember@{graph} '{phrase}' topic:{PLANET_TOPIC}")
-        assert status == 200, body.get("error")
-    return graph
-
-
 def _recall_count(query, text):
     status, body = query(text)
     assert status == 200, body.get("error")
     return body["results"]["count"]
 
 
-def test_recall_depth_is_inert(planets_graph, query):
-    """depth parses and is accepted, and changes nothing: the methodology uses
-    exactly one anchor-mediated step (larger values are reserved for iterated
-    transmission). A lone seed's topic hub sits exactly at the background rate,
-    so its siblings never ride in — at any depth.
+def test_recall_depth_selects_a_lane(planets_graph, query):
+    """depth picks the retrieval lane, and both lanes answer this query the
+    same way — for different reasons.
+
+    depth:0 is the floor: the anchor traversal never runs, so only the seed
+    itself can be returned. depth:1 and depth:2 both run the anchor-mediated
+    round and still return the seed alone, because a lone seed's topic hub sits
+    exactly at the background rate and so transmits nothing at either admission
+    bar. Omitting the clause is the configured default. Asserting all of them is
+    what separates "the hub was silent" from "the graph channel was never
+    consulted" — a regression that broke transmission entirely would still pass
+    a floor-only test. The lantern cluster below is what distinguishes the
+    floor from the graph lanes by their results.
     """
     g = planets_graph
-    for clause in ("depth:1", "depth:2", "depth:3", ""):
+    for clause in ("depth:0", "depth:1", "depth:2", ""):
         assert _recall_count(query, f"recall@{g} mercury {clause}".strip()) == 1, (
             f"recall mercury {clause}: a fair-share hub must not transmit"
         )
 
 
-def test_recall_top_truncates_results(planets_graph, query):
+def test_floor_lane_returns_only_what_the_text_index_matched(
+    lantern_graph, lantern_silent, query
+):
+    """depth:0 is the floor lane: seeds only, no transmission.
+
+    The traversal never runs, so every hit contains the query term and the
+    cluster's silent member — which contains none — cannot appear. depth:0 is
+    also the explicit spelling of the shipped default, and must be honoured
+    rather than collapsing back to the configured default, which is what made
+    it a bug.
+    """
+    clause = "depth:0"
+    status, body = query(f"recall@{lantern_graph} lantern {clause} top:20")
+    assert status == 200, body.get("error")
+
+    values = [hit["value"] for hit in body["results"]["hits"]]
+    assert values, f"{clause}: the text index still matches the lantern facts"
+    assert lantern_silent not in values, (
+        f"{clause} surfaced {lantern_silent!r}: it carries no query term, so "
+        "the floor lane must not be able to reach it"
+    )
+
+
+@pytest.mark.parametrize("clause", ["depth:1", "depth:2"])
+def test_graph_lanes_transmit_to_a_fact_the_floor_cannot_reach(
+    lantern_graph, lantern_silent, query, clause
+):
+    """depth:1 and depth:2 both run the round, and the difference from the
+    floor is visible in the hits.
+
+    The silent member arrives funded by its cluster's surplus alone, while the
+    almanac hub — holding a fair share of the query's mass across eight
+    members — transmits nothing, so its memos stay out. Same query, same graph,
+    one clause apart from the floor test above: this is the pair that proves
+    the lane switch reaches the engine rather than being parsed and dropped.
+
+    This cluster is strongly above chance, so it clears both admission bars.
+    What separates depth:1 (precision) from depth:2 (max recall) is an anchor
+    between one and two times its fair share, which needs mass arithmetic too
+    delicate to pin over HTTP — TestSearchDepthOnePrecisionBar covers it.
+    """
+    status, body = query(f"recall@{lantern_graph} lantern {clause} top:20")
+    assert status == 200, body.get("error")
+
+    values = [hit["value"] for hit in body["results"]["hits"]]
+    assert lantern_silent in values, (
+        f"{clause} did not fund {lantern_silent!r}; got {values}"
+    )
+    assert not any(v.startswith("unrelated almanac entry") for v in values), (
+        f"a fair-share hub transmitted to its members: {values}"
+    )
+
+
+def test_recall_top_truncates_results(planets_graph, planet_facts, query):
     """Top caps the number of ranked results returned, never pads. All four
     facts contain "planet", so the text index matches every one directly.
     """
     g = planets_graph
-    n = len(PLANET_FACTS)
+    n = len(planet_facts)
 
     assert _recall_count(query, f"recall@{g} planet top:1") == 1
     assert _recall_count(query, f"recall@{g} planet top:2") == 2
@@ -182,7 +214,9 @@ def test_recall_top_truncates_results(planets_graph, query):
     assert _recall_count(query, f"recall@{g} planet top:10") == n
 
 
-def test_recall_unique_keyword_returns_only_its_fact(planets_graph, query):
+def test_recall_unique_keyword_returns_only_its_fact(
+    planets_graph, planet_facts, query
+):
     """The recall for one fact's unique keyword is exactly that fact, by
     value — its silent hub adds nothing and its siblings stay out.
     """
@@ -190,7 +224,7 @@ def test_recall_unique_keyword_returns_only_its_fact(planets_graph, query):
     status, body = query(f"recall@{g} mercury")
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
-    assert values == [PLANET_FACTS["mercury"]]
+    assert values == [planet_facts["mercury"]]
 
 
 # Three facts that all contain the keyword "comet" but are otherwise unrelated:

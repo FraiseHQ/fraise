@@ -130,7 +130,7 @@ def recall_tool(
     async def recall_memory(args: dict[str, Any]) -> dict[str, Any]:
         keywords = args.get("keywords") or []
         top = args.get("top") or _DEFAULT_TOP
-        depth = args.get("depth") or _DEFAULT_DEPTH
+        depth = args.get("depth", _DEFAULT_DEPTH)
         vector = encode(" ".join(keywords)) if encode and keywords else None
         try:
             result = client.recall(

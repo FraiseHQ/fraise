@@ -63,7 +63,9 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50
+      - name: Validate PR title
+        id: title
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -82,9 +84,6 @@ jobs:
             upgrade
             release
           requireScope: false
-          # Allow breaking-change marker: feat!: or feat(scope)!:
-          headerPattern: '^(\w+)(?:\(([\w\-\.]+)\))?(!)?: (.+)$'
-          headerPatternCorrespondence: type, scope, breaking, subject
 
      # https://github.com/finleyfamily/action-enforce-branch-name
       - name: Validate branch name

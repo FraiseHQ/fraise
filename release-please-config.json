@@ -72,7 +72,6 @@
       "versioning": "prerelease",
       "prerelease": true,
       "prerelease-type": "beta",
-      "release-as": "0.1.0-beta.1",
       "bump-minor-pre-major": true,
       "extra-files": [
         {
