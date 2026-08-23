@@ -4,7 +4,7 @@ version = "0.1.0-beta.3"
 description = "Fraise SDK"
 readme = "README.md"
 authors = [
-    { name = "Rene Jean Corneille", email = "14303619+RonsenbergVI@users.noreply.github.com" }
+    { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [

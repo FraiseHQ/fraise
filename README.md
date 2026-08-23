@@ -274,7 +274,7 @@ The TypeScript equivalent is `memoryTools(client)` from
 
 ## References
 
-* [Roadmap](https://github.com/users/RonsenbergVI/projects/2)
+* [Roadmap](https://github.com/orgs/FraiseHQ/projects/1/views/1)
 * [Database design](./docs/design.md)
 * [Query language spec](./docs/query-spec.md)
 * [Release process](./RELEASE.md)
