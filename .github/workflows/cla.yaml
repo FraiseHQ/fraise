@@ -17,10 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: CLA Assistant
+        # release-please's release PRs carry no contribution to license.
         if: >-
-          github.event.comment.body == 'recheck' ||
+          !startsWith(github.event.pull_request.head.ref, 'release-please') &&
+          (github.event.comment.body == 'recheck' ||
           github.event.comment.body == 'I have read the CLA and I hereby agree to its terms' ||
-          github.event_name == 'pull_request_target'
+          github.event_name == 'pull_request_target')
         uses: contributor-assistant/github-action@v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
