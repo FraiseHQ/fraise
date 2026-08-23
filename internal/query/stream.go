@@ -28,8 +28,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/graph"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
 // data structure representing a stream: language of the scheduler

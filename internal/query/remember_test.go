@@ -25,7 +25,7 @@ package query
 import (
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
 func TestRememberIsWrite(t *testing.T) {

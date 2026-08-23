@@ -22,7 +22,7 @@
 
 package trees
 
-import "github.com/RonsenbergVI/fraise/internal/hash"
+import "github.com/FraiseHQ/fraise/internal/hash"
 
 // Point represents a value in a P-dimensional space (with P being float32 or
 // float64) that spatial trees can index and query.

@@ -29,12 +29,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/hash"
-	"github.com/RonsenbergVI/fraise/internal/index"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
 // InMemoryGraph is the in-process implementation of Graph. Nodes live in a

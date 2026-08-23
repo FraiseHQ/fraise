@@ -33,8 +33,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
-	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
 // sortThenTruncate is the reference model TopK replaces: sort every (key,

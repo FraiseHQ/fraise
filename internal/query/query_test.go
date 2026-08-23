@@ -29,9 +29,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/graph"
-	"github.com/RonsenbergVI/fraise/internal/query"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/query"
 )
 
 // These tests exercise Parse, which turns a query string into the concrete

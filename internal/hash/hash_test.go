@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // TestXXH64KnownVectors pins the implementation to the canonical XXH64 test

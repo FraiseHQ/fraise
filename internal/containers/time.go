@@ -27,7 +27,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // TimeValue is a time bound that can resolve itself against "now" and hash

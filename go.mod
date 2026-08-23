@@ -1,4 +1,4 @@
-module github.com/RonsenbergVI/fraise
+module github.com/FraiseHQ/fraise
 
 go 1.25.0
 

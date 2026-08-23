@@ -28,8 +28,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
-	"github.com/RonsenbergVI/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/index"
 )
 
 func TestBTreeIndexInsertAndRetrieve(t *testing.T) {

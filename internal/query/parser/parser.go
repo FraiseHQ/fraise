@@ -29,8 +29,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/query/lexer"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
 
 // Warning is a parse-time observation about a query that ran anyway: the

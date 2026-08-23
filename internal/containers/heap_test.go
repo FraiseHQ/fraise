@@ -32,7 +32,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
 // ---- helpers ---------------------------------------------------------------

@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/graph"
 )
 
 // chainGraph builds 1 -> 2 -> 3 plus the isolated node 4.

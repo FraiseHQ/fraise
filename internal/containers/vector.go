@@ -27,7 +27,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // Vector carries K so it can hash itself with the same Hasher[K, string] its

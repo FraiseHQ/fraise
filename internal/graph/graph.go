@@ -25,9 +25,9 @@ package graph
 import (
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/hash"
-	"github.com/RonsenbergVI/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/index"
 )
 
 // GraphStats is a point-in-time snapshot of a graph's shape.

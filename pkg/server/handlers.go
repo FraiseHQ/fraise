@@ -27,12 +27,12 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/RonsenbergVI/fraise/internal/index"
-	"github.com/RonsenbergVI/fraise/internal/query"
-	"github.com/RonsenbergVI/fraise/internal/query/parser"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
-	"github.com/RonsenbergVI/fraise/pkg/scheduler"
-	"github.com/RonsenbergVI/fraise/pkg/version"
+	"github.com/FraiseHQ/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/internal/query"
+	"github.com/FraiseHQ/fraise/internal/query/parser"
+	"github.com/FraiseHQ/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/pkg/scheduler"
+	"github.com/FraiseHQ/fraise/pkg/version"
 	"github.com/gin-gonic/gin"
 )
 

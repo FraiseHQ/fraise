@@ -29,9 +29,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/containers/trees"
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/containers/trees"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // point is a test double implementing both trees.TreeNode[int, string, float64]

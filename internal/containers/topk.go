@@ -25,7 +25,7 @@ package containers
 import (
 	"sort"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/comparator"
 )
 
 // topKEntry pairs a key with its score so the two travel together through

@@ -26,7 +26,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/internal/index"
 )
 
 // TestStemmingTokenizerReducesInflections pins the stemmer's contract: the

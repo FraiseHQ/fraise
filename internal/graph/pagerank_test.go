@@ -27,9 +27,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/graph"
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // starGraph builds spokes 2..6 all pointing at hub 1.

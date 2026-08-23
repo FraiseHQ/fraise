@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/cache"
+	"github.com/FraiseHQ/fraise/internal/cache"
 )
 
 func TestLRUCache_GetMiss(t *testing.T) {

@@ -35,7 +35,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/comparator"
 )
 
 // TestMatchCountEquivalentToPrePluginRanking is the heart of the seam: on

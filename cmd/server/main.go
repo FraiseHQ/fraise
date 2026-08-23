@@ -30,10 +30,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/hash"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
-	"github.com/RonsenbergVI/fraise/pkg/server"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/pkg/server"
 )
 
 func PrintBanner() {

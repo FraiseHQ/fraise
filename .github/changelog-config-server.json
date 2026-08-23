@@ -54,7 +54,7 @@
       "flags": "gu"
     }
   },
-  "template": "#{{CHANGELOG}}\n### 🔀 Other changes\n\n#{{UNCATEGORIZED}}\n\n**Full changelog**: https://github.com/RonsenbergVI/fraise/compare/#{{FROM_TAG}}...#{{TO_TAG}}",
+  "template": "#{{CHANGELOG}}\n### 🔀 Other changes\n\n#{{UNCATEGORIZED}}\n\n**Full changelog**: https://github.com/FraiseHQ/fraise/compare/#{{FROM_TAG}}...#{{TO_TAG}}",
   "pr_template": "- #{{TITLE}} (##{{NUMBER}})",
   "empty_template": "_No changes since #{{FROM_TAG}}._"
 }

@@ -22,7 +22,7 @@
 
 package optimisation
 
-import "github.com/RonsenbergVI/fraise/internal/query"
+import "github.com/FraiseHQ/fraise/internal/query"
 
 type Dedupe[K comparable, P float32 | float64] struct{}
 

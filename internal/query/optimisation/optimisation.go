@@ -22,7 +22,7 @@
 
 package optimisation
 
-import "github.com/RonsenbergVI/fraise/internal/query"
+import "github.com/FraiseHQ/fraise/internal/query"
 
 type Optimisation[K comparable, P float32 | float64] interface {
 	Optimise(q query.Query[K, P]) query.Query[K, P]

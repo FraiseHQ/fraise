@@ -28,12 +28,12 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/hash"
 
-	"github.com/RonsenbergVI/fraise/pkg/db"
-	"github.com/RonsenbergVI/fraise/pkg/engine"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/pkg/db"
+	"github.com/FraiseHQ/fraise/pkg/engine"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
