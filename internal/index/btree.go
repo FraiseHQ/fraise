@@ -25,10 +25,10 @@ package index
 import (
 	"errors"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/containers/trees"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/containers/trees"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
 // BTreeIndex is a full-text index backed by an ordered BTree from the

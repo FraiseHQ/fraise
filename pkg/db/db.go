@@ -25,8 +25,8 @@ package db
 import (
 	"fmt"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/graph"
 )
 
 // the db hols the logic of translating low level calls to the memory Graphs

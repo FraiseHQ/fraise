@@ -27,9 +27,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 type Recall[K comparable, P float32 | float64] struct {

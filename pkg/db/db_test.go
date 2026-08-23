@@ -25,8 +25,8 @@ package db_test
 import (
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/pkg/db"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/pkg/db"
 )
 
 // TestNewDBAllocatesGraphs checks that a new store allocates the default number

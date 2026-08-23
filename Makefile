@@ -61,7 +61,7 @@ RESET          := \033[0m
 
 # Build flags. Injects the same pkg/version symbols GoReleaser sets on a
 # release (see .goreleaser.yaml), so every build path reports its real version.
-VERSION_PKG    := github.com/RonsenbergVI/fraise/pkg/version
+VERSION_PKG    := github.com/FraiseHQ/fraise/pkg/version
 LDFLAGS        := -X '$(VERSION_PKG).Version=$(BUILD_VERSION)' \
                   -X '$(VERSION_PKG).Commit=$(BUILD)' \
                   -X '$(VERSION_PKG).Date=$(BUILD_DATE)'

@@ -26,7 +26,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/pkg/version"
+	"github.com/FraiseHQ/fraise/pkg/version"
 )
 
 // semverPattern is MAJOR.MINOR.PATCH with an optional dot-numbered pre-release

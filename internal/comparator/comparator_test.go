@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/comparator"
 )
 
 func TestTimeComparator(t *testing.T) {

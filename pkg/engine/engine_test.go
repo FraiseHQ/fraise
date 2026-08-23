@@ -27,12 +27,12 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/hash"
-	"github.com/RonsenbergVI/fraise/internal/query"
-	"github.com/RonsenbergVI/fraise/pkg/db"
-	"github.com/RonsenbergVI/fraise/pkg/engine"
-	"github.com/RonsenbergVI/fraise/pkg/scheduler"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/query"
+	"github.com/FraiseHQ/fraise/pkg/db"
+	"github.com/FraiseHQ/fraise/pkg/engine"
+	"github.com/FraiseHQ/fraise/pkg/scheduler"
 )
 
 // newEngine builds an engine wired to a started store, mirroring how the server

@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/config"
 )
 
 // collectFixture builds the smallest graph on which every collection theorem

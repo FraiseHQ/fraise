@@ -25,9 +25,9 @@ builds:
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
-      - -X github.com/RonsenbergVI/fraise/pkg/version.Version={{ .Version }}
-      - -X github.com/RonsenbergVI/fraise/pkg/version.Commit={{ .ShortCommit }}
-      - -X github.com/RonsenbergVI/fraise/pkg/version.Date={{ .CommitDate }}
+      - -X github.com/FraiseHQ/fraise/pkg/version.Version={{ .Version }}
+      - -X github.com/FraiseHQ/fraise/pkg/version.Commit={{ .ShortCommit }}
+      - -X github.com/FraiseHQ/fraise/pkg/version.Date={{ .CommitDate }}
 
 archives:
   - formats: [tar.gz]
@@ -91,7 +91,7 @@ changelog:
 
 release:
   github:
-    owner: RonsenbergVI
+    owner: FraiseHQ
     name: fraise
   # release-please creates the GitHub Release and owns its notes; GoReleaser
   # only attaches binaries to it. Any other mode would overwrite those notes,
@@ -102,10 +102,10 @@ release:
   header: |
     ## Fraise {{ .Tag }}
 
-    See [CHANGELOG.md](https://github.com/RonsenbergVI/fraise/blob/main/CHANGELOG.md)
+    See [CHANGELOG.md](https://github.com/FraiseHQ/fraise/blob/main/CHANGELOG.md)
     for the curated summary.
   footer: |
-    **Install**: download a binary below, or `go install github.com/RonsenbergVI/fraise/cmd/fraise@{{ .Tag }}`
+    **Install**: download a binary below, or `go install github.com/FraiseHQ/fraise/cmd/fraise@{{ .Tag }}`
 
 # Announcement — Discord enabled; swap to the slack block if you land on Slack.
 announce:

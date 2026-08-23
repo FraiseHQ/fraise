@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph"
 )
 
 // excessTraversalGraph builds the smallest graph exercising every band rule:

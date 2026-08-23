@@ -28,11 +28,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/query"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/query"
 
-	"github.com/RonsenbergVI/fraise/pkg/db"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/pkg/db"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
 // The scheduler executes planned query streams on a pool of workers fed by a

@@ -26,14 +26,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/RonsenbergVI/fraise/internal/cache"
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/hash"
-	"github.com/RonsenbergVI/fraise/internal/query"
-	"github.com/RonsenbergVI/fraise/internal/query/optimisation"
+	"github.com/FraiseHQ/fraise/internal/cache"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/query"
+	"github.com/FraiseHQ/fraise/internal/query/optimisation"
 
-	"github.com/RonsenbergVI/fraise/pkg/logger"
-	"github.com/RonsenbergVI/fraise/pkg/scheduler"
+	"github.com/FraiseHQ/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/pkg/scheduler"
 )
 
 type Engine[K ~uint64, P float32 | float64] struct {

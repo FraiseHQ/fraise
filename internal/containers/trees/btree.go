@@ -26,8 +26,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // ErrDuplicateValue is returned by Insert when an equal value (per the tree's

@@ -30,7 +30,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/RonsenbergVI/fraise/internal/query/parser"
+	"github.com/FraiseHQ/fraise/internal/query/parser"
 )
 
 // FuzzRememberPhraseRoundTrip is the server-side guarantee that quoting is a

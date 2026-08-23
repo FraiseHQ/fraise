@@ -27,8 +27,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/query/lexer"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
 
 type ClauseType int

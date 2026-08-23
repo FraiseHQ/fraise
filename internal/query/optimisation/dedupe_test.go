@@ -28,8 +28,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/query"
-	"github.com/RonsenbergVI/fraise/internal/query/optimisation"
+	"github.com/FraiseHQ/fraise/internal/query"
+	"github.com/FraiseHQ/fraise/internal/query/optimisation"
 )
 
 var _ optimisation.Optimisation[string, float32] = (*optimisation.Dedupe[string, float32])(nil)

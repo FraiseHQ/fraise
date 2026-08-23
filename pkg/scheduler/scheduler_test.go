@@ -29,11 +29,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/index"
-	"github.com/RonsenbergVI/fraise/internal/query"
-	"github.com/RonsenbergVI/fraise/pkg/db"
-	"github.com/RonsenbergVI/fraise/pkg/scheduler"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/internal/query"
+	"github.com/FraiseHQ/fraise/pkg/db"
+	"github.com/FraiseHQ/fraise/pkg/scheduler"
 )
 
 // newStartedDB builds a store with populated graphs, ready to back a scheduler.

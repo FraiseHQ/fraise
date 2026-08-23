@@ -28,8 +28,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
 // newConfig returns a config whose log level/format can be overridden for a

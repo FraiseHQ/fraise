@@ -22,7 +22,7 @@
 
 package index
 
-import "github.com/RonsenbergVI/fraise/internal/containers"
+import "github.com/FraiseHQ/fraise/internal/containers"
 
 // SearchIndex maps keys of type K to values of type V and ranks those keys by
 // relevance to a query. The query has the same type V the index stores — a

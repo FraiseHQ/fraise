@@ -28,8 +28,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
-	"github.com/RonsenbergVI/fraise/internal/containers/trees"
+	"github.com/FraiseHQ/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/containers/trees"
 )
 
 func newIntBTree(degree int) *trees.BTree[int, int, float64] {

@@ -26,7 +26,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/config"
 	"golang.org/x/exp/slog"
 )
 

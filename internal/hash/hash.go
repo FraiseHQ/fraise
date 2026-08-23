@@ -22,7 +22,7 @@
 
 package hash
 
-import "github.com/RonsenbergVI/fraise/internal/config"
+import "github.com/FraiseHQ/fraise/internal/config"
 
 // Hasher maps a value of type T to a comparable key of type K. Implementations
 // such as XxHash provide a concrete hashing algorithm.

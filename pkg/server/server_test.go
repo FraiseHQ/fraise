@@ -31,8 +31,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/gin-gonic/gin"
 )
 

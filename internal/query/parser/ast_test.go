@@ -30,8 +30,8 @@ import (
 
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/query/lexer"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
 
 func tok(t lexer.TokenType, lit string) lexer.Token {

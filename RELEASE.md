@@ -117,7 +117,7 @@ in the new phase.
 ### 3. Post-release checks
 
 - [ ] GitHub Release page shows all artifacts (6 archives + checksums).
-- [ ] `go install github.com/RonsenbergVI/fraise/cmd/fraise@vX.Y.Z` works.
+- [ ] `go install github.com/FraiseHQ/fraise/cmd/fraise@vX.Y.Z` works.
 - [ ] Docker image pulled and boots (`docker run … --version` prints the right version).
 - [ ] Announcement arrived in the channel.
 

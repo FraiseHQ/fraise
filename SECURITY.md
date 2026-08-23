@@ -16,7 +16,7 @@ supported window explicitly.
 **Please do not open a public issue for a security problem.**
 
 Report it privately through GitHub:
-<https://github.com/RonsenbergVI/fraise/security/advisories/new>
+<https://github.com/FraiseHQ/fraise/security/advisories/new>
 
 If you would rather use email, write to **contact@getfraise.dev** — put
 `fraise` in the subject line.

@@ -25,7 +25,7 @@ package graph
 import (
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 type Fact[K comparable] struct {

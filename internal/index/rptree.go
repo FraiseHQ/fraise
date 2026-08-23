@@ -26,11 +26,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/RonsenbergVI/fraise/internal/comparator"
-	"github.com/RonsenbergVI/fraise/internal/config"
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/containers/trees"
-	"github.com/RonsenbergVI/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/internal/comparator"
+	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/containers/trees"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
 // compile-time check that RPTreeIndex is a VectorIndex.

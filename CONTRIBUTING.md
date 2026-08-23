@@ -4,7 +4,7 @@ Thanks for being here. Contributions of any size are welcome: a typo fix, a bug
 report, a question that reveals the docs are unclear. All of it helps.
 
 **If you're unsure about anything, ask.** Open a
-[Discussion](https://github.com/RonsenbergVI/fraise/discussions) and someone will
+[Discussion](https://github.com/FraiseHQ/fraise/discussions) and someone will
 help you figure it out. You don't need to know the answer before you ask the
 question, and no question here is too basic.
 
@@ -12,7 +12,7 @@ question, and no question here is too basic.
 
 You don't have to write code to contribute:
 
-- **Report a bug** — [open an issue](https://github.com/RonsenbergVI/fraise/issues/new/choose).
+- **Report a bug** — [open an issue](https://github.com/FraiseHQ/fraise/issues/new/choose).
   Even a partial report is useful; we'll ask if we need more.
 - **Improve the docs** — if something confused you, it will confuse the next
   person. Fixing that is one of the most valuable things you can do.
@@ -22,7 +22,7 @@ You don't have to write code to contribute:
   project is actually for.
 
 Looking for somewhere to start? Issues labelled
-[`good first issue`](https://github.com/RonsenbergVI/fraise/labels/good%20first%20issue)
+[`good first issue`](https://github.com/FraiseHQ/fraise/labels/good%20first%20issue)
 are scoped small and come with enough context to get going. If one looks
 interesting but the description is thin, comment and ask — that's not a bother,
 it's a signal the issue needs a better description.
@@ -48,7 +48,7 @@ You'll want Go 1.25+, plus [`uv`](https://docs.astral.sh/uv/) (Python) and
 [`pnpm`](https://pnpm.io/) (TypeScript) if you're working on the SDKs.
 
 ```bash
-git clone https://github.com/RonsenbergVI/fraise.git
+git clone https://github.com/FraiseHQ/fraise.git
 cd fraise
 
 # Install dependencies for all three components:
@@ -67,7 +67,7 @@ If you'd rather not install anything locally, run the server straight from the
 published container image:
 
 ```bash
-docker run --rm -p 9876:9876 ghcr.io/RonsenbergVI/fraise:edge
+docker run --rm -p 9876:9876 ghcr.io/fraisehq/fraise:edge
 ```
 
 `:edge` tracks the latest commit on `main`; every commit also publishes an
@@ -158,7 +158,7 @@ The full runbook is in [RELEASE.md](RELEASE.md); the short version:
 
 - A release is a **git tag**. Pushing the tag triggers the matching workflow:
   full test suite → **manual approval** on the `release` environment → publish.
-- The **container image** (`ghcr.io/RonsenbergVI/fraise`) publishes on every
+- The **container image** (`ghcr.io/fraisehq/fraise`) publishes on every
   merge to `main` (`:edge` + an immutable commit-SHA tag) and on server
   releases (`:latest` and semver tags).
 - **Semantic versioning with a `v` prefix.** Pre-1.0, breaking changes bump
@@ -186,7 +186,7 @@ is there, you'll be invited. Usually triage first, then release rights as trust
 builds.
 
 **Want to head that way? Say so.** Open a
-[Discussion](https://github.com/RonsenbergVI/fraise/discussions) or mention it on
+[Discussion](https://github.com/FraiseHQ/fraise/discussions) or mention it on
 a PR. Knowing someone wants the responsibility makes it easy to hand over the
 right pieces at the right time — you don't have to wait to be noticed.
 

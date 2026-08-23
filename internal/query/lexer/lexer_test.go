@@ -25,7 +25,7 @@ package lexer_test
 import (
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/query/lexer"
+	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
 
 func Test_newLexer(t *testing.T) {

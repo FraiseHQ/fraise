@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph"
 )
 
 // fakeHasher returns the material it was handed instead of hashing it, so a test

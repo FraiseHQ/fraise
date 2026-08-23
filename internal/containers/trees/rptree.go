@@ -29,8 +29,8 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/RonsenbergVI/fraise/internal/containers"
-	"github.com/RonsenbergVI/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // defaultRPLeafSize is the number of points a leaf accumulates before it is

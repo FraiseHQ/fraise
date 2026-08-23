@@ -29,7 +29,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/config"
 )
 
 // withArgs runs the binary's own command line for one test, restoring it after.

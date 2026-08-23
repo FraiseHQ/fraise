@@ -5,22 +5,22 @@
 # Fraise
 
 <p align="center">
-  <a href="https://ronsenbergvi.github.io/fraise">Docs</a>
+  <a href="https://fraisehq.github.io/fraise">Docs</a>
   ·
   <a href="https://discord.gg/eHDFwnwHq">Discord</a>
   ·
   <a href="./docs/query-spec.md">Query language</a>
   ·
-  <a href="https://github.com/RonsenbergVI/fraise/issues">Issues</a>
+  <a href="https://github.com/FraiseHQ/fraise/issues">Issues</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/RonsenbergVI/fraise/actions/workflows/go.yaml"><img src="https://github.com/RonsenbergVI/fraise/actions/workflows/go.yaml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/RonsenbergVI/fraise/actions/workflows/python.yaml"><img src="https://github.com/RonsenbergVI/fraise/actions/workflows/python.yaml/badge.svg" alt="Python SDK"></a>
-  <a href="https://codecov.io/gh/RonsenbergVI/fraise"><img src="https://codecov.io/gh/RonsenbergVI/fraise/branch/main/graph/badge.svg" alt="codecov"></a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/RonsenbergVI/fraise"><img src="https://api.scorecard.dev/projects/github.com/RonsenbergVI/fraise/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://github.com/RonsenbergVI/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/RonsenbergVI/fraise?sort=semver" alt="Release"></a>
-  <a href="https://pkg.go.dev/github.com/RonsenbergVI/fraise"><img src="https://pkg.go.dev/badge/github.com/RonsenbergVI/fraise.svg" alt="Go Reference"></a>
+  <a href="https://github.com/FraiseHQ/fraise/actions/workflows/go.yaml"><img src="https://github.com/FraiseHQ/fraise/actions/workflows/go.yaml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml"><img src="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml/badge.svg" alt="Python SDK"></a>
+  <a href="https://codecov.io/gh/FraiseHQ/fraise" ><img src="https://codecov.io/gh/FraiseHQ/fraise/branch/main/graph/badge.svg?token=Y4T2AA3JBF"/></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/FraiseHQ/fraise"><img src="https://api.scorecard.dev/projects/github.com/FraiseHQ/fraise/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://github.com/FraiseHQ/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/FraiseHQ/fraise?sort=semver" alt="Release"></a>
+  <a href="https://pkg.go.dev/github.com/FraiseHQ/fraise"><img src="https://pkg.go.dev/badge/github.com/FraiseHQ/fraise.svg" alt="Go Reference"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://discord.gg/eHDFwnwHq"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
 </p>
@@ -89,7 +89,7 @@ route below leaves you with a server listening on `127.0.0.1:9876`.
 ### With Go
 
 ```sh
-go install github.com/RonsenbergVI/fraise/cmd/server@latest
+go install github.com/FraiseHQ/fraise/cmd/server@latest
 "$(go env GOPATH)/bin/server"
 ```
 
@@ -108,7 +108,7 @@ VERSION=0.1.0-beta.2
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')                # linux | darwin
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')  # amd64 | arm64
 ASSET="fraise_${VERSION}_${OS}_${ARCH}.tar.gz"
-BASE="https://github.com/RonsenbergVI/fraise/releases/download/v${VERSION}"
+BASE="https://github.com/FraiseHQ/fraise/releases/download/v${VERSION}"
 
 curl -sSfLO "${BASE}/${ASSET}"
 tar xzf "$ASSET"
@@ -129,7 +129,7 @@ curl -sSfLO "${BASE}/checksums.txt.sigstore.json"
 # 1. the bundle proves checksums.txt came from this repo's release workflow
 cosign verify-blob \
   --bundle checksums.txt.sigstore.json \
-  --certificate-identity-regexp 'https://github.com/RonsenbergVI/fraise/.github/workflows/go.yaml@refs/tags/v.*' \
+  --certificate-identity-regexp 'https://github.com/FraiseHQ/fraise/.github/workflows/go.yaml@refs/tags/v.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   checksums.txt
 
@@ -140,7 +140,7 @@ sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-mi
 ### With Docker
 
 ```sh
-docker run -p 127.0.0.1:9876:9876 ghcr.io/ronsenbergvi/fraise:0.1.0-beta.2
+docker run -p 127.0.0.1:9876:9876 ghcr.io/fraisehq/fraise:0.1.0-beta.2
 ```
 
 Published tags: one per release (`0.1.0-beta.2`), `edge` for the tip of `main`,
@@ -150,14 +150,14 @@ at the first stable release.
 Images are built with SLSA provenance, verifiable without pulling:
 
 ```sh
-gh attestation verify oci://ghcr.io/ronsenbergvi/fraise:0.1.0-beta.2 \
-  --repo RonsenbergVI/fraise
+gh attestation verify oci://ghcr.io/fraisehq/fraise:0.1.0-beta.2 \
+  --repo FraiseHQ/fraise
 ```
 
 ### Run from source
 
 ```sh
-git clone https://github.com/RonsenbergVI/fraise
+git clone https://github.com/FraiseHQ/fraise
 cd fraise
 make run
 ```
@@ -274,11 +274,11 @@ The TypeScript equivalent is `memoryTools(client)` from
 
 ## References
 
-* [Roadmap](https://github.com/users/RonsenbergVI/projects/2)
+* [Roadmap](https://github.com/orgs/FraiseHQ/projects/1/views/1)
 * [Database design](./docs/design.md)
 * [Query language spec](./docs/query-spec.md)
 * [Release process](./RELEASE.md)
-* [Issues](https://github.com/RonsenbergVI/fraise/issues)
+* [Issues](https://github.com/FraiseHQ/fraise/issues)
 
 ## Contributing
 
@@ -293,7 +293,7 @@ This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 
 Questions, ideas, or building something with Fraise? Join the
 [Discord](https://discord.gg/eHDFwnwHq). Bugs and feature requests belong in
-[issues](https://github.com/RonsenbergVI/fraise/issues) so they don't get lost.
+[issues](https://github.com/FraiseHQ/fraise/issues) so they don't get lost.
 
 ## License
 

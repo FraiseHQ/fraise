@@ -31,7 +31,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RonsenbergVI/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/config"
 )
 
 func TestConfigSet_FromFile(t *testing.T) {

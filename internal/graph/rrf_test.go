@@ -25,7 +25,7 @@ package graph_test
 import (
 	"testing"
 
-	"github.com/RonsenbergVI/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph"
 )
 
 // TestRRFConsensusBeatsASingleFavourite is the fusion property the scorer
