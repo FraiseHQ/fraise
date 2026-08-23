@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.2](https://github.com/RonsenbergVI/fraise/compare/python/v0.1.0-beta.1...python/v0.1.0-beta.2) (2026-08-22)
+
+
+### Features
+
+* add depth parameter ([#200](https://github.com/RonsenbergVI/fraise/issues/200)) ([3dab727](https://github.com/RonsenbergVI/fraise/commit/3dab727ba98ffea894bfd8b23d93c504d975cfe9))
+
 ## [0.1.0-beta.1](https://github.com/RonsenbergVI/fraise/compare/python/v0.1.0-alpha.1...python/v0.1.0-beta.1) (2026-08-15)
 
 

@@ -277,3 +277,87 @@ func TestRoundTripTokenTypeToStringToKeyLITERAL(t *testing.T) {
 		})
 	}
 }
+
+// TestIsCommand pins which tokens open a query. The parser asks this to tell a
+// second command apart from a stray word — "recall x recall y" is one
+// instruction too many, not an unexpected token — so a field wrongly reporting
+// as a command would turn a repairable typo into a misleading message.
+func TestIsCommand(t *testing.T) {
+	commands := []lexer.TokenType{lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE}
+	for _, tt := range commands {
+		if !tt.IsCommand() {
+			t.Errorf("%v.IsCommand() = false, want true", tt)
+		}
+	}
+
+	// Every other type, including the fields that are keywords but not verbs.
+	others := []lexer.TokenType{
+		lexer.TOPIC, lexer.ENTITY, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
+		lexer.VEC, lexer.LITERAL, lexer.PHRASE, lexer.COLON, lexer.AT, lexer.EOL,
+		lexer.NEWLINE, lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
+	}
+	for _, tt := range others {
+		if tt.IsCommand() {
+			t.Errorf("%v.IsCommand() = true, want false", tt)
+		}
+	}
+}
+
+// TestTokenDescribe pins how an error message names a token. The two tokens
+// with no literal are the whole point: %q renders them as `""`, an empty string
+// the caller never wrote and cannot act on, which is what turned "recall ferry
+// top" into a message that read like a parser bug.
+func TestTokenDescribe(t *testing.T) {
+	cases := []struct {
+		name string
+		tok  lexer.Token
+		want string
+	}{
+		{"end of input has a name, not an empty literal", lexer.Token{Type: lexer.EOL}, "end of input"},
+		{"a newline has a name too", lexer.Token{Type: lexer.NEWLINE, Literal: "\n"}, "a new line"},
+		{"a word is quoted", lexer.Token{Type: lexer.LITERAL, Literal: "ferry"}, `"ferry"`},
+		{"a keyword is quoted like any other word", lexer.Token{Type: lexer.TOP, Literal: "top"}, `"top"`},
+		{"punctuation is quoted", lexer.Token{Type: lexer.COLON, Literal: ":"}, `":"`},
+		{"a quote inside the literal is escaped, not left to close the message",
+			lexer.Token{Type: lexer.PHRASE, Literal: `it"s`}, `"it\"s"`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.tok.Describe(); got != tc.want {
+				t.Errorf("Describe() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestIsMisCasedKeyword pins the parser's view of a mis-cased keyword. The
+// lexer types a keyword by spelling and forgives casing only before a ':', so
+// everywhere else one arrives as an ordinary literal — and wherever a clause
+// could have started, that literal is a mistake rather than a term. A correctly
+// cased keyword is not mis-cased, and neither is a phrase: quoting is how a
+// caller says they meant the word.
+func TestIsMisCasedKeyword(t *testing.T) {
+	cases := []struct {
+		name string
+		tok  lexer.Token
+		want bool
+	}{
+		{"a literal spelling a keyword", lexer.Token{Type: lexer.LITERAL, Literal: "Top"}, true},
+		{"shouted", lexer.Token{Type: lexer.LITERAL, Literal: "DEPTH"}, true},
+		{"a command spelling counts too", lexer.Token{Type: lexer.LITERAL, Literal: "Recall"}, true},
+		{"an ordinary word", lexer.Token{Type: lexer.LITERAL, Literal: "ferry"}, false},
+		{"a word merely containing one", lexer.Token{Type: lexer.LITERAL, Literal: "topical"}, false},
+		{"the keyword itself is not mis-cased", lexer.Token{Type: lexer.TOP, Literal: "top"}, false},
+		{"a phrase is data, whatever it spells", lexer.Token{Type: lexer.PHRASE, Literal: "Top"}, false},
+		{"end of input spells nothing", lexer.Token{Type: lexer.EOL}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.tok.IsMisCasedKeyword(); got != tc.want {
+				t.Errorf("IsMisCasedKeyword() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

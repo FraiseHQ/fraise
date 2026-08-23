@@ -343,8 +343,8 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 
 	// The shared entity is the query's only touched anchor, so its observed
 	// mass IS the background: it holds no surplus, transmits nothing, and the
-	// entity-linked fact does not ride in on mere reachability. depth is
-	// inert, so asking for 2 changes nothing.
+	// entity-linked fact does not ride in on mere reachability. depth 2 is
+	// the excess lane, so the traversal genuinely ran and still funded nothing.
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
 	nodes, _, _, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
@@ -728,7 +728,7 @@ func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	g := noDecayGraph()
 	calm, memos := stormGraph(t, g)
 
-	nodes, _, contributions, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	nodes, _, contributions, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 20, time.Time{}, time.Time{})
 	if background <= 0 {
 		t.Fatalf("background = %v, want positive: two anchors are touched", background)
 	}
@@ -753,6 +753,130 @@ func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	list := contributions[found]
 	if len(list) != 1 || list[0].Src != graph.SrcGraph || list[0].Score <= 0 || list[0].Degree != 3 {
 		t.Errorf("silent member's contributions = %+v, want a single weather-cluster observation", list)
+	}
+}
+
+// marginalGraph builds the case that separates the two transmitting lanes: an
+// anchor holding more than its fair share of the query's mass, but less than
+// twice it. depth 2 admits it at the plain fair share; depth 1 raises the bar
+// to depthOneAdmission x fair share and turns it away.
+//
+//	harbour (degree 4): 3 "tide" facts + "the lamps are lit at dusk"  <- no query term
+//	ledger  (degree 4): 1 "tide" fact  + 3 unrelated entries
+//
+// With four seeds of comparable mass m, the background is 4m/8 = m/2, so the
+// harbour's fair share is 2m against an observed 3m: above 1x, below 2x.
+func marginalGraph(t *testing.T, g *graph.InMemoryGraph[uint64, float64]) (silent string) {
+	t.Helper()
+	now := time.Now()
+	silent = "the lamps are lit at dusk"
+
+	link := func(topic *graph.Topic[uint64], value string) {
+		fact := mkFact(g, value, now)
+		if err := g.Set(fact); err != nil {
+			t.Fatalf("Set(%q) = %v, want nil", value, err)
+		}
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	}
+
+	harbour := mkTopic(g, "harbour", now)
+	mustSet(t, g, harbour)
+	link(harbour, "the tide turns before dawn")
+	link(harbour, "a high tide floods the slipway")
+	link(harbour, "the tide leaves the mudflats bare")
+	link(harbour, silent)
+
+	ledger := mkTopic(g, "ledger", now)
+	mustSet(t, g, ledger)
+	link(ledger, "the tide of invoices never stops")
+	for _, value := range []string{
+		"an entry for the quarterly audit",
+		"an entry for the annual return",
+		"an entry for the petty cash",
+	} {
+		link(ledger, value)
+	}
+	return silent
+}
+
+// TestSearchDepthLanes pins the depth knob's three lanes on a cluster whose
+// anchor is strongly above chance. depth 0 is the floor: the traversal is
+// skipped, so the background is 0, no SrcGraph contribution is recorded, and
+// the silent member the graph lanes fund is not surfaced. depth 1 and depth 2
+// both run the anchor-mediated round, and the weather cluster clears even the
+// precision bar, so both fund it. One parameter, three behaviours — the bar
+// itself is what TestSearchDepthOnePrecisionBar separates.
+func TestSearchDepthLanes(t *testing.T) {
+	g := noDecayGraph()
+	calm, _ := stormGraph(t, g)
+	contains := func(vals []string, want string) bool {
+		for _, v := range vals {
+			if v == want {
+				return true
+			}
+		}
+		return false
+	}
+	search := func(depth int) ([]string, [][]graph.Contribution[uint64, float64], float64) {
+		nodes, _, contribs, bg := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, depth, 20, time.Time{}, time.Time{})
+		return values(nodes), contribs, bg
+	}
+
+	// depth 0: floor — traversal skipped, graph channel off.
+	vals0, contribs0, bg0 := search(0)
+	if bg0 != 0 {
+		t.Errorf("depth 0 background = %v, want 0: the floor lane runs no traversal", bg0)
+	}
+	for _, list := range contribs0 {
+		for _, c := range list {
+			if c.Src == graph.SrcGraph {
+				t.Errorf("depth 0 recorded a graph contribution %+v: the floor lane funds nothing", c)
+			}
+		}
+	}
+	if contains(vals0, calm) {
+		t.Errorf("depth 0 surfaced silent member %q: the floor lane transmits no mass", calm)
+	}
+
+	// depth 1 and 2: both traverse, and this anchor clears both bars.
+	for _, depth := range []int{1, 2} {
+		vals, _, bg := search(depth)
+		if bg <= 0 {
+			t.Errorf("depth %d background = %v, want positive: the lane observes anchors", depth, bg)
+		}
+		if !contains(vals, calm) {
+			t.Errorf("depth %d did not fund silent member %q: a strongly above-chance anchor transmits in both lanes", depth, calm)
+		}
+	}
+}
+
+// TestSearchDepthOnePrecisionBar is what makes depth 1 a distinct lane rather
+// than a synonym for depth 2: an anchor between its fair share and twice it is
+// evidence, but not strong evidence. depth 2 (max recall) admits it and funds
+// its silent member; depth 1 (precision) turns it away, so the same query
+// returns only what the text index matched. If depthOneAdmission were dropped
+// to 1, this test is the one that fails.
+func TestSearchDepthOnePrecisionBar(t *testing.T) {
+	g := noDecayGraph()
+	silent := marginalGraph(t, g)
+	contains := func(vals []string, want string) bool {
+		for _, v := range vals {
+			if v == want {
+				return true
+			}
+		}
+		return false
+	}
+	search := func(depth int) []string {
+		nodes, _, _, _ := g.Search([]string{"tide"}, containers.Vector[uint64, float64]{}, nil, nil, depth, 20, time.Time{}, time.Time{})
+		return values(nodes)
+	}
+
+	if got := search(1); contains(got, silent) {
+		t.Errorf("depth 1 funded %q: a marginally above-chance anchor must not clear the precision bar; got %v", silent, got)
+	}
+	if got := search(2); !contains(got, silent) {
+		t.Errorf("depth 2 did not fund %q: it clears the plain fair share; got %v", silent, got)
 	}
 }
 
