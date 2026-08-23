@@ -98,6 +98,9 @@ instructions are our fault, not yours.
    don't expect review comments about it.
 5. Open the pull request. Describe **what problem it solves**, not just what the
    code does. If it closes an issue, write `Closes #123` in the description.
+6. **Sign the [CLA](CLA.md) on your first PR** — a bot comments with the exact
+   phrase to reply with, and the check clears for all your future
+   contributions.
 
 Draft PRs are welcome. If you want early feedback on an approach before
 polishing it, open one as a draft and say so.
