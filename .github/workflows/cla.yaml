@@ -8,7 +8,7 @@ on:
 
 permissions:
   actions: write
-  contents: write        # writes the signature file to the signatures branch
+  contents: read         # signatures are written to FraiseHQ/cla via the PAT
   pull-requests: write   # comments on the PR
   statuses: write        # sets the blocking status check
 
@@ -19,7 +19,6 @@ jobs:
     # contribution to license.
     if: >-
       !startsWith(github.event.pull_request.head.ref, 'release-please') &&
-      !startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
       (github.event.comment.body == 'recheck' ||
       github.event.comment.body == 'I have read the CLA and I hereby agree to its terms' ||
       github.event_name == 'pull_request_target')
@@ -28,10 +27,18 @@ jobs:
         uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN is scoped to this repo only; writing signatures to
+          # FraiseHQ/cla needs a PAT with repo scope.
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
-          # where signatures are stored (a branch in this repo)
+          # Signatures live in FraiseHQ/cla, next to the document they sign,
+          # so one signature record covers every repo in the org. The action
+          # creates the file itself — creating it by hand makes the run fail —
+          # but the branch must already exist and must not be protected.
+          remote-organization-name: 'FraiseHQ'
+          remote-repository-name: 'cla'
           path-to-signatures: 'signatures/v1/cla.json'
-          branch: 'cla-signatures'
+          branch: 'main'
           # the document contributors are agreeing to
           path-to-document: 'https://github.com/FraiseHQ/cla/blob/main/cla.md'
           # exact phrase a contributor comments to sign (must match the `if` above)
@@ -41,5 +48,4 @@ jobs:
             and comment exactly:
           custom-pr-sign-comment: 'I have read the CLA and I hereby agree to its terms'
           custom-allsigned-prcomment: 'All contributors have signed the CLA. ✅'
-          # nobody who needs to sign: you, and bots
           allowlist: RonsenbergVI,dependabot[bot],renovate[bot],github-actions[bot]
