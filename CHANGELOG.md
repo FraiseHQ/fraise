@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.1.0-beta.8](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.7...v0.1.0-beta.8) (2026-08-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* actionable fql errors and anchor-seeded recall ([#218](https://github.com/RonsenbergVI/fraise/issues/218))
+
+### Features
+
+* add depth parameter ([#200](https://github.com/RonsenbergVI/fraise/issues/200)) ([3dab727](https://github.com/RonsenbergVI/fraise/commit/3dab727ba98ffea894bfd8b23d93c504d975cfe9))
+
+
+### Bug fixes
+
+* actionable fql errors and anchor-seeded recall ([#218](https://github.com/RonsenbergVI/fraise/issues/218)) ([31af72a](https://github.com/RonsenbergVI/fraise/commit/31af72ac1f3f0b15f21f5fb337f15e337a0094ec))
+
+
+### Performance
+
+* read one node's neighbourhood without cloning ([#198](https://github.com/RonsenbergVI/fraise/issues/198)) ([3dc4ddd](https://github.com/RonsenbergVI/fraise/commit/3dc4ddd3b4cef4908e6b150d1beb08cf55c48f71))
+
+
+### Maintenance
+
+* add CLA and PR bot ([#220](https://github.com/RonsenbergVI/fraise/issues/220)) ([777c043](https://github.com/RonsenbergVI/fraise/commit/777c0431e976e75fb2a68a86968b2449ac56b9ef))
+* **main:** release python 0.1.0-beta.2 ([#217](https://github.com/RonsenbergVI/fraise/issues/217)) ([6f81991](https://github.com/RonsenbergVI/fraise/commit/6f819918be074139b8662f292d2194f8fa32134e))
+
 ## [0.1.0-beta.7](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.6...v0.1.0-beta.7) (2026-08-15)
 
 
