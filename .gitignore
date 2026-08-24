@@ -34,17 +34,6 @@ dist/
 # .idea/
 # .vscode/
 
-# TypeScript SDK
-node_modules/
-sdk/typescript/dist/
-*.tsbuildinfo
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.npm/
-.yarn/
-.pnp.*
 
 
 # python SDK

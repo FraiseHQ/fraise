@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Fraise is an in-memory temporal-memory-graph database for AI agents (Go server,
-Python/TypeScript SDKs). Architecture background lives in `docs/design.md`,
+Python SDK). Architecture background lives in `docs/design.md`,
 `docs/concurrency.md`, and `docs/query-spec.md`. This file is about *how to add
 code* here.
 
@@ -262,18 +262,19 @@ These apply to every component:
 
 ### TypeScript
 
-Nothing settled yet — the SDK (#45) has not landed. When it does, this section
-should answer the same questions the Python one does: test file naming, where
-tests live relative to the source, and the module/barrel-file rule. `biome`
-handles formatting and linting (`make lint-ts`).
+There is no TypeScript SDK, and nothing in the tree anticipates one: no `sdk/typescript/`, no `biome.json`, no `make *-ts` targets.
+Don't add scaffolding for it ahead of the code. When the SDK does land, this
+section should answer the same questions the Python one does — test file naming,
+where tests live relative to the source, the module/barrel-file rule — and
+`biome` is the intended formatter and linter.
 
 ## Commands
 
 - `make test` / `make test-go` — Go unit tests; `make coverage-go` for coverage.
-- `make test-py` / `make test-ts` — SDK unit tests.
+- `make test-py` — Python SDK unit tests.
 - `make test-e2e` — end-to-end suite; runs pytest locally against the fraise
   image brought up as a daemon via `docker-compose.yaml`.
-- `make test-integration-py` / `make test-integration-ts` — SDK integration
+- `make test-integration-py` — Python SDK integration
   tests, same daemon, driven by a locally-run pytest.
 - `make lint`, `make fmt`, `make build` — quality and build entry points.
 

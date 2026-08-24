@@ -93,8 +93,8 @@ go install github.com/FraiseHQ/fraise/cmd/server@latest
 "$(go env GOPATH)/bin/server"
 ```
 
-`@latest` resolves to the highest pre-release (`v0.1.0-beta.2` today); pin with
-`@v0.1.0-beta.2` to be explicit. The binary installs as `server`, after its
+`@latest` resolves to the highest pre-release (`v0.1.0-beta.8` today); pin with
+`@v0.1.0-beta.8` to be explicit. The binary installs as `server`, after its
 package path — rename it to `fraise` if that reads better.
 
 Nothing further is needed to trust this: the Go toolchain checks every module
@@ -104,7 +104,7 @@ compiles the result.
 ### From a release binary
 
 ```sh
-VERSION=0.1.0-beta.2
+VERSION=0.1.0-beta.8
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')                # linux | darwin
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')  # amd64 | arm64
 ASSET="fraise_${VERSION}_${OS}_${ARCH}.tar.gz"
@@ -140,17 +140,17 @@ sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-mi
 ### With Docker
 
 ```sh
-docker run -p 127.0.0.1:9876:9876 ghcr.io/fraisehq/fraise:0.1.0-beta.2
+docker run -p 127.0.0.1:9876:9876 ghcr.io/fraisehq/fraise:0.1.0-beta.8
 ```
 
-Published tags: one per release (`0.1.0-beta.2`), `edge` for the tip of `main`,
+Published tags: one per release (`0.1.0-beta.8`), `edge` for the tip of `main`,
 and an immutable full-commit-SHA tag for every merge. `latest` starts appearing
 at the first stable release.
 
 Images are built with SLSA provenance, verifiable without pulling:
 
 ```sh
-gh attestation verify oci://ghcr.io/fraisehq/fraise:0.1.0-beta.2 \
+gh attestation verify oci://ghcr.io/fraisehq/fraise:0.1.0-beta.8 \
   --repo FraiseHQ/fraise
 ```
 
@@ -187,11 +187,11 @@ curl -X POST localhost:9876/api/v1/q \
 
 ### SDKs
 
-Prefer to talk to Fraise from your own code? Official clients wrap the query
+Prefer to talk to Fraise from your own code? The official client wraps the query
 endpoint behind two verbs — `remember` and `recall` — with optional vector
 embeddings and agent-framework tools.
 
-**Python** ([`sdk/python`](./sdk/python)):
+**Python** ([`sdk/python`](./sdk/python)) — the only SDK today:
 
 ```sh
 pip install fraise-sdk
@@ -206,23 +206,13 @@ with FraiseClient("http://localhost:9876") as fraise:
         print(hit.value, hit.score)
 ```
 
-**TypeScript** ([`sdk/typescript`](./sdk/typescript)):
+**TypeScript** — not available yet.
+Until it lands, TypeScript callers talk to the HTTP endpoint directly; it is two
+verbs over one route, so a client is a short wrapper around `fetch`. See
+[the HTTP API](./docs/http-api.md).
 
-```sh
-npm install fraise-sdk
-```
-
-```ts
-import { FraiseClient } from "fraise-sdk";
-
-const fraise = new FraiseClient({ baseUrl: "http://localhost:9876" });
-await fraise.remember("the parrot is turquoise", { topics: ["color"] });
-const result = await fraise.recall(["parrot"], { top: 5 });
-for (const hit of result.hits) console.log(hit.value, hit.score);
-```
-
-Both are dependency-light and support vector search when you supply an embedder.
-See each SDK's README for embeddings and the full API.
+The Python SDK is dependency-light and supports vector search when you supply an
+embedder. See [its README](./sdk/python) for embeddings and the full API.
 
 ### Integrate with Claude Agents
 
@@ -248,7 +238,7 @@ A complete, Docker-runnable agent lives in
 
 ### Integrate with OpenAI Agents
 
-Both SDKs ship tools for the [OpenAI Agents
+The Python SDK ships tools for the [OpenAI Agents
 SDK](./sdk/python#openai-agents-tools). `memory_tools(client)` returns bound
 `recall` and `remember` tools:
 
@@ -268,8 +258,7 @@ result = Runner.run_sync(agent, "My favourite colour is orange.")
 print(result.final_output)
 ```
 
-The TypeScript equivalent is `memoryTools(client)` from
-`fraise-sdk/integrations/openai-agents`. Complete, Docker-runnable agents live in
+Complete, Docker-runnable agents live in
 [`examples/openai-agents`](./examples/openai-agents).
 
 ## References
