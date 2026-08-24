@@ -17,11 +17,6 @@ area:sdk-python:
       - any-glob-to-any-file:
           - sdk/python/**
 
-area:sdk-typescript:
-  - changed-files:
-      - any-glob-to-any-file:
-          - sdk/typescript/**
-
 area:docs:
   - changed-files:
       - any-glob-to-any-file:
@@ -36,5 +31,4 @@ area:ci:
           - .pre-commit-config.yaml
           - docker-compose*
           - tests/**
-          - biome.json
           - codecov.yaml

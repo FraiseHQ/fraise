@@ -36,27 +36,26 @@ on its own clock:
 | -------------- | --------------------------------- | ------------- |
 | Server         | `cmd/`, `internal/`, `pkg/`       | Go (1.25)     |
 | Python SDK     | `sdk/python/`                     | Python (≥3.12)|
-| TypeScript SDK | `sdk/typescript/`                 | TypeScript    |
 
 The single `main` branch is always releasable **for every component**. CI is
-split per component (`go.yaml`, `python.yaml`, `typescript.yaml`) and
+split per component (`go.yaml`, `python.yaml`) and
 path-filtered, so a PR only runs the checks for what it touches.
 
 ## Getting set up
 
-You'll want Go 1.25+, plus [`uv`](https://docs.astral.sh/uv/) (Python) and
-[`pnpm`](https://pnpm.io/) (TypeScript) if you're working on the SDKs.
+You'll want Go 1.25+, plus [`uv`](https://docs.astral.sh/uv/) if you're working
+on the Python SDK.
 
 ```bash
 git clone https://github.com/FraiseHQ/fraise.git
 cd fraise
 
-# Install dependencies for all three components:
+# Install dependencies for both components:
 make install
 
 # Confirm it works:
 make test        # Go server tests
-make test-all    # everything: Go + Python + TypeScript
+make test-all    # everything: Go + Python
 ```
 
 Run the server locally with `make dev`. Handy targets: `make lint` (all
@@ -121,7 +120,6 @@ type(optional-scope): subject
   changelog clean:
   - _no scope_ → server — `feat: add request rate limiting`
   - `(python)` → Python SDK — `fix(python): handle empty response body`
-  - `(typescript)` → TypeScript SDK — `feat(typescript): stream recall results`
 - **Breaking changes** use a `!` marker: `feat(api)!: drop legacy session cookies`.
   Pre-1.0, breaking changes are allowed but must be documented (see
   [RELEASE.md](RELEASE.md)).
@@ -154,7 +152,6 @@ The full runbook is in [RELEASE.md](RELEASE.md); the short version:
   | -------------- | -------------------- | -------------------------- |
   | Server         | `v0.1.1`             | GitHub Releases (binaries) |
   | Python SDK     | `python/v1.0.1`      | PyPI (trusted publishing)  |
-  | TypeScript SDK | `typescript/v0.9.12` | npm (with provenance)      |
 
 - A release is a **git tag**. Pushing the tag triggers the matching workflow:
   full test suite → **manual approval** on the `release` environment → publish.

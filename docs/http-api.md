@@ -10,7 +10,7 @@ Nothing that decides *what an answer is* lives here.
 ## `GET /` — health check
 
 ```json
-{"status": "ok", "version": "0.1.0-beta.2"}
+{"status": "ok", "version": "0.1.0-beta.8"}
 ```
 
 `version` is the SDKs' only handshake: they read it to check the server falls in

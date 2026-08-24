@@ -19,7 +19,6 @@ repos:
         args: ['--fix=lf']
       - id: check-json
         name: Check JSON syntax
-        exclude: sdk/typescript/tsconfig.json
 
   # ================
   # Go
@@ -50,17 +49,6 @@ repos:
     hooks:
     - id: ty
       args: [--no-default-groups]
-
-  # ================
-  # TypeScript
-  # ================
-
-  - repo: https://github.com/biomejs/pre-commit
-    rev: v2.5.6
-    hooks:
-      - id: biome-check
-        files: ^sdk/typescript/.*\.(ts|tsx|js|jsx|json|jsonc)$
-        exclude: ^sdk/typescript/dist/
 
   # ================
   # Docker

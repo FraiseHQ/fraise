@@ -51,7 +51,7 @@ jobs:
       - name: Lint
         # Language- and docker-specific hooks run in their own workflows.
         env:
-          SKIP: golangci-lint-full,ruff,ruff-format,ty,biome-check,hadolint-docker
+          SKIP: golangci-lint-full,ruff,ruff-format,ty,hadolint-docker
         run: uvx pre-commit run --all-files --show-diff-on-failure
 
   validate:

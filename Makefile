@@ -39,7 +39,6 @@ GO_VET         := $(GO_CMD) vet
 # Directories
 BIN_DIR        := bin
 CMD_DIR        := ./cmd/server
-TS_DIR         := sdk/typescript
 PY_DIR         := sdk/python
 
 # The agent-framework integrations import their SDK at module scope, so their
@@ -50,7 +49,6 @@ PY_GROUPS      := --group openai --group anthropic
 BINARY_NAME    := fraise
 
 # Package manager commands
-NPM_CMD        := pnpm
 UV_CMD         := uv
 
 # Color output
@@ -66,7 +64,7 @@ LDFLAGS        := -X '$(VERSION_PKG).Version=$(BUILD_VERSION)' \
                   -X '$(VERSION_PKG).Commit=$(BUILD)' \
                   -X '$(VERSION_PKG).Date=$(BUILD_DATE)'
 
-.PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py publish-npm
+.PHONY: help build test test-e2e clean install dev fmt lint check all publish publish-py
 .DEFAULT_GOAL := help
 
 ##@ General
@@ -80,18 +78,13 @@ help: ## Display this help message
 
 build: build-go ## Build all components (currently Go only)
 
-build-all: build-go build-ts build-py ## Build Go server and all SDKs
+build-all: build-go build-py ## Build Go server and all SDKs
 
 build-go: ## Build Go server binary
 	@echo "$(CYAN)Building Go server ($(BUILD_VERSION))...$(RESET)"
 	@mkdir -p $(BIN_DIR)
 	$(GO_BUILD) -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) $(CMD_DIR)
 	@echo "$(GREEN)✓ Binary created: $(BIN_DIR)/$(BINARY_NAME)$(RESET)"
-
-build-ts: ## Build TypeScript SDK
-	@echo "$(CYAN)Building TypeScript SDK...$(RESET)"
-	@cd $(TS_DIR) && $(NPM_CMD) run build
-	@echo "$(GREEN)✓ TypeScript SDK built$(RESET)"
 
 build-py: ## Build Python SDK
 	@echo "$(CYAN)Building Python SDK...$(RESET)"
@@ -104,7 +97,7 @@ test: test-go ## Run all Go tests
 
 coverage: coverage-go coverage-py
 
-test-all: test-go test-ts test-py ## Run tests for Go and all SDKs
+test-all: test-go test-py ## Run tests for Go and all SDKs
 
 test-go: ## Run Go tests with verbose output
 	@echo "$(CYAN)Running Go tests...$(RESET)"
@@ -152,10 +145,6 @@ test-integration-py: ## Run Python SDK integration tests against fraise in Docke
 	  $(UV_CMD) run --package fraise-sdk pytest tests/integration/python -v \
 	    || ( $(FRAISE_LOGS); exit 1 )
 
-test-ts: ## Run TypeScript tests
-	@echo "$(CYAN)Running TypeScript tests...$(RESET)"
-	@cd $(TS_DIR) && $(NPM_CMD) test || echo "$(YELLOW)⚠ No TypeScript tests configured$(RESET)"
-
 test-py: ## Run Python tests with pytest
 	@echo "$(CYAN)Running Python tests...$(RESET)"
 	@$(UV_CMD) run --package fraise-sdk $(PY_GROUPS) pytest $(PY_DIR)/src/tests || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
@@ -171,15 +160,9 @@ dev: ## Run development server
 	@echo "$(CYAN)Starting development server...$(RESET)"
 	$(GO_CMD) run $(CMD_DIR)/main.go
 
-dev-ts: ## Run TypeScript in watch mode
-	@echo "$(CYAN)Starting TypeScript watch mode...$(RESET)"
-	@cd $(TS_DIR) && $(NPM_CMD) run dev
-
 install: ## Install all dependencies
 	@echo "$(CYAN)Installing Go dependencies...$(RESET)"
 	$(GO_CMD) mod download
-	@echo "$(CYAN)Installing TypeScript dependencies...$(RESET)"
-	@cd $(TS_DIR) && $(NPM_CMD) install
 	@echo "$(CYAN)Installing Python dependencies...$(RESET)"
 	@cd $(PY_DIR) && $(UV_CMD) sync
 	@echo "$(GREEN)✓ All dependencies installed$(RESET)"
@@ -192,16 +175,12 @@ install-tools: ## Install development tools
 
 ##@ Code Quality
 
-fmt: fmt-go fmt-ts fmt-py ## Format all code
+fmt: fmt-go fmt-py ## Format all code
 
 fmt-go: ## Format Go code
 	@echo "$(CYAN)Formatting Go code...$(RESET)"
 	$(GO_FMT) ./...
 	@echo "$(GREEN)✓ Go code formatted$(RESET)"
-
-fmt-ts: ## Format TypeScript code
-	@echo "$(CYAN)Formatting TypeScript code...$(RESET)"
-	@cd $(TS_DIR) && $(NPM_CMD) run format 2>/dev/null || echo "$(YELLOW)⚠ No TypeScript formatter configured$(RESET)"
 
 fmt-py: ## Format Python code with ruff
 	@echo "$(CYAN)Formatting Python code...$(RESET)"
@@ -218,10 +197,6 @@ lint: ## Lint all code via pre-commit (every hook)
 lint-go: ## Lint Go via golangci-lint (pre-commit)
 	@echo "$(CYAN)Linting Go code...$(RESET)"
 	@$(PRECOMMIT) golangci-lint-full
-
-lint-ts: ## Lint TypeScript via biome (pre-commit)
-	@echo "$(CYAN)Linting TypeScript code...$(RESET)"
-	@$(PRECOMMIT) biome-check
 
 lint-py: ## Lint Python via ruff + ty (pre-commit)
 	@echo "$(CYAN)Linting Python code...$(RESET)"
@@ -241,7 +216,7 @@ check-all: fmt lint test-all ## Format, lint, and test everything
 
 ##@ Cleanup
 
-clean: clean-go clean-ts clean-py ## Clean all build artifacts
+clean: clean-go clean-py ## Clean all build artifacts
 
 clean-go: ## Clean Go build artifacts
 	@echo "$(CYAN)Cleaning Go artifacts...$(RESET)"
@@ -249,11 +224,6 @@ clean-go: ## Clean Go build artifacts
 	rm -rf $(BIN_DIR)/
 	rm -f coverage.out coverage.html
 	@echo "$(GREEN)✓ Go artifacts cleaned$(RESET)"
-
-clean-ts: ## Clean TypeScript build artifacts
-	@echo "$(CYAN)Cleaning TypeScript artifacts...$(RESET)"
-	@cd $(TS_DIR) && ($(NPM_CMD) run clean 2>/dev/null || rm -rf dist/)
-	@echo "$(GREEN)✓ TypeScript artifacts cleaned$(RESET)"
 
 clean-py: ## Clean Python build artifacts
 	@echo "$(CYAN)Cleaning Python artifacts...$(RESET)"
@@ -266,17 +236,12 @@ clean-all: clean ## Alias for clean
 
 ##@ Publishing
 
-publish: publish-py publish-npm ## Publish Python SDK to PyPI and TypeScript SDK to npm
+publish: publish-py ## Publish Python SDK to PyPI
 
 publish-py: build-py ## Publish Python SDK to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)
 	@echo "$(CYAN)Publishing Python SDK to PyPI...$(RESET)"
 	@cd $(PY_DIR) && $(UV_CMD) publish
 	@echo "$(GREEN)✓ Python SDK published to PyPI$(RESET)"
-
-publish-ts: build-ts ## Publish TypeScript SDK to npm (requires npm auth / NODE_AUTH_TOKEN)
-	@echo "$(CYAN)Publishing TypeScript SDK to npm...$(RESET)"
-	@cd $(TS_DIR) && $(NPM_CMD) publish --access public --no-git-checks
-	@echo "$(GREEN)✓ TypeScript SDK published to npm$(RESET)"
 
 ##@ Workflows
 

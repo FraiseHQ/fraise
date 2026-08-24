@@ -188,15 +188,15 @@ section is updated to say exactly what's supported for how long.
 
 ## Branching & monorepo strategy
 
-One `main`, always releasable **for every component** (server, Python SDK,
-TypeScript SDK). There are no per-component branches — CI path-filtering
+One `main`, always releasable **for every component** (server, Python SDK).
+There are no per-component branches — CI path-filtering
 tests exactly the components a PR touches, and branch protection blocks any
 merge that breaks one of them.
 
 ### Branches
 
 - Short-lived feature branches off `main`, merged by squash PR:
-  `feat/server-rp-forest`, `fix/sdk-py-timeout`, `docs/sdk-ts-readme`.
+  `feat/server-rp-forest`, `fix/sdk-py-timeout`, `docs/sdk-py-readme`.
 - No `develop`, no per-SDK branches, no release branches (pre-1.0).
 
 ### PR scopes route changes to components
@@ -205,32 +205,29 @@ Only two scopes exist — anything unscoped is the server:
 
 - `feat: ...` (no scope) → server
 - `fix(python): ...` → Python SDK
-- `feat(typescript): ...` → TypeScript SDK
 
 The scope keeps each component's changelog clean: `.goreleaser.yaml`
-excludes `(python)`/`(typescript)` scoped commits from server release notes.
+excludes `(python)` scoped commits from server release notes.
 
-### Releases: three tag namespaces, one branch, one workflow
+### Releases: two tag namespaces, one branch, one workflow
 
-`release.yaml` triggers on all three tag patterns and runs the matching
+`release.yaml` triggers on both tag patterns and runs the matching
 pipeline (test → manual approval on the `release` environment → publish):
 
 | Component      | Tag example          | Publishes to               |
 |----------------|----------------------|----------------------------|
 | Server         | `v0.1.1`             | GitHub Releases (binaries) |
 | Python SDK     | `python/v1.0.1`      | PyPI (trusted publishing)  |
-| TypeScript SDK | `typescript/v0.9.12` | npm (provenance)           |
 
 SDK tagging (after the version-bump PR is merged — the workflow rejects a
-tag that doesn't match `pyproject.toml`/`package.json`):
+tag that doesn't match `pyproject.toml`):
 
 ```bash
-    git tag python/v1.0.1     && git push origin python/v1.0.1
-    git tag typescript/v0.9.12 && git push origin typescript/v0.9.12
+    git tag python/v1.0.1 && git push origin python/v1.0.1
 ```
 
-CI is split per component (`go.yaml`, `python.yaml`, `typescript.yaml`),
-each path-filtered to its own files. Branch-protection note: only mark the
+CI is split per component (`go.yaml`, `python.yaml`), each path-filtered to
+its own files. Branch-protection note: only mark the
 **Go** jobs as required checks globally — path-filtered SDK checks would
 otherwise show "expected" forever on server-only PRs.
 
@@ -240,9 +237,9 @@ releases on its own clock. Milestones are named like the tags.
 ### Cross-component (protocol) changes
 
 A wire-protocol or FQL change lands as **one PR** touching the server and
-both SDKs together. Release order afterwards: **server first**, then the
-SDK tags — SDK integration tests run against a published server release,
-and PyPI/npm never ship ahead of the server they target.
+the SDK together. Release order afterwards: **server first**, then the
+SDK tag — SDK integration tests run against a published server release,
+and PyPI never ships ahead of the server it targets.
 
 ### Hotfixes (SDKs)
 
