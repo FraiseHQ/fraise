@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.4](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-beta.3...python/v0.1.0-beta.4) (2026-08-25)
+
+
+### Maintenance
+
+* transfer repo from RonsenbergVI to FraiseHQ org ([#223](https://github.com/FraiseHQ/fraise/issues/223)) ([83600ad](https://github.com/FraiseHQ/fraise/commit/83600ad381a28ec629bc2cc54f58ccc32a87cbb9))
+
 ## [0.1.0-beta.3](https://github.com/RonsenbergVI/fraise/compare/python/v0.1.0-beta.2...python/v0.1.0-beta.3) (2026-08-23)
 
 

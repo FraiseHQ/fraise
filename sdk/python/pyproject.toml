@@ -1,6 +1,6 @@
 [project]
 name = "fraise-sdk"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 description = "Fraise SDK"
 readme = "README.md"
 authors = [
