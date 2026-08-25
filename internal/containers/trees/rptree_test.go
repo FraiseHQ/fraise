@@ -97,7 +97,7 @@ func bruteForceNearest(points []*point, q *point, k int) []int {
 }
 
 func TestRPTreeEmpty(t *testing.T) {
-	rt := trees.NewRPTree[int, string, float64](3, 4, 1)
+	rt := trees.NewRPTree[int, string, float64](3, 4, 1, 32, 8)
 	if got := rt.Len(); got != 0 {
 		t.Errorf("Len() = %d, want 0", got)
 	}
@@ -110,7 +110,7 @@ func TestRPTreeEmpty(t *testing.T) {
 }
 
 func TestRPTreeInsertRejectsBadPoints(t *testing.T) {
-	rt := trees.NewRPTree[int, string, float64](3, 4, 1)
+	rt := trees.NewRPTree[int, string, float64](3, 4, 1, 32, 8)
 
 	if err := rt.Insert(&point{key: 1, coord: []float64{1, 2}}); !errors.Is(err, trees.ErrDimensionMismatch) {
 		t.Errorf("Insert with wrong dimension = %v, want ErrDimensionMismatch", err)
@@ -129,9 +129,9 @@ func TestRPTreeInsertRejectsBadPoints(t *testing.T) {
 func TestRPTreeNearestExactWhenSingleLeaf(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	const dim = 5
-	const n = 20 // well under the default leaf size of 32
+	const n = 20 // well under the leaf size this tree is built with
 
-	rt := trees.NewRPTree[int, string, float64](dim, 4, 7)
+	rt := trees.NewRPTree[int, string, float64](dim, 4, 7, 32, 8)
 	points := make([]*point, n)
 	for i := range points {
 		points[i] = randPoint(rng, i, dim)
@@ -162,7 +162,7 @@ func TestRPTreeNodesCoverEveryInsert(t *testing.T) {
 	const dim = 4
 	const n = 500
 
-	rt := trees.NewRPTree[int, string, float64](dim, 6, 3)
+	rt := trees.NewRPTree[int, string, float64](dim, 6, 3, 32, 8)
 	points := make([]*point, n)
 	for i := range points {
 		points[i] = randPoint(rng, i, dim)
@@ -196,7 +196,7 @@ func TestRPTreeNearestReturnsSubsetOfStoredNodes(t *testing.T) {
 	const n = 500
 	const k = 10
 
-	rt := trees.NewRPTree[int, string, float64](dim, 6, 5)
+	rt := trees.NewRPTree[int, string, float64](dim, 6, 5, 32, 8)
 	all := make(map[int]*point, n)
 	for i := 0; i < n; i++ {
 		p := randPoint(rng, i, dim)
@@ -232,12 +232,123 @@ func TestRPTreeNearestReturnsSubsetOfStoredNodes(t *testing.T) {
 	}
 }
 
+// TestRPTreeNearestFillsKBeyondOneLeaf pins what makes k meaningful: a single
+// root-to-leaf descent sees one leaf, so without probing Nearest returns at most
+// leafSize nodes however large k is — and silently, with nothing to tell a
+// caller apart from an index that genuinely holds no more. k here is several
+// leaves' worth of a tree with far more points than that.
+func TestRPTreeNearestFillsKBeyondOneLeaf(t *testing.T) {
+	rng := rand.New(rand.NewSource(23))
+	const dim = 8
+	const n = 1000
+	const k = 200
+
+	rt := trees.NewRPTree[int, string, float64](dim, 6, 3, 32, 8)
+	for i := 0; i < n; i++ {
+		if err := rt.Insert(randPoint(rng, i, dim)); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+
+	if got := rt.Nearest(randPoint(rng, -1, dim), k); len(got) != k {
+		t.Fatalf("Nearest(k=%d) returned %d nodes out of %d stored, want %d — the search stopped at one leaf", k, len(got), n, k)
+	}
+}
+
+// TestRPTreeNearestIsExactWhenKCoversTheTree is the probing walk's correctness
+// pin. Asking for every stored point exhausts the deferred probes, so the answer
+// must be the exact brute-force ranking: any leaf the walk fails to reach shows
+// up as a missing point, and any leaf it reaches twice as a duplicate. Both are
+// the failure modes of descending a partition out of order, which is what makes
+// this stronger than a recall threshold — it cannot pass by luck.
+func TestRPTreeNearestIsExactWhenKCoversTheTree(t *testing.T) {
+	rng := rand.New(rand.NewSource(29))
+	const dim = 5
+	const n = 300
+
+	rt := trees.NewRPTree[int, string, float64](dim, 6, 4, 32, 8)
+	all := make([]*point, n)
+	for i := range all {
+		p := randPoint(rng, i, dim)
+		all[i] = p
+		if err := rt.Insert(p); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+
+	query := randPoint(rng, -1, dim)
+	got := rt.Nearest(query, n)
+	if len(got) != n {
+		t.Fatalf("Nearest(k=n) returned %d of %d points, want all — probing must exhaust the tree", len(got), n)
+	}
+
+	want := make([]*point, n)
+	copy(want, all)
+	sort.Slice(want, func(i, j int) bool { return query.Distance(want[i]) < query.Distance(want[j]) })
+	for i, node := range got {
+		if d, wantD := query.Distance(all[node.Key()]), query.Distance(want[i]); d != wantD {
+			t.Fatalf("Nearest rank %d is at distance %v, want %v — the walk missed or repeated a leaf", i, d, wantD)
+		}
+	}
+}
+
+// TestRPTreeOverfetchWidensTheCandidatePool pins what the configured factor
+// buys. The projection only decides where to look; true distance decides what
+// comes back, so gathering more candidates can improve the answer or tie, never
+// worsen it — the k-th distance is monotonically non-increasing in over-fetch.
+// A factor large enough to exhaust the tree is exact, which is the upper end the
+// knob converges to: db.vector-search.overfetch trades query cost for recall
+// along this line and cannot overshoot into a worse result.
+func TestRPTreeOverfetchWidensTheCandidatePool(t *testing.T) {
+	rng := rand.New(rand.NewSource(31))
+	const dim = 6
+	const n = 600
+	const k = 10
+
+	points := make([]*point, n)
+	for i := range points {
+		points[i] = randPoint(rng, i, dim)
+	}
+	query := randPoint(rng, -1, dim)
+
+	build := func(overfetch int) *trees.RPTree[int, string, float64] {
+		rt := trees.NewRPTree[int, string, float64](dim, 6, 17, 32, overfetch)
+		for _, p := range points {
+			if err := rt.Insert(p); err != nil {
+				t.Fatalf("Insert(%d) = %v, want nil", p.Key(), err)
+			}
+		}
+		return rt
+	}
+
+	kth := func(rt *trees.RPTree[int, string, float64]) float64 {
+		got := rt.Nearest(query, k)
+		if len(got) != k {
+			t.Fatalf("Nearest returned %d nodes, want %d", len(got), k)
+		}
+		return query.Distance(points[got[k-1].Key()])
+	}
+
+	narrow, wide := kth(build(1)), kth(build(n))
+	if wide > narrow {
+		t.Errorf("over-fetch %d gave a worse k-th distance (%v) than over-fetch 1 (%v) — more candidates must never rank worse", n, wide, narrow)
+	}
+
+	// Exhausting the tree leaves nothing for the approximation to miss.
+	want := bruteForceNearest(points, query, k)
+	for i, node := range build(n).Nearest(query, k) {
+		if node.Key() != want[i] {
+			t.Errorf("with over-fetch %d, Nearest()[%d].Key() = %d, want %d — a factor past the tree size must be exact", n, i, node.Key(), want[i])
+		}
+	}
+}
+
 func TestRPTreeRangeIsExact(t *testing.T) {
 	rng := rand.New(rand.NewSource(5))
 	const dim = 3
 	const n = 400
 
-	rt := trees.NewRPTree[int, string, float64](dim, 5, 2)
+	rt := trees.NewRPTree[int, string, float64](dim, 5, 2, 32, 8)
 	points := make([]*point, n)
 	for i := range points {
 		points[i] = randPoint(rng, i, dim)
@@ -277,7 +388,7 @@ func TestRPTreeRangeIsExact(t *testing.T) {
 func TestRPTreeDeterministicAcrossRuns(t *testing.T) {
 	build := func() []int {
 		rng := rand.New(rand.NewSource(123))
-		rt := trees.NewRPTree[int, string, float64](3, 4, 99)
+		rt := trees.NewRPTree[int, string, float64](3, 4, 99, 32, 8)
 		for i := 0; i < 200; i++ {
 			_ = rt.Insert(randPoint(rng, i, 3))
 		}
@@ -368,7 +479,7 @@ func TestRPTreeWithVectorNodes(t *testing.T) {
 	const dim = 4
 	const n = 20 // stays under the default leaf size
 
-	rt := trees.NewRPTree[int, containers.Vector[int, float64], float64](dim, 4, 13)
+	rt := trees.NewRPTree[int, containers.Vector[int, float64], float64](dim, 4, 13, 32, 8)
 
 	type sample struct {
 		key   int

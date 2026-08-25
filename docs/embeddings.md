@@ -109,6 +109,14 @@ random directions. A search descends every tree and unions the candidates —
 approximate, cheap, and good enough to seed a graph walk that will rank the
 results anyway.
 
+Each descent is multi-probe: routing a query past a split does not discard the
+side it turned away from but keeps it, ordered by how close the query came to
+being sent there, and returns to the closest of them until it holds enough
+candidates to rank. One descent per tree would see a single leaf, which caps
+what a search can return regardless of `top:` and makes a query landing near a
+split miss neighbours that sit just the other side of it — the failure the
+forest exists to average away, reintroduced one level down.
+
 Deletes and overwrites leave garbage behind rather than restructuring the trees,
 so the forest is rebuilt from the live set once it exceeds
 `rptree-flush-factor` entries per live vector. That bounds it at O(live vectors)

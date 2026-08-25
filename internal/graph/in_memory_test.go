@@ -897,6 +897,46 @@ func TestSearchFairSeeding(t *testing.T) {
 	}
 }
 
+// TestSearchAnchorsDoNotConsumeSeedBudget is fair seeding's other half: the
+// budget must go to nodes that can pay for it. An anchor named the query term
+// is the worst possible seed — a one-token document is exactly what BM25's
+// length norm rewards, so it outranks every real fact — and it can return
+// nothing: an anchor seed's neighbours are facts, so ExcessTraversal finds no
+// anchors from it and transmits nothing, and timeFilter drops it before it can
+// be a hit. Twelve facts match "billing" and top is twelve, so every one of
+// them must come back; a build that indexes anchors seeds the Topic and the
+// NamedEntity first and returns ten.
+func TestSearchAnchorsDoNotConsumeSeedBudget(t *testing.T) {
+	g := noDecayGraph()
+	now := time.Now()
+
+	topic := mkTopic(g, "billing", now)
+	mustSet(t, g, topic)
+	entity := mkEntity(g, "billing team", now)
+	mustSet(t, g, entity)
+	for i := 0; i < 12; i++ {
+		fact := mkFact(g, "the billing note "+string(rune('a'+i)), now)
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	}
+
+	seeds, _, err := g.GetTextIndex().Search("billing", 12)
+	if err != nil {
+		t.Fatalf("text Search(billing) = %v, want nil", err)
+	}
+	for _, key := range seeds {
+		if node := g.Get(key); node.Key() == topic.Key() || node.Key() == entity.Key() {
+			t.Errorf("text index seeded the anchor %q, want facts only — it can neither transmit nor be a hit", node.GetValue())
+		}
+	}
+
+	nodes, _, _, _ := g.Search([]string{"billing"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 12, time.Time{}, time.Time{})
+	if len(nodes) != 12 {
+		t.Fatalf("Search(top=12) returned %d hits, want all 12 — anchors took seed slots no fact could then use", len(nodes))
+	}
+}
+
 // TestSearchDeterminism is Property 5.6: no randomness, no iteration to
 // convergence — two identical queries on an identical graph return
 // byte-identical rankings and, with decay off, byte-identical scores and

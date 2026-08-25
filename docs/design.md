@@ -101,23 +101,65 @@ are asked for), each carrying its raw retrieval mass: BM25 × query coverage
 from the text index, `1/(1+distance)` similarity from the vector index. That
 mass then flows into the fact–anchor graph: every anchor (topic or entity
 node) the query touches observes the total seed mass on its members and
-compares it to a **background rate** — the mass a size-proportional smear
-across the query's touched anchors would predict for an anchor of its degree.
-Only the excess above background is transmitted to the anchor's members,
-attenuated per edge (α = 0.5, α² over the two-edge seed→anchor→fact path),
-with the member's own mass excluded so a fact never funds its own boost. A
-fact's relevance is its own mass plus everything transmitted to it.
+compares it to a **background rate** ρ₀ — the mass a size-proportional smear
+of the query's seed mass across the graph's anchors would predict for an
+anchor of its degree. Only the excess above background is transmitted to the
+anchor's members, attenuated per edge (α = 0.5, α² over the two-edge
+seed→anchor→fact path), with the member's own mass excluded so a fact never
+funds its own boost. A fact's relevance is its own mass plus everything
+transmitted to it.
 
 One sentence of intuition: *an anchor may only speak when its members matched
 better than its size alone predicts — hubs are heard exactly when they are
-surprising, and silent when they are merely large.* Four consequences are the
-contract, each pinned by the test suite:
+surprising, and silent when they are merely large.*
+
+### The null must be wider than the sample it judges
+
+ρ₀ is a property of the graph, not of the anchors one query happened to reach.
+The denominator is the total degree of the graph's anchors, and the numerator
+the total seed mass the query put onto anchors; untouched anchors contribute
+their degree and no mass, which is exactly the statement that the query found
+nothing there.
+
+The alternative — normalising over only the anchors a query touched — is not a
+cheaper approximation of this but a different quantity, and a degenerate one.
+Writing M_A for an anchor's observed mass and d_A for its degree, a background
+of ΣM/Σd taken over the touched set T satisfies
+
+```text
+Σ_{A∈T} (M_A − d_A·ρ₀) = ΣM − ρ₀·Σd = 0
+```
+
+identically. The surpluses of the very anchors being judged are then
+constrained to cancel, whatever the query, whatever the graph. A query touching
+one anchor gives it M = d·(M/d), so nothing can ever transmit; a query with one
+seed gives every touched anchor the same mass, so the mass cancels from both
+sides of the admission test and an anchor speaks purely because its degree is
+below the touched mean. Neither outcome is evidence about the graph — both are
+artefacts of measuring a sample against its own mean.
+
+Estimating over the graph's anchors removes the identity: the touched anchors
+are then free to carry positive surplus collectively, which is the thing the
+methodology is trying to detect.
+
+One consequence is worth stating so it is not later mistaken for a defect. A
+single-seed query still admits on degree alone, because with one seed every
+touched anchor observes the same mass and degree is the only thing left to
+distinguish them. Under this null that is the correct inference, not a
+shortcoming: an anchor of degree 3 holding mass m *is* more surprising than an
+anchor of degree 300 holding the same m. What the graph-wide estimate fixes is
+the bar those degrees are measured against — an absolute rate, rather than one
+the query defines for itself.
+
+Four consequences are the contract, each pinned by the test suite:
 
 * **BM25 floor.** Transmission only ever adds, so anchored search can never
   fall below the plain text index's ranking by scoring alone; with no surplus
   anywhere the two are identical.
-* **Hub silence.** An anchor at its fair share of the background transmits
+* **Hub silence.** An anchor at or below its fair share of ρ₀ transmits
   nothing — a mega-hub cannot flood the tail on size alone, structurally.
+  Silence is earned against the graph's rate, so an anchor is silent because
+  it is unremarkable, not because it was the only one asked.
 * **Earned preemption.** A fact with no match of its own outranks a match
   only through anchors carrying genuine above-background evidence, never
   through mere reachability.
