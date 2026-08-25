@@ -114,6 +114,8 @@ func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGr
 			cfg.DB.VectorSearch.NumberTrees,
 			cfg.DB.VectorSearch.Seed,
 			cfg.DB.VectorSearch.FlushFactor,
+			cfg.DB.VectorSearch.LeafSize,
+			cfg.DB.VectorSearch.Overfetch,
 			comparator.OrderedComparator[K],
 		),
 		scorer: NewExcessScorer[K, P](),
@@ -179,11 +181,19 @@ func (g *InMemoryGraph[K, P]) Put(key K, node Node[K]) error {
 }
 
 // store records the node and (re)indexes its value in the text index. Only
-// nodes with a non-empty value are indexed: relationship nodes carry no text,
-// and indexing them as empty documents inflated the corpus count ~3× and
-// crushed avgdl — silently distorting every idf and length norm the text
-// scores are built from. The guard is load-bearing for retrieval quality, not
-// an optimization.
+// facts are indexed. Relationship nodes carry no text at all, and indexing
+// them as empty documents inflated the corpus count ~3× and crushed avgdl —
+// silently distorting every idf and length norm the text scores are built
+// from. Anchors (Topic, NamedEntity) do carry text, and every one of those
+// consequences applies to them harder: a one- or two-token name is exactly
+// the document BM25's length norm rewards most, so an anchor whose name is
+// the query term outranks every real fact and takes the top of the seed list.
+// It cannot pay for the slot. An anchor seed transmits nothing — its
+// neighbours are facts, so ExcessTraversal finds no anchors from it and
+// observes no mass — and timeFilter drops it before it can be a hit. The
+// guard is load-bearing for retrieval quality, not an optimization: anchors
+// earn their place in retrieval by mediating transmission between facts, not
+// by being retrievable themselves.
 func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	g.idToNodes[key] = node
 
@@ -206,7 +216,8 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 		g.nodeToSources[target][source] = r.Key()
 	}
 
-	if attrs := node.GetAttributes(); attrs != nil && attrs.Value != "" {
+	_, isFact := node.(Fact[K])
+	if attrs := node.GetAttributes(); isFact && attrs != nil && attrs.Value != "" {
 		if err := g.textIndex.Insert(key, attrs.Value); err != nil {
 			logger.Warn("Failed to index node text", "error", err)
 			return err

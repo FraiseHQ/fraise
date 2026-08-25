@@ -201,6 +201,12 @@ type VectorSearch struct {
 	// Forest garbage compaction threshold: entries per live vector before
 	// the forest is rebuilt from the live set.
 	FlushFactor int `toml:"flush-factor"`
+
+	// Points an RP-tree leaf holds before it splits into two.
+	LeafSize int `toml:"leaf-size"`
+
+	// Candidates gathered per result asked for before a search stops probing.
+	Overfetch int `toml:"overfetch"`
 }
 
 // Instanciates new configset
@@ -263,6 +269,8 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.VectorSearch.NumberTrees, "rptree-n-trees", DefaultNumberTrees, "RP Tree Number Trees")
 	flagSet.Uint64Var(&config.DB.VectorSearch.Seed, "rptree-seed", DefaultRPSeed, "RP Tree seed")
 	flagSet.IntVar(&config.DB.VectorSearch.FlushFactor, "rptree-flush-factor", DefaultFlushFactor, "RP forest compaction threshold (entries per live vector)")
+	flagSet.IntVar(&config.DB.VectorSearch.LeafSize, "rptree-leaf-size", DefaultLeafSize, "Points an RP-tree leaf holds before it splits")
+	flagSet.IntVar(&config.DB.VectorSearch.Overfetch, "rptree-overfetch", DefaultOverfetch, "Candidates gathered per result before a vector search stops probing")
 
 	return config
 }
@@ -386,6 +394,8 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.VectorSearch.NumberTrees, DefaultNumberTrees)
 	Adjust(&c.DB.VectorSearch.Seed, DefaultRPSeed)
 	Adjust(&c.DB.VectorSearch.FlushFactor, DefaultFlushFactor)
+	Adjust(&c.DB.VectorSearch.LeafSize, DefaultLeafSize)
+	Adjust(&c.DB.VectorSearch.Overfetch, DefaultOverfetch)
 
 	return nil
 }

@@ -64,6 +64,14 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 	// twice the live set.
 	flushFactor int
 
+	// leafSize and overfetch are the trees' own parameters, held here because
+	// this is where a tree is built — newForest hands them to every tree it
+	// makes, so a compaction rebuild keeps the index's configured shape. Both
+	// come from config (db.vector-search.leaf-size, .overfetch); the trees
+	// package holds no defaults of its own.
+	leafSize  int
+	overfetch int
+
 	compare comparator.Comparator[K] // vector key ordering
 }
 
@@ -72,12 +80,22 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 // seed seeds the first tree; the rest derive from it so every tree gets an
 // independent projection. A dim of 0 defers forest construction until the
 // first Insert, whose vector fixes the index dimensionality. flushFactor is the
-// garbage compaction threshold (entries per live vector); a value <= 0 falls
-// back to the config default. compare orders vector keys, the tiebreak Search
-// ranks equidistant vectors by.
-func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees int, seed uint64, flushFactor int, compare comparator.Comparator[K]) *RPTreeIndex[K, P] {
+// garbage compaction threshold (entries per live vector), leafSize the points a
+// tree's leaf holds before splitting, and overfetch the candidates each tree
+// gathers per result before it stops probing. This is the boundary the defaults
+// are applied at: a non-positive value for any of the three falls back to the
+// configured default, so the trees below receive a decided value and hold no
+// policy themselves. compare orders vector keys, the tiebreak Search ranks
+// equidistant vectors by.
+func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees int, seed uint64, flushFactor, leafSize, overfetch int, compare comparator.Comparator[K]) *RPTreeIndex[K, P] {
 	if flushFactor <= 0 {
 		flushFactor = config.DefaultFlushFactor
+	}
+	if leafSize <= 0 {
+		leafSize = config.DefaultLeafSize
+	}
+	if overfetch <= 0 {
+		overfetch = config.DefaultOverfetch
 	}
 	idx := &RPTreeIndex[K, P]{
 		vectors:     make(map[K]containers.Vector[K, P]),
@@ -86,6 +104,8 @@ func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees in
 		numTrees:    numTrees,
 		seed:        seed,
 		flushFactor: flushFactor,
+		leafSize:    leafSize,
+		overfetch:   overfetch,
 		compare:     compare,
 	}
 	if dim > 0 {
@@ -98,7 +118,7 @@ func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees in
 func (idx *RPTreeIndex[K, P]) newForest() []*trees.RPTree[K, containers.Vector[K, P], P] {
 	forest := make([]*trees.RPTree[K, containers.Vector[K, P], P], idx.numTrees)
 	for i := range forest {
-		forest[i] = trees.NewRPTree[K, containers.Vector[K, P], P](idx.dim, idx.projDim, idx.seed+uint64(i))
+		forest[i] = trees.NewRPTree[K, containers.Vector[K, P], P](idx.dim, idx.projDim, idx.seed+uint64(i), idx.leafSize, idx.overfetch)
 	}
 	return forest
 }

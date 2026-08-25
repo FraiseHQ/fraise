@@ -140,14 +140,43 @@ ranking boost.
 
 | Setting                | Flag                           | Default | Meaning                                             |
 |------------------------|--------------------------------|---------|-----------------------------------------------------|
-| `projection-dimension` | `-rptree-projection-dimension` | `8`     | dimension each RP-tree projects vectors down to     |
-| `number-trees`         | `-rptree-n-trees`              | `4`     | trees in the vector index forest                    |
+| `projection-dimension` | `-rptree-projection-dimension` | `128`   | dimension each RP-tree projects vectors down to     |
+| `number-trees`         | `-rptree-n-trees`              | `16`    | trees in the vector index forest                    |
 | `seed`                 | `-rptree-seed`                 | `4`     | seeds the random projections (deterministic builds) |
 | `flush-factor`         | `-rptree-flush-factor`         | `2`     | entries per live vector before the forest rebuilds  |
+| `leaf-size`            | `-rptree-leaf-size`            | `32`    | points a tree leaf holds before it splits           |
+| `overfetch`            | `-rptree-overfetch`            | `32`    | candidates gathered per result before probing stops |
 
 `flush-factor` is what bounds the forest at O(live vectors) under sustained
 writes; `/api/v1/stats` reports `forest_entries` so the bound can be watched
 rather than assumed.
+
+`overfetch` is the knob to reach for first when vector recall is short. A search
+gathers this many candidates per result asked for, scores all of them by true
+distance and keeps the best: the projection decides only where to look, and the
+factor is how much room the exact measure gets to overrule it. At 1 the result
+is whatever the projection routed to; raised far enough it converges on an exact
+scan, so it trades query time for recall continuously with no cliff at either
+end. It is also the only one of these settings that shapes no index, so what it
+costs is query time alone — the others are paid on every write and in resident
+memory as well.
+
+`number-trees` and `projection-dimension` shape the index itself. A single
+random-projection tree is a weak approximator and the forest is what averages
+that away, so recall rises steeply with `number-trees` while query cost and
+memory rise linearly. `projection-dimension` widens the set of split directions
+a tree can draw on, which matters most for deep trees that would otherwise reuse
+the same few; it costs a little at query time and nothing at ingest.
+
+`leaf-size` sets how fine the partition is: bigger leaves mean fewer, coarser
+regions and more vectors scanned per probe, smaller leaves the reverse. It is
+the least useful of the four to move, because `overfetch` reaches the same
+candidate counts without rebuilding the index.
+
+At a fixed latency budget, raising `overfetch` generally beats raising
+`number-trees` — it reaches comparable recall without multiplying write cost or
+resident memory. Reach for more trees when over-fetch alone has stopped paying.
+All four defaults are chosen for recall, not for the fastest possible query.
 
 ## Example
 
