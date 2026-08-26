@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.0-rc.1](https://github.com/FraiseHQ/fraise/compare/v0.1.0-beta.8...v0.1.0-rc.1) (2026-08-25)
+
+
+### Features
+
+* improve text and vector seeding recall ([#227](https://github.com/FraiseHQ/fraise/issues/227)) ([3d776fa](https://github.com/FraiseHQ/fraise/commit/3d776fa5f40391a595c648e605b673a396a9b787))
+
+
+### Maintenance
+
+* **main:** release python 0.1.0-beta.3 ([#219](https://github.com/FraiseHQ/fraise/issues/219)) ([f8cfedc](https://github.com/FraiseHQ/fraise/commit/f8cfedc3dcdae22eb854b4735164b30749338474))
+* transfer repo from RonsenbergVI to FraiseHQ org ([#223](https://github.com/FraiseHQ/fraise/issues/223)) ([83600ad](https://github.com/FraiseHQ/fraise/commit/83600ad381a28ec629bc2cc54f58ccc32a87cbb9))
+* **typescript:** remove typescript sdk placeholder ([#225](https://github.com/FraiseHQ/fraise/issues/225)) ([316ebbd](https://github.com/FraiseHQ/fraise/commit/316ebbd30b3aebd8bcdfb6cef37d3fde6362043e))
+
 ## [0.1.0-beta.8](https://github.com/RonsenbergVI/fraise/compare/v0.1.0-beta.7...v0.1.0-beta.8) (2026-08-23)
 
 
