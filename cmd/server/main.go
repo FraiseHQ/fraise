@@ -51,6 +51,13 @@ func PrintBanner() {
 // supervisor (docker/k8s on-failure restart policy) see the startup failure;
 // exiting 0 would mark a dead server as a clean shutdown.
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if err := runMCP(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "fraise mcp:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		logger.Error("Failed to start server", "error", err)
 		os.Exit(1)
