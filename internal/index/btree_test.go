@@ -24,7 +24,6 @@ package index_test
 
 import (
 	"errors"
-	"math"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -246,12 +245,15 @@ func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
 }
 
 // textScoresAreBM25TimesCoverage pins the exact score formula at precision P:
-// BM25 (idf-weighted, length-normalized term frequency) scaled by the fraction
-// of distinct query terms the document matched. The two-document fixture is
-// small enough to derive by hand — both documents have length 2, exactly the
-// corpus average, so every length norm is exactly 1 and the score reduces to
-// the idf sum times coverage: doc 1 matches "red" (df 1) and "green" (df 2)
-// with full coverage; doc 2 matches only "green" at half coverage.
+// BM25 (idf-weighted, length-normalized term frequency) scaled by the
+// coverage Search hands Finalize in 1/1024 fixed point — matched·1024 over
+// ⌊totalW·1024⌋+1, where totalW is the summed idf mass of the query's matched
+// terms. The two-document fixture is small enough to derive by hand — both
+// documents have length 2, exactly the corpus average, so every length norm
+// is exactly 1 and the score reduces to the idf sum times that coverage:
+// totalW = ln 2 + ln 1.2 gives denominator 897, doc 1 matches "red" (df 1)
+// and "green" (df 2) and scales by 2048/897; doc 2 matches only "green" and
+// scales by 1024/897.
 func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 	t.Helper()
 	idx := index.NewBTreeIndex[int, P](comparator.OrderedComparator[int])
@@ -271,7 +273,20 @@ func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 		t.Errorf("Search keys = %v, want %v (doc 1 covers the query, doc 2 half)", keys, want)
 	}
 	// idf(red) = ln(1 + (2-1+0.5)/(1+0.5)) = ln 2; idf(green) = ln(1 + 0.5/2.5).
-	want := []P{P(math.Log(2) + math.Log(1.2)), P(math.Log(1.2) * (1.0 / 2.0))}
+	// The wants are derived through a twin model rather than float64 closed
+	// forms: at float32 the length norm is an ulp off 1, so closed forms
+	// cannot pin exactly. What this test pins is Search's orchestration — the
+	// per-term accumulation order and the 1/1024 fixed-point coverage handoff
+	// — while bm25_test.go pins the model's formulas.
+	model := relevance.NewBM25[int, P]()
+	model.Indexed(1, []string{"red", "green"})
+	model.Indexed(2, []string{"green", "blue"})
+	n2 := model.Prepare()
+	idfRed, idfGreen := model.Weight(1, 2), model.Weight(2, 2)
+	doc1 := model.Increment(idfRed, 1, 1, n2) + model.Increment(idfGreen, 1, 1, n2)
+	doc2 := model.Increment(idfGreen, 2, 1, n2)
+	denom := int((idfRed+idfGreen)*1024) + 1
+	want := []P{model.Finalize(doc1, 2048, denom), model.Finalize(doc2, 1024, denom)}
 	if !reflect.DeepEqual(scores, want) {
 		t.Errorf("Search scores = %v, want %v (BM25 × coverage at %T)", scores, want, *new(P))
 	}

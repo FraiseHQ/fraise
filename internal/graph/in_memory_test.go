@@ -415,8 +415,10 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 // TestInMemoryGraphSearchRecencyDecayFactor pins the decay formula the README
 // promises ("recent memories outrank older ones"): a fact's score is
 // multiplied by 0.5^(age/half-life). A lone fact in a one-document corpus has
-// a hand-derivable BM25 mass — idf ln(1 + 0.5/1.5) at length norm 1 with full
-// coverage — and the decay factor is observable as the ratio to it.
+// a hand-derivable BM25 mass — idf ln(1 + 0.5/1.5) at length norm 1, scaled
+// by the fixed-point coverage 1024/(⌊1024·ln(4/3)⌋+1) = 1024/295 the index
+// hands Finalize for a fully-matched one-term query — and the decay factor is
+// observable as the ratio to it.
 func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	halflife := testConfig().Engine.Halflife // default 7d
 
@@ -440,7 +442,7 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 			}
 			// The fact ages a hair between Set and Search, so allow a small
 			// tolerance around the exact factor.
-			preDecay := math.Log(1 + 0.5/1.5)
+			preDecay := math.Log(1+0.5/1.5) * 1024 / 295
 			if diff := scores[0]/preDecay - tc.want; diff > 1e-3 || diff < -1e-3 {
 				t.Errorf("score = %v, want ~%v of the BM25 mass %v (0.5^(age/half-life))", scores[0], tc.want, preDecay)
 			}
@@ -531,8 +533,9 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchDecayDisabled checks that a non-positive half-life
-// switches decay off: an old fact keeps its full relevance score — exactly
-// its BM25 mass in a one-document corpus, untouched by age.
+// switches decay off: an old fact keeps its full relevance score — its BM25
+// mass in a one-document corpus at the 1024/295 fixed-point coverage of a
+// fully-matched one-term query, untouched by age.
 func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -543,7 +546,7 @@ func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	if len(scores) != 1 {
 		t.Fatalf("Search returned %d scores, want 1", len(scores))
 	}
-	if want := math.Log(1 + 0.5/1.5); scores[0] != want {
+	if want := math.Log(1+0.5/1.5) * 1024 / 295; scores[0] != want {
 		t.Errorf("score with decay disabled = %v, want exactly the BM25 mass %v", scores[0], want)
 	}
 }

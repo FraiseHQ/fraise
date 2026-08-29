@@ -59,7 +59,8 @@ func TestExcessScorerFloor(t *testing.T) {
 // (Properties 5.3 and 5.4). With background 2, a degree-6 anchor observing
 // mass 14 owes 12 to the null and 2 to the candidate's own mass (self-
 // exclusion): it transmits nothing — fair share exactly. Shrink its degree to
-// 3 and the same observation carries surplus 6, of which α² = 1/4 arrives.
+// 3 and the same observation carries surplus 6 spread over its 3 edges, of
+// which α² = 1/4 arrives per edge.
 func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 
@@ -69,13 +70,14 @@ func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	}
 
 	surplus := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 3, Count: 2})
-	if want := 2 + 0.25*(14-2-3*2.0); scorer.WithBackground(2).Score(surplus) != want {
-		t.Errorf("surplus fold = %v, want m + α²·(M − m − d·ρ₀) = %v", scorer.WithBackground(2).Score(surplus), want)
+	if want := 2 + 0.25*(14-2-3*2.0)/3; scorer.WithBackground(2).Score(surplus) != want {
+		t.Errorf("surplus fold = %v, want m + α²·(M − m − d·ρ₀)/d = %v", scorer.WithBackground(2).Score(surplus), want)
 	}
 
-	// Earned preemption: a pure non-seed funded by the same surplus outranks
-	// a weak seed of mass 1.
-	nonSeed := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 3, Count: 2}}
+	// Earned preemption: a pure non-seed funded by a rich anchor outranks a
+	// weak seed of mass 1. Transmission is per-edge, so the anchor must clear
+	// α²·(M − d·ρ₀)/d > 1: at degree 3 and background 2, mass 20 funds 7/6.
+	nonSeed := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcGraph, Score: 20, Via: 1, Degree: 3, Count: 2}}
 	if got := scorer.WithBackground(2).Score(nonSeed); got <= 1 {
 		t.Errorf("funded non-seed fold = %v, want it to preempt a weak seed's mass 1", got)
 	}
