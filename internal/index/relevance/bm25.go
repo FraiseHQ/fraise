@@ -117,7 +117,7 @@ func (b *BM25[K, P]) Finalize(score P, matched, terms int) P {
 	return score * P(matched) / P(terms)
 }
 
-// Getter for totalLen attribute
+// TotalLen returns the sum of recorded document lengths in tokens.
 func (b BM25[K, P]) TotalLen() int {
 	return b.totalLen
 }
