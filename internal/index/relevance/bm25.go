@@ -58,7 +58,7 @@ func NewBM25[K comparable, P float32 | float64]() *BM25[K, P] {
 }
 
 // Indexed records the document's length into the corpus statistics.
-func (b BM25[K, P]) Indexed(key K, tokens []string) {
+func (b *BM25[K, P]) Indexed(key K, tokens []string) {
 	b.lengths[key] = len(tokens)
 	b.totalLen += len(tokens)
 }
@@ -66,7 +66,7 @@ func (b BM25[K, P]) Indexed(key K, tokens []string) {
 // Removed retires the document's length. The recorded length is used, not
 // len(tokens): the tokenizer may have changed since the insert, and the
 // statistics must retire exactly what they admitted.
-func (b BM25[K, P]) Removed(key K, _ []string) {
+func (b *BM25[K, P]) Removed(key K, _ []string) {
 	b.totalLen -= b.lengths[key]
 	delete(b.lengths, key)
 }
@@ -88,7 +88,7 @@ func (b *BM25[K, P]) Terms(tokens []string) []string {
 }
 
 // Weight is the BM25 idf: log(1 + (n − df + 0.5) / (df + 0.5)).
-func (b BM25[K, P]) Weight(df, docs int) P {
+func (b *BM25[K, P]) Weight(df, docs int) P {
 	n := P(docs)
 	return P(math.Log(float64(1 + (n-P(df)+0.5)/(P(df)+0.5))))
 }
@@ -98,14 +98,14 @@ func (b BM25[K, P]) Weight(df, docs int) P {
 // state rather than cached on the model, so it stays safe under concurrent
 // queries sharing this instance, and Increment turns it into one multiply
 // per posting entry instead of a division.
-func (b BM25[K, P]) Prepare() P {
+func (b *BM25[K, P]) Prepare() P {
 	avgdl := P(b.totalLen) / P(len(b.lengths))
 	return bm25K1 * bm25B / avgdl
 }
 
 // Increment is the idf-weighted, length-normalized term-frequency gain. n2
 // is this query's Prepare() result.
-func (b BM25[K, P]) Increment(weight P, key K, tf int, n2 P) P {
+func (b *BM25[K, P]) Increment(weight P, key K, tf int, n2 P) P {
 	freq := P(tf)
 	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*P(b.lengths[key]))
 }
@@ -113,16 +113,16 @@ func (b BM25[K, P]) Increment(weight P, key K, tf int, n2 P) P {
 // Finalize scales by coverage: the fraction of distinct query terms the
 // document matched. An alternative coverage multiplier is a one-line swap in
 // this slot.
-func (b BM25[K, P]) Finalize(score P, matched, terms int) P {
+func (b *BM25[K, P]) Finalize(score P, matched, terms int) P {
 	return score * P(matched) / P(terms)
 }
 
 // Getter for totalLen attribute
-func (b BM25[K, P]) TotalLen() int {
+func (b *BM25[K, P]) TotalLen() int {
 	return b.totalLen
 }
 
 // Getter for lengths attribute
-func (b BM25[K, P]) Lengths() map[K]int {
+func (b *BM25[K, P]) Lengths() map[K]int {
 	return b.lengths
 }
