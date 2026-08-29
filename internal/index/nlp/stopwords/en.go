@@ -20,11 +20,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// External pins of the default relevance model. MatchCount is the ranking
-// the index shipped with before relevance became pluggable — one point per
-// query-term occurrence, repeats included — so these pins spell that
-// contract out method by method. The randomized equivalence pin against the
-// pre-plugin ranking lives with the index, which owns the drive loop.
+// English is the English stop-word list used by this package.
+//
+// All entries are lowercase to support case-insensitive matching.
 
 package stopwords
 
