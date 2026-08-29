@@ -80,13 +80,11 @@ func (s *ExcessScorer[K, P]) Score(contributions []Contribution[K, P]) P {
 		if c.Src != SrcGraph {
 			continue
 		}
-		d := P(c.Degree)
-
-		if d < 1 {
-			d = 1
+		deg := P(c.Degree)
+		if deg < 1 {
+			deg = 1
 		}
-
-		if surplus := (c.Score - mass - P(c.Degree)*s.background) / d; surplus > 0 {
+		if surplus := (c.Score - mass - deg*s.background) / deg; surplus > 0 {
 			excess += surplus
 		}
 	}
