@@ -28,6 +28,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/internal/index"
 )
@@ -128,7 +129,7 @@ func (g *fakeGraph) GetTextIndex() index.TextIndex[uint64, float64]     { return
 func (g *fakeGraph) MergeFrom(graph.Graph[uint64, float64])             {}
 func (g *fakeGraph) Copy() graph.Graph[uint64, float64]                 { return g }
 func (g *fakeGraph) Nodes() map[uint64]graph.Node[uint64]               { return nil }
-func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) ([]*graph.Node[uint64], []float64, [][]graph.Contribution[uint64, float64], float64) {
+func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) ([]*graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64) {
 	return nil, nil, nil, 0
 }
 func (g *fakeGraph) RLock()   {}

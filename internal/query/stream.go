@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
@@ -238,7 +239,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 // anchor's key resolved to its stored value — the topic or entity name a
 // client can actually read. A vanished anchor falls back to an empty via
 // rather than inventing one.
-func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P], contributions []graph.Contribution[K, P]) []HitContribution[P] {
+func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P], contributions []scoring.Contribution[K, P]) []HitContribution[P] {
 	out := make([]HitContribution[P], len(contributions))
 	for i, c := range contributions {
 		wire := HitContribution[P]{
@@ -248,7 +249,7 @@ func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P]
 			Degree: c.Degree,
 			Count:  c.Count,
 		}
-		if c.Src == graph.SrcGraph {
+		if c.Src == scoring.SrcGraph {
 			if node := g.Get(c.Via); node != nil {
 				wire.Via = node.GetValue()
 			}

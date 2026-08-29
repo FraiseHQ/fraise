@@ -20,20 +20,20 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package index_test
+package nlp_test
 
 import (
 	"reflect"
 	"testing"
 
-	"github.com/FraiseHQ/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/internal/index/nlp"
 )
 
 // TestStemmingTokenizerReducesInflections pins the stemmer's contract: the
 // split and casing are SimpleTokenizer's, and every English inflection lands
 // on its Snowball stem, so "running", "runs" and "RUN" become one term.
 func TestStemmingTokenizerReducesInflections(t *testing.T) {
-	got := index.StemmingTokenizer{}.Tokenize("The runner was RUNNING; she runs easily!")
+	got := nlp.StemmingTokenizer{}.Tokenize("The runner was RUNNING; she runs easily!")
 	want := []string{"the", "runner", "was", "run", "she", "run", "easili"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Tokenize = %v, want %v", got, want)
@@ -45,7 +45,7 @@ func TestStemmingTokenizerReducesInflections(t *testing.T) {
 // stemming rewrites, it never drops, so every term the plain split would
 // index still exists under some spelling.
 func TestStemmingTokenizerPassesUnstemmableTermsThrough(t *testing.T) {
-	got := index.StemmingTokenizer{}.Tokenize("v2 café 東京 1234")
+	got := nlp.StemmingTokenizer{}.Tokenize("v2 café 東京 1234")
 	want := []string{"v2", "café", "東京", "1234"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Tokenize = %v, want %v", got, want)

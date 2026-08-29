@@ -31,6 +31,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/internal/index"
 )
@@ -52,7 +53,7 @@ type fakeGraph struct {
 
 	searchNodes      []*graph.Node[string]
 	searchScores     []float32
-	searchContribs   [][]graph.Contribution[string, float32]
+	searchContribs   [][]scoring.Contribution[string, float32]
 	searchBackground float32
 }
 
@@ -68,7 +69,7 @@ func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32])     { g.merged = 
 func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32, [][]graph.Contribution[string, float32], float32) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32, [][]scoring.Contribution[string, float32], float32) {
 	g.searchCalled = true
 	return g.searchNodes, g.searchScores, g.searchContribs, g.searchBackground
 }
@@ -153,9 +154,9 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 // objects across requests; this test drives it exactly where the handler
 // sets it.
 func TestStreamCommitExplainAttachesContributions(t *testing.T) {
-	contributions := [][]graph.Contribution[string, float32]{
-		{{Src: graph.SrcText, Score: 1, Rank: 0, Count: 1}},
-		{{Src: graph.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: graph.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2}},
+	contributions := [][]scoring.Contribution[string, float32]{
+		{{Src: scoring.SrcText, Score: 1, Rank: 0, Count: 1}},
+		{{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2}},
 	}
 	// The wire form: sources by name, the graph entry's anchor key resolved
 	// via Get — the fake stores no nodes, so via falls back to empty, which

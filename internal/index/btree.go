@@ -28,6 +28,8 @@ import (
 	"github.com/FraiseHQ/fraise/internal/comparator"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/containers/trees"
+	"github.com/FraiseHQ/fraise/internal/index/nlp"
+	"github.com/FraiseHQ/fraise/internal/index/relevance"
 	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
@@ -42,8 +44,8 @@ type BTreeIndex[K comparable, P float32 | float64] struct {
 	tree      *trees.BTree[K, string, P] // ordered term dictionary (P is unused)
 	postings  map[string]map[K]int       // term -> document key -> term frequency
 	documents map[K]string               // key -> raw document text
-	tokenizer Tokenizer
-	relevance Relevance[K]
+	tokenizer nlp.Tokenizer
+	relevance relevance.Relevance[K, P]
 	compare   comparator.Comparator[K] // document key ordering
 }
 
@@ -56,8 +58,8 @@ func NewBTreeIndex[K comparable, P float32 | float64](compare comparator.Compara
 		tree:      trees.NewBTree[K, string, P](32, comparator.OrderedComparator[string]),
 		postings:  make(map[string]map[K]int),
 		documents: make(map[K]string),
-		tokenizer: SimpleTokenizer{},
-		relevance: MatchCount[K]{},
+		tokenizer: nlp.SimpleTokenizer{},
+		relevance: relevance.MatchCount[K, P]{},
 		compare:   compare,
 	}
 }
@@ -66,7 +68,7 @@ func NewBTreeIndex[K comparable, P float32 | float64](compare comparator.Compara
 // called before the first Insert and never after: postings tokenized under
 // the old scheme would be unreachable under the new one. nil is ignored
 // rather than stored: an index without a tokenizer cannot index.
-func (idx *BTreeIndex[K, P]) SetTokenizer(t Tokenizer) {
+func (idx *BTreeIndex[K, P]) SetTokenizer(t nlp.Tokenizer) {
 	if t == nil {
 		return
 	}
@@ -78,7 +80,7 @@ func (idx *BTreeIndex[K, P]) SetTokenizer(t Tokenizer) {
 // model maintains its own corpus statistics through the lifecycle hooks, so
 // one arriving mid-corpus would score against empty statistics. nil is
 // ignored rather than stored: an index without a relevance model cannot rank.
-func (idx *BTreeIndex[K, P]) SetRelevance(r Relevance[K]) {
+func (idx *BTreeIndex[K, P]) SetRelevance(r relevance.Relevance[K, P]) {
 	if r == nil {
 		return
 	}
@@ -151,25 +153,29 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		}
 	}
 
-	scores := make(map[K]float64, maxPosting)
-	matched := make(map[K]int, maxPosting)
+	scores := make(map[K]P, maxPosting)
+	matched := make(map[K]P, maxPosting)
 	prepared := idx.relevance.Prepare()
+
+	var totalW P
 	for _, term := range terms {
 		posting := idx.postings[term]
 		if len(posting) == 0 {
 			continue
 		}
 		weight := idx.relevance.Weight(len(posting), len(idx.documents))
+		totalW += weight
 		for key, tf := range posting {
 			scores[key] += idx.relevance.Increment(weight, key, tf, prepared)
 			matched[key]++
 		}
 	}
 	for key := range scores {
-		scores[key] = idx.relevance.Finalize(scores[key], matched[key], len(terms))
+		scores[key] = idx.relevance.Finalize(scores[key], int(matched[key]*1024), int(totalW*1024)+1)
 	}
 
-	top := containers.NewTopK[K, float64](k, idx.compare)
+	top := containers.NewTopK[K, P](k, idx.compare)
+
 	for key, score := range scores {
 		top.Offer(key, score)
 	}

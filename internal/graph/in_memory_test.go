@@ -32,6 +32,7 @@ import (
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/index"
 )
 
@@ -414,8 +415,10 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 // TestInMemoryGraphSearchRecencyDecayFactor pins the decay formula the README
 // promises ("recent memories outrank older ones"): a fact's score is
 // multiplied by 0.5^(age/half-life). A lone fact in a one-document corpus has
-// a hand-derivable BM25 mass — idf ln(1 + 0.5/1.5) at length norm 1 with full
-// coverage — and the decay factor is observable as the ratio to it.
+// a hand-derivable BM25 mass — idf ln(1 + 0.5/1.5) at length norm 1, scaled
+// by the fixed-point coverage 1024/(⌊1024·ln(4/3)⌋+1) = 1024/295 the index
+// hands Finalize for a fully-matched one-term query — and the decay factor is
+// observable as the ratio to it.
 func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	halflife := testConfig().Engine.Halflife // default 7d
 
@@ -439,7 +442,7 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 			}
 			// The fact ages a hair between Set and Search, so allow a small
 			// tolerance around the exact factor.
-			preDecay := math.Log(1 + 0.5/1.5)
+			preDecay := math.Log(1+0.5/1.5) * 1024 / 295
 			if diff := scores[0]/preDecay - tc.want; diff > 1e-3 || diff < -1e-3 {
 				t.Errorf("score = %v, want ~%v of the BM25 mass %v (0.5^(age/half-life))", scores[0], tc.want, preDecay)
 			}
@@ -454,9 +457,9 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 // interface, in the same spirit as fakeHasher.
 type constScorer struct{ score float64 }
 
-func (s constScorer) Score([]graph.Contribution[uint64, float64]) float64 { return s.score }
+func (s constScorer) Score([]scoring.Contribution[uint64, float64]) float64 { return s.score }
 
-func (s constScorer) WithBackground(float64) graph.Scorer[uint64, float64] { return s }
+func (s constScorer) WithBackground(float64) scoring.Scorer[uint64, float64] { return s }
 
 // TestNewGraphInstallsStemmingTokenizer pins the tokenizer wiring: recall
 // keywords rarely arrive in the fact's exact inflection, so NewGraph installs
@@ -530,8 +533,9 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchDecayDisabled checks that a non-positive half-life
-// switches decay off: an old fact keeps its full relevance score — exactly
-// its BM25 mass in a one-document corpus, untouched by age.
+// switches decay off: an old fact keeps its full relevance score — its BM25
+// mass in a one-document corpus at the 1024/295 fixed-point coverage of a
+// fully-matched one-term query, untouched by age.
 func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -542,7 +546,7 @@ func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	if len(scores) != 1 {
 		t.Fatalf("Search returned %d scores, want 1", len(scores))
 	}
-	if want := math.Log(1 + 0.5/1.5); scores[0] != want {
+	if want := math.Log(1+0.5/1.5) * 1024 / 295; scores[0] != want {
 		t.Errorf("score with decay disabled = %v, want exactly the BM25 mass %v", scores[0], want)
 	}
 }
@@ -751,7 +755,7 @@ func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	// The funded member carries exactly one observation: its cluster's mass,
 	// through the weather anchor.
 	list := contributions[found]
-	if len(list) != 1 || list[0].Src != graph.SrcGraph || list[0].Score <= 0 || list[0].Degree != 3 {
+	if len(list) != 1 || list[0].Src != scoring.SrcGraph || list[0].Score <= 0 || list[0].Degree != 3 {
 		t.Errorf("silent member's contributions = %+v, want a single weather-cluster observation", list)
 	}
 }
@@ -817,7 +821,7 @@ func TestSearchDepthLanes(t *testing.T) {
 		}
 		return false
 	}
-	search := func(depth int) ([]string, [][]graph.Contribution[uint64, float64], float64) {
+	search := func(depth int) ([]string, [][]scoring.Contribution[uint64, float64], float64) {
 		nodes, _, contribs, bg := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, depth, 20, time.Time{}, time.Time{})
 		return values(nodes), contribs, bg
 	}
@@ -829,7 +833,7 @@ func TestSearchDepthLanes(t *testing.T) {
 	}
 	for _, list := range contribs0 {
 		for _, c := range list {
-			if c.Src == graph.SrcGraph {
+			if c.Src == scoring.SrcGraph {
 				t.Errorf("depth 0 recorded a graph contribution %+v: the floor lane funds nothing", c)
 			}
 		}

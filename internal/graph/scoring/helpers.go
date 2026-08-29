@@ -20,34 +20,34 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package graph
+package scoring
 
-import (
-	"math"
-	"testing"
-)
+import "math"
 
-// TestClampsSaturateInsteadOfWrapping pins the overflow guards on the
-// Contribution fields: a position or hop beyond the field's range saturates at
-// the maximum (worst) value. A plain cast would wrap, ranking an overflow
-// position as if it were among the best.
-func TestClampsSaturateInsteadOfWrapping(t *testing.T) {
-	if got := clampRank(3); got != 3 {
-		t.Errorf("clampRank(3) = %d, want 3", got)
+// ClampRank bounds a source position to Contribution.Rank's range: a result
+// list longer than the field would otherwise wrap, ranking overflow positions
+// as if they were the best.
+func ClampRank(rank int) uint16 {
+	if rank > math.MaxUint16 {
+		return math.MaxUint16
 	}
-	if got := clampRank(math.MaxUint16 + 1); got != math.MaxUint16 {
-		t.Errorf("clampRank(MaxUint16+1) = %d, want %d", got, math.MaxUint16)
+	return uint16(rank)
+}
+
+// clampCount bounds a funding-seed count to Contribution.Count's range, for
+// the same reason as clampRank: a wrapped count would misreport a heavily
+// funded anchor as barely funded.
+func ClampCount(count int) uint16 {
+	if count > math.MaxUint16 {
+		return math.MaxUint16
 	}
-	if got := clampCount(2); got != 2 {
-		t.Errorf("clampCount(2) = %d, want 2", got)
+	return uint16(count)
+}
+
+// clampDegree bounds an anchor degree to Contribution.Degree's range.
+func ClampDegree(degree int) uint32 {
+	if int64(degree) > math.MaxUint32 {
+		return math.MaxUint32
 	}
-	if got := clampCount(math.MaxUint16 + 1); got != math.MaxUint16 {
-		t.Errorf("clampCount(MaxUint16+1) = %d, want %d", got, math.MaxUint16)
-	}
-	if got := clampDegree(7); got != 7 {
-		t.Errorf("clampDegree(7) = %d, want 7", got)
-	}
-	if got := clampDegree(math.MaxUint32 + 1); got != math.MaxUint32 {
-		t.Errorf("clampDegree(MaxUint32+1) = %d, want %d", got, uint32(math.MaxUint32))
-	}
+	return uint32(degree)
 }

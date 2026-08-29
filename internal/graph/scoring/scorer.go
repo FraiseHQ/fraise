@@ -20,9 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package graph
-
-import "math"
+package scoring
 
 // Source identifies the retrieval stage that produced a Contribution.
 // Collection sites record observations on each source's own scale; the
@@ -42,6 +40,30 @@ const (
 	// the fair share and applies the hinge.
 	SrcGraph
 )
+
+// Scorer folds one candidate's contributions into its relevance score;
+// higher wins. Search applies it twice — to each seed's own contributions
+// before any traversal (fixing the seed masses the traversal aggregates) and
+// to every candidate's full list at the end — and one instance is shared by
+// every concurrent search on the graph, so implementations must be pure: no
+// mutation of the slice, no mutable state, same input same output.
+//
+// Query-scoped inputs arrive by binding, never by mutation. WithBackground
+// returns a scorer bound to one query's background rate — the average mass
+// density per unit of anchor degree the traversal observed, the one
+// query-global number a null model needs. An unbound scorer folds at
+// background zero, which is exactly what seed fusion wants: before the
+// traversal has observed anything there is no null to compare against.
+// Mutating the shared instance instead would race one query's background
+// into another's folds, since reads run concurrently under RLock.
+type Scorer[K comparable, P float32 | float64] interface {
+	// Score folds contributions at the scorer's bound background rate.
+	Score(contributions []Contribution[K, P]) P
+
+	// WithBackground returns a scorer bound to background; a fold with no
+	// null model returns itself.
+	WithBackground(background P) Scorer[K, P]
+}
 
 // String names the source for logs and for the explain payload, which
 // serializes contributions for clients that never see the Go constants.
@@ -86,55 +108,3 @@ type Contribution[K comparable, P float32 | float64] struct {
 // order and seed traversals run in ascending key order — so a Scorer may fold
 // a list's floats front to back without run-to-run drift in the low bits.
 type Candidates[K comparable, P float32 | float64] map[K][]Contribution[K, P]
-
-// Scorer folds one candidate's contributions into its relevance score;
-// higher wins. Search applies it twice — to each seed's own contributions
-// before any traversal (fixing the seed masses the traversal aggregates) and
-// to every candidate's full list at the end — and one instance is shared by
-// every concurrent search on the graph, so implementations must be pure: no
-// mutation of the slice, no mutable state, same input same output.
-//
-// Query-scoped inputs arrive by binding, never by mutation. WithBackground
-// returns a scorer bound to one query's background rate — the average mass
-// density per unit of anchor degree the traversal observed, the one
-// query-global number a null model needs. An unbound scorer folds at
-// background zero, which is exactly what seed fusion wants: before the
-// traversal has observed anything there is no null to compare against.
-// Mutating the shared instance instead would race one query's background
-// into another's folds, since reads run concurrently under RLock.
-type Scorer[K comparable, P float32 | float64] interface {
-	// Score folds contributions at the scorer's bound background rate.
-	Score(contributions []Contribution[K, P]) P
-
-	// WithBackground returns a scorer bound to background; a fold with no
-	// null model returns itself.
-	WithBackground(background P) Scorer[K, P]
-}
-
-// clampRank bounds a source position to Contribution.Rank's range: a result
-// list longer than the field would otherwise wrap, ranking overflow positions
-// as if they were the best.
-func clampRank(rank int) uint16 {
-	if rank > math.MaxUint16 {
-		return math.MaxUint16
-	}
-	return uint16(rank)
-}
-
-// clampCount bounds a funding-seed count to Contribution.Count's range, for
-// the same reason as clampRank: a wrapped count would misreport a heavily
-// funded anchor as barely funded.
-func clampCount(count int) uint16 {
-	if count > math.MaxUint16 {
-		return math.MaxUint16
-	}
-	return uint16(count)
-}
-
-// clampDegree bounds an anchor degree to Contribution.Degree's range.
-func clampDegree(degree int) uint32 {
-	if int64(degree) > math.MaxUint32 {
-		return math.MaxUint32
-	}
-	return uint32(degree)
-}
