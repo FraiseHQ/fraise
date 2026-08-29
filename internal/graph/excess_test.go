@@ -152,7 +152,7 @@ func TestExcessTraversalCloneIsIndependent(t *testing.T) {
 // TestExcessTraversalMissingSource mirrors the BFS contract: an unknown
 // source is an error, not an empty walk.
 func TestExcessTraversalMissingSource(t *testing.T) {
-	g, _, _, _, _ := scoringexcessTraversalGraph(t)
+	g, _, _, _, _ := excessTraversalGraph(t)
 	tr := graph.NewExcessTraversal[uint64, float64]()
 	tr.SetSource(0xdeadbeef)
 	if _, err := tr.Run(g); err == nil {
