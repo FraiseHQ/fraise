@@ -118,11 +118,11 @@ func (b *BM25[K, P]) Finalize(score P, matched, terms int) P {
 }
 
 // Getter for totalLen attribute
-func (b *BM25[K, P]) TotalLen() int {
+func (b BM25[K, P]) TotalLen() int {
 	return b.totalLen
 }
 
 // Getter for lengths attribute
-func (b *BM25[K, P]) Lengths() map[K]int {
+func (b BM25[K, P]) Lengths() map[K]int {
 	return b.lengths
 }
