@@ -24,7 +24,7 @@ package scoring
 
 import "math"
 
-// clampRank bounds a source position to Contribution.Rank's range: a result
+// ClampRank bounds a source position to Contribution.Rank's range: a result
 // list longer than the field would otherwise wrap, ranking overflow positions
 // as if they were the best.
 func ClampRank(rank int) uint16 {
