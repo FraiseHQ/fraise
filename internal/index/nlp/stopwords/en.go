@@ -295,7 +295,6 @@ var English = []string{
 	"to",
 	"together",
 	"too",
-	"top",
 	"toward",
 	"towards",
 	"twelve",

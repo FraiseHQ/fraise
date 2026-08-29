@@ -145,7 +145,7 @@ def test_explain_score_recomputes_from_payload(query, explain):
         contributions = hit["contributions"]
         m = sum(c["score"] for c in contributions if c["source"] in ("text", "vector"))
         surplus = sum(
-            max(0.0, c["score"] - m - c["degree"] * background)
+            max(0.0, c["score"] - m - c["degree"] * background) / c["degree"]
             for c in contributions
             if c["source"] == "graph"
         )
