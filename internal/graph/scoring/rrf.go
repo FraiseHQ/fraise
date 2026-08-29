@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package graph
+package scoring
 
 // DefaultRRFK is the dampening constant the configuration wires when the RRF
 // scorer is selected. 60 is the empirical standard from Cormack, Clarke &

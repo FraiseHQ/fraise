@@ -20,34 +20,34 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package graph
+package nlp_test
 
 import (
-	"math"
+	"reflect"
 	"testing"
+
+	"github.com/FraiseHQ/fraise/internal/index/nlp"
 )
 
-// TestClampsSaturateInsteadOfWrapping pins the overflow guards on the
-// Contribution fields: a position or hop beyond the field's range saturates at
-// the maximum (worst) value. A plain cast would wrap, ranking an overflow
-// position as if it were among the best.
-func TestClampsSaturateInsteadOfWrapping(t *testing.T) {
-	if got := clampRank(3); got != 3 {
-		t.Errorf("clampRank(3) = %d, want 3", got)
+// TestStemmingTokenizerReducesInflections pins the stemmer's contract: the
+// split and casing are SimpleTokenizer's, and every English inflection lands
+// on its Snowball stem, so "running", "runs" and "RUN" become one term.
+func TestStemmingTokenizerReducesInflections(t *testing.T) {
+	got := nlp.StemmingTokenizer{}.Tokenize("The runner was RUNNING; she runs easily!")
+	want := []string{"the", "runner", "was", "run", "she", "run", "easili"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Tokenize = %v, want %v", got, want)
 	}
-	if got := clampRank(math.MaxUint16 + 1); got != math.MaxUint16 {
-		t.Errorf("clampRank(MaxUint16+1) = %d, want %d", got, math.MaxUint16)
-	}
-	if got := clampCount(2); got != 2 {
-		t.Errorf("clampCount(2) = %d, want 2", got)
-	}
-	if got := clampCount(math.MaxUint16 + 1); got != math.MaxUint16 {
-		t.Errorf("clampCount(MaxUint16+1) = %d, want %d", got, math.MaxUint16)
-	}
-	if got := clampDegree(7); got != 7 {
-		t.Errorf("clampDegree(7) = %d, want 7", got)
-	}
-	if got := clampDegree(math.MaxUint32 + 1); got != math.MaxUint32 {
-		t.Errorf("clampDegree(MaxUint32+1) = %d, want %d", got, uint32(math.MaxUint32))
+}
+
+// TestStemmingTokenizerPassesUnstemmableTermsThrough pins the safety half:
+// numbers, non-English words and CJK text pass through the stemmer intact —
+// stemming rewrites, it never drops, so every term the plain split would
+// index still exists under some spelling.
+func TestStemmingTokenizerPassesUnstemmableTermsThrough(t *testing.T) {
+	got := nlp.StemmingTokenizer{}.Tokenize("v2 café 東京 1234")
+	want := []string{"v2", "café", "東京", "1234"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Tokenize = %v, want %v", got, want)
 	}
 }

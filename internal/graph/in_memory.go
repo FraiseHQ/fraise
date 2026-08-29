@@ -32,8 +32,11 @@ import (
 	"github.com/FraiseHQ/fraise/internal/comparator"
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/internal/index/nlp"
+	"github.com/FraiseHQ/fraise/internal/index/relevance"
 	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
@@ -59,7 +62,7 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	// ExcessScorer, because unscored candidates cannot rank at all.
 	traversal Traversal[K, P]
 	ranking   Ranking[K, P]
-	scorer    Scorer[K, P]
+	scorer    scoring.Scorer[K, P]
 
 	hasher hash.Hasher[K, string]
 
@@ -83,7 +86,7 @@ func (g *InMemoryGraph[K, P]) SetRanking(r Ranking[K, P]) {
 // SetScorer installs the scorer Search folds candidate contributions with.
 // nil is ignored rather than stored: unlike its peers, whose nil means "use
 // the fallback behaviour", a graph without a scorer cannot rank at all.
-func (g *InMemoryGraph[K, P]) SetScorer(s Scorer[K, P]) {
+func (g *InMemoryGraph[K, P]) SetScorer(s scoring.Scorer[K, P]) {
 	if s == nil {
 		return
 	}
@@ -98,9 +101,9 @@ func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGr
 	// methodology needs BM25's raw retrieval mass; "matchcount", the index's
 	// own default, remains selectable for comparison runs.
 	textIndex := index.NewBTreeIndex[K, P](comparator.OrderedComparator[K])
-	textIndex.SetTokenizer(index.StemmingTokenizer{})
+	textIndex.SetTokenizer(nlp.StemmingTokenizer{})
 	if cfg.DB.RelevanceModel.Name == config.RelevanceBM25 {
-		textIndex.SetRelevance(index.NewBM25[K]())
+		textIndex.SetRelevance(relevance.NewBM25[K, P]())
 	}
 
 	g := &InMemoryGraph[K, P]{
@@ -118,7 +121,7 @@ func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGr
 			cfg.DB.VectorSearch.Overfetch,
 			comparator.OrderedComparator[K],
 		),
-		scorer: NewExcessScorer[K, P](),
+		scorer: scoring.NewExcessScorer[K, P](),
 		hasher: hash.NewHasher[K](cfg),
 		config: cfg,
 	}
@@ -368,7 +371,7 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 	return g.textIndex
 }
 
-func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]Contribution[K, P], P) {
+func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P) {
 	// A. Collection: the retrieval stages pool everything they observe about
 	// every candidate — text seeds, vector seeds, anchor transmission — as
 	// Contribution records, plus the one query-global observation (the
@@ -410,7 +413,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	nodes := make([]*Node[K], len(rankedKeys))
 	scoresOut := make([]P, len(rankedKeys))
-	contributions := make([][]Contribution[K, P], len(rankedKeys))
+	contributions := make([][]scoring.Contribution[K, P], len(rankedKeys))
 	for i, key := range rankedKeys {
 		node := g.idToNodes[key]
 		nodes[i] = &node
@@ -429,8 +432,8 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 // compute no policy — the hinge, the null model and the attenuation live
 // entirely in the Scorer — and the second return is the background rate, the
 // query-global observation that fold needs.
-func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (Candidates[K, P], P) {
-	candidates := make(Candidates[K, P])
+func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P) {
+	candidates := make(scoring.Candidates[K, P])
 	seeds := g.gatherSeeds(keywords, vector, candidates, top)
 	background := g.findNeighbours(seeds, candidates, topics, entities, depth)
 	return candidates, background
@@ -448,7 +451,7 @@ func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vecto
 // The seed keys return in ascending key order: scorers fold contribution
 // lists as floats, so the traversal must observe in a deterministic order or
 // the low bits of a shared anchor's mass drift between identical queries.
-func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates Candidates[K, P], top int) []K {
+func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates scoring.Candidates[K, P], top int) []K {
 	seedK := g.config.DB.SeedSize
 	if top > seedK {
 		seedK = top
@@ -460,7 +463,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 		if keys, scores, err := g.textIndex.Search(strings.Join(keywords, " "), seedK); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
-				candidates[key] = append(candidates[key], Contribution[K, P]{Src: SrcText, Score: scores[rank], Rank: clampRank(rank), Count: 1})
+				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
 			}
 		} else {
 			logger.Debug("Text index yielded no seeds", "error", err)
@@ -471,7 +474,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 		if keys, distances, err := g.vectorIndex.Search(vector, seedK); err == nil {
 			vectorSeeds = len(keys)
 			for rank, key := range keys {
-				candidates[key] = append(candidates[key], Contribution[K, P]{Src: SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: clampRank(rank), Count: 1})
+				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1})
 			}
 		} else {
 			logger.Debug("Vector index yielded no seeds", "error", err)
@@ -516,7 +519,7 @@ const depthOneAdmission = 2
 // depthOneAdmission * fair share (the precision lane) and depth 2 at plain
 // fair share (max recall). The pooled candidates are then filtered by
 // topics and entities regardless of the lane.
-func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates Candidates[K, P], topics []string, entities []string, depth int) P {
+func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candidates[K, P], topics []string, entities []string, depth int) P {
 	// depth 0 completes no transmission: the candidates are the text/vector
 	// seeds alone, scored by their own mass (the floor), the anchor expansion
 	// skipped entirely — the fast, text-only lane. depth 1 and 2 both run the
@@ -617,12 +620,12 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates Candidates[K,
 				continue
 			}
 			for _, member := range members[anchor] {
-				candidates[member] = append(candidates[member], Contribution[K, P]{
-					Src:    SrcGraph,
+				candidates[member] = append(candidates[member], scoring.Contribution[K, P]{
+					Src:    scoring.SrcGraph,
 					Score:  anchorMass[anchor],
 					Via:    anchor,
-					Degree: clampDegree(degree[anchor]),
-					Count:  clampCount(anchorSeeds[anchor]),
+					Degree: scoring.ClampDegree(degree[anchor]),
+					Count:  scoring.ClampCount(anchorSeeds[anchor]),
 				})
 			}
 		}

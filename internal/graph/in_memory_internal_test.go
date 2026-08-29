@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 )
 
 // collectFixture builds the smallest graph on which every collection theorem
@@ -55,7 +56,7 @@ type collectFixture struct {
 	h            [6]uint64
 	u            [10]uint64
 	cluster, hub uint64
-	candidates   Candidates[uint64, float64]
+	candidates   scoring.Candidates[uint64, float64]
 	seeds        []uint64
 	background   float64
 }
@@ -104,10 +105,10 @@ func newCollectFixture(t *testing.T) *collectFixture {
 
 	// Hand-built seed contributions: the scorer's seed fusion (background 0)
 	// sums them, so these ARE the masses.
-	fx.candidates = Candidates[uint64, float64]{
-		fx.f1:   {{Src: SrcText, Score: 8, Rank: 0, Count: 1}},
-		fx.f2:   {{Src: SrcText, Score: 6, Rank: 1, Count: 1}},
-		fx.h[0]: {{Src: SrcText, Score: 2, Rank: 2, Count: 1}},
+	fx.candidates = scoring.Candidates[uint64, float64]{
+		fx.f1:   {{Src: scoring.SrcText, Score: 8, Rank: 0, Count: 1}},
+		fx.f2:   {{Src: scoring.SrcText, Score: 6, Rank: 1, Count: 1}},
+		fx.h[0]: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	fx.seeds = []uint64{fx.f1, fx.f2, fx.h[0]}
 	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, nil, nil, 2)
@@ -115,10 +116,10 @@ func newCollectFixture(t *testing.T) *collectFixture {
 }
 
 // graphContributions returns the SrcGraph entries pooled for key.
-func graphContributions(candidates Candidates[uint64, float64], key uint64) []Contribution[uint64, float64] {
-	var out []Contribution[uint64, float64]
+func graphContributions(candidates scoring.Candidates[uint64, float64], key uint64) []scoring.Contribution[uint64, float64] {
+	var out []scoring.Contribution[uint64, float64]
 	for _, c := range candidates[key] {
-		if c.Src == SrcGraph {
+		if c.Src == scoring.SrcGraph {
 			out = append(out, c)
 		}
 	}
@@ -173,7 +174,7 @@ func TestCollectExpandsOnlyAboveBackgroundAnchors(t *testing.T) {
 func TestCollectRecordsObservationsNotPolicy(t *testing.T) {
 	fx := newCollectFixture(t)
 
-	want := Contribution[uint64, float64]{Src: SrcGraph, Score: 14, Via: fx.cluster, Degree: 3, Count: 2}
+	want := scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: fx.cluster, Degree: 3, Count: 2}
 	for _, member := range []uint64{fx.f1, fx.f3} {
 		got := graphContributions(fx.candidates, member)
 		if len(got) != 1 || got[0] != want {
@@ -228,10 +229,10 @@ func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 	}
 	link("hub", ballast...)
 
-	candidates := Candidates[uint64, float64]{
-		s1: {{Src: SrcText, Score: 16, Rank: 0, Count: 1}},
-		s2: {{Src: SrcText, Score: 16, Rank: 1, Count: 1}},
-		s3: {{Src: SrcText, Score: 2, Rank: 2, Count: 1}},
+	candidates := scoring.Candidates[uint64, float64]{
+		s1: {{Src: scoring.SrcText, Score: 16, Rank: 0, Count: 1}},
+		s2: {{Src: scoring.SrcText, Score: 16, Rank: 1, Count: 1}},
+		s3: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	g.findNeighbours([]uint64{s1, s2, s3}, candidates, nil, nil, 2)
 

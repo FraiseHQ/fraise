@@ -23,13 +23,18 @@
 package index_test
 
 import (
-	"math"
 	"errors"
+	"math"
+	"math/rand"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/comparator"
 	"github.com/FraiseHQ/fraise/internal/index"
+	"github.com/FraiseHQ/fraise/internal/index/nlp"
+	"github.com/FraiseHQ/fraise/internal/index/relevance"
 )
 
 func TestBTreeIndexInsertAndRetrieve(t *testing.T) {
@@ -71,7 +76,7 @@ func TestBTreeIndexSearchEmpty(t *testing.T) {
 // its terms), and a document matching nothing is not a result at all.
 func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
-	idx.SetRelevance(index.NewBM25[int]())
+	idx.SetRelevance(relevance.NewBM25[int, float64]())
 	docs := map[int]string{
 		1: "the quick brown fox jumps over the lazy dog",
 		2: "the quick brown fox",
@@ -250,7 +255,7 @@ func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
 func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 	t.Helper()
 	idx := index.NewBTreeIndex[int, P](comparator.OrderedComparator[int])
-	idx.SetRelevance(index.NewBM25[int]())
+	idx.SetRelevance(relevance.NewBM25[int, P]())
 	if err := idx.Insert(1, "red green"); err != nil {
 		t.Fatalf("Insert(1) = %v, want nil", err)
 	}
@@ -322,14 +327,13 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 	}
 }
 
-
 // TestBTreeIndexStemmingUnifiesInflections pins the one-tokenizer contract
 // end to end: with the stemming tokenizer installed, a document indexed as
 // "running" is found by the query "runs", because both sides pass through
 // the same stemmer. This is what SetTokenizer exists for.
 func TestBTreeIndexStemmingUnifiesInflections(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
-	idx.SetTokenizer(index.StemmingTokenizer{})
+	idx.SetTokenizer(nlp.StemmingTokenizer{})
 	if err := idx.Insert(1, "the marathon runner was running at dawn"); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -343,5 +347,143 @@ func TestBTreeIndexStemmingUnifiesInflections(t *testing.T) {
 	}
 	if len(keys) != 1 || keys[0] != 1 {
 		t.Fatalf("Search(runs) = %v, want the running document alone", keys)
+	}
+}
+
+// TestBM25LifecycleBookkeeping pins the statistics across the whole document
+// lifecycle: insert admits a length, update retires the old length before
+// admitting the new (Removed precedes Indexed, so the key is never counted
+// twice), and delete returns the statistics to zero — using the recorded
+// length, not a re-tokenization that a tokenizer swap could skew.
+func TestBM25LifecycleBookkeeping(t *testing.T) {
+	model := relevance.NewBM25[int, float32]()
+	idx := index.NewBTreeIndex[int, float32](comparator.OrderedComparator[int])
+	idx.SetRelevance(model)
+
+	if err := idx.Insert(1, "one two three"); err != nil {
+		t.Fatalf("Insert = %v, want nil", err)
+	}
+	if model.TotalLen() != 3 || model.Lengths()[1] != 3 {
+		t.Fatalf("after insert: totalLen %d, lengths[1] %d, want 3 and 3", model.TotalLen(), model.Lengths()[1])
+	}
+
+	if err := idx.Update(1, "one two three four five"); err != nil {
+		t.Fatalf("Update = %v, want nil", err)
+	}
+	if model.TotalLen() != 5 || model.Lengths()[1] != 5 {
+		t.Fatalf("after update: totalLen %d, lengths[1] %d, want 5 and 5 (old length retired first)", model.TotalLen(), model.Lengths()[1])
+	}
+
+	if err := idx.Delete(1); err != nil {
+		t.Fatalf("Delete = %v, want nil", err)
+	}
+	if model.TotalLen() != 0 || len(model.Lengths()) != 0 {
+		t.Fatalf("after delete: totalLen %d, %d lengths, want the statistics back at zero", model.TotalLen(), len(model.Lengths()))
+	}
+}
+
+// TestSearchPurity pins the query side of the Relevance contract: the same
+// query twice against an untouched corpus is byte-identical — no query
+// mutates the model's statistics.
+func TestSearchPurity(t *testing.T) {
+	for name, model := range map[string]relevance.Relevance[int, float32]{
+		"match count": relevance.MatchCount[int, float32]{},
+		"bm25":        relevance.NewBM25[int, float32](),
+	} {
+		t.Run(name, func(t *testing.T) {
+			idx := index.NewBTreeIndex[int, float32](comparator.OrderedComparator[int])
+			idx.SetRelevance(model)
+			for key, doc := range map[int]string{1: "red green", 2: "green blue", 3: "blue red green"} {
+				if err := idx.Insert(key, doc); err != nil {
+					t.Fatalf("Insert(%d) = %v, want nil", key, err)
+				}
+			}
+
+			firstKeys, firstScores, err := idx.Search("red green", 0)
+			if err != nil {
+				t.Fatalf("Search = %v, want nil", err)
+			}
+			for i := 0; i < 10; i++ {
+				keys, scores, err := idx.Search("red green", 0)
+				if err != nil || !reflect.DeepEqual(keys, firstKeys) || !reflect.DeepEqual(scores, firstScores) {
+					t.Fatalf("call %d: %v %v (err %v), want %v %v every call", i+2, keys, scores, err, firstKeys, firstScores)
+				}
+			}
+		})
+	}
+}
+
+// TestMatchCountEquivalentToPrePluginRanking is the heart of the seam: on
+// randomized corpora and queries, the default model produces exactly the
+// ranking the index shipped with before relevance became pluggable —
+// identical keys, identical scores, identical order, including the
+// double-count a repeated query term always earned. The oracle reimplements
+// that ranking independently from the raw documents (per-document term sets,
+// one point per query-term occurrence, count-descending with the key
+// tiebreak), so the pin cannot drift with the index's internals.
+func TestMatchCountEquivalentToPrePluginRanking(t *testing.T) {
+	rng := rand.New(rand.NewSource(7)) // deterministic corpora across runs
+	vocabulary := []string{"ash", "brine", "coral", "drift", "eddy", "fjord", "gull", "harbour"}
+
+	for corpus := 0; corpus < 20; corpus++ {
+		idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+		docs := make(map[int][]string)
+		for key := 0; key < 12; key++ {
+			length := 1 + rng.Intn(6)
+			tokens := make([]string, length)
+			for i := range tokens {
+				tokens[i] = vocabulary[rng.Intn(len(vocabulary))]
+			}
+			docs[key] = tokens
+			if err := idx.Insert(key, strings.Join(tokens, " ")); err != nil {
+				t.Fatalf("Insert(%d) = %v, want nil", key, err)
+			}
+		}
+
+		for probe := 0; probe < 10; probe++ {
+			queryTokens := make([]string, 1+rng.Intn(4)) // repeats likely
+			for i := range queryTokens {
+				queryTokens[i] = vocabulary[rng.Intn(len(vocabulary))]
+			}
+			query := strings.Join(queryTokens, " ")
+
+			gotKeys, gotScores, err := idx.Search(query, 0)
+			if err != nil {
+				t.Fatalf("Search(%q) = %v, want nil", query, err)
+			}
+
+			// The oracle: membership per document, one point per query-term
+			// occurrence, count desc then key asc.
+			counts := make(map[int]int)
+			for _, term := range queryTokens {
+				for key, tokens := range docs {
+					for _, docTerm := range tokens {
+						if docTerm == term {
+							counts[key]++
+							break
+						}
+					}
+				}
+			}
+			wantKeys := make([]int, 0, len(counts))
+			for key := range counts {
+				wantKeys = append(wantKeys, key)
+			}
+			sort.Slice(wantKeys, func(i, j int) bool {
+				if counts[wantKeys[i]] != counts[wantKeys[j]] {
+					return counts[wantKeys[i]] > counts[wantKeys[j]]
+				}
+				return wantKeys[i] < wantKeys[j]
+			})
+			wantScores := make([]float64, len(wantKeys))
+			for i, key := range wantKeys {
+				wantScores[i] = float64(counts[key])
+			}
+
+			if !reflect.DeepEqual(gotKeys, wantKeys) || !reflect.DeepEqual(gotScores, wantScores) {
+				t.Fatalf("corpus %d, Search(%q):\n got %v %v\nwant %v %v",
+					corpus, query, gotKeys, gotScores, wantKeys, wantScores)
+			}
+		}
 	}
 }

@@ -32,6 +32,7 @@ import (
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/index"
 )
 
@@ -454,9 +455,9 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 // interface, in the same spirit as fakeHasher.
 type constScorer struct{ score float64 }
 
-func (s constScorer) Score([]graph.Contribution[uint64, float64]) float64 { return s.score }
+func (s constScorer) Score([]scoring.Contribution[uint64, float64]) float64 { return s.score }
 
-func (s constScorer) WithBackground(float64) graph.Scorer[uint64, float64] { return s }
+func (s constScorer) WithBackground(float64) scoring.Scorer[uint64, float64] { return s }
 
 // TestNewGraphInstallsStemmingTokenizer pins the tokenizer wiring: recall
 // keywords rarely arrive in the fact's exact inflection, so NewGraph installs
@@ -751,7 +752,7 @@ func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	// The funded member carries exactly one observation: its cluster's mass,
 	// through the weather anchor.
 	list := contributions[found]
-	if len(list) != 1 || list[0].Src != graph.SrcGraph || list[0].Score <= 0 || list[0].Degree != 3 {
+	if len(list) != 1 || list[0].Src != scoring.SrcGraph || list[0].Score <= 0 || list[0].Degree != 3 {
 		t.Errorf("silent member's contributions = %+v, want a single weather-cluster observation", list)
 	}
 }
@@ -817,7 +818,7 @@ func TestSearchDepthLanes(t *testing.T) {
 		}
 		return false
 	}
-	search := func(depth int) ([]string, [][]graph.Contribution[uint64, float64], float64) {
+	search := func(depth int) ([]string, [][]scoring.Contribution[uint64, float64], float64) {
 		nodes, _, contribs, bg := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, depth, 20, time.Time{}, time.Time{})
 		return values(nodes), contribs, bg
 	}
@@ -829,7 +830,7 @@ func TestSearchDepthLanes(t *testing.T) {
 	}
 	for _, list := range contribs0 {
 		for _, c := range list {
-			if c.Src == graph.SrcGraph {
+			if c.Src == scoring.SrcGraph {
 				t.Errorf("depth 0 recorded a graph contribution %+v: the floor lane funds nothing", c)
 			}
 		}

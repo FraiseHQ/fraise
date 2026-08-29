@@ -27,6 +27,7 @@ import (
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 )
 
 // the db hols the logic of translating low level calls to the memory Graphs
@@ -81,7 +82,7 @@ func (d *DB[K, P]) Start() error {
 			g.SetTraversal(graph.NewBFSTraversal[K, P](graph.Both))
 		}
 		if d.Config.DB.ScoringAlgorithm.Name == config.ScoringRRF {
-			g.SetScorer(graph.NewRRFScorer[K, P](graph.DefaultRRFK))
+			g.SetScorer(scoring.NewRRFScorer[K, P](scoring.DefaultRRFK))
 		}
 		if d.Config.DB.RankingAlgorithm.Name == config.RankingPageRank {
 			g.SetRanking(graph.NewPageRank[K, P](
