@@ -36,8 +36,10 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/internal/index"
 	"github.com/FraiseHQ/fraise/internal/index/nlp"
+	"github.com/FraiseHQ/fraise/internal/index/nlp/stopwords"
 	"github.com/FraiseHQ/fraise/internal/index/relevance"
 	"github.com/FraiseHQ/fraise/pkg/logger"
+	"golang.org/x/text/language"
 )
 
 // InMemoryGraph is the in-process implementation of Graph. Nodes live in a
@@ -221,7 +223,8 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 
 	_, isFact := node.(Fact[K])
 	if attrs := node.GetAttributes(); isFact && attrs != nil && attrs.Value != "" {
-		if err := g.textIndex.Insert(key, attrs.Value); err != nil {
+
+		if err := g.textIndex.Insert(key, stopwords.CleanContent(attrs.Value, language.English)); err != nil {
 			logger.Warn("Failed to index node text", "error", err)
 			return err
 		}
