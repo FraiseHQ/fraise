@@ -43,7 +43,7 @@ PY_DIR         := sdk/python
 
 # The agent-framework integrations import their SDK at module scope, so their
 # tests skip entirely unless these optional groups are installed.
-PY_GROUPS      := --group openai --group anthropic
+PY_GROUPS      := --extra openai --extra anthropic
 
 # Binary name
 BINARY_NAME    := fraise
