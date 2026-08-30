@@ -209,4 +209,10 @@ const (
 	// DefaultPrecision is the floating-point precision for embeddings and scores
 	// ("float32" or "float64"), selecting which server instantiation is built.
 	DefaultPrecision string = PrecisionFloat32
+
+	// default fraise daemon address
+	DefaultMCPAddress string = "http://127.0.0.1:9876"
+
+	// default fraise graph to use
+	DefaultMCPGraph uint = 0
 )
