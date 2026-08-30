@@ -41,10 +41,6 @@ BIN_DIR        := bin
 CMD_DIR        := ./cmd/server
 PY_DIR         := sdk/python
 
-# The agent-framework integrations import their SDK at module scope, so their
-# tests skip entirely unless these optional groups are installed.
-PY_GROUPS      := --extra openai --extra anthropic
-
 # Binary name
 BINARY_NAME    := fraise
 
@@ -142,12 +138,12 @@ test-integration-py: ## Run Python SDK integration tests against fraise in Docke
 	@echo "$(CYAN)Starting fraise (docker) for Python SDK integration tests...$(RESET)"
 	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
 	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
-	  $(UV_CMD) run --package fraise-sdk pytest tests/integration/python -v \
+	  $(UV_CMD) run --package fraise-sdk --extra dev pytest tests/integration/python -v \
 	    || ( $(FRAISE_LOGS); exit 1 )
 
 test-py: ## Run Python tests with pytest
 	@echo "$(CYAN)Running Python tests...$(RESET)"
-	@$(UV_CMD) run --package fraise-sdk $(PY_GROUPS) pytest $(PY_DIR)/src/tests || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
+	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
 
 test-watch: ## Run Go tests in watch mode (requires reflex)
 	@echo "$(CYAN)Running Go tests in watch mode...$(RESET)"
