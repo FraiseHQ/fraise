@@ -1,7 +1,6 @@
 # fraise-sdk (Python)
 
-A Python client for a [Fraise](../../README.md) memory server, plus ready-made
-memory tools for agent frameworks.
+A Python client for a [Fraise](../../README.md) memory server, plus ready-made memory tools for agent frameworks.
 
 ## Install
 
@@ -26,26 +25,18 @@ with FraiseClient("http://localhost:9876") as fraise:
         print(hit.value, hit.score)
 ```
 
-`recall` returns a `RecallResult` (`.count`, `.hits`, and it iterates/`len()`s
-over the hits). Vector search is supported by passing an embedding:
+`recall` returns a `RecallResult` (`.count`, `.hits`, and it iterates/`len()`s over the hits). Vector search is supported by passing an embedding:
 
 ```python
 fraise.remember("the kingfisher is electric blue", graph=6, vector=embedding)
 hits = fraise.recall(graph=6, vector=embedding)  # seeded only by the vector
 ```
 
-A recall needs a seed, not a keyword: a vector or a `topics`/`entities` filter
-is one on its own, so `fraise.recall(topics=["birds"])` — everything about a
-topic — is a query in its own right.
+A recall needs a seed, not a keyword: a vector or a `topics`/`entities` filter is one on its own, so `fraise.recall(topics=["birds"])` — everything about a topic — is a query in its own right.
 
-Anything the typed helpers do not cover is reachable through the raw
-`fraise.query("recall@3 ...")` escape hatch.
+Anything the typed helpers do not cover is reachable through the raw `fraise.query("recall@3 ...")` escape hatch.
 
-Some queries run but read like a near-miss of a different query — a recall
-whose first keyword is also a grammar keyword, e.g. `fraise.recall("since", "7d")`,
-one `:` away from a `since:7d` time filter. The server answers them and
-attaches a warning; the SDK lists it on `result.warnings` and re-emits it as
-a `FraiseWarning`:
+Some queries run but read like a near-miss of a different query — a recall whose first keyword is also a grammar keyword, e.g. `fraise.recall("since", "7d")`, one `:` away from a `since:7d` time filter. The server answers them and attaches a warning; the SDK lists it on `result.warnings` and re-emits it as a `FraiseWarning`:
 
 ```python
 import warnings
@@ -54,13 +45,11 @@ from fraise_sdk import FraiseWarning
 warnings.filterwarnings("ignore", category=FraiseWarning)  # silence wholesale
 ```
 
-The query shapes that warn (and the neighbouring ones that stay silent) are
-catalogued in the query spec, `docs/query-spec.md` § Warnings.
+The query shapes that warn (and the neighbouring ones that stay silent) are catalogued in the query spec, `docs/query-spec.md` § Warnings.
 
 ## Embeddings (optional)
 
-Give the client an **embedder** and it encodes text to a vector automatically —
-`remember` embeds its value, `recall` embeds its query phrase (or its keywords):
+Give the client an **embedder** and it encodes text to a vector automatically — `remember` embeds its value, `recall` embeds its query phrase (or its keywords):
 
 ```python
 from fraise_sdk import FraiseClient
@@ -72,16 +61,11 @@ fraise.remember("the kingfisher is electric blue", graph=6)          # stored wi
 hits = fraise.recall("small bright bird", graph=6, query="small bright bird")
 ```
 
-An embedder is anything implementing the `Embedder` ABC (subclass it and define
-`embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`,
-so a lambda over your own model works too. Per call you can force it with
-`embed=True`, skip it with `embed=False`, or override with an explicit `vector=`.
-Only OpenAI is provided today — Anthropic has no embeddings API.
+An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Only OpenAI is provided today — Anthropic has no embeddings API.
 
 ## OpenAI Agents tools
 
-`memory_tools(client)` returns a `recall` and a `remember` `FunctionTool` bound
-to one memory graph, so the agent decides *what* to store and retrieve:
+`memory_tools(client)` returns a `recall` and a `remember` `FunctionTool` bound to one memory graph, so the agent decides *what* to store and retrieve:
 
 ```python
 from agents import Agent, Runner
@@ -99,17 +83,13 @@ result = Runner.run_sync(agent, "My favourite colour is orange. Remember that.")
 print(result.final_output)
 ```
 
-Pass an embedder — `memory_tools(fraise, embedder=OpenAIEmbedder())` — to make
-the tools vectorise implicitly: recall and remember encode their text through it
-and carry the vector alongside.
+Pass an embedder — `memory_tools(fraise, embedder=OpenAIEmbedder())` — to make the tools vectorise implicitly: recall and remember encode their text through it and carry the vector alongside.
 
-See [`examples/openai-agents/`](../../examples/openai-agents) for a complete,
-Docker-runnable script.
+See [`examples/openai-agents/`](../../examples/openai-agents) for a complete, Docker-runnable script.
 
 ## Claude Agent SDK tools
 
-The Claude Agent SDK groups tools into an in-process MCP server, so the entry
-point is `memory_server(client)`; pair it with `allowed_tools()`:
+The Claude Agent SDK groups tools into an in-process MCP server, so the entry point is `memory_server(client)`; pair it with `allowed_tools()`:
 
 ```python
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
@@ -124,21 +104,13 @@ options = ClaudeAgentOptions(
 )
 ```
 
-`memory_server(fraise, embedder=OpenAIEmbedder())` makes the tools vectorise
-implicitly, exactly as in the OpenAI integration.
+`memory_server(fraise, embedder=OpenAIEmbedder())` makes the tools vectorise implicitly, exactly as in the OpenAI integration.
 
-See [`examples/claude-agent-sdk/`](../../examples/claude-agent-sdk) for a
-complete, Docker-runnable script.
+See [`examples/claude-agent-sdk/`](../../examples/claude-agent-sdk) for a complete, Docker-runnable script.
 
 ## Notes & limits
 
-- A fact value is stored inside a single-quoted phrase where every character
-  is literal; the SDK escapes apostrophes for you, so `remember("it's blue")`
-  stores the text exactly as written.
+- A fact value is stored inside a single-quoted phrase where every character is literal; the SDK escapes apostrophes for you, so `remember("it's blue")` stores the text exactly as written.
 - Keywords, topics, and entities are single whitespace-free tokens.
-- The first vector written to a graph fixes that graph's embedding dimension;
-  later writes to the same graph must match it.
-- `FraiseClient` defaults to a 30s request timeout (`timeout=` on the
-  constructor or on individual `query`/`remember`/`recall` calls overrides
-  it); a request that exceeds it raises `FraiseError` naming the timeout,
-  distinct from the error raised when the server can't be reached at all.
+- The first vector written to a graph fixes that graph's embedding dimension; later writes to the same graph must match it.
+- `FraiseClient` defaults to a 30s request timeout (`timeout=` on the constructor or on individual `query`/`remember`/`recall` calls overrides it); a request that exceeds it raises `FraiseError` naming the timeout, distinct from the error raised when the server can't be reached at all.

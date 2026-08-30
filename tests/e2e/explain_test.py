@@ -130,9 +130,9 @@ def test_explain_shows_transmitted_surplus(query, explain):
 def test_explain_score_recomputes_from_payload(query, explain):
     """The recompute pin: with the query-level background rate, every hit's
     score equals the formula applied to its own payload — S = m + α²·Σ max(0,
-    M_A − m − d_A·ρ₀) — within float tolerance (the hair of recency decay
-    between write and read). The payload is therefore a complete explanation,
-    not a summary.
+    M_A − m − d_A·ρ₀)/d_A, each anchor's surplus arriving as its per-edge
+    share — within float tolerance (the hair of recency decay between write
+    and read). The payload is therefore a complete explanation, not a summary.
     """
     _seed_storm_facts(query)
 
@@ -145,7 +145,7 @@ def test_explain_score_recomputes_from_payload(query, explain):
         contributions = hit["contributions"]
         m = sum(c["score"] for c in contributions if c["source"] in ("text", "vector"))
         surplus = sum(
-            max(0.0, c["score"] - m - c["degree"] * background) / max(c["degree"],0.01)
+            max(0.0, c["score"] - m - c["degree"] * background) / max(c["degree"], 0.01)
             for c in contributions
             if c["source"] == "graph"
         )

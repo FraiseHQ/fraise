@@ -92,6 +92,7 @@ These apply to every component:
   `Hash` comments explain what must not collide and what breaks if it does.
 - Formatting and linting are non-negotiable, whatever the language: `make lint`
   is the gate and it must be clean before a PR.
+- Markdown prose is never hard-wrapped: one paragraph is one source line, however long — the same for a list item and for a blockquote line. Editors and renderers do the wrapping; hard breaks mid-paragraph make the file read as compacted and ragged, and turn every later edit into a rewrap diff. Code blocks, tables and the GitHub issue templates keep their own line structure. This applies to README.md, everything under docs/, and every other prose .md in the tree.
 
 ### Go
 

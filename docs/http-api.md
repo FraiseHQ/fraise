@@ -1,11 +1,8 @@
 # HTTP API
 
-Fraise exposes three endpoints. Everything an agent does goes through one of
-them; the query language ([`query-spec.md`](query-spec.md)) carries the rest.
+Fraise exposes three endpoints. Everything an agent does goes through one of them; the query language ([`query-spec.md`](query-spec.md)) carries the rest.
 
-The surface is deliberately small: handlers bind the request, hand the query
-string to the parser, refuse what the client got wrong, and wait for the engine.
-Nothing that decides *what an answer is* lives here.
+The surface is deliberately small: handlers bind the request, hand the query string to the parser, refuse what the client got wrong, and wait for the engine. Nothing that decides *what an answer is* lives here.
 
 ## `GET /` — health check
 
@@ -13,14 +10,11 @@ Nothing that decides *what an answer is* lives here.
 {"status": "ok", "version": "0.1.0-beta.8"}
 ```
 
-`version` is the SDKs' only handshake: they read it to check the server falls in
-the range they support (see `COMPATIBILITY.md`), so the field is part of the
-contract rather than a convenience.
+`version` is the SDKs' only handshake: they read it to check the server falls in the range they support (see `COMPATIBILITY.md`), so the field is part of the contract rather than a convenience.
 
 ## `POST /api/v1/q` — query
 
-The one endpoint that reads and writes. The body carries the query and any
-parameters it references:
+The one endpoint that reads and writes. The body carries the query and any parameters it references:
 
 ```json
 {
@@ -34,8 +28,7 @@ parameters it references:
 | `query`      | string                 | yes      | one command per request                 |
 | `parameters` | object of float arrays | no       | binds `$name` references, e.g. `vec:$v` |
 
-Vectors stay out of the query string on purpose: the query is a cache key and a
-log line, and an inline embedding would ruin both.
+Vectors stay out of the query string on purpose: the query is a cache key and a log line, and an inline embedding would ruin both.
 
 A successful response carries ranked hits, newest-and-strongest first:
 
@@ -54,16 +47,11 @@ A successful response carries ranked hits, newest-and-strongest first:
 }
 ```
 
-`count` is how many hits were returned, not how many exist — a recall is capped
-by `top:` and by `default-top`. A write returns 200 with an empty result set.
+`count` is how many hits were returned, not how many exist — a recall is capped by `top:` and by `default-top`. A write returns 200 with an empty result set.
 
 ## `POST /api/v1/explain` — explained recall
 
-The same request body and pipeline as `/q`, for recalls only: each hit also
-carries `contributions`, the per-source sightings its score was folded from.
-Use it to see *why* a fact ranked where it did; use `/q` when the ranking is
-all you need — the breakdown costs response tokens, which is why it lives on
-its own endpoint instead of every recall.
+The same request body and pipeline as `/q`, for recalls only: each hit also carries `contributions`, the per-source sightings its score was folded from. Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
 
 ```json
 {
@@ -93,12 +81,9 @@ One contribution records one sighting of the hit by one retrieval source:
 | `rank`   | the hit's position in that source's own result list, 0 first       |
 | `hop`    | 0 for a seed; how many hops from its seed for a graph sighting     |
 
-`score` on the hit remains the final fused value (after recency decay and any
-ranking boost), so the contributions explain its ingredients rather than
-summing to it exactly.
+`score` on the hit remains the final fused value (after recency decay and any ranking boost), so the contributions explain its ingredients rather than summing to it exactly.
 
-A `remember` on this endpoint is rejected with 400: a write has no ranking to
-explain, and explaining must never mutate a graph.
+A `remember` on this endpoint is rejected with 400: a write has no ranking to explain, and explaining must never mutate a graph.
 
 ## `GET /api/v1/stats` — per-graph snapshot
 
@@ -120,9 +105,7 @@ One entry per graph, in selector order, computed on demand from the live graphs:
 | `vectors`        | vectors indexed                                                             |
 | `forest_entries` | entries in the vector forest: live vectors plus garbage awaiting compaction |
 
-`forest_entries` exists to make an internal invariant observable: it must stay
-within `flush-factor × vectors`, so a leak in the vector index shows up here
-before it shows up as memory.
+`forest_entries` exists to make an internal invariant observable: it must stay within `flush-factor × vectors`, so a leak in the vector index shows up here before it shows up as memory.
 
 ## Errors
 
@@ -141,10 +124,5 @@ Every failure returns the same shape, with the status code carrying the category
 
 Two properties are deliberate:
 
-* **A client error says exactly what is wrong**, including the column a parse
-  failed at and the values a field accepts. The caller is usually a model, and
-  a model can correct itself from a precise message — that is the whole reason
-  the parser refuses to guess.
-* **A 500 never carries detail.** The body is a generic message and the specifics
-  go to the log, so an internal error cannot leak the shape of the store to a
-  client.
+* **A client error says exactly what is wrong**, including the column a parse failed at and the values a field accepts. The caller is usually a model, and a model can correct itself from a precise message — that is the whole reason the parser refuses to guess.
+* **A 500 never carries detail.** The body is a generic message and the specifics go to the log, so an internal error cannot leak the shape of the store to a client.
