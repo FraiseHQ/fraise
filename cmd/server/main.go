@@ -28,12 +28,15 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/pkg/logger"
+	"github.com/FraiseHQ/fraise/pkg/mcp"
 	"github.com/FraiseHQ/fraise/pkg/server"
+	"github.com/FraiseHQ/fraise/pkg/version"
 )
 
 func PrintBanner() {
@@ -51,65 +54,97 @@ func PrintBanner() {
 // supervisor (docker/k8s on-failure restart policy) see the startup failure;
 // exiting 0 would mark a dead server as a clean shutdown.
 func main() {
-	if err := run(); err != nil {
-		logger.Error("Failed to start server", "error", err)
+
+	args := os.Args[1:]
+
+	// The first argument selects the command when it is not a flag; otherwise
+	// the command defaults to the server, so every invocation that predates
+	// subcommands — the docker CMD, the systemd unit, brew services, a bare
+	// `fraise -config x` — keeps meaning what it always meant. The command is
+	// stripped before flag parsing: Parse rejects any non-flag argument.
+	cmd := "serve"
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		cmd = args[0]
+		args = args[1:]
+	}
+
+	c := config.New()
+	cfgErr := c.Parse(args) // load config file, then override via CLI flags
+
+	if err := run(cmd, context.Background(), c, cfgErr); err != nil {
+		// Stderr, not the logger: on the mcp path stdout belongs to the
+		// protocol and no stdout logger is ever installed. A non-zero exit
+		// lets a supervisor see the failure instead of a clean shutdown.
+		fmt.Fprintln(os.Stderr, "fraise:", err)
 		os.Exit(1)
 	}
 }
 
-// run wires up config, signals and the server, and blocks until the server
-// stops. It returns an error instead of exiting so its deferred signal stop
-// runs and main can translate failure into the process exit code.
-func run() error {
-	PrintBanner()
+// run dispatches the command and blocks until it finishes. It returns an
+// error instead of exiting so its deferred signal stop runs and main can
+// translate failure into the process exit code.
+func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) error {
 
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	// A context cancelled on SIGINT/SIGTERM drives graceful shutdown: an
 	// operator's `docker stop`/Ctrl-C lets in-flight writes finish instead of
-	// being dropped. stop restores default signal handling on return.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// being dropped — and it lives here, not in main, so os.Exit can never
+	// skip the deferred restore. stop restores default signal handling.
 	defer stop()
 
-	c := config.New()
-	cfgErr := c.Parse(os.Args[1:]) // load config file, then override via CLI flags
-
-	// The logger is installed before the config error is acted on, so that the
-	// error has somewhere to go — main reports it through this logger.
-	logger.SetDefault(logger.NewLogger(c))
-
-	// A setting naming something the server cannot honour stops startup, before
-	// anything is announced: it was asked for explicitly, and running with a
-	// different value instead is a substitution an operator can only detect by
-	// noticing the behaviour they asked for is missing. The error lists what the
-	// setting accepts.
+	// A setting naming something the process cannot honour stops startup on
+	// every path, before anything is announced: it was asked for explicitly,
+	// and running with a different value instead is a substitution an
+	// operator can only detect by noticing the behaviour they asked for is
+	// missing. The error lists what the setting accepts.
 	if errors.Is(cfgErr, config.ErrInvalidValue) {
 		return cfgErr
 	}
 
-	logger.Info("Starting server...")
-	if cfgErr != nil {
-		// Parse falls back to built-in defaults on a missing/invalid file; log
-		// so a silently-defaulted config is visible rather than a surprise.
-		logger.Warn("Config not fully loaded, using defaults", "error", cfgErr)
-	}
-	logger.Debug("Config loaded", "config", c)
+	switch cmd {
+	case "mcp":
+		// Stdout carries the MCP protocol from here on: no logger, no
+		// banner. Config trouble was already handled above, on stderr.
+		return mcp.New(c).Start(ctx)
 
-	// P (embedding/score precision) is a compile-time type parameter, so the
-	// config value selects which instantiation to build and run here. Both are
-	// compiled in; the whole stack below is generic over P.
-	switch c.DB.Precision {
-	case config.PrecisionFloat32:
-		logger.Info("Using single precision", "precision", config.PrecisionFloat32)
-		return runServer[float32](ctx, c)
-	case config.PrecisionFloat64:
-		logger.Info("Using double precision", "precision", config.PrecisionFloat64)
-		return runServer[float64](ctx, c)
+	case "serve":
+		// The logger is installed before the config error is acted on, so
+		// that the error has somewhere to go.
+		logger.SetDefault(logger.NewLogger(c))
+		logger.Info("Starting server...")
+		if cfgErr != nil {
+			// Parse falls back to built-in defaults on a missing/invalid
+			// file; log so a silently-defaulted config is visible rather
+			// than a surprise.
+			logger.Warn("Config not fully loaded, using defaults", "error", cfgErr)
+		}
+		logger.Debug("Config loaded", "config", c)
+
+		// P (embedding/score precision) is a compile-time type parameter, so the
+		// config value selects which instantiation to build and run here. Both are
+		// compiled in; the whole stack below is generic over P.
+		switch c.DB.Precision {
+		case config.PrecisionFloat32:
+			logger.Info("Using single precision", "precision", config.PrecisionFloat32)
+			return runServer[float32](ctx, c)
+		case config.PrecisionFloat64:
+			logger.Info("Using double precision", "precision", config.PrecisionFloat64)
+			return runServer[float64](ctx, c)
+		default:
+			// Startup rejects any other value, so this is an unset config, and the
+			// documented default is what it means. It used to fall back to float64
+			// — not even the default — so a typo silently changed the precision of
+			// every score in the store.
+			logger.Warn("Precision unset, using the default", "precision", config.DefaultPrecision)
+			return runServer[float32](ctx, c)
+		}
+
+	case "version":
+		fmt.Println(version.Version)
+		return nil
+
 	default:
-		// Startup rejects any other value, so this is an unset config, and the
-		// documented default is what it means. It used to fall back to float64
-		// — not even the default — so a typo silently changed the precision of
-		// every score in the store.
-		logger.Warn("Precision unset, using the default", "precision", config.DefaultPrecision)
-		return runServer[float32](ctx, c)
+		return fmt.Errorf("unknown command %q (expected serve, mcp or version)", cmd)
 	}
 }
 
@@ -122,5 +157,6 @@ func runServer[P float32 | float64](ctx context.Context, c *config.ConfigSet) er
 	if err != nil {
 		return err
 	}
+	PrintBanner()
 	return srv.Start(ctx)
 }

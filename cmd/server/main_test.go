@@ -23,6 +23,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -69,7 +70,9 @@ func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 		t.Run(tc.flag+"="+tc.value, func(t *testing.T) {
 			withArgs(t, tc.flag, tc.value)
 
-			err := run()
+			c := config.New()
+			cfgErr := c.Parse(os.Args[1:])
+			err := run("serve", context.Background(), c, cfgErr)
 
 			if !errors.Is(err, config.ErrInvalidValue) {
 				t.Fatalf("run() = %v, want an ErrInvalidValue so main exits non-zero", err)
@@ -130,5 +133,24 @@ func TestRunSurvivesAMissingConfigFile(t *testing.T) {
 	}
 	if errors.Is(err, config.ErrInvalidValue) {
 		t.Fatalf("a missing config file took the fatal branch: %v", err)
+	}
+}
+
+// TestRunRejectsAnUnknownCommand pins the dispatch contract: a mistyped
+// command is an error naming the accepted ones, never a silent fallthrough
+// into serving — `fraise sevre -config x` starting the server would hide the
+// typo behind a running process.
+func TestRunRejectsAnUnknownCommand(t *testing.T) {
+	withArgs(t)
+
+	c := config.New()
+	cfgErr := c.Parse(os.Args[1:])
+	err := run("sevre", context.Background(), c, cfgErr)
+
+	if err == nil || !strings.Contains(err.Error(), `"sevre"`) {
+		t.Fatalf("run(sevre) = %v, want an error naming the unknown command", err)
+	}
+	if !strings.Contains(err.Error(), "serve, mcp or version") {
+		t.Errorf("error %q does not list the accepted commands", err)
 	}
 }
