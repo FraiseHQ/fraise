@@ -34,31 +34,83 @@ remember 'acme moved to annual billing' topic:billing entity:acme
 recall billing entity:acme since:30d top:5
 ```
 
-Two verbs. Sub-millisecond recall. No infrastructure to run.
+Two verbs. One binary. No infrastructure to run.
 
 <!-- demo GIF goes here -->
 
+## Install
+
+```sh
+brew install fraisehq/tap/fraise
+brew services start fraise
+curl -X POST localhost:9876/api/v1/q -H 'content-type: application/json' \
+  -d '{"query":"remember \"the parrot is turquoise\" topic:color"}'
+```
+
+Linux packages, Docker, `go install` and signed release binaries are all in
+[Get Started](#get-started) below.
+
+> **Fraise is in-memory and ephemeral.** Memories live in the process and are
+> gone when it stops — there is no snapshot and no load-on-boot yet.
+> Persistence is [issue #171](https://github.com/FraiseHQ/fraise/issues/171)
+> and is the next major piece of work. Build agents on it, don't put your only
+> copy of anything in it.
+
+## How it compares
+
+Measured on [LoCoMo](https://github.com/snap-research/locomo) — 10 multi-session
+conversations, 1,982 questions — with every system ingesting the same
+conversations, using the same extraction model and the same embedding model, and
+answering the same questions. `k=10`, full data, run 2026-08-30.
+
+| system | retrieval recall | p50 search | memory tokens |
+|---|---|---|---|
+| **fraise 0.1.0** | **0.893** | **0.176 s** | **2,902,039** |
+| everos 1.2.3 | 0.897 | 0.376 s | 10,030,966 |
+| letta 0.16.8 | 0.897 | 0.349 s | 226,854 |
+| mem0 2.0.18 | 0.886 | 0.576 s | 4,120,078 |
+| graphiti 0.29.3 | 0.819 | 0.301 s | 9,866,183 |
+| cognee 1.5.3 | 0.790 | 6.273 s | 8,526,019 |
+
+**Fraise matches the best systems on recall, at 2× the speed and a third of the
+tokens.** Same evidence found; half the latency; a fraction of the cost.
+
+These come from a standalone multi-system harness — precision, recall and F1
+across `k` ∈ {1, 3, 5, 10}, per category, every run tagged and reproducible from
+the tag. The harness and the full results are published separately, in October.
+
 ## Why Fraise
 
-- **A query language agents can actually write.** FQL has two verbs — `remember`
-  and `recall` — and one way to say each thing. Fewer degrees of freedom means
-  fewer ways for a model to get it wrong, and fewer tokens spent saying it.
+- **A query language agents can actually write.** FQL has two verbs —
+  `remember` and `recall` — and one way to say each thing. Fewer degrees of
+  freedom means fewer ways for a model to get it wrong, and fewer tokens spent
+  saying it.
 - **Hybrid retrieval.** Facts are indexed for full-text, graph, and (optionally)
   vector search. One query, ranked across all three.
 - **Temporal by default.** Recent memories outrank older ones, so recall is
   recency-aware without asking for it.
-- **Fast enough to sit inside a turn.** Recall in tens of microseconds, writes in
-  low milliseconds — remember mid-step, while the user waits.
-- **No infrastructure.** A single binary. No database to provision, no service to
-  stand up beside it.
+- **The fastest system measured.** 0.176 s p50 on LoCoMo, twice the next best.
+  Remember and recall mid-step, while the user waits.
+- **No infrastructure.** A single binary. No database to provision, no service
+  to stand up beside it.
 - **Open source, MIT.**
-
 ## Status
 
-Fraise is early and pre-`v0.1.0`. It runs, and the core loop works end to end —
-but the API and the query language may still change between minor versions.
+**v0.1.0 — the first stable release.** The core loop works end to end, the
+install paths are verified on clean machines, and the benchmark row above is
+produced from this tag.
 
-Not production-ready. Good for experimenting with agent memory today.
+What that does and doesn't promise:
+
+- The HTTP API and FQL are stable within `0.1.x`. They may still change between
+  minor versions before `1.0`.
+- **Storage is in-memory and ephemeral.** See the callout above.
+- Authentication is not shipped ([#177](https://github.com/FraiseHQ/fraise/issues/177)).
+  The server binds loopback by default. Do not expose it to a network you don't
+  control.
+- `forget` and `update` are not shipped
+  ([#172](https://github.com/FraiseHQ/fraise/issues/172)).
+Good for building agent memory today. Not yet a system of record.
 
 ## How it works
 
@@ -68,23 +120,47 @@ node:
 - **facts** — the things you remember, one statement each
 - **entities** — who or what a fact mentions
 - **topics** — what a fact is about
+Edges connect facts to the entities they mention and the topics they're about,
+so a query can start from either side. A `recall` finds seed facts by text (and
+optionally by vector similarity), expands through shared entities and topics up
+to `depth` hops, ranks by relevance and recency, and returns the best `top`
+results.
 
-Edges connect facts to the entities they mention and the topics they're about, so
-a query can start from either side. A `recall` finds seed facts by text (and
-optionally by vector similarity), expands through shared entities and topics up to
-`depth` hops, ranks by relevance and recency, and returns the best `top` results.
+Ranking is not a black box: a fact's score is its own match strength plus what
+it receives through anchors carrying *more* mass than their size would predict.
+The background rate that "more" is measured against is estimated per query, from
+the part of the graph the query touched — so there is no relevance constant to
+tune. [`docs/design.md`](./docs/design.md) has the full model.
 
 A single Fraise instance holds several independent memory graphs (8 by default),
 addressed with `@N` — one per user, per session, per agent, however you like.
 
 ## Get Started
 
-Fraise is a single binary — no database to provision, nothing to configure. Every
-route below leaves you with a server listening on `127.0.0.1:9876`.
+Fraise is a single binary — no database to provision, nothing to configure.
+Every route below leaves you with a server listening on `127.0.0.1:9876`.
 
-> Fraise is pre-`v0.1.0`, so every published version is a pre-release. Two
-> consequences for the commands below: Docker's `:latest` tag and GitHub's
-> `/releases/latest/` URL don't resolve yet, so each one pins a version.
+### With Homebrew
+
+```sh
+brew install fraisehq/tap/fraise
+brew services start fraise
+```
+
+### With Docker
+
+```sh
+docker run -p 127.0.0.1:9876:9876 ghcr.io/fraisehq/fraise:latest
+```
+
+Published tags: one per release, `latest` for the newest stable, `edge` for the
+tip of `main`, and an immutable full-commit-SHA tag for every merge.
+
+Images are built with SLSA provenance, verifiable without pulling:
+
+```sh
+gh attestation verify oci://ghcr.io/fraisehq/fraise:latest --repo FraiseHQ/fraise
+```
 
 ### With Go
 
@@ -93,18 +169,29 @@ go install github.com/FraiseHQ/fraise/cmd/server@latest
 "$(go env GOPATH)/bin/server"
 ```
 
-`@latest` resolves to the highest pre-release (`v0.1.0-beta.8` today); pin with
-`@v0.1.0-beta.8` to be explicit. The binary installs as `server`, after its
-package path — rename it to `fraise` if that reads better.
+The binary installs as `server`, after its package path — rename it to `fraise`
+if that reads better.
 
 Nothing further is needed to trust this: the Go toolchain checks every module
 download against the public checksum transparency log, and your own machine
 compiles the result.
 
+### Linux packages
+
+`.deb` and `.rpm` packages ship with every release, with a systemd user unit:
+
+```sh
+VERSION=0.1.0
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -sSfLO "https://github.com/FraiseHQ/fraise/releases/download/v${VERSION}/fraise_${VERSION}_${ARCH}.deb"
+sudo dpkg -i "fraise_${VERSION}_${ARCH}.deb"
+systemctl --user enable --now fraise
+```
+
 ### From a release binary
 
 ```sh
-VERSION=0.1.0-beta.8
+VERSION=0.1.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')                # linux | darwin
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')  # amd64 | arm64
 ASSET="fraise_${VERSION}_${OS}_${ARCH}.tar.gz"
@@ -119,8 +206,8 @@ Windows builds ship as `.zip` under the same naming scheme.
 
 ### Verify a release
 
-Releases after `v0.1.0-beta.2` carry a [cosign](https://docs.sigstore.dev/)
-signature over `checksums.txt`, using the same `VERSION` and `BASE` as above:
+Releases carry a [cosign](https://docs.sigstore.dev/) signature over
+`checksums.txt`, using the same `VERSION` and `BASE` as above:
 
 ```sh
 curl -sSfLO "${BASE}/checksums.txt"
@@ -137,29 +224,12 @@ cosign verify-blob \
 sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-missing -c
 ```
 
-### With Docker
-
-```sh
-docker run -p 127.0.0.1:9876:9876 ghcr.io/fraisehq/fraise:0.1.0-beta.8
-```
-
-Published tags: one per release (`0.1.0-beta.8`), `edge` for the tip of `main`,
-and an immutable full-commit-SHA tag for every merge. `latest` starts appearing
-at the first stable release.
-
-Images are built with SLSA provenance, verifiable without pulling:
-
-```sh
-gh attestation verify oci://ghcr.io/fraisehq/fraise:0.1.0-beta.8 \
-  --repo FraiseHQ/fraise
-```
-
 ### Run from source
 
 ```sh
 git clone https://github.com/FraiseHQ/fraise
 cd fraise
-make run
+make dev
 ```
 
 ### Your first memory
@@ -167,11 +237,11 @@ make run
 ```sh
 curl -X POST localhost:9876/api/v1/q \
   -H 'content-type: application/json' \
-  -d '{"query": "remember 'the parrot is turquoise' topic:color"}'
+  -d '{"query":"remember \"the parrot is turquoise\" topic:color"}'
 
 curl -X POST localhost:9876/api/v1/q \
   -H 'content-type: application/json' \
-  -d '{"query": "recall parrot"}'
+  -d '{"query":"recall parrot"}'
 ```
 
 ```json
@@ -185,11 +255,23 @@ curl -X POST localhost:9876/api/v1/q \
 }
 ```
 
-### SDKs
+## Use it from an agent
 
-Prefer to talk to Fraise from your own code? The official client wraps the query
-endpoint behind two verbs — `remember` and `recall` — with optional vector
-embeddings and agent-framework tools.
+### MCP
+
+`fraise mcp` is a stdio MCP server — a thin bridge to a running daemon, so any
+MCP client can remember and recall. No flags needed if the daemon is on its
+default address.
+
+```json
+{
+  "mcpServers": {
+    "fraise": { "command": "fraise", "args": ["mcp"] }
+  }
+}
+```
+
+### SDKs
 
 **Python** ([`sdk/python`](./sdk/python)) — the only SDK today:
 
@@ -206,19 +288,20 @@ with FraiseClient("http://localhost:9876") as fraise:
         print(hit.value, hit.score)
 ```
 
-**TypeScript** — not available yet.
-Until it lands, TypeScript callers talk to the HTTP endpoint directly; it is two
-verbs over one route, so a client is a short wrapper around `fetch`. See
-[the HTTP API](./docs/http-api.md).
-
 The Python SDK is dependency-light and supports vector search when you supply an
 embedder. See [its README](./sdk/python) for embeddings and the full API.
 
-### Integrate with Claude Agents
+**TypeScript** — not available yet
+([#179](https://github.com/FraiseHQ/fraise/issues/179)). Until it lands,
+TypeScript callers use `fraise mcp` or talk to the HTTP endpoint directly; it is
+two verbs over one route, so a client is a short wrapper around `fetch`. See
+[the HTTP API](./docs/http-api.md).
+
+### Claude Agent SDK
 
 The Python SDK ships memory tools for the [Claude Agent
-SDK](./sdk/python#claude-agent-sdk-tools), exposed as an in-process MCP server so
-the agent decides *what* to store and recall:
+SDK](./sdk/python#claude-agent-sdk-tools), exposed as an in-process MCP server
+so the agent decides *what* to store and recall:
 
 ```python
 from claude_agent_sdk import ClaudeAgentOptions
@@ -236,11 +319,9 @@ options = ClaudeAgentOptions(
 A complete, Docker-runnable agent lives in
 [`examples/claude-agent-sdk`](./examples/claude-agent-sdk).
 
-### Integrate with OpenAI Agents
+### OpenAI Agents SDK
 
-The Python SDK ships tools for the [OpenAI Agents
-SDK](./sdk/python#openai-agents-tools). `memory_tools(client)` returns bound
-`recall` and `remember` tools:
+`memory_tools(client)` returns bound `recall` and `remember` tools:
 
 ```python
 from agents import Agent, Runner
@@ -268,7 +349,6 @@ Complete, Docker-runnable agents live in
 * [Query language spec](./docs/query-spec.md)
 * [Release process](./RELEASE.md)
 * [Issues](https://github.com/FraiseHQ/fraise/issues)
-
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for how to
@@ -283,6 +363,10 @@ This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 Questions, ideas, or building something with Fraise? Join the
 [Discord](https://discord.gg/eHDFwnwHq). Bugs and feature requests belong in
 [issues](https://github.com/FraiseHQ/fraise/issues) so they don't get lost.
+
+## Citing
+
+If you use Fraise in academic work, see [CITATION.cff](./CITATION.cff).
 
 ## License
 
