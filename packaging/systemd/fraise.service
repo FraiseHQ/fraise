@@ -1,0 +1,27 @@
+# Fraise systemd user unit: install to /usr/lib/systemd/user/ (shipped there
+# by the .deb/.rpm packages), then per user:
+#
+#   systemctl --user enable --now fraise
+#   journalctl --user -u fraise -f
+#
+# The service must survive the user logging out when agents run long:
+#   loginctl enable-linger $USER
+#
+# For a system-level install (a shared server instance), copy this unit to
+# /etc/systemd/system/fraise.service, replace %h with a real home or point
+# -config at /etc/fraise/fraise.config.toml, and add [Service] User=fraise —
+# see docs/operations.md.
+#
+# A missing config file is not an error: the server logs the fallback and
+# starts on built-in defaults, so this unit works before any config exists.
+
+[Unit]
+Description=Fraise in-memory temporal memory graph database for AI agents
+Documentation=https://github.com/FraiseHQ/fraise
+
+[Service]
+ExecStart=/usr/bin/fraise -config %h/.config/fraise/fraise.config.toml
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

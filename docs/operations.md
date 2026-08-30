@@ -37,6 +37,32 @@ services:
 
 A config file is optional — the defaults plus flags are a complete configuration. Mount one when you want to pin settings; use flags for the one or two you override per environment.
 
+### As a managed service
+
+The Postgres/redis mental model: install once, let the platform's supervisor own the process. Both routes ship a default config with every setting commented at its default — the file documents itself, and uncommenting a line is the whole act of configuring.
+
+**macOS (Homebrew).** `brew services start fraise` runs the daemon under launchd with `keep_alive`: it restarts on crashes and comes back at login. Logs land in `$(brew --prefix)/var/log/fraise.log`; the config is `$(brew --prefix)/etc/fraise/fraise.config.toml`, installed on first install and left alone on upgrades (a changed default arrives beside it as `.default`).
+
+**Linux, per user (systemd).** The `.deb`/`.rpm` packages install a user unit to `/usr/lib/systemd/user/fraise.service`. `systemctl --user enable --now fraise` starts it and keeps it restarting on failure; `journalctl --user -u fraise -f` follows the logs. The unit points at `~/.config/fraise/fraise.config.toml`, which need not exist — a missing config logs the fallback and the defaults stand (see [Startup](#startup)). A user manager normally stops at logout; for agents that run longer than your session, `loginctl enable-linger $USER` keeps it up.
+
+**Linux, system-level (a shared server).** The same unit works as a system service for a machine-wide instance: copy it to `/etc/systemd/system/fraise.service`, replace the `%h`-based `-config` path with `/etc/fraise/fraise.config.toml` (the packages install the default there), and run it as a dedicated unprivileged user:
+
+```ini
+[Unit]
+Description=Fraise in-memory temporal memory graph database for AI agents
+After=network.target
+
+[Service]
+User=fraise
+ExecStart=/usr/bin/fraise -config /etc/fraise/fraise.config.toml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then `systemctl enable --now fraise` and `journalctl -u fraise -f`, without `--user`. Remember what a restart means here before reaching for `systemctl restart`: the store is memory, and bouncing the service is an empty database.
+
 ## Startup
 
 The server exits non-zero, before binding a port, when a setting names something it cannot honour:

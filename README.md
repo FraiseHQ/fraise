@@ -138,6 +138,8 @@ brew install fraisehq/tap/fraise
 brew services start fraise
 ```
 
+The service survives crashes and restarts on login (`keep_alive`), logs to `$(brew --prefix)/var/log/fraise.log`, and reads its config from `$(brew --prefix)/etc/fraise/fraise.config.toml` — installed with every setting commented at its default, and never overwritten on upgrade.
+
 ### With Docker
 
 ```sh
@@ -178,6 +180,8 @@ curl -sSfLO "https://github.com/FraiseHQ/fraise/releases/download/v${VERSION}/fr
 sudo dpkg -i "fraise_${VERSION}_${ARCH}.deb"
 systemctl --user enable --now fraise
 ```
+
+Logs go to the journal (`journalctl --user -u fraise -f`), and the unit reads `~/.config/fraise/fraise.config.toml` when present — a shipped default with every setting commented lives at `/etc/fraise/fraise.config.toml` to copy from. For agents that outlive your login session, let the user manager keep running: `loginctl enable-linger $USER`. A system-level (shared server) variant of the unit is described in [`docs/operations.md`](docs/operations.md).
 
 ### From a release binary
 

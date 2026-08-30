@@ -36,6 +36,72 @@ archives:
         formats: [zip]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    # Setting files replaces the default list, so LICENSE/README are named
+    # explicitly. The default config rides in the archive so the brew formula
+    # can install it under etc/ — the packages ship their own copy via nfpms.
+    files:
+      - LICENSE
+      - README.md
+      - src: fraise.config.toml
+        dst: fraise.config.toml
+
+# The Postgres/redis mental model: fraise as a managed local service. brews
+# is deprecated in goreleaser v2.10+ in favour of homebrew_casks, but only a
+# formula carries the brew-services block this depends on, so the deprecation
+# is accepted deliberately; CI runs `release`, which warns, never `check`,
+# which fails on it. The formula lands in the tap the README installs from
+# (fraisehq/tap), with a
+# service block so `brew services start fraise` supervises the daemon —
+# keep_alive restarts it on crashes, logs land under var/log/ where brew
+# services users look first. etc.install is upgrade-safe: an existing,
+# user-edited config is left in place and the new default lands as .default.
+brews:
+  - name: fraise
+    repository:
+      owner: FraiseHQ
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/FraiseHQ/fraise
+    description: In-memory temporal graph database for AI agents memory
+    license: MIT
+    install: |
+      bin.install "fraise"
+      etc.install "fraise.config.toml" => "fraise/fraise.config.toml"
+    service: |
+      run [opt_bin/"fraise", "-config", etc/"fraise/fraise.config.toml"]
+      keep_alive true
+      log_path var/"log/fraise.log"
+      error_log_path var/"log/fraise.log"
+      working_dir var
+    caveats: |
+      Run fraise as a supervised background service:
+        brew services start fraise
+      Config:  #{etc}/fraise/fraise.config.toml
+      Logs:    #{var}/log/fraise.log
+    test: |
+      assert_match "-config", shell_output("#{bin}/fraise -h 2>&1")
+
+# .deb/.rpm parity for the brew service story, from the same tag and build
+# matrix. The systemd user unit ships to the vendor unit directory so
+# `systemctl --user enable --now fraise` works right after install; the
+# default config is marked config|noreplace so upgrades never clobber edits.
+nfpms:
+  - package_name: fraise
+    ids: [fraise]
+    vendor: FraiseHQ
+    homepage: https://github.com/FraiseHQ/fraise
+    maintainer: René-Jean Corneille <corneille.r.j@gmail.com>
+    description: In-memory temporal graph database for AI agents memory.
+    license: MIT
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: packaging/systemd/fraise.service
+        dst: /usr/lib/systemd/user/fraise.service
+      - src: fraise.config.toml
+        dst: /etc/fraise/fraise.config.toml
+        type: config|noreplace
 
 checksum:
   name_template: checksums.txt
