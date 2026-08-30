@@ -125,15 +125,13 @@ def test_hit_values_come_back_exactly_as_written(client, models_graph):
 def test_scores_are_raw_fused_quantities(tide_result):
     """Scores are positive and arrive raw, on the scorer's own scale.
 
-    Under the shipped reciprocal-rank fusion a score is a sum of 1/(k+rank)
-    terms, so every hit lands as a small fraction well below 1.0. The obvious
-    reading of a score as a similarity in [0, 1] is wrong in both directions:
-    nothing normalises the fused sums to that range on purpose, and nothing
-    caps what a differently-scaled scorer may return — clients must treat
-    scores as ordering, not probability.
+    Under the shipped excess fold a hit's score is its seed mass plus any
+    transmitted surplus, in raw seed units — BM25 scaled by match breadth,
+    where covering the whole query scores about its matched-term count — so
+    a score at or above 1.0 is ordinary, not an anomaly. The obvious reading
+    of a score as a similarity in [0, 1] is wrong in both directions: nothing
+    normalises the fold to that range on purpose, and nothing caps what a
+    differently-scaled scorer may return — clients must treat scores as
+    ordering, not probability.
     """
     assert all(hit.score > 0 for hit in tide_result)
-    assert all(hit.score < 1.0 for hit in tide_result), (
-        "reciprocal-rank sums are small fractions; a score at or above 1.0 "
-        "means the fold changed scale and this pin should be revisited"
-    )

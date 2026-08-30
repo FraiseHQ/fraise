@@ -115,14 +115,16 @@ def test_a_lone_seed_hub_stays_silent(instrument_graph, client):
 def test_top_caps_the_number_of_results(instrument_graph, instrument_facts, client):
     """``top`` truncates a recall that would otherwise return every match.
 
-    Every instrument fact contains "is", so the text index matches all of
-    them directly.
+    Each fact matches its own instrument keyword, so seeding with all four
+    matches every fact. The filler words the facts share ("the", "is") are
+    stop words, stripped at index time, so no single common term can match
+    them all.
     """
-    capped = client.recall("is", graph=instrument_graph, top=2)
+    capped = client.recall(*instrument_facts, graph=instrument_graph, top=2)
     assert capped.count == 2
-    assert client.recall("is", graph=instrument_graph, top=10).count == len(
-        instrument_facts
-    )
+    assert client.recall(
+        *instrument_facts, graph=instrument_graph, top=10
+    ).count == len(instrument_facts)
 
 
 def test_a_topic_filter_narrows_a_keyword_recall(

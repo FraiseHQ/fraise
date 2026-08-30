@@ -8,10 +8,22 @@ on:
       - "python/v[0-9]+.[0-9]+.[0-9]+-*" # pre-releases: -alpha.N / -beta.N / -rc.N
     paths:
       - "sdk/python/**"
+      - "tests/integration/python/**"
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - Dockerfile.fraise
+      - docker-compose.yaml
       - ".github/workflows/python.yaml"
   pull_request:
     paths:
       - "sdk/python/**"
+      - "tests/integration/python/**"
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - Dockerfile.fraise
+      - docker-compose.yaml
       - ".github/workflows/python.yaml"
 
 concurrency:
