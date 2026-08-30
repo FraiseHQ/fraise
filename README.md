@@ -94,23 +94,14 @@ the tag. The harness and the full results are published separately, in October.
 - **No infrastructure.** A single binary. No database to provision, no service
   to stand up beside it.
 - **Open source, MIT.**
+
 ## Status
 
 **v0.1.0 — the first stable release.** The core loop works end to end, the
 install paths are verified on clean machines, and the benchmark row above is
 produced from this tag.
 
-What that does and doesn't promise:
-
-- The HTTP API and FQL are stable within `0.1.x`. They may still change between
-  minor versions before `1.0`.
-- **Storage is in-memory and ephemeral.** See the callout above.
-- Authentication is not shipped ([#177](https://github.com/FraiseHQ/fraise/issues/177)).
-  The server binds loopback by default. Do not expose it to a network you don't
-  control.
-- `forget` and `update` are not shipped
-  ([#172](https://github.com/FraiseHQ/fraise/issues/172)).
-Good for building agent memory today. Not yet a system of record.
+Good for building agent memory today. Not yet for long term production use.
 
 ## How it works
 
