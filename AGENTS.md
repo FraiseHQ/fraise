@@ -110,18 +110,14 @@ These apply to every component:
 
 ### Python
 
-- Test files are named `*_test.py` (not `test_*.py`), and **every** suite that
-  tests the SDK mirrors the package one-to-one — the unit suite and the
-  integration suite alike. Both roots take the same relative path under
-  `fraise_sdk/`, so a module maps to one file per suite:
+- Test files are named `*_test.py` (not `test_*.py`), and the SDK suite mirrors the package one-to-one: a module maps to exactly one test file under the same relative path, and that file holds the module's unit tests and its integration tests together.
 
   ```text
-  sdk/python/src/fraise_sdk/  → sdk/python/src/tests/      (unit)
-                              → tests/integration/python/  (integration)
+  sdk/python/src/fraise_sdk/    → sdk/python/src/tests/
 
-  client.py                   → client_test.py
-  query.py                    → query_test.py
-  providers/openai.py         → providers/openai_test.py
+  client.py                     → client_test.py
+  query.py                      → query_test.py
+  providers/openai.py           → providers/openai_test.py
   integrations/openai_agents.py → integrations/openai_agents_test.py
   ```
 
@@ -132,21 +128,27 @@ These apply to every component:
   its own. Mirror the source module's own banner comments
   (`# -- lifecycle ---`, `# -- embedding ---`) to keep those sections findable.
 
+  Integration tests live in the same mirrored file as the module's unit tests, under its `# -- integration` banner, and every one carries `@pytest.mark.integration`: `-m "not integration"` is the unit run and touches nothing live (`make test-py`), `-m integration` drives the daemon `make test-integration-py` brings up. The live fixtures they use sit in the same `conftest.py` as the mocked ones, under its "live server" banner — a fixture only instantiates when a test asks, so the unit run never waits on a health check.
+
   The point is that the tests for a given module are findable from its path
   alone, without grepping. Three consequences are intended, not accidents:
 
-  - The same basename recurs across suites — `client_test.py` exists twice.
-    `--import-mode=importlib` in the root `pyproject.toml` is what stops pytest
-    tripping over that. Never rename a file to dodge the collision.
-  - A module gets no file in a suite when it has nothing to test there:
-    `providers/base.py` resolves embedders without touching the network, so it
-    has no integration test. A missing file is fine; a misnamed one is not.
+  - The same basename can recur across suite roots (an SDK test file and a
+    server-suite file sharing a name). `--import-mode=importlib` in the root
+    `pyproject.toml` is what stops pytest tripping over that. Never rename a
+    file to dodge the collision.
+  - A module with nothing to test at one level simply has no tests at that
+    level: `providers/base.py` resolves embedders without touching the
+    network, so it has unit tests and no `integration`-marked ones. A missing
+    section is fine; a misnamed file is not.
   - `conftest.py` is fixture machinery and mirrors nothing.
 
-  `tests/e2e/` is exempt **from this naming rule only**: it drives the running
-  server over HTTP, so it mirrors the server, not the SDK. Every other rule in
-  this section — fixtures, imports, docstrings, `parametrize`, mocking — applies
-  to it in full.
+  `tests/e2e/` and `tests/integration/` are exempt **from this naming rule
+  only**: each drives the released binary and mirrors what it drives —
+  `tests/e2e/` the HTTP server, `tests/integration/` the MCP bridge
+  (`pkg/mcp`) together with the daemon behind it, both roles of the one
+  binary. Every other rule in this section — fixtures, imports, docstrings,
+  `parametrize`, mocking — applies to them in full.
 - **Every fixture lives in `conftest.py`. This holds for every pytest suite in
   the repo — the SDK unit suite, the integration suite and `tests/e2e/`
   alike** — including a fixture that a single test file asks for, and including

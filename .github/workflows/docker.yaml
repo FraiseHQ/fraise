@@ -9,6 +9,7 @@ on:
       - "go.mod"
       - "go.sum"
       - "tests/e2e/**"
+      - "tests/integration/**"
       - ".golangci.yml"
       - ".github/workflows/go.yaml"
       - Dockerfile.fraise
@@ -20,6 +21,7 @@ on:
       - "go.mod"
       - "go.sum"
       - "tests/e2e/**"
+      - "tests/integration/**"
       - ".golangci.yml"
       - ".github/workflows/go.yaml"
       - Dockerfile.fraise
@@ -48,9 +50,30 @@ jobs:
       - name: Lint
         run: make lint-docker
 
-  test:
-    name: E2E tests
+  integration:
+    name: Server + MCP bridge integration
     needs: lint
+    # The suite drives the freshly built binary in both of its roles at once —
+    # the daemon over HTTP and `fraise mcp` over stdio — so it needs Go, not
+    # docker. Same native two-arch matrix as e2e: the bridge is the binary.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      - name: Server + MCP bridge integration tests
+        run: make test-integration
+
+  e2e:
+    name: E2E tests
+    needs: integration
     # Native amd64 + arm64 runners: exercises the image (and its per-arch build)
     # on both architectures every run, no QEMU emulation.
     runs-on: ${{ matrix.runner }}
@@ -67,7 +90,7 @@ jobs:
 
   deploy:
     name: Build and push
-    needs: test
+    needs: e2e
     # Only publish on real pushes (branch/tag) — never on PRs or the weekly scan.
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
