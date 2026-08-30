@@ -6,26 +6,26 @@ readme = "README.md"
 authors = [
     { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "requests>=2.33.1",
+]
+
+[project.optional-dependencies]
+openai = [
+    "openai-agents>=0.19.4",
+]
+anthropic = [
+    "claude-agent-sdk>=0.2.148",
+]
+huggingface = [
+    "huggingface-hub>=1.27.0",
+]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
 ]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
-
-[dependency-groups]
-anthropic = [
-    "claude-agent-sdk>=0.2.134",
-]
-dev = [
-    "pytest>=9.0.3",
-    "pytest-cov>=7.0.0",
-]
-huggingface = [
-    "huggingface-hub>=1.27.0",
-]
-openai = [
-    "openai-agents>=0.19.4",
-]

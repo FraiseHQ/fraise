@@ -122,6 +122,37 @@ def respond():
     return _arm
 
 
+def _arm_get(session, body, status_code: int = 200) -> MagicMock:
+    """Arm ``session`` to answer the next GET with ``body``.
+
+    Private: tests reach this through the ``respond_get`` fixture. Mirrors
+    ``_arm``, which arms POST — the health and version probes are the
+    client's only GETs.
+    """
+    response = MagicMock(
+        status_code=status_code,
+        ok=200 <= status_code < 300,
+        text=json.dumps(body),
+    )
+    response.json.return_value = body
+    session.get.return_value = response
+    return response
+
+
+@pytest.fixture
+def respond_get():
+    """Callable arming a session to answer the next GET with a given body.
+
+    The ``session`` fixture arms POST only; health/version/compatibility
+    tests arm the GET side through this.
+
+    Returns:
+        ``callable(session, body, status_code=200) -> MagicMock`` — the mock
+        response, for tests that want to alter it directly.
+    """
+    return _arm_get
+
+
 @pytest.fixture
 def sent():
     """Callable returning the JSON payload of the single POST a session made.

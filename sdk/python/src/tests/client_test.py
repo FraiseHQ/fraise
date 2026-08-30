@@ -150,6 +150,20 @@ def test_api_error_surfaces_server_message(session, respond):
     assert "could not parse query" in excinfo.value.message
 
 
+def test_an_error_with_a_non_json_body_still_raises(session, respond):
+    """An error status whose body is not JSON still raises FraiseAPIError,
+    surfacing the raw text — a proxy's HTML error page reaches the caller
+    instead of being swallowed into silence.
+    """
+    response = respond(session, {}, status_code=502)
+    response.json.side_effect = ValueError("not json")
+    response.text = "<html>bad gateway</html>"
+    with pytest.raises(FraiseAPIError) as excinfo:
+        FraiseClient().recall("anything")
+    assert excinfo.value.status_code == 502
+    assert "bad gateway" in excinfo.value.message
+
+
 def test_unreachable_server_raises_fraise_error(session):
     session.post.side_effect = requests.ConnectionError("refused")
     with pytest.raises(FraiseError, match="could not reach fraise"):
@@ -166,6 +180,115 @@ def test_timed_out_server_raises_a_distinct_fraise_error(session):
         FraiseClient(timeout=5.0).recall("anything")
     assert "could not reach fraise" not in str(excinfo.value)
     assert "5.0s" in str(excinfo.value)
+
+
+def test_health_is_true_on_200(session, respond_get):
+    """A 200 from the health endpoint answers True."""
+    respond_get(session, {"status": "ok"})
+    assert FraiseClient().health() is True
+
+
+def test_health_is_false_on_a_non_200(session, respond_get):
+    """A non-200 answers False: degraded is not healthy."""
+    respond_get(session, {}, status_code=503)
+    assert FraiseClient().health() is False
+
+
+def test_health_is_false_when_unreachable(session):
+    """A transport error is swallowed into False, never raised.
+
+    health() is the probe callers use to decide whether to bother, so it has
+    to answer even when nothing is listening.
+    """
+    session.get.side_effect = requests.ConnectionError("refused")
+    assert FraiseClient().health() is False
+
+
+def test_server_version_reads_the_health_field(session, respond_get):
+    """The version travels in the health endpoint's ``version`` field."""
+    respond_get(session, {"status": "ok", "version": "0.1.0"})
+    assert FraiseClient().server_version() == "0.1.0"
+
+
+def test_server_version_is_none_when_unreachable(session):
+    """An unreachable server reports no version rather than raising."""
+    session.get.side_effect = requests.ConnectionError("refused")
+    assert FraiseClient().server_version() is None
+
+
+def test_server_version_is_none_on_a_non_200(session, respond_get):
+    """An error status yields None even when the body carries a version:
+    an error page's claims are not the server's."""
+    respond_get(session, {"version": "0.1.0"}, status_code=500)
+    assert FraiseClient().server_version() is None
+
+
+def test_server_version_is_none_on_a_non_json_body(session, respond_get):
+    """A body that fails to decode yields None — a proxy's HTML error page
+    is not a version."""
+    response = respond_get(session, {})
+    response.json.side_effect = ValueError("not json")
+    assert FraiseClient().server_version() is None
+
+
+@pytest.mark.parametrize("body", [{}, {"version": ""}, {"version": 3}, []])
+def test_server_version_is_none_without_a_usable_version_field(
+    session, respond_get, body
+):
+    """A decoded body without a non-empty string version yields None —
+    servers predating version reporting and shape surprises alike."""
+    respond_get(session, body)
+    assert FraiseClient().server_version() is None
+
+
+def test_check_compatibility_warns_when_the_version_is_unknown(session):
+    """No readable version warns and answers False instead of guessing."""
+    session.get.side_effect = requests.ConnectionError("refused")
+    with pytest.warns(UserWarning, match="could not determine"):
+        assert FraiseClient().check_compatibility() is False
+
+
+def test_check_compatibility_strict_raises_when_the_version_is_unknown(session):
+    """strict=True turns the unknown-version warning into a FraiseError."""
+    session.get.side_effect = requests.ConnectionError("refused")
+    with pytest.raises(FraiseError, match="could not determine"):
+        FraiseClient().check_compatibility(strict=True)
+
+
+@pytest.mark.parametrize("version", ["0.2.0", "99.0.0", "0.0.9", "0.1", "abc", "x.y.z"])
+def test_check_compatibility_warns_outside_the_supported_range(
+    session, respond_get, version
+):
+    """A version outside SUPPORTED_SERVER — above it, below it, or too
+    mangled to parse at all — warns and answers False: the SDK keeps
+    working, eyes open."""
+    respond_get(session, {"version": version})
+    with pytest.warns(UserWarning, match="outside this SDK's supported range"):
+        assert FraiseClient().check_compatibility() is False
+
+
+def test_check_compatibility_strict_raises_outside_the_supported_range(
+    session, respond_get
+):
+    """strict=True turns the out-of-range warning into a FraiseError."""
+    respond_get(session, {"version": "99.0.0"})
+    with pytest.raises(FraiseError, match="outside this SDK's supported range"):
+        FraiseClient().check_compatibility(strict=True)
+
+
+@pytest.mark.parametrize("version", ["0.1.0", "v0.1.5", "0.1.9-beta.2"])
+def test_check_compatibility_accepts_a_supported_version(session, respond_get, version):
+    """An in-range version answers True with no warning — a ``v`` prefix and
+    a pre-release suffix are spelling, not incompatibility. The literals sit
+    inside SUPPORTED_SERVER (>=0.1.0,<0.2.0) and rot with it on purpose,
+    like the integration suite's live pin."""
+    respond_get(session, {"version": version})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert FraiseClient().check_compatibility() is True
+
+
+# -- lifecycle ----------------------------------------------------------------
 
 
 def test_closing_closes_the_session_the_client_owns(session):
