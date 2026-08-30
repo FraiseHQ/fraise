@@ -163,9 +163,11 @@ func TestParseRecallMissingParameter(t *testing.T) {
 	}
 }
 
-// TestParseRejectsOverLimits checks that the configured ceilings are enforced at
-// parse time: a recall over the top/depth ceiling, or a bound vector longer than
-// the dimension ceiling, is rejected with ErrLimitExceeded and no query.
+// TestParseRejectsOverLimits checks that the configured ranges are enforced at
+// parse time: a recall outside the top/depth range, or a bound vector longer
+// than the dimension ceiling, is rejected with ErrLimitExceeded and no query.
+// top:0 is the floor case — presence-keyed parsing keeps it visible, so it is
+// rejected with the range error instead of silently answering with the default.
 func TestParseRejectsOverLimits(t *testing.T) {
 	cfg := config.New()
 	cfg.DB.MaxTop = 10
@@ -178,6 +180,7 @@ func TestParseRejectsOverLimits(t *testing.T) {
 		params map[string][]float32
 	}{
 		{"top over ceiling", "recall@0 anna top:99", nil},
+		{"top under floor", "recall@0 anna top:0", nil},
 		{"depth over ceiling", "recall@0 anna depth:9", nil},
 		{"recall vector too long", "recall@0 anna vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
 		{"remember vector too long", "remember@0 'a fact' vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},

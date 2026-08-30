@@ -889,6 +889,44 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 	})
 }
 
+// TestExplicitTopIsVisibleIncludingZero pins that the *presence* of a top
+// clause, not a nonzero value, decides whether the configured default applies.
+//
+// Unlike depth:0, top:0 is not a valid request — the documented range is
+// 1..max-top — but it must survive parsing as an explicit clause: reading
+// presence off the value collapsed it into the default and skipped the range
+// check with it, so a caller asking for zero results silently got up to a
+// thousand. The rejection lives in query.Parse; what is pinned here is that
+// the parser keeps the clause visible for it.
+func TestExplicitTopIsVisibleIncludingZero(t *testing.T) {
+	cases := []struct {
+		query    string
+		explicit bool
+		want     int // Top(7) — 7 stands in for the configured default
+	}{
+		{"recall x top:0", true, 0},
+		{"recall x top:5", true, 5},
+		{"recall x", false, 7},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+			}
+			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
+
+			if got := rc.HasTop(); got != tc.explicit {
+				t.Errorf("HasTop() = %v, want %v", got, tc.explicit)
+			}
+			if got := rc.Top(7); got != tc.want {
+				t.Errorf("Top(7) = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestExplicitDepthIsHonouredIncludingZero pins that the *presence* of a depth
 // clause, not a nonzero value, decides whether the configured default applies.
 //

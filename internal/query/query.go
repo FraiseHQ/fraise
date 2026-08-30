@@ -176,14 +176,14 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		return qo, warns, nil
 
 	case *parser.RecallCommandNode[K, P]:
-		// Enforce the top/depth ceilings before building the query: a
-		// client-supplied result count or walk depth over its ceiling is a
-		// client error, rejected here rather than clamped. Only an explicit
-		// clause is checked — the configured default is operator-set and trusted,
-		// so an unspecified top/depth is never rejected even if the default
-		// itself exceeds the ceiling.
+		// Enforce the top/depth ranges before building the query: a
+		// client-supplied result count or walk depth outside its documented
+		// range is a client error, rejected here rather than clamped. Only an
+		// explicit clause is checked — the configured default is operator-set
+		// and trusted, so an unspecified top/depth is never rejected even if
+		// the default itself exceeds the ceiling.
 		top := n.Top(c.DB.DefaultTop)
-		if n.HasTop() && top > c.DB.MaxTop {
+		if n.HasTop() && (top < 1 || top > c.DB.MaxTop) {
 			logger.Warn("Rejecting recall over top ceiling", "top", top, "max", c.DB.MaxTop)
 			return nil, nil, fmt.Errorf("%w: top:%d out of range (1-%d)", ErrLimitExceeded, top, c.DB.MaxTop)
 		}

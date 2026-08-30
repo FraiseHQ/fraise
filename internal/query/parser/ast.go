@@ -125,17 +125,20 @@ func (r RecallCommandNode[K, P]) Topics() []string {
 }
 
 func (r RecallCommandNode[K, P]) Top(v int) int {
-	if r.top.value == 0 {
+	if !r.HasTop() {
 		return v
 	}
 	return r.top.value
 }
 
 // HasTop reports whether the recall carried an explicit top clause, as opposed
-// to falling back to the configured default. Ceiling checks apply only to a
-// client-supplied value, never to the trusted default.
+// to falling back to the configured default. Presence is the parsed top key,
+// not a nonzero value, so an explicit top:0 stays visible to the range check
+// and is rejected as out of range instead of silently answering with the
+// default. Ceiling checks apply only to a client-supplied value, never to the
+// trusted default.
 func (r RecallCommandNode[K, P]) HasTop() bool {
-	return r.top.value != 0
+	return r.top.key.Type == lexer.TOP
 }
 
 func (r RecallCommandNode[K, P]) Depth(v int) int {
