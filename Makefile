@@ -104,9 +104,9 @@ coverage-go: ## Run Go tests with coverage report
 	$(GO_TEST) -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 	@echo "$(GREEN)✓ Coverage report: coverage.txt$(RESET)"
 
-coverage-py: ## Run Python SDK unit tests with coverage report
+coverage-py: ## Run Python SDK unit tests with coverage report (integration-marked tests excluded)
 	@echo "$(CYAN)Running Python SDK tests with coverage...$(RESET)"
-	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests \
+	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m "not integration" \
 		--cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term
 	@echo "$(GREEN)✓ Coverage report: coverage-py.xml$(RESET)"
 
@@ -134,16 +134,20 @@ test-e2e: ## Run end-to-end tests against fraise in Docker
 	  $(UV_CMD) run --package tests pytest tests/e2e -v \
 	    || ( $(FRAISE_LOGS); exit 1 )
 
-test-integration-py: ## Run Python SDK integration tests against fraise in Docker
+test-integration-py: ## Run Python SDK integration tests (marked `integration`) against fraise in Docker
 	@echo "$(CYAN)Starting fraise (docker) for Python SDK integration tests...$(RESET)"
 	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
 	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
-	  $(UV_CMD) run --package fraise-sdk --extra dev pytest tests/integration/python -v \
+	  $(UV_CMD) run --package fraise-sdk --extra dev pytest $(PY_DIR)/src/tests -m integration -v \
 	    || ( $(FRAISE_LOGS); exit 1 )
 
-test-py: ## Run Python tests with pytest
+test-integration: build-go ## Run server + MCP bridge integration tests (pytest drives the built binary over stdio)
+	@echo "$(CYAN)Running server + MCP bridge integration tests...$(RESET)"
+	@FRAISE_BIN=$(CURDIR)/$(BIN_DIR)/$(BINARY_NAME) $(UV_CMD) run --package tests pytest tests/integration -v
+
+test-py: ## Run Python unit tests with pytest (integration-marked tests excluded)
 	@echo "$(CYAN)Running Python tests...$(RESET)"
-	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
+	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m "not integration" || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
 
 test-watch: ## Run Go tests in watch mode (requires reflex)
 	@echo "$(CYAN)Running Go tests in watch mode...$(RESET)"
