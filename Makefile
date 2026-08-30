@@ -110,7 +110,7 @@ coverage-go: ## Run Go tests with coverage report
 
 coverage-py: ## Run Python SDK unit tests with coverage report
 	@echo "$(CYAN)Running Python SDK tests with coverage...$(RESET)"
-	@$(UV_CMD) run --package fraise-sdk $(PY_GROUPS) pytest $(PY_DIR)/src/tests \
+	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests \
 		--cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term
 	@echo "$(GREEN)✓ Coverage report: coverage-py.xml$(RESET)"
 
