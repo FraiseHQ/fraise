@@ -41,6 +41,7 @@ type ConfigSet struct {
 	Log       LogConfig       `toml:"log"`
 	Engine    EngineConfig    `toml:"engine"`
 	DB        DBConfig        `toml:"db"`
+	MCP       MCPConfig       `toml:"mcp"`
 
 	configFile string
 }
@@ -209,6 +210,14 @@ type VectorSearch struct {
 	Overfetch int `toml:"overfetch"`
 }
 
+type MCPConfig struct {
+	// fraise daemon address
+	addr string `toml:"address"`
+
+	// memory graph index
+	graph uint `toml:"graph"`
+}
+
 // Instanciates new configset
 func New() *ConfigSet {
 	config := &ConfigSet{}
@@ -271,6 +280,10 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.VectorSearch.FlushFactor, "rptree-flush-factor", DefaultFlushFactor, "RP forest compaction threshold (entries per live vector)")
 	flagSet.IntVar(&config.DB.VectorSearch.LeafSize, "rptree-leaf-size", DefaultLeafSize, "Points an RP-tree leaf holds before it splits")
 	flagSet.IntVar(&config.DB.VectorSearch.Overfetch, "rptree-overfetch", DefaultOverfetch, "Candidates gathered per result before a vector search stops probing")
+
+	// mcp server
+	flagSet.StringVar(&config.MCP.addr, "addr", DefaultMCPAddress, "address of the fraise daemon")
+	flagSet.UintVar(&config.MCP.graph, "graph", DefaultMCPGraph, "which memory graph to use")
 
 	return config
 }

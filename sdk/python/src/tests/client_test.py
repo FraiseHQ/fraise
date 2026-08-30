@@ -376,3 +376,284 @@ def test_embedder_object_is_called_through_its_embed_method(session, sent):
     assert sent(session)["parameters"] == {"v": [1.0, 2.0, 3.0]}
     embedder.embed.assert_called_once_with("hello world")
     embedder.assert_not_called()
+
+
+@pytest.mark.integration
+def test_client_works_as_a_context_manager(fraise_url):
+    """A client built by ``with`` reaches the server inside the block."""
+    with FraiseClient(fraise_url) as fraise:
+        assert fraise.health() is True
+
+
+@pytest.mark.integration
+def test_an_injected_session_still_reaches_the_server_after_close(fraise_url):
+    """Closing the client leaves a caller-supplied session usable.
+
+    The caller owns what the caller passed in. Asserted by using the session
+    after the client is closed, rather than by inspecting a mock's close call.
+    """
+    session = requests.Session()
+    with FraiseClient(fraise_url, session=session) as fraise:
+        assert fraise.health() is True
+    assert session.get(f"{fraise_url}/", timeout=10).status_code == 200
+    session.close()
+
+
+@pytest.mark.integration
+def test_client_connects(client):
+    """The client reaches the server and reads back a version string."""
+    assert client.health() is True
+    assert client.server_version() is not None
+
+
+@pytest.mark.integration
+def test_health_is_false_when_the_server_is_unreachable(dead_url):
+    """health() swallows the transport error instead of raising.
+
+    It is the probe callers use to decide whether to bother, so it has to
+    answer even when nothing is listening.
+    """
+    assert FraiseClient(dead_url).health() is False
+
+
+@pytest.mark.integration
+def test_server_version_is_none_when_the_server_is_unreachable(dead_url):
+    """An unreachable server reports no version rather than raising."""
+    assert FraiseClient(dead_url).server_version() is None
+
+
+@pytest.mark.integration
+def test_check_compatibility_accepts_the_live_server(client):
+    """The running server falls inside SUPPORTED_SERVER, silently.
+
+    The one assertion here that rots on its own: SUPPORTED_SERVER is a
+    hardcoded range, and this fails the day the image moves outside it.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert client.check_compatibility() is True
+    assert caught == []
+
+
+@pytest.mark.integration
+def test_check_compatibility_strict_does_not_raise(client):
+    """Strict mode passes against a supported server instead of raising."""
+    assert client.check_compatibility(strict=True) is True
+
+
+@pytest.mark.integration
+def test_remember_then_recall_returns_the_fact(client, round_trip_graph):
+    """The round trip: a fact stored through the SDK is found through the SDK."""
+    client.remember("the kettle whistles when the water boils", graph=round_trip_graph)
+    result = client.recall("kettle", graph=round_trip_graph)
+    assert "the kettle whistles when the water boils" in [h.value for h in result]
+
+
+@pytest.mark.integration
+def test_a_lone_seed_hub_stays_silent(instrument_graph, client):
+    """A single seed's topic hub holds exactly the background rate, so its
+    siblings never surface on reachability alone — in either retrieval lane.
+
+    This is the excess-transmission contract through the SDK: an anchor is
+    heard only when its members matched better than its size predicts. The
+    two depths are asserted for different reasons: depth=1 is the BM25 floor,
+    where no traversal runs at all, while depth=2 runs the excess round and
+    the hub declines to transmit on its own merits.
+    """
+    assert client.recall("cello", graph=instrument_graph, depth=1).count == 1
+    assert client.recall("cello", graph=instrument_graph, depth=2).count == 1
+
+
+@pytest.mark.integration
+def test_top_caps_the_number_of_results(instrument_graph, instrument_facts, client):
+    """``top`` truncates a recall that would otherwise return every match.
+
+    Each fact matches its own instrument keyword, so seeding with all four
+    matches every fact. The filler words the facts share ("the", "is") are
+    stop words, stripped at index time, so no single common term can match
+    them all.
+    """
+    capped = client.recall(*instrument_facts, graph=instrument_graph, top=2)
+    assert capped.count == 2
+    assert client.recall(
+        *instrument_facts, graph=instrument_graph, top=10
+    ).count == len(instrument_facts)
+
+
+@pytest.mark.integration
+def test_a_topic_filter_narrows_a_keyword_recall(
+    instrument_graph, instrument_topic, client
+):
+    """A topic filter alongside a keyword is accepted and narrows the result
+    to the tagged match itself.
+    """
+    filtered = client.recall(
+        "cello", graph=instrument_graph, topics=[instrument_topic], depth=2
+    )
+    assert filtered.count == 1
+
+
+@pytest.mark.integration
+def test_recall_is_reachable_with_an_anchor_and_no_keyword(
+    instrument_graph, instrument_topic, client
+):
+    """``client.recall(topics=[...])`` — "everything about X" — reaches the
+    server instead of failing in the parser.
+
+    The typed helper has always documented an anchor as a seed of its own, but
+    the grammar demanded a text term before any clause, so this call answered
+    400 and callers padded it with a keyword they did not mean. The count is
+    deliberately not asserted: what an anchor-seeded walk *returns* is the
+    retrieval model's business, and this pins only that the question can be
+    asked at all.
+    """
+    result = client.recall(graph=instrument_graph, topics=[instrument_topic])
+    assert result.count >= 0
+
+
+@pytest.mark.integration
+def test_a_keyword_spelled_search_word_is_not_a_clause(client, round_trip_graph):
+    """A search word that spells a keyword is a word, wherever it is passed.
+
+    ``recall("kettle", "top")`` used to build ``recall@0 kettle top``, which the
+    grammar reads as an unfinished ``top:`` clause and rejects. The builder
+    quotes it now, so the position a caller happens to pass a word in no longer
+    decides whether their query parses.
+    """
+    result = client.recall("kettle", "top", graph=round_trip_graph)
+    assert result.count >= 0
+
+
+@pytest.mark.integration
+def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):
+    """A keyword no fact contains yields an empty, falsey result."""
+    result = client.recall(no_match, graph=round_trip_graph)
+    assert result.count == 0
+    assert bool(result) is False
+
+
+@pytest.mark.integration
+def test_a_keyword_spelled_term_recalls_with_a_warning(client, round_trip_graph):
+    """recall("since", "7d") runs, and the server's parse warning surfaces on
+    both channels the SDK offers.
+
+    The leading term "since" is legal data but one ':' from a since clause,
+    so the live server answers the search and attaches a warning naming both
+    readings. The SDK lists it on ``result.warnings`` and re-emits it as a
+    :class:`FraiseWarning` — this is the whole warning pipeline, wire to
+    caller, in one round trip. Read-only: recalls write nothing.
+    """
+    with pytest.warns(FraiseWarning, match="also a keyword"):
+        result = client.recall("since", "7d", graph=round_trip_graph)
+
+    assert len(result.warnings) == 1
+    assert "since:<value>" in result.warnings[0]
+
+
+@pytest.mark.integration
+def test_an_unambiguous_recall_carries_no_warnings(client, round_trip_graph, no_match):
+    """A recall with nothing keyword-shaped in it warns about nothing: the
+    list is empty and no FraiseWarning is emitted, so callers who escalate
+    warnings to errors pass clean queries untouched.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FraiseWarning)
+        result = client.recall(no_match, graph=round_trip_graph)
+
+    assert result.warnings == []
+
+
+@pytest.mark.integration
+def test_a_configured_embedder_stores_and_finds_a_fact_by_vector(
+    vector_graph, embedding_client
+):
+    """The implicit-vector path end to end.
+
+    ``remember`` encodes the value, ``recall`` encodes the query phrase, and
+    the server matches the two.
+    """
+    fact = "the barometer falls before a storm"
+    embedding_client.remember(fact, graph=vector_graph)
+    result = embedding_client.recall("barometer", graph=vector_graph, query=fact)
+    assert fact in [h.value for h in result]
+
+
+@pytest.mark.integration
+def test_an_explicit_vector_overrides_the_embedder(
+    vector_graph, vector_dim, embedding_client
+):
+    """An explicit ``vector`` is what reaches the server, not the embedder's.
+
+    Made observable by handing over a vector of the wrong width: the server
+    refuses it. Had the client fallen back to encoding the value, the vector
+    sent would have been the graph's width and the write would have succeeded,
+    so this failing is what proves the override.
+    """
+    with pytest.raises(FraiseAPIError):
+        embedding_client.remember(
+            "the sundial needs no winding",
+            graph=vector_graph,
+            vector=[0.5] * (vector_dim // 2),
+        )
+
+
+@pytest.mark.integration
+def test_embed_false_stores_a_fact_without_a_vector(
+    vector_graph, client, recalled_values
+):
+    """Opting out of embedding still produces a valid write.
+
+    Read back through the plain client so the assertion is a pure keyword
+    recall — an embedding client would also vector-match its way to every other
+    fact in the graph.
+    """
+    fact = "the hourglass measures three minutes"
+    client.remember(fact, graph=vector_graph, embed=False)
+    assert fact in recalled_values("hourglass", vector_graph)
+
+
+@pytest.mark.integration
+def test_a_mismatched_vector_dimension_is_rejected(vector_graph, vector_dim, client):
+    """A vector of the wrong width is a 400 naming the expected and supplied
+    dimensions: a client error the caller can correct, not a server fault to
+    retry.
+    """
+    with pytest.raises(FraiseAPIError) as excinfo:
+        client.remember(
+            "a vector of the wrong width",
+            graph=vector_graph,
+            vector=[0.5] * (vector_dim // 2),
+        )
+    assert excinfo.value.status_code == 400
+    assert f"expects {vector_dim}, got {vector_dim // 2}" in excinfo.value.message
+
+
+@pytest.mark.integration
+def test_query_returns_the_decoded_body(client, round_trip_graph, no_match):
+    """The raw escape hatch returns the server's decoded JSON body."""
+    body = client.query(f"recall@{round_trip_graph} {no_match}")
+    assert body["results"] == {"count": 0, "hits": []}
+
+
+@pytest.mark.integration
+def test_query_surfaces_a_server_error_as_an_api_error(client):
+    """A rejected query becomes FraiseAPIError carrying the server's message.
+
+    The error envelope the client unpacks is the server's, not a fixture's, so
+    this fails if the server stops reporting failures as ``{"error": ...}``.
+    """
+    with pytest.raises(FraiseAPIError) as excinfo:
+        client.query("this is not a query")
+    assert excinfo.value.status_code == 400
+    assert "parse error" in excinfo.value.message
+
+
+@pytest.mark.integration
+def test_an_unreachable_server_raises_fraise_error(dead_url, round_trip_graph):
+    """A transport failure arrives as FraiseError, not a requests exception.
+
+    A refused connection is the deterministic way to reach that branch; a
+    timeout races a local server that answers faster than the clock.
+    """
+    with pytest.raises(FraiseError, match="could not reach fraise"):
+        FraiseClient(dead_url).query(f"recall@{round_trip_graph} anything")
