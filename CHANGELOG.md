@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.0-rc.3](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.2...v0.1.0-rc.3) (2026-08-30)
+
+
+### Bug fixes
+
+* reject top:0 instead of substituting the default ([#245](https://github.com/FraiseHQ/fraise/issues/245)) ([2d59c58](https://github.com/FraiseHQ/fraise/commit/2d59c58e37c75b3aef947ed23e82507cba3c5f7f))
+
+
+### Maintenance
+
+* add support for installation via linux and darwin package managers ([#249](https://github.com/FraiseHQ/fraise/issues/249)) ([f228404](https://github.com/FraiseHQ/fraise/commit/f228404ce1bf0978be092d57c1f2a80473a6f798))
+* update SDK dependencies ([#247](https://github.com/FraiseHQ/fraise/issues/247)) ([0401c2e](https://github.com/FraiseHQ/fraise/commit/0401c2e7b38d5a3b1f2719284e04d978f58e64bb))
+
 ## [0.1.0-rc.2](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.1...v0.1.0-rc.2) (2026-08-29)
 
 
