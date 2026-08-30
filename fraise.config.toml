@@ -1,0 +1,69 @@
+# Fraise server configuration.
+#
+# Every setting is optional: a key left commented out — or this whole file
+# missing — falls back to the built-in default shown here. Flags override the
+# file (fraise -config <path> -log-level error). An uncommented key that names
+# no known setting is a startup error, not a typo the server ignores.
+#
+# Reference: https://github.com/FraiseHQ/fraise/blob/main/docs/configuration.md
+
+[log]
+# level = "INFO"              # DEBUG INFO WARN ERROR
+# format = "text"             # text json
+# disable-timestamp = true
+
+[server]
+# port = 9876
+# read-timeout = "15s"
+# read-header-timeout = "5s"
+# write-timeout = "15s"
+# idle-timeout = "60s"
+# shutdown-grace = "10s"
+# max-body-bytes = 1048576    # request body cap in bytes (1 MiB)
+
+[scheduler]
+# workers = 4                 # default: max(2, GOMAXPROCS(0))
+# buffer-size = 200
+# enqueue-timeout = "2s"
+
+[engine]
+# allow-unanchored-recall = false
+# half-life = "168h"          # non-positive disables recency decay
+# cache-capacity = 1000
+
+[db]
+# precision = "float32"       # float32 float64
+# num-graphs = 8
+# default-top = 10
+# default-depth = 0
+# max-top = 1000
+# max-depth = 2
+# max-vector-dimension = 4096
+# seed-size = 10
+
+[db.hashing-function]
+# name = "xxhash"             # xxhash t1ha
+# seed = 0
+
+[db.search-algorithm]
+# name = "excess"             # none bfs excess
+
+[db.ranking-algorithm]
+# name = "none"               # none pagerank
+# pagerank-damping = 0.85
+# pagerank-max-iter = 100
+# pagerank-tol = 1e-6
+
+[db.scoring-algorithm]
+# name = "excess"             # excess rrf
+
+[db.relevance-model]
+# name = "bm25"               # bm25 matchcount
+
+[db.vector-search]
+# projection-dimension = 128
+# number-trees = 16
+# seed = 4
+# flush-factor = 2
+# leaf-size = 32
+# overfetch = 32
