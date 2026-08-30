@@ -99,6 +99,9 @@ func (b *BM25[K, P]) Weight(df, docs int) P {
 // queries sharing this instance, and Increment turns it into one multiply
 // per posting entry instead of a division.
 func (b *BM25[K, P]) Prepare() P {
+	if len(b.lengths) == 0 || b.totalLen == 0 {
+		return 0
+	}
 	avgdl := P(b.totalLen) / P(len(b.lengths))
 	return bm25K1 * bm25B / avgdl
 }

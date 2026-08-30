@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-rc.2](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.1...v0.1.0-rc.2) (2026-08-29)
+
+
+### Features
+
+* degree-normalize excess transmission and strip stop words at index time ([#231](https://github.com/FraiseHQ/fraise/issues/231)) ([891fbf2](https://github.com/FraiseHQ/fraise/commit/891fbf20654c2e73499fc42c7a069740c1451753))
+
 ## [0.1.0-rc.1](https://github.com/FraiseHQ/fraise/compare/v0.1.0-beta.8...v0.1.0-rc.1) (2026-08-25)
 
 
