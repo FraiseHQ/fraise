@@ -133,10 +133,7 @@ These apply to every component:
   The point is that the tests for a given module are findable from its path
   alone, without grepping. Three consequences are intended, not accidents:
 
-  - The same basename can recur across suite roots (an SDK test file and a
-    server-suite file sharing a name). `--import-mode=importlib` in the root
-    `pyproject.toml` is what stops pytest tripping over that. Never rename a
-    file to dodge the collision.
+  - The same basename can recur across suite roots (an SDK test file and a server-suite file sharing a name). `--import-mode=importlib` in the root `pyproject.toml` is what stops pytest tripping over that. Never rename a file to dodge the collision.
   - A module with nothing to test at one level simply has no tests at that
     level: `providers/base.py` resolves embedders without touching the
     network, so it has unit tests and no `integration`-marked ones. A missing
@@ -149,9 +146,7 @@ These apply to every component:
   (`pkg/mcp`) together with the daemon behind it, both roles of the one
   binary. Every other rule in this section — fixtures, imports, docstrings,
   `parametrize`, mocking — applies to them in full.
-- **Every fixture lives in `conftest.py`. This holds for every pytest suite in
-  the repo — the SDK unit suite, the integration suite and `tests/e2e/`
-  alike** — including a fixture that a single test file asks for, and including
+- **Every fixture lives in `conftest.py`. This holds for every pytest suite in the repo — the SDK suite (mocked and live halves alike), `tests/integration/` and `tests/e2e/`** — including a fixture that a single test file asks for, and including
   the seed data it is built from. A test module is assertions; a
   `@pytest.fixture` in one is setup hiding among them, and it splits "how did
   this graph get populated?" across as many files as there are suites. A
@@ -277,8 +272,8 @@ where tests live relative to the source, the module/barrel-file rule — and
 - `make test-py` — Python SDK unit tests.
 - `make test-e2e` — end-to-end suite; runs pytest locally against the fraise
   image brought up as a daemon via `docker-compose.yaml`.
-- `make test-integration-py` — Python SDK integration
-  tests, same daemon, driven by a locally-run pytest.
+- `make test-integration-py` — the `integration`-marked half of the SDK suite (`sdk/python/src/tests -m integration`), driven by a locally-run pytest against the same daemon.
+- `make test-integration` — the server + MCP bridge suite (`tests/integration/`): builds the binary and drives it as daemon *and* as `fraise mcp` over stdio. Needs Go, not docker.
 - `make lint`, `make fmt`, `make build` — quality and build entry points.
 
 When a change alters a contract (an interface method, hash material, a wire
