@@ -236,6 +236,13 @@ options = ClaudeAgentOptions(
 A complete, Docker-runnable agent lives in
 [`examples/claude-agent-sdk`](./examples/claude-agent-sdk).
 
+### Integrate with Codex
+
+Codex connects to the same long-term memory surface through the stateless
+`fraise mcp` stdio bridge. The [Codex integration guide](./docs/codex.md)
+contains the `config.toml` block, CLI registration command, scoped `AGENTS.md`
+memory discipline, and a two-session remember/recall verification flow.
+
 ### Integrate with OpenAI Agents
 
 The Python SDK ships tools for the [OpenAI Agents
