@@ -1,0 +1,41 @@
+#!/bin/sh
+
+set -e
+
+# nfpms runs this script for both formats, with different conventions:
+#   deb  — postinst, $1="configure", $2=previous version (empty on first install)
+#   rpm  — %post,    $1="1" on install, "2" on upgrade
+#
+# Only greet on a first install. An upgrade should be silent: the user has
+# already been told, and package managers that print on every upgrade get
+# tuned out.
+
+first_install() {
+	case "$1" in
+	configure) [ -z "$2" ] ;;
+	1) true ;;
+	*) false ;;
+	esac
+}
+
+first_install "$@" || exit 0
+
+# No systemd, nothing useful to say — the binary is on PATH either way.
+command -v systemctl >/dev/null 2>&1 || exit 0
+
+# The unit ships to /usr/lib/systemd/user/, so it is a *user* service and this
+# script runs as root: it cannot enable it on the user's behalf. Print the one
+# command instead of guessing which human this machine belongs to.
+
+cat <<'MSG'
+
+Fraise installed.
+
+  systemctl --user enable --now fraise    start it now, and on every login
+  journalctl --user -u fraise -f          follow the logs
+  loginctl enable-linger "$USER"          also start at boot (optional)
+
+Config: /etc/fraise/fraise.config.toml
+        per-user override: ~/.config/fraise/fraise.config.toml
+
+MSG

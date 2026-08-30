@@ -65,9 +65,13 @@ brews:
     homepage: https://github.com/FraiseHQ/fraise
     description: In-memory temporal graph database for AI agents memory
     license: MIT
+    # (etc/"fraise").install, not etc.install "x" => "fraise/x": Pathname#install
+    # mkpaths its receiver only, so the rename form ENOENTs when etc/fraise does
+    # not exist yet — the receiver form creates it and keeps the upgrade-safe
+    # .default behaviour for an existing, user-edited config.
     install: |
       bin.install "fraise"
-      etc.install "fraise.config.toml" => "fraise/fraise.config.toml"
+      (etc/"fraise").install "fraise.config.toml"
     service: |
       run [opt_bin/"fraise", "-config", etc/"fraise/fraise.config.toml"]
       keep_alive true
@@ -96,6 +100,8 @@ nfpms:
     license: MIT
     formats: [deb, rpm]
     bindir: /usr/bin
+    scripts:
+      postinstall: packaging/scripts/postinst
     contents:
       - src: packaging/systemd/fraise.service
         dst: /usr/lib/systemd/user/fraise.service
