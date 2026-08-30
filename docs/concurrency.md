@@ -39,13 +39,7 @@ Partition your data across graphs when:
 
 All graphs within a database share the same underlying configuration and lifecycle (Start/Stop).
 
-A graph is also an isolation boundary, not only a lock domain: no query reads
-across graphs, and no walk traverses between them. That is why the graph
-selector is validated twice — the parser rejects a selector that would not fit
-`uint8` (unchecked, `@256` would wrap to graph 0 and read another tenant's
-memory), and the server rejects one past the allocated count. Concurrency is the
-reason to have several graphs; isolation is the reason to be careful which one a
-query names.
+A graph is also an isolation boundary, not only a lock domain: no query reads across graphs, and no walk traverses between them. That is why the graph selector is validated twice — the parser rejects a selector that would not fit `uint8` (unchecked, `@256` would wrap to graph 0 and read another tenant's memory), and the server rejects one past the allocated count. Concurrency is the reason to have several graphs; isolation is the reason to be careful which one a query names.
 
 ## Scheduler
 
@@ -63,33 +57,22 @@ execute(stream) → Acquire lock → Commit in place
 
 ### Configuration
 
-The scheduler is configured under `[scheduler]` (see
-[`configuration.md`](configuration.md)):
+The scheduler is configured under `[scheduler]` (see [`configuration.md`](configuration.md)):
 
-- **workers**: number of concurrent worker goroutines (default
-  `max(2, GOMAXPROCS(0))` — reads take `RLock` and run concurrently, so
-  tracking the machine's core count avoids a queueing penalty; `-workers`
-  still overrides it)
+- **workers**: number of concurrent worker goroutines (default `max(2, GOMAXPROCS(0))` — reads take `RLock` and run concurrently, so tracking the machine's core count avoids a queueing penalty; `-workers` still overrides it)
 - **buffer-size**: capacity of the work queue (default 200)
-- **enqueue-timeout**: how long `Submit` waits for room before shedding
-  (default 2s)
+- **enqueue-timeout**: how long `Submit` waits for room before shedding (default 2s)
 
-The three are one setting in three parts: `workers` bounds how much executes at
-once, `buffer-size` bounds how much waits, and `enqueue-timeout` bounds how long
-a caller is willing to wait to become one of the waiting. Raising the first two
-without the third just moves where requests pile up.
+The three are one setting in three parts: `workers` bounds how much executes at once, `buffer-size` bounds how much waits, and `enqueue-timeout` bounds how long a caller is willing to wait to become one of the waiting. Raising the first two without the third just moves where requests pile up.
 
 ### Submitting Work
 
-`Submit` is bounded and context-aware, which is what turns overload into
-backpressure instead of an ever-growing pile of blocked goroutines. It returns:
+`Submit` is bounded and context-aware, which is what turns overload into backpressure instead of an ever-growing pile of blocked goroutines. It returns:
 
 - `nil` once the stream is on the queue
-- `ErrQueueFull` if the queue stayed saturated for `enqueue-timeout` — the
-  server answers **429**, telling the client to back off
+- `ErrQueueFull` if the queue stayed saturated for `enqueue-timeout` — the server answers **429**, telling the client to back off
 - `ErrShutdown` if the scheduler is stopping or was never started — **503**
-- a wrapped `ctx.Err()` if the caller gave up first, in which case there is no
-  live request left to answer
+- a wrapped `ctx.Err()` if the caller gave up first, in which case there is no live request left to answer
 
 A caller is therefore never parked indefinitely on a full, nil, or closed queue.
 
@@ -97,31 +80,23 @@ A caller is therefore never parked indefinitely on a full, nil, or closed queue.
 
 When the scheduler starts:
 
-1. A buffered channel of size `buffer-size` is created, alongside a `quit`
-   channel
+1. A buffered channel of size `buffer-size` is created, alongside a `quit` channel
 2. `workers` goroutines are spawned, each selecting on both
 3. Streams submitted via `Submit()` are placed on the queue
 4. Workers process streams in queue order (FIFO)
 
 When the scheduler stops:
 
-1. `quit` is closed — **the queue itself is never closed**. Closing it would
-   panic a `Submit` that is mid-send; closing a separate channel refuses new
-   work without that race, and unparks any `Submit` waiting on a full queue.
+1. `quit` is closed — **the queue itself is never closed**. Closing it would panic a `Submit` that is mid-send; closing a separate channel refuses new work without that race, and unparks any `Submit` waiting on a full queue.
 2. Each worker drains what is already buffered, then exits
 3. All goroutines are waited on (via `sync.WaitGroup`)
-4. `Stop` drains any straggler a `Submit` raced into the buffer as `quit`
-   closed. This runs single-threaded once the workers are gone, so an accepted
-   write is executed rather than silently dropped
+4. `Stop` drains any straggler a `Submit` raced into the buffer as `quit` closed. This runs single-threaded once the workers are gone, so an accepted write is executed rather than silently dropped
 
-The invariant across all four steps: work that `Submit` accepted is work that
-runs. A write acknowledged and then dropped by shutdown would be indistinguishable
-from data loss.
+The invariant across all four steps: work that `Submit` accepted is work that runs. A write acknowledged and then dropped by shutdown would be indistinguishable from data loss.
 
 ### Stream Execution
 
-Each worker processes a single stream at a time, taking whichever of queue or
-quit is ready:
+Each worker processes a single stream at a time, taking whichever of queue or quit is ready:
 
 ```go
 func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struct{}) {
@@ -140,22 +115,13 @@ func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struc
 }
 ```
 
-Whatever happens, `execute` signals completion: `stream.Finish()` is deferred
-before anything that can fail, so a request waiting on `Done()` is never left
-hanging by an early error such as an out-of-range graph selector.
+Whatever happens, `execute` signals completion: `stream.Finish()` is deferred before anything that can fail, so a request waiting on `Done()` is never left hanging by an early error such as an out-of-range graph selector.
 
 The `execute()` method:
 
 1. **Selects the graph**: `DB.Select(stream.Query.GetGraphID())`
-2. **Acquires the graph's lock**: `stream.Acquire(g)` — the write lock for
-   writes, a read lock for reads
-3. **Commits in place**: `stream.Commit(g)` — reads run the search against the
-   live graph; writes mutate it directly under the exclusive lock, costing
-   O(fact + incremental index updates) regardless of graph size. The lock is
-   already exclusive, so no staging copy is needed: nothing can observe
-   intermediate state. On error the stream records it and completes; the one
-   realistic write failure (vector-dimension mismatch) is checked before any
-   mutation, leaving the graph untouched.
+2. **Acquires the graph's lock**: `stream.Acquire(g)` — the write lock for writes, a read lock for reads
+3. **Commits in place**: `stream.Commit(g)` — reads run the search against the live graph; writes mutate it directly under the exclusive lock, costing O(fact + incremental index updates) regardless of graph size. The lock is already exclusive, so no staging copy is needed: nothing can observe intermediate state. On error the stream records it and completes; the one realistic write failure (vector-dimension mismatch) is checked before any mutation, leaving the graph untouched.
 
 ## Locking Strategy
 
@@ -258,9 +224,7 @@ Writes serialize on graph 0's lock
 
 1. **Distribute data**: Use multiple graphs; partition by agent, conversation, or domain
 2. **Batch reads**: Use `RLock()` to read multiple entities in one critical section
-3. **Minimize lock hold time**: writes commit in place, so lock hold time is
-   proportional to the fact being written — keep facts small rather than
-   batching many into one stream
+3. **Minimize lock hold time**: writes commit in place, so lock hold time is proportional to the fact being written — keep facts small rather than batching many into one stream
 4. **Monitor queue depth**: If the queue fills up, consider increasing `BufferSize` or `Workers`
 
 ## Future Considerations

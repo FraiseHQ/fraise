@@ -25,8 +25,7 @@
   <a href="https://discord.gg/eHDFwnwHq"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
 </p>
 
-**Fraise is a memory database for AI agents.** One they query directly, in a
-language built for tokens, not humans.
+**Fraise is a memory database for AI agents.** One they query directly, in a language built for tokens, not humans.
 
 ```text
 remember 'acme moved to annual billing' topic:billing entity:acme
@@ -34,57 +33,42 @@ remember 'acme moved to annual billing' topic:billing entity:acme
 recall billing entity:acme since:30d top:5
 ```
 
-Two verbs. Sub-millisecond recall. No infrastructure to run.
+Two verbs. Fast memory retrieval. No infrastructure to run.
 
 <!-- demo GIF goes here -->
 
 ## Why Fraise
 
-- **A query language agents can actually write.** FQL has two verbs — `remember`
-  and `recall` — and one way to say each thing. Fewer degrees of freedom means
-  fewer ways for a model to get it wrong, and fewer tokens spent saying it.
-- **Hybrid retrieval.** Facts are indexed for full-text, graph, and (optionally)
-  vector search. One query, ranked across all three.
-- **Temporal by default.** Recent memories outrank older ones, so recall is
-  recency-aware without asking for it.
-- **Fast enough to sit inside a turn.** Recall in tens of microseconds, writes in
-  low milliseconds — remember mid-step, while the user waits.
-- **No infrastructure.** A single binary. No database to provision, no service to
-  stand up beside it.
+- **A query language agents can actually write.** FQL has two verbs — `remember` and `recall` — and one way to say each thing. Fewer degrees of freedom means fewer ways for a model to get it wrong, and fewer tokens spent saying it.
+- **Hybrid retrieval.** Facts are indexed for full-text, graph, and (optionally) vector search. One query, ranked across all three.
+- **Temporal by default.** Recent memories outrank older ones, so recall is recency-aware without asking for it.
+- **Fast enough to sit inside a turn.** Recall in tens of microseconds, writes in low milliseconds: allows your agent to remember mid-step, while the user waits.
+- **No infrastructure.** A single binary. No database to provision, no service to stand up beside it.
 - **Open source, MIT.**
 
 ## Status
 
-Fraise is early and pre-`v0.1.0`. It runs, and the core loop works end to end —
-but the API and the query language may still change between minor versions.
+Fraise is early and `v0.1.0`. It runs, and the core loop works end to end, but the API and the query language may still change between minor versions.
 
-Not production-ready. Good for experimenting with agent memory today.
+As such, it is not production-ready, only suitable for experimentation.
 
 ## How it works
 
-Fraise stores knowledge as a **temporal memory graph** built from three kinds of
-node:
+Fraise stores knowledge as a **temporal memory graph** built from three kinds of node:
 
 - **facts** — the things you remember, one statement each
 - **entities** — who or what a fact mentions
 - **topics** — what a fact is about
 
-Edges connect facts to the entities they mention and the topics they're about, so
-a query can start from either side. A `recall` finds seed facts by text (and
-optionally by vector similarity), expands through shared entities and topics up to
-`depth` hops, ranks by relevance and recency, and returns the best `top` results.
+Edges connect facts to the entities they mention and the topics they're about, so a query can start from either side. A `recall` finds seed facts by text (and optionally by vector similarity), expands through shared entities and topics up to `depth` hops, ranks by relevance and recency, and returns the best `top` results.
 
-A single Fraise instance holds several independent memory graphs (8 by default),
-addressed with `@N` — one per user, per session, per agent, however you like.
+A single Fraise instance holds several independent memory graphs (8 by default), addressed with `@N` — one per user, per session, per agent, however you like.
 
 ## Get Started
 
-Fraise is a single binary — no database to provision, nothing to configure. Every
-route below leaves you with a server listening on `127.0.0.1:9876`.
+Fraise is a single binary — no database to provision, nothing to configure. Every route below leaves you with a server listening on `127.0.0.1:9876`.
 
-> Fraise is pre-`v0.1.0`, so every published version is a pre-release. Two
-> consequences for the commands below: Docker's `:latest` tag and GitHub's
-> `/releases/latest/` URL don't resolve yet, so each one pins a version.
+> Fraise is pre-`v0.1.0`, so every published version is a pre-release. Two consequences for the commands below: Docker's `:latest` tag and GitHub's `/releases/latest/` URL don't resolve yet, so each one pins a version.
 
 ### With Go
 
@@ -93,18 +77,14 @@ go install github.com/FraiseHQ/fraise/cmd/server@latest
 "$(go env GOPATH)/bin/server"
 ```
 
-`@latest` resolves to the highest pre-release (`v0.1.0-beta.8` today); pin with
-`@v0.1.0-beta.8` to be explicit. The binary installs as `server`, after its
-package path — rename it to `fraise` if that reads better.
+`@latest` resolves to the highest pre-release (`v0.1.0-rc.2` today); pin with `@v0.1.0-rc.2` to be explicit. The binary installs as `server`, after its package path — rename it to `fraise` if that reads better.
 
-Nothing further is needed to trust this: the Go toolchain checks every module
-download against the public checksum transparency log, and your own machine
-compiles the result.
+Nothing further is needed to trust this: the Go toolchain checks every module download against the public checksum transparency log, and your own machine compiles the result.
 
 ### From a release binary
 
 ```sh
-VERSION=0.1.0-beta.8
+VERSION=0.1.0-rc.2
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')                # linux | darwin
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')  # amd64 | arm64
 ASSET="fraise_${VERSION}_${OS}_${ARCH}.tar.gz"
@@ -119,8 +99,7 @@ Windows builds ship as `.zip` under the same naming scheme.
 
 ### Verify a release
 
-Releases after `v0.1.0-beta.2` carry a [cosign](https://docs.sigstore.dev/)
-signature over `checksums.txt`, using the same `VERSION` and `BASE` as above:
+Releases after `v0.1.0-rc.2` carry a [cosign](https://docs.sigstore.dev/) signature over `checksums.txt`, using the same `VERSION` and `BASE` as above:
 
 ```sh
 curl -sSfLO "${BASE}/checksums.txt"
@@ -140,17 +119,15 @@ sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-mi
 ### With Docker
 
 ```sh
-docker run -p 127.0.0.1:9876:9876 ghcr.io/fraisehq/fraise:0.1.0-beta.8
+docker run -p 127.0.0.1:9876:9876 ghcr.io/fraisehq/fraise:0.1.0-rc.2
 ```
 
-Published tags: one per release (`0.1.0-beta.8`), `edge` for the tip of `main`,
-and an immutable full-commit-SHA tag for every merge. `latest` starts appearing
-at the first stable release.
+Published tags: one per release (`0.1.0-rc.2`), `edge` for the tip of `main`, and an immutable full-commit-SHA tag for every merge. `latest` starts appearing at the first stable release.
 
 Images are built with SLSA provenance, verifiable without pulling:
 
 ```sh
-gh attestation verify oci://ghcr.io/fraisehq/fraise:0.1.0-beta.8 \
+gh attestation verify oci://ghcr.io/fraisehq/fraise:0.1.0-rc.2 \
   --repo FraiseHQ/fraise
 ```
 
@@ -187,9 +164,7 @@ curl -X POST localhost:9876/api/v1/q \
 
 ### SDKs
 
-Prefer to talk to Fraise from your own code? The official client wraps the query
-endpoint behind two verbs — `remember` and `recall` — with optional vector
-embeddings and agent-framework tools.
+Prefer to talk to Fraise from your own code? The official client wraps the query endpoint behind two verbs — `remember` and `recall` — with optional vector embeddings and agent-framework tools.
 
 **Python** ([`sdk/python`](./sdk/python)) — the only SDK today:
 
@@ -206,19 +181,13 @@ with FraiseClient("http://localhost:9876") as fraise:
         print(hit.value, hit.score)
 ```
 
-**TypeScript** — not available yet.
-Until it lands, TypeScript callers talk to the HTTP endpoint directly; it is two
-verbs over one route, so a client is a short wrapper around `fetch`. See
-[the HTTP API](./docs/http-api.md).
+**TypeScript** — not available yet. Until it lands, TypeScript callers talk to the HTTP endpoint directly; it is two verbs over one route, so a client is a short wrapper around `fetch`. See [the HTTP API](./docs/http-api.md).
 
-The Python SDK is dependency-light and supports vector search when you supply an
-embedder. See [its README](./sdk/python) for embeddings and the full API.
+The Python SDK is dependency-light and supports vector search when you supply an embedder. See [its README](./sdk/python) for embeddings and the full API.
 
 ### Integrate with Claude Agents
 
-The Python SDK ships memory tools for the [Claude Agent
-SDK](./sdk/python#claude-agent-sdk-tools), exposed as an in-process MCP server so
-the agent decides *what* to store and recall:
+The Python SDK ships memory tools for the [Claude Agent SDK](./sdk/python#claude-agent-sdk-tools), exposed as an in-process MCP server so the agent decides *what* to store and recall:
 
 ```python
 from claude_agent_sdk import ClaudeAgentOptions
@@ -233,14 +202,11 @@ options = ClaudeAgentOptions(
 )
 ```
 
-A complete, Docker-runnable agent lives in
-[`examples/claude-agent-sdk`](./examples/claude-agent-sdk).
+A complete, Docker-runnable agent lives in [`examples/claude-agent-sdk`](./examples/claude-agent-sdk).
 
 ### Integrate with OpenAI Agents
 
-The Python SDK ships tools for the [OpenAI Agents
-SDK](./sdk/python#openai-agents-tools). `memory_tools(client)` returns bound
-`recall` and `remember` tools:
+The Python SDK ships tools for the [OpenAI Agents SDK](./sdk/python#openai-agents-tools). `memory_tools(client)` returns bound `recall` and `remember` tools:
 
 ```python
 from agents import Agent, Runner
@@ -258,21 +224,19 @@ result = Runner.run_sync(agent, "My favourite colour is orange.")
 print(result.final_output)
 ```
 
-Complete, Docker-runnable agents live in
-[`examples/openai-agents`](./examples/openai-agents).
+Complete, Docker-runnable agents live in [`examples/openai-agents`](./examples/openai-agents).
 
 ## References
 
-* [Roadmap](https://github.com/orgs/FraiseHQ/projects/1/views/1)
-* [Database design](./docs/design.md)
-* [Query language spec](./docs/query-spec.md)
-* [Release process](./RELEASE.md)
-* [Issues](https://github.com/FraiseHQ/fraise/issues)
+- [Roadmap](https://github.com/orgs/FraiseHQ/projects/1/views/1)
+- [Database design](./docs/design.md)
+- [Query language spec](./docs/query-spec.md)
+- [Release process](./RELEASE.md)
+- [Issues](https://github.com/FraiseHQ/fraise/issues)
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for how to
-build, test, and submit changes.
+Contributions are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for how to build, test, and submit changes.
 
 ## Code of Conduct
 
@@ -280,9 +244,7 @@ This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 
 ## Community
 
-Questions, ideas, or building something with Fraise? Join the
-[Discord](https://discord.gg/eHDFwnwHq). Bugs and feature requests belong in
-[issues](https://github.com/FraiseHQ/fraise/issues) so they don't get lost.
+Questions, ideas, or building something with Fraise? Join the [Discord](https://discord.gg/eHDFwnwHq). Bugs and feature requests belong in [issues](https://github.com/FraiseHQ/fraise/issues) so they don't get lost.
 
 ## License
 
