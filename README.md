@@ -306,7 +306,7 @@ Add it to `opencode.json` in your project root:
 }
 ```
 
-Wiring the tools up makes them available; it does not teach an agent when to reach for them. Put that in the file your agent already reads — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex and OpenCode — and keep it to two habits: recall before answering anything that leans on earlier decisions or preferences, and remember only facts that will still matter in a later session, one self-contained fact per call with the topics and entities that will make it findable.
+The bridge describes itself over MCP: each tool arrives with a description and a full JSON schema for its arguments and results — the FQL shapes, a worked example, what a score means — so a client knows what `recall` and `remember` do and how to call them without being told. What a tool description cannot carry is the policy: the habit of reaching for memory unprompted, and the judgement about what is worth keeping. That belongs in the file your agent already reads — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex and OpenCode — and two habits are enough: recall before answering anything that leans on earlier decisions or preferences, and remember only facts that will still matter in a later session, one self-contained fact per call with the topics and entities that will make it findable.
 
 ### SDKs
 
