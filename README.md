@@ -254,9 +254,49 @@ curl -X POST localhost:9876/api/v1/q \
 
 ### MCP
 
-`fraise mcp` is a stdio MCP server — a thin bridge to a running daemon, so any
-MCP client can remember and recall. No flags needed if the daemon is on its
-default address.
+`fraise mcp` is a stdio MCP server — a thin bridge to a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, and needs no flags when the daemon is on its default address.
+
+Start the daemon first (`brew services start fraise`, or `systemctl --user start fraise` on Linux), then register the bridge with whichever coding agent you use.
+
+#### Claude Code
+
+```sh
+claude mcp add fraise -- fraise mcp
+```
+
+That registers it for the current project; add `--scope user` to make it available in every project instead.
+
+#### Codex
+
+```sh
+codex mcp add fraise -- fraise mcp
+```
+
+Or write it into `~/.codex/config.toml` directly:
+
+```toml
+[mcp_servers.fraise]
+command = "fraise"
+args = ["mcp"]
+```
+
+#### OpenCode
+
+Add it to `opencode.json` in your project root:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "fraise": {
+      "type": "local",
+      "command": ["fraise", "mcp"]
+    }
+  }
+}
+```
+
+#### Any other client
 
 ```json
 {
@@ -265,6 +305,8 @@ default address.
   }
 }
 ```
+
+Wiring the tools up makes them available; it does not teach an agent when to reach for them. Put that in the file your agent already reads — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex and OpenCode — and keep it to two habits: recall before answering anything that leans on earlier decisions or preferences, and remember only facts that will still matter in a later session, one self-contained fact per call with the topics and entities that will make it findable.
 
 ### SDKs
 
