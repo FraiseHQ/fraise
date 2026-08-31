@@ -25,6 +25,8 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,5 +154,57 @@ func TestRunRejectsAnUnknownCommand(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "serve, mcp or version") {
 		t.Errorf("error %q does not list the accepted commands", err)
+	}
+}
+
+// TestRunTreatsHelpAsSuccess pins the -h contract. The flag package answers
+// help by printing usage and returning flag.ErrHelp — a request served, not a
+// failure — but the FlagSet used to be built with flag.PanicOnError, which
+// has no special case for that sentinel the way ExitOnError does, so
+// `fraise mcp -h` ended in a goroutine dump printed on top of the usage text.
+//
+// The command deliberately names something run rejects: that makes the
+// assertion distinguish "help short-circuited" from "help fell through into
+// the dispatch" without starting a server, which a "serve" here would do.
+func TestRunTreatsHelpAsSuccess(t *testing.T) {
+	for _, name := range []string{"-h", "-help"} {
+		t.Run(name, func(t *testing.T) {
+			withArgs(t, name)
+
+			c := config.New()
+			c.SetOutput(io.Discard) // the usage text is not this test's business
+			cfgErr := c.Parse(os.Args[1:])
+
+			if !errors.Is(cfgErr, flag.ErrHelp) {
+				t.Fatalf("Parse(%s) = %v, want flag.ErrHelp", name, cfgErr)
+			}
+			if err := run("no-such-command", context.Background(), c, cfgErr); err != nil {
+				t.Errorf("run() = %v, want nil: help is answered, not failed", err)
+			}
+		})
+	}
+}
+
+// TestRunRejectsAnUnknownFlag guards the regression the help fix could have
+// introduced. Under flag.PanicOnError a mistyped flag crashed, which at least
+// stopped the process; under ContinueOnError it arrives as an ordinary error,
+// and run warns about ordinary errors and starts anyway. Parse classifies it
+// as ErrInvalidFlag precisely so it stays fatal here, rather than silently
+// serving with a default the operator never asked for.
+func TestRunRejectsAnUnknownFlag(t *testing.T) {
+	withArgs(t, "-bogus")
+
+	c := config.New()
+	c.SetOutput(io.Discard)
+	cfgErr := c.Parse(os.Args[1:])
+
+	if !errors.Is(cfgErr, config.ErrInvalidFlag) {
+		t.Fatalf("Parse(-bogus) = %v, want it to wrap ErrInvalidFlag", cfgErr)
+	}
+	if !strings.Contains(cfgErr.Error(), "bogus") {
+		t.Errorf("error %q does not name the offending flag", cfgErr)
+	}
+	if err := run("serve", context.Background(), c, cfgErr); !errors.Is(err, config.ErrInvalidFlag) {
+		t.Errorf("run() = %v, want the flag error so main exits non-zero", err)
 	}
 }
