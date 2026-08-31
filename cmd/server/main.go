@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -92,12 +93,25 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 	// skip the deferred restore. stop restores default signal handling.
 	defer stop()
 
+	// -h/--help is a request answered, not a failure: the flag package has
+	// already written the usage text and there is nothing left to run. It is
+	// handled here rather than by flag.ExitOnError so that every exit
+	// decision stays in one place the tests can reach.
+	if errors.Is(cfgErr, flag.ErrHelp) {
+		return nil
+	}
+
 	// A setting naming something the process cannot honour stops startup on
 	// every path, before anything is announced: it was asked for explicitly,
 	// and running with a different value instead is a substitution an
 	// operator can only detect by noticing the behaviour they asked for is
 	// missing. The error lists what the setting accepts.
-	if errors.Is(cfgErr, config.ErrInvalidValue) {
+	//
+	// An unrecognised flag is fatal for the same reason. It has to be named
+	// explicitly because everything below merely warns: a mistyped flag that
+	// warned would start the server with a default the operator never asked
+	// for, silently.
+	if errors.Is(cfgErr, config.ErrInvalidValue) || errors.Is(cfgErr, config.ErrInvalidFlag) {
 		return cfgErr
 	}
 
