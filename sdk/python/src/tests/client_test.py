@@ -38,7 +38,7 @@ def test_remember_posts_expected_query(session, query_url):
     FraiseClient().remember("the parrot is turquoise", graph=3, topics=["color"])
     session.post.assert_called_once_with(
         query_url,
-        json={"query": "remember@3 'the parrot is turquoise' topic:color"},
+        json={"query": "remember@3 'the parrot is turquoise' topic:'color'"},
         timeout=DEFAULT_TIMEOUT_SECONDS,
     )
 

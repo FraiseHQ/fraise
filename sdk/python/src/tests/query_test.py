@@ -41,7 +41,7 @@ def test_remember_with_graph_topics_and_entities():
         topics=["color"],
         entities=["anne"],
     )
-    assert got == "remember@3 'anne loves the color orange' topic:color entity:anne"
+    assert got == "remember@3 'anne loves the color orange' topic:'color' entity:'anne'"
 
 
 def test_remember_with_vector_appends_placeholder():
@@ -101,7 +101,7 @@ def test_recall_with_vector_only():
 
 
 def test_recall_topic_seed_is_enough():
-    assert build_recall(topics=["birds"]) == "recall@0 topic:birds"
+    assert build_recall(topics=["birds"]) == "recall@0 topic:'birds'"
 
 
 def test_recall_requires_a_seed():
@@ -174,6 +174,31 @@ def test_a_query_phrase_takes_the_leading_slot_so_keywords_are_quoted():
     assert build_recall(["top"], query="what is at the top") == (
         "recall@0 'what is at the top' 'top'"
     )
+
+
+def test_anchor_values_are_quoted_as_data():
+    """Anchor values can contain grammar-significant characters and spaces."""
+    got = build_remember(
+        "anne has references",
+        topics=["topic:secret", "since 7d"],
+        entities=["o'brien", "a@b.com"],
+    )
+    assert got == (
+        "remember@0 'anne has references' "
+        "topic:'topic:secret' topic:'since 7d' entity:'o''brien' entity:'a@b.com'"
+    )
+
+
+def test_syntax_significant_recall_terms_are_quoted():
+    """A non-leading search term with FQL punctuation stays a term, not syntax."""
+    assert build_recall(["anne", "topic:secret", "since:7d", "a@b.com"]) == (
+        "recall@0 anne 'topic:secret' 'since:7d' 'a@b.com'"
+    )
+
+
+def test_leading_colon_term_is_quoted():
+    """A single colon-bearing keyword is still caller data, not a filter clause."""
+    assert build_recall(["topic:secret"]) == "recall@0 'topic:secret'"
 
 
 @pytest.mark.parametrize(
@@ -268,6 +293,19 @@ def test_awkward_values_still_parse(value, client, query_graph):
 
 
 @pytest.mark.integration
+def test_anchor_values_with_fql_punctuation_still_parse(client, query_graph):
+    """Quoted anchors keep FQL punctuation and whitespace inside the value."""
+    client.query(
+        build_remember(
+            "anne keeps a tricky citation",
+            graph=query_graph,
+            topics=["topic:secret", "since 7d"],
+            entities=["o'brien", "a@b.com"],
+        )
+    )
+
+
+@pytest.mark.integration
 def test_the_vector_placeholder_binds_to_the_parameter_the_builder_names(
     client, query_graph, encode
 ):
@@ -309,7 +347,7 @@ def test_a_recall_seeded_without_keywords_parses(kwargs, client, query_graph, en
     """Every keyword-free seed the builder allows is accepted by the grammar.
 
     ``build_recall`` documents "a recall needs at least one seed: keywords, a
-    vector, or a topic/entity filter" and builds ``recall@2 topic:weather`` (or
+    vector, or a topic/entity filter" and builds ``recall@2 topic:'weather'`` (or
     ``vec:$v``, or ``entity:...``) accordingly. The grammar used to want a word
     or quoted phrase before any clause and answered 400, so
     ``client.recall(topics=[...])`` and ``client.recall(vector=[...])`` — pure
@@ -345,6 +383,18 @@ def test_a_keyword_spelled_search_word_survives_the_grammar(
     can prove the quoting is the right escape, which is what this file is for.
     """
     body = client.query(build_recall(keywords, graph=query_graph))
+    assert "results" in body
+
+
+@pytest.mark.integration
+def test_syntax_significant_search_words_survive_the_grammar(client, query_graph):
+    """Colon, at-sign, dollar and apostrophe terms reach the parser as data."""
+    body = client.query(
+        build_recall(
+            ["anne", "topic:secret", "since:7d", "a@b.com", "o'brien"],
+            graph=query_graph,
+        )
+    )
     assert "results" in body
 
 
