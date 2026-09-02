@@ -110,3 +110,29 @@ def test_an_unreachable_daemon_is_an_in_band_error(mcp_without_daemon):
     assert result.get("isError") is True
     text = result["content"][0]["text"]
     assert "is the daemon running" in text
+
+
+def test_anchor_only_recall_returns_what_is_filed_under_the_anchor(mcp):
+    """Anchors alone seed the search with what is filed under them, so an
+    agent can see what it knows about a topic before it knows what to search
+    for.
+
+    Two facts filed under one topic, and nothing else on graph 3, both come
+    back from `recall@3 topic:cormorants`, each scored like any recall hit:
+    the unit of mass its anchor lends, decayed by age.
+    """
+    facts = (
+        "the cormorant dries its wings on the post",
+        "the cormorant dives from the surface",
+    )
+    for phrase in facts:
+        stored = mcp.call(
+            "remember", {"query": f"remember@3 '{phrase}' topic:cormorants"}
+        )
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call("recall", {"query": "recall@3 topic:cormorants"})
+    assert not found.get("isError", False), found
+    hits = found["structuredContent"]["results"]["hits"]
+    assert {hit["value"] for hit in hits} == set(facts)
+    assert all(hit["score"] > 0 for hit in hits), hits

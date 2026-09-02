@@ -135,24 +135,26 @@ recall_query    = recall_cmd recall_body ;
 recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
 
 (* SEMANTIC RULE: a recall needs at least one *seed*, and the      *)
-(* terms come first. A term, an anchor and a vector are all seeds, *)
-(* so 'recall topic:billing' and 'recall vec:$v' are questions —   *)
-(* expand from here and rank what you reach. A modifier is not a   *)
-(* seed: it scopes a search, so 'recall top:3' and 'recall         *)
-(* since:7d' start nothing and are errors. After the first field a *)
-(* bare term is an error. The fields themselves interleave in any  *)
-(* order, but only anchors may repeat: a repeated anchor adds a    *)
-(* filter, a repeated modifier is a duplicate-clause error.        *)
+(* terms come first. A term, an anchor and a vector are all seeds: *)
+(* a term or a vector is matched, and an anchor on its own seeds   *)
+(* the search with everything filed under it — 'recall             *)
+(* topic:billing' is everything about billing, newest first (see   *)
+(* Anchors as seeds). A modifier is not a seed: it scopes a        *)
+(* recall, so 'recall top:3' and 'recall since:7d' start nothing   *)
+(* and are errors. After the first field a bare term is an error.  *)
+(* The fields themselves interleave in any order, but only anchors *)
+(* may repeat: a repeated anchor adds a filter (alone, a seed), a  *)
+(* repeated modifier is a duplicate-clause error.                  *)
 (* The leading term is the one place a bare reserved word reads as *)
 (* a term — no clause can start there. After it, a keyword starts  *)
 (* a clause; quote it ('top') to search for the word itself.       *)
 recall_body     = ( term+ field* ) | seeding_field+ field* ;
 field           = anchor | modifier ;
-seeding_field   = anchor | vec_field ;   (* enough on its own to start a search *)
+seeding_field   = anchor | vec_field ;   (* enough on its own to seed a recall *)
 
 term            = bare_word | phrase ;        (* soft ranking seed (SHOULD) *)
 
-anchor          = anchor_field ;              (* every anchor filters; there is no way to say MUST_NOT *)
+anchor          = anchor_field ;              (* a filter beside a term or vector, a seed alone; there is no way to say MUST_NOT *)
 anchor_field    = topic_field | entity_field ;
 topic_field     = 'topic'  ':' anchor_value ;
 entity_field    = 'entity' ':' anchor_value ;
@@ -196,6 +198,20 @@ time_unit         = 's' | 'm' | 'h' | 'd' | 'w' ;
 iso_date          = ?\d{4}-\d{2}-\d{2}? ;         (* date only: ':' would end the token *)
 param_ref         = '$' identifier ;
 ```
+
+## Anchors as seeds
+
+A recall starts from its seeds, and a term, a vector and an anchor are all seeds. A term is matched against the text index and a vector against the vector index; their mass moves through the anchors the matches share, and what is reached comes back ranked by relevance and recency, capped at `top:`. Beside a term or a vector, a `topic:`/`entity:` is a filter over that ranking: a fact must be filed under one of the topics named and one of the entities named.
+
+A recall carrying only anchors — at least one `topic:` or `entity:`, no term, no `vec:` — is seeded by the anchors themselves. It answers "what do I know about billing?", asked before the caller knows what to search for, and it needs no term because the anchor already holds the answer: a fact is filed under an anchor by an edge, so an anchor's members are one adjacency lookup away. Every fact filed under any of the named anchors enters the candidate set carrying one unit of mass per named anchor it is filed under, and the ranking runs from there exactly as it does from a term.
+
+* Several anchors seed the union of their members, each fact once, whatever it is filed under: `recall topic:billing entity:acme` is everything about billing together with everything about acme. Alone, the anchors seed rather than filter, which is why it is the union where the same two clauses beside a term narrow to facts about billing *that mention* acme.
+* A hit's `score` is the number of named anchors it is filed under, decayed by its age through the same half-life every recall applies: `n × 0.5^(age / half-life)`, not a text relevance. With a single anchor named that is newest first. With several, a fact filed under two of them starts at twice the mass of one filed under a single anchor, and each half-life of age costs it half — so among facts of an age, the more of the named anchors the higher, and among facts under the same anchors, the newer the higher. With decay disabled, equals fall to the deterministic key order.
+* `top:` caps the results as always, and `default-top` applies when it is absent. `since:`/`until:` bound them the same way too.
+* `depth:` has no effect when the anchors seed: with every member already in hand there is nothing to expand from, and expanding from all of them would return most of the graph. The clause is still range-checked — `depth:5` is rejected as always.
+* An anchor nothing is filed under seeds nothing. That is the one case where an anchored recall is genuinely empty: an empty result means an empty anchor, never a question the engine could not answer.
+
+A recall with neither anchors nor a term or vector has no seed at all: it is the unanchored recall that `allow-unanchored-recall` is about (see [configuration](configuration.md)), and anchor seeding changes nothing there.
 
 ## Warnings
 
@@ -253,6 +269,8 @@ recall billing entity:acme since:7d top:5
 recall billing topic:billing
 recall 'annual contract' topic:billing entity:acme depth:1
 recall@3 auth topic:auth entity:okta
+recall topic:billing top:20                                  (* anchors alone seed: everything filed under billing, newest first *)
+recall topic:billing entity:acme since:30d                   (* both anchors seed: their union, a fact under both weighing twice *)
 remember 'acme moved to annual billing' topic:billing topic:contracts
 remember 'acme signed with okta' topic:auth entity:okta
 remember 'meeting at 3:30pm about the topic' topic:meetings   (* colons and reserved words are literal inside a phrase *)
@@ -267,5 +285,6 @@ remember 'alice''s laptop' topic:devices                     (* '' is an escaped
 * **field**: additional information provided to the search in order to find the right facts.
 * **field value**: value of a field used to find a fact
 * **term**: a word or sequence of words used to find a fact.
+* **seed**: what a recall starts from: a term, a vector, or — with neither — the members of the anchors it names.
 * **command**: task to perform by the engine: recall, remember.
 * **instruction**: a full query sent to the database engine with a command, search terms and fields (can be used interchangeably with the term query).

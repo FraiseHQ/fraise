@@ -137,6 +137,24 @@ type Graph[K comparable, P float32 | float64] interface {
 	//   - top:      maximum number of results returned
 	//   - since:    inclusive lower time bound; zero value = unbounded
 	//   - until:    exclusive upper time bound; zero value = unbounded
+	//
+	// A call carrying no keywords and no vector has nothing to match, so
+	// with at least one topic or entity named the anchors seed the search
+	// themselves — "what do I know about billing?", asked before the caller
+	// knows what to search for. Every fact filed under any of them enters
+	// the candidates, unioned, carrying one unit anchor contribution per
+	// named anchor it is filed under, and the ranking runs on from there
+	// exactly as from a text or vector seed — the scorer, the recency decay,
+	// the time window and the top cap. A hit's score is therefore the number
+	// of named anchors it is filed under, decayed by its age: under one
+	// anchor newest first, and under several a fact filed under more of them
+	// starts with more mass and ages like any other. The anchors are seeds
+	// there, not filters on top; no traversal runs
+	// (depth is inert: every member is already in hand, and expanding from
+	// all of them would return most of the graph); and no anchor is
+	// observed, so the returned background is zero. An anchor nothing is
+	// filed under seeds nothing, so an unknown anchor is exactly an empty
+	// result.
 	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P)
 
 	// Graphs expose their read-write lock so callers can hold a single

@@ -69,7 +69,7 @@ func New(c *config.ConfigSet) *MCPServer {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:         "recall",
-		Description:  "Search the agent's long-term memory: run an FQL recall against the fraise daemon and return the matching facts ranked by relevance and recency.",
+		Description:  "Search the agent's long-term memory: run an FQL recall against the fraise daemon and return the matching facts ranked by relevance and recency. Anchors alone — topic:/entity: with no search terms and no vector — seed the search with every fact filed under them, scored one unit per named anchor and decayed by age, newest first under a single anchor: the way to see what is stored under a topic before you know what to search for.",
 		InputSchema:  recallInputSchema,
 		OutputSchema: recallOutputSchema,
 	}, s.recall)

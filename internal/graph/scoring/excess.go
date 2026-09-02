@@ -63,13 +63,13 @@ func (s *ExcessScorer[K, P]) WithBackground(background P) Scorer[K, P] {
 }
 
 // Score folds contributions at the bound background rate. Seed mass first —
-// the text and vector observations sum directly — then the hinge over each
-// graph observation, in list order, so identical inputs fold to
+// the text, vector and anchor observations sum directly — then the hinge
+// over each graph observation, in list order, so identical inputs fold to
 // byte-identical scores.
 func (s *ExcessScorer[K, P]) Score(contributions []Contribution[K, P]) P {
 	var mass P
 	for _, c := range contributions {
-		if c.Src == SrcText || c.Src == SrcVector {
+		if c.Src == SrcText || c.Src == SrcVector || c.Src == SrcAnchor {
 			mass += c.Score
 		}
 	}

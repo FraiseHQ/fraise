@@ -85,9 +85,11 @@ type Hit[K comparable, P float32 | float64] struct {
 // ranking to clients that never see the enum. A text or vector entry carries
 // its raw mass and list position; a graph entry — one per funding anchor —
 // carries the anchor's full observed mass, the anchor's value under via, its
-// degree, and how many seeds funded it. With the query-level background rate,
-// these are exactly the inputs of the scoring fold, so a client can recompute
-// the hit's score from its own payload.
+// degree, and how many seeds funded it; an anchor entry — one per named
+// anchor an anchor-seeded fact is filed under — carries its unit mass and
+// the anchor's value under via. With the query-level background rate, these are
+// exactly the inputs of the scoring fold, so a client can recompute the
+// hit's score from its own payload.
 type HitContribution[P float32 | float64] struct {
 	Source string `json:"source"`
 	Score  P      `json:"score"`

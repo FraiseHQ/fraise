@@ -66,7 +66,7 @@ var hitSchema = &jsonschema.Schema{
 		},
 		"score": {
 			Type:        "number",
-			Description: "Raw relevance in the scorer's own units: an ordering, not a probability, with no upper bound.",
+			Description: "Raw relevance in the scorer's own units: an ordering, not a probability, with no upper bound. When anchors alone seed the search it is one unit per named anchor the fact is filed under, decayed by age.",
 		},
 	},
 	Required: []string{"value", "timestamp", "score"},
@@ -98,7 +98,7 @@ var (
 		Properties: map[string]*jsonschema.Schema{
 			"query": {
 				Type:        "string",
-				Description: "A full FQL recall: bare search terms, then optional topic:/entity: filters, top:N result cap, depth:0-2 retrieval lane, since:/until: time bounds, vec:$name for an optional vector seed. Example: recall@2 barometer storm topic:weather top:5 depth:1 since:7d",
+				Description: "A full FQL recall: bare search terms, then optional topic:/entity: filters, top:N result cap, depth:0-2 retrieval lane, since:/until: time bounds, vec:$name for an optional vector seed. Example: recall@2 barometer storm topic:weather top:5 depth:1 since:7d. Anchors alone, with no terms and no vec:, seed the search with every fact filed under those topics/entities, scored one unit per named anchor and decayed by age, so newest first under one anchor (depth: has no effect). Example: recall@2 topic:weather top:20",
 			},
 			"parameters": parametersSchema,
 		},
@@ -125,7 +125,7 @@ var (
 		Properties: map[string]*jsonschema.Schema{
 			"results": {
 				Type:        "object",
-				Description: "Ranked recall results, best first.",
+				Description: "Ranked recall results, best first; with anchors alone, each hit scores one unit per named anchor it is filed under, decayed by age — newest first under a single anchor.",
 				Properties: map[string]*jsonschema.Schema{
 					"count": {
 						Type:        "integer",

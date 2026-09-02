@@ -376,9 +376,10 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P) {
 	// A. Collection: the retrieval stages pool everything they observe about
-	// every candidate — text seeds, vector seeds, anchor transmission — as
-	// Contribution records, plus the one query-global observation (the
-	// background rate). No stage computes policy.
+	// every candidate — text seeds, vector seeds, anchor transmission, or
+	// with anchors alone the anchors' own members — as Contribution records,
+	// plus the one query-global observation (the background rate). No stage
+	// computes policy.
 	candidates, background := g.collect(keywords, vector, topics, entities, depth, top)
 
 	// B. Scoring: the scorer folds each candidate's contributions into one
@@ -435,11 +436,73 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 // compute no policy — the hinge, the null model and the attenuation live
 // entirely in the Scorer — and the second return is the background rate, the
 // query-global observation that fold needs.
+//
+// A call with nothing to match — no keywords and no vector — takes the one
+// other seeding there is: the named anchors' own members. The anchors are
+// seeds there rather than filters on top (the pool is their union by
+// construction, a fact filed under several of them holding one sighting per
+// anchor), no traversal runs — depth is inert, since every member is already
+// in hand and expanding from all of them would return most of the graph —
+// and no anchor is observed, so the background is zero: the scorer folds
+// each member's own seed mass, and the recency decay ranks the results from
+// there.
 func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P) {
 	candidates := make(scoring.Candidates[K, P])
+	if len(keywords) == 0 && vector.Empty() {
+		g.gatherMembers(topics, entities, candidates)
+		return candidates, 0
+	}
 	seeds := g.gatherSeeds(keywords, vector, candidates, top)
 	background := g.findNeighbours(seeds, candidates, topics, entities, depth)
 	return candidates, background
+}
+
+// gatherMembers seeds the candidate pool from the named anchors' adjacency
+// rows: every fact filed under a named topic or entity, carrying one
+// SrcAnchor contribution of unit mass per named anchor it is filed under, so
+// a fact under two of them holds twice the seed mass of a fact under one —
+// it answers more of the question. Each anchor resolves to the key store
+// filed it under, the Topic or NamedEntity hash of its value: a topic and an
+// entity of one name are two anchors, and an anchor nothing is filed under
+// resolves to an empty row, so an unknown anchor seeds nothing. Anchors are
+// visited in query order and a repeated one once, so a candidate's list is
+// appended in a fixed order for the scorer's fold. Only facts seed: an
+// anchor's row holds facts by construction, and only facts are memories.
+func (g *InMemoryGraph[K, P]) gatherMembers(topics []string, entities []string, candidates scoring.Candidates[K, P]) {
+	anchors := make([]K, 0, len(topics)+len(entities))
+	named := make(map[K]struct{}, len(topics)+len(entities))
+	name := func(anchor K) {
+		if _, dup := named[anchor]; dup {
+			return
+		}
+		named[anchor] = struct{}{}
+		anchors = append(anchors, anchor)
+	}
+	for _, value := range topics {
+		name(Topic[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+	}
+	for _, value := range entities {
+		name(NamedEntity[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+	}
+
+	var members int
+	for _, anchor := range anchors {
+		degree := scoring.ClampDegree(len(g.nodeToTargets[anchor]) + len(g.nodeToSources[anchor]))
+		for _, member := range g.Neighbours(anchor) {
+			if _, isFact := g.idToNodes[member].(Fact[K]); !isFact {
+				continue
+			}
+			candidates[member] = append(candidates[member], scoring.Contribution[K, P]{
+				Src:    scoring.SrcAnchor,
+				Score:  1,
+				Via:    anchor,
+				Degree: degree,
+				Count:  1,
+			})
+			members++
+		}
+	}
+	logger.Debug("Gathered anchor members", "anchors", len(anchors), "members", members)
 }
 
 // gatherSeeds seeds the candidate pool from the text index (keywords) and the

@@ -123,3 +123,32 @@ func TestExcessScorerPurity(t *testing.T) {
 		t.Errorf("fold mutated its input: %+v, want %+v", list, snapshot)
 	}
 }
+
+// TestExcessScorerAnchorSightingsAreSeedMass pins the anchor-seeded fold: anchor
+// sightings sum into the seed mass exactly as text and vector ones do — one
+// unit per named anchor a fact is filed under, so two sightings fold to 2 —
+// and that mass is self-excluded by the hinge like any other, so a graph
+// observation on top of it transmits only what exceeds it.
+func TestExcessScorerAnchorSightingsAreSeedMass(t *testing.T) {
+	scorer := scoring.NewExcessScorer[uint64, float64]()
+
+	one := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcAnchor, Score: 1, Via: 1, Degree: 3, Count: 1}}
+	if got := scorer.Score(one); got != 1 {
+		t.Errorf("one anchor sighting folds to %v, want its unit mass 1", got)
+	}
+
+	two := []scoring.Contribution[uint64, float64]{
+		{Src: scoring.SrcAnchor, Score: 1, Via: 1, Degree: 3, Count: 1},
+		{Src: scoring.SrcAnchor, Score: 1, Via: 2, Degree: 2, Count: 1},
+	}
+	if got := scorer.Score(two); got != 2 {
+		t.Errorf("two anchor sightings fold to %v, want 2", got)
+	}
+
+	// Mass 2, background 0: an anchor observing 6 over one edge holds surplus
+	// 6 − 2 − 1·0 = 4, of which α² = 1/4 arrives.
+	funded := append(append([]scoring.Contribution[uint64, float64]{}, two...), scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 6, Via: 3, Degree: 1, Count: 1})
+	if got, want := scorer.Score(funded), 2+0.25*(6-2-1*0.0)/1; got != want {
+		t.Errorf("funded fold = %v, want m + α²·(M − m − d·ρ₀)/d = %v", got, want)
+	}
+}

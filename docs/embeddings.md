@@ -82,4 +82,4 @@ Deletes and overwrites leave garbage behind rather than restructuring the trees,
 
 ## Vectors are a seed, not an answer
 
-A recall still needs at least one term. The vector index contributes `seed-size` candidates, the text index contributes its own, and the graph walk expands from both — each source ranking its own sightings, the ranks fusing reciprocally, and the fused score then decaying by age. Semantic similarity is one signal feeding a ranking, never the ranking itself.
+A recall still needs a seed: a term, a vector, or anchors on their own (see [`query-spec.md`](query-spec.md#anchors-as-seeds)). The vector index contributes `seed-size` candidates, the text index contributes its own, and the graph walk expands from both — each source ranking its own sightings, the ranks fusing reciprocally, and the fused score then decaying by age. Semantic similarity is one signal feeding a ranking, never the ranking itself.

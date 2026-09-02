@@ -80,7 +80,7 @@ Four consequences are the contract, each pinned by the test suite:
 * **Earned preemption.** A fact with no match of its own outranks a match only through anchors carrying genuine above-background evidence — and enough of it per edge: a thin surplus spread over a large membership preempts nothing — never through mere reachability.
 * **No normalization, no knobs.** Scores stay in raw seed units end to end (relevance is homogeneous in the mass scale, so normalizing is a provable ordering no-op that only breaks the channels' commensurability), and the methodology carries zero dataset-tuned constants.
 
-This is why a recall needs at least one term: without a seed there is no mass to transmit. `depth:` selects which of three lanes a recall takes, trading precision against recall:
+This is why a recall needs at least one seed: without one there is no mass to transmit. A term and a vector seed through their indices; anchors named on their own seed through their members — `recall topic:billing` is everything filed under billing, each fact carrying a unit of mass per named anchor it is filed under, no traversal running from them, and the same fold, decay and cap ranking the results (see [`query-spec.md`](query-spec.md#anchors-as-seeds)). `depth:` selects which of three lanes a recall takes, trading precision against recall:
 
 * `depth:0` — the default — stops at the seed mass, which *is* the BM25 floor, and skips the anchor traversal entirely: the fast, text-only lane.
 * `depth:1` runs the anchor-mediated round described here, but admits an anchor only once its observed mass clears **twice** its null-expected share. Only strongly above-chance anchors speak, so what transmission adds is high-precision.

@@ -511,3 +511,155 @@ def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(query):
         f"depth:1 must return the seed alone; {LEDGER_FACTS[0]!r} reached it as a "
         f"neighbour, so it is serving as the {LEDGER_TOPIC!r} topic node: {hits}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Anchor-seeded recall. A recall naming anchors and no term or vector is
+# seeded by the anchors themselves: every fact filed under them enters the
+# candidates instead of being filtered by them, and the ordinary ranking — a
+# unit of mass per named anchor a fact is filed under, decayed by age — puts
+# the newest first. The planet star is the single-anchor case; the tidepool
+# probe (conftest) is the union.
+# ---------------------------------------------------------------------------
+
+
+def test_anchor_only_recall_returns_every_member_newest_first(
+    planets_graph, planet_facts, query
+):
+    """`recall topic:planets` is seeded by the topic: the whole star, newest first.
+
+    The fixture writes the facts in dict order, so the ranking is that order
+    reversed. Before anchors seeded, this query parsed and returned nothing
+    (no term, no seed), which a caller could not tell from an empty topic.
+    """
+    ranking = _recall_ranking(query, f"recall@{planets_graph} topic:planets top:10")
+    assert ranking == list(reversed(planet_facts.values())), (
+        f"want the star newest first, got {ranking}"
+    )
+
+
+def test_anchor_seeded_hits_are_scored_by_the_ordinary_ranking(planets_graph, query):
+    """An anchor-seeded recall is ranked like any other: each hit carries the
+    unit of mass its anchor lends, decayed by age, so scores are positive and
+    strictly descend with the ranking rather than being absent or flat.
+
+    Strictly, because a flat set would drain from the ranker in non-increasing
+    order too. The star's writes are sequential round trips, so the decay
+    factors differ by about a part in ten billion — resolvable because
+    tests/fraise.config.toml runs the daemon at float64 precision.
+    """
+    status, body = query(f"recall@{planets_graph} topic:planets top:10")
+    assert status == 200, body.get("error")
+    scores = [hit["score"] for hit in body["results"]["hits"]]
+    assert scores, "the star must be returned"
+    assert all(s > 0 for s in scores), scores
+    assert all(a > b for a, b in zip(scores, scores[1:], strict=False)), (
+        f"scores must strictly descend with recency, got {scores}"
+    )
+
+
+def test_anchor_seeds_union_ranking_the_fact_under_both_first(
+    tidepool_graph, tidepool_anchors, tidepool_facts, query
+):
+    """`recall topic:tidepool entity:limpet` is everything under either anchor,
+    each fact once.
+
+    Alone, the anchors seed rather than filter — the same two clauses beside a
+    term narrow to facts filed under both — so the result is the union. The
+    fact filed under both anchors carries two units of seed mass and, written
+    moments apart from the others, ranks first; the other two follow newest
+    first, the entity's fact having been written after the topic's.
+    """
+    topic, entity = tidepool_anchors
+    ranking = _recall_ranking(
+        query, f"recall@{tidepool_graph} topic:{topic} entity:{entity} top:10"
+    )
+    assert ranking == [
+        tidepool_facts["both"],
+        tidepool_facts["entity"],
+        tidepool_facts["topic"],
+    ], f"want the union with the doubly-filed fact first, got {ranking}"
+
+
+@pytest.mark.parametrize("top", [1, 2, 3])
+def test_anchor_seeded_top_keeps_the_head_of_the_ranking(top, planets_graph, query):
+    """`top` truncates an anchor-seeded recall as it truncates any other: the
+    head, never an arbitrary slice.
+    """
+    full = _recall_ranking(query, f"recall@{planets_graph} topic:planets top:10")
+    truncated = _recall_ranking(
+        query, f"recall@{planets_graph} topic:planets top:{top}"
+    )
+    assert truncated == full[:top], (
+        f"top:{top} must be the first {top} of {full}; got {truncated}"
+    )
+
+
+def test_anchor_seeded_recall_without_top_takes_the_configured_default(
+    saltmarsh_graph, saltmarsh_facts, default_top, query
+):
+    """An anchor-seeded recall with no top: clause is capped at default-top.
+
+    The saltmarsh anchor holds more facts than the configured default, so the
+    uncapped recall must come back exactly default-top long — the head of the
+    ranking — while a top: past the count returns every member.
+    """
+    assert len(saltmarsh_facts) > default_top
+    full = _recall_ranking(
+        query, f"recall@{saltmarsh_graph} topic:saltmarsh top:{len(saltmarsh_facts)}"
+    )
+    assert sorted(full) == sorted(saltmarsh_facts)
+    capped = _recall_ranking(query, f"recall@{saltmarsh_graph} topic:saltmarsh")
+    assert capped == full[:default_top], (
+        f"want the first {default_top} of {full}; got {capped}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("clause", "count"),
+    [("since:1d", 4), ("since:2999-01-01", 0), ("until:1d", 0)],
+)
+def test_anchor_seeded_recall_honours_time_bounds(clause, count, planets_graph, query):
+    """since:/until: bound an anchor-seeded recall as they bound any other.
+
+    The star was written moments ago: a window opening a day ago holds all of
+    it, one opening in 2999 holds nothing, and one closing a day ago holds
+    nothing either.
+    """
+    assert (
+        _recall_count(query, f"recall@{planets_graph} topic:planets {clause}") == count
+    )
+
+
+@pytest.mark.parametrize("clause", ["depth:0", "depth:1", "depth:2"])
+def test_anchor_seeded_recall_ignores_depth(clause, planets_graph, query):
+    """depth: has no effect when the anchors seed: every lane returns the star.
+
+    The members are already in hand, so nothing is expanded from them: the
+    lantern and almanac facts share graph 7 and sit two hops from nothing
+    here, and no lane can pull them in.
+    """
+    full = _recall_ranking(query, f"recall@{planets_graph} topic:planets top:10")
+    assert (
+        _recall_ranking(query, f"recall@{planets_graph} topic:planets {clause} top:10")
+        == full
+    )
+
+
+def test_recall_of_an_unknown_anchor_is_empty(query):
+    """An anchor nothing is filed under seeds nothing — the one genuinely
+    empty anchored recall, and a 200, not an error: the question was
+    well-formed and the answer is that the anchor is empty.
+    """
+    status, body = query("recall@7 topic:nosuchanchorprobe")
+    assert status == 200, body.get("error")
+    assert body["results"] == {"count": 0, "hits": []}
+
+
+def test_a_recall_with_a_term_filters_by_the_anchor(planets_graph, planet_facts, query):
+    """A term beside the anchor seeds from the text index with the anchor as a
+    filter: `recall mercury topic:planets` is the mercury fact alone, not the
+    star it is filed in.
+    """
+    hits = _recall_ranking(query, f"recall@{planets_graph} mercury topic:planets")
+    assert hits == [planet_facts["mercury"]]

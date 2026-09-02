@@ -1111,3 +1111,231 @@ func TestMergeFromForestStaysBounded(t *testing.T) {
 			writes, got, bound, writes*writes/2)
 	}
 }
+
+// Anchor seeding. A Search carrying no keywords and no vector seeds from the
+// named anchors' own members, and the ordinary ranking orders what it found.
+// The fixture files three facts under a "harbour" topic an hour apart, has a
+// "pilot" entity share the middle one and file one of its own, and keeps a
+// bystander under a "ledger" topic no search here names. Timestamps are
+// explicit so the recency order is pinned by the fixture, not the clock.
+const (
+	harbourDawn     = "the harbour master logged the dawn tide"      // harbour, newest
+	harbourFerry    = "the pilot boat met the ferry off the harbour" // harbour + pilot, an hour old
+	harbourCranes   = "the harbour cranes were serviced"             // harbour, two hours old
+	pilotWatch      = "the pilot took the night watch"               // pilot, three hours old
+	ledgerBystander = "the ledger closed for the quarter"            // ledger, newest
+)
+
+// anchorGraph builds the anchor-seeding fixture and returns it with the two
+// anchors a search names, so a test can check a sighting's Via against the
+// key the store filed the anchor under. The excess traversal is installed as
+// db.Start installs it: searchByAnchors asks for depth 2, and the claim that
+// anchor seeding runs no traversal is only pinned if there is one to run.
+func anchorGraph(t *testing.T) (g *graph.InMemoryGraph[uint64, float64], harbour *graph.Topic[uint64], pilot *graph.NamedEntity[uint64]) {
+	t.Helper()
+	g = newGraph()
+	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
+	now := time.Now()
+
+	harbour = mkTopic(g, "harbour", now)
+	pilot = mkEntity(g, "pilot", now)
+	ledger := mkTopic(g, "ledger", now)
+	for _, anchor := range []graph.Node[uint64]{harbour, pilot, ledger} {
+		mustSet(t, g, anchor)
+	}
+
+	file := func(value string, ts time.Time, topic *graph.Topic[uint64], entity *graph.NamedEntity[uint64]) {
+		fact := mkFact(g, value, ts)
+		mustSet(t, g, fact)
+		if topic != nil {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+		}
+		if entity != nil {
+			mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+		}
+	}
+	file(harbourDawn, now, harbour, nil)
+	file(harbourFerry, now.Add(-time.Hour), harbour, pilot)
+	file(harbourCranes, now.Add(-2*time.Hour), harbour, nil)
+	file(pilotWatch, now.Add(-3*time.Hour), nil, pilot)
+	file(ledgerBystander, now, ledger, nil)
+	return g, harbour, pilot
+}
+
+// searchByAnchors runs the anchor-only Search shape — nil keywords, an empty
+// vector — with the given anchors, cap and window. It asks for depth 2 on
+// purpose: a test that passes through it also proves the lane is inert when
+// the anchors seed.
+func searchByAnchors(g *graph.InMemoryGraph[uint64, float64], topics, entities []string, top int, since, until time.Time) ([]*graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64) {
+	return g.Search(nil, containers.Vector[uint64, float64]{}, topics, entities, 2, top, since, until)
+}
+
+// TestInMemoryGraphSearchSeedsFromAnchorMembersNewestFirst pins the anchor-only
+// shape: a Search with nothing to match and a topic named returns every fact
+// filed under that topic — and nothing else — newest first. Each hit is
+// scored (the unit anchor mass, decayed by age, which is what orders the
+// results), carries exactly one anchor sighting naming the topic it was
+// found under, and the background is zero because no anchor was observed.
+// depth 2 is passed and changes nothing: the pilot's other fact sits two hops
+// from a member and would be a transmission candidate from a text seed, but
+// anchor seeding runs no traversal.
+func TestInMemoryGraphSearchSeedsFromAnchorMembersNewestFirst(t *testing.T) {
+	g, harbour, _ := anchorGraph(t)
+
+	nodes, scores, contributions, background := searchByAnchors(g, []string{"harbour"}, nil, 10, time.Time{}, time.Time{})
+	if want := []string{harbourDawn, harbourFerry, harbourCranes}; !reflect.DeepEqual(values(nodes), want) {
+		t.Fatalf("Search(topic=harbour) = %v, want the topic's members newest first %v", values(nodes), want)
+	}
+	for i := range scores {
+		if scores[i] <= 0 {
+			t.Errorf("scores[%d] = %v, want the decayed unit mass, above zero", i, scores[i])
+		}
+		if i > 0 && scores[i] >= scores[i-1] {
+			t.Errorf("scores[%d] = %v is not below scores[%d] = %v: the ranking must decay with age", i, scores[i], i-1, scores[i-1])
+		}
+		want := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcAnchor, Score: 1, Via: harbour.Key(), Degree: 3, Count: 1}}
+		if !reflect.DeepEqual(contributions[i], want) {
+			t.Errorf("contributions[%d] = %+v, want one anchor sighting via harbour %+v", i, contributions[i], want)
+		}
+	}
+	if background != 0 {
+		t.Errorf("background = %v, want 0: anchor seeding observes no anchor", background)
+	}
+}
+
+// TestInMemoryGraphSearchAnchorSeedsUnion pins what naming several anchors
+// means when they seed: the pool is their union with each fact once — where
+// the same two clauses beside a term narrow to facts filed under both — and a
+// fact filed under both named anchors carries a sighting from each, twice the
+// seed mass, which at an hour's age puts it ahead of the fresher singly-filed
+// fact (2 × 0.5^(1h/168h) against 1); the rest follow newest first. The
+// sightings arrive in query order, topics then entities, so the fold is
+// byte-identical run to run.
+func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
+	g, harbour, pilot := anchorGraph(t)
+
+	nodes, scores, contributions, _ := searchByAnchors(g, []string{"harbour"}, []string{"pilot"}, 10, time.Time{}, time.Time{})
+	if want := []string{harbourFerry, harbourDawn, harbourCranes, pilotWatch}; !reflect.DeepEqual(values(nodes), want) {
+		t.Fatalf("Search(topic=harbour, entity=pilot) = %v, want the union with the doubly-filed fact first %v", values(nodes), want)
+	}
+	want := []scoring.Contribution[uint64, float64]{
+		{Src: scoring.SrcAnchor, Score: 1, Via: harbour.Key(), Degree: 3, Count: 1},
+		{Src: scoring.SrcAnchor, Score: 1, Via: pilot.Key(), Degree: 2, Count: 1},
+	}
+	if !reflect.DeepEqual(contributions[0], want) {
+		t.Errorf("contributions of the doubly-filed fact = %+v, want one sighting per anchor in query order %+v", contributions[0], want)
+	}
+	if scores[0] <= scores[1] {
+		t.Errorf("doubly-filed score %v is not above the singly-filed %v", scores[0], scores[1])
+	}
+
+	// The same anchors beside a term filter rather than seed: "dawn" is in a
+	// harbour fact that mentions no pilot, so the entity clause empties it.
+	nodes, _, _, _ = g.Search([]string{"dawn"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, []string{"pilot"}, 0, 10, time.Time{}, time.Time{})
+	if len(nodes) != 0 {
+		t.Errorf("Search(dawn, topic=harbour, entity=pilot) = %v, want nothing: beside a term the anchors narrow", values(nodes))
+	}
+}
+
+// TestInMemoryGraphSearchAnchorSeedsCapWindowAndUnknownAnchor pins the
+// modifiers on an anchor-seeded search and the one case that is genuinely
+// empty: top keeps the head of the ranking, since/until bound it as always
+// ([since, until), zero open), an anchor nothing is filed under seeds nothing
+// beside the ones that do, and identity is by kind — a topic's name asked for
+// as an entity names no anchor at all.
+func TestInMemoryGraphSearchAnchorSeedsCapWindowAndUnknownAnchor(t *testing.T) {
+	g, _, _ := anchorGraph(t)
+	cutoff := time.Now().Add(-90 * time.Minute)
+	harbourAll := []string{harbourDawn, harbourFerry, harbourCranes}
+
+	cases := []struct {
+		name     string
+		topics   []string
+		entities []string
+		top      int
+		since    time.Time
+		until    time.Time
+		want     []string
+	}{
+		{"top keeps the newest", []string{"harbour"}, nil, 2, time.Time{}, time.Time{}, []string{harbourDawn, harbourFerry}},
+		{"a non-positive top returns everything", []string{"harbour"}, nil, 0, time.Time{}, time.Time{}, harbourAll},
+		{"since keeps the recent", []string{"harbour"}, nil, 10, cutoff, time.Time{}, []string{harbourDawn, harbourFerry}},
+		{"until keeps the old", []string{"harbour"}, nil, 10, time.Time{}, cutoff, []string{harbourCranes}},
+		{"an unknown anchor is empty", []string{"nosuch"}, nil, 10, time.Time{}, time.Time{}, []string{}},
+		{"an unknown anchor beside a known one adds nothing", []string{"nosuch", "harbour"}, nil, 10, time.Time{}, time.Time{}, harbourAll},
+		{"a topic's name is not an entity", nil, []string{"harbour"}, 10, time.Time{}, time.Time{}, []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nodes, _, _, _ := searchByAnchors(g, tc.topics, tc.entities, tc.top, tc.since, tc.until)
+			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("Search(topics=%v entities=%v top=%d) = %v, want %v", tc.topics, tc.entities, tc.top, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchNamesAnAnchorOnce pins that a repeated anchor is one
+// anchor: the grammar reads topic:x topic:x as a list, but its members are
+// sighted once, not once per mention — or repeating a clause would double
+// their mass and put them ahead of everything filed under the other anchors.
+func TestInMemoryGraphSearchNamesAnAnchorOnce(t *testing.T) {
+	g, harbour, _ := anchorGraph(t)
+
+	_, _, contributions, _ := searchByAnchors(g, []string{"harbour", "harbour"}, nil, 10, time.Time{}, time.Time{})
+	if len(contributions) != 3 {
+		t.Fatalf("Search(topic=harbour, topic=harbour) returned %d hits, want the topic's 3 members", len(contributions))
+	}
+	want := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcAnchor, Score: 1, Via: harbour.Key(), Degree: 3, Count: 1}}
+	for i, c := range contributions {
+		if !reflect.DeepEqual(c, want) {
+			t.Errorf("contributions[%d] = %+v, want a single sighting %+v", i, c, want)
+		}
+	}
+}
+
+// TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey: two facts filed under one
+// topic at the same instant carry equal mass and equal decay, so nothing but
+// the key can order them. The search must rank them by key every time, as
+// any search does, or top would truncate an arbitrary member of the tie; the
+// query is repeated because the candidate map's iteration order changes
+// between calls.
+func TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+	topic := mkTopic(g, "tides", now)
+	mustSet(t, g, topic)
+	tied := make([]uint64, 0, 3)
+	for _, value := range []string{"spring tide", "neap tide", "king tide"} {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		tied = append(tied, fact.Key())
+	}
+	sort.Slice(tied, func(i, j int) bool { return tied[i] < tied[j] })
+
+	for i := 0; i < 20; i++ {
+		nodes, _, _, _ := searchByAnchors(g, []string{"tides"}, nil, 2, time.Time{}, time.Time{})
+		if got := keys(nodes); !reflect.DeepEqual(got, tied[:2]) {
+			t.Fatalf("Search(topic=tides, top=2) keys = %v on call %d, want the two lowest keys %v every call", got, i+1, tied[:2])
+		}
+	}
+}
+
+// TestInMemoryGraphSearchWithATermSeedsFromText pins that a term keeps the
+// seeding in the text index: the same anchor beside a keyword filters the
+// text matches and lends no sighting, so every contribution is the text
+// index's and the score is BM25 mass rather than the unit anchor mass.
+func TestInMemoryGraphSearchWithATermSeedsFromText(t *testing.T) {
+	g, _, _ := anchorGraph(t)
+
+	nodes, _, contributions, _ := g.Search([]string{"cranes"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 0, 10, time.Time{}, time.Time{})
+	if want := []string{harbourCranes}; !reflect.DeepEqual(values(nodes), want) {
+		t.Fatalf("Search(cranes, topic=harbour) = %v, want the one text match %v", values(nodes), want)
+	}
+	for _, c := range contributions[0] {
+		if c.Src == scoring.SrcAnchor {
+			t.Errorf("a text-seeded search recorded an anchor sighting %+v; anchors seed only on their own", c)
+		}
+	}
+}
