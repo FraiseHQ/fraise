@@ -313,7 +313,7 @@ The bridge describes itself over MCP: each tool arrives with a description and a
 **Python** ([`sdk/python`](./sdk/python)) — the only SDK today:
 
 ```sh
-pip install fraise-sdk
+pip install --pre fraise-sdk
 ```
 
 ```python
