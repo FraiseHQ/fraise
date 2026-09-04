@@ -825,3 +825,66 @@ func TestScanPhraseUnterminatedRecordsPosition(t *testing.T) {
 		t.Fatalf("first token = {%v %q}, want LITERAL \"foo\"", got.Type, got.Literal)
 	}
 }
+
+// TestScanStringNULIsData pins that a NUL inside a bare word is data, matching
+// scanPhrase: JSON may carry \u0000, and terminating the word on it silently
+// dropped later clauses (including anchor scope). See FraiseHQ/fraise#236.
+func TestScanStringNULIsData(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  []lexer.Token
+	}{
+		{
+			name:  "nul inside a recall term keeps later clauses",
+			input: "recall secret\x00 topic:private",
+			want: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.LITERAL, Literal: "secret\x00"},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.LITERAL, Literal: "private"},
+				{Type: lexer.EOL},
+			},
+		},
+		{
+			name:  "nul inside an anchor value keeps later clauses",
+			input: "remember 'x' topic:a\x00bogus entity:b",
+			want: []lexer.Token{
+				{Type: lexer.REMEMBER, Literal: "remember"},
+				{Type: lexer.PHRASE, Literal: "x"},
+				{Type: lexer.TOPIC, Literal: "topic"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.LITERAL, Literal: "a\x00bogus"},
+				{Type: lexer.ENTITY, Literal: "entity"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.LITERAL, Literal: "b"},
+				{Type: lexer.EOL},
+			},
+		},
+		{
+			name:  "nul alone is a bare-word literal, not EOL",
+			input: "recall x \x00 y",
+			want: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.LITERAL, Literal: "x"},
+				{Type: lexer.LITERAL, Literal: "\x00"},
+				{Type: lexer.LITERAL, Literal: "y"},
+				{Type: lexer.EOL},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			l := lexer.New(tc.input)
+			for i, want := range tc.want {
+				got := l.Next()
+				if got.Type != want.Type || got.Literal != want.Literal {
+					t.Fatalf("token[%d] = {%v %q}, want {%v %q}",
+						i, got.Type, got.Literal, want.Type, want.Literal)
+				}
+			}
+		})
+	}
+}

@@ -73,6 +73,16 @@ func (l *Lexer) Next() Token {
 
 	l.skipBlank()
 
+	// End of input is detected by position, not by peek() returning rune(0):
+	// a bare word must swallow a JSON NUL escape as data the same way a phrase
+	// already does. Treating NUL as EOL silently dropped later clauses
+	// (including anchor scope).
+	if l.CurrentPos.Column >= len(l.Input) {
+		tok = Token{Type: EOL}
+		tok.Pos = l.CurrentPos
+		return tok
+	}
+
 	switch l.peek() {
 	case rune(':'):
 		l.readCharacter()
@@ -103,8 +113,6 @@ func (l *Lexer) Next() Token {
 	case rune('\n'):
 		l.readCharacter()
 		tok = Token{Type: NEWLINE, Literal: string(l.Character)}
-	case rune(0):
-		tok = Token{Type: EOL}
 	default:
 		tokLiteral := l.scanString()
 		tokType, reserved := KeywordsMap[tokLiteral]
@@ -137,13 +145,19 @@ func (l *Lexer) peek() rune {
 	return l.Input[l.CurrentPos.Column]
 }
 
-// scans a string
+// scanString reads a bare word. End of input is detected by position, not by
+// peek() returning rune(0): JSON may legally carry a NUL escape (\u0000) in a
+// bare word, and it must be swallowed as data — the same rule scanPhrase already
+// applies inside quotes. Terminating on NUL used to drop every later clause.
 func (l *Lexer) scanString() string {
 	var res []rune
 f:
 	for {
+		if l.CurrentPos.Column >= len(l.Input) {
+			break f
+		}
 		switch l.peek() {
-		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune('\n'), rune(0), rune('@'):
+		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune('\n'), rune('@'):
 			break f
 		default:
 			res = append(res, l.peek())
