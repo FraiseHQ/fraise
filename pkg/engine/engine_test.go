@@ -173,3 +173,75 @@ func TestPlanCachesQuery(t *testing.T) {
 		t.Fatalf("second Plan returned error: %v", err)
 	}
 }
+
+// TestPlanCacheKeysAgreeForDuplicateTerms checks that a query with repeated
+// keywords, topics or entities is cached under the hash of the *optimised*
+// query, so a second identical request hits rather than storing an unreachable
+// LRU entry.
+func TestPlanCacheKeysAgreeForDuplicateTerms(t *testing.T) {
+	cases := []struct {
+		name  string
+		dup   string
+		canon string
+	}{
+		{"keywords", "recall@0 foo foo top:5", "recall@0 foo top:5"},
+		{"topics", "recall@0 foo topic:color topic:color", "recall@0 foo topic:color"},
+		{"entities", "recall@0 foo entity:alice entity:alice", "recall@0 foo entity:alice"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.New()
+			e := newEngine(t, cfg)
+			if err := e.Start(); err != nil {
+				t.Fatalf("Start returned error: %v", err)
+			}
+			defer e.Stop()
+
+			first, _, err := query.Parse[uint64, float32](tc.dup, nil, cfg)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error: %v", tc.dup, err)
+			}
+			rawKey := first.Hash(e.Hasher)
+
+			if _, err := e.Plan(first); err != nil {
+				t.Fatalf("first Plan returned error: %v", err)
+			}
+			optKey := first.Hash(e.Hasher)
+			if rawKey == optKey {
+				t.Fatal("duplicate terms did not change the cache key after Optimise")
+			}
+			if _, ok := e.Cache.Get(rawKey); ok {
+				t.Fatal("cache stored under the raw pre-dedupe key")
+			}
+			if _, ok := e.Cache.Get(optKey); !ok {
+				t.Fatal("cache did not store under the optimised key")
+			}
+			if got := e.Cache.Len(); got != 1 {
+				t.Fatalf("cache Len after first Plan = %d, want 1", got)
+			}
+
+			second, _, err := query.Parse[uint64, float32](tc.dup, nil, cfg)
+			if err != nil {
+				t.Fatalf("Parse(%q) second returned error: %v", tc.dup, err)
+			}
+			if _, err := e.Plan(second); err != nil {
+				t.Fatalf("second Plan returned error: %v", err)
+			}
+			if got := e.Cache.Len(); got != 1 {
+				t.Fatalf("second identical duplicate query missed the cache: Len=%d, want 1", got)
+			}
+
+			canon, _, err := query.Parse[uint64, float32](tc.canon, nil, cfg)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error: %v", tc.canon, err)
+			}
+			if _, err := e.Plan(canon); err != nil {
+				t.Fatalf("canonical Plan returned error: %v", err)
+			}
+			if got := e.Cache.Len(); got != 1 {
+				t.Fatalf("canonical form missed the duplicate query's cache entry: Len=%d, want 1", got)
+			}
+		})
+	}
+}
