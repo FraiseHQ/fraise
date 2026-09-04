@@ -11,9 +11,6 @@ format = "json"
 disable-timestamp = true
 
 [engine]
-# Let a recall match on keywords alone, without anchoring to an entity/topic —
-# the agent recalls by free keywords.
-allow-unanchored-recall = true
 half-life = "168h"
 cache-capacity = 1024
 

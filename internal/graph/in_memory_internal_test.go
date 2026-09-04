@@ -111,7 +111,10 @@ func newCollectFixture(t *testing.T) *collectFixture {
 		fx.h[0]: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	fx.seeds = []uint64{fx.f1, fx.f2, fx.h[0]}
-	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, nil, nil, 2)
+	// The fixture's topics are named: the traversal runs only through an
+	// anchor the query names, and naming all three keeps the filter from
+	// narrowing anything.
+	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, []string{"cluster", "hub", "giant"}, nil, 2)
 	return fx
 }
 
@@ -234,7 +237,7 @@ func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 		s2: {{Src: scoring.SrcText, Score: 16, Rank: 1, Count: 1}},
 		s3: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
-	g.findNeighbours([]uint64{s1, s2, s3}, candidates, nil, nil, 2)
+	g.findNeighbours([]uint64{s1, s2, s3}, candidates, []string{"left", "right", "hub"}, nil, 2)
 
 	got := graphContributions(candidates, shared)
 	if len(got) != 2 {

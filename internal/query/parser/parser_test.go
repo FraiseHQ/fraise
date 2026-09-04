@@ -1185,3 +1185,66 @@ func TestMiscasedClauseWarns(t *testing.T) {
 		}
 	}
 }
+
+// TestDepthWithoutAnchorWarns pins the third warning: depth selects a graph
+// lane, and the graph is entered only through an anchor the recall names, so
+// a depth above the floor on a recall naming no topic or entity asked for
+// transmission it will not get. The query is unambiguous and runs; the
+// response says the clause had no effect. Any anchor named opens the graph
+// and keeps the clause silent, depth:0 is the floor and asks for nothing the
+// recall cannot do, and an omitted clause is the operator's default, never
+// the caller's slip.
+func TestDepthWithoutAnchorWarns(t *testing.T) {
+	cases := []struct {
+		name  string
+		query string
+		warns bool
+	}{
+		{"depth on a term-only recall", "recall ferry depth:2", true},
+		{"depth on a vector-only recall", "recall vec:$v depth:1", true},
+		{"depth beside an anchor alone", "recall topic:harbour depth:2", false},
+		{"depth beside a term and an anchor", "recall ferry topic:harbour depth:2", false},
+		{"depth beside a vector and an anchor", "recall vec:$v entity:acme depth:1", false},
+		{"the floor never warns", "recall ferry depth:0", false},
+		{"no depth clause never warns", "recall ferry", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+			}
+			if got := len(warns) > 0; got != tc.warns {
+				t.Fatalf("Parse(%q) warnings = %v, want warned=%v", tc.query, warns, tc.warns)
+			}
+		})
+	}
+}
+
+// TestDepthWithoutAnchorWarningIsActionable pins the message: it names the
+// clause that had no effect and what the graph needs, positioned at the
+// clause like every other warning, so a caller can fix the query from the
+// response alone — add an anchor, or drop the clause.
+func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
+	q := "recall ferry depth:2"
+	_, warns, err := parser.Parse[uint64, float32](q)
+	if err != nil {
+		t.Fatalf("Parse(%q) unexpected error: %v", q, err)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("Parse(%q) warnings = %v, want exactly one", q, warns)
+	}
+
+	msg := warns[0].String()
+	for _, want := range []string{
+		"depth:2 has no effect",   // the clause that did nothing
+		"topic:/entity:",          // what opens the graph
+		"names none",              // why this recall could not
+		"parse warning at column", // positioned like an error
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("warning %q does not contain %q", msg, want)
+		}
+	}
+}

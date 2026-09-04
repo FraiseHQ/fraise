@@ -241,6 +241,25 @@ func (p *parser[K, P]) warnMisCasedKeyword(tok lexer.Token) {
 	})
 }
 
+// warnDepthWithoutGraph flags a depth clause on a recall naming no anchor.
+// depth selects a graph lane, and the graph is entered only through a
+// topic:/entity: anchor, so a recall naming none runs on the text and vector
+// indices alone and a depth above the floor asked for a lane that cannot
+// run. The query is unambiguous, so it runs — but honouring the clause in
+// silence would tell the caller transmission happened when it did not, so
+// the response says the clause had no effect and what would give it one.
+// depth:0 is the floor and asks for nothing such a recall cannot do, and an
+// omitted clause is the operator's default, never the caller's slip.
+func (p *parser[K, P]) warnDepthWithoutGraph(r *RecallCommandNode[K, P]) {
+	if !r.HasDepth() || r.depth.value == 0 || len(r.topics) > 0 || len(r.entities) > 0 {
+		return
+	}
+	p.warns = append(p.warns, Warning{
+		Msg: fmt.Sprintf("%s has no effect: the graph is searched only through a topic:/entity: anchor and this recall names none, so it runs on the text and vector indices alone", r.depth.String()),
+		Pos: r.depth.key.Pos,
+	})
+}
+
 // errEmpty builds the error for an empty or whitespace-only value, and returns
 // nil for any other. Quoting is the only way to write one and it is never what a
 // caller meant: an empty fact can never be retrieved, and an empty anchor is an
@@ -435,6 +454,8 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	if len(r.terms) == 0 && len(r.topics) == 0 && len(r.entities) == 0 && r.vec == nil {
 		return nil, p.errf(r.key.Pos, "a recall needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>")
 	}
+
+	p.warnDepthWithoutGraph(&r)
 
 	return &r, nil
 }

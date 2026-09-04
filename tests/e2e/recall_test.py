@@ -132,9 +132,10 @@ def test_recall_depth_selects_a_lane(planets_graph, query):
 
     depth:0 is the floor: the anchor traversal never runs, so only the seed
     itself can be returned. depth:1 and depth:2 both run the anchor-mediated
-    round and still return the seed alone, because a lone seed's topic hub sits
-    exactly at the background rate and so transmits nothing at either admission
-    bar. Omitting the clause is the configured default. Asserting all of them is
+    round — the star's topic is named, which is what opens the graph — and
+    still return the seed alone, because a lone seed's topic hub sits exactly
+    at the background rate and so transmits nothing at either admission bar.
+    Omitting the clause is the configured default. Asserting all of them is
     what separates "the hub was silent" from "the graph channel was never
     consulted" — a regression that broke transmission entirely would still pass
     a floor-only test. The lantern cluster below is what distinguishes the
@@ -142,8 +143,9 @@ def test_recall_depth_selects_a_lane(planets_graph, query):
     """
     g = planets_graph
     for clause in ("depth:0", "depth:1", "depth:2", ""):
-        assert _recall_count(query, f"recall@{g} mercury {clause}".strip()) == 1, (
-            f"recall mercury {clause}: a fair-share hub must not transmit"
+        text = f"recall@{g} mercury topic:planets {clause}".strip()
+        assert _recall_count(query, text) == 1, (
+            f"{text}: a fair-share hub must not transmit"
         )
 
 
@@ -159,7 +161,9 @@ def test_floor_lane_returns_only_what_the_text_index_matched(
     it a bug.
     """
     clause = "depth:0"
-    status, body = query(f"recall@{lantern_graph} lantern {clause} top:20")
+    status, body = query(
+        f"recall@{lantern_graph} lantern topic:lanterns topic:almanac {clause} top:20"
+    )
     assert status == 200, body.get("error")
 
     values = [hit["value"] for hit in body["results"]["hits"]]
@@ -182,13 +186,18 @@ def test_graph_lanes_transmit_to_a_fact_the_floor_cannot_reach(
     members — transmits nothing, so its memos stay out. Same query, same graph,
     one clause apart from the floor test above: this is the pair that proves
     the lane switch reaches the engine rather than being parsed and dropped.
+    Both topics are named because the graph is entered only through an anchor
+    the recall names; naming the hub too keeps its memos in the candidate set,
+    so their absence is the hub's silence and not the filter's doing.
 
     This cluster is strongly above chance, so it clears both admission bars.
     What separates depth:1 (precision) from depth:2 (max recall) is an anchor
     between one and two times its fair share, which needs mass arithmetic too
     delicate to pin over HTTP — TestSearchDepthOnePrecisionBar covers it.
     """
-    status, body = query(f"recall@{lantern_graph} lantern {clause} top:20")
+    status, body = query(
+        f"recall@{lantern_graph} lantern topic:lanterns topic:almanac {clause} top:20"
+    )
     assert status == 200, body.get("error")
 
     values = [hit["value"] for hit in body["results"]["hits"]]
@@ -447,8 +456,9 @@ def test_identical_recalls_return_identically_ranked_hits(query):
         status, body = query(f"remember@{graph} '{phrase}'")
         assert status == 200, body.get("error")
 
-    # depth:1 holds the walk to the seeded facts, so this is exactly the five.
-    text = f"recall@{graph} quasar depth:1"
+    # The facts carry no anchor and the query names none, so this is exactly
+    # the five the text index matches.
+    text = f"recall@{graph} quasar"
     ranking = _recall_ranking(query, text)
     assert set(ranking) == set(QUASAR_FACTS), (
         f"{text!r} must match every quasar fact and nothing else; got {ranking}"
@@ -475,8 +485,8 @@ def test_recall_top_keeps_the_head_of_the_ranking(top, query):
         status, body = query(f"remember@{graph} '{phrase}'")
         assert status == 200, body.get("error")
 
-    full = _recall_ranking(query, f"recall@{graph} quasar depth:1")
-    truncated = _recall_ranking(query, f"recall@{graph} quasar depth:1 top:{top}")
+    full = _recall_ranking(query, f"recall@{graph} quasar")
+    truncated = _recall_ranking(query, f"recall@{graph} quasar top:{top}")
     assert truncated == full[:top], (
         f"top:{top} must be the first {top} of the full ranking {full}; got {truncated}"
     )
@@ -495,18 +505,21 @@ LEDGER_FACTS = ("ledgerprobe", "acme settles invoices quarterly")
 def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(query):
     """A fact whose text equals its topic's name must not stand in for the topic.
 
-    Recall returns facts, never the hubs it walks through, so depth:1 is exactly
-    the seed here. When the "ledgerprobe" fact *was* the hub, the bystander sat
-    one hop from a fact rather than one hop from a topic, and this recall handed
-    back an unrelated memory as a second hit. Graph 5's other facts carry
-    different topics, so nothing else is one hop from the seed.
+    Recall returns facts, never the hubs it walks through, so with the topic
+    named to open the graph, depth:1 is exactly the seed here. When the
+    "ledgerprobe" fact *was* the hub, the bystander sat one hop from a fact
+    rather than one hop from a topic, and this recall handed back an unrelated
+    memory as a second hit. Graph 5's other facts carry different topics, so
+    nothing else is one hop from the seed.
     """
     graph = 5
     for phrase in LEDGER_FACTS:
         status, body = query(f"remember@{graph} '{phrase}' topic:{LEDGER_TOPIC}")
         assert status == 200, body.get("error")
 
-    hits = _recall_ranking(query, f"recall@{graph} quarterly depth:1")
+    hits = _recall_ranking(
+        query, f"recall@{graph} quarterly topic:{LEDGER_TOPIC} depth:1"
+    )
     assert hits == ["acme settles invoices quarterly"], (
         f"depth:1 must return the seed alone; {LEDGER_FACTS[0]!r} reached it as a "
         f"neighbour, so it is serving as the {LEDGER_TOPIC!r} topic node: {hits}"

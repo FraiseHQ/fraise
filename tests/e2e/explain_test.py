@@ -55,7 +55,7 @@ def test_explain_breaks_down_each_hit_by_source(query, explain):
     """
     _seed_pulsar_facts(query)
 
-    status, body = explain("recall@2 pulsar depth:2")
+    status, body = explain("recall@2 pulsar entity:vela depth:2")
     assert status == 200, body.get("error")
     hits = body["results"]["hits"]
     assert len(hits) == 2, f"want both pulsar facts, got {hits}"
@@ -77,7 +77,10 @@ def test_explain_breaks_down_each_hit_by_source(query, explain):
 
 # The surplus fixture: a small "weather" cluster concentrates the query's mass
 # while a larger "archive" hub holds a fair share of it, so exactly one anchor
-# speaks and its silent member is funded by transmission alone.
+# speaks and its silent member is funded by transmission alone. Both topics are
+# named on the recalls below because the graph is entered only through an
+# anchor the recall names; naming the hub keeps its memos in the candidate set,
+# so their absence is its silence and not the filter's doing.
 STORM_CLUSTER = (
     "the barometer falls before the storm",
     "storm clouds gather at sea",
@@ -108,7 +111,9 @@ def test_explain_shows_transmitted_surplus(query, explain):
     """
     _seed_storm_facts(query)
 
-    status, body = explain("recall@2 barometer storm top:20")
+    status, body = explain(
+        "recall@2 barometer storm topic:weather topic:archive top:20"
+    )
     assert status == 200, body.get("error")
     hits = {h["value"]: h for h in body["results"]["hits"]}
 
@@ -136,7 +141,9 @@ def test_explain_score_recomputes_from_payload(query, explain):
     """
     _seed_storm_facts(query)
 
-    status, body = explain("recall@2 barometer storm top:20")
+    status, body = explain(
+        "recall@2 barometer storm topic:weather topic:archive top:20"
+    )
     assert status == 200, body.get("error")
     background = body["results"].get("background", 0)
     assert background > 0, "two anchors are touched; the null rate must be positive"
@@ -163,7 +170,7 @@ def test_plain_query_carries_no_contributions(query):
     """
     _seed_pulsar_facts(query)
 
-    status, body = query("recall@2 pulsar depth:2")
+    status, body = query("recall@2 pulsar entity:vela depth:2")
     assert status == 200, body.get("error")
     hits = body["results"]["hits"]
     assert hits, "the pulsar facts must be recallable"

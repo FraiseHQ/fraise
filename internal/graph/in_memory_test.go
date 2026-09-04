@@ -345,9 +345,10 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	// The shared entity is the query's only touched anchor, so its observed
 	// mass IS the background: it holds no surplus, transmits nothing, and the
 	// entity-linked fact does not ride in on mere reachability. depth 2 is
-	// the excess lane, so the traversal genuinely ran and still funded nothing.
+	// the excess lane and the entity is named, so the traversal genuinely ran
+	// and still funded nothing.
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
-	nodes, _, _, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 10, time.Time{}, time.Time{})
+	nodes, _, _, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, []string{"alice"}, 2, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
 		t.Errorf("Search(acme, depth=2) = %v, want only the direct hit — a lone anchor has no surplus to transmit", values(nodes))
 	}
@@ -686,7 +687,7 @@ func TestSearchBM25Floor(t *testing.T) {
 		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	}
 
-	nodes, scores, _, _ := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _ := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 1, 10, time.Time{}, time.Time{})
 	textKeys, textScores, err := g.GetTextIndex().Search("comet", 10)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
@@ -706,7 +707,7 @@ func TestSearchScoresNeverBelowTextMass(t *testing.T) {
 	g := noDecayGraph()
 	stormGraph(t, g)
 
-	nodes, scores, _, _ := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	nodes, scores, _, _ := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
 	textKeys, textScores, err := g.GetTextIndex().Search("barometer storm", 20)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
@@ -732,7 +733,7 @@ func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	g := noDecayGraph()
 	calm, memos := stormGraph(t, g)
 
-	nodes, _, contributions, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, contributions, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
 	if background <= 0 {
 		t.Fatalf("background = %v, want positive: two anchors are touched", background)
 	}
@@ -822,7 +823,7 @@ func TestSearchDepthLanes(t *testing.T) {
 		return false
 	}
 	search := func(depth int) ([]string, [][]scoring.Contribution[uint64, float64], float64) {
-		nodes, _, contribs, bg := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, depth, 20, time.Time{}, time.Time{})
+		nodes, _, contribs, bg := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, depth, 20, time.Time{}, time.Time{})
 		return values(nodes), contribs, bg
 	}
 
@@ -872,7 +873,7 @@ func TestSearchDepthOnePrecisionBar(t *testing.T) {
 		return false
 	}
 	search := func(depth int) []string {
-		nodes, _, _, _ := g.Search([]string{"tide"}, containers.Vector[uint64, float64]{}, nil, nil, depth, 20, time.Time{}, time.Time{})
+		nodes, _, _, _ := g.Search([]string{"tide"}, containers.Vector[uint64, float64]{}, []string{"harbour", "ledger"}, nil, depth, 20, time.Time{}, time.Time{})
 		return values(nodes)
 	}
 
@@ -949,9 +950,9 @@ func TestSearchDeterminism(t *testing.T) {
 	g := noDecayGraph()
 	stormGraph(t, g)
 
-	firstNodes, firstScores, _, firstBackground := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+	firstNodes, firstScores, _, firstBackground := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
 	for i := 0; i < 20; i++ {
-		nodes, scores, _, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 20, time.Time{}, time.Time{})
+		nodes, scores, _, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
 		if !reflect.DeepEqual(keys(nodes), keys(firstNodes)) || !reflect.DeepEqual(scores, firstScores) || background != firstBackground {
 			t.Fatalf("call %d returned a different ranking, scores or background: %v %v %v vs %v %v %v",
 				i+1, keys(nodes), scores, background, keys(firstNodes), firstScores, firstBackground)
@@ -1337,5 +1338,45 @@ func TestInMemoryGraphSearchWithATermSeedsFromText(t *testing.T) {
 		if c.Src == scoring.SrcAnchor {
 			t.Errorf("a text-seeded search recorded an anchor sighting %+v; anchors seed only on their own", c)
 		}
+	}
+}
+
+// TestSearchWithoutAnchorsSkipsTheGraph pins the graph's door: the anchor
+// traversal runs only when the query names a topic or entity. The same storm
+// query that funds the cluster's silent member once the fixture's topics are
+// named observes no anchor without them — background zero, no graph
+// contribution, the silent member absent — whatever the depth: a recall
+// naming no anchor is a text and vector search.
+func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
+	g := noDecayGraph()
+	calm, _ := stormGraph(t, g)
+
+	nodes, _, contributions, background := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 20, time.Time{}, time.Time{})
+	if background != 0 {
+		t.Errorf("background = %v without an anchor named, want 0: the traversal must not run", background)
+	}
+	for i, list := range contributions {
+		for _, c := range list {
+			if c.Src == scoring.SrcGraph {
+				t.Errorf("hit %d recorded a graph contribution %+v without an anchor named", i, c)
+			}
+		}
+	}
+	for _, value := range values(nodes) {
+		if value == calm {
+			t.Errorf("silent member %q surfaced without an anchor named: nothing may transmit", calm)
+		}
+	}
+
+	nodes, _, _, background = g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	if background <= 0 {
+		t.Fatalf("background = %v with the topics named, want positive: the traversal runs through a named anchor", background)
+	}
+	funded := false
+	for _, value := range values(nodes) {
+		funded = funded || value == calm
+	}
+	if !funded {
+		t.Errorf("Search(topics named) = %v, want the silent member %q funded once the graph is entered", values(nodes), calm)
 	}
 }

@@ -163,7 +163,7 @@ anchor_value    = identifier | quoted_identifier ; (* a reserved word qualifies,
 modifier        = since_field | until_field | depth_field | top_field | vec_field ;
 since_field     = 'since' ':' time_value ;     (* lower time bound; duration read as "ago" *)
 until_field     = 'until' ':' time_value ;     (* upper time bound; duration read as "ago" *)
-depth_field     = 'depth' ':' integer ;        (* retrieval lane: 0 floor, 1 precision, 2 max recall *)
+depth_field     = 'depth' ':' integer ;        (* retrieval lane: 0 floor, 1 precision, 2 max recall; takes effect beside an anchor *)
 top_field       = 'top'   ':' integer ;        (* result limit, default 10; both are bounded — see below *)
 vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 
@@ -201,7 +201,7 @@ param_ref         = '$' identifier ;
 
 ## Anchors as seeds
 
-A recall starts from its seeds, and a term, a vector and an anchor are all seeds. A term is matched against the text index and a vector against the vector index; their mass moves through the anchors the matches share, and what is reached comes back ranked by relevance and recency, capped at `top:`. Beside a term or a vector, a `topic:`/`entity:` is a filter over that ranking: a fact must be filed under one of the topics named and one of the entities named.
+A recall starts from its seeds, and a term, a vector and an anchor are all seeds. A term is matched against the text index and a vector against the vector index, and what they match comes back ranked by relevance and recency, capped at `top:`. Beside a term or a vector, a `topic:`/`entity:` does two things: it filters the ranking — a fact must be filed under one of the topics named and one of the entities named — and it opens the graph, so the matches' mass moves through the anchors they share and `depth:` selects how far above chance an anchor must be to pass it on. A recall naming no anchor is answered by the text and vector indices alone: the graph is entered only through an anchor, so a `depth:` above the floor on such a recall has no effect, and the response says so (see [Warnings](#warnings)).
 
 A recall carrying only anchors — at least one `topic:` or `entity:`, no term, no `vec:` — is seeded by the anchors themselves. It answers "what do I know about billing?", asked before the caller knows what to search for, and it needs no term because the anchor already holds the answer: a fact is filed under an anchor by an edge, so an anchor's members are one adjacency lookup away. Every fact filed under any of the named anchors enters the candidate set carrying one unit of mass per named anchor it is filed under, and the ranking runs from there exactly as it does from a term.
 
@@ -211,7 +211,7 @@ A recall carrying only anchors — at least one `topic:` or `entity:`, no term, 
 * `depth:` has no effect when the anchors seed: with every member already in hand there is nothing to expand from, and expanding from all of them would return most of the graph. The clause is still range-checked — `depth:5` is rejected as always.
 * An anchor nothing is filed under seeds nothing. That is the one case where an anchored recall is genuinely empty: an empty result means an empty anchor, never a question the engine could not answer.
 
-A recall with neither anchors nor a term or vector has no seed at all: it is the unanchored recall that `allow-unanchored-recall` is about (see [configuration](configuration.md)), and anchor seeding changes nothing there.
+A recall with neither anchors nor a term or vector has no seed at all and is rejected: there is nothing to search from.
 
 ## Warnings
 
@@ -230,7 +230,7 @@ Each entry is positioned like a parse error — `parse warning at column N:`, th
 
 ### Queries that warn
 
-Two shapes warn.
+Three shapes warn.
 
 **1. A recall whose leading term spells a reserved keyword** (any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`), in any casing. The leading term is the one position where a bare reserved word legally reads as data — a recall must start with a term, so no clause can begin there — which also makes it the one position where a mistyped clause slips through as a search instead of an error.
 
@@ -250,6 +250,12 @@ Two shapes warn.
 
 An anchor *value* is data, not syntax, so `entity:Top` is silent: it is the same anchor as `entity:top` by design, and an agent never has to remember how it capitalised something.
 
+**3. A `depth:` above the floor on a recall naming no anchor.** `depth:` selects a graph lane, and the graph is entered only through a `topic:`/`entity:` the recall names. A recall naming none runs on the text and vector indices alone, so `depth:1` or `depth:2` on it asked for transmission that will not happen. The query is unambiguous, so it runs — but honouring the clause in silence would tell the caller the graph was searched when it was not, so the warning names the clause that had no effect and what would give it one. `depth:0` is the floor and never warns: it asks for exactly what such a recall does.
+
+| query              | reading that runs     | what it warns about                      |
+|--------------------|-----------------------|------------------------------------------|
+| `recall x depth:2` | a text search for "x" | `depth:2` had no effect: no anchor named |
+
 ### Queries that stay silent
 
 Every neighbouring shape resolves without ambiguity, so it carries no warning — the grammar either runs it silently or rejects it outright:
@@ -259,6 +265,7 @@ Every neighbouring shape resolves without ambiguity, so it carries no warning �
 * `entity:top`, `entity:Top` — value position: after a field's `:` only a value can appear, so there is nothing to mistake it for.
 * `recall x since 7d` — clause position: a missing `:` is an error, not a warning; results scoped by nothing would be worse than either.
 * `recall x Since 7d` — clause position, mis-cased: an error naming the casing.
+* `recall x topic:y depth:2`, `recall x depth:0` — a depth beside an anchor selects a lane the graph will run, and the floor asks for no graph at all.
 
 The bar is meant to keep warnings rare and the list short: a shape joins it only when it is a valid query one typo from a different valid query *and* the grammar has no way to resolve which was meant. Anything the grammar can settle is settled — as a parse, or as an error.
 

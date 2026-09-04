@@ -147,10 +147,6 @@ const (
 	// index insert or search can be asked to do.
 	DefaultMaxVectorDimension int = 4096
 
-	// DefaultAllowUnanchoredRecall controls whether a recall with no anchor
-	// (entity/topic) is permitted.
-	DefaultAllowUnanchoredRecall bool = false
-
 	// DefaultHalflife is the time-decay half-life applied to fact scores.
 	DefaultHalflife time.Duration = 7 * 24 * time.Hour
 
