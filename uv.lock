@@ -388,7 +388,7 @@ requires-dist = [{ name = "pre-commit", specifier = ">=4.6.1" }]
 
 [[package]]
 name = "fraise-sdk"
-version = "0.1.0b4"
+version = "0.1.0-beta.5"
 source = { editable = "sdk/python" }
 dependencies = [
     { name = "requests" },
