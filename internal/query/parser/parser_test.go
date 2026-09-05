@@ -1185,3 +1185,36 @@ func TestMiscasedClauseWarns(t *testing.T) {
 		}
 	}
 }
+
+
+// TestNULInBareWordKeepsLaterClauses is the #236 regression: a NUL inside a
+// bare word used to end the query early, dropping later clauses including
+// anchor scope.
+func TestNULInBareWordKeepsLaterClauses(t *testing.T) {
+	cmd, _, err := parser.Parse[uint64, float32]("recall secret\x00 topic:private")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rc, ok := cmd.(*parser.RecallCommandNode[uint64, float32])
+	if !ok {
+		t.Fatalf("got %T, want *RecallCommandNode", cmd)
+	}
+	if got := rc.Topics(); !slices.Equal(got, []string{"private"}) {
+		t.Fatalf("Topics() = %v, want [private]", got)
+	}
+
+	cmd, _, err = parser.Parse[uint64, float32]("remember 'x' topic:a\x00bogus entity:b")
+	if err != nil {
+		t.Fatalf("Parse remember: %v", err)
+	}
+	rm, ok := cmd.(*parser.RememberCommandNode[float32])
+	if !ok {
+		t.Fatalf("got %T, want *RememberCommandNode", cmd)
+	}
+	if got := rm.Topics(); !slices.Equal(got, []string{"a\x00bogus"}) {
+		t.Fatalf("Topics() = %q, want [a\\x00bogus]", got)
+	}
+	if got := rm.Entities(); !slices.Equal(got, []string{"b"}) {
+		t.Fatalf("Entities() = %v, want [b]", got)
+	}
+}
