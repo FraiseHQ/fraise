@@ -17,6 +17,11 @@ permissions:
 
 jobs:
   label:
+    # Labelling writes to the PR, and on the pull_request event a PR from a
+    # fork only gets a read-only token: both steps would fail with a 403 and
+    # mark the checks red for a contributor who did nothing wrong. Skip it
+    # there; a maintainer can label a fork PR by hand.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13
