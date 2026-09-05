@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.1.0-rc.4](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.3...v0.1.0-rc.4) (2026-08-31)
+
+
+### Features
+
+* add fraise mcp bridge ([#250](https://github.com/FraiseHQ/fraise/issues/250)) ([40695d2](https://github.com/FraiseHQ/fraise/commit/40695d28bbc189fdb9d725cbc6aec3c20ea227fc))
+
+
+### Bug fixes
+
+* improve fraise installation on Linux and MacOs ([#251](https://github.com/FraiseHQ/fraise/issues/251)) ([42c108f](https://github.com/FraiseHQ/fraise/commit/42c108f172c0b94755566d73c195b31728d8d411))
+
+
+### Maintenance
+
+* **main:** release 0.1.0-rc.4 ([#252](https://github.com/FraiseHQ/fraise/issues/252)) ([fbdf5c0](https://github.com/FraiseHQ/fraise/commit/fbdf5c0f0e2fdcbdd299d4dfbd5494fb361c4785))
+* setup fraise usage with coding agents ([#254](https://github.com/FraiseHQ/fraise/issues/254)) ([5dac4b2](https://github.com/FraiseHQ/fraise/commit/5dac4b21f96f3a3f1181fa389b200efc33feaa6c))
+
+## [0.1.0-rc.4](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.3...v0.1.0-rc.4) (2026-08-31)
+
+
+### Features
+
+* add fraise mcp bridge ([#250](https://github.com/FraiseHQ/fraise/issues/250)) ([40695d2](https://github.com/FraiseHQ/fraise/commit/40695d28bbc189fdb9d725cbc6aec3c20ea227fc))
+
+
+### Bug fixes
+
+* improve fraise installation on Linux and MacOs ([#251](https://github.com/FraiseHQ/fraise/issues/251)) ([42c108f](https://github.com/FraiseHQ/fraise/commit/42c108f172c0b94755566d73c195b31728d8d411))
+
+
+### Maintenance
+
+* setup fraise usage with coding agents ([#254](https://github.com/FraiseHQ/fraise/issues/254)) ([5dac4b2](https://github.com/FraiseHQ/fraise/commit/5dac4b21f96f3a3f1181fa389b200efc33feaa6c))
+
 ## [0.1.0-rc.3](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.2...v0.1.0-rc.3) (2026-08-30)
 
 

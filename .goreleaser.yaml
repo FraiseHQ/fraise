@@ -101,7 +101,7 @@ nfpms:
     formats: [deb, rpm]
     bindir: /usr/bin
     scripts:
-      postinstall: packaging/scripts/postinst
+      postinstall: packaging/deb/postinst
     contents:
       - src: packaging/systemd/fraise.service
         dst: /usr/lib/systemd/user/fraise.service

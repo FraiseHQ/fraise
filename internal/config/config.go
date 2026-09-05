@@ -24,6 +24,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"runtime"
@@ -222,7 +223,7 @@ type MCPConfig struct {
 func New() *ConfigSet {
 	config := &ConfigSet{}
 
-	config.FlagSet = flag.NewFlagSet("flags", flag.PanicOnError)
+	config.FlagSet = flag.NewFlagSet("flags", flag.ContinueOnError)
 
 	flagSet := config.FlagSet
 
@@ -311,7 +312,10 @@ func (c *ConfigSet) Parse(arguments []string) error {
 	err := c.FlagSet.Parse(arguments)
 
 	if err != nil {
-		return err
+		if errors.Is(err, flag.ErrHelp) {
+			return err
+		}
+		return fmt.Errorf("%w: %v", ErrInvalidFlag, err)
 	}
 
 	if c.configFile == "" {
