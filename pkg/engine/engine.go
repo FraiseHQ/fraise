@@ -83,15 +83,16 @@ func (e *Engine[K, P]) Stop() {
 }
 
 func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
-
-	if cached, ok := e.Cache.Get(q.Hash(e.Hasher)); ok {
+	// Optimise before hashing so Put and Get share one key. Dedupe mutates the
+	// query in place; hashing the raw query for Get and the deduplicated form
+	// for Put left duplicate-keyword queries stored under a key that is never
+	// looked up (#238).
+	q = e.Optimisations.Optimise(q)
+	key := q.Hash(e.Hasher)
+	if cached, ok := e.Cache.Get(key); ok {
 		q = cached
 	} else {
-		// NOTE: run optimisaitons on query and cache optimised query
-		// only optimised queries are cached
-		optimised := e.Optimisations.Optimise(q)
-		e.Cache.Put(q.Hash(e.Hasher), optimised)
-		q = optimised
+		e.Cache.Put(key, q)
 	}
 
 	stream, err := q.Plan(e.Config)
