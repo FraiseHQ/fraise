@@ -17,26 +17,23 @@ jobs:
   cla:
     runs-on: ubuntu-latest
     # Every pull request event, and only the comment that signs. Release and
-    # dependency PRs are not skipped: their authors are allowlisted, and a
-    # skipped job would leave the required cla/signed status unset.
+    # dependency PRs are not skipped: bots are exempt, the owner has signed,
+    # and a skipped job would leave the required cla/signed status unset.
     if: >-
       github.event_name == 'pull_request_target' ||
       (github.event.issue.pull_request != null &&
        contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA'))
     steps:
       - name: CLA gate
-        # No release yet: pinned to main as of adoption.
-        uses: FraiseHQ/cla-gate-action@96bb509b7f172266b2e71555256242bfc5cd981c
+        uses: FraiseHQ/cla-gate-action@5db1fb436ecdb9ea8bac3655eb3b06a5c1831943 # v1.0.0
         with:
           # the document contributors are agreeing to
           cla-url: https://github.com/FraiseHQ/cla/blob/main/cla.md
           # Signatures live in FraiseHQ/cla, next to the document they sign,
-          # so one signature covers every repo in the org: signatures.json and
-          # the optional allowlist.json on its main branch. GITHUB_TOKEN cannot
-          # write across repositories, hence the PAT.
+          # so one signature covers every repo in the org: signatures/v1/cla.json
+          # and the optional allowlist.json on its main branch. GITHUB_TOKEN
+          # cannot write across repositories, hence the PAT.
           signature-repo: FraiseHQ/cla
           signature-branch: main
+          signature-path: signatures/v1/cla.json
           signature-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-          # The copyright holder grants no licence to themself; bots are exempt
-          # by the action's default (*[bot]).
-          allowlist: RonsenbergVI
