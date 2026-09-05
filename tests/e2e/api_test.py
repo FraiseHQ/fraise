@@ -453,6 +453,8 @@ def test_leading_keyword_term_warns_but_runs(query):
         "recall@0 'since' 7d",  # quoting the term states the intent
         "recall@0 zebras entity:top",  # anchor values are unambiguous, never warned about
         "recall@0 zebras since:7d",  # an actual clause is what it says it is
+        "recall@0 zebras topic:food depth:2",  # a depth beside an anchor selects a lane that runs
+        "recall@0 zebras depth:0",  # the floor asks for no graph at all
     ],
 )
 def test_unambiguous_query_carries_no_warnings_key(query, text):
@@ -529,6 +531,25 @@ def test_query_accepts_every_valid_depth(query, text):
     status, body = query(text)
 
     assert status == 200, f"{text!r} should parse, got {status}: {body.get('error')!r}"
+
+
+@pytest.mark.parametrize("text", ["recall@0 zebras depth:1", "recall@0 zebras depth:2"])
+def test_depth_without_an_anchor_runs_but_warns(query, text):
+    """A depth above the floor on a recall naming no anchor runs, and the
+    response says the clause had no effect.
+
+    The graph is entered only through a topic:/entity: the recall names, so
+    with none it is a text search whatever its depth. Honouring the clause in
+    silence would tell an agent transmission happened when it did not, so the
+    warning names the clause and what would give it effect.
+    """
+    status, body = query(text)
+
+    assert status == 200, f"{text!r} should parse, got {status}: {body}"
+    warnings = body.get("warnings") or []
+    assert len(warnings) == 1, f"{text!r}: want exactly one warning, got {warnings}"
+    assert "has no effect" in warnings[0], warnings[0]
+    assert "names none" in warnings[0], warnings[0]
 
 
 @pytest.mark.parametrize(

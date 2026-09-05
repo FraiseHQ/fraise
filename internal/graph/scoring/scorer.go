@@ -39,6 +39,13 @@ const (
 	// observed mass M_A — the raw observation, before the scorer subtracts
 	// the fair share and applies the hinge.
 	SrcGraph
+
+	// SrcAnchor is anchor seeding: a Search naming anchors and nothing to
+	// match seeds from the anchors' own members (see graph.Graph). Score is
+	// a unit mass, one sighting per named anchor the fact is filed under, so
+	// a fact under several of the named anchors carries more seed mass than
+	// one under a single anchor: it answers more of the question.
+	SrcAnchor
 )
 
 // Scorer folds one candidate's contributions into its relevance score;
@@ -75,6 +82,8 @@ func (s Source) String() string {
 		return "vector"
 	case SrcGraph:
 		return "graph"
+	case SrcAnchor:
+		return "anchor"
 	default:
 		return "unknown"
 	}
@@ -89,11 +98,12 @@ func (s Source) String() string {
 // Score is oriented so that bigger is always better: the vector site converts
 // the distance its index reports (smaller is nearer) to 1/(1+distance) on the
 // way in; a graph observation carries the funding anchor's full observed
-// mass. Rank is the candidate's position in the producing source's own result
-// list (0 is best) — a graph observation has no list and leaves it zero. Via,
-// Degree and Count exist for graph observations: the funding anchor, its
-// degree at collection time, and how many seed members funded it; a seed
-// contribution's Count is 1.
+// mass; an anchor sighting carries unit mass. Rank is the candidate's
+// position in the producing source's own result list (0 is best) — a graph
+// observation or an anchor sighting has no list and leaves it zero. Via,
+// Degree and Count exist for graph and anchor observations: the funding or
+// filing anchor, its degree at collection time, and how many seed members
+// funded it; a seed contribution's Count is 1.
 type Contribution[K comparable, P float32 | float64] struct {
 	Src    Source
 	Score  P

@@ -11,7 +11,6 @@ format = "json"
 disable-timestamp = true
 
 [engine]
-allow-unanchored-recall = true
 half-life = "168h"
 cache-capacity = 1024
 

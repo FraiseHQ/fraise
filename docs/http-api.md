@@ -76,7 +76,7 @@ One contribution records one sighting of the hit by one retrieval source:
 
 | Field    | Meaning                                                            |
 |----------|--------------------------------------------------------------------|
-| `source` | which stage saw it: `text`, `vector` or `graph`                    |
+| `source` | which stage saw it: `text`, `vector`, `graph` or `anchor`          |
 | `score`  | the source's raw magnitude: match count, similarity, or seed score |
 | `rank`   | the hit's position in that source's own result list, 0 first       |
 | `hop`    | 0 for a seed; how many hops from its seed for a graph sighting     |

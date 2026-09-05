@@ -55,7 +55,7 @@ def test_identical_recall_text_rebinds_vector(query, vector):
         assert status == 200, body.get("error")
 
     # Identical text both times — only the bound parameter differs.
-    text = f"recall@{graph} zzzcacheprobe vec:$v depth:1"
+    text = f"recall@{graph} zzzcacheprobe vec:$v"
 
     status, body = query(text, parameters={"v": vec_a})
     assert status == 200, body.get("error")

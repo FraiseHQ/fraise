@@ -63,7 +63,7 @@ def test_matching_more_of_the_query_outranks_matching_less(query):
         status, body = query(f"remember@{graph} '{phrase}'")
         assert status == 200, body.get("error")
 
-    values, scores = _ranked_hits(query, f"recall@{graph} monsoon delta depth:1")
+    values, scores = _ranked_hits(query, f"recall@{graph} monsoon delta")
     assert values == [both, one], f"two matching terms must beat one; got {values}"
     assert scores[0] > scores[1], (
         f"the better match must win strictly, not by tiebreak: {scores}"
@@ -79,7 +79,8 @@ def test_the_fact_asked_about_outranks_its_neighbourhood(query):
     mass next to a bigger fair-share hub is the smallest shape where an
     anchor speaks. The cluster's silent member is funded — attenuated α² —
     and lands behind both facts that actually matched; the hub's memos stay
-    out entirely.
+    out entirely. Both topics are named because the graph is entered only
+    through an anchor the recall names.
     """
     graph = 0
     direct = (
@@ -96,7 +97,9 @@ def test_the_fact_asked_about_outranks_its_neighbourhood(query):
         )
         assert status == 200, body.get("error")
 
-    values, scores = _ranked_hits(query, f"recall@{graph} geyser caldera top:20")
+    values, scores = _ranked_hits(
+        query, f"recall@{graph} geyser caldera topic:thermal topic:archive top:20"
+    )
     assert silent in values, f"the cluster's surplus must fund its member; got {values}"
     assert values[0] == direct[0], (
         f"the direct two-term match must outrank everything funded; got {values}"

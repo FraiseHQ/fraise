@@ -62,7 +62,6 @@ See [`concurrency.md`](concurrency.md) for how these three interact.
 
 | Setting                   | Flag                       | Default | Meaning                                     |
 |---------------------------|----------------------------|---------|---------------------------------------------|
-| `allow-unanchored-recall` | `-allow-unanchored-recall` | `false` | permit a recall with no entity/topic anchor |
 | `half-life`               | `-half-life`               | `168h`  | time-decay half-life applied to fact scores |
 | `cache-capacity`          | `-cache-capacity`          | `1000`  | size of the LRU of optimised query plans    |
 
@@ -145,7 +144,6 @@ format = "json"
 disable-timestamp = true
 
 [engine]
-allow-unanchored-recall = true
 half-life = "168h"
 cache-capacity = 1024
 

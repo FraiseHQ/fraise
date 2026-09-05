@@ -235,10 +235,10 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 }
 
 // resolveContributions maps a hit's collected contributions to their wire
-// form: sources serialized by name and, for graph entries, the funding
-// anchor's key resolved to its stored value — the topic or entity name a
-// client can actually read. A vanished anchor falls back to an empty via
-// rather than inventing one.
+// form: sources serialized by name and, for graph and anchor entries, the
+// funding or filing anchor's key resolved to its stored value — the topic or
+// entity name a client can actually read. A vanished anchor falls back to an
+// empty via rather than inventing one.
 func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P], contributions []scoring.Contribution[K, P]) []HitContribution[P] {
 	out := make([]HitContribution[P], len(contributions))
 	for i, c := range contributions {
@@ -249,7 +249,7 @@ func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P]
 			Degree: c.Degree,
 			Count:  c.Count,
 		}
-		if c.Src == scoring.SrcGraph {
+		if c.Src == scoring.SrcGraph || c.Src == scoring.SrcAnchor {
 			if node := g.Get(c.Via); node != nil {
 				wire.Via = node.GetValue()
 			}
