@@ -26,8 +26,8 @@ These are pure functions with no I/O, so they are the natural unit-test seam:
 the wire format lives here, and :mod:`fraise_sdk.client` only concerns itself
 with transport. The grammar they target:
 
-    remember@<graph> '<value>' [topic:<t>]... [entity:<e>]... [vec:$<name>]
-    recall@<graph> <keyword>... [topic:<t>]... [entity:<e>]...
+    remember@<graph> '<value>' [topic:'<t>']... [entity:'<e>']... [vec:$<name>]
+    recall@<graph> <keyword>... [topic:'<t>']... [entity:'<e>']...
                    [top:<n>] [depth:<n>] [vec:$<name>]
 
 The vector itself never appears in the string — the caller sends it out of band
@@ -71,6 +71,8 @@ _KEYWORDS = frozenset(
     }
 )
 
+_TERM_QUOTE_CHARS = frozenset(":@$'")
+
 
 def _token(kind: str, value: str) -> str:
     """Validate and return a bare grammar token (a keyword, topic or entity).
@@ -92,7 +94,7 @@ def _token(kind: str, value: str) -> str:
 def _clauses(prefix: str, values: Iterable[str] | None) -> list[str]:
     if not values:
         return []
-    return [f"{prefix}:{_token(prefix, v)}" for v in values]
+    return [f"{prefix}:{_quote_value(v)}" for v in values]
 
 
 def _quote_value(value: str) -> str:
@@ -121,12 +123,14 @@ def _term(value: str, *, leading: bool) -> str:
     builder writes the form that means one — quoting is the grammar's own escape
     for exactly this.
 
-    The leading term is left bare deliberately. It parses either way, and
+    A leading plain term is left bare deliberately. It parses either way, and
     quoting it would suppress the server's keyword-ambiguity warning, which is
     the caller's only signal that ``recall("since", "7d")`` sits one ``:`` away
     from a time bound.
     """
     token = _token("keyword", value)
+    if any(ch in token for ch in _TERM_QUOTE_CHARS):
+        return _quote_value(token)
     if leading or token.lower() not in _KEYWORDS:
         return token
     return _quote_value(token)
