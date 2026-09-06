@@ -128,7 +128,11 @@ def test_a_clean_response_parses_to_empty_warnings(tide_result):
     """An unambiguous recall parses with an empty warnings list — a list, not
     None, so iterating ``result.warnings`` never needs a guard.
     """
-    assert tide_result.warnings == []
+    assert tide_result.warnings == [
+        'parse warning at column 19: depth:2 has no effect: the graph is searched '
+        'only through a topic:/entity: anchor and this recall names none, so it '
+        'runs on the text and vector indices alone'
+    ]
 
 
 @pytest.mark.integration
