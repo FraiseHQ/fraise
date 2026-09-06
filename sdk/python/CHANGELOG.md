@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.0-beta.5](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-beta.4...python/v0.1.0-beta.5) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* support anchored only and unanchored recalls ([#262](https://github.com/FraiseHQ/fraise/issues/262))
+
+### Features
+
+* add fraise mcp bridge ([#250](https://github.com/FraiseHQ/fraise/issues/250)) ([40695d2](https://github.com/FraiseHQ/fraise/commit/40695d28bbc189fdb9d725cbc6aec3c20ea227fc))
+* support anchored only and unanchored recalls ([#262](https://github.com/FraiseHQ/fraise/issues/262)) ([5db8999](https://github.com/FraiseHQ/fraise/commit/5db89992325232ff0d9bc9f02973c7f2acaf8910))
+
+
+### Maintenance
+
+* update depth to new semantics in SDK ([#285](https://github.com/FraiseHQ/fraise/issues/285)) ([49ad10a](https://github.com/FraiseHQ/fraise/commit/49ad10a0a577952af22466ada94ae5b3753e5bea))
+* update documentation ([#280](https://github.com/FraiseHQ/fraise/issues/280)) ([09b1c29](https://github.com/FraiseHQ/fraise/commit/09b1c29bd648855522b408cb21c30ff83ad17a29))
+* update SDK dependencies ([#247](https://github.com/FraiseHQ/fraise/issues/247)) ([0401c2e](https://github.com/FraiseHQ/fraise/commit/0401c2e7b38d5a3b1f2719284e04d978f58e64bb))
+
 ## [0.1.0-beta.4](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-beta.3...python/v0.1.0-beta.4) (2026-08-25)
 
 
