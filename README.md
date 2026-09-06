@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://fraisehq.github.io/fraise">Docs</a>
   ·
-  <a href="https://discord.gg/eHDFwnwHq">Discord</a>
+  <a href="https://discord.com/invite/VYnAkb8gH">Discord</a>
   ·
   <a href="https://docs.getfraise.dev/docs/query-language/foundations/design-principles">Query language</a>
   ·
@@ -23,7 +23,7 @@
   <a href="https://pypi.org/project/fraise-sdk/"><img src="https://img.shields.io/pypi/v/fraise-sdk" alt="PyPI"></a>
   <a href="https://pkg.go.dev/github.com/FraiseHQ/fraise"><img src="https://pkg.go.dev/badge/github.com/FraiseHQ/fraise.svg" alt="Go Reference"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-  <a href="https://discord.gg/eHDFwnwHq"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
+  <a href="https://discord.com/invite/VYnAkb8gH"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
 </p>
 
 **Fraise is a memory database for AI agents.** One they query directly, in a
@@ -51,11 +51,7 @@ curl -X POST localhost:9876/api/v1/q -H 'content-type: application/json' \
 Linux packages, Docker, `go install` and signed release binaries are all in
 [Get Started](#get-started) below.
 
-> **Fraise is in-memory and ephemeral.** Memories live in the process and are
-> gone when it stops — there is no snapshot and no load-on-boot yet.
-> Persistence is [issue #171](https://github.com/FraiseHQ/fraise/issues/171)
-> and is the next major piece of work. Build agents on it, don't put your only
-> copy of anything in it.
+> Read [Durability](https://docs.getfraise.dev/docs/operations/durability) before you deploy. Persistence is [issue #171](https://github.com/FraiseHQ/fraise/issues/171) and the next major piece of work.
 
 ## How it compares
 
@@ -400,7 +396,7 @@ This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 ## Community
 
 Questions, ideas, or building something with Fraise? Join the
-[Discord](https://discord.gg/eHDFwnwHq). Bugs and feature requests belong in
+[Discord](https://discord.com/invite/VYnAkb8gH). Bugs and feature requests belong in
 [issues](https://github.com/FraiseHQ/fraise/issues) so they don't get lost.
 
 ## Citing
