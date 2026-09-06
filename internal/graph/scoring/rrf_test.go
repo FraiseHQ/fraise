@@ -87,6 +87,14 @@ func rrfScoresExactly[P float32 | float64](t *testing.T) {
 			P(1)/P(60) + P(1)/P(61) + P(1)/P(62),
 		},
 		{
+			// An anchor sighting has no list, so it ranks 0 like any
+			// seed: the same 1/k, whatever mass it carries.
+			"an anchor sighting is a rank-0 sighting",
+			60,
+			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcAnchor, Score: 1, Rank: 0}},
+			P(1) / P(60),
+		},
+		{
 			"k is the scorer's parameter",
 			1,
 			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcText, Rank: 1}},

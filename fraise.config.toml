@@ -27,7 +27,6 @@
 # enqueue-timeout = "2s"
 
 [engine]
-# allow-unanchored-recall = false
 # half-life = "168h"          # non-positive disables recency decay
 # cache-capacity = 1000
 

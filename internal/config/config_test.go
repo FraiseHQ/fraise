@@ -49,7 +49,6 @@ format = "json"
 disable-timestamp = true
 
 [engine]
-allow-unanchored-recall = true
 half-life = "168h"
 cache-capacity = 1024
 
@@ -91,9 +90,6 @@ name = "xxhash"
 	}
 	if !c.Log.DisableTimestamp {
 		t.Errorf("Log.DisableTimestamp: got false, want true")
-	}
-	if !c.Engine.AllowUnanchoredRecall {
-		t.Errorf("Engine.AllowUnanchoredRecall: got false, want true")
 	}
 	if c.Engine.Halflife != 168*time.Hour {
 		t.Errorf("Engine.Halflife: got %v, want %v", c.Engine.Halflife, 168*time.Hour)
