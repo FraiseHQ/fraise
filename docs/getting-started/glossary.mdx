@@ -1,6 +1,7 @@
 ---
 title: "Glossary"
-description: "The terms the query specification uses, defined once"
+description: "The terms the rest of the documentation uses, defined once"
+navIcon: "📖"
 ---
 
 - **fact** — a memory's atomic element.
@@ -19,7 +20,7 @@ These are not part of the grammar, but they appear throughout the ranking docume
 - **seed** — the initial evidence a query puts into the graph: a matched term, a named anchor, or a vector's nearest neighbours.
 - **mass** — a seed's raw retrieval magnitude, in the units the source produced it in.
 - **surplus** — the part of an anchor's observed mass that exceeds what its size alone would predict.
-- **background rate (ρ₀)** — the mass a size-proportional smear of the query's seed mass across the graph's anchors would predict for an anchor of a given degree.
+- **background rate ($\rho_0$)** — the mass a size-proportional smear of the query's seed mass across the graph's anchors would predict for an anchor of a given degree.
 - **lane** — which of the three `depth:` behaviours a recall takes: the BM25 floor, high precision, or maximum recall.
 
 The model that uses them is in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval) and [Excess transmission](/docs/retrieval/ranking/excess-transmission).

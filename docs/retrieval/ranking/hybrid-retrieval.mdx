@@ -18,17 +18,17 @@ A recall pulls a bounded number of candidates from each source it can use — at
 
 | Source | Mass it carries |
 |---|---|
-| text index | BM25 × match breadth — the matched-term count priced against the query's total idf mass, so a document covering the whole query scores its term count and a partial match is discounted by the informativeness it missed |
-| vector index | `1/(1+distance)` similarity |
+| text index | BM25 $\times$ match breadth — the matched-term count priced against the query's total idf mass, so a document covering the whole query scores its term count and a partial match is discounted by the informativeness it missed |
+| vector index | $1 / (1 + \text{distance})$ similarity |
 
 ## The transmission
 
-That mass then flows into the fact–anchor graph. Every anchor — a topic or entity node — the query touches observes the total seed mass on its members and compares it to a **background rate** ρ₀: the mass a size-proportional smear of the query's seed mass across the graph's anchors would predict for an anchor of its degree.
+That mass then flows into the fact–anchor graph. Every anchor — a topic or entity node — the query touches observes the total seed mass on its members and compares it to a **background rate** $\rho_0$: the mass a size-proportional smear of the query's seed mass across the graph's anchors would predict for an anchor of its degree.
 
 Only the excess above background is transmitted, and it is transmitted **once, not once per member**:
 
 - the surplus is divided across the anchor's edges, each member receiving its per-edge share;
-- attenuated per edge (α = 0.5, α² over the two-edge seed → anchor → fact path);
+- attenuated per edge ($\alpha = 0.5$, $\alpha^2$ over the two-edge seed → anchor → fact path);
 - with the member's own mass excluded, so a fact never funds its own boost.
 
 A fact's relevance is its own mass plus everything transmitted to it.

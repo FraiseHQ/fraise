@@ -33,4 +33,4 @@ That symmetry is the point: a dimension mismatch means the caller is using a dif
   `float32` halves the memory of every vector and score at a precision that embedding models comfortably exceed in noise. **Choose `float64` only with a reason to.**
 </Note>
 
-A vector costs `dimension × 4` bytes at `float32` (`× 8` at `float64`) plus its entry in every RP-tree — see [Sizing](/docs/operations/runbook/sizing).
+A vector costs $\text{dimension} \times 4$ bytes at `float32` ($\times 8$ at `float64`) plus its entry in every RP-tree — see [Sizing](/docs/operations/runbook/sizing).

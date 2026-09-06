@@ -25,10 +25,11 @@ package relevance
 import "math"
 
 // BM25 constants: the standard Robertson–Walker defaults, internal on
-// purpose. The retrieval methodology (see docs/design.md) requires raw,
-// untuned BM25 units — the anchor-level excess statistic sums seed masses
-// across documents, and a per-dataset knob here would break the
-// commensurability that keeps the text channel and those sums on one scale.
+// purpose. The retrieval methodology requires raw, untuned BM25 units — the
+// anchor-level excess statistic sums seed masses across documents, and a
+// per-dataset knob here would break the commensurability that keeps the text
+// channel and those sums on one scale. The model is documented at
+// https://docs.getfraise.dev/docs/retrieval/ranking/hybrid-retrieval.
 const (
 	// bm25K1 saturates term frequency: repetitions of a term add ever less.
 	bm25K1 = 1.2

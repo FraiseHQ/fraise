@@ -3,7 +3,7 @@ title: "Sizing"
 description: "Memory is the constraint — what a vector costs, what a graph costs, and what the plan cache counts"
 ---
 
-- **Memory** is the constraint. Facts, their index entries, and their vectors all live in the heap; a vector costs `dimension × 4` bytes at `float32` (`× 8` at `float64`) plus its entry in every RP-tree.
+- **Memory** is the constraint. Facts, their index entries, and their vectors all live in the heap; a vector costs $\text{dimension} \times 4$ bytes at `float32` ($\times 8$ at `float64`) plus its entry in every RP-tree.
 - **`num-graphs`** costs almost nothing empty. Allocate for the isolation you want, not the load you have.
 - **`cache-capacity`** is a count of query plans, not bytes. The default 1000 is generous for agents that repeat a handful of query shapes.
 

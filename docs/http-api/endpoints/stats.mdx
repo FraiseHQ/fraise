@@ -24,7 +24,7 @@ One entry per graph, in selector order, computed on demand from the live graphs:
 
 ## Why `forest_entries` is exposed
 
-It exists to make an internal invariant observable: it must stay within `flush-factor × vectors`, so **a leak in the vector index shows up here before it shows up as memory.**
+It exists to make an internal invariant observable: it must stay within $\texttt{flush-factor} \times \texttt{vectors}$, so **a leak in the vector index shows up here before it shows up as memory.**
 
 ## Using it as the observability surface
 

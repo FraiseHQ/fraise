@@ -17,9 +17,9 @@ Deletes and overwrites leave garbage behind rather than restructuring the trees,
 
 `forest_entries` in `/api/v1/stats` is how you watch it: the invariant is
 
-```text
-forest_entries ≤ flush-factor × vectors
-```
+$$
+\texttt{forest\_entries} \le \texttt{flush-factor} \times \texttt{vectors}
+$$
 
 so a leak in the vector index shows up there before it shows up as memory. See [Health and monitoring](/docs/operations/runbook/health-and-monitoring).
 
