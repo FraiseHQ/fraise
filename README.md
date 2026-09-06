@@ -19,7 +19,7 @@
   <a href="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml"><img src="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml/badge.svg" alt="Python SDK"></a>
   <a href="https://codecov.io/gh/FraiseHQ/fraise" ><img src="https://codecov.io/gh/FraiseHQ/fraise/branch/main/graph/badge.svg?token=Y4T2AA3JBF"/></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/FraiseHQ/fraise"><img src="https://api.scorecard.dev/projects/github.com/FraiseHQ/fraise/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://github.com/FraiseHQ/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/FraiseHQ/fraise?sort=semver" alt="Release"></a>
+  <a href="https://github.com/FraiseHQ/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/FraiseHQ/fraise?sort=semver" alt="Go"></a>
   <a href="https://pkg.go.dev/github.com/FraiseHQ/fraise"><img src="https://pkg.go.dev/badge/github.com/FraiseHQ/fraise.svg" alt="Go Reference"></a>
   <a href="https://pypi.org/project/fraise-sdk/"><img src="https://img.shields.io/pypi/v/fraise-sdk" alt="PyPI"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
