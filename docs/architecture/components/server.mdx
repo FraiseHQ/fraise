@@ -1,0 +1,40 @@
+---
+title: "Server"
+description: "A deliberately thin HTTP surface: bind, validate, refuse, wait — and nothing that decides what an answer is"
+---
+
+The HTTP surface is deliberately thin: three endpoints, and no behaviour of its own beyond validation. Handlers bind the request, hand the query string to the parser, refuse what the client got wrong, and wait for the stream to finish.
+
+<Note title="Where answers are decided" type="note">
+
+  **Anything that decides *what an answer is* belongs to the engine or the query layer.**
+
+</Note>
+
+## Why thinness matters
+
+That thinness is what keeps error handling honest:
+
+| Failure | Status |
+|---|---|
+| a parse failure | 400, carrying the parser's positioned message |
+| a full queue | 429 |
+| a shutdown in progress | 503 |
+| anything unrecognised | 500 with a generic body, the detail in the log |
+
+So an internal error never leaks through the wire. See [Errors](/docs/http-api/errors) for the full table.
+
+## The endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | health check and version handshake |
+| `POST /api/v1/q` | the one endpoint that reads and writes |
+| `POST /api/v1/explain` | the same pipeline, with per-source contributions |
+| `GET /api/v1/stats` | per-graph snapshot, computed on demand |
+
+Full request and response shapes are in the [HTTP API](/docs/http-api/endpoints/query) section.
+
+## Request limits
+
+The server enforces its own timeouts and a body cap before anything is buffered — `read-header-timeout` against Slowloris, `max-body-bytes` against oversized bodies, `shutdown-grace` for the drain. See [Server settings](/docs/configuration/reference/server).

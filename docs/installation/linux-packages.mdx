@@ -1,0 +1,64 @@
+---
+title: "Linux packages"
+description: "Install the .deb or .rpm package and run Fraise as a systemd user service"
+---
+
+`.deb` and `.rpm` packages ship with every release, with a systemd user unit:
+
+<Step>
+  <StepItem title="Download the package">
+
+  ```sh
+  VERSION=0.1.0
+  ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+  curl -sSfLO "https://github.com/FraiseHQ/fraise/releases/download/v${VERSION}/fraise_${VERSION}_${ARCH}.deb"
+  ```
+
+  </StepItem>
+  <StepItem title="Install">
+
+  ```sh
+  sudo dpkg -i "fraise_${VERSION}_${ARCH}.deb"
+  ```
+
+  </StepItem>
+  <StepItem title="Enable and start the service">
+
+  ```sh
+  systemctl --user enable --now fraise
+  ```
+
+  </StepItem>
+</Step>
+
+## What the package installs
+
+| Path | Contents |
+|---|---|
+| `/usr/lib/systemd/user/fraise.service` | the user unit |
+| `~/.config/fraise/fraise.config.toml` | the config the unit points at (need not exist) |
+| `/etc/fraise/fraise.config.toml` | shipped default, every setting commented at its default |
+
+`systemctl --user enable --now fraise` starts it and keeps it restarting on failure. Logs go to the journal:
+
+```sh
+journalctl --user -u fraise -f
+```
+
+<Note title="Missing config file" type="note">
+
+  A missing config is not an error — it is logged and the defaults stand. See [Startup](/docs/operations/runbook/startup).
+
+</Note>
+
+## Outliving your login session
+
+A user manager normally stops at logout. For agents that run longer than your session:
+
+```sh
+loginctl enable-linger $USER
+```
+
+## A machine-wide instance
+
+The same unit works as a system service for a shared server — copy it to `/etc/systemd/system/`, point `-config` at `/etc/fraise/fraise.config.toml`, and run it as a dedicated unprivileged user. The full unit is in [Running as a managed service](/docs/operations/managed-service).

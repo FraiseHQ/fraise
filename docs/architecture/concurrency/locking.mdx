@@ -1,0 +1,52 @@
+---
+title: "Locking strategy"
+description: "Per-graph read-write mutexes, why the lock is exposed to callers, and what that prevents"
+---
+
+## Per-graph locks
+
+Each graph holds a `sync.RWMutex` protecting its internal state:
+
+```go
+type InMemoryGraph[K comparable, P float32 | float64] struct {
+    idToNodes     map[K]Node[K]
+    nodeToSources map[K]map[K]Relationship[K]
+    nodeToTargets map[K]map[K]Relationship[K]
+    mu            sync.RWMutex
+}
+```
+
+Public methods for lock management:
+
+- `RLock()` / `RUnlock()` — acquire/release a read lock
+- `Lock()` / `Unlock()` — acquire/release a write lock
+
+## Lock holder responsibility
+
+The graph interface exposes locks to allow callers to compose operations while holding a single lock:
+
+```go
+g.Lock()
+defer g.Unlock()
+
+node := g.Get(key)    // read under lock
+if node != nil {
+    g.Put(key, modified)  // write under lock
+}
+```
+
+<Note title="No internal locking" type="warning">
+
+  This prevents **read-modify-write races**. Without explicit composition, the graph operations would need internal locking — not currently implemented in the interface contract.
+
+</Note>
+
+## Read-write semantics
+
+- **Reads** — multiple goroutines can read from a graph simultaneously (`RLock()`)
+- **Writes** — exclusive access; blocks all readers and other writers (`Lock()`)
+- **No upgrade** — a read lock cannot be upgraded to a write lock without releasing first
+
+## Keeping hold time short
+
+Writes commit in place, so lock hold time is proportional to the fact being written. **Keep facts small rather than batching many into one stream** — see [Concurrency guarantees](/docs/architecture/concurrency/guarantees) for the rest of the contention playbook.

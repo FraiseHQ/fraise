@@ -1,0 +1,57 @@
+name: Docs
+
+# Mirror docs/ into the website repository. FraiseHQ/www renders the
+# documentation from contents/docs and this repository is the source of truth
+# for it: a change to docs/ on main is committed there as-is, so the two trees
+# never drift and a docs fix never needs a second pull request. The changelog
+# release-please maintains lives in docs/ too, so a release syncs it the same
+# way.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs.yaml"
+  workflow_dispatch:
+
+# One sync at a time and none cancelled: every push to main must land in www in
+# order, or a cancelled run leaves the site one docs change behind.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync docs to www
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # GITHUB_TOKEN cannot write across repositories, hence the PAT: the same
+      # one cla.yaml uses to write to FraiseHQ/cla. checkout keeps it in the
+      # clone's git config, which is what the push below authenticates with.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: FraiseHQ/www
+          ref: main
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          path: www
+
+      # A mirror, not a merge: a page deleted here disappears there, so
+      # contents/docs is exactly docs/ at this commit.
+      - name: Mirror docs/ into contents/docs
+        run: rsync --archive --delete docs/ www/contents/docs/
+
+      # Stages contents/docs (deletions included), commits only when that
+      # changed anything, and pushes to www's main.
+      - uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d
+        with:
+          repository: www
+          branch: main
+          file_pattern: contents/docs
+          commit_message: "docs: sync from FraiseHQ/fraise@${{ github.sha }}"
+          commit_author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>

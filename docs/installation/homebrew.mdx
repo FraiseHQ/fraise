@@ -1,0 +1,51 @@
+---
+title: "Homebrew"
+description: "Install Fraise on macOS and run it as a supervised launchd service"
+---
+
+<Step>
+  <StepItem title="Install">
+
+  ```sh
+  brew install fraisehq/tap/fraise
+  ```
+
+  </StepItem>
+  <StepItem title="Start the service">
+
+  ```sh
+  brew services start fraise
+  ```
+
+  </StepItem>
+</Step>
+
+## What the service does
+
+`brew services start fraise` runs the daemon under launchd with `keep_alive`: it restarts on crashes and comes back at login.
+
+| Path | Contents |
+|---|---|
+| `$(brew --prefix)/var/log/fraise.log` | daemon logs |
+| `$(brew --prefix)/etc/fraise/fraise.config.toml` | configuration |
+
+The config file is installed on first install with every setting commented at its default — the file documents itself, and uncommenting a line is the whole act of configuring. It is left alone on upgrades; when a default changes, the new file arrives beside it as `.default`.
+
+This is the Postgres/redis mental model: install once, and let the platform's supervisor own the process.
+
+## Configuring it
+
+Edit the config file, then restart the service:
+
+```sh
+brew services restart fraise
+```
+
+Before restarting, read [Durability](/docs/operations/durability) for what a restart does to the store.
+
+Every setting, its accepted values and its default are listed in [Configuration](/docs/configuration/overview).
+
+## Next
+
+- [Your first memory](/docs/getting-started/first-memory)
+- [Running as a managed service](/docs/operations/managed-service) — the same model on Linux

@@ -124,18 +124,48 @@ def test_recall_reports_server_errors_as_text():
 
 def test_recall_passes_graph_and_budgets_through():
     client = _client()
-    _invoke(recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=4)
+    _invoke(recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=2)
     client.recall.assert_called_once_with(
-        "a", "b", graph=3, top=7, depth=4, vector=None, embed=False
+        "a", "b", graph=3, top=7, depth=2, vector=None, embed=False
     )
 
 
-def test_recall_defaults_top_and_depth_when_the_model_omits_them():
+def test_recall_defaults_top_and_leaves_depth_to_the_server():
+    """An omitted top takes the tool's ceiling; an omitted depth is passed as
+    None so no clause is emitted and the server's configured lane applies. A
+    tool-side depth would be a lane the tool cannot use, since it names no
+    topic or entity, and any value above the floor draws a warning per call.
+    """
     client = _client()
     _invoke(recall_tool(client), keywords=["a"])
     call = client.recall.call_args.kwargs
     assert call["top"] == 5
-    assert call["depth"] == 2
+    assert call["depth"] is None
+
+
+def test_recall_schema_bounds_depth_to_the_lanes():
+    """The generated schema carries the lanes' range on depth's integer branch.
+
+    The bound rides on the parameter's annotation; this pins that the framework
+    surfaces it to the model rather than dropping it on the way to JSON Schema.
+    """
+    depth = recall_tool(_client()).params_json_schema["properties"]["depth"]
+    integer = next(branch for branch in depth["anyOf"] if branch["type"] == "integer")
+    assert (integer["minimum"], integer["maximum"]) == (0, 2)
+
+
+@pytest.mark.parametrize("depth", [-1, 3, 99])
+def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(depth):
+    """An out-of-range depth fails the framework's argument validation.
+
+    The runtime answers the model with its standard tool error instead of
+    raising into the agent loop, and the server is never called: the schema
+    already told the model the range, so the correction is one retry away.
+    """
+    client = _client()
+    result = _invoke(recall_tool(client), keywords=["a"], depth=depth)
+    assert result.startswith("An error occurred while running the tool")
+    client.recall.assert_not_called()
 
 
 def test_recall_vectorises_through_the_embedder():
