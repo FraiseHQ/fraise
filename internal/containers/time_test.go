@@ -203,6 +203,7 @@ func TestParseTimeValueRelative(t *testing.T) {
 		{"2h", 2 * time.Hour},
 		{"7d", 7 * 24 * time.Hour},
 		{"1w", 7 * 24 * time.Hour},
+		{"106751d", 106751 * 24 * time.Hour},
 		{"0d", 0}, // zero is allowed
 	}
 
@@ -263,6 +264,8 @@ func TestParseTimeValueErrors(t *testing.T) {
 		{"unknown unit", "7x"},
 		{"fractional not supported", "1.5h"},
 		{"invalid date", "2026-13-40"},
+		{"duration multiplication overflow", "106752d"},
+		{"duration that wraps positive", "999999999999d"},
 	}
 
 	for _, tt := range tests {

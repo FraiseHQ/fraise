@@ -24,6 +24,7 @@ package containers
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -86,6 +87,8 @@ func (tf TimeFilter[K]) Hash(h hash.Hasher[K, string]) string {
 
 // ParseTimeValue converts a string into a TimeValue: a RelativeTime
 // ("7d", "30m", "1w") or an AbsoluteTime ("2026-01-15" or RFC3339).
+// Relative values that cannot fit in time.Duration are rejected before
+// multiplication so they cannot wrap into a different bound.
 func ParseTimeValue[K comparable](s string) (TimeValue[K], error) {
 	if s == "" {
 		return nil, fmt.Errorf("%w: empty string", ErrInvalidTime)
@@ -94,6 +97,14 @@ func ParseTimeValue[K comparable](s string) (TimeValue[K], error) {
 	// Relative: <int><unit>. A date never ends in a unit letter.
 	if mult, ok := unitDuration(s[len(s)-1]); ok {
 		if n, err := strconv.Atoi(s[:len(s)-1]); err == nil && n >= 0 {
+			if int64(n) > math.MaxInt64/int64(mult) {
+				return nil, fmt.Errorf(
+					"%w: %q exceeds the maximum span of %s",
+					ErrInvalidTime,
+					s,
+					time.Duration(math.MaxInt64),
+				)
+			}
 			return RelativeTime[K]{Dur: time.Duration(n) * mult}, nil
 		}
 	}
