@@ -148,8 +148,13 @@ def recall_tool(
         keywords = args.get("keywords") or []
         top = args.get("top") or _DEFAULT_TOP
         depth = args.get("depth")
-        if depth is not None and not 0 <= depth <= _MAX_DEPTH:
-            return _err(f"depth must be between 0 and {_MAX_DEPTH}, got {depth}")
+        if depth is not None:
+            if type(depth) is not int:
+                return _err(
+                    f"depth must be an integer between 0 and {_MAX_DEPTH}, got {depth!r}"
+                )
+            if not 0 <= depth <= _MAX_DEPTH:
+                return _err(f"depth must be between 0 and {_MAX_DEPTH}, got {depth}")
         vector = encode(" ".join(keywords)) if encode and keywords else None
         try:
             result = client.recall(
