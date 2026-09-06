@@ -1,0 +1,42 @@
+---
+title: "Search, ranking and scoring algorithms"
+description: "The traversal, the fold and the relevance model — what each accepts, and which values exist only for comparison runs"
+navLabel: "Algorithms"
+---
+
+| Setting | Flag | Default | Accepts |
+|---------------------------------------|----------------------|----------|----------------------------------|
+| `search-algorithm.name` | `-search-algorithm` | `excess` | `none` `bfs` `excess` |
+| `ranking-algorithm.name` | `-ranking-algorithm` | `none` | `none` `pagerank` |
+| `ranking-algorithm.pagerank-damping` | `-pagerank-damping` | `0.85` | probability of following an edge |
+| `ranking-algorithm.pagerank-max-iter` | `-pagerank-max-iter` | `100` | power-iteration cap |
+| `ranking-algorithm.pagerank-tol` | `-pagerank-tol` | `1e-6` | convergence threshold |
+| `scoring-algorithm.name` | `-scoring-algorithm` | `excess` | `excess` `rrf` |
+| `relevance-model.name` | `-relevance-model` | `bm25` | `bm25` `matchcount` |
+
+## `search-algorithm`
+
+Selects the traversal moving seed evidence through the graph:
+
+- `excess` — the shipped excess-transmission strategy;
+- `bfs` — tree-shaped incidence, available for comparison runs;
+- `none` — turns the graph channel off: text/vector search only.
+
+## `scoring-algorithm`
+
+Selects the fold deriving relevance from the pooled evidence. `rrf` remains available for comparison runs — its dampening constant is fixed at 60, the literature standard, because a comparison baseline is not tunable — but it carries **no null model**, which is why `excess` is the default. See [Excess transmission](/docs/retrieval/ranking/excess-transmission).
+
+## `relevance-model`
+
+Selects how the text index turns a match into a number:
+
+- `bm25` — raw idf-weighted mass $\times$ match breadth against the query's idf mass, what the excess methodology consumes;
+- `matchcount` — one point per query-term occurrence, the pre-BM25 ranking, for comparison runs.
+
+## `ranking-algorithm`
+
+The pagerank knobs are read **only** when `ranking-algorithm` is `pagerank`; `none` applies no global ranking boost.
+
+## In short
+
+The defaults — `excess` / `none` / `excess` / `bm25` — are the shipped methodology. The other values exist so a comparison run can isolate one channel at a time, not as tuning surface for production.

@@ -1,0 +1,76 @@
+---
+title: "Commands"
+description: "recall and remember — what each one requires, what seeds a search, and how a graph selector is written"
+navIcon: "⌨️"
+---
+
+FQL has two commands. A query is one of them, on one line.
+
+## `remember` — assert a fact
+
+```text
+remember 'acme moved to annual billing' topic:billing topic:contracts
+```
+
+A remember takes a phrase — the fact — followed by any number of anchors and an optional vector:
+
+```ebnf
+remember_query  = remember_cmd phrase (anchor_field | vec_field)* ;
+```
+
+Anchors are **not required**: a fact with none is stored and reachable by text search alone. The phrase is stored exactly as written; anchors are folded to lower case.
+
+## `recall` — ask a question
+
+```text
+recall billing entity:acme since:7d top:5
+```
+
+A recall needs at least one **seed**, and the terms come first:
+
+```ebnf
+recall_body   = ( term+ field* ) | seeding_field+ field* ;
+field         = anchor | modifier ;
+seeding_field = anchor | vec_field ;
+```
+
+A term, an anchor and a vector are all seeds, so `recall topic:billing` and `recall vec:$v` are questions — expand from here and rank what you reach.
+
+<Note title="Modifiers are not seeds" type="warning">
+
+  A **modifier is not a seed**: it scopes a search, so `recall top:3` and `recall since:7d` start nothing and are errors.
+
+</Note>
+
+After the first field, a bare term is an error. The fields themselves interleave in any order, but only anchors may repeat: a repeated anchor adds a filter, a repeated modifier is a duplicate-clause error.
+
+### Seeds versus modifiers
+
+| Field | Seeds a search | Repeatable | Meaning |
+|---|---|---|---|
+| `topic:` | yes | yes | anchor: what a fact is about |
+| `entity:` | yes | yes | anchor: who or what a fact mentions |
+| `vec:` | yes | no | semantic seed (recall) or stored embedding (remember) |
+| `since:` | no | no | lower time bound, duration read as "ago" |
+| `until:` | no | no | upper time bound |
+| `depth:` | no | no | retrieval lane: 0 floor, 1 precision, 2 max recall |
+| `top:` | no | no | result limit, default 10 |
+
+## Graph selectors
+
+A selector is glued to the verb, with no whitespace before the `@`:
+
+```text
+recall@3 auth topic:auth entity:okta
+remember@3 'acme signed with okta' topic:auth entity:okta
+```
+
+```ebnf
+graph_selector = '@' integer ;   (* default 0 *)
+```
+
+The selector is lexed *with* the command as one token. An absent selector means graph 0. Selectors are `uint8` and bounded twice over — the parser rejects anything that does not fit the type, and the server rejects selectors past the allocated count. See [Bounds](/docs/query-language/tokens/bounds) and [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+
+## Reserved but unimplemented
+
+`forget` and `update` are reserved by the lexer, but no command implements them: a query starting with either is rejected. In value position they behave like every other keyword — `entity:update` is the word "update".

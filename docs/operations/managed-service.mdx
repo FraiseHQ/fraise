@@ -1,0 +1,84 @@
+---
+title: "Running as a managed service"
+description: "launchd on macOS, systemd per user or system-wide on Linux — install once and let the supervisor own the process"
+navIcon: "🧰"
+---
+
+The Postgres/redis mental model: install once, let the platform's supervisor own the process. Both packaged routes ship a default config with every setting commented at its default — the file documents itself, and uncommenting a line is the whole act of configuring.
+
+## macOS (Homebrew)
+
+```sh
+brew services start fraise
+```
+
+Runs the daemon under launchd with `keep_alive`: it restarts on crashes and comes back at login.
+
+- logs: `$(brew --prefix)/var/log/fraise.log`
+- config: `$(brew --prefix)/etc/fraise/fraise.config.toml`, installed on first install and left alone on upgrades — a changed default arrives beside it as `.default`
+
+## Linux, per user (systemd)
+
+The `.deb`/`.rpm` packages install a user unit to `/usr/lib/systemd/user/fraise.service`.
+
+<Step>
+  <StepItem title="Enable and start">
+
+  ```sh
+  systemctl --user enable --now fraise
+  journalctl --user -u fraise -f
+  ```
+
+  The unit points at `~/.config/fraise/fraise.config.toml`, which need not exist — a missing config logs the fallback and the defaults stand (see [Startup](/docs/operations/runbook/startup)).
+
+  </StepItem>
+  <StepItem title="Keep it running after logout">
+
+  A user manager normally stops at logout; for agents that run longer than your session:
+
+  ```sh
+  loginctl enable-linger $USER
+  ```
+
+  </StepItem>
+</Step>
+
+## Linux, system-level (a shared server)
+
+<Step>
+  <StepItem title="Install the unit">
+
+  The same unit works as a system service for a machine-wide instance: copy it to `/etc/systemd/system/fraise.service`, replace the `%h`-based `-config` path with `/etc/fraise/fraise.config.toml` (the packages install the default there), and run it as a dedicated unprivileged user:
+
+  ```ini title="/etc/systemd/system/fraise.service"
+  [Unit]
+  Description=Fraise in-memory temporal memory graph database for AI agents
+  After=network.target
+
+  [Service]
+  User=fraise
+  ExecStart=/usr/bin/fraise -config /etc/fraise/fraise.config.toml
+  Restart=on-failure
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+  </StepItem>
+  <StepItem title="Enable and start">
+
+  Then:
+
+  ```sh
+  systemctl enable --now fraise
+  journalctl -u fraise -f
+  ```
+
+  without `--user`.
+
+  </StepItem>
+</Step>
+
+## Before you restart
+
+Read [Durability](/docs/operations/durability) for what `systemctl restart` does to the store before reaching for it.

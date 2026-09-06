@@ -1,0 +1,43 @@
+---
+title: "Startup"
+description: "Why a bad setting exits non-zero before the port is bound, and how to read a crash loop after a deploy"
+---
+
+The server exits non-zero, **before binding a port**, when a setting names something it cannot honour:
+
+```text
+config: invalid value: log.level = "verbose" (accepted: DEBUG, INFO, WARN, ERROR)
+```
+
+That is deliberate: exit 0 would look like a clean shutdown to a supervisor's restart policy, and starting anyway would run with a value nobody asked for.
+
+## A missing config file is not fatal
+
+It is logged and the defaults stand. The defaults plus flags are a complete configuration.
+
+## Reading a crash loop
+
+<Note title="Read the first log line" type="warning">
+
+  A crash loop right after a deploy is worth reading the first log line for: **if it names a setting, the config is wrong, and no amount of restarting will fix it.**
+
+</Note>
+
+| First log line | Meaning |
+|---|---|
+| `config: invalid value: ...` | a setting is outside its accepted vocabulary — fix the value |
+| an unknown-key error | the file has a key that maps to no setting — a typo the server refuses to ignore |
+| a fallback notice | no config file was found; the defaults are in force, and the server started |
+
+## What starts, in order
+
+1. Configuration is resolved: defaults, then file, then flags, then validation.
+2. The database allocates `num-graphs` graphs — the count never grows afterwards.
+3. The scheduler creates its queue and spawns `workers` goroutines.
+4. The HTTP server binds `port` and starts answering `GET /`.
+
+<Note title="Nothing to warm up" type="success">
+
+  There is nothing to warm up and nothing to recover, so a server that answers `GET /` is a server that works — see [Health and monitoring](/docs/operations/runbook/health-and-monitoring).
+
+</Note>

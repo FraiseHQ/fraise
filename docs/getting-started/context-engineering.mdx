@@ -1,0 +1,40 @@
+---
+title: "Context engineering"
+description: "Why retrieval is ranked and bounded rather than exhaustive, and why recency is a ranking signal rather than a filter"
+navIcon: "🎚️"
+---
+
+A model's context is assembled per call, and memory is only one of the things competing for it. Fraise's job is not to hold everything an agent has ever seen; it is to answer *"what, of what I know, is worth the tokens for **this** turn"*.
+
+Two consequences run through the design.
+
+## Retrieval is ranked and bounded, never exhaustive
+
+A recall returns the top few facts — 10 by default, `top:` to change it — because a caller that cannot afford to read a thousand rows is not served by being offered them.
+
+```text
+recall billing entity:acme top:5
+```
+
+`top:` is bounded by `max-top` (1000 by default), and a value past it is rejected with the range in the message. The ceiling exists so one query cannot force unbounded work; the default beneath it is what a caller gets when it asks for nothing. See [Bounds](/docs/query-language/tokens/bounds).
+
+## Recency is a first-class ranking signal
+
+Contextual memory ages: what an agent learned an hour ago usually beats what it learned last quarter. That is the "temporal" in temporal memory graph, and it is **scored rather than filtered**: the score is multiplied by
+
+$$
+0.5^{\, \text{age} / \text{half-life}}
+$$
+
+Decay is ranking, not filtering — an old fact still surfaces when nothing newer matches, which is what makes it safe to leave on by default. When you need a hard window, `since:` and `until:` are absolute constraints: a fact outside them does not appear at any score.
+
+See [Temporality](/docs/retrieval/memory-model/temporality) for the half-life setting and how the two interact.
+
+## What this means for an agent's prompt
+
+The habits that make memory pay off are policy, not API surface, and they belong in the file your agent already reads — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex and OpenCode. Two are enough:
+
+- **recall before answering** anything that leans on earlier decisions or preferences;
+- **remember only facts that will still matter in a later session**, one self-contained fact per call, with the topics and entities that will make it findable.
+
+[MCP](/docs/integrations/mcp) covers what the tool descriptions carry on their own, and what they cannot.
