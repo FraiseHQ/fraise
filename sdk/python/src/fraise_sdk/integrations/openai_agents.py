@@ -44,12 +44,15 @@ concern, not something the model should pick.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.errors import FraiseError
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
 try:
     from agents import FunctionTool, function_tool
+    from pydantic import Field
 except ImportError as exc:  # pragma: no cover - exercised only without the extra
     raise ImportError(
         "The OpenAI Agents integration requires the 'openai-agents' package. "
@@ -62,6 +65,15 @@ except ImportError as exc:  # pragma: no cover - exercised only without the extr
 # with, and this tool names no topic or entity, so any explicit lane above the
 # floor would only draw a warning.
 _DEFAULT_TOP = 5
+
+# The retrieval lanes are 0, 1 and 2 by design — the scorer runs at most one
+# anchor-mediated round — so a larger depth is not a deeper search but a
+# request the server rejects at parse time. The bound rides on the parameter's
+# annotation, which the framework turns into both the schema's range and a
+# validation of every call, so the model gets a correction it can act on
+# rather than a round trip that fails. An operator can only lower the ceiling
+# (max-depth), and the server's own rejection still surfaces as a tool error.
+_MAX_DEPTH = 2
 
 
 def recall_tool(
@@ -80,7 +92,9 @@ def recall_tool(
     encode = resolve_embedder(embedder)
 
     def recall_memory(
-        keywords: list[str], top: int = _DEFAULT_TOP, depth: int | None = None
+        keywords: list[str],
+        top: int = _DEFAULT_TOP,
+        depth: Annotated[int | None, Field(ge=0, le=_MAX_DEPTH)] = None,
     ) -> str:
         """Search long-term memory for facts related to the given keywords.
 

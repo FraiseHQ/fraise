@@ -161,11 +161,36 @@ def test_recall_defaults_top_and_leaves_depth_to_the_server():
     assert call["depth"] is None
 
 
+def test_recall_schema_bounds_depth_to_the_lanes():
+    """The schema states the lanes' range so the model never has to guess it.
+
+    A depth past 2 is not a deeper search but a parse error on the server, so
+    the bound belongs in the contract the model reads, not only in the check
+    behind it.
+    """
+    depth = recall_tool(_client()).input_schema["properties"]["depth"]
+    assert (depth["minimum"], depth["maximum"]) == (0, 2)
+
+
+@pytest.mark.parametrize("depth", [-1, 3, 99])
+def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(depth):
+    """An out-of-range depth is answered with a correction and never sent.
+
+    The server would reject it anyway, but a round trip that fails teaches the
+    model nothing; the tool error names the range so the retry can be right.
+    """
+    client = _client()
+    payload = _invoke(recall_tool(client), keywords=["a"], depth=depth)
+    assert payload["is_error"] is True
+    assert _text(payload) == f"depth must be between 0 and 2, got {depth}"
+    client.recall.assert_not_called()
+
+
 def test_recall_passes_graph_and_budgets_through():
     client = _client()
-    _invoke(recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=4)
+    _invoke(recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=2)
     client.recall.assert_called_once_with(
-        "a", "b", graph=3, top=7, depth=4, vector=None, embed=False
+        "a", "b", graph=3, top=7, depth=2, vector=None, embed=False
     )
 
 
