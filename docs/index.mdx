@@ -40,13 +40,7 @@ A single Fraise instance holds several independent memory graphs (8 by default),
 
 ## Before you build on it
 
-<Note title="Nothing is persisted" type="warning">
-
-  **Fraise is in-memory and ephemeral.** Memories live in the process and are gone when it stops — there is no snapshot and no load-on-boot yet. Build agents on it, don't put your only copy of anything in it.
-
-</Note>
-
-[Durability](/docs/operations/durability) spells out what that means for deploys, load balancers and capacity planning.
+Fraise doesn't yet support persistance. Read [Durability](/docs/operations/durability) before you deploy. What the store keeps across a restart, and what that means for deploys, load balancers and capacity planning.
 
 ## Status
 

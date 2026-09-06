@@ -28,9 +28,7 @@ SIGINT or SIGTERM starts a graceful shutdown:
 
 ## What a clean shutdown does not protect
 
-Since nothing is persisted, a clean shutdown protects in-flight requests, **not the data** — the data is gone either way.
-
-See [Durability](/docs/operations/durability).
+A clean shutdown protects in-flight requests; what happens to the data is covered in [Durability](/docs/operations/durability).
 
 ## The mechanism
 

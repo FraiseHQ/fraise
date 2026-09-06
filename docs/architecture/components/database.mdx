@@ -14,15 +14,9 @@ The database does not distinguish them — `Query.IsWrite()` is what the schedul
 - a **read** runs the search against the live graph under a read lock;
 - a **write** mutates it directly under the exclusive lock.
 
-## Nothing is persisted
+## Persistence
 
-<Note title="Empty database on restart" type="warning">
-
-  Everything is in memory and nothing is persisted; **a restart is an empty database.** No snapshot, no write-ahead log, no recovery.
-
-</Note>
-
-[Durability](/docs/operations/durability) covers what that means in production.
+See [Durability](/docs/operations/durability) for what the store keeps across a restart and what that means in production.
 
 ## What a graph holds
 
@@ -44,4 +38,4 @@ type InMemoryGraph[K comparable, P float32 | float64] struct {
 
 ## Node keys
 
-`db.hashing-function` derives node keys from values — `xxhash` (default) or `t1ha`, with a `uint64` seed. Changing either on a populated store means the same fact hashes to a different key; since nothing is persisted, that only matters across a restart with a changed config. See [Database settings](/docs/configuration/reference/database).
+`db.hashing-function` derives node keys from values — `xxhash` (default) or `t1ha`, with a `uint64` seed. Changing either means the same fact hashes to a different key; [Durability](/docs/operations/durability) explains why that is only a concern across a restart. The settings are listed in [Database settings](/docs/configuration/reference/database).

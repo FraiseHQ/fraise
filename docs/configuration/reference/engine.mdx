@@ -19,11 +19,11 @@ cache-capacity = 1024
 
 ## `half-life`
 
-A recall's score decays with a fact's age on an exponential half-life:
+A recall's score decays with a fact's age on an exponential half-life: the score is multiplied by
 
-```text
-score *= 0.5 ^ (age / half-life)
-```
+$$
+0.5^{\, \text{age} / \text{half-life}}
+$$
 
 <Note title="Disabling decay" type="note">
 

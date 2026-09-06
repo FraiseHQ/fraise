@@ -20,11 +20,11 @@ recall billing entity:acme top:5
 
 ## Recency is a first-class ranking signal
 
-Contextual memory ages: what an agent learned an hour ago usually beats what it learned last quarter. That is the "temporal" in temporal memory graph, and it is **scored rather than filtered**:
+Contextual memory ages: what an agent learned an hour ago usually beats what it learned last quarter. That is the "temporal" in temporal memory graph, and it is **scored rather than filtered**: the score is multiplied by
 
-```text
-score *= 0.5 ^ (age / half-life)
-```
+$$
+0.5^{\, \text{age} / \text{half-life}}
+$$
 
 Decay is ranking, not filtering — an old fact still surfaces when nothing newer matches, which is what makes it safe to leave on by default. When you need a hard window, `since:` and `until:` are absolute constraints: a fact outside them does not appear at any score.
 

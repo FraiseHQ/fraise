@@ -39,8 +39,4 @@ Each layer is generic in `[K, P]`: `K` is the node key type (`uint64` in product
 
 Reads and writes both arrive as **streams**, and the database does not distinguish them — `Query.IsWrite()` is what the scheduler uses to decide the lock it takes.
 
-<Note title="Nothing is persisted" type="warning">
-  Everything is in memory and nothing is persisted; a restart is an empty database.
-</Note>
-
 The locking rules and the shutdown protocol are covered in [Concurrency](/docs/architecture/concurrency/multi-graph).

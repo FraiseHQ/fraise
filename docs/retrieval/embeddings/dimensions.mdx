@@ -9,7 +9,7 @@ The first vector inserted into a graph establishes that graph's dimensionality. 
 
 This is the rule that most often surprises. Practically:
 
-- **One model per graph.** Switching embedding models means a new graph, not a migration — nothing is persisted, so "migrating" is re-remembering the facts.
+- **One model per graph.** Switching embedding models means a new graph, not a migration — "migrating" is re-remembering the facts.
 - **The dimension is not configured**, it is observed. The server logs it when it is established, and `/api/v1/stats` reports how many vectors a graph holds.
 
 ## A mismatch is a 400 on both commands
