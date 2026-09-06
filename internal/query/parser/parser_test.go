@@ -58,6 +58,9 @@ func FuzzRememberPhraseRoundTrip(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, value string) {
+		if strings.TrimSpace(value) == "" {
+			t.Skip("a whitespace-only fact is empty, and empty facts are rejected")
+		}
 		if !utf8.ValidString(value) {
 			t.Skip("JSON transport never delivers invalid UTF-8")
 		}
