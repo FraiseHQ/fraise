@@ -1,0 +1,46 @@
+---
+title: "Keywords"
+description: "The reserved words of FQL, why they are reserved by position rather than by spelling, and how casing is treated"
+---
+
+Tokens form the vocabulary of the Fraise query language. The classes are keywords (commands, operators and fields), literals, punctuation and fields.
+
+Keywords are specific query instructions. They are **reserved by position, not by spelling alone**: where a clause can start, a keyword reads as syntax, and `recall food topic` is a parse error rather than a search including the word "topic". Where only a value can appear — the right-hand side of a field's `:`, or the leading term a recall must start with — a keyword is ordinary data: `entity:top` files under the word "top", and `recall top` searches for it.
+
+One tie-breaker resolves the boundary: **a keyword immediately followed by `:` is always a field**, so `top:3` never means the word "top", and `entity:top:3` is an error rather than a guess. Quoting (`recall food 'topic'`) remains the escape hatch wherever a bare keyword still reads as syntax.
+
+## The list
+
+| Keyword | Usage | Type |
+|----------|----------------|---------|
+| remember | remember_query | Command |
+| recall | recall_query | Command |
+| topic | topic_field | Field |
+| entity | entity_field | Field |
+| since | since_field | Field |
+| until | until_field | Field |
+| top | top_field | Field |
+| depth | depth_field | Field |
+| vec | vec_field | Field |
+
+<Note title="Reserved but unimplemented" type="warning">
+
+  `forget` and `update` are reserved by the lexer as well, but no command implements them: a query starting with either is rejected.
+
+</Note>
+
+## Casing
+
+Keywords are written in lower case only, and casing does not un-reserve one: where a clause could start, a mis-cased keyword is an error naming the casing — `recall x Since 7d` is rejected, never read as a three-term search. Folding `Since` into a term there would let a mistyped clause silently become data, scoping the query by nothing with no error to correct from.
+
+The tie-breaker above is the one place casing is forgiven. A word glued to a `:` has exactly one reading — no production puts a bare word before a colon — so `Depth:2` is the depth clause, and `recall x depth:2 DEPTH:5` is reported as the duplicate it is rather than as a casing mistake. Blaming the casing there would name the shallower of the two problems, and an agent that dutifully lower-cased it would get a silently rescoped query back.
+
+Forgiven is not unremarked: the clause runs and the response carries a [warning](/docs/query-language/reference/warnings) naming the casing. Away from a colon the spelling must still match exactly, so `RECALL x` is not a command.
+
+## The one surviving ambiguity
+
+At the leading term, `recall since 7d` is a valid search for the words "since" and "7d", and also one `:` away from `recall since:7d`. The query runs as the term search, and the response carries a warning naming both readings. The shapes that warn — and the neighbouring ones that stay silent — are catalogued in [Warnings](/docs/query-language/reference/warnings).
+
+## No boolean operators
+
+There are none. Several terms in one recall are a union (any match seeds the search), and there is no way to write a conjunction or a negation.

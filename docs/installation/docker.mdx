@@ -1,0 +1,53 @@
+---
+title: "Docker"
+description: "Run Fraise from the published container image, and verify the image's provenance before you pull it"
+---
+
+```sh
+docker run -p 127.0.0.1:9876:9876 ghcr.io/fraisehq/fraise:latest
+```
+
+The image runs the binary directly as an unprivileged user and exposes 9876.
+
+## Tags
+
+Published tags: one per release, `latest` for the newest stable, `edge` for the tip of `main`, and an immutable full-commit-SHA tag for every merge.
+
+## Provenance
+
+Images are built with SLSA provenance, verifiable without pulling:
+
+```sh
+gh attestation verify oci://ghcr.io/fraisehq/fraise:latest --repo FraiseHQ/fraise
+```
+
+## With a config file
+
+A config file is optional — the defaults plus flags are a complete configuration. Mount one when you want to pin settings; use flags for the one or two you override per environment.
+
+```sh
+docker run --rm -p 9876:9876 \
+  -v "$PWD/fraise.config.toml:/etc/fraise/fraise.config.toml:ro" \
+  fraise -config /etc/fraise/fraise.config.toml
+```
+
+## With compose
+
+```yaml
+services:
+  fraise:
+    build:
+      context: .
+      dockerfile: Dockerfile.fraise
+    ports:
+      - "9876:9876"
+    volumes:
+      - ./fraise.config.toml:/etc/fraise/fraise.config.toml:ro
+    command: ["-config", "/etc/fraise/fraise.config.toml"]
+```
+
+<Note title="Health check and stop timeout" type="warning">
+
+  Add a health check on `GET /`, and give the container a stop timeout longer than `shutdown-grace` so the graceful drain is not cut short by SIGKILL — both are covered in [Running Fraise](/docs/operations/running).
+
+</Note>

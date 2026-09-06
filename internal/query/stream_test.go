@@ -25,6 +25,7 @@ package query
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -157,20 +158,22 @@ func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 	contributions := [][]scoring.Contribution[string, float32]{
 		{{Src: scoring.SrcText, Score: 1, Rank: 0, Count: 1}},
 		{{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2}},
+		{{Src: scoring.SrcAnchor, Score: 1, Via: "harbour-key", Degree: 4, Count: 1}},
 	}
-	// The wire form: sources by name, the graph entry's anchor key resolved
-	// via Get — the fake stores no nodes, so via falls back to empty, which
-	// is the contract for a vanished anchor.
+	// The wire form: sources by name, the graph and anchor entries' anchor
+	// keys resolved via Get — the fake stores no nodes, so via falls back to
+	// empty, which is the contract for a vanished anchor.
 	want := [][]HitContribution[float32]{
 		{{Source: "text", Score: 1, Rank: 0, Count: 1}},
 		{{Source: "vector", Score: 0.5, Rank: 1, Count: 1}, {Source: "graph", Score: 2, Degree: 3, Count: 2}},
+		{{Source: "anchor", Score: 1, Degree: 4, Count: 1}},
 	}
 
 	for _, explain := range []bool{true, false} {
 		t.Run(fmt.Sprintf("explain=%v", explain), func(t *testing.T) {
 			g := &fakeGraph{
-				searchNodes:      []*graph.Node[string]{nil, nil},
-				searchScores:     []float32{0.9, 0.8},
+				searchNodes:      []*graph.Node[string]{nil, nil, nil},
+				searchScores:     []float32{0.9, 0.8, 0.7},
 				searchContribs:   contributions,
 				searchBackground: 0.25,
 			}
@@ -433,4 +436,111 @@ func BenchmarkRememberCommit(b *testing.B) {
 			}
 		})
 	}
+}
+
+// TestCommitSeedsFromAnchorsStoredByCommit drives the production write path
+// and then the anchor-only read it makes possible: a Recall naming a topic
+// and no term reaches Search with nil keywords and an empty vector, and the
+// topic node Commit stored is the one the seeding resolves — one identity on
+// both sides of the store, which is what this pins (seeding that resolved
+// anchors under a different key would return nothing, exactly as the recall
+// did before anchors seeded). Every fact filed under the topic comes back and
+// nothing else, each scored from its unit anchor mass, and in explain mode
+// each breakdown names the topic it was found under. Naming the entity as
+// well doubles the mass of every fact filed under both, and a term beside the
+// anchor seeds from the text index with the anchor as a filter.
+func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+	facts := []string{"the deploy runs at noon", "the deploy key lives in vault", "the deploy log is archived weekly"}
+	for _, value := range facts {
+		w := &Remember[uint64, float32]{Value: value, Topics: []string{"deploys"}, Entities: []string{"ops"}}
+		if err := NewStream[uint64, float32](w).Commit(g); err != nil {
+			t.Fatalf("Commit(%q) = %v, want nil", value, err)
+		}
+	}
+	bystander := &Remember[uint64, float32]{Value: "the invoice is due friday", Topics: []string{"billing"}}
+	if err := NewStream[uint64, float32](bystander).Commit(g); err != nil {
+		t.Fatalf("Commit(bystander) = %v, want nil", err)
+	}
+
+	read := func(t *testing.T, q *Recall[uint64, float32]) *QueryResult[uint64, float32] {
+		t.Helper()
+		s := NewStream[uint64, float32](q)
+		s.Explain = true
+		if err := s.Commit(g); err != nil {
+			t.Fatalf("Commit(recall) = %v, want nil", err)
+		}
+		return s.Result
+	}
+	hitValues := func(r *QueryResult[uint64, float32]) []string {
+		out := make([]string, len(r.Hits))
+		for i, h := range r.Hits {
+			out[i] = (*h.Node).GetValue()
+		}
+		return out
+	}
+	sorted := func(values []string) []string {
+		out := append([]string(nil), values...)
+		sort.Strings(out)
+		return out
+	}
+
+	t.Run("a topic alone lists its members", func(t *testing.T) {
+		r := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		if got, want := sorted(hitValues(r)), sorted(facts); !reflect.DeepEqual(got, want) {
+			t.Fatalf("Search(topic=deploys) = %v, want every fact filed under the topic %v and no other", got, want)
+		}
+		for i, hit := range r.Hits {
+			if hit.Score <= 0 {
+				t.Errorf("Hits[%d].Score = %v, want the decayed unit anchor mass, above zero", i, hit.Score)
+			}
+			if i > 0 && hit.Score > r.Hits[i-1].Score {
+				t.Errorf("Hits[%d].Score = %v ranks above Hits[%d].Score = %v; want best first", i, hit.Score, i-1, r.Hits[i-1].Score)
+			}
+			want := []HitContribution[float32]{{Source: "anchor", Score: 1, Via: "deploys", Degree: 3, Count: 1}}
+			if !reflect.DeepEqual(hit.Contributions, want) {
+				t.Errorf("Hits[%d].Contributions = %+v, want the one anchor sighting resolved to its topic %+v", i, hit.Contributions, want)
+			}
+		}
+		if r.Background != 0 {
+			t.Errorf("Background = %v, want 0: anchor seeding observes no anchor", r.Background)
+		}
+	})
+
+	t.Run("a topic and an entity double the mass of a fact under both", func(t *testing.T) {
+		single := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		both := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Entities: []string{"ops"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		if got, want := sorted(hitValues(both)), sorted(facts); !reflect.DeepEqual(got, want) {
+			t.Fatalf("Search(topic=deploys, entity=ops) = %v, want the union %v, each fact once", got, want)
+		}
+		singleScore := make(map[string]float32, len(single.Hits))
+		for _, hit := range single.Hits {
+			singleScore[(*hit.Node).GetValue()] = hit.Score
+		}
+		for i, hit := range both.Hits {
+			value := (*hit.Node).GetValue()
+			if hit.Score <= singleScore[value] {
+				t.Errorf("%q scores %v under both anchors, not above its %v under one", value, hit.Score, singleScore[value])
+			}
+			want := []HitContribution[float32]{
+				{Source: "anchor", Score: 1, Via: "deploys", Degree: 3, Count: 1},
+				{Source: "anchor", Score: 1, Via: "ops", Degree: 3, Count: 1},
+			}
+			if !reflect.DeepEqual(hit.Contributions, want) {
+				t.Errorf("Hits[%d].Contributions = %+v, want one sighting per named anchor %+v", i, hit.Contributions, want)
+			}
+		}
+	})
+
+	t.Run("a term beside the anchor searches", func(t *testing.T) {
+		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		if got, want := hitValues(r), []string{"the deploy key lives in vault"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: the anchor filters, it does not list", got, want)
+		}
+		for _, c := range r.Hits[0].Contributions {
+			if c.Source == "anchor" {
+				t.Errorf("a text-seeded search recorded an anchor sighting %+v; anchors seed only on their own", c)
+			}
+		}
+	})
 }
