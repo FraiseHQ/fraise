@@ -5,8 +5,6 @@ on:
   # comment on PRs from forks. It checks out nothing and runs no PR code.
   pull_request_target:
     types: [opened, reopened, synchronize]
-  # edited as well as created: a signing comment corrected after a typo fires
-  # no created event, and the corrected phrase would otherwise never be seen.
   issue_comment:
     types: [created, edited]
 
@@ -18,23 +16,16 @@ permissions:
 jobs:
   cla:
     runs-on: ubuntu-latest
-    # Every pull request event, and only the comment that signs. Release and
-    # dependency PRs are not skipped: bots are exempt, the owner has signed,
-    # and a skipped job would leave the required cla/signed status unset.
-    if: >-
-      github.event_name == 'pull_request_target' ||
-      (github.event.issue.pull_request != null &&
-      contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA'))
+    # Pull request events, and every comment on a pull request. Whether a
+    # comment is a signature is decided inside the action, so this condition
+    # and the phrase cannot drift apart. Release and dependency PRs are not
+    # skipped: bots are exempt, and a skipped job leaves cla/signed unset.
+    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request != null
     steps:
       - name: CLA gate
-        uses: FraiseHQ/cla-gate-action@5db1fb436ecdb9ea8bac3655eb3b06a5c1831943 # v1.0.0
+        uses: FraiseHQ/cla-gate-action@REPLACE_WITH_NEW_SHA # v2.0.0
         with:
-          # the document contributors are agreeing to
           cla-url: https://github.com/FraiseHQ/cla/blob/main/cla.md
-          # Signatures live in FraiseHQ/cla, next to the document they sign,
-          # so one signature covers every repo in the org: signatures/v1/cla.json
-          # and the optional allowlist.json on its main branch. GITHUB_TOKEN
-          # cannot write across repositories, hence the PAT.
           signature-repo: FraiseHQ/cla
           signature-branch: main
           signature-path: signatures/v1/cla.json
