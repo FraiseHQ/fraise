@@ -113,18 +113,17 @@ func FuzzParseNeverPanics(f *testing.F) {
 	})
 }
 
-// TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned
-// error reaches the caller as-is. The call sites used to re-wrap with a bad
-// %e verb, turning a clean "invalid since value ..." into
-// `&{%!e(string=...)}` in the 400 body — the message an agent needs to
-// self-correct was garbled at the last step.
+// TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned,
+// actionable error reaches the caller. Call-site wrappers have both replaced
+// the inner cause and used a bad %e verb, turning useful diagnostics into
+// generic or garbled 400 responses that an agent cannot self-correct from.
 func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 	cases := []struct {
 		query string
 		want  string // substring of the inner, positioned error
 	}{
-		{"recall x since:soon", "invalid since value"},
-		{"recall x until:later", "invalid until value"},
+		{"recall x since:soon", `invalid since value "soon": containers: invalid time value: "soon" (want e.g. 7d or 2026-01-15)`},
+		{"recall x until:later", `invalid until value "later": containers: invalid time value: "later" (want e.g. 7d or 2026-01-15)`},
 		{"recall x depth:abc", "invalid depth value"},
 		{"recall x top:abc", "invalid top value"},
 		{"recall x topic:", "expected a word or quoted phrase"},
