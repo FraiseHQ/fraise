@@ -17,7 +17,7 @@
       "release-type": "go",
       "package-name": "fraise",
       "include-component-in-tag": false,
-      "changelog-path": "docs/CHANGELOG.md",
+      "changelog-path": "docs/changelog.md",
       "versioning": "prerelease",
       "prerelease": true,
       "prerelease-type": "beta",
