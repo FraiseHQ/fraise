@@ -71,9 +71,11 @@ DEFAULT_SERVER_NAME = "fraise_memory"
 RECALL_TOOL = "recall_memory"
 REMEMBER_TOOL = "remember_fact"
 
-# Tool-call budgets: sane ceilings so the model need not reason about scale.
+# Tool-call budget: a sane ceiling so the model need not reason about scale.
+# Depth has no default here: an omitted clause takes the lane the server is
+# configured with, and this tool names no topic or entity, so any explicit
+# lane above the floor would only draw a warning.
 _DEFAULT_TOP = 5
-_DEFAULT_DEPTH = 2
 
 
 def _ok(text: str) -> dict[str, Any]:
@@ -120,8 +122,13 @@ def recall_tool(
                 },
                 "depth": {
                     "type": "integer",
-                    "description": "How far to follow links between related facts (1 "
-                    "keeps only direct keyword matches; higher pulls in connected facts).",
+                    "description": "Retrieval lane, 0 to 2: 0 searches the text and "
+                    "vector indices only; 1 also lets topics and entities that "
+                    "clearly concentrate the matches pull in the facts filed under "
+                    "them; 2 admits them at their fair share for maximum recall. "
+                    "The graph lanes need a topic or entity on the recall, which "
+                    "this tool does not name, so omit it and the server's default "
+                    "applies.",
                 },
             },
             "required": ["keywords"],
@@ -130,7 +137,7 @@ def recall_tool(
     async def recall_memory(args: dict[str, Any]) -> dict[str, Any]:
         keywords = args.get("keywords") or []
         top = args.get("top") or _DEFAULT_TOP
-        depth = args.get("depth", _DEFAULT_DEPTH)
+        depth = args.get("depth")
         vector = encode(" ".join(keywords)) if encode and keywords else None
         try:
             result = client.recall(
