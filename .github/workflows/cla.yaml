@@ -23,7 +23,7 @@ jobs:
     if: github.event_name == 'pull_request_target' || github.event.issue.pull_request != null
     steps:
       - name: CLA gate
-        uses: FraiseHQ/cla-gate-action@REPLACE_WITH_NEW_SHA # v2.0.0
+        uses: FraiseHQ/cla-gate-action@6c278daa979c0d9ef6bdb4464151e95fbecf1a9a # v2.0.0
         with:
           cla-url: https://github.com/FraiseHQ/cla/blob/main/cla.md
           signature-repo: FraiseHQ/cla
