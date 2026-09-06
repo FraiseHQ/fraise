@@ -28,6 +28,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/query/lexer"
@@ -69,6 +70,13 @@ type parser[K comparable, P float32 | float64] struct {
 }
 
 func Parse[K comparable, P float32 | float64](q string) (cmd CommandNode, warns []Warning, err error) {
+	if !utf8.ValidString(q) {
+		return nil, nil, &Error{
+			Msg: "query is not valid UTF-8",
+			Pos: lexer.Position{Column: 1},
+		}
+	}
+
 	p := &parser[K, P]{l: lexer.New(q)}
 	// prime cur and peek
 	p.next()

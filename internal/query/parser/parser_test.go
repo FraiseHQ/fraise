@@ -116,6 +116,29 @@ func FuzzParseNeverPanics(f *testing.F) {
 	})
 }
 
+func TestParseRejectsInvalidUTF8(t *testing.T) {
+	for _, raw := range []string{
+		"recall \xff\xfe",
+		"recall \xed\xa0\x80",
+		"remember 'a\xffb' topic:x",
+	} {
+		cmd, warns, err := parser.Parse[uint64, float32](raw)
+		if err == nil {
+			t.Fatalf("Parse(%q) returned command %T, want an invalid UTF-8 error", raw, cmd)
+		}
+		if cmd != nil || warns != nil {
+			t.Fatalf("Parse(%q) returned output alongside error: cmd=%T warns=%v", raw, cmd, warns)
+		}
+		var parseErr *parser.Error
+		if !errors.As(err, &parseErr) {
+			t.Fatalf("Parse(%q) error = %T, want *parser.Error", raw, err)
+		}
+		if parseErr.Msg != "query is not valid UTF-8" || parseErr.Pos.Column != 1 {
+			t.Errorf("Parse(%q) error = %#v, want positioned UTF-8 error", raw, parseErr)
+		}
+	}
+}
+
 // TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned
 // error reaches the caller as-is. The call sites used to re-wrap with a bad
 // %e verb, turning a clean "invalid since value ..." into
