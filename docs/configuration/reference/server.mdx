@@ -1,0 +1,26 @@
+---
+title: "[server]"
+description: "Port, request timeouts, body cap and the shutdown grace period"
+navLabel: "Server"
+---
+
+| Setting | Flag | Default | Meaning |
+|-----------------------|------------------------|---------|--------------------------------------------------------|
+| `port` | `-port` | `9876` | TCP port the HTTP API listens on |
+| `read-timeout` | `-read-timeout` | `15s` | max time to read a whole request |
+| `read-header-timeout` | `-read-header-timeout` | `5s` | max time to read headers alone (Slowloris) |
+| `write-timeout` | `-write-timeout` | `15s` | max time to write a response |
+| `idle-timeout` | `-idle-timeout` | `60s` | max idle time on a kept-alive connection |
+| `shutdown-grace` | `-shutdown-grace` | `10s` | how long shutdown waits for in-flight requests |
+| `max-body-bytes` | `-max-body-bytes` | `1 MiB` | request body cap, enforced before the body is buffered |
+
+```toml
+[server]
+port = 9876
+```
+
+## Notes
+
+- `max-body-bytes` is enforced **before** the body is buffered, so an oversized request costs a 400 rather than the memory it asked for. Vectors bound as parameters count against it.
+- `shutdown-grace` bounds the in-flight drain on SIGINT/SIGTERM. Give a container a stop timeout longer than this, or the runtime's SIGKILL will cut the drain short — see [Shutdown](/docs/operations/runbook/shutdown).
+- `read-header-timeout` exists specifically for Slowloris-style connections that dribble headers.

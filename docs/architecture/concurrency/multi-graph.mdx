@@ -1,0 +1,50 @@
+---
+title: "Multi-graph architecture"
+description: "How partitioning across independent in-memory graphs turns concurrent writes into parallel ones"
+navIcon: "🧵"
+---
+
+Fraise employs three mechanisms to handle concurrency:
+
+1. **Multi-graph sharding** — distributing data across independent in-memory graphs
+2. **Worker pool scheduler** — processing streams through configurable workers
+3. **Per-graph read-write locks** — protecting individual graph state
+
+Together, these enable high-performance concurrent reads with serialized writes per graph.
+
+## Independent graphs
+
+The database maintains multiple independent temporal memory graphs (8 by default). Each graph is a completely separate in-memory data structure containing:
+
+- nodes (entities, facts, relationships)
+- text search indices
+- vector (semantic) indices
+- adjacency maps for graph traversal
+
+## Graph partitioning
+
+Streams specify a target graph via `Query.GetGraphID()`, which returns an index (0–7 by default). This partitioning allows:
+
+- multiple writes to **different graphs** to proceed in parallel;
+- reads from any graph at any time, unless a write is in progress on that graph;
+- independent scaling: no global lock contention.
+
+All graphs within a database share the same underlying configuration and lifecycle (Start/Stop).
+
+## When to use multiple graphs
+
+Partition your data across graphs when:
+
+- you have multiple agents with separate memory contexts;
+- data is naturally independent (per-user memory, per-conversation state);
+- you want to reduce lock contention by distributing writes.
+
+## Isolation, not only concurrency
+
+A graph is also an isolation boundary, not only a lock domain: no query reads across graphs, and no walk traverses between them. That is why the graph selector is validated twice — the parser rejects a selector that would not fit `uint8` (unchecked, `@256` would wrap to graph 0 and read another tenant's memory), and the server rejects one past the allocated count.
+
+<Note title="Isolation boundary" type="warning">
+
+  **Concurrency is the reason to have several graphs; isolation is the reason to be careful which one a query names.**
+
+</Note>

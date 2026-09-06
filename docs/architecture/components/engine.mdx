@@ -1,0 +1,32 @@
+---
+title: "Engine"
+description: "Turning a parsed query into an executable stream, and the plan cache that makes a repeated query free to plan"
+---
+
+Fraise's query language is inspired by the simplicity of Redis and borrows some syntax elements from Lucene.
+
+The engine turns a parsed query into an executable **stream**.
+
+## Planning is cached
+
+A query hashes itself into a key (`internal/hash`), and an LRU of `cache-capacity` entries holds the plans built for those keys — so a repeated query, the common case for an agent in a loop, skips optimisation entirely.
+
+## The cache key is lossless
+
+The cache key is the whole query, built from lossless material:
+
+- exact hex floats,
+- RFC3339Nano timestamps,
+- `|`-delimited `tag=` segments, with lists NUL-delimited.
+
+<Note title="The hashing invariant" type="note">
+
+  **Two queries that would produce different results must never hash alike**, which is why nothing in the key is derived from a lossy `String()`.
+
+</Note>
+
+This is also why vectors are bound as [parameters](/docs/query-language/tokens/parameters) rather than written inline: a query is a cache key and a log line, and a few thousand floats spliced into it would ruin both.
+
+## Sizing the cache
+
+`cache-capacity` is a count of query plans, not bytes. The default 1000 is generous for agents that repeat a handful of query shapes. See [Engine settings](/docs/configuration/reference/engine).

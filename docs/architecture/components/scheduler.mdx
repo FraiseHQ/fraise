@@ -1,0 +1,43 @@
+---
+title: "Scheduler"
+description: "A bounded queue and a worker pool: how Fraise turns overload into backpressure instead of blocked goroutines"
+---
+
+The scheduler is a pool of `workers` goroutines fed by a bounded queue of `buffer-size` streams. A worker takes a stream, locks the graph it names, runs it, and unlocks — so writes serialise per graph while reads on other graphs carry on untouched.
+
+<Mermaid
+  chart='flowchart TD
+  submit["Submit(stream)"] --> queue["Queue (buffered channel)"]
+  queue --> workers["Workers (pool of goroutines)"]
+  workers --> execute["execute(stream)"]
+  execute --> acquire["Acquire lock"]
+  acquire --> commit["Commit in place"]'
+/>
+
+## Bounded is the operative word
+
+Submitting to a full queue waits at most `enqueue-timeout` and then fails, which turns an overloaded server into 429s instead of an unbounded pile of blocked handler goroutines.
+
+Shutdown is the mirror image: the queue stops accepting, workers drain what is already in it, and in-flight writes finish rather than being dropped.
+
+## Three settings, one knob
+
+| Setting | Default | Bounds |
+|---|---|---|
+| `workers` | `max(2, GOMAXPROCS(0))` | how much executes at once |
+| `buffer-size` | `200` | how much waits |
+| `enqueue-timeout` | `2s` | how long a caller waits to become one of the waiting |
+
+<Note title="One knob, not three" type="warning">
+  The three are one setting in three parts. Raising the first two without the third just moves where requests pile up.
+</Note>
+
+The default worker count tracks the machine's core count because reads take `RLock` and run concurrently, so a smaller pool would add a queueing penalty for nothing; `-workers` still overrides it.
+
+## Deeper
+
+<CardGrid>
+  <Card title="Scheduler internals" description="submit semantics, worker lifecycle, stream execution" href="/docs/architecture/concurrency/scheduler-internals" />
+  <Card title="Locking" description="what a worker takes and for how long" href="/docs/architecture/concurrency/locking" />
+  <Card title="Load and backpressure" description="reading sustained 429s" href="/docs/operations/runbook/backpressure" />
+</CardGrid>

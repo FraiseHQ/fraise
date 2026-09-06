@@ -450,18 +450,22 @@ def test_remember_then_recall_returns_the_fact(client, round_trip_graph):
 
 
 @pytest.mark.integration
-def test_a_lone_seed_hub_stays_silent(instrument_graph, client):
+def test_a_lone_seed_hub_stays_silent(instrument_graph, instrument_topic, client):
     """A single seed's topic hub holds exactly the background rate, so its
-    siblings never surface on reachability alone — in either retrieval lane.
+    siblings never surface on reachability alone — in either graph lane.
 
     This is the excess-transmission contract through the SDK: an anchor is
     heard only when its members matched better than its size predicts. The
-    two depths are asserted for different reasons: depth=1 is the BM25 floor,
-    where no traversal runs at all, while depth=2 runs the excess round and
-    the hub declines to transmit on its own merits.
+    topic is named because the graph is entered only through an anchor the
+    recall names; the two depths are then the two lanes that run it, depth=1
+    admitting an anchor only well above its fair share and depth=2 at the
+    fair share itself, and the hub declines to transmit at either bar.
     """
-    assert client.recall("cello", graph=instrument_graph, depth=1).count == 1
-    assert client.recall("cello", graph=instrument_graph, depth=2).count == 1
+    for depth in (1, 2):
+        hits = client.recall(
+            "cello", graph=instrument_graph, topics=[instrument_topic], depth=depth
+        )
+        assert hits.count == 1, f"depth={depth}: a fair-share hub must not transmit"
 
 
 @pytest.mark.integration

@@ -1,0 +1,48 @@
+---
+title: "Producing vectors"
+description: "Using the Python SDK's embedders, or any callable, to encode text before it reaches Fraise"
+---
+
+The Python SDK ships embedders, or takes any callable:
+
+```python
+from fraise_sdk import FraiseClient
+from fraise_sdk.providers import OpenAIEmbedder
+
+client = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder())
+client.remember("the parrot is turquoise", topics=["birds"])   # encoded for you
+client.recall("colourful birds")                               # encoded for you
+```
+
+## The shipped embedders
+
+| Embedder | Default model | Notes |
+|---|---|---|
+| `OpenAIEmbedder` | `text-embedding-3-small` | its `dimensions` parameter can be set to match a graph's existing dimension |
+| `HuggingFaceEmbedder` | `sentence-transformers/all-MiniLM-L6-v2` | sentence-level models only: a model emitting one vector per token has nothing to store |
+| anything else | — | an `Embedder` subclass, or a bare `callable(text) -> Sequence[float]` |
+
+Both vendor SDKs are optional extras, imported inside the function that needs them, so `import fraise_sdk` stays cheap for callers who use neither.
+
+## Without an embedder
+
+A client without an embedder still works; it simply writes and recalls without vectors, on text and graph structure alone.
+
+Per call:
+
+- `embed=True` forces encoding,
+- `embed=False` skips it,
+- an explicit `vector=` always wins.
+
+## Talking to the endpoint directly
+
+If you are not using the SDK, encode in your own process and bind the result as a parameter:
+
+```json
+{
+  "query": "remember 'the parrot is turquoise' topic:birds vec:$v",
+  "parameters": {"v": [0.10, 0.22, 0.87]}
+}
+```
+
+See [Parameters](/docs/query-language/tokens/parameters) for the reference syntax, and [Python SDK](/docs/integrations/python-sdk) for the client itself.

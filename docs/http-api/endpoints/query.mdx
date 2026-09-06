@@ -1,0 +1,58 @@
+---
+title: "POST /api/v1/q — query"
+description: "The one endpoint that reads and writes: request body, parameters, and the ranked response shape"
+navLabel: "Query"
+---
+
+Fraise exposes three endpoints. Everything an agent does goes through one of them; the [query language](/docs/query-language/foundations/design-principles) carries the rest.
+
+This is the one endpoint that reads and writes. The body carries the query and any parameters it references:
+
+```json
+{
+  "query": "recall bird topic:garden vec:$v top:5",
+  "parameters": {"v": [0.10, 0.22, 0.87]}
+}
+```
+
+| Field | Type | Required | Notes |
+|--------------|------------------------|----------|-----------------------------------------|
+| `query` | string | yes | one command per request |
+| `parameters` | object of float arrays | no | binds `$name` references, e.g. `vec:$v` |
+
+Vectors stay out of the query string on purpose: the query is a cache key and a log line, and an inline embedding would ruin both.
+
+## Response
+
+A successful response carries ranked hits, newest-and-strongest first:
+
+```json
+{
+  "results": {
+    "count": 1,
+    "hits": [
+      {
+        "value": "the parrot is turquoise",
+        "timestamp": "2026-08-09T17:40:53.851+01:00",
+        "score": 1
+      }
+    ]
+  }
+}
+```
+
+<Note title="Count is not a total" type="warning">
+
+`count` is how many hits were **returned**, not how many exist — a recall is capped by `top:` and by `default-top`.
+
+</Note>
+
+A write returns 200 with an empty result set.
+
+## Warnings
+
+A query that ran but sits one typo from a different valid query carries a `warnings` array beside its results. The key is absent when there is nothing to say, so a clean response shape is unchanged — see [Warnings](/docs/query-language/reference/warnings).
+
+## Errors
+
+Client errors are precise on purpose: the caller is usually a model, and a model can correct itself from a precise message. See [Errors](/docs/http-api/errors).

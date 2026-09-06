@@ -1,0 +1,40 @@
+---
+title: "Parameters"
+description: "Binding a vector to a query with a $name reference, and why embeddings never appear inline in the query string"
+---
+
+A field reference binds a value the query does not carry inline. It is written `$name` and resolved against the `parameters` object of the request:
+
+```json
+{"query": "recall bird vec:$v top:5", "parameters": {"v": [0.1, 0.2, 0.3]}}
+```
+
+```ebnf
+param_ref = '$' identifier ;
+vec_field = 'vec' ':' param_ref ;
+```
+
+## Only `vec` takes one
+
+<Note title="Dollar sign required" type="warning">
+
+  `vec` is the only field that takes a parameter, and it accepts nothing else — the `$` is required, so `vec:v` is an error.
+
+</Note>
+
+It is valid on both commands:
+
+- on `recall`, the vector is a **semantic seed** — the vector index returns its nearest neighbours, which then seed the graph walk;
+- on `remember`, it is the **embedding stored** with the fact.
+
+## Why vectors stay out of the query string
+
+Keeping vectors out of the query string is the point. A query is a cache key and a log line; an inline embedding would make both unusable, and would put a few thousand floats through the lexer on every call.
+
+The cache key is built from the whole query — see [Engine](/docs/architecture/components/engine) — so a query that repeats, which is the common case for an agent in a loop, skips planning entirely. A few thousand floats spliced into that key would defeat it.
+
+## Missing parameters are client errors
+
+A query naming a parameter the request does not carry is rejected as a client error, rather than running as though the field had been omitted. A recall that quietly fell back to keyword search would return plausible results with no semantic input at all, and nothing in the response would say so.
+
+See [Embeddings](/docs/retrieval/embeddings/overview) for where the vector comes from, and [Dimensions](/docs/retrieval/embeddings/dimensions) for what happens when it is the wrong width.
