@@ -7,9 +7,9 @@
 <p align="center">
   <a href="https://fraisehq.github.io/fraise">Docs</a>
   ·
-  <a href="https://discord.gg/eHDFwnwHq">Discord</a>
+  <a href="https://discord.com/invite/VYnAkb8gH">Discord</a>
   ·
-  <a href="./docs/query-spec.md">Query language</a>
+  <a href="https://docs.getfraise.dev/docs/query-language/foundations/design-principles">Query language</a>
   ·
   <a href="https://github.com/FraiseHQ/fraise/issues">Issues</a>
 </p>
@@ -19,10 +19,11 @@
   <a href="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml"><img src="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml/badge.svg" alt="Python SDK"></a>
   <a href="https://codecov.io/gh/FraiseHQ/fraise" ><img src="https://codecov.io/gh/FraiseHQ/fraise/branch/main/graph/badge.svg?token=Y4T2AA3JBF"/></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/FraiseHQ/fraise"><img src="https://api.scorecard.dev/projects/github.com/FraiseHQ/fraise/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://github.com/FraiseHQ/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/FraiseHQ/fraise?sort=semver" alt="Release"></a>
+  <a href="https://github.com/FraiseHQ/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/FraiseHQ/fraise?sort=semver" alt="Go"></a>
+  <a href="https://pypi.org/project/fraise-sdk/"><img src="https://img.shields.io/pypi/v/fraise-sdk" alt="PyPI"></a>
   <a href="https://pkg.go.dev/github.com/FraiseHQ/fraise"><img src="https://pkg.go.dev/badge/github.com/FraiseHQ/fraise.svg" alt="Go Reference"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-  <a href="https://discord.gg/eHDFwnwHq"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
+  <a href="https://discord.com/invite/VYnAkb8gH"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
 </p>
 
 **Fraise is a memory database for AI agents.** One they query directly, in a
@@ -50,11 +51,7 @@ curl -X POST localhost:9876/api/v1/q -H 'content-type: application/json' \
 Linux packages, Docker, `go install` and signed release binaries are all in
 [Get Started](#get-started) below.
 
-> **Fraise is in-memory and ephemeral.** Memories live in the process and are
-> gone when it stops — there is no snapshot and no load-on-boot yet.
-> Persistence is [issue #171](https://github.com/FraiseHQ/fraise/issues/171)
-> and is the next major piece of work. Build agents on it, don't put your only
-> copy of anything in it.
+> Read [Durability](https://docs.getfraise.dev/docs/operations/durability) before you deploy. Persistence is [issue #171](https://github.com/FraiseHQ/fraise/issues/171) and the next major piece of work.
 
 ## How it compares
 
@@ -121,7 +118,7 @@ Ranking is not a black box: a fact's score is its own match strength plus what
 it receives through anchors carrying *more* mass than their size would predict.
 The background rate that "more" is measured against is estimated per query, from
 the part of the graph the query touched — so there is no relevance constant to
-tune. [`docs/design.md`](./docs/design.md) has the full model.
+tune. [Hybrid retrieval](https://docs.getfraise.dev/docs/retrieval/ranking/hybrid-retrieval) has the full model.
 
 A single Fraise instance holds several independent memory graphs (8 by default),
 addressed with `@N` — one per user, per session, per agent, however you like.
@@ -181,7 +178,7 @@ sudo dpkg -i "fraise_${VERSION}_${ARCH}.deb"
 systemctl --user enable --now fraise
 ```
 
-Logs go to the journal (`journalctl --user -u fraise -f`), and the unit reads `~/.config/fraise/fraise.config.toml` when present — a shipped default with every setting commented lives at `/etc/fraise/fraise.config.toml` to copy from. For agents that outlive your login session, let the user manager keep running: `loginctl enable-linger $USER`. A system-level (shared server) variant of the unit is described in [`docs/operations.md`](docs/operations.md).
+Logs go to the journal (`journalctl --user -u fraise -f`), and the unit reads `~/.config/fraise/fraise.config.toml` when present — a shipped default with every setting commented lives at `/etc/fraise/fraise.config.toml` to copy from. For agents that outlive your login session, let the user manager keep running: `loginctl enable-linger $USER`. A system-level (shared server) variant of the unit is described in [Running as a managed service](https://docs.getfraise.dev/docs/operations/managed-service).
 
 ### From a release binary
 
@@ -332,7 +329,7 @@ embedder. See [its README](./sdk/python) for embeddings and the full API.
 ([#179](https://github.com/FraiseHQ/fraise/issues/179)). Until it lands,
 TypeScript callers use `fraise mcp` or talk to the HTTP endpoint directly; it is
 two verbs over one route, so a client is a short wrapper around `fetch`. See
-[the HTTP API](./docs/http-api.md).
+[the HTTP API](https://docs.getfraise.dev/docs/http-api/endpoints/query).
 
 ### Claude Agent SDK
 
@@ -382,8 +379,9 @@ Complete, Docker-runnable agents live in
 ## References
 
 * [Roadmap](https://github.com/orgs/FraiseHQ/projects/1/views/1)
-* [Database design](./docs/design.md)
-* [Query language spec](./docs/query-spec.md)
+* [Documentation](https://docs.getfraise.dev)
+* [Architecture](https://docs.getfraise.dev/docs/architecture/overview)
+* [Query language grammar](https://docs.getfraise.dev/docs/query-language/reference/grammar)
 * [Release process](./RELEASE.md)
 * [Issues](https://github.com/FraiseHQ/fraise/issues)
 ## Contributing
@@ -398,7 +396,7 @@ This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 ## Community
 
 Questions, ideas, or building something with Fraise? Join the
-[Discord](https://discord.gg/eHDFwnwHq). Bugs and feature requests belong in
+[Discord](https://discord.com/invite/VYnAkb8gH). Bugs and feature requests belong in
 [issues](https://github.com/FraiseHQ/fraise/issues) so they don't get lost.
 
 ## Citing

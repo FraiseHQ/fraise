@@ -1,0 +1,38 @@
+---
+title: "Durability"
+description: "Fraise is in-memory and persists nothing — what that means for deploys, load balancers and capacity"
+navIcon: "💾"
+---
+
+## The one thing to know first
+
+**Fraise is in-memory and persists nothing.** A restart is an empty database — no snapshot, no write-ahead log, no recovery.
+
+Everything else in this section follows from that:
+
+- **Treat a Fraise instance as a cache of memory an agent can rebuild**, not as a system of record. If the facts matter beyond a process lifetime, something else has to own them.
+- **A rolling deploy is data loss, not a rollover.** Two instances behind a load balancer do not share memory; a client that wrote to one and recalls from the other gets nothing.
+- **Capacity is memory.** There is no spill to disk — the store grows until the process is killed for it.
+
+## What a clean shutdown protects
+
+Since nothing is persisted, a graceful shutdown protects **in-flight requests, not the data** — the data is gone either way.
+
+<Note title="Accepted work runs" type="note">
+
+  What it does guarantee is that work the scheduler accepted is work that runs: an acknowledged write is never dropped by shutdown. See [Shutdown](/docs/operations/runbook/shutdown).
+
+</Note>
+
+## Consequences for design
+
+| Because nothing persists | Do this |
+|---|---|
+| a restart empties the store | let the agent re-remember, or keep the source of truth elsewhere |
+| instances share nothing | pin a client to one instance, rather than load-balancing across several |
+| there is no eviction | watch `nodes`, `order` and `size` — memory is the only limit |
+| switching embedding models cannot be migrated | use a new graph and re-remember the facts |
+
+## Where this is going
+
+Persistence is the next major piece of work. Until it lands: build agents on Fraise, but don't put your only copy of anything in it.

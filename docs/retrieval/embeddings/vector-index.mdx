@@ -1,0 +1,32 @@
+---
+title: "The vector index"
+description: "A forest of random-projection trees: how a search descends it, and how the forest is bounded under sustained writes"
+---
+
+Each graph indexes its vectors in a forest of random-projection trees: `rptree-n-trees` trees, each projecting onto `rptree-projection-dimension` random directions. A search descends every tree and unions the candidates — approximate, cheap, and good enough to seed a graph walk that will rank the results anyway.
+
+## Multi-probe descent
+
+Each descent is multi-probe: routing a query past a split does not discard the side it turned away from but keeps it, ordered by how close the query came to being sent there, and returns to the closest of them until it holds enough candidates to rank.
+
+One descent per tree would see a single leaf, which caps what a search can return regardless of `top:` and makes a query landing near a split miss neighbours that sit just the other side of it — the failure the forest exists to average away, reintroduced one level down.
+
+## Garbage and rebuilds
+
+Deletes and overwrites leave garbage behind rather than restructuring the trees, so the forest is rebuilt from the live set once it exceeds `rptree-flush-factor` entries per live vector. That bounds it at **O(live vectors)** under sustained writes.
+
+`forest_entries` in `/api/v1/stats` is how you watch it: the invariant is
+
+$$
+\texttt{forest\_entries} \le \texttt{flush-factor} \times \texttt{vectors}
+$$
+
+so a leak in the vector index shows up there before it shows up as memory. See [Health and monitoring](/docs/operations/runbook/health-and-monitoring).
+
+## Reproducibility
+
+`rptree-seed` fixes the random projections, so an identical sequence of writes produces an identical index — which is what makes vector behaviour reproducible between runs.
+
+## Tuning
+
+`overfetch` is the knob to reach for first when vector recall is short; `number-trees` and `projection-dimension` shape the index itself and are paid on every write. The full trade-off is in [Vector search settings](/docs/configuration/reference/vector-search).

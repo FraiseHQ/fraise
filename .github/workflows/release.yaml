@@ -21,7 +21,7 @@ jobs:
       pull-requests: write
     steps:
       # Maintains an open "chore(main): release X.Y.Z" PR that bumps the
-      # Version constant in pkg/version/version.go and CHANGELOG.md. Merging
+      # Version constant in pkg/version/version.go and docs/CHANGELOG.md. Merging
       # that PR tags the release and creates the GitHub Release — the tag can
       # therefore never disagree with the version compiled into the binary.
       #

@@ -1,0 +1,46 @@
+---
+title: "Literals"
+description: "Phrases, integers, durations and dates — the value forms FQL accepts and how they are written"
+---
+
+| Literal | Form | Notes |
+|-----------|-------------------|-------------------------------------------------------------|
+| phrase | `'...'` | opaque: every character is literal, `''` is one apostrophe |
+| integer | `0`, `10`, `1000` | non-negative only; a leading `-` is a separate token |
+| duration | `7d`, `30m`, `1w` | `<integer><unit>`, units `s` `m` `h` `d` `w`, read as "ago" |
+| date | `2026-01-15` | `YYYY-MM-DD` |
+| param ref | `$v` | see [Parameters](/docs/query-language/tokens/parameters) |
+
+## Phrases
+
+A phrase is opaque: every character inside it is literal, and `''` is an escaped apostrophe.
+
+```text
+remember 'meeting at 3:30pm about the topic' topic:meetings
+remember 'alice''s laptop' topic:devices
+```
+
+The first stores a colon and the reserved word "topic" as part of the fact; the second stores *alice's laptop*.
+
+## Time values
+
+A time value is either a duration or a date:
+
+```ebnf
+time_value = duration | iso_date ;
+duration   = integer time_unit ;
+time_unit  = 's' | 'm' | 'h' | 'd' | 'w' ;
+iso_date   = ?\d{4}-\d{2}-\d{2}? ;
+```
+
+A duration is read as **"ago"**, so `since:7d` means "no older than seven days".
+
+<Note title="Dates carry no time of day" type="warning">
+
+  **A date carries no time of day.** `since:2026-01-15T10:00:00Z` does not parse — the first `:` ends the value, so the rest of the timestamp arrives as stray tokens. Whole days are the finest an absolute bound can be written to; use a duration when finer is needed.
+
+</Note>
+
+## Integers
+
+Integers are non-negative; a leading `-` is a separate token that no production accepts. Every integer a query can write is bounded — see [Bounds](/docs/query-language/tokens/bounds).

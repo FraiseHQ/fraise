@@ -121,7 +121,7 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       # No changelog is built here: release-please already created the GitHub
-      # Release and wrote its notes from CHANGELOG.md. GoReleaser only appends
+      # Release and wrote its notes from docs/CHANGELOG.md. GoReleaser only appends
       # binaries and checksums to it (release.mode: append).
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94
         with:

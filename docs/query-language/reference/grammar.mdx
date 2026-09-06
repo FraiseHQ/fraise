@@ -1,0 +1,92 @@
+---
+title: "Grammar"
+description: "The complete EBNF grammar of the Fraise Query Language, v0.1.0"
+navIcon: "📜"
+---
+
+The normative grammar. Everything else in this section is commentary on it.
+
+```ebnf
+(* ============================================================ *)
+(* Fraise Query Language (FQL) — v0.1.0                         *)
+(* ============================================================ *)
+
+query           = recall_query | remember_query ;
+
+(* ------------------------------------------------------------ *)
+(* RECALL                                                       *)
+(* ------------------------------------------------------------ *)
+
+recall_query    = recall_cmd recall_body ;
+recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
+
+(* SEMANTIC RULE: a recall needs at least one *seed*, and the      *)
+(* terms come first. A term, an anchor and a vector are all seeds, *)
+(* so 'recall topic:billing' and 'recall vec:$v' are questions —   *)
+(* expand from here and rank what you reach. A modifier is not a   *)
+(* seed: it scopes a search, so 'recall top:3' and 'recall         *)
+(* since:7d' start nothing and are errors. After the first field a *)
+(* bare term is an error. The fields themselves interleave in any  *)
+(* order, but only anchors may repeat: a repeated anchor adds a    *)
+(* filter, a repeated modifier is a duplicate-clause error.        *)
+(* The leading term is the one place a bare reserved word reads as *)
+(* a term — no clause can start there. After it, a keyword starts  *)
+(* a clause; quote it ('top') to search for the word itself.       *)
+recall_body     = ( term+ field* ) | seeding_field+ field* ;
+field           = anchor | modifier ;
+seeding_field   = anchor | vec_field ;   (* enough on its own to start a search *)
+
+term            = bare_word | phrase ;        (* soft ranking seed (SHOULD) *)
+
+anchor          = anchor_field ;              (* every anchor filters; there is no way to say MUST_NOT *)
+anchor_field    = topic_field | entity_field ;
+topic_field     = 'topic'  ':' anchor_value ;
+entity_field    = 'entity' ':' anchor_value ;
+anchor_value    = identifier | quoted_identifier ; (* a reserved word qualifies, unless ':' follows it *)
+
+modifier        = since_field | until_field | depth_field | top_field | vec_field ;
+since_field     = 'since' ':' time_value ;     (* lower time bound; duration read as "ago" *)
+until_field     = 'until' ':' time_value ;     (* upper time bound; duration read as "ago" *)
+depth_field     = 'depth' ':' integer ;        (* retrieval lane: 0 floor, 1 precision, 2 max recall *)
+top_field       = 'top'   ':' integer ;        (* result limit, default 10; both are bounded *)
+vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
+
+(* ------------------------------------------------------------ *)
+(* REMEMBER                                                     *)
+(* ------------------------------------------------------------ *)
+
+(* Asserts a fact (phrase), the anchors it is filed under, and    *)
+(* optionally its embedding. Anchors are not required: a fact with *)
+(* none is stored and reachable by text search alone.              *)
+remember_query  = remember_cmd phrase (anchor_field | vec_field)* ;
+remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace before '@' *)
+
+(* ------------------------------------------------------------ *)
+(* SHARED                                                       *)
+(* ------------------------------------------------------------ *)
+
+graph_selector  = '@' integer ;                (* default 0; lexed WITH the command as one token: (recall|remember)(@[0-9]+)? *)
+
+(* ------------------------------------------------------------ *)
+(* LITERALS                                                     *)
+(* ------------------------------------------------------------ *)
+
+bare_word         = ?[^\s:'$()@+~-][^\s:'$()@]*? ; (* '-' may appear inside a word, never at its start *)
+phrase            = "'" { ?[^']? | "''" } "'" ; (* opaque: any char is literal; '' is an escaped quote *)
+identifier        = bare_word ;                (* folded to lower case on the way in *)
+quoted_identifier = "'" { ?[^']? | "''" } "'" ; (* same opaque rule as phrase *)
+integer           = ?[0-9]+? ;                 (* non-negative; '-' is its own token *)
+time_value        = duration | iso_date ;
+duration          = integer time_unit ;
+time_unit         = 's' | 'm' | 'h' | 'd' | 'w' ;
+iso_date          = ?\d{4}-\d{2}-\d{2}? ;         (* date only: ':' would end the token *)
+param_ref         = '$' identifier ;
+```
+
+## Reading it
+
+<CardGrid>
+  <Card title="Commands" description="what a seed is, and why a modifier is not one" href="/docs/query-language/foundations/commands" />
+  <Card title="Keywords" description="position-based reservation and the : tie-breaker" href="/docs/query-language/tokens/keywords" />
+  <Card title="Bounds" description="the ranges the integers above are checked against" href="/docs/query-language/tokens/bounds" />
+</CardGrid>
