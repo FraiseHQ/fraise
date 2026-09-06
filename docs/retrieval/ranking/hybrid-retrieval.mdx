@@ -1,0 +1,51 @@
+---
+title: "Hybrid retrieval"
+description: "How the text index, the vector index and the fact–anchor graph combine into a single relevance score"
+navIcon: "🔍"
+---
+
+Each temporal memory graph indexes all data ingested into a full-text search index and a vector index (when embeddings are provided).
+
+<Note title="Seeds, not answers" type="note">
+
+**The two are seeds, not answers**, and retrieval scores are **BM25 plus transmitted surplus**.
+
+</Note>
+
+## The seeds
+
+A recall pulls a bounded number of candidates from each source it can use — at least `seed-size`, widened to `top:` when more results are asked for — each carrying its raw retrieval mass:
+
+| Source | Mass it carries |
+|---|---|
+| text index | BM25 $\times$ match breadth — the matched-term count priced against the query's total idf mass, so a document covering the whole query scores its term count and a partial match is discounted by the informativeness it missed |
+| vector index | $1 / (1 + \text{distance})$ similarity |
+
+## The transmission
+
+That mass then flows into the fact–anchor graph. Every anchor — a topic or entity node — the query touches observes the total seed mass on its members and compares it to a **background rate** $\rho_0$: the mass a size-proportional smear of the query's seed mass across the graph's anchors would predict for an anchor of its degree.
+
+Only the excess above background is transmitted, and it is transmitted **once, not once per member**:
+
+- the surplus is divided across the anchor's edges, each member receiving its per-edge share;
+- attenuated per edge ($\alpha = 0.5$, $\alpha^2$ over the two-edge seed → anchor → fact path);
+- with the member's own mass excluded, so a fact never funds its own boost.
+
+A fact's relevance is its own mass plus everything transmitted to it.
+
+## One sentence of intuition
+
+> *An anchor may only speak when its members matched better than its size alone predicted — hubs are heard exactly when they are surprising, silent when they are merely large, and never louder than their surplus divided among everyone listening.*
+
+## Why a recall needs a seed
+
+Without a seed there is no mass to transmit. That is why a recall must carry at least one term, anchor or vector, and why `recall top:3` is an error rather than an unfiltered dump.
+
+## Where to go from here
+
+<CardGrid>
+  <Card title="Excess transmission" description="how ρ₀ is estimated, and why the null has to be wider than the sample it judges" href="/docs/retrieval/ranking/excess-transmission" />
+  <Card title="Ranking guarantees" description="the four properties the test suite pins" href="/docs/retrieval/ranking/guarantees" />
+  <Card title="Retrieval lanes" description="what depth: selects" href="/docs/retrieval/ranking/depth" />
+  <Card title="Explained recall" description="the per-source contributions behind one hit" href="/docs/http-api/endpoints/explain" />
+</CardGrid>

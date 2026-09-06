@@ -603,9 +603,11 @@ def test_second_command_is_rejected_as_one_per_instruction(query, text):
 
 
 # ---------------------------------------------------------------------------
-# Anchor-seeded recall. Anchors are seeds, not filters, so "everything about
-# billing" is a natural query — and it is currently unreachable, because
-# parseRecall demands a term before any clause.
+# Anchor-seeded recall. Anchors are seeds, not merely filters, so "everything
+# about billing" is a natural query: with no term or vector beside them the
+# anchors seed the recall with everything filed under them rather than
+# filter it. The results themselves are pinned in recall_test.py; here it is
+# the parse that every modifier a recall takes rides on the shape too.
 # ---------------------------------------------------------------------------
 
 
@@ -624,11 +626,12 @@ def test_second_command_is_rejected_as_one_per_instruction(query, text):
 )
 def test_anchor_only_recall_is_reachable(query, text):
     """An anchor is a seed, so a recall with no text term is a well-formed
-    question: expand from this anchor and rank what you reach.
+    question — seeded by everything filed under it — and the parser accepts
+    each shape whatever the graph holds.
 
-    If a text term is genuinely required, this test should be replaced by one
-    pinning a message that *says* so — "expected a word or quoted phrase, but
-    found \"topic\"" reads like the anchor itself was malformed.
+    If a text term were genuinely required, this test should be replaced by
+    one pinning a message that *says* so — "expected a word or quoted phrase,
+    but found \"topic\"" reads like the anchor itself was malformed.
     """
     status, body = query(text)
     _accept(status, body, text)

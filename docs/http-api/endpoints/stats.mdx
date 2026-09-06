@@ -1,0 +1,45 @@
+---
+title: "GET /api/v1/stats — per-graph snapshot"
+description: "One entry per graph, computed on demand, and the invariant forest_entries exists to make observable"
+navLabel: "Stats"
+---
+
+One entry per graph, in selector order, computed on demand from the live graphs:
+
+```json
+{
+  "graphs": [
+    {"id": 0, "order": 12, "size": 18, "nodes": 30, "vectors": 4, "forest_entries": 6}
+  ]
+}
+```
+
+| Field | Meaning |
+|------------------|-----------------------------------------------------------------------------|
+| `order` | entities (vertices) |
+| `size` | relationships (edges) |
+| `nodes` | total stored nodes |
+| `vectors` | vectors indexed |
+| `forest_entries` | entries in the vector forest: live vectors plus garbage awaiting compaction |
+
+## Why `forest_entries` is exposed
+
+It exists to make an internal invariant observable: it must stay within $\texttt{flush-factor} \times \texttt{vectors}$, so **a leak in the vector index shows up here before it shows up as memory.**
+
+## Using it as the observability surface
+
+<Note title="No metrics endpoints yet" type="warning">
+
+There are no metrics endpoints yet; the log and `/stats` are the whole observability surface.
+
+</Note>
+
+What to read from it:
+
+| Signal | Why it matters |
+|---|---|
+| `nodes`, `order`, `size` growing without bound | nothing evicts — memory is the only limit |
+| `forest_entries` > `flush-factor × vectors` | the vector index is not compacting |
+| a graph far larger than its peers | partitioning is uneven, and that graph's writes serialise against each other |
+
+The runbook version of this table is in [Health and monitoring](/docs/operations/runbook/health-and-monitoring).

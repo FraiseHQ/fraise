@@ -174,7 +174,7 @@ release:
   header: |
     ## Fraise {{ .Tag }}
 
-    See [CHANGELOG.md](https://github.com/FraiseHQ/fraise/blob/main/CHANGELOG.md)
+    See [CHANGELOG.md](https://github.com/FraiseHQ/fraise/blob/main/docs/CHANGELOG.md)
     for the curated summary.
   footer: |
     **Install**: download a binary below, or `go install github.com/FraiseHQ/fraise/cmd/fraise@{{ .Tag }}`

@@ -1,0 +1,33 @@
+---
+title: "Identifiers"
+description: "What counts as a bare word, why identifiers are case-folded, and why an empty one is always an error"
+---
+
+An identifier is a bare word: a run of characters ending at whitespace or at one of the [punctuation characters](/docs/query-language/tokens/punctuation). Terms, anchor values, and field values are all identifiers unless they are quoted.
+
+- **Letters, digits, `_` and `-` are ordinary.** `foo-bar`, `foo_bar` and `123` are each a single identifier.
+- **Case is folded.** An identifier is an identity, not prose, so `topic:Billing`, `topic:billing` and `topic:BILLING` are one anchor, stored as `billing`. Only the quoted fact of a `remember` keeps the case it was written with. An agent never has to remember how it capitalised something.
+- **A reserved keyword is a valid identifier in value position**, unless a `:` follows it (see [Keywords](/docs/query-language/tokens/keywords)), and casing does not matter there: `entity:Top` and `entity:top` are the same anchor. Where a keyword still reads as syntax — a non-leading recall term — no casing makes it an identifier: `Topic` is a mis-cased keyword and an error, and quoting (`recall food 'topic'`) is the escape.
+- **An identifier cannot be empty.** `topic:` with nothing after it is an error, not an empty anchor. Quoting does not create one either: `topic:''` and `topic:'   '` are the same error, and so are `recall ''` and `remember ''`. An empty fact can never be retrieved and an empty anchor is an identity no caller can name a second time, so both are rejected rather than stored.
+
+<Note title="Quoting is the escape hatch" type="note">
+
+  Anything a bare word cannot express, a quoted phrase can: **quoting is the single escape hatch**, and inside quotes nothing is reserved.
+
+</Note>
+
+## Grammar
+
+```ebnf
+bare_word         = ?[^\s:'$()@+~-][^\s:'$()@]*? ; (* '-' may appear inside a word, never at its start *)
+identifier        = bare_word ;                    (* folded to lower case on the way in *)
+quoted_identifier = "'" { ?[^']? | "''" } "'" ;    (* same opaque rule as a phrase *)
+```
+
+## Stored case versus matched case
+
+| Written | Stored as | Found by |
+|---|---|---|
+| `remember 'MiXeD Case'` | `MiXeD Case` | `recall mixed`, `recall MIXED` |
+| `topic:Billing` | `billing` | `topic:billing`, `topic:BILLING` |
+| `entity:'Acme Corp'` | `acme corp` | `entity:'acme corp'` |

@@ -124,11 +124,19 @@ def test_an_empty_result_set_parses(client, models_graph, no_match):
 
 
 @pytest.mark.integration
-def test_a_clean_response_parses_to_empty_warnings(tide_result):
-    """An unambiguous recall parses with an empty warnings list — a list, not
-    None, so iterating ``result.warnings`` never needs a guard.
+def test_a_warned_response_carries_the_warning_verbatim(tide_result):
+    """A recall the server ran with a warning surfaces it as a list of strings.
+
+    The fixture asks for depth:2 with no topic or entity, which the server
+    answers from the text and vector indices alone and flags. The exact text is
+    pinned so a client can show it unchanged; the empty-list shape of a clean
+    response is a unit concern, covered by the ``from_json`` tests above.
     """
-    assert tide_result.warnings == []
+    assert tide_result.warnings == [
+        "parse warning at column 19: depth:2 has no effect: the graph is searched "
+        "only through a topic:/entity: anchor and this recall names none, so it "
+        "runs on the text and vector indices alone"
+    ]
 
 
 @pytest.mark.integration

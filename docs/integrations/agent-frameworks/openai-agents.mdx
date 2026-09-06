@@ -1,0 +1,32 @@
+---
+title: "OpenAI Agents SDK"
+description: "memory_tools(client) returns bound recall and remember tools for an OpenAI Agents SDK agent"
+---
+
+`memory_tools(client)` returns bound `recall` and `remember` tools:
+
+```python
+from agents import Agent, Runner
+from fraise_sdk import FraiseClient
+from fraise_sdk.integrations.openai_agents import memory_tools
+
+fraise = FraiseClient("http://localhost:9876")
+agent = Agent(
+    name="Assistant",
+    instructions="Remember durable facts the user shares, and recall them when relevant.",
+    tools=memory_tools(fraise),
+)
+
+result = Runner.run_sync(agent, "My favourite colour is orange.")
+print(result.final_output)
+```
+
+Complete, Docker-runnable agents live in `examples/openai-agents` in the Fraise repository.
+
+## What the tools do
+
+Both are thin wrappers over the [query endpoint](/docs/http-api/endpoints/query): `remember` asserts one self-contained fact with its topics and entities, `recall` seeds a search and returns ranked hits. The client is the same [Python SDK](/docs/integrations/python-sdk) client, so an embedder passed to it applies to both tools.
+
+## Instructions matter more than schemas
+
+The tool schemas tell the model *how* to call; the instructions tell it *when*. Recall before answering anything that leans on earlier decisions, and remember only what will still matter in a later session.

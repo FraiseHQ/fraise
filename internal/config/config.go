@@ -94,9 +94,6 @@ type LogConfig struct {
 }
 
 type EngineConfig struct {
-	// Allow unanchored recalls: queries of type "recall since:7d"
-	AllowUnanchoredRecall bool `toml:"allow-unanchored-recall"`
-
 	// Half life for time decay (used to score facts)
 	Halflife time.Duration `toml:"half-life"`
 
@@ -251,7 +248,6 @@ func New() *ConfigSet {
 	flagSet.BoolVar(&config.Log.DisableTimestamp, "log-disable-timestamp", true, "Log Format")
 
 	// engine
-	flagSet.BoolVar(&config.Engine.AllowUnanchoredRecall, "allow-unanchored-recall", DefaultAllowUnanchoredRecall, "Allow unanchored recalls")
 	flagSet.DurationVar(&config.Engine.Halflife, "half-life", DefaultHalflife, "Half life for time decay")
 	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
 
@@ -383,7 +379,6 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// so Adjust would override any explicit false from the config file.
 
 	// engine
-	Adjust(&c.Engine.AllowUnanchoredRecall, DefaultAllowUnanchoredRecall)
 	Adjust(&c.Engine.Halflife, DefaultHalflife)
 	Adjust(&c.Engine.CacheCapacity, DefaultCacheCapacity)
 
