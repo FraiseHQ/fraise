@@ -50,3 +50,14 @@ def test_tools_list_carries_both_tools_with_their_schemas(mcp):
         assert tool["description"], f"{name} needs a model-facing description"
         assert tool["inputSchema"]["required"] == ["query"]
         assert tool["outputSchema"]["required"] == ["results"]
+
+
+def test_recall_description_tells_the_model_anchors_alone_seed(mcp):
+    """The recall tool says anchors alone are enough to search from.
+
+    An agent learns the anchor-only shape from nothing but the description it
+    is handed, so the phrase has to be there for it to ask "what do I know
+    about this topic" before it knows what to search for.
+    """
+    tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
+    assert "anchors alone" in tools["recall"]["description"].lower()

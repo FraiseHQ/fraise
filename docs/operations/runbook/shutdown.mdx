@@ -1,0 +1,41 @@
+---
+title: "Shutdown"
+description: "What SIGINT and SIGTERM start, what the grace period protects, and what it cannot protect"
+---
+
+SIGINT or SIGTERM starts a graceful shutdown:
+
+1. the HTTP server stops accepting;
+2. in-flight requests get up to `shutdown-grace` to finish;
+3. the scheduler refuses new work;
+4. workers drain what they already accepted before exiting.
+
+<Note title="Accepted work runs" type="note">
+
+  **Work that `Submit` accepted is work that runs** — an acknowledged write is never dropped by shutdown. A write acknowledged and then dropped would be indistinguishable from data loss.
+
+</Note>
+
+## Containers
+
+`docker stop` sends SIGTERM, so the default path is the graceful one.
+
+<Note title="Container stop timeout" type="warning">
+
+  **Give the container a stop timeout longer than `shutdown-grace`**, or the runtime's SIGKILL will cut the drain short.
+
+</Note>
+
+## What a clean shutdown does not protect
+
+A clean shutdown protects in-flight requests; what happens to the data is covered in [Durability](/docs/operations/durability).
+
+## The mechanism
+
+The queue itself is never closed. Closing it would panic a `Submit` that is mid-send; closing a separate `quit` channel refuses new work without that race, and unparks any `Submit` waiting on a full queue. `Stop` then drains any straggler a `Submit` raced into the buffer as `quit` closed, single-threaded once the workers are gone.
+
+The full protocol is in [Scheduler internals](/docs/architecture/concurrency/scheduler-internals).
+
+## A submit during shutdown
+
+Returns `ErrShutdown`, which the server answers with a **503**. A caller is never parked indefinitely on a closed queue.

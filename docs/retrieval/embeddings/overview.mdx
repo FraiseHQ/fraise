@@ -1,0 +1,43 @@
+---
+title: "Embeddings overview"
+description: "Semantic search is optional, and the server never computes a vector — the path one takes from your process to the index"
+navIcon: "🧬"
+---
+
+Semantic search is optional in Fraise, and **the server never computes a vector.** It stores what it is given, indexes it, and searches it. Deciding what text means is the caller's job.
+
+That split is deliberate. Embedding models change often, cost money, and differ per deployment; a database that picked one would be wrong for most callers and would tie a memory store's release cycle to a model vendor's.
+
+## The path a vector takes
+
+<Mermaid
+  chart='flowchart TD
+  src["text"] --> embedder["embedder (SDK, your process)"]
+  embedder --> vector["[0.10, 0.22, ...]"]
+  vector --> params["parameters: {#39;v#39;: [...]}"]
+  params --> query["query: remember #39;the parrot is turquoise#39; topic:birds vec:$v"]
+  query --> store["graph N: fact node + vector index entry"]'
+/>
+
+A vector reaches the server as a request **parameter**, bound to a `vec:$v` reference in the query — never inline in the query text. The query string is a cache key and a log line; a few thousand floats spliced into it would ruin both and put the lexer to work for nothing. See [Query endpoint](/docs/http-api/endpoints/query) for the request shape.
+
+## `vec:` on both commands
+
+- on `remember`, the vector is the fact's embedding, stored and indexed with it;
+- on `recall`, it is a semantic seed — the vector index returns its nearest neighbours, which then seed the graph walk.
+
+## Vectors are a seed, not an answer
+
+A recall still needs at least one term. The vector index contributes `seed-size` candidates, the text index contributes its own, and the graph walk expands from both — each source ranking its own sightings, the ranks fusing, and the fused score then decaying by age.
+
+<Note title="One signal, not the ranking" type="note">
+  **Semantic similarity is one signal feeding a ranking, never the ranking itself.**
+</Note>
+
+## Next
+
+<CardGrid>
+  <Card title="Producing vectors" description="the SDK embedders" href="/docs/retrieval/embeddings/producing-vectors" />
+  <Card title="Dimensions" description="the rule that most often surprises" href="/docs/retrieval/embeddings/dimensions" />
+  <Card title="The vector index" description="how the RP-tree forest is searched and rebuilt" href="/docs/retrieval/embeddings/vector-index" />
+</CardGrid>

@@ -1,0 +1,31 @@
+---
+title: "Load and backpressure"
+description: "What a 429 means, why it is working as intended, and which of the three scheduler settings to move"
+---
+
+A 429 means the queue stayed full for `enqueue-timeout` and the request was shed. **That is working as intended** — the alternative is unbounded blocked goroutines — but sustained 429s mean the three scheduler settings are mismatched to the load.
+
+## Which setting to move
+
+- **`workers`** bounds how much executes at once. Raise it when workers are idle waiting on graph locks, not when they are busy.
+- **`buffer-size`** bounds how much waits. Raising it absorbs bursts; it does not add throughput, and a deep queue only delays the 429 while raising latency.
+- **`enqueue-timeout`** bounds how long a client waits before being told to back off. Keep it well under the caller's own timeout, or you will shed work the client has already given up on.
+
+## When more workers will not help
+
+<Note title="One hot graph" type="warning">
+
+  Writes to the *same* graph serialise. **If one graph is hot, more workers will not help** — spread the load across graphs, which is what they are for.
+
+</Note>
+
+A graph far larger than its peers in `/api/v1/stats` is the same problem seen from the other side: uneven partitioning concentrates both memory and lock contention on one graph.
+
+## Client-side handling
+
+| Status | What the client should do |
+|---|---|
+| 429 | back off and retry — the queue is saturated |
+| 503 | the server is shutting down; reconnect elsewhere or wait for the restart |
+
+See [Errors](/docs/http-api/errors) and [Scheduler settings](/docs/configuration/reference/scheduler).

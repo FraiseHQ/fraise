@@ -45,7 +45,7 @@ from fraise_sdk import FraiseWarning
 warnings.filterwarnings("ignore", category=FraiseWarning)  # silence wholesale
 ```
 
-The query shapes that warn (and the neighbouring ones that stay silent) are catalogued in the query spec, `docs/query-spec.md` § Warnings.
+The query shapes that warn (and the neighbouring ones that stay silent) are catalogued in [Warnings](https://docs.getfraise.dev/docs/query-language/reference/warnings).
 
 ## Embeddings (optional)
 

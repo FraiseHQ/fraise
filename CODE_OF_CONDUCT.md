@@ -37,7 +37,7 @@ You do not have to agree with anyone's politics, identity, or worldview to work 
 This Code of Conduct applies across every space the project runs:
 
 - **GitHub** — issues, pull requests, discussions, commit messages, and code comments.
-- **[Discord](https://discord.gg/eHDFwnwHq)** — every channel, including voice, and including direct messages that begin from contact made in the server.
+- **[Discord](https://discord.com/invite/VYnAkb8gH)** — every channel, including voice, and including direct messages that begin from contact made in the server.
 - **Project social accounts, talks, and events**, online or in person.
 
 It also applies whenever you are representing the project in public.

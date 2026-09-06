@@ -5,7 +5,7 @@
 # file (fraise -config <path> -log-level error). An uncommented key that names
 # no known setting is a startup error, not a typo the server ignores.
 #
-# Reference: https://github.com/FraiseHQ/fraise/blob/main/docs/configuration.md
+# Reference: https://docs.getfraise.dev/docs/configuration/overview
 
 [log]
 # level = "INFO"              # DEBUG INFO WARN ERROR
@@ -27,7 +27,6 @@
 # enqueue-timeout = "2s"
 
 [engine]
-# allow-unanchored-recall = false
 # half-life = "168h"          # non-positive disables recency decay
 # cache-capacity = 1000
 

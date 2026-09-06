@@ -1,0 +1,38 @@
+---
+title: "Core concepts"
+description: "Facts, entities, topics, streams and memory graphs — the vocabulary the rest of the documentation uses"
+navIcon: "📐"
+---
+
+Fraise is an in-memory database with a query system flexible enough to store and retrieve contextual information. Memory is only one of many parts of a model's context, but any long-term memory storage can find its way into the model's short-term context — so the system has to keep track of and update existing memory.
+
+## Streams and the memory graph
+
+Updates arrive as **streams**. A stream contains a single update to the **temporal memory graph**. A memory graph is made of knowledge:
+
+- `facts`
+- `entities`
+- `relationships`
+
+plus a memory retrieval system. Facts, entities and relationships are indexed for fast retrieval via graph, semantic and text representations. Those representations are gathered in indices, and a federated query engine manages retrieval and ranking.
+
+The graph is called **temporal** because short-term memories are by default deemed more relevant than older ones — see [Temporality](/docs/retrieval/memory-model/temporality).
+
+## Anchors
+
+A fact is filed under **anchors**: `topic:` for what it is about, `entity:` for who or what it mentions. Anchors are what the graph channel expands through — a recall that reaches an anchor can reach every fact filed under it, and the ranking decides which of those were worth reaching.
+
+Anchors are optional on a write: a fact with none is stored and reachable by text search alone.
+
+## How a query travels
+
+<Mermaid
+  chart='flowchart TD
+  request["HTTP request"] --> server["server<br/>parse the body, parse the query, reject client errors"]
+  server --> engine["engine<br/>look up or build a plan (stream), then submit it"]
+  engine --> scheduler["scheduler<br/>queue the stream; a worker takes it and locks its graph"]
+  scheduler --> database["database<br/>apply the stream to graph N: index writes, or seed + walk"]
+  database --> results["results marshalled back onto the waiting request"]'
+/>
+
+Each stage is covered in [Architecture](/docs/architecture/overview).

@@ -1,0 +1,37 @@
+---
+title: "[scheduler]"
+description: "Workers, queue depth and enqueue timeout — one setting in three parts"
+navLabel: "Scheduler"
+---
+
+| Setting | Flag | Default | Meaning |
+|-------------------|--------------------|-------------------------|-----------------------------------------------|
+| `workers` | `-workers` | `max(2, GOMAXPROCS(0))` | worker goroutines executing streams |
+| `buffer-size` | `-buffer-size` | `200` | queue depth |
+| `enqueue-timeout` | `-enqueue-timeout` | `2s` | how long a submit waits for room before a 429 |
+
+```toml
+[scheduler]
+workers = 4
+buffer-size = 128
+```
+
+## The three are one setting
+
+`workers` bounds how much **executes** at once, `buffer-size` bounds how much **waits**, and `enqueue-timeout` bounds how long a caller is willing to wait to become one of the waiting. Raising the first two without the third just moves where requests pile up.
+
+## Why the default tracks core count
+
+Reads take `RLock` and run concurrently, so tracking the machine's core count avoids a queueing penalty. `-workers` still overrides it.
+
+## Tuning against 429s
+
+- Raise `workers` when workers are idle waiting on graph locks, not when they are busy.
+- Raising `buffer-size` absorbs bursts; it does not add throughput, and a deep queue only delays the 429 while raising latency.
+- Keep `enqueue-timeout` well under the caller's own timeout, or you will shed work the client has already given up on.
+
+<Note title="One hot graph" type="warning">
+
+  Writes to the *same* graph serialise. If one graph is hot, more workers will not help — spread the load across graphs. See [Load and backpressure](/docs/operations/runbook/backpressure) and [Concurrency](/docs/architecture/concurrency/multi-graph).
+
+</Note>

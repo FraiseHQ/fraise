@@ -1,0 +1,76 @@
+---
+title: "Scheduler internals"
+description: "Submit semantics, worker lifecycle, and what execute() does with a stream"
+---
+
+The `Scheduler` manages when and how streams are executed. It implements a work-queue pattern.
+
+## Submitting work
+
+`Submit` is bounded and context-aware, which is what turns overload into backpressure instead of an ever-growing pile of blocked goroutines. It returns:
+
+| Result | Meaning | HTTP |
+|---|---|---|
+| `nil` | the stream is on the queue | — |
+| `ErrQueueFull` | the queue stayed saturated for `enqueue-timeout` | **429** — back off |
+| `ErrShutdown` | the scheduler is stopping or was never started | **503** |
+| wrapped `ctx.Err()` | the caller gave up first | no live request left to answer |
+
+A caller is therefore never parked indefinitely on a full, nil, or closed queue.
+
+## Worker lifecycle
+
+When the scheduler starts:
+
+1. A buffered channel of size `buffer-size` is created, alongside a `quit` channel.
+2. `workers` goroutines are spawned, each selecting on both.
+3. Streams submitted via `Submit()` are placed on the queue.
+4. Workers process streams in queue order (FIFO).
+
+When the scheduler stops:
+
+1. `quit` is closed — **the queue itself is never closed.** Closing it would panic a `Submit` that is mid-send; closing a separate channel refuses new work without that race, and unparks any `Submit` waiting on a full queue.
+2. Each worker drains what is already buffered, then exits.
+3. All goroutines are waited on (via `sync.WaitGroup`).
+4. `Stop` drains any straggler a `Submit` raced into the buffer as `quit` closed. This runs single-threaded once the workers are gone, so an accepted write is executed rather than silently dropped.
+
+<Note title="Accepted work runs" type="note">
+
+  The invariant across all four steps: **work that `Submit` accepted is work that runs.** A write acknowledged and then dropped by shutdown would be indistinguishable from data loss.
+
+</Note>
+
+## Stream execution
+
+Each worker processes a single stream at a time, taking whichever of queue or quit is ready:
+
+```go
+func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struct{}) {
+    defer s.wg.Done()
+    for {
+        select {
+        case stream := <-queue:
+            if err := s.execute(stream); err != nil {
+                logger.Error("Failed to execute stream", "error", err)
+            }
+        case <-quit:
+            // drain what is already buffered, then return
+            return
+        }
+    }
+}
+```
+
+<Note title="Guaranteed completion" type="note">
+
+  Whatever happens, `execute` signals completion: `stream.Finish()` is deferred before anything that can fail, so a request waiting on `Done()` is never left hanging by an early error such as an out-of-range graph selector.
+
+</Note>
+
+The `execute()` method:
+
+1. **Selects the graph** — `DB.Select(stream.Query.GetGraphID())`
+2. **Acquires the graph's lock** — `stream.Acquire(g)`: the write lock for writes, a read lock for reads
+3. **Commits in place** — `stream.Commit(g)`: reads run the search against the live graph; writes mutate it directly under the exclusive lock, costing O(fact + incremental index updates) regardless of graph size.
+
+The lock is already exclusive, so no staging copy is needed: nothing can observe intermediate state. On error the stream records it and completes; the one realistic write failure (vector-dimension mismatch) is checked before any mutation, leaving the graph untouched.

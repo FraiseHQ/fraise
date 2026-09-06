@@ -1,9 +1,6 @@
 # AGENTS.md
 
-Fraise is an in-memory temporal-memory-graph database for AI agents (Go server,
-Python SDK). Architecture background lives in `docs/design.md`,
-`docs/concurrency.md`, and `docs/query-spec.md`. This file is about *how to add
-code* here.
+Fraise is an in-memory temporal-memory-graph database for AI agents (Go server, Python SDK). Architecture background lives in `docs/`, published at https://docs.getfraise.dev: the Architecture section (`docs/architecture/`, components and concurrency) and the query grammar (`docs/query-language/reference/grammar.mdx`). This file is about *how to add code* here.
 
 ## Scope discipline
 

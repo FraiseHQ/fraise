@@ -1,0 +1,66 @@
+---
+title: "Quickstart"
+description: "Install Fraise, start the daemon, and write your first memory in under a minute"
+navIcon: "⚡"
+---
+
+Fraise is a single binary — no database to provision, nothing to configure. Every install route leaves you with a server listening on `127.0.0.1:9876`.
+
+## The fast path
+
+<Step>
+  <StepItem title="Install">
+
+  ```sh
+  brew install fraisehq/tap/fraise
+  ```
+
+  </StepItem>
+  <StepItem title="Start the service">
+
+  ```sh
+  brew services start fraise
+  ```
+
+  </StepItem>
+  <StepItem title="Write a memory">
+
+  ```sh
+  curl -X POST localhost:9876/api/v1/q -H 'content-type: application/json' \
+    -d "{\"query\": \"remember 'the parrot is turquoise' topic:color\"}"
+  ```
+
+  </StepItem>
+</Step>
+
+<Note title="Setup complete" type="success">
+  That is the whole setup. The daemon runs under launchd, restarts on crashes, and comes back at login.
+</Note>
+
+## Check it is up
+
+```sh
+curl localhost:9876/
+```
+
+```json
+{"status": "ok", "version": "0.1.0-beta.8"}
+```
+
+`GET /` is liveness and readiness in one: there is nothing to warm up and nothing to recover, so a server that answers is a server that works. The `version` field is the SDKs' compatibility handshake — see [Health check](/docs/http-api/endpoints/health).
+
+## Other ways to install
+
+<CardGrid>
+  <Card title="Homebrew" description="macOS, and you want a supervised service" href="/docs/installation/homebrew" />
+  <Card title="Docker" description="containers, CI, or a throwaway instance" href="/docs/installation/docker" />
+  <Card title="Linux packages" description="Debian/RPM hosts with systemd" href="/docs/installation/linux-packages" />
+  <Card title="Release binaries" description="anywhere else, with signatures to verify" href="/docs/installation/binaries" />
+  <Card title="From source" description="Go toolchain on hand, or hacking on Fraise" href="/docs/installation/from-source" />
+</CardGrid>
+
+## Next
+
+- [Your first memory](/docs/getting-started/first-memory) — remember and recall over `curl`
+- [Core concepts](/docs/getting-started/core-concepts) — facts, entities, topics and graphs
+- [Use it from an agent](/docs/integrations/mcp) — MCP bridge and SDKs

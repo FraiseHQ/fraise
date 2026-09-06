@@ -1,0 +1,77 @@
+---
+title: "Running Fraise"
+description: "The container image, a compose service, and how a config file is mounted and overridden"
+navIcon: "🚢"
+---
+
+The image runs the binary directly as an unprivileged user and exposes 9876:
+
+<Tabs defaultValue="docker">
+  <TabsList>
+    <TabsTrigger value="docker">docker run</TabsTrigger>
+    <TabsTrigger value="compose">Compose</TabsTrigger>
+  </TabsList>
+  <TabsContent value="docker">
+
+  ```bash
+  docker run --rm -p 9876:9876 \
+    -v "$PWD/fraise.config.toml:/etc/fraise/fraise.config.toml:ro" \
+    fraise -config /etc/fraise/fraise.config.toml
+  ```
+
+  </TabsContent>
+  <TabsContent value="compose">
+
+  Or with compose, as the test suites do:
+
+  ```yaml
+  services:
+    fraise:
+      build:
+        context: .
+        dockerfile: Dockerfile.fraise
+      ports:
+        - "9876:9876"
+      volumes:
+        - ./fraise.config.toml:/etc/fraise/fraise.config.toml:ro
+      command: ["-config", "/etc/fraise/fraise.config.toml"]
+  ```
+
+  </TabsContent>
+</Tabs>
+
+## Config file or flags
+
+A config file is optional — the defaults plus flags are a complete configuration. **Mount one when you want to pin settings; use flags for the one or two you override per environment.**
+
+```bash
+fraise -config /etc/fraise/fraise.config.toml -log-level error
+```
+
+Flags win over the file. See [How configuration works](/docs/configuration/overview).
+
+## Health checking the container
+
+```yaml
+healthcheck:
+  test: ["CMD", "wget", "-qO-", "http://localhost:9876/"]
+  interval: 10s
+  timeout: 2s
+  retries: 3
+```
+
+`GET /` is liveness and readiness in one — there is nothing to warm up and nothing to recover.
+
+## Stopping it
+
+`docker stop` sends SIGTERM, so the default path is the graceful one.
+
+<Note title="Container stop timeout" type="warning">
+
+  **Give the container a stop timeout longer than `shutdown-grace`**, or the runtime's SIGKILL will cut the drain short. See [Shutdown](/docs/operations/runbook/shutdown).
+
+</Note>
+
+## Not behind a load balancer
+
+Two instances do not share memory. A client that wrote to one and recalls from the other gets nothing — see [Durability](/docs/operations/durability) before scaling horizontally.
