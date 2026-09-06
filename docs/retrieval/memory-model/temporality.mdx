@@ -1,0 +1,51 @@
+---
+title: "Temporality"
+description: "How age decays a fact's score, and how since/until differ from decay by being absolute constraints"
+navIcon: "⏳"
+---
+
+Every fact carries the time it was written, and a recall's score decays with that age on an exponential half-life (`half-life`, one week by default):
+
+```text
+score *= 0.5 ^ (age / half-life)
+```
+
+So a fact twice the half-life old contributes a quarter of its score.
+
+## Decay is ranking, not filtering
+
+An old fact still surfaces when nothing newer matches, which is what makes it safe to leave on by default. A non-positive `half-life` disables decay entirely.
+
+This is the "temporal" in temporal memory graph: recency is a first-class ranking signal, because contextual memory ages — what an agent learned an hour ago usually beats what it learned last quarter.
+
+## `since:` and `until:` are absolute
+
+Filtering is what the time bounds are for, and they are absolute constraints rather than nudges: **a fact outside the window does not appear at any score.**
+
+Bounds are written as a duration read as "ago", or as a date:
+
+```text
+recall billing since:7d
+recall billing since:2026-01-15 until:2026-02-01
+```
+
+| Form | Example | Meaning |
+|---|---|---|
+| duration | `since:7d` | no older than seven days |
+| date | `since:2026-01-15` | on or after that day |
+
+<Note title="Dates carry no time of day" type="warning">
+
+  A date carries no time of day — the first `:` ends the value, so a full RFC3339 timestamp does not parse. Use a duration when finer than a day is needed. See [Literals](/docs/query-language/tokens/literals).
+
+</Note>
+
+## Choosing between them
+
+| You want | Use |
+|---|---|
+| recent facts preferred, older ones still reachable | the default decay |
+| a hard window, nothing outside it | `since:` / `until:` |
+| no recency preference at all | a non-positive `half-life` |
+
+`half-life` is an operator setting, not a query clause — see [Engine settings](/docs/configuration/reference/engine).

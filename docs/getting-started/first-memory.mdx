@@ -1,0 +1,100 @@
+---
+title: "Your first memory"
+description: "Write a fact with remember, read it back with recall, and understand the response shape"
+navIcon: "🧠"
+---
+
+Everything an agent does goes through `POST /api/v1/q`. One command per request.
+
+## Remember, then recall
+
+<Step>
+  <StepItem title="Remember">
+
+  ```sh
+  curl -X POST localhost:9876/api/v1/q \
+    -H 'content-type: application/json' \
+    -d '{"query":"remember \"the parrot is turquoise\" topic:color"}'
+  ```
+
+  </StepItem>
+  <StepItem title="Recall">
+
+  ```sh
+  curl -X POST localhost:9876/api/v1/q \
+    -H 'content-type: application/json' \
+    -d '{"query":"recall parrot"}'
+  ```
+
+  ```json
+  {
+    "results": {
+      "count": 1,
+      "hits": [
+        { "value": "the parrot is turquoise", "timestamp": "...", "score": 1 }
+      ]
+    }
+  }
+  ```
+
+  </StepItem>
+</Step>
+
+A write returns 200 with an empty result set.
+
+<Note title="Count is not a total" type="warning">
+
+  `count` is how many hits were returned, not how many exist — a recall is capped by `top:` and by `default-top`.
+
+</Note>
+
+## Reading the query
+
+```text
+remember 'the parrot is turquoise' topic:color entity:polly
+```
+
+| Piece | What it is |
+|---|---|
+| `remember` | the command — the only two are `remember` and `recall` |
+| `'the parrot is turquoise'` | the fact, stored exactly as written |
+| `topic:color` | an anchor: what the fact is about |
+| `entity:polly` | an anchor: who or what it mentions |
+
+```text
+recall billing entity:acme since:7d top:5
+```
+
+| Piece | What it is |
+|---|---|
+| `billing` | a term — the seed the search expands from |
+| `entity:acme` | an anchor, which both seeds and filters |
+| `since:7d` | a time bound, read as "ago" |
+| `top:5` | the result cap, 10 by default |
+
+## Scoping to a graph
+
+A selector glued to the verb picks one of the instance's memory graphs:
+
+```text
+remember@3 'acme signed with okta' topic:auth entity:okta
+recall@3 auth topic:auth
+```
+
+Graph 3 in both cases; an absent selector means graph 0. Graphs are full isolation boundaries — see [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+
+## When something is wrong
+
+A client error says exactly what is wrong, including the column a parse failed at:
+
+```json
+{"error": "parse error at column 24: Expected colon, but found \"food\""}
+```
+
+The caller is usually a model, and a model can correct itself from a precise message — that is the whole reason the parser refuses to guess. See [Errors](/docs/http-api/errors).
+
+## Next
+
+- [Core concepts](/docs/getting-started/core-concepts) — the vocabulary the rest of the docs uses
+- [Query examples](/docs/appendix/example-queries) — worked queries, including the awkward cases
+- [Use it from an agent](/docs/integrations/mcp) — stop writing `curl` by hand

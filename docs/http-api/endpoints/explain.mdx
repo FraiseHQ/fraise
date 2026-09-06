@@ -1,0 +1,53 @@
+---
+title: "POST /api/v1/explain — explained recall"
+description: "The same pipeline as /q, with the per-source contributions each hit's score was folded from"
+navLabel: "Explain"
+---
+
+The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from.
+
+Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
+
+```json
+{
+  "results": {
+    "count": 1,
+    "hits": [
+      {
+        "value": "the parrot is turquoise",
+        "timestamp": "2026-08-09T17:40:53.851+01:00",
+        "score": 0.75,
+        "contributions": [
+          { "source": "text",  "score": 1, "rank": 0, "hop": 0 },
+          { "source": "graph", "score": 2, "rank": 1, "hop": 2 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## A contribution
+
+One contribution records one sighting of the hit by one retrieval source:
+
+| Field | Meaning |
+|----------|--------------------------------------------------------------------|
+| `source` | which stage saw it: `text`, `vector` or `graph` |
+| `score` | the source's raw magnitude: match count, similarity, or seed score |
+| `rank` | the hit's position in that source's own result list, 0 first |
+| `hop` | 0 for a seed; how many hops from its seed for a graph sighting |
+
+<Note title="Contributions are not a sum" type="warning">
+
+`score` on the hit remains the final fused value — after recency decay and any ranking boost — so **the contributions explain its ingredients rather than summing to it exactly.**
+
+</Note>
+
+## Writes are rejected
+
+A `remember` on this endpoint is rejected with 400: a write has no ranking to explain, and explaining must never mutate a graph.
+
+## Reading a breakdown
+
+A `hop: 0` text sighting is the fact's own match; a `hop: 2` graph sighting is mass that reached it over the seed → anchor → fact path. A hit with only graph contributions matched nothing itself and was preempted in on transmitted surplus alone — which the model only permits when the surplus was genuinely above background. See [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).

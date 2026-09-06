@@ -1,0 +1,29 @@
+---
+title: "Claude Agent SDK"
+description: "Memory tools exposed as an in-process MCP server, so the agent decides what to store and recall"
+---
+
+The Python SDK ships memory tools for the Claude Agent SDK, exposed as an in-process MCP server so the agent decides *what* to store and recall:
+
+```python
+from claude_agent_sdk import ClaudeAgentOptions
+from fraise_sdk import FraiseClient
+from fraise_sdk.integrations.claude_agents import memory_server, allowed_tools
+
+fraise = FraiseClient("http://localhost:9876")
+options = ClaudeAgentOptions(
+    system_prompt="Remember durable facts the user shares, and recall them when relevant.",
+    mcp_servers={"fraise_memory": memory_server(fraise)},
+    allowed_tools=allowed_tools(),
+)
+```
+
+A complete, Docker-runnable agent lives in `examples/claude-agent-sdk` in the Fraise repository.
+
+## In-process, not a subprocess
+
+`memory_server(fraise)` is an in-process MCP server bound to the client you pass it — so the tools talk to the daemon over HTTP without a second process in between. If you would rather run the bridge as a separate stdio server, that is [`fraise mcp`](/docs/integrations/mcp).
+
+## The system prompt does the rest
+
+The tools carry their own schemas; the policy is yours to state. *"Remember durable facts the user shares, and recall them when relevant"* is the short version — [Context engineering](/docs/getting-started/context-engineering) is the longer one.

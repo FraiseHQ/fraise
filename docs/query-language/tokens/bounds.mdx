@@ -1,0 +1,35 @@
+---
+title: "Bounds"
+description: "Every integer a query can write is bounded, and a value past its bound is rejected with the range in the message"
+---
+
+Every integer a query can write is bounded, and a value past its bound is rejected with the range in the message — an agent told only "invalid" retries with another large number.
+
+| Value | Range | Set by |
+|----------------|--------------------------|---------------------------------|
+| graph selector | `0`–`255` | the wire form (a `uint8`) |
+| `depth` | `0`–`max-depth` (2) | operator config |
+| `top` | `1`–`max-top` (1000) | operator config |
+| `vec` length | `max-vector-dimension` | operator config |
+
+## Two layers, on purpose
+
+A selector inside `0`–`255` that names no allocated graph is a **separate error from the server**, naming the graphs that do exist. The two bounds are checked in different layers deliberately, so a regression in one cannot hide behind the other:
+
+- the parser rejects anything that does not fit `uint8` — unchecked, `@256` would wrap to graph 0 and read another tenant's memory;
+- the server then rejects a selector past `num-graphs`.
+
+## Ceilings versus defaults
+
+The ceilings exist so one query cannot force unbounded work. They bound what a *client* may ask for; the defaults beneath them are what it gets when it asks for nothing.
+
+| Setting | Default | What it bounds |
+|---|---|---|
+| `default-top` | `10` | results returned when a recall omits `top:` |
+| `max-top` | `1000` | ceiling on `top:` |
+| `default-depth` | `0` | lane taken when a recall omits `depth:` |
+| `max-depth` | `2` | ceiling on `depth:` |
+| `max-vector-dimension` | `4096` | ceiling on a bound vector's length |
+| `num-graphs` | `8` | graphs allocated; selectors are `0..n-1` |
+
+All of them are operator-set — see [Database settings](/docs/configuration/reference/database).

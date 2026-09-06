@@ -1,0 +1,50 @@
+---
+title: "Python SDK"
+description: "The dependency-light client for Fraise, with optional embedder support — and the status of other languages"
+navIcon: "🐍"
+---
+
+<Step>
+  <StepItem title="Install">
+
+  ```sh
+  pip install fraise-sdk
+  ```
+
+  </StepItem>
+  <StepItem title="Remember and recall">
+
+  ```python
+  from fraise_sdk import FraiseClient
+
+  with FraiseClient("http://localhost:9876") as fraise:
+      fraise.remember("the parrot is turquoise", topics=["color"])
+      for hit in fraise.recall("parrot", top=5):
+          print(hit.value, hit.score)
+  ```
+
+  </StepItem>
+</Step>
+
+The Python SDK is dependency-light and supports vector search when you supply an embedder.
+
+## With embeddings
+
+```python
+from fraise_sdk import FraiseClient
+from fraise_sdk.providers import OpenAIEmbedder
+
+client = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder())
+client.remember("the parrot is turquoise", topics=["birds"])   # encoded for you
+client.recall("colourful birds")                               # encoded for you
+```
+
+A client without an embedder still works; it simply writes and recalls without vectors, on text and graph structure alone. Per call, `embed=True` forces encoding and `embed=False` skips it, and an explicit `vector=` always wins. See [Producing vectors](/docs/retrieval/embeddings/producing-vectors).
+
+## Version compatibility
+
+The SDK reads the `version` field from `GET /` to check the server falls in the range it supports — the handshake is part of the contract, not a convenience. See [Health check](/docs/http-api/endpoints/health).
+
+## TypeScript
+
+Not available yet. Until it lands, TypeScript callers use [`fraise mcp`](/docs/integrations/mcp) or talk to the HTTP endpoint directly; it is two verbs over one route, so a client is a short wrapper around `fetch`. See [the HTTP API](/docs/http-api/endpoints/query).

@@ -1,0 +1,39 @@
+---
+title: "Ranking guarantees"
+description: "Four properties of the retrieval model that are contract rather than tendency, each pinned by the test suite"
+---
+
+Four consequences of the [excess-transmission model](/docs/retrieval/ranking/excess-transmission) are the contract, each pinned by the test suite.
+
+## BM25 floor
+
+Transmission only ever **adds**, so anchored search can never fall below the plain text index's ranking by scoring alone; with no surplus anywhere the two are identical.
+
+<Note title="Safe to raise depth" type="note">
+
+This is what makes `depth:` safe to raise: the graph channel can add evidence, never subtract it.
+
+</Note>
+
+## Hub silence
+
+An anchor at or below its fair share of ρ₀ transmits nothing — **a mega-hub cannot flood the tail on size alone, structurally.**
+
+Degree enters the fold twice: it raises the fair share an anchor must clear, and it divides what clears it into per-edge shares — so size both hardens the admission bar and thins whatever passes it. Silence is earned against the graph's rate, so an anchor is silent because it is unremarkable, not because it was the only one asked.
+
+## Earned preemption
+
+A fact with no match of its own outranks a match only through anchors carrying genuine above-background evidence — **and enough of it per edge**: a thin surplus spread over a large membership preempts nothing. Never through mere reachability.
+
+## No normalization, no knobs
+
+Scores stay in raw seed units end to end — relevance is homogeneous in the mass scale, so normalising is a provable ordering no-op that only breaks the channels' commensurability — and the methodology carries **zero dataset-tuned constants**.
+
+## What this buys a caller
+
+| Property | What it rules out |
+|---|---|
+| BM25 floor | the graph channel making results worse than plain text search |
+| Hub silence | a popular topic drowning the ranking on popularity alone |
+| Earned preemption | reachability being mistaken for relevance |
+| No knobs | a relevance constant that has to be re-fitted per dataset |

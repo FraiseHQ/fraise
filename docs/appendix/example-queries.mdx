@@ -1,0 +1,51 @@
+---
+title: "Example queries"
+description: "Worked FQL queries, including the awkward cases: colons in phrases, keywords as values, and escaped apostrophes"
+---
+
+```text
+recall billing entity:acme since:7d top:5
+recall billing topic:billing
+recall 'annual contract' topic:billing entity:acme depth:1
+recall@3 auth topic:auth entity:okta
+remember 'acme moved to annual billing' topic:billing topic:contracts
+remember 'acme signed with okta' topic:auth entity:okta
+remember 'meeting at 3:30pm about the topic' topic:meetings   (* colons and reserved words are literal inside a phrase *)
+remember 'she reached the top' topic:hiking entity:top       (* a keyword after a field's ':' is the word itself *)
+remember 'alice''s laptop' topic:devices                     (* '' is an escaped apostrophe -> alice's laptop *)
+```
+
+## Reading them one at a time
+
+| Query | What it does |
+|---|---|
+| `recall billing entity:acme since:7d top:5` | seeds on the term *billing*, filtered to the anchor `acme` and the last seven days, capped at five hits |
+| `recall billing topic:billing` | the same word as both a text seed and an anchor — the two channels are independent |
+| `recall 'annual contract' topic:billing entity:acme depth:1` | a quoted multi-word term, two anchors, and the high-precision retrieval lane |
+| `recall@3 auth topic:auth entity:okta` | the same, against memory graph 3 |
+| `remember 'acme moved to annual billing' topic:billing topic:contracts` | one fact filed under two topics — anchors are the one repeatable clause |
+
+## The awkward cases
+
+**A phrase is opaque.** `remember 'meeting at 3:30pm about the topic' topic:meetings` stores the colon and the reserved word "topic" as part of the fact. Nothing inside quotes is syntax.
+
+**A keyword after a `:` is data.** `remember 'she reached the top' topic:hiking entity:top` files the fact under the anchor *top*. In value position a reserved word is an ordinary identifier.
+
+**`''` is an escaped apostrophe.** `remember 'alice''s laptop' topic:devices` stores *alice's laptop*.
+
+## Shapes that are errors
+
+| Query | Why |
+|---|---|
+| `recall top:3` | a modifier is not a seed — nothing to search from |
+| `recall since:7d` | the same: it scopes a search rather than starting one |
+| `recall food topic` | `topic` in clause position is syntax; quote it (`'topic'`) to search for the word |
+| `recall x Since 7d` | mis-cased keyword in clause position — an error naming the casing |
+| `recall x depth:2 depth:1` | a repeated modifier is a duplicate-clause error, not last-one-wins |
+| `recall ferry\nbridge` | one instruction per line |
+| `topic:` | an identifier cannot be empty |
+| `entity:top:3` | a keyword glued to `:` is always a field |
+
+## Shapes that run with a warning
+
+`recall since 7d`, `recall top`, `recall x TOP:3` — all valid, all one typo from something else. See [Warnings](/docs/query-language/reference/warnings).

@@ -1,0 +1,41 @@
+---
+title: "Why Fraise?"
+description: "What Fraise does differently from other agent memory systems, and how it measures up on recall, latency and token cost"
+navIcon: "🎯"
+---
+
+## Why Fraise?
+
+- **A query language agents can actually write.** FQL has two verbs — `remember` and `recall` — and one way to say each thing. Fewer degrees of freedom means fewer ways for a model to get it wrong, and fewer tokens spent saying it.
+- **Hybrid retrieval.** Facts are indexed for full-text, graph, and (optionally) vector search. One query, ranked across all three.
+- **Temporal by default.** Recent memories outrank older ones, so recall is recency-aware without asking for it.
+- **The fastest system measured.** 0.176 s p50 on LoCoMo, twice the next best. Remember and recall mid-step, while the user waits.
+- **No infrastructure.** A single binary. No database to provision, no service to stand up beside it.
+- **Open source, MIT.**
+
+## How it compares
+
+Measured on [LoCoMo](https://github.com/snap-research/locomo) — 10 multi-session conversations, 1,982 questions — with every system ingesting the same conversations, using the same extraction model and the same embedding model, and answering the same questions. `k=10`, full data, run 2026-08-30.
+
+| system | retrieval recall | p50 search | memory tokens |
+|---|---|---|---|
+| **fraise 0.1.0** | **0.893** | **0.176 s** | **2,902,039** |
+| everos 1.2.3 | 0.897 | 0.376 s | 10,030,966 |
+| letta 0.16.8 | 0.897 | 0.349 s | 226,854 |
+| mem0 2.0.18 | 0.886 | 0.576 s | 4,120,078 |
+| graphiti 0.29.3 | 0.819 | 0.301 s | 9,866,183 |
+| cognee 1.5.3 | 0.790 | 6.273 s | 8,526,019 |
+
+**Fraise matches the best systems on recall, at 2× the speed and a third of the tokens.** Same evidence found; half the latency; a fraction of the cost.
+
+<Note title="Benchmark provenance" type="note">
+
+  These come from a standalone multi-system harness — precision, recall and F1 across `k ∈ {1, 3, 5, 10}`, per category, every run tagged and reproducible from the tag. The harness and the full results are published separately, in October.
+
+</Note>
+
+## Ranking is not a black box
+
+A fact's score is its own match strength plus what it receives through anchors carrying *more* mass than their size would predict. The background rate that "more" is measured against is a property of the graph, not of the anchors one query happened to reach — so there is no relevance constant to tune, and no dataset-fitted magic number anywhere in the fold.
+
+[Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval) is the short version; [Excess transmission](/docs/retrieval/ranking/excess-transmission) is the full model, and [Ranking guarantees](/docs/retrieval/ranking/guarantees) is the contract the test suite pins.

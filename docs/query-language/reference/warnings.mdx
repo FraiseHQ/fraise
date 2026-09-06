@@ -1,0 +1,59 @@
+---
+title: "Warnings"
+description: "The two query shapes that run but carry a warning, and the neighbouring shapes that stay silent"
+---
+
+An error rejects a query; a warning accompanies one that ran. The bar for a warning is deliberately high: the query must be valid with exactly one reading, *and* sit one typo away from a different valid query — close enough that a slip of a colon would change the results without changing the status code. The hits are real and complete either way; the warning only says what else the query could have meant.
+
+Warnings travel beside the results, never instead of them, and the key is absent when there is nothing to say — the response shape of a clean query is unchanged:
+
+```json
+{
+  "results": {"count": 1, "hits": ["..."]},
+  "warnings": ["parse warning at column 12: term \"since\" is also a keyword: write since:<value> if a clause was meant, or quote it ('since') to search for the word"]
+}
+```
+
+Each entry is positioned like a parse error — `parse warning at column N:`, the column naming the last character of the token it is about — and names both readings with the syntax that selects each one, so it can be resolved from the message alone.
+
+## Queries that warn
+
+Two shapes warn.
+
+### 1. A recall whose leading term spells a reserved keyword
+
+Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`, in any casing. The leading term is the one position where a bare reserved word legally reads as data — a recall must start with a term, so no clause can begin there — which also makes it the one position where a mistyped clause slips through as a search instead of an error.
+
+| query | reading that runs | near-miss it warns about |
+|--------------------|--------------------------------|---------------------------------|
+| `recall since 7d` | a search for "since" and "7d" | `recall since:7d`, a time bound |
+| `recall top` | a search for "top" | an unfinished `top:<n>` clause |
+| `recall Top shelf` | a search for "top" and "shelf" | the same, mis-cased |
+
+### 2. A clause whose keyword is not lower case
+
+A word glued to a `:` has exactly one reading, so the clause runs — see [Keywords](/docs/query-language/tokens/keywords) for why erroring there would report the shallower of two problems. But this language is lower case, and accepting the spelling in silence teaches the opposite. The warning names the clause that ran, and there is one per mis-cased clause so a query with several can be fixed in a single pass.
+
+| query | reading that runs | what it warns about |
+|----------------------------|--------------------------|----------------------------------------|
+| `recall x TOP:3` | `top:3` | `TOP` is syntax, and syntax is lower case |
+| `recall x Topic:food` | `topic:food` | the same, on an anchor key |
+| `remember 'a' Entity:bob` | `entity:bob` | the same, on a write |
+
+<Note title="Anchor values are data" type="note">
+
+  An anchor *value* is data, not syntax, so `entity:Top` is silent: it is the same anchor as `entity:top` by design, and an agent never has to remember how it capitalised something.
+
+</Note>
+
+## Queries that stay silent
+
+Every neighbouring shape resolves without ambiguity, so it carries no warning — the grammar either runs it silently or rejects it outright:
+
+- `recall 'since' 7d` — quoting the term states the intent, and is the way to silence the warning above.
+- `recall x since:7d` — an actual clause is what it says it is.
+- `entity:top`, `entity:Top` — value position: after a field's `:` only a value can appear, so there is nothing to mistake it for.
+- `recall x since 7d` — clause position: a missing `:` is an **error**, not a warning; results scoped by nothing would be worse than either.
+- `recall x Since 7d` — clause position, mis-cased: an error naming the casing.
+
+The bar is meant to keep warnings rare and the list short: a shape joins it only when it is a valid query one typo from a different valid query *and* the grammar has no way to resolve which was meant. Anything the grammar can settle is settled — as a parse, or as an error.

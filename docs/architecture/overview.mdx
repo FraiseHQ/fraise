@@ -1,0 +1,46 @@
+---
+title: "Architecture overview"
+description: "The four components a query passes through, and the type parameters the whole stack is generic in"
+navIcon: "🏛️"
+---
+
+The database application is made up of four components:
+
+- **database**
+- **server**
+- **engine**
+- **scheduler**
+
+A query passes through all four in one direction:
+
+<Mermaid
+  chart='flowchart TD
+  request["HTTP request"] --> server["server<br/>parse the body, parse the query, reject client errors"]
+  server --> engine["engine<br/>look up or build a plan (stream), then submit it"]
+  engine --> scheduler["scheduler<br/>queue the stream; a worker takes it and locks its graph"]
+  scheduler --> database["database<br/>apply the stream to graph N: index writes, or seed + walk"]
+  database --> results["results marshalled back onto the waiting request"]'
+/>
+
+## Generic in `[K, P]`
+
+Each layer is generic in `[K, P]`: `K` is the node key type (`uint64` in production) and `P` the float precision of embeddings and scores, chosen at startup by `db.precision`. Both instantiations are compiled in; `cmd/server` picks one and the whole stack below follows.
+
+## The components
+
+<CardGrid>
+  <Card title="Server" description="bind and validate requests, refuse client errors" href="/docs/architecture/components/server" />
+  <Card title="Engine" description="turn a parsed query into an executable stream, cache plans" href="/docs/architecture/components/engine" />
+  <Card title="Scheduler" description="queue streams, run them on a worker pool, lock the graph" href="/docs/architecture/components/scheduler" />
+  <Card title="Database" description="own the graphs and apply streams to one of them" href="/docs/architecture/components/database" />
+</CardGrid>
+
+## Streams
+
+Reads and writes both arrive as **streams**, and the database does not distinguish them — `Query.IsWrite()` is what the scheduler uses to decide the lock it takes.
+
+<Note title="Nothing is persisted" type="warning">
+  Everything is in memory and nothing is persisted; a restart is an empty database.
+</Note>
+
+The locking rules and the shutdown protocol are covered in [Concurrency](/docs/architecture/concurrency/multi-graph).

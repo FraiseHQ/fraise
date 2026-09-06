@@ -1,0 +1,45 @@
+---
+title: "Excess transmission"
+description: "Why the background rate is estimated over the whole graph rather than over the anchors one query happened to touch"
+---
+
+## The null must be wider than the sample it judges
+
+ρ₀ is a property of the graph, not of the anchors one query happened to reach. The denominator is the **total degree of the graph's anchors**, and the numerator the total seed mass the query put onto anchors; untouched anchors contribute their degree and no mass, which is exactly the statement that the query found nothing there.
+
+## Why the cheaper estimate is not an approximation
+
+The alternative — normalising over only the anchors a query touched — is not a cheaper approximation of this but a **different quantity, and a degenerate one**.
+
+Writing M_A for an anchor's observed mass and d_A for its degree, a background of ΣM/Σd taken over the touched set T satisfies
+
+```text
+Σ_{A∈T} (M_A − d_A·ρ₀) = ΣM − ρ₀·Σd = 0
+```
+
+identically. The surpluses of the very anchors being judged are then constrained to cancel, whatever the query, whatever the graph:
+
+- a query touching **one anchor** gives it M = d·(M/d), so nothing can ever transmit;
+- a query with **one seed** gives every touched anchor the same mass, so the mass cancels from both sides of the admission test and an anchor speaks purely because its degree is below the touched mean.
+
+Neither outcome is evidence about the graph — both are artefacts of measuring a sample against its own mean.
+
+Estimating over the graph's anchors removes the identity: the touched anchors are then free to carry positive surplus collectively, which is the thing the methodology is trying to detect.
+
+## A consequence, not a defect
+
+A single-seed query still admits on degree alone, because with one seed every touched anchor observes the same mass and degree is the only thing left to distinguish them. Under this null that is the **correct inference**, not a shortcoming: an anchor of degree 3 holding mass m *is* more surprising than an anchor of degree 300 holding the same m.
+
+What the graph-wide estimate fixes is the bar those degrees are measured against — an absolute rate, rather than one the query defines for itself.
+
+## Choosing the traversal
+
+`search-algorithm` selects the traversal moving seed evidence through the graph:
+
+| Value | Behaviour |
+|---|---|
+| `excess` (default) | the shipped excess-transmission strategy |
+| `bfs` | tree-shaped incidence, kept for comparison runs |
+| `none` | the graph channel off — text/vector search only |
+
+`scoring-algorithm` selects the fold deriving relevance from the pooled evidence. `rrf` remains available for comparison runs — its dampening constant is fixed at 60, the literature standard, because a comparison baseline is not tunable — but it carries no null model, which is why `excess` is the default. See [Algorithm settings](/docs/configuration/reference/algorithms).

@@ -1,0 +1,59 @@
+---
+title: "Example configuration"
+description: "A complete fraise.config.toml, and where each install route expects to find it"
+navIcon: "📄"
+---
+
+```toml:fraise.config.toml
+[scheduler]
+workers = 4
+buffer-size = 128
+
+[server]
+port = 9876
+
+[log]
+level = "DEBUG"
+format = "json"
+disable-timestamp = true
+
+[engine]
+allow-unanchored-recall = true
+half-life = "168h"
+cache-capacity = 1024
+
+[db]
+precision = "float64"
+default-top = 10
+default-depth = 2
+seed-size = 64
+
+[db.hashing-function]
+name = "xxhash"
+```
+
+## Where the file lives
+
+| Install route | Path |
+|---|---|
+| Homebrew | `$(brew --prefix)/etc/fraise/fraise.config.toml` |
+| systemd, per user | `~/.config/fraise/fraise.config.toml` |
+| systemd, system-level | `/etc/fraise/fraise.config.toml` |
+| Docker | wherever you mount it, named by `-config` |
+| anything else | `fraise.config.toml` in the working directory, unless `-config` says otherwise |
+
+<Note title="Packaged defaults" type="note">
+
+  Both packaged routes ship a default config with **every setting commented at its default** — the file documents itself, and uncommenting a line is the whole act of configuring.
+
+</Note>
+
+## Partial files are fine
+
+A file only needs the settings you are changing; everything else stays at its default. A missing file is not an error either — the defaults plus flags are a complete configuration.
+
+<Note title="Unknown keys and bad values" type="warning">
+
+  But a key that maps to no known setting **is** an error, and so is a value outside a fixed vocabulary: the server exits non-zero before binding a port. See [How configuration works](/docs/configuration/overview).
+
+</Note>

@@ -1,0 +1,56 @@
+---
+title: "[db]"
+description: "Precision, graph count, query defaults, the ceilings that bound what a client may ask for, and node key hashing"
+navLabel: "Database"
+---
+
+| Setting | Flag | Default | Meaning |
+|------------------------|-------------------------|-----------|-----------------------------------------------------------|
+| `precision` | `-precision` | `float32` | float width of embeddings and scores: `float32` `float64` |
+| `num-graphs` | `-num-graphs` | `8` | independent graphs allocated; selectors are `0..n-1` |
+| `default-top` | `-default-top` | `10` | results returned when a recall omits `top:` |
+| `default-depth` | `-default-depth` | `0` | retrieval lane when a recall omits `depth:` (0 = floor) |
+| `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it |
+| `max-depth` | `-max-depth` | `2` | ceiling on `depth:` (lanes are 0, 1 and 2) |
+| `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
+| `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
+
+```toml
+[db]
+precision = "float64"
+default-top = 10
+default-depth = 2
+seed-size = 64
+```
+
+## Precision is a compile-time type parameter
+
+Both instantiations are built into the binary and this setting picks which one runs. `float32` halves the memory of every vector and score at a precision embedding models comfortably exceed in noise — choose `float64` only with a reason to.
+
+## Ceilings versus defaults
+
+The three ceilings exist so **one query cannot force unbounded work**. They bound what a *client* may ask for; the defaults above them are what it gets when it asks for nothing. A value past a ceiling is rejected with the range in the message — see [Bounds](/docs/query-language/tokens/bounds).
+
+## `num-graphs`
+
+Graphs are allocated at startup and the count never grows: a selector is an index, not a lookup. Empty graphs cost almost nothing, so allocate for the isolation you want, not the load you have. See [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+
+## `[db.hashing-function]`
+
+| Setting | Flag | Default | Accepts |
+|---------|--------------------------|----------|-----------------|
+| `name` | `-hashing-function` | `xxhash` | `xxhash` `t1ha` |
+| `seed` | `-hashing-function-seed` | `0` | any `uint64` |
+
+```toml
+[db.hashing-function]
+name = "xxhash"
+```
+
+This derives node keys from values.
+
+<Note title="Changing hash settings" type="warning">
+
+  Changing either on a populated store means the same fact hashes to a different key — since nothing is persisted, that only matters across a restart with a changed config.
+
+</Note>
