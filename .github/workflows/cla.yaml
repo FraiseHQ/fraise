@@ -5,8 +5,10 @@ on:
   # comment on PRs from forks. It checks out nothing and runs no PR code.
   pull_request_target:
     types: [opened, reopened, synchronize]
+  # edited as well as created: a signing comment corrected after a typo fires
+  # no created event, and the corrected phrase would otherwise never be seen.
   issue_comment:
-    types: [created]
+    types: [created, edited]
 
 permissions:
   contents: read
