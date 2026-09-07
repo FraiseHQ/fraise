@@ -296,6 +296,28 @@ def test_recall_unions_matches_across_keywords(query):
     )
 
 
+def test_recall_by_emoji_finds_the_fact(query):
+    """A fact whose salient content is an emoji is recallable by that emoji —
+    the bug-report repro, taken through the store.
+
+    The text index keeps symbols (Unicode category So: emoji, check marks and
+    the like) as terms of their own, so ``recall 🍊`` reaches the fruit fact
+    through the index like any word would. Before, the tokenizer kept only
+    letters and digits: the fact was accepted and stored verbatim but indexed
+    under no term at all, so it looked stored and could never be found. Graph
+    3 is otherwise written with prose only, so the emoji term is unique to
+    this fact and the hit list is fully determined.
+    """
+    fact = "🍊 🍋 🍌"
+    status, body = query(f"remember@3 '{fact}' topic:fruit")
+    assert status == 200, body.get("error")
+
+    status, body = query("recall@3 🍊")
+    assert status == 200, body.get("error")
+    values = [hit["value"] for hit in body["results"]["hits"]]
+    assert values == [fact], f"recall by emoji should find the fruit fact; got {values}"
+
+
 def test_recall_with_anchor_filters_returns_tagged_fact(query):
     """A fact written with topic:/entity: anchors must be recallable through
     those anchors — the ticket repro. Regression: Commit created the anchor
