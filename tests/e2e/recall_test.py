@@ -305,7 +305,7 @@ def test_recall_by_emoji_finds_the_fact(query):
     through the index like any word would. Before, the tokenizer kept only
     letters and digits: the fact was accepted and stored verbatim but indexed
     under no term at all, so it looked stored and could never be found. Graph
-    3 is otherwise written with prose only, so the emoji term is unique to
+    8 is otherwise written with prose only, so the emoji term is unique to
     this fact and the hit list is fully determined.
     """
     fact = "🍊 🍋 🍌"
