@@ -309,10 +309,10 @@ def test_recall_by_emoji_finds_the_fact(query):
     this fact and the hit list is fully determined.
     """
     fact = "🍊 🍋 🍌"
-    status, body = query(f"remember@3 '{fact}' topic:fruit")
+    status, body = query(f"remember@6 '{fact}' topic:fruit")
     assert status == 200, body.get("error")
 
-    status, body = query("recall@3 🍊")
+    status, body = query("recall@6 🍊")
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
     assert values == [fact], f"recall by emoji should find the fruit fact; got {values}"
