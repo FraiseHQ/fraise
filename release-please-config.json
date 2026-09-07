@@ -68,7 +68,7 @@
       "changelog-path": "CHANGELOG.md",
       "versioning": "prerelease",
       "prerelease": true,
-      "prerelease-type": "beta",
+      "prerelease-type": "rc",
       "bump-minor-pre-major": true,
       "extra-files": [
         {
