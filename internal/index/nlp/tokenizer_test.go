@@ -24,10 +24,41 @@ package nlp_test
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/index/nlp"
 )
+
+// TestWordsKeepsSpellingAndSymbolTerms pins the term boundary the tokenizers
+// and stop-word cleaning share: a term is a run of letters, digits and So
+// symbols, returned exactly as written. Emoji and marks such as ✓ and © are
+// terms in their own right — a fact whose salient content is an emoji used to
+// tokenize to nothing and index under no term, so it looked stored but could
+// never be found by text. Punctuation and the other symbol classes delimit as
+// before, so "c++" still splits to "c" and "$5" to "5", and joiners and
+// modifiers delimit, so a multi-rune emoji sequence yields its So symbols.
+func TestWordsKeepsSpellingAndSymbolTerms(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{"emoji are terms", "🍊 🍋 🍌", []string{"🍊", "🍋", "🍌"}},
+		{"symbols keep their spelling alongside words", "Deploy ✓ Acme©", []string{"Deploy", "✓", "Acme©"}},
+		{"punctuation delimits", "the, graph; is: temporal!", []string{"the", "graph", "is", "temporal"}},
+		{"math, currency and modifier symbols delimit", "c++ costs $5 and 2^3", []string{"c", "costs", "5", "and", "2", "3"}},
+		{"joiners and modifiers split a sequence into its symbols", "👨\u200d👩\u200d👧 👍\U0001F3FD ❤\ufe0f", []string{"👨", "👩", "👧", "👍", "❤"}},
+		{"delimiters alone yield no terms", " :) -- ", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := nlp.Words(tt.text); !slices.Equal(got, tt.want) {
+				t.Errorf("Words(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+}
 
 // TestStemmingTokenizerReducesInflections pins the stemmer's contract: the
 // split and casing are SimpleTokenizer's, and every English inflection lands
@@ -41,12 +72,12 @@ func TestStemmingTokenizerReducesInflections(t *testing.T) {
 }
 
 // TestStemmingTokenizerPassesUnstemmableTermsThrough pins the safety half:
-// numbers, non-English words and CJK text pass through the stemmer intact —
-// stemming rewrites, it never drops, so every term the plain split would
-// index still exists under some spelling.
+// numbers, non-English words, CJK text and symbols pass through the stemmer
+// intact — stemming rewrites, it never drops, so every term the plain split
+// would index still exists under some spelling.
 func TestStemmingTokenizerPassesUnstemmableTermsThrough(t *testing.T) {
-	got := nlp.StemmingTokenizer{}.Tokenize("v2 café 東京 1234")
-	want := []string{"v2", "café", "東京", "1234"}
+	got := nlp.StemmingTokenizer{}.Tokenize("v2 café 東京 1234 🍊")
+	want := []string{"v2", "café", "東京", "1234", "🍊"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Tokenize = %v, want %v", got, want)
 	}
