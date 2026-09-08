@@ -125,8 +125,8 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 		query string
 		want  string // substring of the inner, positioned error
 	}{
-		{"recall x since:soon", `invalid since value "soon": containers: invalid time value: "soon" (want e.g. 7d or 2026-01-15)`},
-		{"recall x until:later", `invalid until value "later": containers: invalid time value: "later" (want e.g. 7d or 2026-01-15)`},
+		{"recall x since:soon", `invalid since value "soon": containers: invalid time value: "soon" (want e.g. 7d or 2026-01-15); expected a duration like 7d or a date like 2026-01-15`},
+		{"recall x until:later", `invalid until value "later": containers: invalid time value: "later" (want e.g. 7d or 2026-01-15); expected a duration like 7d or a date like 2026-01-15`},
 		{"recall x depth:abc", "invalid depth value"},
 		{"recall x top:abc", "invalid top value"},
 		{"recall x topic:", "expected a word or quoted phrase"},

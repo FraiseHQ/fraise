@@ -563,7 +563,7 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 
 	t, err := containers.ParseTimeValue[K](tok.Literal)
 	if err != nil {
-		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: %s", strings.ToLower(key.Literal), tok.Describe(), err)
+		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: %s; expected a duration like 7d or a date like 2026-01-15", strings.ToLower(key.Literal), tok.Describe(), err)
 	}
 
 	return key, t, nil
