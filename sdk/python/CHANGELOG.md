@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-rc.1](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-beta.5...python/v0.1.0-rc.1) (2026-09-07)
+
+
+### Bug fixes
+
+* **python:** reject a bare string where a sequence is wanted ([#290](https://github.com/FraiseHQ/fraise/issues/290)) ([caf046e](https://github.com/FraiseHQ/fraise/commit/caf046e46f35ab71586c8199d80dd6b67b17ae94))
+
 ## [0.1.0-beta.5](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-beta.4...python/v0.1.0-beta.5) (2026-09-06)
 
 
