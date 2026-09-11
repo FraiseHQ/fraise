@@ -15,15 +15,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/FraiseHQ/fraise/actions/workflows/go.yaml"><img src="https://github.com/FraiseHQ/fraise/actions/workflows/go.yaml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml"><img src="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml/badge.svg" alt="Python SDK"></a>
-  <a href="https://codecov.io/gh/FraiseHQ/fraise" ><img src="https://codecov.io/gh/FraiseHQ/fraise/branch/main/graph/badge.svg?token=Y4T2AA3JBF"/></a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/FraiseHQ/fraise"><img src="https://api.scorecard.dev/projects/github.com/FraiseHQ/fraise/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://github.com/FraiseHQ/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/FraiseHQ/fraise?sort=semver" alt="Go"></a>
-  <a href="https://pypi.org/project/fraise-sdk/"><img src="https://img.shields.io/pypi/v/fraise-sdk" alt="PyPI"></a>
-  <a href="https://pkg.go.dev/github.com/FraiseHQ/fraise"><img src="https://pkg.go.dev/badge/github.com/FraiseHQ/fraise.svg" alt="Go Reference"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-  <a href="https://discord.com/invite/VYnAkb8gH"><img src="https://img.shields.io/discord/1523303330326253759?logo=discord&logoColor=white&label=discord&color=5865F2" alt="Discord"></a>
+  <a href="https://github.com/FraiseHQ/fraise/stargazers"><img src="https://img.shields.io/github/stars/FraiseHQ/fraise?style=for-the-badge&logo=github&logoColor=white&label=STARS&labelColor=555&color=E3B341" alt="Stars"></a>
+  <a href="https://github.com/FraiseHQ/fraise/forks"><img src="https://img.shields.io/github/forks/FraiseHQ/fraise?style=for-the-badge&logo=github&logoColor=white&label=FORKS&labelColor=555&color=2088C1" alt="Forks"></a>
+  <a href="https://github.com/FraiseHQ/fraise/releases/latest"><img src="https://img.shields.io/github/v/release/FraiseHQ/fraise?sort=semver&filter=v*&style=for-the-badge&label=RELEASE&labelColor=555&color=2088C1" alt="Release"></a>
+  <a href="https://pypi.org/project/fraise-sdk/"><img src="https://img.shields.io/pypi/v/fraise-sdk?style=for-the-badge&logo=pypi&logoColor=white&label=PYPI&labelColor=555&color=2088C1" alt="PyPI"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/FraiseHQ/fraise?style=for-the-badge&label=LICENSE&labelColor=555&color=3FB950" alt="License: MIT"></a>
+  <br>
+  <a href="https://github.com/FraiseHQ/fraise/actions/workflows/go.yaml"><img src="https://img.shields.io/github/actions/workflow/status/FraiseHQ/fraise/go.yaml?branch=main&style=for-the-badge&label=CI&labelColor=555" alt="CI"></a>
+  <a href="https://github.com/FraiseHQ/fraise/actions/workflows/python.yaml"><img src="https://img.shields.io/github/actions/workflow/status/FraiseHQ/fraise/python.yaml?branch=main&style=for-the-badge&label=PYTHON%20SDK&labelColor=555" alt="Python SDK"></a>
+  <a href="https://codecov.io/gh/FraiseHQ/fraise"><img src="https://img.shields.io/codecov/c/github/FraiseHQ/fraise?style=for-the-badge&logo=codecov&logoColor=white&label=COVERAGE&labelColor=555" alt="Coverage"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/FraiseHQ/fraise"><img src="https://img.shields.io/ossf-scorecard/github.com/FraiseHQ/fraise?style=for-the-badge&label=OPENSSF%20SCORECARD&labelColor=555" alt="OpenSSF Scorecard"></a>
+  <br>
+  <a href="https://pkg.go.dev/github.com/FraiseHQ/fraise"><img src="https://img.shields.io/badge/GO%20REFERENCE-PKG.GO.DEV-2088C1?style=for-the-badge&logo=go&logoColor=white&labelColor=555" alt="Go Reference"></a>
+  <a href="https://discord.com/invite/VYnAkb8gH"><img src="https://img.shields.io/badge/DISCORD-JOIN-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=555" alt="Discord"></a>
 </p>
 
 **Fraise is a memory database for AI agents.** One they query directly, in a
