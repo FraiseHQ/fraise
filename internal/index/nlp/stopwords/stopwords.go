@@ -24,9 +24,10 @@ package stopwords
 
 import (
 	"strings"
-	"unicode"
 
 	"golang.org/x/text/language"
+
+	"github.com/FraiseHQ/fraise/internal/index/nlp"
 )
 
 // sets maps a base language to its lowercase stop-word set. Keying on the
@@ -48,9 +49,9 @@ func toSet(words []string) map[string]struct{} {
 // CleanContent removes tag's stop words from content and returns the words
 // that survive, in their original spelling and order, joined by single
 // spaces. Matching is case-insensitive, and words are delimited the way the
-// tokenizer delimits them — runs of characters that are neither letters nor
-// digits — so punctuation never shields a stop word and the terms removed
-// here are exactly the terms the index would otherwise have carried.
+// tokenizer delimits them — nlp.Words is the one definition of the boundary —
+// so punctuation never shields a stop word and the terms removed here are
+// exactly the terms the index would otherwise have carried.
 // Cleaning only removes, never rewrites: every surviving word still reaches
 // the index as written. A tag that does not state its language (Base infers
 // "en" for language.Und, at low confidence) or states one with no stop-word
@@ -66,9 +67,7 @@ func CleanContent(content string, tag language.Tag) string {
 	if !ok {
 		return content
 	}
-	words := strings.FieldsFunc(content, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
+	words := nlp.Words(content)
 	kept := words[:0]
 	for _, word := range words {
 		if _, stop := set[strings.ToLower(word)]; !stop {
