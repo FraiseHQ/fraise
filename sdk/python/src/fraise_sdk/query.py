@@ -89,10 +89,29 @@ def _token(kind: str, value: str) -> str:
     return value
 
 
+def _sequence(kind: str, values: Iterable[str] | None) -> Iterable[str]:
+    """Return ``values`` as the ``kind`` tokens the caller meant, or nothing.
+
+    ``str`` satisfies ``Sequence[str]``, so ``topics="billing"`` passes the
+    type hint and then iterates into one token per character: the write
+    succeeds, the fact is filed under ``b``, ``i``, ``l``... and a recall by the
+    anchor the caller named finds nothing. A bare string is refused by name
+    instead — the caller meant one value, and a fact that is accepted, stored
+    and unretrievable is the worst outcome a builder can hand back.
+
+    Raises:
+        FraiseQueryError: if ``values`` is a string rather than a sequence.
+    """
+    if isinstance(values, str):
+        raise FraiseQueryError(
+            f"{kind} must be a sequence of strings, not a string: {values!r}; "
+            f"did you mean [{values!r}]?"
+        )
+    return values or []
+
+
 def _clauses(prefix: str, values: Iterable[str] | None) -> list[str]:
-    if not values:
-        return []
-    return [f"{prefix}:{_token(prefix, v)}" for v in values]
+    return [f"{prefix}:{_token(prefix, v)}" for v in _sequence(prefix, values)]
 
 
 def _quote_value(value: str) -> str:
@@ -195,7 +214,7 @@ def build_recall(
         parts.append(_quote_value(query))
     # len(parts) == 1 is the leading term slot: nothing but the command has been
     # written yet, so this keyword is the one the grammar reads as data.
-    for keyword in keywords or []:
+    for keyword in _sequence("keyword", keywords):
         parts.append(_term(keyword, leading=len(parts) == 1))
     parts += _clauses("topic", topics)
     parts += _clauses("entity", entities)
