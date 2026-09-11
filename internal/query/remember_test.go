@@ -65,7 +65,7 @@ func TestRememberHash(t *testing.T) {
 	// Hash folds in graph, value, the delimited entity/topic lists and the
 	// bound vector so writes that differ in any of those get distinct cache
 	// keys.
-	const want = "g=2|v=hello world|en=alice|to=greeting|vec=H(0x1p-01)"
+	const want = "g=1:2|v=11:hello world|en=1[5:alice]|to=1[8:greeting]|vec=10:H(0x1p-01)|"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -125,5 +125,20 @@ func TestRememberPlan(t *testing.T) {
 	case <-s.Done():
 		t.Error("Plan() stream is already done; it must stay open until committed")
 	default:
+	}
+}
+
+// TestRememberHashDelimiterCollision pins the #237 case: a fact value that
+// contains the old "|en=" delimiter must not hash like a shorter value with
+// an entity that continues the same bytes.
+func TestRememberHashDelimiterCollision(t *testing.T) {
+	h := &fakeHasher{}
+	q1 := Remember[string, float32]{Value: "x|en=y"}
+	q2 := Remember[string, float32]{Value: "x", Entities: []string{"y|en="}}
+	if q1.Hash(h) == q2.Hash(h) {
+		t.Fatalf("distinct remembers collided: both hashed to %q", q1.Hash(h))
+	}
+	if q1.SameAs(&q2) {
+		t.Fatal("SameAs reported equal for delimiter-shifted remembers")
 	}
 }

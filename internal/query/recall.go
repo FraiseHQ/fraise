@@ -62,29 +62,63 @@ func (r *Recall[K, P]) SetGraphID(id uint8) {
 // hash alike.
 func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
-	b.WriteString("g=")
-	b.WriteString(strconv.Itoa(int(r.context.GraphID)))
-	b.WriteString("|kw=")
-	b.WriteString(strings.Join(r.Keywords, "\x00"))
-	b.WriteString("|en=")
-	b.WriteString(strings.Join(r.Entities, "\x00"))
-	b.WriteString("|to=")
-	b.WriteString(strings.Join(r.Topics, "\x00"))
-	b.WriteString("|d=")
-	b.WriteString(strconv.Itoa(r.Parameters.Depth))
-	b.WriteString("|t=")
-	b.WriteString(strconv.Itoa(r.Parameters.Top))
-	b.WriteString("|s=")
+	writeField(&b, "g", strconv.Itoa(int(r.context.GraphID)))
+	writeList(&b, "kw", r.Keywords)
+	writeList(&b, "en", r.Entities)
+	writeList(&b, "to", r.Topics)
+	writeField(&b, "d", strconv.Itoa(r.Parameters.Depth))
+	writeField(&b, "t", strconv.Itoa(r.Parameters.Top))
+	since := ""
 	if s := r.Parameters.Since; s != nil {
-		b.WriteString(s.Hash(h))
+		since = s.Hash(h)
 	}
-	b.WriteString("|u=")
+	writeField(&b, "s", since)
+	until := ""
 	if u := r.Parameters.Until; u != nil {
-		b.WriteString(u.Hash(h))
+		until = u.Hash(h)
 	}
-	b.WriteString("|vec=")
-	b.WriteString(r.Vector.Hash(h))
+	writeField(&b, "u", until)
+	writeField(&b, "vec", r.Vector.Hash(h))
 	return h.Hash(b.String())
+}
+
+// SameAs reports whether other is an equivalent Recall for plan-cache hits.
+func (r Recall[K, P]) SameAs(other Query[K, P]) bool {
+	o, ok := other.(*Recall[K, P])
+	if !ok {
+		return false
+	}
+	if r.context.GraphID != o.context.GraphID {
+		return false
+	}
+	if r.Parameters.Depth != o.Parameters.Depth || r.Parameters.Top != o.Parameters.Top {
+		return false
+	}
+	if len(r.Keywords) != len(o.Keywords) || len(r.Entities) != len(o.Entities) || len(r.Topics) != len(o.Topics) {
+		return false
+	}
+	for i := range r.Keywords {
+		if r.Keywords[i] != o.Keywords[i] {
+			return false
+		}
+	}
+	for i := range r.Entities {
+		if r.Entities[i] != o.Entities[i] {
+			return false
+		}
+	}
+	for i := range r.Topics {
+		if r.Topics[i] != o.Topics[i] {
+			return false
+		}
+	}
+	if !timeValuesEqual[K](r.Parameters.Since, o.Parameters.Since) {
+		return false
+	}
+	if !timeValuesEqual[K](r.Parameters.Until, o.Parameters.Until) {
+		return false
+	}
+	return r.Vector.Equal(o.Vector)
 }
 
 func (r Recall[K, P]) IsWrite() bool {
