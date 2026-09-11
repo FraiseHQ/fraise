@@ -1,0 +1,58 @@
+---
+title: "Introduction"
+description: "Fraise is an in-memory temporal memory graph database that AI agents query directly, in a language built for tokens rather than for humans"
+navIcon: "🍓"
+---
+
+**Fraise is a memory database for AI agents.** One they query directly, in a language built for tokens, not humans.
+
+```text
+remember 'acme moved to annual billing' topic:billing entity:acme
+
+recall billing entity:acme since:30d top:5
+```
+
+Two verbs. One binary. No infrastructure to run.
+
+## The constraint everything follows from
+
+Fraise is a high-performance, in-memory database for AI agents' contextual memory. Agents are given access to a simple DSL that allows them to store and retrieve memory in real time.
+
+Everything in this documentation follows from one constraint: **the caller is a model, not a person.** It queries far more often than a human would, it pays for every token it reads back, and it cannot tell a wrong answer from a right one.
+
+That is why:
+
+- the query language is small — see [Design principles](/docs/query-language/foundations/design-principles);
+- results are ranked and capped rather than complete — see [Context engineering](/docs/getting-started/context-engineering);
+- an unparseable query is an error rather than a best guess — see [Warnings](/docs/query-language/reference/warnings).
+
+## What it stores
+
+Fraise stores knowledge as a **temporal memory graph** built from three kinds of node:
+
+- **facts** — the things you remember, one statement each
+- **entities** — who or what a fact mentions
+- **topics** — what a fact is about
+
+Edges connect facts to the entities they mention and the topics they are about, so a query can start from either side. A `recall` finds seed facts by text (and optionally by vector similarity), expands through shared entities and topics up to `depth` hops, ranks by relevance and recency, and returns the best `top` results.
+
+A single Fraise instance holds several independent memory graphs (8 by default), addressed with `@N` — one per user, per session, per agent, however you like. See [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+
+## Before you build on it
+
+Fraise doesn't yet support persistance. Read [Durability](/docs/operations/durability) before you deploy. What the store keeps across a restart, and what that means for deploys, load balancers and capacity planning.
+
+## Status
+
+**v0.1.0 — the first stable release.** The core loop works end to end, the install paths are verified on clean machines, and the published benchmark row is produced from this tag.
+
+Good for building agent memory today. Not yet for long term production use.
+
+## Where to go next
+
+<CardGrid>
+  <Card title="Quickstart" description="a server and your first memory in two commands" href="/docs/getting-started/quickstart" />
+  <Card title="Why Fraise" description="what it does differently, and how it measures up" href="/docs/why-fraise" />
+  <Card title="Query language" description="the grammar an agent writes" href="/docs/query-language/foundations/design-principles" />
+  <Card title="HTTP API" description="the three endpoints everything goes through" href="/docs/http-api/endpoints/query" />
+</CardGrid>

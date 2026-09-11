@@ -1,0 +1,40 @@
+---
+title: "Errors"
+description: "One error shape, four status codes, and the two properties that make client errors precise and server errors opaque"
+navIcon: "⚠️"
+---
+
+Every failure returns the same shape, with the status code carrying the category:
+
+```json
+{"error": "parse error at column 24: Expected colon, but found \"food\""}
+```
+
+| Status | When |
+|--------|---------------------------------------------------------------------------------------------------------------------------------------|
+| 400 | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a vector whose dimension does not match its graph, a graph selector outside the allocated range |
+| 429 | the scheduler queue stayed full past `enqueue-timeout` — back off and retry |
+| 503 | the server is shutting down |
+| 500 | an internal failure |
+
+## Two deliberate properties
+
+**A client error says exactly what is wrong**, including the column a parse failed at and the values a field accepts. The caller is usually a model, and a model can correct itself from a precise message — that is the whole reason the parser refuses to guess.
+
+**A 500 never carries detail.** The body is a generic message and the specifics go to the log, so an internal error cannot leak the shape of the store to a client.
+
+## Handling a 429
+
+A 429 means the queue stayed full for `enqueue-timeout` and the request was shed. That is working as intended — the alternative is unbounded blocked goroutines. Back off and retry; if they are sustained, the scheduler settings are mismatched to the load. See [Load and backpressure](/docs/operations/runbook/backpressure).
+
+## Handling a 400
+
+The message names the fix. Common cases:
+
+| Message names | Fix |
+|---|---|
+| a column and an unexpected token | correct the syntax at that column — see [Grammar](/docs/query-language/reference/grammar) |
+| a range | the value exceeded a [bound](/docs/query-language/tokens/bounds) |
+| a missing parameter | bind it in the request's `parameters` object |
+| a dimension mismatch | the graph was built with a different embedding model — see [Dimensions](/docs/retrieval/embeddings/dimensions) |
+| the graphs that exist | the selector named an unallocated graph; raise `num-graphs` or pick another |

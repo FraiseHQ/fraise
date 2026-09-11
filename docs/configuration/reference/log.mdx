@@ -1,0 +1,27 @@
+---
+title: "[log]"
+description: "Log level, output format and timestamps"
+navLabel: "Logging"
+---
+
+| Setting | Flag | Default | Accepts |
+|---------------------|--------------------------|---------|-------------------------------|
+| `level` | `-log-level` | `INFO` | `DEBUG` `INFO` `WARN` `ERROR` |
+| `format` | `-log-format` | `text` | `text` `json` |
+| `disable-timestamp` | `-log-disable-timestamp` | `true` | boolean |
+
+Logs go to stdout; **file logging is not supported.**
+
+```toml
+[log]
+level = "DEBUG"
+format = "json"
+disable-timestamp = true
+```
+
+## Notes
+
+- Values from the fixed vocabulary are matched without regard to case, so `-log-level error` and `-log-level ERROR` are the same request. A value outside it stops the server before it binds a port.
+- Run with `format = "json"` if you ship logs anywhere that parses them.
+- The log is half the observability surface — `/api/v1/stats` is the other half. There are no metrics endpoints yet. See [Health and monitoring](/docs/operations/runbook/health-and-monitoring).
+- When a service manager owns the process, its own facility collects stdout: `$(brew --prefix)/var/log/fraise.log` under Homebrew, the journal under systemd.

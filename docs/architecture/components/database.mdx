@@ -1,0 +1,41 @@
+---
+title: "Database"
+description: "The layer that owns the graphs and translates a stream into calls on one of them"
+---
+
+The database owns the graphs and translates a stream into calls on one of them.
+
+It allocates `num-graphs` graphs at startup and **never grows**: a selector is an index, not a lookup. That is what makes graph selection O(1) and what makes an out-of-range selector a clean error rather than an allocation.
+
+## Reads and writes are both streams
+
+The database does not distinguish them — `Query.IsWrite()` is what the scheduler uses to decide the lock it takes:
+
+- a **read** runs the search against the live graph under a read lock;
+- a **write** mutates it directly under the exclusive lock.
+
+## Persistence
+
+See [Durability](/docs/operations/durability) for what the store keeps across a restart and what that means in production.
+
+## What a graph holds
+
+| Structure | Contents |
+|---|---|
+| nodes | facts, entities, relationships |
+| text index | full-text search over ingested data |
+| vector index | RP-tree forest, when embeddings are provided |
+| adjacency maps | source and target maps for traversal |
+
+```go
+type InMemoryGraph[K comparable, P float32 | float64] struct {
+    idToNodes     map[K]Node[K]
+    nodeToSources map[K]map[K]Relationship[K]
+    nodeToTargets map[K]map[K]Relationship[K]
+    mu            sync.RWMutex
+}
+```
+
+## Node keys
+
+`db.hashing-function` derives node keys from values — `xxhash` (default) or `t1ha`, with a `uint64` seed. Changing either means the same fact hashes to a different key; [Durability](/docs/operations/durability) explains why that is only a concern across a restart. The settings are listed in [Database settings](/docs/configuration/reference/database).

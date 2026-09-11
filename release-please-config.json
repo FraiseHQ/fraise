@@ -17,10 +17,7 @@
       "release-type": "go",
       "package-name": "fraise",
       "include-component-in-tag": false,
-      "changelog-path": "CHANGELOG.md",
-      "versioning": "prerelease",
-      "prerelease": true,
-      "prerelease-type": "beta",
+      "changelog-path": "docs/changelog.md",
       "bump-minor-pre-major": true,
       "exclude-paths": [
         ".dockerignore",
@@ -32,7 +29,6 @@
         ".python-version",
         ".release-please-manifest.json",
         "AGENTS.md",
-        "CHANGELOG.md",
         "CLAUDE.md",
         "CODE_OF_CONDUCT.md",
         "COMPATIBILITY.md",
@@ -69,7 +65,7 @@
       "changelog-path": "CHANGELOG.md",
       "versioning": "prerelease",
       "prerelease": true,
-      "prerelease-type": "beta",
+      "prerelease-type": "rc",
       "bump-minor-pre-major": true,
       "extra-files": [
         {

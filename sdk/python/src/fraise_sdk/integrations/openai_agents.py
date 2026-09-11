@@ -44,22 +44,36 @@ concern, not something the model should pick.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.errors import FraiseError
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
 try:
     from agents import FunctionTool, function_tool
+    from pydantic import Field
 except ImportError as exc:  # pragma: no cover - exercised only without the extra
     raise ImportError(
         "The OpenAI Agents integration requires the 'openai-agents' package. "
         "Install it with:  pip install 'fraise-sdk[openai]'"
     ) from exc
 
-# Tool-call budgets: sane ceilings so the model does not have to reason about
-# scale. Overridable per call by the model within the tool's own arguments.
+# Tool-call budget: a sane ceiling so the model does not have to reason about
+# scale, overridable per call within the tool's own arguments. Depth has no
+# default here: an omitted clause takes the lane the server is configured
+# with, and this tool names no topic or entity, so any explicit lane above the
+# floor would only draw a warning.
 _DEFAULT_TOP = 5
-_DEFAULT_DEPTH = 2
+
+# The retrieval lanes are 0, 1 and 2 by design — the scorer runs at most one
+# anchor-mediated round — so a larger depth is not a deeper search but a
+# request the server rejects at parse time. The bound rides on the parameter's
+# annotation, which the framework turns into both the schema's range and a
+# validation of every call, so the model gets a correction it can act on
+# rather than a round trip that fails. An operator can only lower the ceiling
+# (max-depth), and the server's own rejection still surfaces as a tool error.
+_MAX_DEPTH = 2
 
 
 def recall_tool(
@@ -78,7 +92,9 @@ def recall_tool(
     encode = resolve_embedder(embedder)
 
     def recall_memory(
-        keywords: list[str], top: int = _DEFAULT_TOP, depth: int = _DEFAULT_DEPTH
+        keywords: list[str],
+        top: int = _DEFAULT_TOP,
+        depth: Annotated[int | None, Field(ge=0, le=_MAX_DEPTH)] = None,
     ) -> str:
         """Search long-term memory for facts related to the given keywords.
 
@@ -89,8 +105,12 @@ def recall_tool(
             keywords: Salient words to search for — names, topics, or nouns from
                 the question. Provide several for a broader search.
             top: Maximum number of facts to return, most relevant first.
-            depth: How far to follow links between related facts (1 keeps only
-                direct keyword matches; higher pulls in connected facts).
+            depth: Retrieval lane, 0 to 2. 0 searches the text and vector
+                indices only; 1 also lets topics and entities that clearly
+                concentrate the matches pull in the facts filed under them; 2
+                admits them at their fair share for maximum recall. The graph
+                lanes need a topic or entity on the recall, which this tool
+                does not name, so omit it and the server's default applies.
 
         """
         vector = encode(" ".join(keywords)) if encode and keywords else None

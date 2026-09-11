@@ -32,6 +32,7 @@ import pytest
 import requests
 from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
 from fraise_sdk.client import DEFAULT_TIMEOUT_SECONDS
+from fraise_sdk.errors import FraiseQueryError
 
 
 def test_remember_posts_expected_query(session, query_url):
@@ -49,6 +50,20 @@ def test_remember_with_vector_sends_parameters(session, sent):
         "query": "remember@6 'kingfisher is blue' vec:$v",
         "parameters": {"v": [0.5, 0.5]},
     }
+
+
+def test_a_bare_string_topic_is_rejected_before_any_request(session):
+    """``topics="color"`` never reaches the wire.
+
+    The builder refuses a bare string where a sequence is wanted, and the
+    client raises that error before posting. The server would accept the
+    letter-by-letter expansion and file the fact under one anchor per
+    character, unretrievable by the anchor the caller named, so failing in the
+    caller's own stack trace is the only useful answer.
+    """
+    with pytest.raises(FraiseQueryError, match="did you mean"):
+        FraiseClient().remember("the parrot is turquoise", topics="color")
+    session.post.assert_not_called()
 
 
 def test_recall_parses_hits(session, respond, sent):
@@ -450,18 +465,22 @@ def test_remember_then_recall_returns_the_fact(client, round_trip_graph):
 
 
 @pytest.mark.integration
-def test_a_lone_seed_hub_stays_silent(instrument_graph, client):
+def test_a_lone_seed_hub_stays_silent(instrument_graph, instrument_topic, client):
     """A single seed's topic hub holds exactly the background rate, so its
-    siblings never surface on reachability alone — in either retrieval lane.
+    siblings never surface on reachability alone — in either graph lane.
 
     This is the excess-transmission contract through the SDK: an anchor is
     heard only when its members matched better than its size predicts. The
-    two depths are asserted for different reasons: depth=1 is the BM25 floor,
-    where no traversal runs at all, while depth=2 runs the excess round and
-    the hub declines to transmit on its own merits.
+    topic is named because the graph is entered only through an anchor the
+    recall names; the two depths are then the two lanes that run it, depth=1
+    admitting an anchor only well above its fair share and depth=2 at the
+    fair share itself, and the hub declines to transmit at either bar.
     """
-    assert client.recall("cello", graph=instrument_graph, depth=1).count == 1
-    assert client.recall("cello", graph=instrument_graph, depth=2).count == 1
+    for depth in (1, 2):
+        hits = client.recall(
+            "cello", graph=instrument_graph, topics=[instrument_topic], depth=depth
+        )
+        assert hits.count == 1, f"depth={depth}: a fair-share hub must not transmit"
 
 
 @pytest.mark.integration

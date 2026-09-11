@@ -45,7 +45,8 @@ this map current when claiming a graph:
     6  vector round trip + cache probes
        + krakatoa fusion cluster          (test_vectors.py, test_query_cache.py)
     7  planet star
-       + lantern/almanac depth-lane probe  (test_recall.py)
+       + lantern/almanac depth-lane probe
+       + tidepool + saltmarsh anchor probes (test_recall.py)
 """
 
 import os
@@ -214,6 +215,34 @@ _ALMANAC_HUB = ("a lantern in the old almanac",) + tuple(
     f"unrelated almanac entry {i}" for i in range(7)
 )
 
+# The anchor-seeding probe. A fact filed under a topic and an entity at once,
+# between a fact filed under the topic alone and one under the entity alone,
+# so a recall naming both anchors and nothing else has a union to assemble, a
+# duplicate to suppress and a fact to rank first — the one filed under both.
+# Written in this order, so newest first is the reverse of it. No fact here
+# contains "planet", "mercury" or "lantern", and nothing else on graph 7 is
+# filed under these anchors, so the results are exact.
+_TIDEPOOL_TOPIC = "tidepool"
+_TIDEPOOL_ENTITY = "limpet"
+_TIDEPOOL_FACTS = {
+    "topic": "the tide leaves the rockpool warm",
+    "both": "the limpet clamps down as the water drops",
+    "entity": "a limpet returns to its home scar",
+}
+_TIDEPOOL_ANCHORS = {
+    "topic": f"topic:{_TIDEPOOL_TOPIC}",
+    "both": f"topic:{_TIDEPOOL_TOPIC} entity:{_TIDEPOOL_ENTITY}",
+    "entity": f"entity:{_TIDEPOOL_ENTITY}",
+}
+
+# The default-top probe: one anchor holding more facts than the daemon's
+# configured default-top (10 in tests/fraise.config.toml), so an anchor-only
+# recall with no top: clause is visibly capped. Shares graph 7 with the probes above and
+# contains none of their words.
+_DEFAULT_TOP = 10
+_SALTMARSH_TOPIC = "saltmarsh"
+_SALTMARSH_FACTS = tuple(f"saltmarsh channel {i} was surveyed" for i in range(12))
+
 
 @pytest.fixture(scope="session")
 def planet_facts():
@@ -261,6 +290,58 @@ def lantern_graph(query):
     for phrase in _ALMANAC_HUB:
         status, body = query(
             f"remember@{_PLANET_GRAPH} '{phrase}' topic:{_ALMANAC_TOPIC}"
+        )
+        assert status == 200, body.get("error")
+    return _PLANET_GRAPH
+
+
+@pytest.fixture(scope="session")
+def tidepool_anchors():
+    """The anchor-seeding probe's (topic, entity) pair."""
+    return _TIDEPOOL_TOPIC, _TIDEPOOL_ENTITY
+
+
+@pytest.fixture(scope="session")
+def tidepool_facts():
+    """The anchor-seeding probe's facts, keyed by what each is filed under
+    ("topic", "both", "entity"), in write order."""
+    return dict(_TIDEPOOL_FACTS)
+
+
+@pytest.fixture(scope="module")
+def tidepool_graph(query):
+    """Seed the anchor-seeding probe and return its graph id.
+
+    Idempotent for the same reason as the planet star: facts are keyed by
+    value, and a rewrite refreshes the timestamp in the same order.
+    """
+    for filed, phrase in _TIDEPOOL_FACTS.items():
+        status, body = query(
+            f"remember@{_PLANET_GRAPH} '{phrase}' {_TIDEPOOL_ANCHORS[filed]}"
+        )
+        assert status == 200, body.get("error")
+    return _PLANET_GRAPH
+
+
+@pytest.fixture(scope="session")
+def default_top():
+    """The daemon's configured default-top (tests/fraise.config.toml)."""
+    return _DEFAULT_TOP
+
+
+@pytest.fixture(scope="session")
+def saltmarsh_facts():
+    """The default-top probe's facts, in write order."""
+    return tuple(_SALTMARSH_FACTS)
+
+
+@pytest.fixture(scope="module")
+def saltmarsh_graph(query):
+    """Seed the default-top probe and return its graph id. Idempotent: facts
+    are keyed by value."""
+    for phrase in _SALTMARSH_FACTS:
+        status, body = query(
+            f"remember@{_PLANET_GRAPH} '{phrase}' topic:{_SALTMARSH_TOPIC}"
         )
         assert status == 200, body.get("error")
     return _PLANET_GRAPH

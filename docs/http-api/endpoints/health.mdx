@@ -1,0 +1,39 @@
+---
+title: "GET / — health check"
+description: "Liveness, readiness and the version handshake the SDKs rely on"
+navLabel: "Health check"
+---
+
+```sh
+curl localhost:9876/
+```
+
+```json
+{"status": "ok", "version": "0.1.0"}
+```
+
+## What it tells you
+
+`GET /` returns 200 with a status and the running version once the server is listening.
+
+<Note title="Liveness and readiness" type="success">
+
+It is a **liveness and readiness check in one** — there is nothing to warm up and nothing to recover, so a server that answers is a server that works.
+
+</Note>
+
+```yaml
+healthcheck:
+  test: ["CMD", "wget", "-qO-", "http://localhost:9876/"]
+  interval: 10s
+  timeout: 2s
+  retries: 3
+```
+
+## The version field is a contract
+
+`version` is the SDKs' only handshake: they read it to check the server falls in the range they support, so the field is part of the contract rather than a convenience.
+
+## When it does not answer
+
+If the process exits immediately after a deploy, read the first log line: a startup failure names the setting it could not honour, and no amount of restarting will fix it. See [Startup](/docs/operations/runbook/startup).

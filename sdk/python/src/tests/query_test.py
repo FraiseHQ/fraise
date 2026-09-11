@@ -114,6 +114,33 @@ def test_recall_rejects_whitespace_in_keyword():
         build_recall(["two words"])
 
 
+@pytest.mark.parametrize(
+    ("build", "args", "param", "kind"),
+    [
+        (build_remember, ("a fact",), "topics", "topic"),
+        (build_remember, ("a fact",), "entities", "entity"),
+        (build_recall, (), "topics", "topic"),
+        (build_recall, (), "entities", "entity"),
+        (build_recall, (), "keywords", "keyword"),
+    ],
+)
+def test_a_bare_string_where_a_sequence_is_wanted_is_rejected(build, args, param, kind):
+    """``topics="billing"`` is refused by name, never expanded letter by letter.
+
+    ``str`` satisfies ``Sequence[str]``, so the bare string type-checks and
+    used to iterate into ``topic:b topic:i topic:l ...``: the write succeeded,
+    the fact was filed under one anchor per letter, and a recall by ``billing``
+    found nothing. Every path that takes a sequence is covered — the five reach
+    the check independently — and the message names the fix.
+    """
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build(*args, **{param: "billing"})
+    assert str(exc_info.value) == (
+        f"{kind} must be a sequence of strings, not a string: 'billing'; "
+        "did you mean ['billing']?"
+    )
+
+
 @pytest.mark.parametrize("bad", [0, -1])
 def test_recall_rejects_non_positive_top(bad):
     """top must be positive — a recall that can return nothing is a caller bug."""

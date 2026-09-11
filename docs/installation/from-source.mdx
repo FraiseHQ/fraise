@@ -1,0 +1,55 @@
+---
+title: "From source"
+description: "Install with the Go toolchain, or clone the repository and run a development server"
+---
+
+## With Go
+
+<Step>
+  <StepItem title="Install">
+
+  ```sh
+  go install github.com/FraiseHQ/fraise/cmd/server@latest
+  ```
+
+  </StepItem>
+  <StepItem title="Run">
+
+  ```sh
+  "$(go env GOPATH)/bin/server"
+  ```
+
+  </StepItem>
+</Step>
+
+The binary installs as `server`, after its package path — rename it to `fraise` if that reads better.
+
+<Note title="Nothing further to verify" type="success">
+
+  Nothing further is needed to trust this: the Go toolchain checks every module download against the public checksum transparency log, and your own machine compiles the result.
+
+</Note>
+
+## Run from a clone
+
+<Step>
+  <StepItem title="Clone">
+
+  ```sh
+  git clone https://github.com/FraiseHQ/fraise
+  cd fraise
+  ```
+
+  </StepItem>
+  <StepItem title="Start the development server">
+
+  ```sh
+  make dev
+  ```
+
+  </StepItem>
+</Step>
+
+## Which build runs
+
+`cmd/server` picks a float precision at startup and the whole stack below follows it. Each layer is generic in `[K, P]` — `K` the node key type (`uint64` in production) and `P` the float width of embeddings and scores — and both instantiations are compiled into the binary, so `db.precision` selects one rather than recompiling. See [Architecture](/docs/architecture/overview).

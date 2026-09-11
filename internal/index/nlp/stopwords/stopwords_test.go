@@ -32,8 +32,9 @@ import (
 
 // TestCleanContentRemovesEnglishStopWords pins the cleaning contract:
 // matching is case-insensitive, surviving words keep their spelling and
-// order, and any run of non-alphanumeric characters delimits a word — the
-// tokenizer's split — so punctuation never shields a stop word from removal.
+// order, and words are delimited the tokenizer's way — punctuation splits, a
+// symbol such as an emoji is a word — so punctuation never shields a stop
+// word from removal and a symbol survives it as a term.
 func TestCleanContentRemovesEnglishStopWords(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -44,6 +45,7 @@ func TestCleanContentRemovesEnglishStopWords(t *testing.T) {
 		{"matching ignores case, survivors keep theirs", "The Graph IS Temporal", "Graph Temporal"},
 		{"punctuation does not shield a stop word", "the, graph; is: temporal!", "graph temporal"},
 		{"hyphens delimit words", "state-of-the-art recall", "state art recall"},
+		{"symbols are words and survive", "the 🍊 is ripe ✓", "🍊 ripe ✓"},
 		{"only stop words leave nothing", "to be or not to be", ""},
 		{"empty content stays empty", "", ""},
 	}

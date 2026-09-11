@@ -1,0 +1,77 @@
+---
+title: "Concurrency guarantees"
+description: "What is guaranteed per graph, what is guaranteed across graphs, and what is explicitly not guaranteed about ordering"
+---
+
+## Per-graph atomicity
+
+All operations on a single graph are serialized through its lock:
+
+- concurrent writes to the same graph **will serialize**;
+- concurrent reads do not block each other;
+- writes block concurrent reads.
+
+## Cross-graph independence
+
+Operations on different graphs are fully independent:
+
+- 4 workers can write to 4 different graphs in parallel;
+- no global coordination or lock contention.
+
+## Stream ordering within a graph
+
+Streams submitted to the scheduler are processed **in FIFO order** (per worker). However, because there are multiple workers:
+
+- streams targeting the same graph may be processed by different workers;
+- lock ordering is still FIFO — whoever acquires the lock first goes first;
+- **there is no guaranteed ordering across multiple workers.**
+
+<Note title="No cross-worker ordering" type="warning">
+
+  If strict ordering is required, submit streams to a single worker or use a dedicated queue.
+
+</Note>
+
+## Practical implications
+
+### High concurrency
+
+<Mermaid
+  chart='flowchart TD
+  setup["4 workers, 8 graphs"] --> a1["Agent 1 submits write to graph 0"]
+  setup --> a2["Agent 2 submits write to graph 1"]
+  setup --> a3["Agent 3 submits write to graph 2"]
+  setup --> a4["Agent 4 submits write to graph 3"]
+  a1 --> result["All 4 writes proceed in parallel (different graphs)"]
+  a2 --> result
+  a3 --> result
+  a4 --> result'
+/>
+
+### Contention
+
+<Mermaid
+  chart='flowchart TD
+  setup["4 workers, 8 graphs"] --> a1["Agent 1 submits write to graph 0"]
+  setup --> a2["Agent 2 submits write to graph 0"]
+  setup --> a3["Agent 3 submits write to graph 0"]
+  setup --> a4["Agent 4 submits write to graph 0"]
+  a1 --> result["Writes serialize on graph 0#39;s lock"]
+  a2 --> result
+  a3 --> result
+  a4 --> result'
+/>
+
+## Avoiding lock contention
+
+1. **Distribute data** — use multiple graphs; partition by agent, conversation, or domain.
+2. **Batch reads** — use `RLock()` to read multiple entities in one critical section.
+3. **Minimize lock hold time** — writes commit in place, so hold time is proportional to the fact being written; keep facts small rather than batching many into one stream.
+4. **Monitor queue depth** — if the queue fills up, consider raising `buffer-size` or `workers`. If one *graph* is hot, more workers will not help — spread the load across graphs, which is what they are for.
+
+## Future considerations
+
+- **Write ordering** — provide a guarantee or API to enforce stream ordering across graphs
+- **Lock profiling** — metrics for lock contention and wait times
+- **Optimistic locking** — versioning for read-optimized workloads
+- **Lock-free data structures** — alternatives like `sync.Map` for specific use cases

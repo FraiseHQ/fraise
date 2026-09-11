@@ -1,0 +1,51 @@
+---
+title: "Memory graphs"
+description: "A Fraise database is several independent graphs; each one is an isolation boundary as well as a lock domain"
+navIcon: "🕸️"
+---
+
+A Fraise database consists of multiple memory graphs (by default 8), selected by the query itself: `recall@3` and `remember@3` address graph 3, and an absent selector means graph 0.
+
+## A graph is a full isolation boundary
+
+Each graph has its own nodes, edges, text index and vector index, and **nothing traverses from one to another**. That makes a graph the natural unit for a tenant, a user, or a session: two agents on different graphs cannot read each other's memories even by accident, and their writes never contend.
+
+Each graph contains:
+
+- nodes (entities, facts, relationships)
+- text search indices
+- vector (semantic) indices
+- adjacency maps for graph traversal
+
+All graphs within a database share the same underlying configuration and lifecycle.
+
+## Selectors are bounded twice over
+
+Selectors are `uint8` and checked in two different layers on purpose, so a regression in one cannot hide behind the other:
+
+1. the parser rejects anything that does not fit the type — so `@256` cannot wrap around to graph 0 and land in another tenant's memory;
+2. the server rejects selectors past the allocated count, naming the graphs that do exist.
+
+<Note title="More graphs, not more shards" type="warning">
+
+  Raising `num-graphs` raises the isolation available; **it does not shard a single tenant's data.**
+
+</Note>
+
+## When to use several
+
+Partition your data across graphs when:
+
+- you have multiple agents with separate memory contexts;
+- data is naturally independent (per-user memory, per-conversation state);
+- you want to reduce lock contention by distributing writes.
+
+Concurrency is the reason to have several graphs; isolation is the reason to be careful which one a query names. Writes to the *same* graph serialise on its lock, while writes to different graphs proceed in parallel — see [Multi-graph architecture](/docs/architecture/concurrency/multi-graph).
+
+## Cost
+
+`num-graphs` costs almost nothing empty. **Allocate for the isolation you want, not the load you have.** The database allocates them at startup and never grows: a selector is an index, not a lookup.
+
+## Dimension is per graph
+
+The first vector inserted into a graph establishes that graph's dimensionality, and every later vector in it must match exactly. One model per graph — see [Dimensions](/docs/retrieval/embeddings/dimensions).

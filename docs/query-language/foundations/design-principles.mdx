@@ -1,0 +1,31 @@
+---
+title: "Design principles"
+description: "Why FQL optimises for simplicity and the removal of ambiguity rather than for expressiveness"
+navIcon: "🧭"
+---
+
+Fraise is designed to be queried by agents over and over again. The main decision was to create a simple query language for retrieving information: **FQL is designed for token economy while being LLM-friendly.**
+
+Human DSL design optimises for expressiveness and aesthetic flexibility. This query language optimises for simplicity and chooses to remove ambiguity wherever possible: for an AI agent, degrees of freedom are a potential source of failure.
+
+## The principles
+
+- **Commands and field names are written in lower case.** They are syntax, matched exactly, so `RECALL x` is a parse error rather than a query — nothing is silently rewritten on the way in.
+- **Everything else is data.** A remembered fact — the quoted phrase — is *stored* exactly as written and *matched* without regard to case: `remember 'MiXeD Case'` comes back spelled that way, and `recall mixed` finds it. Terms and anchor values are identity rather than prose, so the parser folds them to lower case on the way in — `topic:Billing` and `topic:billing` are the same anchor. An agent should not have to remember how it capitalised something a hundred turns ago.
+- **One command at a time.** Multiple commands in a single instruction lead to a runtime error.
+- **One line per instruction.** A new line ends the instruction: anything after it is a second one and is rejected, so `recall ferry\nbridge` is an error rather than a two-term search silently spanning both lines. Trailing blank lines are not an instruction and are ignored.
+- **A clause that takes one value may be given once.** Repeating it is an error, not a last-one-wins overwrite: a query that silently answers a differently-scoped question is the failure an agent cannot detect. Anchors are the exception — repeating `topic:`/`entity:` is a list by design.
+
+The principle of removing ambiguity remains central to new versions of the DSL. As much as possible we avoid introducing features that allow the same concept to be expressed in multiple ways.
+
+## No boolean operators
+
+There are none. Several terms in one recall are a **union** — any match seeds the search — and there is no way to write a conjunction or a negation. Every anchor filters; there is no way to say MUST_NOT.
+
+## Representation
+
+Queries are not designed to be read from a file, but directly from a UTF-8 encoded string. The wire form is a JSON body with the query as a string field — see [Query endpoint](/docs/http-api/endpoints/query).
+
+## Errors over guesses
+
+An unparseable query is rejected with the column it failed at and the values a field accepts. A model can correct itself from a precise message; it cannot detect a plausible answer to a question it did not ask. Where a query is valid but sits one typo away from a different valid query, the query runs and the response carries a [warning](/docs/query-language/reference/warnings) naming both readings.
