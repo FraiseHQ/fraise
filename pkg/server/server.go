@@ -78,11 +78,14 @@ func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.H
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	r := gin.New()
+	r.Use(gin.Recovery())
+
 	s := &Server[K, P]{
 		Config: config,
 		DB:     db,
 		Engine: engine,
-		router: gin.Default(),
+		router: r,
 	}
 
 	// The service terminates TLS/proxying elsewhere; it never trusts client
