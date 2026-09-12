@@ -173,3 +173,41 @@ func TestPlanCachesQuery(t *testing.T) {
 		t.Fatalf("second Plan returned error: %v", err)
 	}
 }
+
+// TestPlanCacheHitWithDuplicateKeywords guards #238: Dedupe.Optimise mutates the
+// query in place, so Plan must hash after Optimise for both Put and Get. A fresh
+// parse of the same duplicate-keyword recall must hit the entry stored by the
+// first Plan (same cached query object), not miss forever under a raw-key lookup.
+func TestPlanCacheHitWithDuplicateKeywords(t *testing.T) {
+	cfg := config.New()
+	e := newEngine(t, cfg)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer e.Stop()
+
+	q1, _, err := query.Parse[uint64, float32]("recall@0 foo foo top:5", nil, cfg)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if _, err := e.Plan(q1); err != nil {
+		t.Fatalf("first Plan returned error: %v", err)
+	}
+	// q1 is now deduplicated in place; its hash is the cache key.
+	cached, ok := e.Cache.Get(q1.Hash(e.Hasher))
+	if !ok {
+		t.Fatal("first Plan did not cache the optimised query")
+	}
+
+	q2, _, err := query.Parse[uint64, float32]("recall@0 foo foo top:5", nil, cfg)
+	if err != nil {
+		t.Fatalf("second Parse returned error: %v", err)
+	}
+	stream, err := e.Plan(q2)
+	if err != nil {
+		t.Fatalf("second Plan returned error: %v", err)
+	}
+	if stream.Query != cached {
+		t.Fatal("second Plan missed the cache for a duplicate-keyword query; Put/Get keys disagree")
+	}
+}
