@@ -26,13 +26,16 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -302,5 +305,54 @@ func TestStatsEndpoint(t *testing.T) {
 	if g0.ForestEntries < g0.Vectors || g0.ForestEntries > 2*g0.Vectors {
 		t.Errorf("graphs[0].forest_entries = %d, want within [vectors, 2*vectors] = [%d, %d]",
 			g0.ForestEntries, g0.Vectors, 2*g0.Vectors)
+	}
+}
+
+
+// TestRememberInfoLogOmitsFactText pins #242: at the default Info level a
+// successful remember must log query shape (verb, graph, hits, duration) and
+// must never echo the fact text into stdout.
+func TestRememberInfoLogOmitsFactText(t *testing.T) {
+	const secret = "SSN-999-88-7777 personal memory that must not hit Info logs"
+
+	r, wpipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("creating pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = wpipe
+	t.Cleanup(func() { os.Stdout = original })
+
+	cfg := config.New()
+	cfg.Log.Level = config.LogLevelInfo
+	cfg.Log.Format = config.LogFormatJSON
+	// NewLogger captures os.Stdout at construction time.
+	logger.SetDefault(logger.NewLogger(cfg))
+	t.Cleanup(func() { logger.SetDefault(nil) })
+
+	s := newTestServer(t)
+	body := `{"query":"remember@0 '` + secret + `' topic:pii"}`
+	resp := s.do(http.MethodPost, "/api/v1/q", body)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	if err := wpipe.Close(); err != nil {
+		t.Fatalf("closing pipe: %v", err)
+	}
+	os.Stdout = original
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading captured output: %v", err)
+	}
+	logged := string(out)
+	if strings.Contains(logged, secret) {
+		t.Fatalf("Info log leaked fact text: %s", logged)
+	}
+	if !strings.Contains(logged, `"msg":"Query executed"`) {
+		t.Fatalf("Info log missing Query executed: %s", logged)
+	}
+	if !strings.Contains(logged, `"verb":"remember"`) {
+		t.Fatalf("Info log missing verb=remember: %s", logged)
 	}
 }

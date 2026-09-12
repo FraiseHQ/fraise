@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/FraiseHQ/fraise/internal/index"
 	"github.com/FraiseHQ/fraise/internal/query"
@@ -105,6 +106,7 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return
 		}
+		started := time.Now()
 
 		logger.Debug("Query received", "query", req.Query, "parameters", len(req.Parameters))
 
@@ -195,7 +197,23 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 				c.JSON(status, ErrorResponse{Error: msg})
 				return
 			}
-			logger.Info("Query executed", "query", req.Query, "graph", q.GetGraphID())
+			verb := "recall"
+			if q.IsWrite() {
+				verb = "remember"
+			}
+			hits := 0
+			if stream.Result != nil {
+				hits = stream.Result.Count
+			}
+			// Info carries shape only — never the query text — so a remember
+			// does not dump personal facts into default container logs.
+			logger.Info("Query executed",
+				"verb", verb,
+				"graph", q.GetGraphID(),
+				"hits", hits,
+				"duration", time.Since(started),
+			)
+			logger.Debug("Query executed", "query", req.Query, "graph", q.GetGraphID())
 			// The warnings key appears only when there is something to say, so
 			// the response shape for a clean query is unchanged.
 			resp := gin.H{"results": stream.Result}
