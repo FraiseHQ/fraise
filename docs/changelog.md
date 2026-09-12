@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1](https://github.com/FraiseHQ/fraise/compare/v0.1.0...v0.1.1) (2026-09-12)
+
+
+### Maintenance
+
+* update gin router definition ([#300](https://github.com/FraiseHQ/fraise/issues/300)) ([76f0182](https://github.com/FraiseHQ/fraise/commit/76f01824018a3de13e834e5f08ffa59bec05aeae))
+* update readme badges ([#293](https://github.com/FraiseHQ/fraise/issues/293)) ([1731a31](https://github.com/FraiseHQ/fraise/commit/1731a319c296d7f822453692da2c1410b970b44a))
+
 ## [0.1.0](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.4...v0.1.0) (2026-09-07)
 
 
