@@ -58,7 +58,7 @@ docker run --rm -p 9876:9876 ghcr.io/fraisehq/fraise:edge
 ## Making a change
 
 1. **For anything non-trivial, open an issue first.** Not for permission — so nobody spends a weekend on something that's already half-built or heading in a different direction. Small fixes can go straight to a PR.
-2. **Create a branch named `type/short-description`** — e.g. `fix/empty-response-body`, `feat/rate-limiting`, `docs/sdk-py-readme`. The type must be one of `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`. CI checks this on every PR.
+2. **Create a branch named `type/short-description`** — e.g. `fix/empty-response-body`, `feat/rate-limiting`, `docs/sdk-py-readme`. The type must be one of `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`, and the description is lowercase letters and digits separated by `-` or `.` — no underscores, no capitals. CI checks this on every PR (see [Branch, PR title & description conventions](#branch-pr-title--description-conventions)).
 3. Make your change. Add a test if you're fixing a bug or adding behaviour.
 4. Run the checks locally:
 
@@ -68,12 +68,16 @@ docker run --rm -p 9876:9876 ghcr.io/fraisehq/fraise:edge
    ```
 
    Formatting is handled automatically in CI — don't spend time on style, and don't expect review comments about it.
-5. Open the pull request. Describe **what problem it solves**, not just what the code does. If it closes an issue, write `Closes #123` in the description.
+5. Open the pull request with a [Conventional Commits](#branch-pr-title--description-conventions) title and a description that follows the [pull request template](.github/pull_request_template.md). Describe **what problem it solves**, not just what the code does. If it closes an issue, write `Closes #123` in the description.
 6. **Sign the [CLA](CLA.md) on your first PR** — a bot comments with the exact phrase to reply with, and the check clears for all your future contributions.
 
 Draft PRs are welcome. If you want early feedback on an approach before polishing it, open one as a draft and say so.
 
-### PR title & commit conventions
+### Branch, PR title & description conventions
+
+Three things are checked on every PR: the branch name (above), the PR title and the PR description. The first two are enforced by CI, which leaves a sticky comment with the rules when either fails; the third is what reviewers read first.
+
+#### PR title
 
 Titles follow [Conventional Commits](https://www.conventionalcommits.org/) — a bot checks the title on every PR:
 
@@ -82,13 +86,27 @@ type(optional-scope): subject
 ```
 
 - **Subject**: lowercase, no trailing period, 3–60 characters.
-- **Type**: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert` (also `deps`, `upgrade`, `release`).
+- **Type**: `feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `deps` `upgrade` `release`. Note this is not quite the branch-type list: `style` and `revert` are valid branch types but not PR-title types — a revert is titled `fix:` or `chore:`, a formatting-only change `chore:`.
 - **Scope routes the change to a component.** This keeps each component's changelog clean:
   - _no scope_ → server — `feat: add request rate limiting`
   - `(python)` → Python SDK — `fix(python): handle empty response body`
 - **Breaking changes** use a `!` marker: `feat(api)!: drop legacy session cookies`. Pre-1.0, breaking changes are allowed but must be documented (see [RELEASE.md](RELEASE.md)).
 
 A wire-protocol or FQL change that spans the server and both SDKs lands as **one PR** touching all three together.
+
+#### PR description
+
+The description follows [`.github/pull_request_template.md`](.github/pull_request_template.md). GitHub pre-fills it when you open a PR in the browser; `gh pr create --body`, and agents that open PRs, bypass the template, so copy it in yourself. Keep every heading and fill every section:
+
+- **Type of change** — tick one box.
+- **Description of the changes** — one or two sentences on *what* changes.
+- **Motivation for the changes** — the problem it solves. `Closes #123` goes here.
+- **Breaking change?** — if yes, fill in the collapsed block: what breaks, before → after, and what an existing user has to change.
+- **How it was tested** — the commands you ran and the cases you covered, or "not tested — here's why". Honesty is fine.
+- **Checklist** — tick what's true; an unticked box with a reason is better than a ticked one that isn't.
+- **Notes for reviewers** — optional: open questions, places you'd like a second opinion.
+
+A description that says only what the diff already shows is the most common reason a review stalls — the motivation and testing sections are the ones that save a round-trip.
 
 ## What happens next
 

@@ -280,5 +280,10 @@ not an obstacle to sed away.
 
 ## Pull requests
 
-Follow `CONTRIBUTING.md` for PR instructions: branch naming, commit message
-format, and the review process.
+`CONTRIBUTING.md` is the source of truth for the review process. Three conventions apply to every PR, and CI enforces the first two on every push (`.github/workflows/pull-request.yaml`):
+
+- **Branch name**: `type/short-description` — `feat/rate-limiting`, `fix/empty-response-body`, `docs/sdk-py-readme`. Type is one of `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`; the description is lowercase letters and digits separated by `-` or `.`, nothing else.
+- **PR title**: Conventional Commits, `type(optional-scope): subject`. Subject lowercase, no trailing period, 3–60 characters. Type is one of `feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` `deps` `upgrade` `release` (`style` and `revert` are branch types only). Scope routes the change to a component's changelog: no scope is the server, `(python)` is the Python SDK. A breaking change carries `!` after the type/scope.
+- **PR description**: the body of `.github/pull_request_template.md` with every section filled — type of change, description, motivation (`Closes #N` goes here), breaking change, how it was tested, checklist, notes for reviewers. The template is only auto-applied in the browser; a PR opened from the CLI or by an agent has to paste it in. Never delete a section — write "n/a" or "not tested — here's why".
+
+When asked for PR artifacts, produce exactly the title and the description as above; branch creation and git are the author's.
