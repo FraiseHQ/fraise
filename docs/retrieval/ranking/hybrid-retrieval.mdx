@@ -21,6 +21,10 @@ A recall pulls a bounded number of candidates from each source it can use — at
 | text index | BM25 $\times$ match breadth — the matched-term count priced against the query's total idf mass, so a document covering the whole query scores its term count and a partial match is discounted by the informativeness it missed |
 | vector index | $1 / (1 + \text{distance})$ similarity |
 
+### What the text index matches
+
+A fact is indexed under its terms and a recall's keywords are read the same way, so the two line up: text is case-folded, English stop words are dropped, and each remaining term is reduced to its stem, which is how `running` finds a fact written with `runs`. A term is a maximal run of letters, digits and symbols in Unicode category So (Symbol, other) — the class that holds emoji, check marks and marks such as `©` — so a fact written as `🍊 🍋 🍌` is found by `recall 🍊`. Every other character delimits: whitespace, punctuation, and the math, currency and modifier symbols, so `c++` indexes as `c` and `$5` as `5`. Joiners and variation selectors delimit too, so a multi-character emoji sequence indexes as each of its symbols.
+
 ## The transmission
 
 That mass then flows into the fact–anchor graph. Every anchor — a topic or entity node — the query touches observes the total seed mass on its members and compares it to a **background rate** $\rho_0$: the mass a size-proportional smear of the query's seed mass across the graph's anchors would predict for an anchor of its degree.
