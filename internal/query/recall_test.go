@@ -94,8 +94,8 @@ func TestRecallHash(t *testing.T) {
 	// Hash folds in graph, delimited keyword/entity/topic lists, depth, top,
 	// the time bounds and the bound vector so queries that differ in any of
 	// those get distinct cache keys.
-	const want = "g=3|kw=qu\x00ick|en=alice|to=weather|d=2|t=5" +
-		"|s=H(r1h0m0s)|u=H(a2026-06-18T12:00:00Z)|vec=H(0x1p-01\x000x1p-02)"
+	const want = "g=1:3|kw=2[2:qu,3:ick]|en=1[5:alice]|to=1[7:weather]|d=1:2|t=1:5" +
+		"|s=10:H(r1h0m0s)|u=24:H(a2026-06-18T12:00:00Z)|vec=18:H(0x1p-01\x000x1p-02)|"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -107,7 +107,7 @@ func TestRecallHash(t *testing.T) {
 func TestRecallHashEmpty(t *testing.T) {
 	var r Recall[string, float32]
 	h := &fakeHasher{}
-	const want = "g=0|kw=|en=|to=|d=0|t=0|s=|u=|vec=H()"
+	const want = "g=1:0|kw=0[]|en=0[]|to=0[]|d=1:0|t=1:0|s=0:|u=0:|vec=3:H()|"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}

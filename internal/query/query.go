@@ -41,6 +41,7 @@ type Query[K comparable, P float32 | float64] interface {
 	hash.Hashable[K, string]
 	IsWrite() bool
 	SetGraphID(id uint8)
+	SameAs(other Query[K, P]) bool
 }
 
 type QueryParameters[K comparable] struct {
