@@ -7,7 +7,7 @@ require (
 	github.com/blevesearch/snowballstem v0.9.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/jsonschema-go v0.4.3
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9
 	golang.org/x/text v0.42.0
 )
