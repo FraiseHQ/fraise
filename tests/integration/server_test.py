@@ -39,9 +39,12 @@ def test_initialize_names_the_server(mcp):
 def test_tools_list_carries_both_tools_with_their_schemas(mcp):
     """tools/list names recall and remember, each carrying the wire schemas.
 
-    The schemas mirror the HTTP query API: query required on the way in,
-    results required on the way out. A client that validates arguments
-    against these — as the Go SDK itself does — depends on them being here.
+    The schemas mirror the HTTP query API: query required on the way in, and
+    on the way out whatever that side of the API answers with — results for a
+    recall, the status token for a write, which the server keeps apart so a
+    stored fact is not the same bytes as a recall that matched nothing. A
+    client that validates against these — as the Go SDK itself does — depends
+    on them being here and matching the daemon.
     """
     tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
 
@@ -49,7 +52,8 @@ def test_tools_list_carries_both_tools_with_their_schemas(mcp):
     for name, tool in tools.items():
         assert tool["description"], f"{name} needs a model-facing description"
         assert tool["inputSchema"]["required"] == ["query"]
-        assert tool["outputSchema"]["required"] == ["results"]
+    assert tools["recall"]["outputSchema"]["required"] == ["results"]
+    assert tools["remember"]["outputSchema"]["required"] == ["status"]
 
 
 def test_recall_description_tells_the_model_anchors_alone_seed(mcp):

@@ -141,12 +141,14 @@ func TestUnreachableDaemonNamesTheAddressAndTheFix(t *testing.T) {
 }
 
 // TestRememberConfirmsTheWrite pins the write path: the input forwards
-// verbatim, the empty result decodes, and the model sees the confirmation
-// with the server's parse warnings beside it.
+// verbatim, the acknowledgement decodes, and the model sees the confirmation
+// with the server's parse warnings beside it. The daemon answers a write with
+// its own shape rather than a recall's envelope, so the structured output the
+// bridge hands a programmatic client carries the status token and no results.
 func TestRememberConfirmsTheWrite(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"results":{"count":0,"hits":[]},"warnings":["parse warning at column 15"]}`))
+		_, _ = w.Write([]byte(`{"status":"ok","warnings":["parse warning at column 15"]}`))
 	}))
 	defer ts.Close()
 
@@ -154,11 +156,40 @@ func TestRememberConfirmsTheWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remember = %v, want nil", err)
 	}
-	if out.Results.Count != 0 || len(out.Results.Hits) != 0 {
-		t.Errorf("structured output = %+v, want the empty write result", out)
+	if out.Status != "ok" {
+		t.Errorf("structured output = %+v, want the write acknowledgement", out)
 	}
 	text := res.Content[0].(*mcp.TextContent).Text
 	if want := "Remembered.\nwarning: parse warning at column 15"; text != want {
+		t.Errorf("rendered text = %q, want %q", text, want)
+	}
+}
+
+// TestRecallOnEmptyGraphTellsTheModelToWrite pins the bridge's handling of the
+// daemon's 204: it is a success with no body, so nothing decodes and the
+// distinction survives only if the bridge reads the status. The model must be
+// told the graph is empty rather than that its query missed — the first is
+// answered by remembering something, the second by asking differently, and
+// conflating them sends an agent rephrasing against a graph it never wrote to.
+//
+// The structured half still has to satisfy the recall tool's output schema,
+// which requires hits to be an array, so the empty result is materialised
+// rather than left nil and marshalled as null.
+func TestRecallOnEmptyGraphTellsTheModelToWrite(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	res, out, err := bridge(ts).recall(context.Background(), nil, RecallInput{Query: "recall anna"})
+	if err != nil {
+		t.Fatalf("recall = %v, want nil: 204 is a success, not a failure to relay", err)
+	}
+	if out.Results.Count != 0 || out.Results.Hits == nil || len(out.Results.Hits) != 0 {
+		t.Errorf("structured output = %+v, want an empty, non-nil hit list", out)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if want := "No stored facts matched: this graph is empty, nothing has been remembered in it yet."; text != want {
 		t.Errorf("rendered text = %q, want %q", text, want)
 	}
 }

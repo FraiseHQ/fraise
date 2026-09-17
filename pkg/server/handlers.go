@@ -60,6 +60,18 @@ func errorToResponse(err error) (int, string) {
 	}
 }
 
+// graphIsEmpty reports whether the graph selected by id holds nothing at all.
+// It reads the same snapshot /api/v1/stats serves, so "empty" means here what
+// it means there — zero stored nodes — rather than a second, private notion of
+// emptiness that could disagree with what an operator sees.
+//
+// Only a read that matched nothing asks this, so the per-graph read locks the
+// snapshot takes are paid on that path alone, never on one that returned hits.
+func (s *Server[K, P]) graphIsEmpty(id uint8) bool {
+	graphs := s.DB.Stats().Graphs
+	return int(id) < len(graphs) && graphs[id].Nodes == 0
+}
+
 // handleHealthCheck returns a handler that reports the server is alive,
 // responding with HTTP 200 and a simple status payload.
 //
@@ -196,14 +208,39 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 				return
 			}
 			logger.Info("Query executed", "query", req.Query, "graph", q.GetGraphID())
+
+			// Warnings ride beside every successful answer, write or read, so
+			// they are rendered once here and attached by whichever branch
+			// below answers.
+			msgs := make([]string, len(warns))
+			for i, w := range warns {
+				msgs[i] = w.String()
+			}
+
+			// A write is acknowledged in its own shape rather than with a
+			// read's envelope: see WriteResponse for why the two must not be
+			// the same bytes.
+			if q.IsWrite() {
+				c.JSON(http.StatusOK, WriteResponse{Status: writeStatusOK, Warnings: msgs})
+				return
+			}
+
+			// A read that matched nothing in a graph holding nothing at all is
+			// not the same answer as one that searched a populated graph and
+			// matched none of it: the first says the caller has yet to write,
+			// the second that the query missed. 204 carries that distinction
+			// in the status line, which costs no body — and must not have one,
+			// so warnings go with it: what a phrasing might have meant instead
+			// is moot when there was nothing to search either way.
+			if stream.Result.Count == 0 && s.graphIsEmpty(q.GetGraphID()) {
+				c.Status(http.StatusNoContent)
+				return
+			}
+
 			// The warnings key appears only when there is something to say, so
 			// the response shape for a clean query is unchanged.
 			resp := gin.H{"results": stream.Result}
-			if len(warns) > 0 {
-				msgs := make([]string, len(warns))
-				for i, w := range warns {
-					msgs[i] = w.String()
-				}
+			if len(msgs) > 0 {
 				resp["warnings"] = msgs
 			}
 			c.JSON(http.StatusOK, resp)

@@ -47,6 +47,12 @@ this map current when claiming a graph:
     7  planet star
        + lantern/almanac depth-lane probe
        + tidepool + saltmarsh anchor probes (test_recall.py)
+    8  never written: the empty-graph probes (api_test.py)
+
+Graph 8 is claimed by staying empty. A recall of a graph holding nothing is
+answered 204 with no body, as distinct from the 200 and empty result set a
+populated graph returns when nothing matched, and the only way to test that is
+a graph no test ever writes to. Do not write to graph 8.
 """
 
 import os
@@ -94,6 +100,46 @@ def base_url():
     pytest.fail(f"fraise server not reachable at {BASE_URL}: {last_error}")
 
 
+# The value primed into every claimed graph. It shares no term with any fact
+# or keyword the suite searches for, so it can never be a hit and never shifts
+# a pinned count — it exists only to make the graph non-empty.
+_PRIMER = "zzzprimerzzz marks this graph as written to"
+
+
+@pytest.fixture(scope="session")
+def num_graphs(get):
+    """How many graphs the running server allocated.
+
+    Read from /api/v1/stats, which reports one snapshot per graph, rather than
+    hardcoded: the suite's config sets the count (see tests/fraise.config.toml)
+    and a test naming an out-of-range selector must follow it, not a number
+    that silently becomes valid the next time the count changes.
+
+    Returns:
+        The allocated graph count; valid selectors are 0..count-1.
+    """
+    return len(get("/api/v1/stats").json()["graphs"])
+
+
+@pytest.fixture(scope="session", autouse=True)
+def primed_graphs(query):
+    """Write one unsearchable fact into every graph the suite claims but 8.
+
+    A recall of a graph holding nothing is answered 204 with no body, which is
+    the correct answer and the wrong one to receive in a test about parsing,
+    warnings or limits: those issue recalls that deliberately match nothing and
+    never write first, so their status would depend on whether some other file
+    had happened to write to that graph yet, and files run in any order.
+
+    Priming makes "the graph is populated" true before any test runs, which is
+    also the state a real caller queries in. Graph 8 is deliberately left out —
+    it is the one graph the 204 itself is tested against.
+    """
+    for graph in range(8):
+        status, body = query(f"remember@{graph} '{_PRIMER}'")
+        assert status == 200, f"priming graph {graph}: {body.get('error')}"
+
+
 @pytest.fixture(scope="session")
 def request_timeout():
     """Per-request timeout for tests that make raw HTTP calls themselves."""
@@ -108,6 +154,18 @@ def get(base_url):
         return requests.get(f"{base_url}{path}", timeout=REQUEST_TIMEOUT_SECONDS)
 
     return _get
+
+
+def _body(response) -> dict:
+    """Decode a response body, or {} when it carried none.
+
+    A 204 — a recall of a graph holding nothing — is a success with no body at
+    all, so the fixtures that return (status, body) would otherwise raise on
+    the one status a test most wants to assert about.
+    """
+    if not response.content:
+        return {}
+    return response.json()
 
 
 @pytest.fixture(scope="session")
@@ -128,7 +186,7 @@ def query(base_url):
             json=data,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
-        return response.status_code, response.json()
+        return response.status_code, _body(response)
 
     return _query
 
@@ -153,7 +211,7 @@ def explain(base_url):
             json=data,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
-        return response.status_code, response.json()
+        return response.status_code, _body(response)
 
     return _explain
 

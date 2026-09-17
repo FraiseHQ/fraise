@@ -47,11 +47,33 @@ A successful response carries ranked hits, newest-and-strongest first:
 
 </Note>
 
-A write returns 200 with an empty result set.
+### A write is acknowledged, not answered with results
+
+A write has no result set. It returns 200 with an acknowledgement of its own:
+
+```json
+{"status": "ok"}
+```
+
+The `status` key is what tells a write apart from a read. Both SDKs branch on it, so it is a fixed token rather than a message — treat its presence, not its wording, as the signal that the fact was stored.
+
+### An empty graph answers 204
+
+A recall of a graph that holds nothing comes back `204 No Content`, with no body at all. It is a success, not an error: there was nothing to search.
+
+This is deliberately distinct from a recall that searched a populated graph and matched none of it, which stays 200 with an empty result set:
+
+```json
+{"results": {"count": 0, "hits": []}}
+```
+
+The two call for different responses from the caller. A 204 says no fact has ever been written to this graph, so no rephrasing of the query would have helped; a 200 with no hits says the facts are there and the query missed them. Collapsing them sends a caller debugging a question when it should be checking whether it ever wrote.
+
+A 204 carries no `warnings` either, since it carries no body — what a phrasing might have meant instead does not matter when there was nothing to search either way.
 
 ## Warnings
 
-A query that ran but sits one typo from a different valid query carries a `warnings` array beside its results. The key is absent when there is nothing to say, so a clean response shape is unchanged — see [Warnings](/docs/query-language/reference/warnings).
+A query that ran but sits one typo from a different valid query carries a `warnings` array beside its results — or beside a write's `status`, which warns on the same terms. The key is absent when there is nothing to say, so a clean response shape is unchanged — see [Warnings](/docs/query-language/reference/warnings).
 
 ## Errors
 

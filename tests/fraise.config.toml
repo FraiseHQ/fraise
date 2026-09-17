@@ -15,6 +15,7 @@ half-life = "168h"
 cache-capacity = 1024
 
 [db]
+num-graphs = 10
 precision = "float64"
 default-top = 10
 default-depth = 2

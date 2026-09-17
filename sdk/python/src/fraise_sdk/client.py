@@ -37,6 +37,11 @@ from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 DEFAULT_BASE_URL = "http://localhost:9876"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
+# 204 No Content is how the server answers a recall of a graph that holds
+# nothing. It is a success, not an error, and it has no body: the distinction
+# between "nothing is stored here" and "nothing matched" is the status itself.
+_NO_CONTENT = 204
+
 # Server versions this SDK is verified against. Keep in sync with COMPATIBILITY.md
 # and bump when a release starts relying on newer server behaviour.
 SUPPORTED_SERVER = ">=0.1.0,<0.2.0"
@@ -198,7 +203,10 @@ class FraiseClient:
         match it.
 
         Returns nothing on success and raises :class:`FraiseAPIError` if the
-        server rejects the write.
+        server rejects the write. The server acknowledges an accepted write
+        with ``{"status": "ok"}`` rather than a read's empty result envelope,
+        so a stored fact is no longer the same bytes on the wire as a recall
+        that matched nothing.
         """
         resolved = self._resolve_vector(vector, value, embed)
         text = _query.build_remember(
@@ -209,7 +217,7 @@ class FraiseClient:
             with_vector=resolved is not None,
         )
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
-        self.query(text, parameters=parameters, timeout=timeout)
+        self._post(text, parameters=parameters, timeout=timeout)
 
     def recall(
         self,
@@ -262,9 +270,13 @@ class FraiseClient:
             with_vector=resolved is not None,
         )
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
-        body = self.query(text, parameters=parameters, timeout=timeout)
+        status, body = self._post(text, parameters=parameters, timeout=timeout)
         results = body.get("results") or {}
-        return RecallResult.from_json(results, warnings=body.get("warnings"))
+        return RecallResult.from_json(
+            results,
+            warnings=body.get("warnings"),
+            empty=status == _NO_CONTENT,
+        )
 
     # -- embedding ---------------------------------------------------------
 
@@ -309,10 +321,47 @@ class FraiseClient:
         :meth:`recall`; reach for it when you need a query the typed helpers do
         not yet cover. Raises :class:`FraiseAPIError` on any non-2xx response.
 
+        The body's shape follows the query: a recall answers with ``results``,
+        a write with ``{"status": "ok"}``. A recall of a graph that holds
+        nothing is answered 204 and has no body at all, which decodes to ``{}``
+        — :meth:`recall` reads that distinction off the status line, so prefer
+        it over this method when you need to tell an empty graph from a miss.
+
         Any ``warnings`` the server attached to a successful response are
         emitted as :class:`FraiseWarning` — every operation funnels through
         here, so the typed helpers inherit that. Silence them by category with
         ``warnings.filterwarnings("ignore", category=FraiseWarning)``.
+
+        Transport and API failures reach the caller from :meth:`_post`
+        unchanged — :class:`FraiseError` for a timeout or an unreachable
+        server, :class:`FraiseAPIError` for a non-2xx response.
+        """
+        _, body = self._post(text, parameters=parameters, timeout=timeout)
+        return body
+
+    def _post(
+        self,
+        text: str,
+        *,
+        parameters: dict[str, list[float]] | None = None,
+        timeout: float | None = None,
+    ) -> tuple[int, dict]:
+        """Send a query and return the response status beside its decoded body.
+
+        Every request funnels through here, including :meth:`query`'s. It is
+        split from that method because one successful answer carries its
+        meaning in the status line rather than the body — a 204 says the graph
+        searched holds nothing — and :meth:`query`'s contract is to return the
+        body, which for a 204 is empty.
+
+        Args:
+            text: the raw query string.
+            parameters: out-of-band vector bindings the query references.
+            timeout: per-call override of the client's timeout.
+
+        Returns:
+            The HTTP status code and the decoded JSON body, ``{}`` when the
+            response carried none.
 
         Raises:
             FraiseError: if the request times out or the server is unreachable
@@ -359,7 +408,9 @@ class FraiseClient:
         # query ran and the results are valid, but the server flagged a reading
         # the caller may not have meant. Emitted per message, category-scoped,
         # so a caller can react to one or silence them all.
+        # stacklevel 3 is the caller of the public method that called _post
+        # (query, recall or remember), which is the line a user can act on.
         for message in body.get("warnings") or []:
-            warnings.warn(message, FraiseWarning, stacklevel=2)
+            warnings.warn(message, FraiseWarning, stacklevel=3)
 
-        return body
+        return response.status_code, body
