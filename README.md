@@ -380,6 +380,28 @@ print(result.final_output)
 Complete, Docker-runnable agents live in
 [`examples/openai-agents`](./examples/openai-agents).
 
+### Strands Agents
+
+Strands Agents can use the existing `fraise mcp` bridge directly through its
+Python `MCPClient`:
+
+```python
+from mcp import StdioServerParameters, stdio_client
+from strands import Agent
+from strands.tools.mcp import MCPClient
+
+mcp_client = MCPClient(
+    lambda: stdio_client(StdioServerParameters(command="fraise", args=["mcp"]))
+)
+with mcp_client:
+    agent = Agent(tools=mcp_client.list_tools_sync())
+    agent("Remember that my favourite colour is orange.")
+```
+
+See the complete two-turn Docker example in
+[`examples/python/strands-agents`](./examples/python/strands-agents) and the
+[Strands Agents integration guide](./docs/integrations/agent-frameworks/strands-agents.mdx).
+
 ## References
 
 * [Roadmap](https://github.com/orgs/FraiseHQ/projects/1/views/1)

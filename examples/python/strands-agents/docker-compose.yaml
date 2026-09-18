@@ -1,0 +1,27 @@
+name: fraise-example-strands-agents
+
+services:
+  fraise:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile.fraise
+    volumes:
+      - ./fraise.config.toml:/etc/fraise/fraise.config.toml:ro
+    command: ["-config", "/etc/fraise/fraise.config.toml"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9876/"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  agent:
+    build:
+      context: ../../..
+      dockerfile: examples/python/strands-agents/Dockerfile
+    depends_on:
+      fraise:
+        condition: service_healthy
+    environment:
+      FRAISE_MCP_ADDR: http://fraise:9876
+      CONTROL_RUN: ${CONTROL_RUN:-0}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
