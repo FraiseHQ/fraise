@@ -1,0 +1,64 @@
+---
+title: "Strands Agents"
+description: "Use Strands Agents with Fraise memory through the MCP bridge"
+---
+
+Strands Agents can consume Fraise's existing stdio MCP bridge directly. The
+bridge exposes the `remember` and `recall` tools, including their compact FQL
+descriptions, so no framework-specific adapter is required:
+
+```python
+from mcp import StdioServerParameters, stdio_client
+from strands import Agent
+from strands.tools.mcp import MCPClient
+
+mcp_client = MCPClient(
+    lambda: stdio_client(
+        StdioServerParameters(
+            command="fraise",
+            args=["mcp"],
+        )
+    )
+)
+
+with mcp_client:
+    tools = mcp_client.list_tools_sync()
+    agent = Agent(
+        tools=tools,
+        system_prompt=(
+            "Remember durable facts with remember, and call recall before "
+            "answering questions that depend on earlier turns."
+        ),
+    )
+    agent("My favourite colour is orange. Remember this.")
+```
+
+Install both Python packages with:
+
+```bash
+pip install fraise-sdk strands-agents
+```
+
+Start Fraise first, then make sure the `fraise` binary is on `PATH`. To point
+the bridge at a non-default daemon address, pass `-addr` after the `mcp`
+subcommand, for example `args=["mcp", "-addr", "http://localhost:9876"]`.
+
+## A fresh session can recall memory
+
+Create a new `Agent` for the next turn rather than carrying the previous
+conversation history. Ask it to call `recall` before answering:
+
+```python
+agent = Agent(
+    tools=tools,
+    system_prompt=(
+        "Call recall before answering anything that may depend on earlier "
+        "turns. Say you do not know when memory cannot confirm it."
+    ),
+)
+agent("What is my favourite colour?")
+```
+
+The complete Docker-runnable two-turn example, including an optional no-memory
+control run, is in
+[`examples/python/strands-agents`](https://github.com/FraiseHQ/fraise/tree/main/examples/python/strands-agents).
