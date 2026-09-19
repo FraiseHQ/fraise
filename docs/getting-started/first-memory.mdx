@@ -40,7 +40,7 @@ Everything an agent does goes through `POST /api/v1/q`. One command per request.
   </StepItem>
 </Step>
 
-A write returns 200 with an empty result set.
+A write returns 200 with `{"status": "ok"}` — an acknowledgement rather than a result set, so a stored fact never looks like a search that found nothing. A recall of a graph you have not written to yet returns 204 with no body at all, which is how you tell "nothing is stored here" from "nothing matched". See [the query endpoint](/docs/http-api/endpoints/query) for both.
 
 <Note title="Count is not a total" type="warning">
 

@@ -89,6 +89,45 @@ def test_daemon_rejections_surface_in_band(mcp):
     assert "top:0 out of range" in result["content"][0]["text"]
 
 
+def test_a_recall_of_an_empty_graph_tells_the_model_to_write(mcp):
+    """Graph 7 is never written to, so the daemon answers its recall 204.
+
+    That status is the only carrier of the distinction — 204 has no body — so
+    a bridge that read the body alone would relay "no stored facts matched",
+    the same words it uses for a query that missed facts that do exist. The
+    model needs them apart: the first is answered by remembering something,
+    the second by asking differently, and conflating them sends an agent
+    rephrasing against a graph it never wrote to.
+
+    The structured half still satisfies the recall tool's output schema, which
+    requires hits to be an array — a 204 must not leave it null.
+    """
+    result = mcp.call("recall", {"query": "recall@7 anything"})
+    assert not result.get("isError", False), result
+
+    assert result["structuredContent"]["results"] == {"count": 0, "hits": []}
+    assert result["content"][0]["text"] == (
+        "No stored facts matched: this graph is empty, "
+        "nothing has been remembered in it yet."
+    )
+
+
+def test_a_write_is_acknowledged_with_its_own_shape(mcp):
+    """The daemon answers a write with a status token, not a recall envelope.
+
+    The bridge's structured output follows it, so a programmatic client can
+    tell an accepted write from a recall that matched nothing — before the
+    split the two were the same bytes, and a fact that never landed looked
+    exactly like one that did.
+    """
+    stored = mcp.call("remember", {"query": "remember@1 'the ack is its own shape'"})
+    assert not stored.get("isError", False), stored
+
+    assert stored["structuredContent"]["status"] == "ok"
+    assert "results" not in stored["structuredContent"]
+    assert stored["content"][0]["text"] == "Remembered."
+
+
 def test_parse_warnings_ride_beside_the_results(mcp):
     """A query that runs with a parse warning delivers the warning on both
     faces: in the structured payload and rendered for the model.

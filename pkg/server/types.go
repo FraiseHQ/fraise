@@ -42,3 +42,19 @@ type HandleQueryRequest[P float32 | float64] struct {
 	Query      string         `json:"query"`
 	Parameters map[string][]P `json:"parameters,omitempty"`
 }
+
+// writeStatusOK is the value of a write acknowledgement's "status" key. It is
+// a fixed token, not a message: clients branch on it, so it must not be
+// reworded into prose.
+const writeStatusOK = "ok"
+
+// WriteResponse is the JSON body a successful write answers with. A write has
+// no result set, and answering it with a read's empty envelope made an
+// accepted write byte-identical to a recall that matched nothing — a stored
+// fact and a missed search were the same bytes on the wire. The "status" key
+// is the acknowledgement, and its presence is what tells a write's 200 from a
+// read's. Both SDKs branch on that key, so it is part of the contract.
+type WriteResponse struct {
+	Status   string   `json:"status"`
+	Warnings []string `json:"warnings,omitempty"`
+}

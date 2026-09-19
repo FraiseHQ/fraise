@@ -32,7 +32,8 @@ import (
 // exactly: the bridge forwards its input as the request body and returns the
 // response body as its output, so what a model sees here is the same wire
 // contract pkg/server and internal/query define — HandleQueryRequest on the
-// way in, {"results": QueryResult} plus optional warnings on the way out.
+// way in, {"results": QueryResult} plus optional warnings on the way out for a
+// recall, {"status": "ok"} for a write.
 // Explain-mode fields (background, per-hit contributions) belong to
 // /api/v1/explain, which the bridge does not call, so they do not appear
 // here. If either wire shape moves, these move in the same change.
@@ -107,18 +108,13 @@ var (
 	rememberOutputSchema = &jsonschema.Schema{
 		Type: "object",
 		Properties: map[string]*jsonschema.Schema{
-			"results": {
-				Type:        "object",
-				Description: "A write's result is always empty: count 0 and no hits. The acknowledgement is the response itself.",
-				Properties: map[string]*jsonschema.Schema{
-					"count": {Type: "integer"},
-					"hits":  {Type: "array", Items: hitSchema},
-				},
-				Required: []string{"count", "hits"},
+			"status": {
+				Type:        "string",
+				Description: "The write acknowledgement, the fixed token \"ok\". A write has no result set to return; this key's presence is what distinguishes an accepted write from a recall that matched nothing.",
 			},
 			"warnings": warningsSchema,
 		},
-		Required: []string{"results"},
+		Required: []string{"status"},
 	}
 	recallOutputSchema = &jsonschema.Schema{
 		Type: "object",
@@ -152,8 +148,9 @@ type Hit struct {
 	Score     float64   `json:"score"`
 }
 
-// Result is the results envelope of a query response: the hit count and the
-// ranked hits, best first. A write's result is always empty (count 0).
+// Result is the results envelope of a recall response: the hit count and the
+// ranked hits, best first. Only reads carry one — a write is acknowledged with
+// a status token instead (RememberOutput).
 type Result struct {
 	Count int   `json:"count"`
 	Hits  []Hit `json:"hits"`
@@ -182,11 +179,13 @@ type RememberInput struct {
 	Parameters map[string][]float64 `json:"parameters,omitempty"`
 }
 
-// RememberOutput is the remember tool's result payload: the same response
-// envelope as a recall, with the result always empty — the acknowledgement
-// is the response itself, and warnings ride beside it when the parse had
-// something to say.
+// RememberOutput is the remember tool's result payload, the /api/v1/q write
+// response verbatim: the acknowledgement token, and any parse warnings the
+// server attached — the write committed, but the parse read close to a
+// different query. It is deliberately not a recall's envelope: a write and a
+// recall that matched nothing used to be the same bytes, which made a fact
+// that never landed indistinguishable from one that did.
 type RememberOutput struct {
-	Results  Result   `json:"results"`
+	Status   string   `json:"status"`
 	Warnings []string `json:"warnings,omitempty"`
 }

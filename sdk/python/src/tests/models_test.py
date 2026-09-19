@@ -55,6 +55,32 @@ def test_from_json_carries_warnings_beside_the_hits():
     assert [hit.value for hit in result] == ["since the storm"]
 
 
+def test_from_json_defaults_to_a_populated_graph():
+    """``empty`` is False unless the caller says otherwise.
+
+    It rides the status line (204), not the body, so ``from_json`` cannot
+    infer it from the payload and must not try: an empty result set is the
+    ordinary miss until the response says the graph itself was empty.
+    """
+    result = RecallResult.from_json({"count": 0, "hits": []})
+
+    assert result.empty is False
+
+
+def test_from_json_carries_the_empty_graph_flag():
+    """A 204 has no body, so the empty result is paired with the flag by hand.
+
+    The two halves of an empty answer come from different places — the body
+    (or its absence) and the status — and this is where they are joined.
+    """
+    result = RecallResult.from_json({}, empty=True)
+
+    assert result.empty is True
+    assert result.count == 0
+    assert result.hits == []
+    assert bool(result) is False
+
+
 @pytest.mark.integration
 def test_the_response_parses_into_the_declared_types(tide_result):
     """Every hit the server sent becomes a Hit with the declared field types."""
