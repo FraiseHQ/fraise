@@ -50,10 +50,10 @@ from typing import Any
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.constants import (
     DEFAULT_SERVER_NAME,
+    DEFAULT_TOP,
+    MAX_DEPTH,
     RECALL_TOOL,
     REMEMBER_TOOL,
-    DEFAULT_TOP,
-    MAX_DEPTH
 )
 from fraise_sdk.errors import FraiseError
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder

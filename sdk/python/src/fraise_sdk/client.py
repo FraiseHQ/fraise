@@ -33,15 +33,14 @@ from fraise_sdk import query as _query
 from fraise_sdk.constants import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT_SECONDS,
-    SUPPORTED_SERVER,
-    SERVER_MIN,
+    NO_CONTENT,
     SERVER_MAX_EXCLUSIVE,
-    NO_CONTENT
+    SERVER_MIN,
+    SUPPORTED_SERVER,
 )
 from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
 from fraise_sdk.models import RecallResult
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
-
 
 
 def _parse_version(text: str) -> tuple[int, int, int] | None:

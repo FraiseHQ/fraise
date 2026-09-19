@@ -39,11 +39,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from fraise_sdk.constants import (
-    VECTOR_PARAM,
-    MAX_GRAPH,
-    KEYWORDS
-)
+from fraise_sdk.constants import KEYWORDS, MAX_GRAPH, VECTOR_PARAM
 from fraise_sdk.errors import FraiseQueryError
 
 
