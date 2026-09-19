@@ -30,23 +30,18 @@ from collections.abc import Sequence
 import requests
 
 from fraise_sdk import query as _query
+from fraise_sdk.constants import (
+    DEFAULT_BASE_URL,
+    DEFAULT_TIMEOUT_SECONDS,
+    SUPPORTED_SERVER,
+    SERVER_MIN,
+    SERVER_MAX_EXCLUSIVE,
+    NO_CONTENT
+)
 from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
 from fraise_sdk.models import RecallResult
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
-DEFAULT_BASE_URL = "http://localhost:9876"
-DEFAULT_TIMEOUT_SECONDS = 30.0
-
-# 204 No Content is how the server answers a recall of a graph that holds
-# nothing. It is a success, not an error, and it has no body: the distinction
-# between "nothing is stored here" and "nothing matched" is the status itself.
-_NO_CONTENT = 204
-
-# Server versions this SDK is verified against. Keep in sync with COMPATIBILITY.md
-# and bump when a release starts relying on newer server behaviour.
-SUPPORTED_SERVER = ">=0.1.0,<0.2.0"
-_SERVER_MIN = (0, 1, 0)
-_SERVER_MAX_EXCLUSIVE = (0, 2, 0)
 
 
 def _parse_version(text: str) -> tuple[int, int, int] | None:
@@ -168,7 +163,7 @@ class FraiseClient:
             return False
 
         parsed = _parse_version(version)
-        if parsed is None or not (_SERVER_MIN <= parsed < _SERVER_MAX_EXCLUSIVE):
+        if parsed is None or not (SERVER_MIN <= parsed < SERVER_MAX_EXCLUSIVE):
             message = (
                 f"fraise server {version} is outside this SDK's supported range "
                 f"{SUPPORTED_SERVER}; behaviour may be undefined"
@@ -275,7 +270,7 @@ class FraiseClient:
         return RecallResult.from_json(
             results,
             warnings=body.get("warnings"),
-            empty=status == _NO_CONTENT,
+            empty=status == NO_CONTENT,
         )
 
     # -- embedding ---------------------------------------------------------

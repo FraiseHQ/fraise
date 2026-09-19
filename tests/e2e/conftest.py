@@ -297,7 +297,7 @@ _TIDEPOOL_ANCHORS = {
 # configured default-top (10 in tests/fraise.config.toml), so an anchor-only
 # recall with no top: clause is visibly capped. Shares graph 7 with the probes above and
 # contains none of their words.
-_DEFAULT_TOP = 10
+DEFAULT_TOP = 10
 _SALTMARSH_TOPIC = "saltmarsh"
 _SALTMARSH_FACTS = tuple(f"saltmarsh channel {i} was surveyed" for i in range(12))
 
@@ -384,7 +384,7 @@ def tidepool_graph(query):
 @pytest.fixture(scope="session")
 def default_top():
     """The daemon's configured default-top (tests/fraise.config.toml)."""
-    return _DEFAULT_TOP
+    return DEFAULT_TOP
 
 
 @pytest.fixture(scope="session")

@@ -23,8 +23,9 @@
 """Unit tests for the pure query-string builders."""
 
 import pytest
+from fraise_sdk.constants import VECTOR_PARAM
 from fraise_sdk.errors import FraiseAPIError, FraiseQueryError
-from fraise_sdk.query import VECTOR_PARAM, build_recall, build_remember
+from fraise_sdk.query import build_recall, build_remember
 
 
 def test_remember_minimal():

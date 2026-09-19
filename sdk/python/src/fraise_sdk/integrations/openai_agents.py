@@ -64,7 +64,7 @@ except ImportError as exc:  # pragma: no cover - exercised only without the extr
 # default here: an omitted clause takes the lane the server is configured
 # with, and this tool names no topic or entity, so any explicit lane above the
 # floor would only draw a warning.
-_DEFAULT_TOP = 5
+DEFAULT_TOP = 5
 
 # The retrieval lanes are 0, 1 and 2 by design — the scorer runs at most one
 # anchor-mediated round — so a larger depth is not a deeper search but a
@@ -73,7 +73,7 @@ _DEFAULT_TOP = 5
 # validation of every call, so the model gets a correction it can act on
 # rather than a round trip that fails. An operator can only lower the ceiling
 # (max-depth), and the server's own rejection still surfaces as a tool error.
-_MAX_DEPTH = 2
+MAX_DEPTH = 2
 
 
 def recall_tool(
@@ -93,8 +93,8 @@ def recall_tool(
 
     def recall_memory(
         keywords: list[str],
-        top: int = _DEFAULT_TOP,
-        depth: Annotated[int | None, Field(ge=0, le=_MAX_DEPTH)] = None,
+        top: int = DEFAULT_TOP,
+        depth: Annotated[int | None, Field(ge=0, le=MAX_DEPTH)] = None,
     ) -> str:
         """Search long-term memory for facts related to the given keywords.
 

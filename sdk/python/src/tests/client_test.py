@@ -31,7 +31,7 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
-from fraise_sdk.client import DEFAULT_TIMEOUT_SECONDS
+from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
 
 

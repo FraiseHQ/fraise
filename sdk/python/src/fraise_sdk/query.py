@@ -39,37 +39,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from fraise_sdk.errors import FraiseQueryError
-
-# Name bound to the out-of-band vector in the request parameters. A query carries
-# at most one vector, so a single fixed placeholder keeps client and builder in
-# lock-step without threading a name through every call.
-VECTOR_PARAM = "v"
-
-# The highest graph a query can name. A selector travels as a uint8, so 256 does
-# not fail — it wraps to graph 0 unless the server catches it, which is why this
-# is a hard edge rather than a hint. Which selectors below it exist is the
-# server's business, and only it can answer that.
-MAX_GRAPH = 255
-
-# The grammar's reserved words, mirroring the server's keyword table. A bare term
-# spelling one of these reads as the start of a clause everywhere except the
-# first term of a recall, so the builder has to know them to quote around them.
-_KEYWORDS = frozenset(
-    {
-        "recall",
-        "remember",
-        "forget",
-        "update",
-        "topic",
-        "entity",
-        "since",
-        "until",
-        "top",
-        "depth",
-        "vec",
-    }
+from fraise_sdk.constants import (
+    VECTOR_PARAM,
+    MAX_GRAPH,
+    KEYWORDS
 )
+from fraise_sdk.errors import FraiseQueryError
 
 
 def _token(kind: str, value: str) -> str:
@@ -146,7 +121,7 @@ def _term(value: str, *, leading: bool) -> str:
     from a time bound.
     """
     token = _token("keyword", value)
-    if leading or token.lower() not in _KEYWORDS:
+    if leading or token.lower() not in KEYWORDS:
         return token
     return _quote_value(token)
 
