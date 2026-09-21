@@ -325,17 +325,18 @@ func TestQueryNoMatchOnPopulatedGraphIsEmptyResults(t *testing.T) {
 
 // TestQueryEmptyGraphIsPerGraph checks that emptiness is read off the graph the
 // query selected, not the store as a whole: writing to graph 0 must not stop
-// graph 5 from answering 204. The selector is the unit of isolation everywhere
+// graph 1 from answering 204. The selector is the unit of isolation everywhere
 // else in the API, and a store-wide check would silently make the 204 mean
 // "nothing has ever been written anywhere".
 func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
 	s := newTestServer(t)
-
+	// saves content in graph 0
 	if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna sent the invoice'"}`); w.Code != http.StatusOK {
 		t.Fatalf("seeding write: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@5 anna"}`)
+	// Graph 1 should be empty
+	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@1 anna"}`)
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusNoContent, w.Body.String())

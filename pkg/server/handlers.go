@@ -60,23 +60,6 @@ func errorToResponse(err error) (int, string) {
 	}
 }
 
-// graphIsEmpty reports whether the graph selected by id holds nothing at all.
-// It reads the same snapshot /api/v1/stats serves, so "empty" means here what
-// it means there — zero stored nodes — rather than a second, private notion of
-// emptiness that could disagree with what an operator sees.
-//
-// Only a read that matched nothing asks this, so the per-graph read locks the
-// snapshot takes are paid on that path alone, never on one that returned hits.
-func (s *Server[K, P]) graphIsEmpty(id uint8) bool {
-	g, err := s.DB.Select(id)
-	if err != nil {
-		return false
-	}
-	g.RLock()
-	defer g.RUnlock()
-	return g.Stats().Nodes == 0
-}
-
 // handleHealthCheck returns a handler that reports the server is alive,
 // responding with HTTP 200 and a simple status payload.
 //
@@ -237,7 +220,8 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 			// in the status line, which costs no body — and must not have one,
 			// so warnings go with it: what a phrasing might have meant instead
 			// is moot when there was nothing to search either way.
-			if stream.Result.Count == 0 && s.graphIsEmpty(q.GetGraphID()) {
+
+			if stream.Result.Count == 0 && stream.IsGraphEmpty {
 				c.Status(http.StatusNoContent)
 				return
 			}

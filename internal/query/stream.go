@@ -49,6 +49,11 @@ type Stream[K comparable, P float32 | float64] struct {
 	// the plan. The stream is built per request and never cached.
 	Explain bool
 
+	// Checks if graph is empty. This is used downstream by server
+	// to return accurate response code (e.g. there's a difference
+	// between an empty search and a search in a empty ggraph)
+	IsGraphEmpty bool
+
 	done chan struct{}
 	once sync.Once
 }
@@ -91,6 +96,8 @@ func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, e
 // with g untouched. Later index errors are pathological; they surface in the
 // returned error with the write partially applied.
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
+
+	s.IsGraphEmpty = g.IsEmpty()
 
 	// Write stream
 	if s.Query.IsWrite() {
@@ -182,6 +189,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 			Hits:  make([]Hit[K, P], 0),
 		}
 		s.Result = &r
+		s.IsGraphEmpty = false
 		logger.Debug("Write stream committed", "value", remember.Value)
 		return nil
 	}
