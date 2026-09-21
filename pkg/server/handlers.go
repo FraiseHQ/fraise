@@ -70,6 +70,13 @@ func errorToResponse(err error) (int, string) {
 func (s *Server[K, P]) graphIsEmpty(id uint8) bool {
 	graphs := s.DB.Stats().Graphs
 	return int(id) < len(graphs) && graphs[id].Nodes == 0
+	g, err := s.DB.Select(id)
+	if err != nil {
+		return false
+	}
+	g.RLock()
+	defer g.RUnlock()
+	return g.Stats().Nodes == 0
 }
 
 // handleHealthCheck returns a handler that reports the server is alive,
