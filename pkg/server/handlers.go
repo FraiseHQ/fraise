@@ -68,8 +68,6 @@ func errorToResponse(err error) (int, string) {
 // Only a read that matched nothing asks this, so the per-graph read locks the
 // snapshot takes are paid on that path alone, never on one that returned hits.
 func (s *Server[K, P]) graphIsEmpty(id uint8) bool {
-	graphs := s.DB.Stats().Graphs
-	return int(id) < len(graphs) && graphs[id].Nodes == 0
 	g, err := s.DB.Select(id)
 	if err != nil {
 		return false
