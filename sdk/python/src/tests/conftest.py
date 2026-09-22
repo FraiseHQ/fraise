@@ -262,7 +262,7 @@ _MODELS_GRAPH = 3
 # 204, which only a graph no test ever writes to can exercise. It sits above
 # the default 8 so the e2e suite's own map, which claims 0-8 against the same
 # daemon, cannot reach it. Do not write to this graph.
-_EMPTY_GRAPH = 9
+_EMPTY_GRAPH = 6
 
 # The dimension every vector in this suite is written with. The first vector
 # inserted into a graph fixes that graph's dimension, and more than one file
