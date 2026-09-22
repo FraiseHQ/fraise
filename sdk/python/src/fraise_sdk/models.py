@@ -53,24 +53,43 @@ class RecallResult:
     and the hits are valid, but it was one typo away from meaning something
     else (e.g. a leading term that spells a grammar keyword). Empty on the
     common, unambiguous path.
+
+    ``empty`` is about the graph, not the result set — ``bool(result)`` is what
+    reports whether anything came back. It separates the two ways a recall comes
+    back with nothing: False is the ordinary miss, where the graph holds facts
+    and none of them matched, so the query is what to change; True means the
+    graph searched holds nothing at all — no fact has ever been written to it —
+    and no rephrasing would have helped. The server carries the difference in
+    the status line (204 for the empty graph), because the two were otherwise
+    the same empty result set, and a caller could not tell a graph it had never
+    written to from a question it had asked badly.
     """
 
     count: int
     hits: list[Hit]
     warnings: list[str] = field(default_factory=list)
+    empty: bool = False
 
     @classmethod
     def from_json(
-        cls, results: dict, warnings: Sequence[str] | None = None
+        cls,
+        results: dict,
+        warnings: Sequence[str] | None = None,
+        *,
+        empty: bool = False,
     ) -> RecallResult:
         """Parse the server's ``results`` object, with any response warnings.
 
         Args:
-            results: the ``results`` member of the response body.
+            results: the ``results`` member of the response body. Empty for a
+                204, which has no body to carry one.
             warnings: the response's ``warnings`` list, which sits beside
                 ``results`` rather than inside it — the caller holding the
                 whole body passes it through here. ``None`` (a clean response,
                 or a pre-warnings server) parses to an empty list.
+            empty: whether the server answered 204, i.e. the graph searched
+                holds nothing. It rides the status line rather than the body,
+                so the caller that saw the response passes it in.
 
         Returns:
             The typed result, warnings included.
@@ -82,6 +101,7 @@ class RecallResult:
             count=results.get("count", len(hits)),
             hits=hits,
             warnings=list(warnings or []),
+            empty=empty,
         )
 
     def __bool__(self) -> bool:

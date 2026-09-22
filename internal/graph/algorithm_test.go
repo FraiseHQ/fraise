@@ -132,7 +132,8 @@ func (g *fakeGraph) Nodes() map[uint64]graph.Node[uint64]               { return
 func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) ([]*graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64) {
 	return nil, nil, nil, 0
 }
-func (g *fakeGraph) RLock()   {}
-func (g *fakeGraph) Lock()    {}
-func (g *fakeGraph) RUnlock() {}
-func (g *fakeGraph) Unlock()  {}
+func (g *fakeGraph) RLock()        {}
+func (g *fakeGraph) Lock()         {}
+func (g *fakeGraph) RUnlock()      {}
+func (g *fakeGraph) Unlock()       {}
+func (g *fakeGraph) IsEmpty() bool { return false }

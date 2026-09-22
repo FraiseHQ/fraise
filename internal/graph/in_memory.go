@@ -846,3 +846,10 @@ func (g *InMemoryGraph[K, P]) MergeFrom(in Graph[K, P]) {
 		_ = g.vectorIndex.Insert(key, vector)
 	}
 }
+
+// IsEmpty reports whether the graph holds nothing at all.
+// Only a read that matched nothing asks this, so the per-graph read locks the
+// snapshot takes are paid on that path alone, never on one that returned hits.
+func (s *InMemoryGraph[K, P]) IsEmpty() bool {
+	return s.Stats().Nodes == 0
+}

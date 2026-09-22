@@ -41,6 +41,21 @@ client.recall("colourful birds")                               # encoded for you
 
 A client without an embedder still works; it simply writes and recalls without vectors, on text and graph structure alone. Per call, `embed=True` forces encoding and `embed=False` skips it, and an explicit `vector=` always wins. See [Producing vectors](/docs/retrieval/embeddings/producing-vectors).
 
+## Telling an empty graph from a miss
+
+`recall` always returns a `RecallResult`, even when nothing came back, so iterating or reading `.count` never has to be guarded. `bool(result)` tells you whether anything matched; `result.empty` tells you about the graph it searched:
+
+```python
+result = client.recall("parrot")
+if not result:
+    if result.empty:
+        print("nothing has been remembered in this graph yet")
+    else:
+        print("facts are stored here, but none matched")
+```
+
+The server carries the distinction in the status line — 204 for a graph holding nothing — and the SDK reads it there. It is worth branching on: the first case is answered by writing something, the second by asking differently, and they are easy to spend an afternoon confusing. See [the query endpoint](/docs/http-api/endpoints/query).
+
 ## Version compatibility
 
 The SDK reads the `version` field from `GET /` to check the server falls in the range it supports — the handshake is part of the contract, not a convenience. See [Health check](/docs/http-api/endpoints/health).

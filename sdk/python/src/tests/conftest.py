@@ -139,6 +139,34 @@ def respond():
     return _arm
 
 
+def _arm_no_content(session) -> MagicMock:
+    """Arm ``session`` to answer the next POST with a bodiless 204.
+
+    Private: tests reach this through the ``respond_no_content`` fixture. It
+    is separate from ``_arm`` because a 204 is the one success with no body at
+    all — decoding it raises, exactly as ``requests`` does on an empty
+    payload, so a client that reaches for the body instead of the status is
+    caught here rather than passing against a mock that returns ``{}``.
+    """
+    response = MagicMock(status_code=204, ok=True, text="")
+    response.json.side_effect = ValueError("no JSON object could be decoded")
+    session.post.return_value = response
+    return response
+
+
+@pytest.fixture
+def respond_no_content():
+    """Callable arming a session to answer the next POST with a bodiless 204.
+
+    That is how the server reports a recall of a graph holding nothing, as
+    distinct from a populated graph none of whose facts matched.
+
+    Returns:
+        ``callable(session) -> MagicMock`` — the mock response.
+    """
+    return _arm_no_content
+
+
 def _arm_get(session, body, status_code: int = 200) -> MagicMock:
     """Arm ``session`` to answer the next GET with ``body``.
 
@@ -229,6 +257,12 @@ _ROUND_TRIP_GRAPH = 0
 _VECTOR_GRAPH = 1
 _QUERY_GRAPH = 2
 _MODELS_GRAPH = 3
+
+# Claimed by staying empty: a recall of a graph holding nothing is answered
+# 204, which only a graph no test ever writes to can exercise. It sits above
+# the default 8 so the e2e suite's own map, which claims 0-8 against the same
+# daemon, cannot reach it. Do not write to this graph.
+_EMPTY_GRAPH = 6
 
 # The dimension every vector in this suite is written with. The first vector
 # inserted into a graph fixes that graph's dimension, and more than one file
@@ -441,6 +475,16 @@ def round_trip_graph():
         The graph id.
     """
     return _ROUND_TRIP_GRAPH
+
+
+@pytest.fixture(scope="session")
+def empty_graph():
+    """A graph no test ever writes to, so a recall of it finds nothing stored.
+
+    Returns:
+        The graph id.
+    """
+    return _EMPTY_GRAPH
 
 
 @pytest.fixture(scope="session")

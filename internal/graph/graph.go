@@ -175,4 +175,7 @@ type Graph[K comparable, P float32 | float64] interface {
 
 	// Unlock releases a write lock.
 	Unlock()
+
+	// Checks if graph is empty
+	IsEmpty() bool
 }

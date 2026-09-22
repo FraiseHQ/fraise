@@ -34,30 +34,40 @@ import (
 )
 
 // call posts in as the /api/v1/q request body and decodes the response into
-// Out. Every failure comes back as an error for the typed handler to return,
-// which the SDK packs into an in-band tool error — the model reads the
-// daemon's own message ("top:0 out of range (1-1000)") and can correct its
-// query, exactly the self-correction contract the HTTP API's error bodies
-// exist for. Nothing here is a protocol error: even an unreachable daemon is
-// something the model should relay, not something that should kill the call.
-func call[Out any](ctx context.Context, s *MCPServer, in any) (Out, error) {
+// Out, returning the status alongside it. Every failure comes back as an error
+// for the typed handler to return, which the SDK packs into an in-band tool
+// error — the model reads the daemon's own message ("top:0 out of range
+// (1-1000)") and can correct its query, exactly the self-correction contract
+// the HTTP API's error bodies exist for. Nothing here is a protocol error:
+// even an unreachable daemon is something the model should relay, not
+// something that should kill the call.
+//
+// The status is returned because one successful answer carries its meaning
+// there rather than in a body: 204 is a read of a graph that holds nothing,
+// and it has no body to decode, so Out stays zero-valued and the caller reads
+// the distinction off the status.
+func call[Out any](ctx context.Context, s *MCPServer, in any) (Out, int, error) {
 	var out Out
 
 	body, err := json.Marshal(in)
 	if err != nil {
-		return out, err
+		return out, 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/api/v1/q", bytes.NewReader(body))
 	if err != nil {
-		return out, err
+		return out, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return out, fmt.Errorf("could not reach fraise at %s — is the daemon running? (brew services start fraise, or systemctl --user start fraise): %w", s.baseURL, err)
+		return out, 0, fmt.Errorf("could not reach fraise at %s — is the daemon running? (brew services start fraise, or systemctl --user start fraise): %w", s.baseURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return out, resp.StatusCode, nil
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		// The error body's "error" field is the message an agent can act on;
@@ -67,34 +77,42 @@ func call[Out any](ctx context.Context, s *MCPServer, in any) (Out, error) {
 			Error string `json:"error"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&e); err != nil || e.Error == "" {
-			return out, fmt.Errorf("fraise answered %s", resp.Status)
+			return out, resp.StatusCode, fmt.Errorf("fraise answered %s", resp.Status)
 		}
-		return out, errors.New(e.Error)
+		return out, resp.StatusCode, errors.New(e.Error)
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return out, fmt.Errorf("undecodable response from fraise at %s: %w", s.baseURL, err)
+		return out, resp.StatusCode, fmt.Errorf("undecodable response from fraise at %s: %w", s.baseURL, err)
 	}
-	return out, nil
+	return out, resp.StatusCode, nil
 }
 
 // recall forwards the tool input as a query and returns the response twice
 // over: as structured content for programmatic clients, and rendered to text
 // for the model.
 func (s *MCPServer) recall(ctx context.Context, _ *mcp.CallToolRequest, in RecallInput) (*mcp.CallToolResult, RecallOutput, error) {
-	out, err := call[RecallOutput](ctx, s, in)
+	out, status, err := call[RecallOutput](ctx, s, in)
 	if err != nil {
 		return nil, RecallOutput{}, err
 	}
+	// A 204 is a read of a graph that holds nothing, and carries no body. The
+	// structured payload still has to satisfy the tool's output schema, which
+	// requires hits to be an array, so the empty result is materialised here
+	// rather than marshalled from a nil slice as null.
+	graphEmpty := status == http.StatusNoContent
+	if graphEmpty {
+		out.Results.Hits = []Hit{}
+	}
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: renderRecall(out)}},
+		Content: []mcp.Content{&mcp.TextContent{Text: renderRecall(out, graphEmpty)}},
 	}, out, nil
 }
 
 // remember forwards the tool input as a query and confirms the write, with
 // any parse warnings the server attached rendered beside the confirmation.
 func (s *MCPServer) remember(ctx context.Context, _ *mcp.CallToolRequest, in RememberInput) (*mcp.CallToolResult, RememberOutput, error) {
-	out, err := call[RememberOutput](ctx, s, in)
+	out, _, err := call[RememberOutput](ctx, s, in)
 	if err != nil {
 		return nil, RememberOutput{}, err
 	}

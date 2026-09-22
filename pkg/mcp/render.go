@@ -34,11 +34,21 @@ import (
 // warnings follow one per line, because the query ran and what the parser
 // flagged is exactly what the model needs to see to fix its next one.
 
-// renderRecall renders a recall response for the model.
-func renderRecall(out RecallOutput) string {
+// renderRecall renders a recall response for the model. graphEmpty separates
+// the two ways a recall comes back with nothing, which the daemon distinguishes
+// by status: a graph that holds nothing at all, and a populated graph none of
+// whose facts matched. The model needs them apart — the first is answered by
+// remembering something, the second by asking differently — and a single "no
+// match" line sends it re-phrasing a query against a graph that was never
+// written to.
+func renderRecall(out RecallOutput, graphEmpty bool) string {
 	var lines []string
 	if len(out.Results.Hits) == 0 {
-		lines = append(lines, "No stored facts matched.")
+		if graphEmpty {
+			lines = append(lines, "No stored facts matched: this graph is empty, nothing has been remembered in it yet.")
+		} else {
+			lines = append(lines, "No stored facts matched.")
+		}
 	}
 	for _, hit := range out.Results.Hits {
 		lines = append(lines, fmt.Sprintf("- %s (relevance %.3f)", hit.Value, hit.Score))
@@ -49,9 +59,9 @@ func renderRecall(out RecallOutput) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderRemember confirms a write for the model. The daemon's result carries
-// no payload for a write, so the confirmation is fixed text; only warnings
-// vary.
+// renderRemember confirms a write for the model. The daemon acknowledges a
+// write with a status token rather than a payload, so the confirmation is
+// fixed text; only warnings vary.
 func renderRemember(out RememberOutput) string {
 	lines := []string{"Remembered."}
 	for _, warning := range out.Warnings {

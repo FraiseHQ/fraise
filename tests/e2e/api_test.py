@@ -55,11 +55,12 @@ def test_query_rejects_unparsable_query(query):
     assert body.get("error"), "expected a parse error message"
 
 
-def test_query_rejects_out_of_range_graph(query):
+def test_query_rejects_out_of_range_graph(query, num_graphs):
     """A selector past the allocated graph range is a fast client error, not a
-    hang. Graph 9 is above the eight graphs the store allocates.
+    hang. The selector is taken from the server's own allocation so it stays
+    out of range whatever the suite's config sets the count to.
     """
-    status, body = query("recall@9 anything")
+    status, body = query(f"recall@{num_graphs} anything")
 
     assert status == 400
     assert body.get("error"), "expected an out-of-range error message"
@@ -121,8 +122,12 @@ def test_wrapping_selector_write_does_not_leak_to_graph_zero(query):
     assert status == 400
 
     status, body = query("recall@0 wrapprobe")
-    assert status == 200
-    assert body["results"]["count"] == 0, (
+    # What this asserts is the probe's absence, which both successful shapes
+    # attest to: 200 with no hits, or the 204 an empty graph answers with. The
+    # suite primes every claimed graph so the first is what actually arrives,
+    # but pinning it would tie a wrap regression test to that arrangement.
+    assert status in (200, 204), body.get("error")
+    assert body.get("results", {}).get("count", 0) == 0, (
         "a rejected @256 write leaked onto graph 0 — uint8 wrap regression"
     )
 
@@ -226,8 +231,10 @@ def test_missing_separator_write_does_not_land(query):
     assert status == 400
 
     status, body = query("recall@5 colonprobe")
-    assert status == 200, body.get("error")
-    assert body["results"]["count"] == 0, (
+    # As above: either successful shape attests that the probe is absent,
+    # which is the whole claim here.
+    assert status in (200, 204), body.get("error")
+    assert body.get("results", {}).get("count", 0) == 0, (
         "a rejected write landed on graph 5 — the parse error did not stop execution"
     )
 
@@ -617,3 +624,52 @@ def test_query_parse_error_message_is_unmangled(query, text, detail):
     assert "parse error at column" in error, (
         f"{text!r}: position lost from the error: {error!r}"
     )
+
+
+# A write, a recall of an empty graph, and a recall that matched nothing used
+# to be one shape: 200 with {"count":0,"hits":[]}. A stored fact was therefore
+# byte-identical to a failed search, and a caller who had never written to a
+# graph got the same answer as one whose query simply missed. These pin the
+# three apart, and both SDKs parse against them.
+
+
+def test_an_accepted_write_is_acknowledged_not_answered_with_results(query):
+    """A write comes back 200 with its own acknowledgement and no result set.
+
+    The "status" key is the contract both SDKs branch on: its presence is what
+    distinguishes an accepted write from a recall that matched nothing.
+    """
+    status, body = query("remember@1 'ackprobe is a loose remember'")
+
+    assert status == 200, body.get("error")
+    assert body == {"status": "ok"}
+
+
+def test_a_recall_of_an_empty_graph_is_204_with_no_body(query):
+    """Graph 8 is never written to, so a recall of it answers 204.
+
+    No body, because 204 must not carry one — and none is needed: the whole
+    answer is "nothing has been stored here", which no result set could say
+    that an ordinary miss would not also say.
+    """
+    status, body = query("recall@8 anything")
+
+    assert status == 204, body.get("error")
+    assert body == {}
+
+
+def test_a_recall_that_matched_nothing_on_a_populated_graph_stays_200(query):
+    """A populated graph that matched nothing keeps the empty result envelope.
+
+    This is the distinction the 204 exists for. The graph is seeded here
+    rather than assumed populated, because files run in any order and a graph
+    that happened to be empty would answer 204 and pass the wrong assertion.
+    """
+    status, body = query("remember@1 'the barometer falls before the storm'")
+    assert status == 200, body.get("error")
+
+    status, body = query("recall@1 zzznomatchzzz")
+
+    assert status == 200, body.get("error")
+    assert body["results"]["count"] == 0
+    assert body["results"]["hits"] == []

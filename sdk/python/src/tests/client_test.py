@@ -31,7 +31,7 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
-from fraise_sdk.client import DEFAULT_TIMEOUT_SECONDS
+from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
 
 
@@ -97,10 +97,64 @@ def test_recall_parses_hits(session, respond, sent):
 
 
 def test_recall_empty_results(session):
+    """A populated graph that matched nothing is an empty, falsey result.
+
+    ``empty`` is False here and that is the whole point of the flag: it reports
+    on the graph, not on the result set, and this graph holds facts the query
+    missed — so rephrasing is the thing to try. Compare the 204 test below,
+    where rephrasing would never have helped.
+    """
     result = FraiseClient().recall("nothingindexed")
     assert result.count == 0
     assert list(result) == []
     assert bool(result) is False
+    assert result.empty is False
+
+
+def test_recall_of_an_empty_graph_is_marked_empty(session, respond_no_content):
+    """A 204 means the graph searched holds nothing, and carries no body.
+
+    The distinction rides the status line, so a client that parsed only the
+    body would report this identically to the miss above — which is the bug
+    the status exists to fix. The result is still a RecallResult: recall's
+    return type does not change shape on an empty graph, or every caller would
+    have to None-check the most ordinary path there is, a read before the
+    first write.
+    """
+    respond_no_content(session)
+
+    result = FraiseClient().recall("nothingindexed")
+
+    assert result.empty is True
+    assert result.count == 0
+    assert list(result) == []
+    assert bool(result) is False
+
+
+def test_a_bodiless_204_reaches_query_as_an_empty_body(session, respond_no_content):
+    """The raw escape hatch answers a 204 with ``{}`` rather than raising.
+
+    ``query`` returns the decoded body and a 204 has none, so ``{}`` is the
+    truthful answer. It is also why the typed ``recall`` exists: the status
+    that carries the meaning is not visible through this method.
+    """
+    respond_no_content(session)
+
+    assert FraiseClient().query("recall nothingindexed") == {}
+
+
+def test_remember_accepts_the_write_acknowledgement(session, respond):
+    """A write is answered with its own shape, not a recall's envelope.
+
+    The server acknowledges with ``{"status": "ok"}``; before that split an
+    accepted write and a recall that matched nothing were the same bytes, so a
+    fact that never landed was indistinguishable from one that did. The client
+    must accept the new shape without reaching for ``results``, which is no
+    longer there.
+    """
+    respond(session, {"status": "ok"})
+
+    assert FraiseClient().remember("the parrot is turquoise") is None
 
 
 def test_recall_surfaces_server_warnings(session, respond, server_warning):
@@ -648,10 +702,61 @@ def test_a_mismatched_vector_dimension_is_rejected(vector_graph, vector_dim, cli
 
 
 @pytest.mark.integration
-def test_query_returns_the_decoded_body(client, round_trip_graph, no_match):
-    """The raw escape hatch returns the server's decoded JSON body."""
-    body = client.query(f"recall@{round_trip_graph} {no_match}")
+def test_query_returns_the_decoded_body(client, instrument_graph, no_match):
+    """The raw escape hatch returns the server's decoded JSON body.
+
+    It takes the populated graph, not the bare id: a recall of a graph holding
+    nothing is answered 204 with no body at all, so an unpopulated graph would
+    make this assert against ``{}``.
+    """
+    body = client.query(f"recall@{instrument_graph} {no_match}")
     assert body["results"] == {"count": 0, "hits": []}
+
+
+@pytest.mark.integration
+def test_query_returns_the_write_acknowledgement(client, round_trip_graph):
+    """A write answers with its own shape, not a recall's empty envelope.
+
+    Pinned against the live server because this is a wire contract: the client
+    branches on the "status" key to tell a stored fact from a search that
+    found nothing, and the two were the same bytes before the split.
+    """
+    body = client.query(
+        f"remember@{round_trip_graph} 'the acknowledgement is its own shape'"
+    )
+
+    assert body == {"status": "ok"}
+
+
+@pytest.mark.integration
+def test_recall_of_an_empty_graph_says_the_graph_is_empty(client, empty_graph):
+    """A recall of a graph nothing was ever written to sets ``empty``.
+
+    The server carries this in the status line (204) and it survives into the
+    result, which is the whole point: without it the caller sees the same
+    empty result as a query that simply missed, and debugs the query when it
+    should be checking whether it ever wrote.
+    """
+    result = client.recall("anything", graph=empty_graph)
+
+    assert result.empty is True
+    assert result.count == 0
+    assert list(result) == []
+
+
+@pytest.mark.integration
+def test_recall_that_missed_on_a_populated_graph_is_not_empty(
+    client, instrument_graph, no_match
+):
+    """The other half of the pair, against the live server.
+
+    Same empty result set, opposite ``empty`` — the graph holds facts,
+    the keyword just matched none of them.
+    """
+    result = client.recall(no_match, graph=instrument_graph)
+
+    assert result.empty is False
+    assert result.count == 0
 
 
 @pytest.mark.integration

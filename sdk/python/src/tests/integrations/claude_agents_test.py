@@ -40,8 +40,8 @@ pytest.importorskip(
     "claude_agent_sdk", reason="requires the 'anthropic' dependency group"
 )
 
+from fraise_sdk.constants import DEFAULT_SERVER_NAME
 from fraise_sdk.integrations.claude_agents import (  # noqa: E402
-    DEFAULT_SERVER_NAME,
     allowed_tools,
     memory_server,
     memory_tools,

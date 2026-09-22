@@ -33,7 +33,11 @@ func TestRenderRecall(t *testing.T) {
 	cases := []struct {
 		name string
 		out  RecallOutput
-		want string
+		// graphEmpty is the daemon's 204, which the bridge reads off the
+		// status line: the recall found nothing because the graph holds
+		// nothing, not because the query missed.
+		graphEmpty bool
+		want       string
 	}{
 		{
 			name: "hits render one line each, best first",
@@ -50,6 +54,12 @@ func TestRenderRecall(t *testing.T) {
 			want: "No stored facts matched.",
 		},
 		{
+			name:       "an empty graph says that instead, so the model writes rather than rephrases",
+			out:        RecallOutput{Results: Result{Count: 0, Hits: []Hit{}}},
+			graphEmpty: true,
+			want:       "No stored facts matched: this graph is empty, nothing has been remembered in it yet.",
+		},
+		{
 			name: "warnings follow the hits, one per line",
 			out: RecallOutput{
 				Results:  Result{Count: 1, Hits: []Hit{{Value: "since the storm", Score: 1}}},
@@ -62,16 +72,16 @@ func TestRenderRecall(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := renderRecall(tc.out); got != tc.want {
+			if got := renderRecall(tc.out, tc.graphEmpty); got != tc.want {
 				t.Errorf("renderRecall = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-// TestRenderRemember pins the write confirmation: fixed text, since a write's
-// result carries no payload, with warnings appended when the parse had
-// something to say.
+// TestRenderRemember pins the write confirmation: fixed text, since a write is
+// acknowledged with a status token rather than a payload, with warnings
+// appended when the parse had something to say.
 func TestRenderRemember(t *testing.T) {
 	cases := []struct {
 		name string
@@ -80,13 +90,13 @@ func TestRenderRemember(t *testing.T) {
 	}{
 		{
 			name: "a clean write is a bare confirmation",
-			out:  RememberOutput{Results: Result{Count: 0, Hits: []Hit{}}},
+			out:  RememberOutput{Status: "ok"},
 			want: "Remembered.",
 		},
 		{
 			name: "warnings ride under the confirmation",
 			out: RememberOutput{
-				Results:  Result{Count: 0, Hits: []Hit{}},
+				Status:   "ok",
 				Warnings: []string{"parse warning at column 15"},
 			},
 			want: "Remembered.\nwarning: parse warning at column 15",

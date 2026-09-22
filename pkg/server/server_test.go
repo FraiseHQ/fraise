@@ -244,9 +244,15 @@ func TestQueryVectorDimensionMismatch(t *testing.T) {
 }
 
 // TestQuerySuccess checks that a well-formed recall query is planned, executed,
-// and returns 200 with a results payload.
+// and returns 200 with a results payload. The graph is seeded first: a recall
+// of a graph that holds nothing is answered 204, so an unseeded graph would
+// exercise that path instead of this one.
 func TestQuerySuccess(t *testing.T) {
 	s := newTestServer(t)
+
+	if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna sent the invoice'"}`); w.Code != http.StatusOK {
+		t.Fatalf("seeding write: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
 
 	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 anna"}`)
 
@@ -255,6 +261,85 @@ func TestQuerySuccess(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "results") {
 		t.Errorf("body = %q, want a results payload", w.Body.String())
+	}
+}
+
+// TestQueryWriteIsAcknowledged pins the write response apart from a read's.
+// Before the split, an accepted write answered with a recall's empty envelope,
+// so {"count":0,"hits":[]} meant both "stored" and "matched nothing" and a
+// fact that never landed was indistinguishable on the wire from one that did.
+// The status token is what tells them apart, and both SDKs branch on it — if
+// this test has to change, their parsing changes with it.
+func TestQueryWriteIsAcknowledged(t *testing.T) {
+	s := newTestServer(t)
+
+	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna sent the invoice' topic:billing"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+	if got, want := strings.TrimSpace(w.Body.String()), `{"status":"ok"}`; got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+}
+
+// TestQueryEmptyGraphIsNoContent checks the third answer a query can give: a
+// recall of a graph holding nothing comes back 204 with no body at all. It is
+// not an error and not a miss — the caller has yet to write anything here, so
+// no rephrasing of the query would have helped, and that is what separates it
+// from TestQueryNoMatchOnPopulatedGraphIsEmptyResults below.
+func TestQueryEmptyGraphIsNoContent(t *testing.T) {
+	s := newTestServer(t)
+
+	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 anna"}`)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusNoContent, w.Body.String())
+	}
+	if body := w.Body.String(); body != "" {
+		t.Errorf("body = %q, want it empty: 204 must not carry one", body)
+	}
+}
+
+// TestQueryNoMatchOnPopulatedGraphIsEmptyResults is the other half of the pair:
+// the graph holds facts and none of them matched, which stays 200 with an empty
+// result set. Losing this distinction is the whole point of the 204 — a caller
+// that cannot tell the two apart debugs its query when it should be checking
+// whether it ever wrote.
+func TestQueryNoMatchOnPopulatedGraphIsEmptyResults(t *testing.T) {
+	s := newTestServer(t)
+
+	if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna sent the invoice'"}`); w.Code != http.StatusOK {
+		t.Fatalf("seeding write: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 zzznomatchzzz"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"count":0`) {
+		t.Errorf("body = %q, want an empty result set", w.Body.String())
+	}
+}
+
+// TestQueryEmptyGraphIsPerGraph checks that emptiness is read off the graph the
+// query selected, not the store as a whole: writing to graph 0 must not stop
+// graph 1 from answering 204. The selector is the unit of isolation everywhere
+// else in the API, and a store-wide check would silently make the 204 mean
+// "nothing has ever been written anywhere".
+func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
+	s := newTestServer(t)
+	// saves content in graph 0
+	if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna sent the invoice'"}`); w.Code != http.StatusOK {
+		t.Fatalf("seeding write: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// Graph 1 should be empty
+	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@1 anna"}`)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusNoContent, w.Body.String())
 	}
 }
 
