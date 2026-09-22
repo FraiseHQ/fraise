@@ -91,6 +91,7 @@ func (g *fakeGraph) Neighbours(key string) []string                     { return
 func (g *fakeGraph) Order() int                                         { return 0 }
 func (g *fakeGraph) Size() int                                          { return 0 }
 func (g *fakeGraph) Stats() graph.GraphStats                            { return graph.GraphStats{} }
+func (g *fakeGraph) IsEmpty() bool                                      { return false }
 
 // --- helpers ---------------------------------------------------------------
 
