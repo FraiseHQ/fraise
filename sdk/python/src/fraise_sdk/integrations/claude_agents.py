@@ -148,6 +148,8 @@ def recall_tool(
             )
         except FraiseError as exc:
             return _err(f"memory lookup failed: {exc}")
+        if results.empty:
+            return _ok("Nothing has been stored in memory yet.")
         if not result.hits:
             return _ok("No stored facts matched those keywords.")
         return _ok(
