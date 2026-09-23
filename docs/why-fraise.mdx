@@ -4,7 +4,7 @@ description: "What Fraise does differently from other agent memory systems, and 
 navIcon: "🎯"
 ---
 
-## Why Fraise?
+## What it does differently
 
 - **A query language agents can actually write.** FQL has two verbs — `remember` and `recall` — and one way to say each thing. Fewer degrees of freedom means fewer ways for a model to get it wrong, and fewer tokens spent saying it.
 - **Hybrid retrieval.** Facts are indexed for full-text, graph, and (optionally) vector search. One query, ranked across all three.
@@ -36,6 +36,6 @@ Measured on [LoCoMo](https://github.com/snap-research/locomo) — 10 multi-sessi
 
 ## Ranking is not a black box
 
-A fact's score is its own match strength plus what it receives through anchors carrying *more* mass than their size would predict. The background rate that "more" is measured against is a property of the graph, not of the anchors one query happened to reach — so there is no relevance constant to tune, and no dataset-fitted magic number anywhere in the fold.
+A fact's score is its own match strength plus what it receives through anchors carrying *more* mass than their size would predict. The background rate that "more" is measured against is the query's own — its seed mass per unit of degree across the anchors it reached — so there is no relevance constant to tune, and no dataset-fitted magic number anywhere in the fold.
 
 [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval) is the short version; [Excess transmission](/docs/retrieval/ranking/excess-transmission) is the full model, and [Ranking guarantees](/docs/retrieval/ranking/guarantees) is the contract the test suite pins.

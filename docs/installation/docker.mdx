@@ -11,7 +11,12 @@ The image runs the binary directly as an unprivileged user and exposes 9876.
 
 ## Tags
 
-Published tags: one per release, `latest` for the newest stable, `edge` for the tip of `main`, and an immutable full-commit-SHA tag for every merge.
+| Tag | Points at |
+|---|---|
+| `0.1.0`, `0.1`, `0` | a release, and the newest release in its minor and major line |
+| `latest` | the newest stable release |
+| `edge` | the tip of `main` |
+| the full commit SHA | one immutable build of `main` |
 
 ## Provenance
 
@@ -23,12 +28,12 @@ gh attestation verify oci://ghcr.io/fraisehq/fraise:latest --repo FraiseHQ/frais
 
 ## With a config file
 
-A config file is optional — the defaults plus flags are a complete configuration. Mount one when you want to pin settings; use flags for the one or two you override per environment.
+A config file is optional — the defaults plus flags are a complete configuration. Mount one when you want to pin settings; use flags for the one or two you override per environment. Arguments after the image name are passed to `fraise`:
 
 ```sh
-docker run --rm -p 9876:9876 \
+docker run --rm -p 127.0.0.1:9876:9876 \
   -v "$PWD/fraise.config.toml:/etc/fraise/fraise.config.toml:ro" \
-  fraise -config /etc/fraise/fraise.config.toml
+  ghcr.io/fraisehq/fraise:latest -config /etc/fraise/fraise.config.toml
 ```
 
 ## With compose
@@ -36,18 +41,22 @@ docker run --rm -p 9876:9876 \
 ```yaml
 services:
   fraise:
-    build:
-      context: .
-      dockerfile: Dockerfile.fraise
+    image: ghcr.io/fraisehq/fraise:latest
     ports:
-      - "9876:9876"
+      - "127.0.0.1:9876:9876"
     volumes:
       - ./fraise.config.toml:/etc/fraise/fraise.config.toml:ro
     command: ["-config", "/etc/fraise/fraise.config.toml"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9876/"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+    stop_grace_period: 15s
 ```
 
 <Note title="Health check and stop timeout" type="warning">
 
-  Add a health check on `GET /`, and give the container a stop timeout longer than `shutdown-grace` so the graceful drain is not cut short by SIGKILL — both are covered in [Running Fraise](/docs/operations/running).
+  The health check polls `GET /`, and `stop_grace_period` is set longer than the default 10-second `shutdown-grace` so the graceful drain is not cut short by SIGKILL — both are covered in [Running Fraise](/docs/operations/running).
 
 </Note>
