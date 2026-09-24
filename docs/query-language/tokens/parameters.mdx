@@ -3,15 +3,16 @@ title: "Parameters"
 description: "Binding a vector to a query with a $name reference, and why embeddings never appear inline in the query string"
 ---
 
-A field reference binds a value the query does not carry inline. It is written `$name` and resolved against the `parameters` object of the request:
+A field reference binds a value the query does not carry inline. It is written `$name` and resolved against the `parameters` object of the request, matching a key exactly — case included, as JSON keys are, so `$V` binds `V` and not `v`:
 
 ```json
 {"query": "recall bird vec:$v top:5", "parameters": {"v": [0.1, 0.2, 0.3]}}
 ```
 
 ```ebnf
-param_ref = '$' identifier ;
-vec_field = 'vec' ':' param_ref ;
+param_ref  = '$' param_name ;
+param_name = bare_word ;    (* matched exactly: never folded *)
+vec_field  = 'vec' ':' param_ref ;
 ```
 
 ## Only `vec` takes one
