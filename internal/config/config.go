@@ -209,11 +209,11 @@ type VectorSearch struct {
 }
 
 type MCPConfig struct {
-	// fraise daemon address
-	addr string `toml:"address"`
-
-	// memory graph index
-	graph uint `toml:"graph"`
+	// Address of the daemon the `fraise mcp` bridge forwards to. Unset, it is
+	// the daemon this same config describes — 127.0.0.1 on server.port — so
+	// `fraise mcp -config x` finds whatever `fraise -config x` serves. The
+	// graph is not configured here: every query names its own with @N.
+	Address string `toml:"address"`
 }
 
 // Instanciates new configset
@@ -278,9 +278,8 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.VectorSearch.LeafSize, "rptree-leaf-size", DefaultLeafSize, "Points an RP-tree leaf holds before it splits")
 	flagSet.IntVar(&config.DB.VectorSearch.Overfetch, "rptree-overfetch", DefaultOverfetch, "Candidates gathered per result before a vector search stops probing")
 
-	// mcp server
-	flagSet.StringVar(&config.MCP.addr, "addr", DefaultMCPAddress, "address of the fraise daemon")
-	flagSet.UintVar(&config.MCP.graph, "graph", DefaultMCPGraph, "which memory graph to use")
+	// mcp bridge (unset: derived from -port in adjust)
+	flagSet.StringVar(&config.MCP.Address, "addr", "", "Address of the fraise daemon the mcp bridge forwards to (default: 127.0.0.1 on -port)")
 
 	return config
 }
@@ -377,6 +376,9 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.Log.Format, DefaultLogFormat)
 	// Log.DisableTimestamp is intentionally not adjusted: its default is true,
 	// so Adjust would override any explicit false from the config file.
+
+	// mcp: after server.port, which the default address is derived from
+	Adjust(&c.MCP.Address, fmt.Sprintf(DefaultMCPAddressFormat, c.Server.Port))
 
 	// engine
 	Adjust(&c.Engine.Halflife, DefaultHalflife)

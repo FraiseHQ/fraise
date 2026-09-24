@@ -378,3 +378,30 @@ func TestParseAppliesDefaultsWithoutAConfigFile(t *testing.T) {
 		t.Errorf("Scheduler.Workers = %d, want max(MinWorkersCount, GOMAXPROCS) = %d", c.Scheduler.Workers, wantWorkers)
 	}
 }
+
+// TestParseDerivesTheMCPAddressFromThePort pins the bridge's default: with no
+// address configured it forwards to the daemon the same config describes, so
+// a port moved in the shared file moves the bridge with it — while an
+// explicit -addr wins over the derivation.
+func TestParseDerivesTheMCPAddressFromThePort(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-port", "4242"}, "http://127.0.0.1:4242"},
+		{nil, "http://127.0.0.1:9876"},
+		{[]string{"-port", "4242", "-addr", "http://10.0.0.5:9876"}, "http://10.0.0.5:9876"},
+	}
+
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			c := config.New()
+			if err := c.Parse(append([]string{"-config", missingConfig(t)}, tc.args...)); errors.Is(err, config.ErrInvalidValue) || errors.Is(err, config.ErrInvalidFlag) {
+				t.Fatalf("Parse(%v) = %v, want the flags accepted", tc.args, err)
+			}
+			if c.MCP.Address != tc.want {
+				t.Errorf("MCP.Address = %q, want %q", c.MCP.Address, tc.want)
+			}
+		})
+	}
+}

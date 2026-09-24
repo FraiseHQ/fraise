@@ -66,3 +66,6 @@
 # flush-factor = 2
 # leaf-size = 32
 # overfetch = 32
+
+[mcp]
+# address = "http://127.0.0.1:9876"  # default: 127.0.0.1 on server.port; fraise mcp forwards here
