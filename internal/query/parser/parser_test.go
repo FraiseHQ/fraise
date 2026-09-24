@@ -24,6 +24,7 @@ package parser_test
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -1049,6 +1050,38 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), `found ""`) {
 				t.Errorf("error %q reports end of input as an empty literal", err)
+			}
+		})
+	}
+}
+
+// TestCommandWordsAreNeverOfferedAsClauses pins the repair for a command word
+// in a recall: quote it. The keyword advice ("write recall:<value> if a clause
+// was meant") sent the caller from one rejection to the next, since no clause
+// is spelled with a command. Both the leading-term warning and the error
+// after the terms say only what works.
+func TestCommandWordsAreNeverOfferedAsClauses(t *testing.T) {
+	cases := []struct {
+		query, word string
+	}{
+		{"recall recall", "recall"},
+		{"recall forget", "forget"},
+		{"recall zebras recall", "recall"},
+		{"recall zebras remember", "remember"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			msg := fmt.Sprint(err, warns)
+			if err == nil && len(warns) == 0 {
+				t.Fatalf("Parse(%q) was silent, want a warning or an error naming the command word", tc.query)
+			}
+			if !strings.Contains(msg, "quote it ('"+tc.word+"')") {
+				t.Errorf("%s does not tell the caller to quote %q", msg, tc.word)
+			}
+			if strings.Contains(msg, tc.word+":<value>") {
+				t.Errorf("%s offers %s:<value>, which is itself an error", msg, tc.word)
 			}
 		})
 	}

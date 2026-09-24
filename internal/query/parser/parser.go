@@ -207,7 +207,14 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 // colon is missing: "recall ferry top" is a caller who meant the word "top"
 // far more often than one who abandoned a top:<n> clause mid-write, and either
 // way the fix is a colon or a quote.
+//
+// A command word gets no clause to suggest: recall:<value> is itself an error,
+// so pointing at it sent the caller from one rejection to the next.
 func (p *parser[K, P]) errKeywordAsClause(tok lexer.Token) error {
+	if tok.Type.IsCommand() {
+		return p.errf(tok.Pos, "%s starts a second command: one command per instruction — quote it ('%s') to search for the word",
+			tok.Describe(), tok.Literal)
+	}
 	return p.errf(tok.Pos, "%s is a keyword and starts no clause here: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
 		tok.Describe(), strings.ToLower(tok.Literal), tok.Literal)
 }
@@ -489,12 +496,15 @@ func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
 	// differently-scoped question — so it is surfaced: the query runs as the
 	// term search and carries a warning naming both readings. A quoted phrase
 	// never warns; quoting is the deliberate form.
-	if _, reserved := lexer.KeywordsMap[strings.ToLower(tok.Literal)]; reserved && tok.Type != lexer.PHRASE {
-		p.warns = append(p.warns, Warning{
-			Msg: fmt.Sprintf("term %q is also a keyword: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
-				tok.Literal, strings.ToLower(tok.Literal), tok.Literal),
-			Pos: tok.Pos,
-		})
+	// A command word has no clause reading to offer — recall:<value> is
+	// itself an error — so its warning names only the quote.
+	if keyword, reserved := lexer.KeywordsMap[strings.ToLower(tok.Literal)]; reserved && tok.Type != lexer.PHRASE {
+		msg := fmt.Sprintf("term %q is also a keyword: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
+			tok.Literal, strings.ToLower(tok.Literal), tok.Literal)
+		if keyword.IsCommand() {
+			msg = fmt.Sprintf("term %q is also a command: quote it ('%s') to search for the word", tok.Literal, tok.Literal)
+		}
+		p.warns = append(p.warns, Warning{Msg: msg, Pos: tok.Pos})
 	}
 
 	terms := []LiteralFieldNode{TermNode{token: tok, value: strings.ToLower(tok.Literal)}}

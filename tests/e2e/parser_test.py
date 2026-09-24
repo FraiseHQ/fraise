@@ -208,10 +208,6 @@ def test_empty_data_is_rejected(query, text):
         "recall vec",
         "recall topic",
         "recall entity",
-        "recall forget",
-        "recall update",
-        "recall remember",
-        "recall recall",
     ],
 )
 def test_leading_reserved_word_runs_and_warns(query, text):
@@ -229,6 +225,37 @@ def test_leading_reserved_word_runs_and_warns(query, text):
     joined = " ".join(str(w) for w in warnings).lower()
     assert "keyword" in joined, (
         f"{text!r}: warning {warnings!r} should name the keyword ambiguity"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall forget",
+        "recall update",
+        "recall remember",
+        "recall recall",
+    ],
+)
+def test_leading_command_word_runs_and_warns_with_the_quote(query, text):
+    """A leading command word runs as a term search and warns, naming the quote.
+
+    A command word has no clause reading: recall:<value> is itself an error, so
+    the warning that used to offer it sent the caller from one rejection to the
+    next. It now says only what works — quote the word — and never suggests a
+    clause spelled with a command.
+    """
+    word = text.split()[1]
+    status, body = query(text)
+    _accept(status, body, text)
+    warnings = body.get("warnings") or []
+    assert warnings, f"{text!r}: expected a warning naming the command word, got none"
+    joined = " ".join(str(w) for w in warnings)
+    assert f"quote it ('{word}')" in joined, (
+        f"{text!r}: warning {warnings!r} should tell the caller to quote the word"
+    )
+    assert f"{word}:<value>" not in joined, (
+        f"{text!r}: warning {warnings!r} offers a clause no command word has"
     )
 
 
