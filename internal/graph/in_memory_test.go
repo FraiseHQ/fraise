@@ -174,6 +174,11 @@ func TestInMemoryGraphRelationships(t *testing.T) {
 	if stats.Nodes != 3 {
 		t.Errorf("Stats().Nodes = %d, want 3", stats.Nodes)
 	}
+	// ...but only the fact and the entity are vertices: the relationship is
+	// the edge between them, already counted by Size.
+	if stats.Order != 2 || g.Order() != 2 {
+		t.Errorf("Stats().Order = %d, Order() = %d, want 2 (the edge is not a vertex)", stats.Order, g.Order())
+	}
 
 	// Deleting an endpoint removes the incident edge from both maps.
 	if err := g.Delete(entity); err != nil {
