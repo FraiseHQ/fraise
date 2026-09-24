@@ -1,9 +1,9 @@
 ---
 title: "OpenAI Agents SDK"
-description: "memory_tools(client) returns bound recall and remember tools for an OpenAI Agents SDK agent"
+description: "memory_tools(client) returns bound recall_memory and remember_fact tools for an OpenAI Agents SDK agent"
 ---
 
-`memory_tools(client)` returns bound `recall` and `remember` tools:
+`memory_tools(client)` returns two tools bound to that client, `recall_memory` and `remember_fact`:
 
 ```python
 from agents import Agent, Runner
@@ -25,7 +25,9 @@ Complete, Docker-runnable agents live in `examples/openai-agents` in the Fraise 
 
 ## What the tools do
 
-Both are thin wrappers over the [query endpoint](/docs/http-api/endpoints/query): `remember` asserts one self-contained fact with its topics and entities, `recall` seeds a search and returns ranked hits. The client is the same [Python SDK](/docs/integrations/python-sdk) client, so an embedder passed to it applies to both tools.
+Both are thin wrappers over the [query endpoint](/docs/http-api/endpoints/query): `remember_fact` asserts one self-contained fact with its topics and entities, `recall_memory` seeds a search and returns ranked hits. The client is the same [Python SDK](/docs/integrations/python-sdk) client, and `graph=` binds both tools to one memory graph.
+
+The tools send no vector unless you give them an embedder of their own — `memory_tools(fraise, embedder=OpenAIEmbedder())` — which then encodes the text of every recall and remember they make.
 
 ## Instructions matter more than schemas
 

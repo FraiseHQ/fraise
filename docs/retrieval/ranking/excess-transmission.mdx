@@ -1,36 +1,53 @@
 ---
 title: "Excess transmission"
-description: "Why the background rate is estimated over the whole graph rather than over the anchors one query happened to touch"
+description: "How the background rate is estimated from the anchors a query reaches, and why memory the query never touched cannot move it"
 ---
 
-## The null must be wider than the sample it judges
+## The background rate is the query's own
 
-$\rho_0$ is a property of the graph, not of the anchors one query happened to reach. The denominator is the **total degree of the graph's anchors**, and the numerator the total seed mass the query put onto anchors; untouched anchors contribute their degree and no mass, which is exactly the statement that the query found nothing there.
+$\rho_0$ is measured over the anchors a query reaches. The numerator is the total seed mass the query put onto those anchors; the denominator is their **total degree**. Every touched anchor counts — including one that ends up silent, since its mass and size are part of what the query observed — and an anchor the query never reached counts not at all.
 
-## Why the cheaper estimate is not an approximation
+Writing $M_A$ for an anchor's observed mass and $d_A$ for its degree, over the touched set $T$:
 
-The alternative — normalising over only the anchors a query touched — is not a cheaper approximation of this but a **different quantity, and a degenerate one**.
+$$
+\rho_0 = \frac{\sum_{A \in T} M_A}{\sum_{A \in T} d_A}
+$$
 
-Writing $M_A$ for an anchor's observed mass and $d_A$ for its degree, a background $\rho_0 = \sum M / \sum d$ taken over the touched set $T$ satisfies
+$d_A \, \rho_0$ is then the anchor's **fair share**: the mass it would hold if the query's evidence were spread across the anchors it reached in proportion to their size. An anchor transmits only what it holds above that share.
+
+## A worked example
+
+Three topics: `cluster` files 3 facts, two of which match the query with mass 8 and 6; `hub` files 6 facts, one of which matches with mass 2; `giant` files 10 facts, none of which match, and the query never reaches it.
+
+| Anchor | Degree | Mass | Fair share at $\rho_0 = 16/9$ | Transmits |
+|---|---|---|---|---|
+| `cluster` | 3 | 14 | 5.33 | yes — it holds well over its share |
+| `hub` | 6 | 2 | 10.67 | no — one weak match among six facts |
+| `giant` | 10 | — | not touched | no, and it does not weigh in $\rho_0$ |
+
+$\rho_0 = (14 + 2)/(3 + 6) = 16/9$. The third `cluster` fact, which matched nothing, receives $\alpha^2 (14 - 0 - 5.33)/3 \approx 0.72$ — the surplus shared across `cluster`'s three edges and attenuated over two — while the two facts that matched keep their own mass plus a smaller share, since a fact never funds its own boost.
+
+## Why untouched anchors stay out
+
+Counting `giant` would lower $\rho_0$ to $16/19$, and every further unrelated anchor would lower it again. Add enough memory the query has nothing to do with and `hub` — one weak match among six facts — clears its share and starts transmitting, although nothing about this query or the facts it matched has changed. An anchor untouched by the query carries no evidence about it; letting it into the rate would make the same question rank differently depending on how much unrelated memory the graph happens to hold.
+
+Measured over the anchors reached, the bar depends only on what the query observed: its seeds, and the anchors those seeds are filed under.
+
+## What a relative bar implies
+
+The fair shares of the touched anchors add up to exactly the mass they hold:
 
 $$
 \sum_{A \in T} \bigl( M_A - d_A \, \rho_0 \bigr) = \sum M - \rho_0 \sum d = 0
 $$
 
-identically. The surpluses of the very anchors being judged are then constrained to cancel, whatever the query, whatever the graph:
+so admission is a comparison among the anchors one query reached: an anchor speaks when it concentrates more of the query's evidence than its size accounts for next to the others. Three consequences follow, and all three are the intended reading:
 
-- a query touching **one anchor** gives it $M = d \cdot (M / d)$, so nothing can ever transmit;
-- a query with **one seed** gives every touched anchor the same mass, so the mass cancels from both sides of the admission test and an anchor speaks purely because its degree is below the touched mean.
+- **A query that reaches one anchor transmits nothing.** That anchor holds exactly its share — $M = d \cdot (M/d)$ — and with nothing to compare it against there is no evidence that it concentrates anything.
+- **A query with one seed admits on degree alone.** Every anchor it touches observes the same mass $m$, so an anchor clears its share exactly when its degree is below the touched mean. That is the correct inference: an anchor of degree 3 holding $m$ *is* more surprising than an anchor of degree 300 holding the same $m$.
+- **Silence is relative, not absolute.** An anchor falls silent when it holds no more of the query's evidence than its size accounts for next to the other anchors reached, whatever that evidence amounts to in raw units.
 
-Neither outcome is evidence about the graph — both are artefacts of measuring a sample against its own mean.
-
-Estimating over the graph's anchors removes the identity: the touched anchors are then free to carry positive surplus collectively, which is the thing the methodology is trying to detect.
-
-## A consequence, not a defect
-
-A single-seed query still admits on degree alone, because with one seed every touched anchor observes the same mass and degree is the only thing left to distinguish them. Under this null that is the **correct inference**, not a shortcoming: an anchor of degree 3 holding mass $m$ *is* more surprising than an anchor of degree 300 holding the same $m$.
-
-What the graph-wide estimate fixes is the bar those degrees are measured against — an absolute rate, rather than one the query defines for itself.
+`depth:1` raises the admission bar to twice the fair share; `depth:2` admits at the fair share itself. The rate and the fold are the same in both — see [Retrieval lanes](/docs/retrieval/ranking/depth).
 
 ## Choosing the traversal
 
