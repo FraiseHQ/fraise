@@ -1063,6 +1063,9 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		// keyword rather than complaining about the token after it.
 		{"remember 'a fact' top:3", "is a keyword"},
 		{"remember 'a fact' since:7d", "is a keyword"},
+		// A NUL outside a phrase used to end the query where it stood, and
+		// everything after it was dropped without a word.
+		{"recall zebras\x00food", "NUL character is only allowed inside a quoted phrase"},
 		// A newline in a value slot is a second instruction starting early.
 		{"recall zebras topic:\nfood", "one command per instruction"},
 		// No better diagnosis exists for a stray '@'.
