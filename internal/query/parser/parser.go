@@ -187,6 +187,8 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 		return p.errf(tok.Pos, "unterminated quoted phrase")
 	case tok.Type == lexer.LPAREN, tok.Type == lexer.RPAREN:
 		return p.errf(tok.Pos, "grouping is not supported: %s has no meaning in a query — there are no boolean operators to group, and terms are already a union", tok.Describe())
+	case tok.Type == lexer.NUL:
+		return p.errf(tok.Pos, "a NUL character is only allowed inside a quoted phrase")
 	case tok.Type == lexer.NEWLINE:
 		return p.errf(tok.Pos, "unexpected %s: one command per instruction", tok.Describe())
 	case tok.Type.IsCommand():
@@ -602,6 +604,11 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 	if p.cur.Type == lexer.ILLEGAL {
 		return nil, p.errf(p.cur.Pos, "unterminated quoted phrase")
 	}
+	// A NUL where the fact should start is rejected for itself, not reported
+	// as a missing phrase.
+	if p.cur.Type == lexer.NUL {
+		return nil, p.errUnexpected(p.cur)
+	}
 	tok, err := p.expect(lexer.PHRASE)
 	if err != nil {
 		return nil, p.errf(p.cur.Pos, "expected a quoted phrase, but found %s", p.cur.Describe())
@@ -624,7 +631,7 @@ func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 	// name themselves, and saying so is worth more here than saying what a
 	// value slot wanted.
 	switch p.cur.Type {
-	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE:
+	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE, lexer.NUL:
 		return p.cur, p.errUnexpected(p.cur)
 	}
 	return p.cur, p.errf(p.cur.Pos, "expected a word or quoted phrase, but found %s", p.cur.Describe())
