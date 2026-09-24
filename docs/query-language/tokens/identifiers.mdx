@@ -19,7 +19,7 @@ An identifier is a bare word: a run of characters ending at whitespace or at one
 ## Grammar
 
 ```ebnf
-bare_word         = ?[^\s:'$()@+~-][^\s:'$()@]*? ; (* '-' may appear inside a word, never at its start *)
+bare_word         = ?[^\s:'"$()@+~-][^\s:'"$()@]*? ; (* '-' may appear inside a word, never at its start *)
 identifier        = bare_word ;                    (* folded to lower case on the way in *)
 quoted_identifier = "'" { ?[^']? | "''" } "'" ;    (* same opaque rule as a phrase *)
 ```

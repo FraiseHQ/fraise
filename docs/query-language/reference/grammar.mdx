@@ -71,7 +71,7 @@ graph_selector  = '@' integer ;                (* default 0; lexed WITH the comm
 (* LITERALS                                                     *)
 (* ------------------------------------------------------------ *)
 
-bare_word         = ?[^\s:'$()@+~-][^\s:'$()@]*? ; (* '-' may appear inside a word, never at its start *)
+bare_word         = ?[^\s:'"$()@+~-][^\s:'"$()@]*? ; (* '-' may appear inside a word, never at its start *)
 phrase            = "'" { ?[^']? | "''" } "'" ; (* opaque: any char is literal; '' is an escaped quote *)
 identifier        = bare_word ;                (* folded to lower case on the way in *)
 quoted_identifier = "'" { ?[^']? | "''" } "'" ; (* same opaque rule as phrase *)

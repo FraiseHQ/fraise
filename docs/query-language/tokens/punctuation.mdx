@@ -14,7 +14,7 @@ Four characters carry meaning. Each one is a single token, and each one also end
 
 ## Lexed but never accepted
 
-`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears.
+`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears. So is a double quote outside a phrase, with its own repair in the message: `"` delimits nothing — phrases are single-quoted.
 
 <Note title="Leading hyphen" type="warning">
 

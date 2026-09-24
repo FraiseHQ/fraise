@@ -1032,6 +1032,12 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		// keyword rather than complaining about the token after it.
 		{"remember 'a fact' top:3", "is a keyword"},
 		{"remember 'a fact' since:7d", "is a keyword"},
+		// A double quote is the phrase written with the wrong quote, wherever
+		// it lands: it used to be read as part of a word, so recall "zebras"
+		// searched for the quote characters too.
+		{`recall "zebras"`, "phrases are single-quoted"},
+		{`remember "a fact"`, "phrases are single-quoted"},
+		{`recall zebras topic:"food"`, "phrases are single-quoted"},
 		// A newline in a value slot is a second instruction starting early.
 		{"recall zebras topic:\nfood", "one command per instruction"},
 		// No better diagnosis exists for a stray '@'.

@@ -103,6 +103,9 @@ func (l *Lexer) Next() Token {
 	case rune('\n'):
 		l.readCharacter()
 		tok = Token{Type: NEWLINE, Literal: string(l.Character)}
+	case rune('"'):
+		l.readCharacter()
+		tok = Token{Type: DQUOTE, Literal: string(l.Character)}
 	case rune(0):
 		tok = Token{Type: EOL}
 	default:
@@ -143,7 +146,7 @@ func (l *Lexer) scanString() string {
 f:
 	for {
 		switch l.peek() {
-		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune('\n'), rune(0), rune('@'):
+		case rune(':'), rune('$'), rune('\''), rune('"'), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune('\n'), rune(0), rune('@'):
 			break f
 		default:
 			res = append(res, l.peek())

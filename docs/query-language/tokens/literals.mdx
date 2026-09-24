@@ -13,7 +13,7 @@ description: "Phrases, integers, durations and dates — the value forms FQL acc
 
 ## Phrases
 
-A phrase is opaque: every character inside it is literal, and `''` is an escaped apostrophe.
+A phrase is opaque: every character inside it is literal, and `''` is an escaped apostrophe. Phrases are single-quoted only: a double quote delimits nothing, and one outside a phrase is rejected with the single-quoted form to write instead.
 
 ```text
 remember 'meeting at 3:30pm about the topic' topic:meetings
