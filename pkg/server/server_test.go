@@ -91,6 +91,40 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+// TestFailuresOutsideTheHandlersKeepTheErrorShape pins that every failure
+// answers {"error": ...}, including the two gin produces itself: an unknown
+// route (or a known path with the wrong method) used to be a plain-text 404,
+// and a recovered panic a 500 with no body at all — neither parses as the
+// error shape a client decodes every other failure with. A panic's detail
+// stays in the log, never in the body.
+func TestFailuresOutsideTheHandlersKeepTheErrorShape(t *testing.T) {
+	s := newTestServer(t)
+	s.router.GET("/panics", func(*gin.Context) { panic("boom") })
+
+	cases := []struct {
+		method, target string
+		status         int
+		want           string
+	}{
+		{http.MethodGet, "/api/v1/nope", http.StatusNotFound, `{"error":"no endpoint GET /api/v1/nope"}`},
+		{http.MethodGet, "/api/v1/q", http.StatusNotFound, `{"error":"no endpoint GET /api/v1/q"}`},
+		{http.MethodGet, "/panics", http.StatusInternalServerError, `{"error":"internal server error"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
+			w := s.do(tc.method, tc.target, "")
+
+			if w.Code != tc.status {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, tc.status, w.Body.String())
+			}
+			if got := w.Body.String(); got != tc.want {
+				t.Errorf("body = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestQueryMalformedBody checks that a request with an invalid JSON body is
 // rejected with 400.
 func TestQueryMalformedBody(t *testing.T) {
