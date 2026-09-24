@@ -71,6 +71,10 @@ const (
 	RPAREN
 	DOLLAR
 	NEWLINE
+	// DQUOTE is a double quote, which delimits nothing: phrases are
+	// single-quoted. It is its own token, rather than part of a word, so the
+	// parser can say so instead of searching for `"parrot"` quotes and all.
+	DQUOTE
 
 	// fields
 	TOPIC
@@ -95,6 +99,7 @@ var TokenMap = map[TokenType]string{
 	DOLLAR:   "$",
 	PHRASE:   "phrase",
 	NEWLINE:  "\n",
+	DQUOTE:   "\"",
 	PLUS:     "+",
 	TILDE:    "~",
 	MINUS:    "-",
