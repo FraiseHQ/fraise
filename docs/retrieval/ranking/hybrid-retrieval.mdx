@@ -4,11 +4,11 @@ description: "How the text index, the vector index and the fact–anchor graph c
 navIcon: "🔍"
 ---
 
-Each temporal memory graph indexes all data ingested into a full-text search index and a vector index (when embeddings are provided).
+Each temporal memory graph indexes every fact's text in a full-text search index and, when an embedding is supplied with it, in a vector index. Its edges link each fact to the topics and entities it is filed under.
 
 <Note title="Seeds, not answers" type="note">
 
-**The two are seeds, not answers**, and retrieval scores are **BM25 plus transmitted surplus**.
+**The indexes are seeds, not answers**, and a retrieval score is **the seeds' own mass plus transmitted surplus**.
 
 </Note>
 
@@ -20,6 +20,9 @@ A recall pulls a bounded number of candidates from each source it can use — at
 |---|---|
 | text index | BM25 $\times$ match breadth — the matched-term count priced against the query's total idf mass, so a document covering the whole query scores its term count and a partial match is discounted by the informativeness it missed |
 | vector index | $1 / (1 + \text{distance})$ similarity |
+| named anchors, on a recall with no term or vector | a unit mass for each named anchor the fact is filed under |
+
+A fact found by more than one source carries the sum of their masses.
 
 ### What the text index matches
 
@@ -27,7 +30,7 @@ A fact is indexed under its terms and a recall's keywords are read the same way,
 
 ## The transmission
 
-That mass then flows into the fact–anchor graph. Every anchor — a topic or entity node — the query touches observes the total seed mass on its members and compares it to a **background rate** $\rho_0$: the mass a size-proportional smear of the query's seed mass across the graph's anchors would predict for an anchor of its degree.
+When the recall names a `topic:` or `entity:` anchor and takes `depth:1` or `depth:2` — see [Retrieval lanes](/docs/retrieval/ranking/depth) — that mass then flows into the fact–anchor graph. Every anchor — a topic or entity node — the query touches observes the total seed mass on its members and compares it to a **background rate** $\rho_0$: the mass a size-proportional smear of the query's seed mass across the anchors it reached would predict for an anchor of its degree.
 
 Only the excess above background is transmitted, and it is transmitted **once, not once per member**:
 
@@ -48,7 +51,7 @@ Without a seed there is no mass to transmit. That is why a recall must carry at 
 ## Where to go from here
 
 <CardGrid>
-  <Card title="Excess transmission" description="how ρ₀ is estimated, and why the null has to be wider than the sample it judges" href="/docs/retrieval/ranking/excess-transmission" />
+  <Card title="Excess transmission" description="how ρ₀ is estimated from the anchors a query reaches, with a worked example" href="/docs/retrieval/ranking/excess-transmission" />
   <Card title="Ranking guarantees" description="the four properties the test suite pins" href="/docs/retrieval/ranking/guarantees" />
   <Card title="Retrieval lanes" description="what depth: selects" href="/docs/retrieval/ranking/depth" />
   <Card title="Explained recall" description="the per-source contributions behind one hit" href="/docs/http-api/endpoints/explain" />

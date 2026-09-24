@@ -4,7 +4,7 @@ description: "The same pipeline as /q, with the per-source contributions each hi
 navLabel: "Explain"
 ---
 
-The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from.
+The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from, and the result carries the query's `background` rate.
 
 Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
 
@@ -14,15 +14,16 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
     "count": 1,
     "hits": [
       {
-        "value": "the parrot is turquoise",
-        "timestamp": "2026-08-09T17:40:53.851+01:00",
-        "score": 0.75,
+        "value": "the parrot sleeps in the kitchen",
+        "timestamp": "2026-09-23T17:52:22.836+01:00",
+        "score": 0.9773,
         "contributions": [
-          { "source": "text",  "score": 1, "rank": 0, "hop": 0 },
-          { "source": "graph", "score": 2, "rank": 1, "hop": 2 }
+          { "source": "text",  "score": 0.9762, "rank": 1, "count": 1 },
+          { "source": "graph", "score": 2.9682, "rank": 0, "via": "polly", "degree": 3, "count": 3 }
         ]
       }
-    ]
+    ],
+    "background": 0.6596
   }
 }
 ```
@@ -33,14 +34,18 @@ One contribution records one sighting of the hit by one retrieval source:
 
 | Field | Meaning |
 |----------|--------------------------------------------------------------------|
-| `source` | which stage saw it: `text`, `vector` or `graph` |
-| `score` | the source's raw magnitude: match count, similarity, or seed score |
+| `source` | which stage saw it: `text`, `vector`, `graph` or `anchor` |
+| `score` | the source's raw mass: BM25 match mass for `text`, similarity for `vector`, the funding anchor's full observed mass for `graph`, a unit mass for `anchor` |
 | `rank` | the hit's position in that source's own result list, 0 first |
-| `hop` | 0 for a seed; how many hops from its seed for a graph sighting |
+| `via` | the anchor a `graph` or `anchor` sighting came through |
+| `degree` | that anchor's degree — how many edges its mass is shared across |
+| `count` | how many seeds funded the sighting |
+
+An `anchor` sighting belongs to a recall seeded by its anchors alone: the fact was reached because it is filed under an anchor the query named.
 
 <Note title="Contributions are not a sum" type="warning">
 
-`score` on the hit remains the final fused value — after recency decay and any ranking boost — so **the contributions explain its ingredients rather than summing to it exactly.**
+`score` on the hit remains the final value — after transmission and recency decay — so **the contributions explain its ingredients rather than summing to it.**
 
 </Note>
 
@@ -50,4 +55,12 @@ A `remember` on this endpoint is rejected with 400: a write has no ranking to ex
 
 ## Reading a breakdown
 
-A `hop: 0` text sighting is the fact's own match; a `hop: 2` graph sighting is mass that reached it over the seed → anchor → fact path. A hit with only graph contributions matched nothing itself and was preempted in on transmitted surplus alone — which the model only permits when the surplus was genuinely above background. See [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).
+A `text` or `vector` sighting is the fact's own match, its mass $m$. A `graph` sighting is an anchor the fact is filed under, carrying the mass $M_A$ the query's seeds put on it; it adds to the hit only the part of that mass above what the anchor's degree predicts at the `background` rate $\rho_0$, with the fact's own mass excluded, shared across the anchor's edges and attenuated twice:
+
+$$
+\alpha^2 \cdot \frac{\max(0,\; M_A - m - d_A \, \rho_0)}{d_A}, \qquad \alpha = 0.5
+$$
+
+In the example, `polly` holds $2.9682 - 0.9762 - 3 \times 0.6596 \approx 0.013$ above background, which spread over its 3 edges and attenuated adds about $0.0011$ to the text mass — hence $0.9773$. A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score.
+
+A hit with only `graph` contributions matched nothing itself and was preempted in on transmitted surplus alone — which the model only permits when the surplus was genuinely above background. The formula and the lanes are introduced in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).

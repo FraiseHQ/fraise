@@ -652,14 +652,23 @@ def test_anchor_seeded_recall_without_top_takes_the_configured_default(
 
 @pytest.mark.parametrize(
     ("clause", "count"),
-    [("since:1d", 4), ("since:2999-01-01", 0), ("until:1d", 0)],
+    [
+        ("since:1d", 4),
+        ("since:2999-01-01", 0),
+        ("until:1d", 0),
+        ("since:106751d", 4),
+        ("since:15250w", 4),
+        ("until:106751d", 0),
+    ],
 )
 def test_anchor_seeded_recall_honours_time_bounds(clause, count, planets_graph, query):
     """since:/until: bound an anchor-seeded recall as they bound any other.
 
     The star was written moments ago: a window opening a day ago holds all of
     it, one opening in 2999 holds nothing, and one closing a day ago holds
-    nothing either.
+    nothing either. The longest duration each unit can hold still opens in the
+    past, about 292 years ago, so it holds the whole star — one day more used
+    to wrap into the future and hold nothing (see parser_test.py).
     """
     assert (
         _recall_count(query, f"recall@{planets_graph} topic:planets {clause}") == count

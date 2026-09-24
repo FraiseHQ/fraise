@@ -564,7 +564,11 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 	tok := p.take()
 
 	t, err := containers.ParseTimeValue[K](tok.Literal)
-	if err != nil {
+	var rangeErr *containers.DurationRangeError
+	switch {
+	case errors.As(err, &rangeErr):
+		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: out of range (at most %d%c)", strings.ToLower(key.Literal), tok.Describe(), rangeErr.Max, rangeErr.Unit)
+	case err != nil:
 		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: expected a duration like 7d or a date like 2026-01-15", strings.ToLower(key.Literal), tok.Describe())
 	}
 
