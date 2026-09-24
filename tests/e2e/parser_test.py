@@ -472,7 +472,6 @@ def test_unterminated_phrase_is_reported_as_such(query, text):
         ("recall ferry until:0x10", "invalid until value"),
         ("recall ferry until:7 d", "invalid until value"),
         ("recall ferry until:--7d", "invalid until value"),
-        ("recall ferry since:99999999999999999999d", "invalid since value"),
         ("recall ferry since:", "expected"),
     ],
 )
@@ -482,6 +481,36 @@ def test_invalid_temporal_values_name_the_accepted_forms(query, text, expected):
 
     The existing message ("expected a duration like 7d or a date like
     2026-01-15") is the model for every other value error in this file.
+    """
+    status, body = query(text)
+    _reject(status, body, expected, text)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "recall ferry since:106752d",
+            'invalid since value "106752d": out of range (at most 106751d)',
+        ),
+        (
+            "recall ferry until:15251w",
+            'invalid until value "15251w": out of range (at most 15250w)',
+        ),
+        ("recall ferry since:2562048h", "out of range (at most 2562047h)"),
+        ("recall ferry since:153722868m", "out of range (at most 153722867m)"),
+        ("recall ferry since:9223372037s", "out of range (at most 9223372036s)"),
+        ("recall ferry since:99999999999999999999d", "out of range (at most 106751d)"),
+    ],
+)
+def test_durations_longer_than_a_duration_holds_are_rejected(query, text, expected):
+    """A duration past about 292 years is out of range, and the message says
+    how far each unit goes.
+
+    It used to wrap negative and resolve to a bound in the future, so
+    since:106752d ran as a window opening after now — a 200 with nothing in
+    it, answering a question nobody asked. The limit is per unit, so the
+    message names the largest count the caller's own unit allows.
     """
     status, body = query(text)
     _reject(status, body, expected, text)

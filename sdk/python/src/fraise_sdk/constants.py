@@ -31,9 +31,9 @@ NO_CONTENT = 204
 
 # Server versions this SDK is verified against. Keep in sync with COMPATIBILITY.md
 # and bump when a release starts relying on newer server behaviour.
-SUPPORTED_SERVER = ">=0.1.0,<0.2.0"
-SERVER_MIN = (0, 1, 0)
-SERVER_MAX_EXCLUSIVE = (0, 2, 0)
+SUPPORTED_SERVER = ">=0.2.0,<0.3.0"
+SERVER_MIN = (0, 2, 0)
+SERVER_MAX_EXCLUSIVE = (0, 3, 0)
 
 # Name bound to the out-of-band vector in the request parameters.
 VECTOR_PARAM = "v"
