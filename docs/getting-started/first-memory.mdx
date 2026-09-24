@@ -14,7 +14,7 @@ Everything an agent does goes through `POST /api/v1/q`. One command per request.
   ```sh
   curl -X POST localhost:9876/api/v1/q \
     -H 'content-type: application/json' \
-    -d '{"query":"remember \"the parrot is turquoise\" topic:color"}'
+    -d "{\"query\": \"remember 'the parrot is turquoise' topic:color\"}"
   ```
 
   </StepItem>
@@ -23,7 +23,7 @@ Everything an agent does goes through `POST /api/v1/q`. One command per request.
   ```sh
   curl -X POST localhost:9876/api/v1/q \
     -H 'content-type: application/json' \
-    -d '{"query":"recall parrot"}'
+    -d '{"query": "recall parrot"}'
   ```
 
   ```json
@@ -57,7 +57,7 @@ remember 'the parrot is turquoise' topic:color entity:polly
 | Piece | What it is |
 |---|---|
 | `remember` | the command — the only two are `remember` and `recall` |
-| `'the parrot is turquoise'` | the fact, stored exactly as written |
+| `'the parrot is turquoise'` | the fact, in single quotes, stored exactly as written |
 | `topic:color` | an anchor: what the fact is about |
 | `entity:polly` | an anchor: who or what it mentions |
 

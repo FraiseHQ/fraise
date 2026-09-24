@@ -16,9 +16,9 @@ One entry per graph, in selector order, computed on demand from the live graphs:
 
 | Field | Meaning |
 |------------------|-----------------------------------------------------------------------------|
-| `order` | entities (vertices) |
-| `size` | relationships (edges) |
-| `nodes` | total stored nodes |
+| `order` | vertices: facts, entities and topics |
+| `size` | edges: a fact's links to the entities it mentions and the topics it is about |
+| `nodes` | every stored node |
 | `vectors` | vectors indexed |
 | `forest_entries` | entries in the vector forest: live vectors plus garbage awaiting compaction |
 

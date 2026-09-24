@@ -11,7 +11,7 @@ from fraise_sdk.providers import OpenAIEmbedder
 
 client = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder())
 client.remember("the parrot is turquoise", topics=["birds"])   # encoded for you
-client.recall("colourful birds")                               # encoded for you
+client.recall(query="colourful birds")                         # encoded for you
 ```
 
 ## The shipped embedders

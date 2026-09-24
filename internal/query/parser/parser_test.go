@@ -116,6 +116,37 @@ func FuzzParseNeverPanics(f *testing.F) {
 	})
 }
 
+// TestDurationsAreBoundedWithTheRangeInTheMessage pins the duration bound at
+// the level an agent sees: a count past what its unit can hold is a parse
+// error naming the largest one allowed, at the value's column — never a
+// silent wrap into a future bound — and the largest count still parses.
+func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string // "" when the query must parse
+	}{
+		{"recall x since:106751d", ""},
+		{"recall x since:106752d", "invalid since value \"106752d\": out of range (at most 106751d)"},
+		{"recall x until:15251w", "invalid until value \"15251w\": out of range (at most 15250w)"},
+		{"recall x since:99999999999999999999d", "out of range (at most 106751d)"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("Parse(%q) = %v, want it to parse", tc.query, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse(%q) = %v, want an error containing %q", tc.query, err, tc.want)
+			}
+		})
+	}
+}
+
 // TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned
 // error reaches the caller as-is. The call sites used to re-wrap with a bad
 // %e verb, turning a clean "invalid since value ..." into
@@ -1032,6 +1063,9 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		// keyword rather than complaining about the token after it.
 		{"remember 'a fact' top:3", "is a keyword"},
 		{"remember 'a fact' since:7d", "is a keyword"},
+		// A NUL outside a phrase used to end the query where it stood, and
+		// everything after it was dropped without a word.
+		{"recall zebras\x00food", "NUL character is only allowed inside a quoted phrase"},
 		// A newline in a value slot is a second instruction starting early.
 		{"recall zebras topic:\nfood", "one command per instruction"},
 		// No better diagnosis exists for a stray '@'.
