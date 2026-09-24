@@ -206,9 +206,8 @@ const (
 	// ("float32" or "float64"), selecting which server instantiation is built.
 	DefaultPrecision string = PrecisionFloat32
 
-	// default fraise daemon address
-	DefaultMCPAddress string = "http://127.0.0.1:9876"
-
-	// default fraise graph to use
-	DefaultMCPGraph uint = 0
+	// DefaultMCPAddressFormat is the address the mcp bridge forwards to when
+	// none is configured: the local daemon, on whatever port the same config
+	// gives it.
+	DefaultMCPAddressFormat string = "http://127.0.0.1:%d"
 )

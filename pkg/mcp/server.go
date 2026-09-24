@@ -24,8 +24,8 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -41,8 +41,9 @@ const defaultTimeout = 30 * time.Second
 
 // MCPServer is the stdio MCP bridge to a running fraise daemon. It is a thin
 // adapter over the HTTP query API — not a second engine — so it reads the
-// same config the daemon does and derives the daemon's address from it:
-// `fraise mcp -config x` finds whatever `fraise -config x` serves.
+// same config the daemon does and forwards to mcp.address, which defaults to
+// the daemon that config describes: `fraise mcp -config x` finds whatever
+// `fraise -config x` serves, and `-addr` points it anywhere else.
 type MCPServer struct {
 	Config *config.ConfigSet
 	Server *mcp.Server
@@ -64,7 +65,7 @@ func New(c *config.ConfigSet) *MCPServer {
 		Config:  c,
 		Server:  server,
 		client:  &http.Client{Timeout: defaultTimeout},
-		baseURL: fmt.Sprintf("http://127.0.0.1:%d", c.Server.Port),
+		baseURL: strings.TrimSuffix(c.MCP.Address, "/"),
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
