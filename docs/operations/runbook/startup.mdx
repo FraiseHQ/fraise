@@ -26,8 +26,8 @@ It is logged and the defaults stand. The defaults plus flags are a complete conf
 | First log line | Meaning |
 |---|---|
 | `config: invalid value: ...` | a setting is outside its accepted vocabulary — fix the value |
-| an unknown-key error | the file has a key that maps to no setting — a typo the server refuses to ignore |
-| a fallback notice | no config file was found; the defaults are in force, and the server started |
+| `config: error while parsing config file: ...` | the file is not valid TOML, holds a value of the wrong type, or has a key that maps to no setting — the message names the file and the line or key |
+| a `Config file not found, using defaults` warning | no config file was found; the defaults are in force, and the server started |
 
 ## What starts, in order
 

@@ -3,7 +3,8 @@
 # Every setting is optional: a key left commented out — or this whole file
 # missing — falls back to the built-in default shown here. Flags override the
 # file (fraise -config <path> -log-level error). An uncommented key that names
-# no known setting is a startup error, not a typo the server ignores.
+# no known setting is a startup error, not a typo the server ignores — and so
+# is a file that is not valid TOML.
 #
 # Reference: https://docs.getfraise.dev/docs/configuration/overview
 
