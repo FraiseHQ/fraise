@@ -212,6 +212,15 @@ func (p *parser[K, P]) errKeywordAsClause(tok lexer.Token) error {
 		tok.Describe(), strings.ToLower(tok.Literal), tok.Literal)
 }
 
+// errRecallClauseOnWrite rejects a well-formed recall clause on a remember.
+// The clause is written correctly, so the keyword-as-clause repair ("write
+// since:<value>") would tell the caller to write exactly what they wrote; the
+// mistake is the command it was given to, and the message says which clauses
+// that command takes.
+func (p *parser[K, P]) errRecallClauseOnWrite(tok lexer.Token) error {
+	return p.errf(tok.Pos, "%s: is a recall clause: a remember takes only topic:, entity: and vec:", strings.ToLower(tok.Literal))
+}
+
 // errDuplicate rejects a single-valued clause given twice. Last-wins is the
 // worse answer: it runs a differently-scoped query than the one asked with
 // nothing in the response to say so, and a repeated clause is an agent
@@ -341,6 +350,11 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 				return nil, err
 			}
 			r.vec = vec
+		case lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH:
+			if p.peek.Type == lexer.COLON {
+				return nil, p.errRecallClauseOnWrite(p.cur)
+			}
+			return nil, p.errUnexpected(p.cur)
 		default:
 			return nil, p.errUnexpected(p.cur)
 		}
