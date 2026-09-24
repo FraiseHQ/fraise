@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.0-rc.2](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-rc.1...python/v0.1.0-rc.2) (2026-09-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* give writes and empty graphs their own responses ([#348](https://github.com/FraiseHQ/fraise/issues/348))
+
+### Features
+
+* give writes and empty graphs their own responses ([#348](https://github.com/FraiseHQ/fraise/issues/348)) ([6467184](https://github.com/FraiseHQ/fraise/commit/6467184326ac65b7dfddfa65914a7db10f3c1cda))
+
+
+### Maintenance
+
+* **main:** release 0.2.0 ([#294](https://github.com/FraiseHQ/fraise/issues/294)) ([ea990fc](https://github.com/FraiseHQ/fraise/commit/ea990fcabbfd8d5848b178d5e70b6ba93bfdd7f9))
+
 ## [0.1.0-rc.1](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-beta.5...python/v0.1.0-rc.1) (2026-09-07)
 
 

@@ -3,10 +3,10 @@ title: "Startup"
 description: "Why a bad setting exits non-zero before the port is bound, and how to read a crash loop after a deploy"
 ---
 
-The server exits non-zero, **before binding a port**, when a setting names something it cannot honour:
+The server exits non-zero, **before binding a port**, when a setting names something it cannot honour, and says which on stderr:
 
 ```text
-config: invalid value: log.level = "verbose" (accepted: DEBUG, INFO, WARN, ERROR)
+fraise: config: invalid value: log.level = "verbose" (accepted: DEBUG, INFO, WARN, ERROR)
 ```
 
 That is deliberate: exit 0 would look like a clean shutdown to a supervisor's restart policy, and starting anyway would run with a value nobody asked for.
@@ -17,13 +17,13 @@ It is logged and the defaults stand. The defaults plus flags are a complete conf
 
 ## Reading a crash loop
 
-<Note title="Read the first log line" type="warning">
+<Note title="Read what it printed" type="warning">
 
-  A crash loop right after a deploy is worth reading the first log line for: **if it names a setting, the config is wrong, and no amount of restarting will fix it.**
+  A crash loop right after a deploy is worth reading the process's last line on stderr for: **if it names a setting, the config is wrong, and no amount of restarting will fix it.**
 
 </Note>
 
-| First log line | Meaning |
+| What it printed | Meaning |
 |---|---|
 | `config: invalid value: ...` | a setting is outside its accepted vocabulary — fix the value |
 | `config: error while parsing config file: ...` | the file is not valid TOML, holds a value of the wrong type, or has a key that maps to no setting — the message names the file and the line or key |
