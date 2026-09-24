@@ -24,6 +24,8 @@ A complete, Docker-runnable agent lives in `examples/claude-agent-sdk` in the Fr
 
 `memory_server(fraise)` is an in-process MCP server bound to the client you pass it — so the tools talk to the daemon over HTTP without a second process in between. If you would rather run the bridge as a separate stdio server, that is [`fraise mcp`](/docs/integrations/mcp).
 
+It exposes two tools, `recall_memory` and `remember_fact`, and `allowed_tools()` returns their fully qualified names under the default server name, `fraise_memory`. Register the server under another key and pass the same key to both: `memory_server(fraise, name=key)` and `allowed_tools(key)`. `graph=` binds both tools to one memory graph, and an `embedder=` makes them send a vector with every call — they send none otherwise.
+
 ## The system prompt does the rest
 
 The tools carry their own schemas; the policy is yours to state. *"Remember durable facts the user shares, and recall them when relevant"* is the short version — [Context engineering](/docs/getting-started/context-engineering) is the longer one.

@@ -1,6 +1,6 @@
 ---
 title: "Grammar"
-description: "The complete EBNF grammar of the Fraise Query Language, v0.1.0"
+description: "The complete EBNF grammar of the Fraise Query Language, v1"
 navIcon: "📜"
 ---
 
@@ -8,7 +8,7 @@ The normative grammar. Everything else in this section is commentary on it.
 
 ```ebnf
 (* ============================================================ *)
-(* Fraise Query Language (FQL) — v0.1.0                         *)
+(* Fraise Query Language (FQL) — v1                             *)
 (* ============================================================ *)
 
 query           = recall_query | remember_query ;
@@ -30,10 +30,11 @@ recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 
 (* order, but only anchors may repeat: a repeated anchor adds a    *)
 (* filter, a repeated modifier is a duplicate-clause error.        *)
 (* The leading term is the one place a bare reserved word reads as *)
-(* a term — no clause can start there. After it, a keyword starts  *)
-(* a clause; quote it ('top') to search for the word itself.       *)
-recall_body     = ( term+ field* ) | seeding_field+ field* ;
-field           = anchor | modifier ;
+(* a term: there a keyword starts a clause only when ':' follows   *)
+(* it. After it, a keyword starts a clause; quote it ('top') to    *)
+(* search for the word itself.                                     *)
+recall_body     = ( term+ field* ) | field+ ;   (* at least one field is a seeding_field *)
+field           = anchor | vec_field | modifier ;
 seeding_field   = anchor | vec_field ;   (* enough on its own to start a search *)
 
 term            = bare_word | phrase ;        (* soft ranking seed (SHOULD) *)
@@ -44,7 +45,7 @@ topic_field     = 'topic'  ':' anchor_value ;
 entity_field    = 'entity' ':' anchor_value ;
 anchor_value    = identifier | quoted_identifier ; (* a reserved word qualifies, unless ':' follows it *)
 
-modifier        = since_field | until_field | depth_field | top_field | vec_field ;
+modifier        = since_field | until_field | depth_field | top_field ;   (* scopes a search, never seeds one *)
 since_field     = 'since' ':' time_value ;     (* lower time bound; duration read as "ago" *)
 until_field     = 'until' ':' time_value ;     (* upper time bound; duration read as "ago" *)
 depth_field     = 'depth' ':' integer ;        (* retrieval lane: 0 floor, 1 precision, 2 max recall *)

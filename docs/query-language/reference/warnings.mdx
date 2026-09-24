@@ -1,9 +1,11 @@
 ---
 title: "Warnings"
-description: "The two query shapes that run but carry a warning, and the neighbouring shapes that stay silent"
+description: "The query shapes that run but carry a warning, and the neighbouring shapes that stay silent"
 ---
 
 An error rejects a query; a warning accompanies one that ran. The bar for a warning is deliberately high: the query must be valid with exactly one reading, *and* sit one typo away from a different valid query — close enough that a slip of a colon would change the results without changing the status code. The hits are real and complete either way; the warning only says what else the query could have meant.
+
+One further shape warns for a neighbouring reason: a clause that is valid but, in that query, has nothing to act on. It changes no result, and the warning keeps the caller from believing it asked for something and got it.
 
 Warnings travel beside the results, never instead of them, and the key is absent when there is nothing to say — the response shape of a clean query is unchanged:
 
@@ -14,15 +16,15 @@ Warnings travel beside the results, never instead of them, and the key is absent
 }
 ```
 
-Each entry is positioned like a parse error — `parse warning at column N:`, the column naming the last character of the token it is about — and names both readings with the syntax that selects each one, so it can be resolved from the message alone.
+Each entry is positioned like a parse error — `parse warning at column N:`, the column naming the last character of the token it is about — and says how to resolve it from the message alone: a near-miss names both readings with the syntax that selects each one.
 
 ## Queries that warn
 
-Two shapes warn.
+Three shapes warn: two near-misses, and one inert clause.
 
 ### 1. A recall whose leading term spells a reserved keyword
 
-Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`, in any casing. The leading term is the one position where a bare reserved word legally reads as data — a recall must start with a term, so no clause can begin there — which also makes it the one position where a mistyped clause slips through as a search instead of an error.
+Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`, in any casing. The leading term — the first word after `recall` — is the one position where a bare reserved word legally reads as data: without a `:` after it, it cannot be a clause, and a recall may open with a term. That also makes it the one position where a mistyped clause slips through as a search instead of an error.
 
 | query | reading that runs | near-miss it warns about |
 |--------------------|--------------------------------|---------------------------------|
@@ -46,6 +48,17 @@ A word glued to a `:` has exactly one reading, so the clause runs — see [Keywo
 
 </Note>
 
+### 3. A retrieval lane with no anchor to act through
+
+`depth:1` and `depth:2` choose how anchors pass evidence on, and a recall enters the graph only through the `topic:`/`entity:` anchors it names. On a recall that names none, the lane is valid but has nothing to act through: the query runs on the text and vector indexes alone, exactly as `depth:0` would, and the warning says so at the `depth` clause.
+
+| query | reading that runs | what it warns about |
+|---------------------------|------------------------------------|------------------------------------------------|
+| `recall parrot depth:2` | a text search for "parrot" | `depth:2` has no effect without an anchor |
+| `recall parrot topic:birds depth:2` | — | nothing: the anchor gives the lane a graph to act through |
+
+See [Retrieval lanes](/docs/retrieval/ranking/depth).
+
 ## Queries that stay silent
 
 Every neighbouring shape resolves without ambiguity, so it carries no warning — the grammar either runs it silently or rejects it outright:
@@ -56,4 +69,4 @@ Every neighbouring shape resolves without ambiguity, so it carries no warning �
 - `recall x since 7d` — clause position: a missing `:` is an **error**, not a warning; results scoped by nothing would be worse than either.
 - `recall x Since 7d` — clause position, mis-cased: an error naming the casing.
 
-The bar is meant to keep warnings rare and the list short: a shape joins it only when it is a valid query one typo from a different valid query *and* the grammar has no way to resolve which was meant. Anything the grammar can settle is settled — as a parse, or as an error.
+The bar is meant to keep warnings rare and the list short: a shape joins it only when it is a valid query one typo from a different valid query *and* the grammar has no way to resolve which was meant, or when a valid clause has nothing to act on. Anything the grammar can settle is settled — as a parse, or as an error.

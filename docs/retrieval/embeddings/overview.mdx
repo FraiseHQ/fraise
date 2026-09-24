@@ -19,7 +19,7 @@ That split is deliberate. Embedding models change often, cost money, and differ 
   query --> store["graph N: fact node + vector index entry"]'
 />
 
-A vector reaches the server as a request **parameter**, bound to a `vec:$v` reference in the query — never inline in the query text. The query string is a cache key and a log line; a few thousand floats spliced into it would ruin both and put the lexer to work for nothing. See [Query endpoint](/docs/http-api/endpoints/query) for the request shape.
+A vector reaches the server as a request **parameter**, bound to a `vec:$v` reference in the query — never inline in the query text. The query string is lexed on every call and written to the log; a few thousand floats spliced into it would bloat every log line and put the lexer to work for nothing. See [Query endpoint](/docs/http-api/endpoints/query) for the request shape.
 
 ## `vec:` on both commands
 
@@ -28,7 +28,7 @@ A vector reaches the server as a request **parameter**, bound to a `vec:$v` refe
 
 ## Vectors are a seed, not an answer
 
-A recall still needs at least one term. The vector index contributes `seed-size` candidates, the text index contributes its own, and the graph walk expands from both — each source ranking its own sightings, the ranks fusing, and the fused score then decaying by age.
+A vector is one seed among several: a recall may carry it alongside terms and anchors, or on its own. The vector index contributes its nearest neighbours — `seed-size` of them, or `top:` when that is larger — and the text index its own matches, each carrying its raw mass; a fact found by both adds the two. When the recall names an anchor and takes `depth:1` or `depth:2`, anchors then pass their surplus on to their facts, and the result decays by age.
 
 <Note title="One signal, not the ranking" type="note">
   **Semantic similarity is one signal feeding a ranking, never the ranking itself.**
