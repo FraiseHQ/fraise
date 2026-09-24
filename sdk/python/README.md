@@ -61,11 +61,11 @@ fraise.remember("the kingfisher is electric blue", graph=6)          # stored wi
 hits = fraise.recall("small bright bird", graph=6, query="small bright bird")
 ```
 
-An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Only OpenAI is provided today — Anthropic has no embeddings API.
+An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Two ship ready-made: `OpenAIEmbedder` (`fraise-sdk[openai]`) and `HuggingFaceEmbedder` (`fraise-sdk[huggingface]`); Anthropic has no embeddings API.
 
 ## OpenAI Agents tools
 
-`memory_tools(client)` returns a `recall` and a `remember` `FunctionTool` bound to one memory graph, so the agent decides *what* to store and retrieve:
+`memory_tools(client)` returns two `FunctionTool`s, `recall_memory` and `remember_fact`, bound to one memory graph, so the agent decides *what* to store and retrieve:
 
 ```python
 from agents import Agent, Runner
