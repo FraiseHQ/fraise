@@ -4,7 +4,7 @@ description: "Install Fraise, start the daemon, and write your first memory in u
 navIcon: "⚡"
 ---
 
-Fraise is a single binary — no database to provision, nothing to configure. Every install route leaves you with a server listening on `127.0.0.1:9876`.
+Fraise is a single binary — no database to provision, nothing to configure. Every install route leaves you with a server listening on port 9876, at `localhost:9876`.
 
 ## The fast path
 
@@ -44,10 +44,10 @@ curl localhost:9876/
 ```
 
 ```json
-{"status": "ok", "version": "0.1.0"}
+{"status": "ok", "version": "0.2.0"}
 ```
 
-`GET /` is liveness and readiness in one: there is nothing to warm up and nothing to recover, so a server that answers is a server that works. The `version` field is the SDKs' compatibility handshake — see [Health check](/docs/http-api/endpoints/health).
+`GET /` is liveness and readiness in one: there is nothing to warm up and nothing to recover, so a server that answers is a server that works. The `version` field is the SDK's compatibility handshake — see [Health check](/docs/http-api/endpoints/health).
 
 ## Other ways to install
 

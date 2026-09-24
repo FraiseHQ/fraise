@@ -58,7 +58,7 @@ from fraise_sdk.providers import OpenAIEmbedder   # needs fraise-sdk[openai]
 fraise = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder(dimensions=128))
 
 fraise.remember("the kingfisher is electric blue", graph=6)          # stored with its vector
-hits = fraise.recall("small bright bird", graph=6, query="small bright bird")
+hits = fraise.recall(query="small bright bird", graph=6)
 ```
 
 An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Only OpenAI is provided today — Anthropic has no embeddings API.
