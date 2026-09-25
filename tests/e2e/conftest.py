@@ -47,6 +47,7 @@ this map current when claiming a graph:
     7  planet star
        + lantern/almanac depth-lane probe
        + tidepool + saltmarsh anchor probes (test_recall.py)
+       never given a vector: vectors_test.py recalls it with one
     8  never written: the empty-graph probes (api_test.py)
 
 Graph 8 is claimed by staying empty. A recall of a graph holding nothing is

@@ -4,23 +4,34 @@ description: "The terms the rest of the documentation uses, defined once"
 navIcon: "📖"
 ---
 
-- **fact** — a memory's atomic element.
-- **memory graph** — a collection of organised facts related to topics and/or entities and indexed for hybrid search (full text, semantic and graph).
-- **field** — additional information provided to the search in order to find the right facts.
-- **field value** — the value of a field used to find a fact.
-- **term** — a word or sequence of words used to find a fact.
-- **command** — a task to perform by the engine: `recall`, `remember`.
-- **instruction** — a full query sent to the database engine with a command, search terms and fields. Can be used interchangeably with *query*.
+## Terms from the data model
+
+- **fact** — a memory's atomic element: one self-contained statement, stored exactly as written, with the time it was written.
+- **topic** — an anchor for what a fact is about, written `topic:billing`.
+- **entity** — an anchor for who or what a fact mentions, written `entity:acme`.
+- **anchor** — a topic or entity: a vertex facts are filed under, and the thing a graph walk moves through.
+- **memory graph** — a collection of facts linked to their topics and entities, indexed for hybrid search (full text, semantic and graph). An instance holds several, fully isolated from one another.
+- **stream** — one query on its way through the system: the unit the engine plans, the scheduler queues and the database applies to one graph.
+
+## Terms from the query language
+
+- **command** — the verb a query starts with: `recall` or `remember`.
+- **instruction** — a full query sent to the database engine: one command with its phrase or terms and its fields, on one line. Used interchangeably with *query*.
+- **phrase** — a single-quoted literal: the fact in a `remember`, or a multi-word term in a `recall`.
+- **term** — a word or phrase a `recall` searches for; terms come before any field.
+- **field** — a `name:value` clause: an anchor, a vector binding (`vec:`) or a modifier.
+- **field value** — the part of a field after its `:`.
+- **modifier** — a field that scopes a recall without seeding it: `since:`, `until:`, `depth:`, `top:`.
+- **graph selector** — `@N` after the command, choosing which memory graph the query addresses; graph 0 when absent.
 
 ## Terms from the retrieval model
 
 These are not part of the grammar, but they appear throughout the ranking documentation:
 
-- **anchor** — a topic or entity node facts are filed under; the thing a graph walk moves through.
 - **seed** — the initial evidence a query puts into the graph: a matched term, a named anchor, or a vector's nearest neighbours.
 - **mass** — a seed's raw retrieval magnitude, in the units the source produced it in.
 - **surplus** — the part of an anchor's observed mass that exceeds what its size alone would predict.
-- **background rate ($\rho_0$)** — the mass a size-proportional smear of the query's seed mass across the graph's anchors would predict for an anchor of a given degree.
+- **background rate ($\rho_0$)** — the query's seed mass per unit of anchor degree, over the anchors it reached: what an anchor of a given degree would hold if that mass were spread across them in proportion to size.
 - **lane** — which of the three `depth:` behaviours a recall takes: the BM25 floor, high precision, or maximum recall.
 
 The model that uses them is in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval) and [Excess transmission](/docs/retrieval/ranking/excess-transmission).

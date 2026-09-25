@@ -3,11 +3,11 @@ title: "Retrieval lanes"
 description: "What depth:0, depth:1 and depth:2 select, and why the methodology does not iterate"
 ---
 
-A recall needs at least one term: without a seed there is no mass to transmit. `depth:` selects which of three lanes a recall takes, trading precision against recall.
+`depth:` selects which of three lanes a recall takes through the graph, trading precision against recall.
 
 | Lane | Behaviour |
 |---|---|
-| `depth:0` | the default — stops at the seed mass, which *is* the BM25 floor, and skips the anchor traversal entirely: the fast, text-only lane |
+| `depth:0` | the default — stops at the seed mass, which *is* the BM25 floor, and skips the anchor traversal entirely: the fast lane, on the text and vector indexes alone |
 | `depth:1` | runs the anchor-mediated round, but admits an anchor only once its observed mass clears **twice** its null-expected share. Only strongly above-chance anchors speak, so what transmission adds is high-precision |
 | `depth:2` | runs the same round admitting at the plain fair share — every anchor holding any surplus at all transmits, for maximum recall |
 
@@ -37,6 +37,13 @@ Because transmission only ever adds, raising the lane cannot push a result below
 
 </Note>
 
-## Unanchored recalls
+## Lanes act through anchors
 
-`allow-unanchored-recall` (off by default) decides whether a recall with no entity or topic anchor is permitted at all. With it off, a recall must name at least one anchor — see [Engine settings](/docs/configuration/reference/engine).
+A recall enters the graph through the `topic:` and `entity:` anchors it names. A recall that names none has nothing for a lane to act through: it runs on the text and vector indexes alone, exactly as `depth:0` would, and a `depth:1` or `depth:2` on it comes back with a [warning](/docs/query-language/reference/warnings) saying so.
+
+| Query | What runs |
+|---|---|
+| `recall billing depth:2` | text and vector search only, with a warning |
+| `recall billing entity:acme depth:2` | the `depth:2` lane, through `acme` |
+
+A recall seeded by anchors alone — no term and no vector — takes its candidates straight from the facts filed under those anchors, so there is no further step for a lane to add.
