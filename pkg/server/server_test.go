@@ -243,6 +243,29 @@ func TestQueryVectorDimensionMismatch(t *testing.T) {
 	}
 }
 
+// TestRecallVectorDimensionMismatch is the read half of the dimension rule:
+// a recall carrying a vector of the wrong width is rejected with 400 naming
+// both dimensions, exactly as a write is. It used to answer 200 from the text
+// index alone, dropping the semantic half of the question without a word.
+func TestRecallVectorDimensionMismatch(t *testing.T) {
+	s := newTestServer(t)
+
+	w := s.do(http.MethodPost, "/api/v1/q",
+		`{"query":"remember@0 'vec one' vec:$v","parameters":{"v":[0.1,0.2,0.3]}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("seeding write status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	w = s.do(http.MethodPost, "/api/v1/q",
+		`{"query":"recall@0 vec vec:$v","parameters":{"v":[0.1,0.2]}}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "expects 3, got 2") {
+		t.Errorf("body = %q, want the expected vs supplied dimensions", w.Body.String())
+	}
+}
+
 // TestQuerySuccess checks that a well-formed recall query is planned, executed,
 // and returns 200 with a results payload. The graph is seeded first: a recall
 // of a graph that holds nothing is answered 204, so an unseeded graph would
