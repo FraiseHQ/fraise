@@ -323,6 +323,39 @@ def test_reserved_word_where_a_value_is_required_names_the_clause(
     _reject(status, body, expected, text)
 
 
+@pytest.mark.parametrize(
+    "text,clause",
+    [
+        ("remember@1 'the ferry docks at dawn' since:7d", "since"),
+        ("remember@1 'the ferry docks at dawn' until:2026-01-15", "until"),
+        ("remember@1 'the ferry docks at dawn' top:3", "top"),
+        ("remember@1 'the ferry docks at dawn' depth:2", "depth"),
+        ("remember@1 'the ferry docks at dawn' topic:harbour since:7d", "since"),
+        ("remember@1 'the ferry docks at dawn' Since:7d", "since"),
+    ],
+)
+def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
+    """A well-formed recall clause on a remember says it is a recall clause
+    and which clauses a remember takes.
+
+    It used to get the keyword repair — "write since:<value> if a clause was
+    meant" — which tells the caller to write exactly what they wrote, so an
+    agent following it would send the same query back. The mistake is the
+    command the clause was given to, whatever its casing and wherever it sits
+    among the anchors.
+    """
+    status, body = query(text)
+    _reject(
+        status,
+        body,
+        f"{clause}: is a recall clause: a remember takes only topic:, entity: and vec:",
+        text,
+    )
+    assert f"write {clause}:<value>" not in body["error"], (
+        f"{text!r}: error {body['error']!r} repeats the clause back as the fix"
+    )
+
+
 # ---------------------------------------------------------------------------
 # The vec: clause. parseVecField produces precise positioned errors and both
 # call sites throw them away for a generic wrap — the exact mangling
