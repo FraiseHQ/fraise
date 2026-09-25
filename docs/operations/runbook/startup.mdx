@@ -25,10 +25,9 @@ It is logged and the defaults stand. The defaults plus flags are a complete conf
 
 | What it printed | Meaning |
 |---|---|
-| `fraise: config: invalid value: ...` | a setting is outside its accepted vocabulary — fix the value |
-| `fraise: config: invalid flag: ...` | a command-line flag names no setting — fix the service definition |
-| an unknown-key error | the file has a key that maps to no setting — a typo the server refuses to ignore |
-| a `Config not fully loaded, using defaults` warning | no config file was found; the defaults are in force, and the server started |
+| `config: invalid value: ...` | a setting is outside its accepted vocabulary — fix the value |
+| `config: error while parsing config file: ...` | the file is not valid TOML, holds a value of the wrong type, or has a key that maps to no setting — the message names the file and the line or key |
+| a `Config file not found, using defaults` warning | no config file was found; the defaults are in force, and the server started |
 
 ## What starts, in order
 

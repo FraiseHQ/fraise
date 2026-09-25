@@ -130,11 +130,38 @@ func TestRunSurvivesAMissingConfigFile(t *testing.T) {
 	c := config.New()
 	err := c.Parse(os.Args[1:])
 
-	if err == nil {
-		t.Fatal("Parse with no config file = nil error, want the file failure reported")
+	if !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse with no config file = %v, want ErrMissingFile reported", err)
 	}
-	if errors.Is(err, config.ErrInvalidValue) {
+	if errors.Is(err, config.ErrInvalidValue) || errors.Is(err, config.ErrParsingFailed) {
 		t.Fatalf("a missing config file took the fatal branch: %v", err)
+	}
+}
+
+// TestRunRefusesToStartOnAnUnusableConfigFile pins where the survivable line
+// now sits: only a missing file is. A file that is there but malformed, or
+// names a key no setting has, used to be logged as "not fully loaded" while
+// the server started on defaults — so an operator's typo in a key ran as if
+// the line had never been written. run returns before building anything.
+func TestRunRefusesToStartOnAnUnusableConfigFile(t *testing.T) {
+	for _, contents := range []string{
+		"[log\nlevel = \"DEBUG\"\n",
+		"[engine]\nallow-unanchored-recall = true\n",
+	} {
+		t.Run(contents, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), config.DefaultConfigFile)
+			if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+				t.Fatalf("writing config file: %v", err)
+			}
+
+			c := config.New()
+			cfgErr := c.Parse([]string{"-config", path})
+			err := run("serve", context.Background(), c, cfgErr)
+
+			if !errors.Is(err, config.ErrParsingFailed) {
+				t.Fatalf("run() = %v, want ErrParsingFailed so main exits non-zero", err)
+			}
+		})
 	}
 }
 
