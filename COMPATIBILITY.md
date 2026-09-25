@@ -6,9 +6,10 @@ Each SDK also declares its supported server range in code and can verify it at r
 
 ## Matrix
 
-| SDK             | SDK version | Supported server (`fraise`) |
-| --------------- | ----------- | --------------------------- |
-| Python SDK      | 0.0.x       | `>=0.1.0, <0.2.0`           |
+| SDK             | SDK version                 | Supported server (`fraise`) |
+| --------------- | --------------------------- | --------------------------- |
+| Python SDK      | <=0.1.0-rc.1                | `>=0.1.0, <0.2.0`           |
+| Python SDK      | >0.1.0-rc.1,<=0.1.0-rc.2    | `>=0.2.0, <0.3.0`           |
 
 While the server is pre-1.0, a minor bump (`0.1 → 0.2`) may introduce breaking changes, so each SDK pins a single supported minor. Once the server reaches 1.0, supported ranges widen to full major lines (`>=1.0.0, <2.0.0`).
 

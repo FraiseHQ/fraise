@@ -30,9 +30,9 @@ It is valid on both commands:
 
 ## Why vectors stay out of the query string
 
-Keeping vectors out of the query string is the point. A query is a cache key and a log line; an inline embedding would make both unusable, and would put a few thousand floats through the lexer on every call.
+Keeping vectors out of the query string is the point. A query is a log line and passes through the lexer on every call; an inline embedding would make the log unreadable and put a few thousand floats through the lexer each time.
 
-The cache key is built from the whole query — see [Engine](/docs/architecture/components/engine) — so a query that repeats, which is the common case for an agent in a loop, skips planning entirely. A few thousand floats spliced into that key would defeat it.
+A bound vector still takes part in planning: the plan cache key is built from the parsed query, and it carries a lossless hash of the vector's exact values — see [Engine](/docs/architecture/components/engine). A query that repeats with the same vector, the common case for an agent in a loop, skips planning entirely; a new vector is a new plan.
 
 ## Missing parameters are client errors
 

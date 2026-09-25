@@ -4,7 +4,7 @@ description: "The one endpoint that reads and writes: request body, parameters, 
 navLabel: "Query"
 ---
 
-Fraise exposes three endpoints. Everything an agent does goes through one of them; the [query language](/docs/query-language/foundations/design-principles) carries the rest.
+Fraise exposes four endpoints — this one, [explained recall](/docs/http-api/endpoints/explain), [stats](/docs/http-api/endpoints/stats) and the [health check](/docs/http-api/endpoints/health) — and everything an agent does goes through this one; the [query language](/docs/query-language/foundations/design-principles) carries the rest.
 
 This is the one endpoint that reads and writes. The body carries the query and any parameters it references:
 
@@ -20,11 +20,11 @@ This is the one endpoint that reads and writes. The body carries the query and a
 | `query` | string | yes | one command per request |
 | `parameters` | object of float arrays | no | binds `$name` references, e.g. `vec:$v` |
 
-Vectors stay out of the query string on purpose: the query is a cache key and a log line, and an inline embedding would ruin both.
+Vectors stay out of the query string on purpose: the query is lexed on every call and written to the log, and an inline embedding would put a few thousand floats through both — see [Parameters](/docs/query-language/tokens/parameters).
 
 ## Response
 
-A successful response carries ranked hits, newest-and-strongest first:
+A successful recall carries ranked hits, highest score first — relevance after recency decay:
 
 ```json
 {
@@ -55,7 +55,7 @@ A write has no result set. It returns 200 with an acknowledgement of its own:
 {"status": "ok"}
 ```
 
-The `status` key is what tells a write apart from a read. Both SDKs branch on it, so it is a fixed token rather than a message — treat its presence, not its wording, as the signal that the fact was stored.
+The `status` key is what tells a write apart from a read. It is a fixed token rather than a message — treat its presence, not its wording, as the signal that the fact was stored.
 
 ### An empty graph answers 204
 
