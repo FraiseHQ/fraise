@@ -29,9 +29,10 @@ recall billing entity:acme since:7d top:5
 A recall needs at least one **seed**, and the terms come first:
 
 ```ebnf
-recall_body   = ( term+ field* ) | seeding_field+ field* ;
-field         = anchor | modifier ;
+recall_body   = ( term+ field* ) | field+ ;   (* at least one field is a seeding_field *)
+field         = anchor | vec_field | modifier ;
 seeding_field = anchor | vec_field ;
+modifier      = since_field | until_field | depth_field | top_field ;
 ```
 
 A term, an anchor and a vector are all seeds, so `recall topic:billing` and `recall vec:$v` are questions — expand from here and rank what you reach.
