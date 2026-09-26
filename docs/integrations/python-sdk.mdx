@@ -28,6 +28,8 @@ navIcon: "🐍"
 
 The Python SDK is dependency-light and supports vector search when you supply an embedder.
 
+`recall` takes bare keywords positionally — `recall("parrot", "turquoise")` — and a natural-language question as `query=`, sent as one quoted phrase so its words never collide with the grammar's keywords. Anchors go in `topics=` and `entities=`, the graph in `graph=` (0 by default), and `top=` and `depth=` map to their clauses.
+
 ## With embeddings
 
 ```python
@@ -36,7 +38,7 @@ from fraise_sdk.providers import OpenAIEmbedder
 
 client = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder())
 client.remember("the parrot is turquoise", topics=["birds"])   # encoded for you
-client.recall("colourful birds")                               # encoded for you
+client.recall(query="colourful birds")                         # encoded for you
 ```
 
 A client without an embedder still works; it simply writes and recalls without vectors, on text and graph structure alone. Per call, `embed=True` forces encoding and `embed=False` skips it, and an explicit `vector=` always wins. See [Producing vectors](/docs/retrieval/embeddings/producing-vectors).
@@ -58,7 +60,7 @@ The server carries the distinction in the status line — 204 for a graph holdin
 
 ## Version compatibility
 
-The SDK reads the `version` field from `GET /` to check the server falls in the range it supports — the handshake is part of the contract, not a convenience. See [Health check](/docs/http-api/endpoints/health).
+`client.check_compatibility()` reads the `version` field from `GET /` and checks the server falls in the range this SDK supports: on a mismatch it warns and returns `False`, and `strict=True` raises instead. It is one request, made only when you call it — a good fit for startup. The field is part of the contract for exactly this reason; see [Health check](/docs/http-api/endpoints/health).
 
 ## TypeScript
 

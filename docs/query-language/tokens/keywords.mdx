@@ -3,9 +3,9 @@ title: "Keywords"
 description: "The reserved words of FQL, why they are reserved by position rather than by spelling, and how casing is treated"
 ---
 
-Tokens form the vocabulary of the Fraise query language. The classes are keywords (commands, operators and fields), literals, punctuation and fields.
+Tokens form the vocabulary of the Fraise query language, in four classes: keywords, [identifiers](/docs/query-language/tokens/identifiers), [literals](/docs/query-language/tokens/literals) and [punctuation](/docs/query-language/tokens/punctuation).
 
-Keywords are specific query instructions. They are **reserved by position, not by spelling alone**: where a clause can start, a keyword reads as syntax, and `recall food topic` is a parse error rather than a search including the word "topic". Where only a value can appear — the right-hand side of a field's `:`, or the leading term a recall must start with — a keyword is ordinary data: `entity:top` files under the word "top", and `recall top` searches for it.
+Keywords are the commands and the field names. They are **reserved by position, not by spelling alone**: where a clause can start, a keyword reads as syntax, and `recall food topic` is a parse error rather than a search including the word "topic". Where a value can appear — the right-hand side of a field's `:`, or the leading term, the first word after `recall` — a keyword not followed by `:` is ordinary data: `entity:top` files under the word "top", and `recall top` searches for it.
 
 One tie-breaker resolves the boundary: **a keyword immediately followed by `:` is always a field**, so `top:3` never means the word "top", and `entity:top:3` is an error rather than a guess. Quoting (`recall food 'topic'`) remains the escape hatch wherever a bare keyword still reads as syntax.
 

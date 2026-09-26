@@ -3,15 +3,16 @@ title: "Parameters"
 description: "Binding a vector to a query with a $name reference, and why embeddings never appear inline in the query string"
 ---
 
-A field reference binds a value the query does not carry inline. It is written `$name` and resolved against the `parameters` object of the request:
+A field reference binds a value the query does not carry inline. It is written `$name` and resolved against the `parameters` object of the request, matching a key exactly — case included, as JSON keys are, so `$V` binds `V` and not `v`:
 
 ```json
 {"query": "recall bird vec:$v top:5", "parameters": {"v": [0.1, 0.2, 0.3]}}
 ```
 
 ```ebnf
-param_ref = '$' identifier ;
-vec_field = 'vec' ':' param_ref ;
+param_ref  = '$' param_name ;
+param_name = bare_word ;    (* matched exactly: never folded *)
+vec_field  = 'vec' ':' param_ref ;
 ```
 
 ## Only `vec` takes one
@@ -29,9 +30,9 @@ It is valid on both commands:
 
 ## Why vectors stay out of the query string
 
-Keeping vectors out of the query string is the point. A query is a cache key and a log line; an inline embedding would make both unusable, and would put a few thousand floats through the lexer on every call.
+Keeping vectors out of the query string is the point. A query is a log line and passes through the lexer on every call; an inline embedding would make the log unreadable and put a few thousand floats through the lexer each time.
 
-The cache key is built from the whole query — see [Engine](/docs/architecture/components/engine) — so a query that repeats, which is the common case for an agent in a loop, skips planning entirely. A few thousand floats spliced into that key would defeat it.
+A bound vector still takes part in planning: the plan cache key is built from the parsed query, and it carries a lossless hash of the vector's exact values — see [Engine](/docs/architecture/components/engine). A query that repeats with the same vector, the common case for an agent in a loop, skips planning entirely; a new vector is a new plan.
 
 ## Missing parameters are client errors
 
