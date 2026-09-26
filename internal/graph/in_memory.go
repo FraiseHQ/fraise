@@ -696,13 +696,17 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 		// Pass 2 (expand): anchors above their admitted share. depth 1 is the
 		// precision lane — it raises the bar to depthOneAdmission × fair share,
 		// so only strongly-above-chance anchors transmit; depth 2 admits at the
-		// plain fair share.
-		admitRate := background
+		// plain fair share. The test is cross-multiplied — M_A·Σd against
+		// d_A·ΣM, rather than M_A against d_A·ρ₀ — because the division rounds:
+		// an anchor holding exactly its share must stay silent, and a query
+		// reaching a single anchor (M_A = ΣM, d_A = Σd) used to clear d·(M/d)
+		// by a rounding error and transmit noise to its members.
+		admission := P(1)
 		if depth == 1 {
-			admitRate *= depthOneAdmission
+			admission = depthOneAdmission
 		}
 		for _, anchor := range touched {
-			if anchorMass[anchor] <= P(degree[anchor])*admitRate {
+			if anchorMass[anchor]*P(totalDegree) <= P(degree[anchor])*totalMass*admission {
 				continue
 			}
 			for _, member := range members[anchor] {
