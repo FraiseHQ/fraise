@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0](https://github.com/FraiseHQ/fraise/compare/v0.1.0...v0.2.0) (2026-09-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* give writes and empty graphs their own responses ([#348](https://github.com/FraiseHQ/fraise/issues/348))
+
+### Features
+
+* give writes and empty graphs their own responses ([#348](https://github.com/FraiseHQ/fraise/issues/348)) ([6467184](https://github.com/FraiseHQ/fraise/commit/6467184326ac65b7dfddfa65914a7db10f3c1cda))
+
+
+### Maintenance
+
+* update gin router definition ([#300](https://github.com/FraiseHQ/fraise/issues/300)) ([76f0182](https://github.com/FraiseHQ/fraise/commit/76f01824018a3de13e834e5f08ffa59bec05aeae))
+* update readme badges ([#293](https://github.com/FraiseHQ/fraise/issues/293)) ([1731a31](https://github.com/FraiseHQ/fraise/commit/1731a319c296d7f822453692da2c1410b970b44a))
+
 ## [0.1.0](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.4...v0.1.0) (2026-09-07)
 
 
