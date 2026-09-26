@@ -23,6 +23,7 @@
 package logger_test
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -169,6 +170,35 @@ func TestFormatSelectsHandler(t *testing.T) {
 
 			if !strings.Contains(out, tc.want) {
 				t.Errorf("format %q did not produce %s output, got:\n%s", tc.format, tc.format, out)
+			}
+		})
+	}
+}
+
+// TestDisableTimestampDropsTheTime pins log.disable-timestamp, which the
+// logger used to ignore: every line carried a time whatever the setting said.
+// Off, the default, keeps the timestamp; on removes it in both encodings, for
+// a supervisor that stamps every line it collects.
+func TestDisableTimestampDropsTheTime(t *testing.T) {
+	cases := []struct {
+		format  string
+		disable bool
+		stamp   string // the fragment a timestamp contributes in this encoding
+	}{
+		{config.LogFormatText, false, `time=`},
+		{config.LogFormatText, true, `time=`},
+		{config.LogFormatJSON, false, `"time":`},
+		{config.LogFormatJSON, true, `"time":`},
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%s/disable=%t", tc.format, tc.disable), func(t *testing.T) {
+			c := newConfig(config.LogLevelInfo, tc.format)
+			c.Log.DisableTimestamp = tc.disable
+			out := captureStdout(t, func() { logger.NewLogger(c).Info("hello") })
+
+			if stamped := strings.Contains(out, tc.stamp); stamped == tc.disable {
+				t.Errorf("disable-timestamp=%t: timestamp present = %t, want %t; got:\n%s", tc.disable, stamped, !tc.disable, out)
 			}
 		})
 	}
