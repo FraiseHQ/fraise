@@ -333,10 +333,16 @@ func exportEdges[K comparable](edges map[K]map[K]K) map[K]map[K]K {
 	return out
 }
 
-// Order returns the number of entities (vertices) in the graph.
+// Order returns the number of vertices in the graph: facts, entities and
+// topics. Relationships are stored as nodes too, and satisfy Entity, so they
+// are excluded by kind — counting them made order equal nodes, and the stats
+// endpoint reported every edge a second time as a vertex.
 func (g *InMemoryGraph[K, P]) Order() int {
 	order := 0
 	for _, node := range g.idToNodes {
+		if _, isEdge := node.(Relationship[K]); isEdge {
+			continue
+		}
 		if _, ok := node.(Entity[K]); ok {
 			order++
 		}
