@@ -1059,10 +1059,15 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		{"remember 'a' topic", "quote it"},
 		// Casing still matters where a clause could start.
 		{"recall zebras Depth 2", "lower case"},
-		// A modifier is not a clause a remember has: the message names the
-		// keyword rather than complaining about the token after it.
-		{"remember 'a fact' top:3", "is a keyword"},
-		{"remember 'a fact' since:7d", "is a keyword"},
+		// A modifier is a recall clause: the message names the command it was
+		// given to and the clauses a remember takes, rather than telling the
+		// caller to write since:<value> — exactly what they wrote.
+		{"remember 'a fact' top:3", "top: is a recall clause: a remember takes only topic:, entity: and vec:"},
+		{"remember 'a fact' since:7d", "since: is a recall clause"},
+		{"remember 'a fact' depth:1", "depth: is a recall clause"},
+		// A NUL outside a phrase used to end the query where it stood, and
+		// everything after it was dropped without a word.
+		{"recall zebras\x00food", "NUL character is only allowed inside a quoted phrase"},
 		// A newline in a value slot is a second instruction starting early.
 		{"recall zebras topic:\nfood", "one command per instruction"},
 		// No better diagnosis exists for a stray '@'.

@@ -187,6 +187,8 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 		return p.errf(tok.Pos, "unterminated quoted phrase")
 	case tok.Type == lexer.LPAREN, tok.Type == lexer.RPAREN:
 		return p.errf(tok.Pos, "grouping is not supported: %s has no meaning in a query — there are no boolean operators to group, and terms are already a union", tok.Describe())
+	case tok.Type == lexer.NUL:
+		return p.errf(tok.Pos, "a NUL character is only allowed inside a quoted phrase")
 	case tok.Type == lexer.NEWLINE:
 		return p.errf(tok.Pos, "unexpected %s: one command per instruction", tok.Describe())
 	case tok.Type.IsCommand():
@@ -210,6 +212,15 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 func (p *parser[K, P]) errKeywordAsClause(tok lexer.Token) error {
 	return p.errf(tok.Pos, "%s is a keyword and starts no clause here: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
 		tok.Describe(), strings.ToLower(tok.Literal), tok.Literal)
+}
+
+// errRecallClauseOnWrite rejects a well-formed recall clause on a remember.
+// The clause is written correctly, so the keyword-as-clause repair ("write
+// since:<value>") would tell the caller to write exactly what they wrote; the
+// mistake is the command it was given to, and the message says which clauses
+// that command takes.
+func (p *parser[K, P]) errRecallClauseOnWrite(tok lexer.Token) error {
+	return p.errf(tok.Pos, "%s: is a recall clause: a remember takes only topic:, entity: and vec:", strings.ToLower(tok.Literal))
 }
 
 // errDuplicate rejects a single-valued clause given twice. Last-wins is the
@@ -341,6 +352,11 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 				return nil, err
 			}
 			r.vec = vec
+		case lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH:
+			if p.peek.Type == lexer.COLON {
+				return nil, p.errRecallClauseOnWrite(p.cur)
+			}
+			return nil, p.errUnexpected(p.cur)
 		default:
 			return nil, p.errUnexpected(p.cur)
 		}
@@ -606,6 +622,11 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 	if p.cur.Type == lexer.ILLEGAL {
 		return nil, p.errf(p.cur.Pos, "unterminated quoted phrase")
 	}
+	// A NUL where the fact should start is rejected for itself, not reported
+	// as a missing phrase.
+	if p.cur.Type == lexer.NUL {
+		return nil, p.errUnexpected(p.cur)
+	}
 	tok, err := p.expect(lexer.PHRASE)
 	if err != nil {
 		return nil, p.errf(p.cur.Pos, "expected a quoted phrase, but found %s", p.cur.Describe())
@@ -628,7 +649,7 @@ func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 	// name themselves, and saying so is worth more here than saying what a
 	// value slot wanted.
 	switch p.cur.Type {
-	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE:
+	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE, lexer.NUL:
 		return p.cur, p.errUnexpected(p.cur)
 	}
 	return p.cur, p.errf(p.cur.Pos, "expected a word or quoted phrase, but found %s", p.cur.Describe())

@@ -10,7 +10,7 @@
 # For a system-level install (a shared server instance), copy this unit to
 # /etc/systemd/system/fraise.service, replace %h with a real home or point
 # -config at /etc/fraise/fraise.config.toml, and add [Service] User=fraise —
-# see docs/operations.md.
+# see https://docs.getfraise.dev/docs/operations/managed-service.
 #
 # A missing config file is not an error: the server logs the fallback and
 # starts on built-in defaults, so this unit works before any config exists.

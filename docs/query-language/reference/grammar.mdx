@@ -72,7 +72,7 @@ graph_selector  = '@' integer ;                (* default 0; lexed WITH the comm
 (* LITERALS                                                     *)
 (* ------------------------------------------------------------ *)
 
-bare_word         = ?[^\s:'$()@+~-][^\s:'$()@]*? ; (* '-' may appear inside a word, never at its start *)
+bare_word         = ?[^\s\0:'$()@+~-][^\s\0:'$()@]*? ; (* '-' may appear inside a word, never at its start *)
 phrase            = "'" { ?[^']? | "''" } "'" ; (* opaque: any char is literal; '' is an escaped quote *)
 identifier        = bare_word ;                (* folded to lower case on the way in *)
 quoted_identifier = "'" { ?[^']? | "''" } "'" ; (* same opaque rule as phrase *)
@@ -81,7 +81,8 @@ time_value        = duration | iso_date ;
 duration          = integer time_unit ;        (* at most ~292 years, e.g. 106751d: see Bounds *)
 time_unit         = 's' | 'm' | 'h' | 'd' | 'w' ;
 iso_date          = ?\d{4}-\d{2}-\d{2}? ;         (* date only: ':' would end the token *)
-param_ref         = '$' identifier ;
+param_ref         = '$' param_name ;
+param_name        = bare_word ;                (* matched exactly against a key of the request's parameters: never folded *)
 ```
 
 ## Reading it

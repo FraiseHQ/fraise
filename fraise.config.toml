@@ -10,7 +10,7 @@
 [log]
 # level = "INFO"              # DEBUG INFO WARN ERROR
 # format = "text"             # text json
-# disable-timestamp = true
+# disable-timestamp = false   # true drops the time, for journald or docker
 
 [server]
 # port = 9876

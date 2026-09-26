@@ -243,6 +243,20 @@ func TestParseCanonicalisesLogFlags(t *testing.T) {
 	}
 }
 
+// TestParseKeepsTimestampsOnByDefault pins log.disable-timestamp's default:
+// false, so timestamps stay on unless asked off. The flag used to default to
+// true, which — once the logger honoured the setting — would have stripped
+// the clock from every log read from a file or a terminal.
+func TestParseKeepsTimestampsOnByDefault(t *testing.T) {
+	c := config.New()
+	if err := c.Parse([]string{"-config", missingConfig(t)}); errors.Is(err, config.ErrInvalidValue) {
+		t.Fatalf("Parse with no config file rejected a default: %v", err)
+	}
+	if c.Log.DisableTimestamp {
+		t.Error("Log.DisableTimestamp = true, want the default false: timestamps stay on unless asked off")
+	}
+}
+
 // TestParseRejectsUnknownLogFlags pins that an unusable value stops startup
 // even with no config file to read. Parse used to return the moment the file
 // was missing, so adjust and validate never ran and the value reached the
