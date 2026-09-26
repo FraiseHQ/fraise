@@ -316,12 +316,22 @@ func (idx *RPTreeIndex[K, P]) Entries() int {
 }
 
 // Flush rebuilds the forest from the currently live vectors, discarding
-// deleted vectors and any stale copies left behind by Insert/Update.
+// deleted vectors and any stale copies left behind by Insert/Update. The live
+// set is replayed in key order: a tree's splits depend on the order points
+// arrive in, and replaying in map order made two identical write sequences
+// build different forests once the first rebuild ran — breaking the promise
+// that a fixed seed reproduces the index.
 func (idx *RPTreeIndex[K, P]) Flush() error {
 	forest := idx.newForest()
 
-	for key, value := range idx.vectors {
-		node := trees.NewVectorNode(key, value)
+	keys := make([]K, 0, len(idx.vectors))
+	for key := range idx.vectors {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return idx.compare(keys[i], keys[j]) < 0 })
+
+	for _, key := range keys {
+		node := trees.NewVectorNode(key, idx.vectors[key])
 		for _, t := range forest {
 			if err := t.Insert(node); err != nil {
 				return err
