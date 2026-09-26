@@ -24,7 +24,7 @@ Three shapes warn: two near-misses, and one inert clause.
 
 ### 1. A recall whose leading term spells a reserved keyword
 
-Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`, in any casing. The leading term — the first word after `recall` — is the one position where a bare reserved word legally reads as data: without a `:` after it, it cannot be a clause, and a recall may open with a term. That also makes it the one position where a mistyped clause slips through as a search instead of an error.
+Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`, in any casing. The leading term is the one position where a bare reserved word legally reads as data — a recall must start with a term, so no clause can begin there — which also makes it the one position where a mistyped clause slips through as a search instead of an error. A command word — `recall`, `remember`, `forget`, `update` — has no clause reading to offer, so its warning names only the quote.
 
 | query | reading that runs | near-miss it warns about |
 |--------------------|--------------------------------|---------------------------------|
