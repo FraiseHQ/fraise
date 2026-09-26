@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.2](https://github.com/FraiseHQ/fraise/compare/v0.2.1...v0.2.2) (2026-09-26)
+
+
+### Bug fixes
+
+* answer unknown routes and panics with the error shape ([#373](https://github.com/FraiseHQ/fraise/issues/373)) ([edf2910](https://github.com/FraiseHQ/fraise/commit/edf29101b51b39a6fbfdbf95deb7fc226d0f58ff))
+* count only vertices in the stats order ([#375](https://github.com/FraiseHQ/fraise/issues/375)) ([f939065](https://github.com/FraiseHQ/fraise/commit/f9390659e1d61516998735a78c98510cd44bb15e))
+* honour log.disable-timestamp ([#371](https://github.com/FraiseHQ/fraise/issues/371)) ([dcfed6a](https://github.com/FraiseHQ/fraise/commit/dcfed6a2ee4bb5af19be19268e7bb303a35d857d))
+* keep a lone anchor at its fair share silent ([#370](https://github.com/FraiseHQ/fraise/issues/370)) ([f6ef21a](https://github.com/FraiseHQ/fraise/commit/f6ef21a777a9ba78b84a4d94640a897c30a47c32))
+* stop offering command words as clauses ([#372](https://github.com/FraiseHQ/fraise/issues/372)) ([4e3c660](https://github.com/FraiseHQ/fraise/commit/4e3c6604446061119d2cbc4f8a3ac872553449c1))
+
 ## [0.2.1](https://github.com/FraiseHQ/fraise/compare/v0.2.0...v0.2.1) (2026-09-25)
 
 
