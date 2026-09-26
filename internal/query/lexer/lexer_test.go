@@ -567,7 +567,7 @@ func TestTokenPosIsLastCharacter(t *testing.T) {
 // for every token type.
 //
 // NOTE: scanPhrase does record the *opening* quote (`Pos: start`), meaning to
-// report an unterminated phrase where it began, but Next() assigns tok.Pos
+// report an unterminated phrase where it began, but Next(true) assigns tok.Pos
 // after the switch and overwrites it — so that position never reaches the
 // parser. If that assignment is ever made conditional, the phrase cases here
 // and in TestScanPhraseUnterminatedRecordsPosition are what should change,
@@ -809,7 +809,7 @@ func TestScanPhrase(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := lexer.New(tc.input).Next()
 			if got.Type != tc.wantTyp || got.Literal != tc.wantLit {
-				t.Errorf("Next() = {%v %q}, want {%v %q}",
+				t.Errorf("Next(true) = {%v %q}, want {%v %q}",
 					got.Type, got.Literal, tc.wantTyp, tc.wantLit)
 			}
 		})

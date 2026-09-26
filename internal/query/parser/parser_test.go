@@ -1320,3 +1320,23 @@ func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 		}
 	}
 }
+
+// selector
+func TestSelectorWithSpace(t *testing.T) {
+	cases := []struct {
+		query         string
+		expectedError string
+	}{
+		{"remember @2 signal", ""},
+		{"recall @3 'car park'", ""},
+		{"recall  @5 'names of'", ""},
+	}
+
+	for _, c := range cases {
+		_, _, err := parser.Parse[uint64, float32](c.query)
+
+		if err == nil {
+			t.Fatal("Error excepted but got a nil value")
+		}
+	}
+}

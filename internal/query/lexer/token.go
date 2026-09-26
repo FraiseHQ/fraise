@@ -70,7 +70,10 @@ const (
 	LPAREN
 	RPAREN
 	DOLLAR
+
+	// blank characters
 	NEWLINE
+	WHITESPACE
 	// NUL is a NUL character outside a phrase. It is its own token, rather
 	// than read as the end of input, so the rest of the query cannot be
 	// silently dropped after it.
@@ -142,6 +145,8 @@ func (t TokenType) IsKeyword() bool {
 		return false
 	}
 }
+
+// func (t Token)
 
 // IsCommand reports whether t is one of the verbs a query can open with. A
 // query is one instruction, so a command token anywhere but the first position

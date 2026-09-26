@@ -309,8 +309,8 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	r := RememberCommandNode[P]{}
 
 	r.key = p.cur
-
 	p.next()
+
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
@@ -318,6 +318,9 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
+
+	p.next()
+
 	// Remember carries exactly one quoted phrase (the fact). The lexer returns
 	// the whole '...' as a single PHRASE token, so consuming it also consumes
 	// the closing quote — no separate delimiter handling here.
@@ -329,6 +332,8 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		return nil, err
 	}
 	r.value = *phrase
+
+	p.next()
 
 	var anchors []AnchorFieldNode
 
@@ -364,6 +369,8 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 				return nil, p.errRecallClauseOnWrite(p.cur)
 			}
 			return nil, p.errUnexpected(p.cur)
+		case lexer.WHITESPACE, lexer.COLON:
+			p.next()
 		default:
 			return nil, p.errUnexpected(p.cur)
 		}
@@ -384,19 +391,20 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
 		if err != nil {
-			// parseGraphSelector already returns a positioned parse error with a
-			// clear message; surface it as-is rather than re-wrapping (which lost
-			// the column and mangled the message via a bad %e verb).
 			return nil, err
 		}
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
+
+	p.next()
 
 	terms, err := p.parseTerms()
 	if err != nil {
 		return nil, err
 	}
 	r.terms = terms
+
+	p.next()
 
 	// Clauses follow the terms. Each modifier is single-valued and each anchor
 	// is a list, so a repeat means opposite things for the two and only the
@@ -464,6 +472,8 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 				return nil, err
 			}
 			r.vec = vec
+		case lexer.WHITESPACE, lexer.COLON:
+			p.next()
 		default:
 			return nil, p.errUnexpected(p.cur)
 		}
@@ -600,9 +610,12 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 }
 
 func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
+
 	key := p.cur
 
-	p.next()
+	if _, err := p.expect(lexer.AT); err != nil {
+		return lexer.Token{}, 0, p.errf(p.cur.Pos, "Expected @, but found %s", p.cur.Describe())
+	}
 
 	tok := p.take()
 
@@ -637,10 +650,13 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 	if p.cur.Type == lexer.NUL {
 		return nil, p.errUnexpected(p.cur)
 	}
+
 	tok, err := p.expect(lexer.PHRASE)
+
 	if err != nil {
 		return nil, p.errf(p.cur.Pos, "expected a quoted phrase, but found %s", p.cur.Describe())
 	}
+
 	return &PhraseNode{value: tok.Literal, pos: tok.Pos}, nil
 }
 
