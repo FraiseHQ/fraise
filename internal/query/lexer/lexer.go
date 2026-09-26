@@ -22,7 +22,9 @@
 
 package lexer
 
-import "strings"
+import (
+	"strings"
+)
 
 type Position struct {
 	Column int
@@ -42,10 +44,17 @@ func New(input string) *Lexer {
 		Input: []rune(input),
 	}
 	l.readCharacter()
+	// initalise positions
+	l.CurrentPos = Position{
+		Column: 0,
+	}
+	l.NextPos = Position{
+		Column: 1,
+	}
 	return &l
 }
 
-func (l *Lexer) skipBlank() {
+func (l *Lexer) SkipBlank() {
 	for isBlank(l.peek()) {
 		l.readCharacter()
 	}
@@ -65,13 +74,15 @@ func (l *Lexer) readCharacter() {
 // instructions, and swallowing it as blank is what let "recall ferry\nbridge"
 // read as one two-term recall instead of the two commands it looks like.
 func isBlank(ch rune) bool {
-	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r')
+	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r') || ch == rune('\x00')
+}
+
+func isPunctuation(ch rune) bool {
+	return ch == rune('@') || ch == rune(':') || ch == rune('(') || ch == rune(')') || ch == rune('$')
 }
 
 func (l *Lexer) Next() Token {
 	var tok Token
-
-	l.skipBlank()
 
 	switch l.peek() {
 	case rune(':'):
@@ -103,6 +114,9 @@ func (l *Lexer) Next() Token {
 	case rune('\n'):
 		l.readCharacter()
 		tok = Token{Type: NEWLINE, Literal: string(l.Character)}
+	case rune(' '):
+		l.readCharacter()
+		tok = Token{Type: WHITESPACE, Literal: string(l.Character)}
 	case rune(0):
 		// peek reads 0 both past the end and at a NUL in the input; only the
 		// first is the end. Reading a NUL as the end dropped everything after
@@ -150,8 +164,8 @@ func (l *Lexer) scanString() string {
 	var res []rune
 f:
 	for {
-		switch l.peek() {
-		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune('\n'), rune(0), rune('@'):
+		switch isBlank(l.peek()) || isPunctuation(l.peek()) {
+		case true:
 			break f
 		default:
 			res = append(res, l.peek())
