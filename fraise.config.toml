@@ -10,7 +10,7 @@
 [log]
 # level = "INFO"              # DEBUG INFO WARN ERROR
 # format = "text"             # text json
-# disable-timestamp = true
+# disable-timestamp = false   # true drops the time, for journald or docker
 
 [server]
 # port = 9876
@@ -27,7 +27,7 @@
 # enqueue-timeout = "2s"
 
 [engine]
-# half-life = "168h"          # non-positive disables recency decay
+# half-life = "168h"          # negative disables recency decay; 0 means the default
 # cache-capacity = 1000
 
 [db]

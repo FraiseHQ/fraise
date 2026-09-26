@@ -23,6 +23,7 @@
 package graph
 
 import (
+	"errors"
 	"math"
 	"sort"
 	"strings"
@@ -374,13 +375,16 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 	return g.textIndex
 }
 
-func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P) {
+func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error) {
 	// A. Collection: the retrieval stages pool everything they observe about
 	// every candidate — text seeds, vector seeds, anchor transmission, or
 	// with anchors alone the anchors' own members — as Contribution records,
 	// plus the one query-global observation (the background rate). No stage
 	// computes policy.
-	candidates, background := g.collect(keywords, vector, topics, entities, depth, top)
+	candidates, background, err := g.collect(keywords, vector, topics, entities, depth, top)
+	if err != nil {
+		return nil, nil, nil, 0, err
+	}
 
 	// B. Scoring: the scorer folds each candidate's contributions into one
 	// relevance score given the background, and the installed ranker (if any)
@@ -427,7 +431,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	logger.Debug("Graph search completed",
 		"candidates", len(kept), "returned", len(rankedKeys))
-	return nodes, scoresOut, contributions, background
+	return nodes, scoresOut, contributions, background, nil
 }
 
 // collect runs the retrieval stages and pools their sightings into one
@@ -435,7 +439,8 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 // every seed, then the topic/entity filters. Stages record Contributions and
 // compute no policy — the hinge, the null model and the attenuation live
 // entirely in the Scorer — and the second return is the background rate, the
-// query-global observation that fold needs.
+// query-global observation that fold needs. The error is the vector seed's
+// dimension mismatch, the one question collection cannot answer as asked.
 //
 // A call with nothing to match — no keywords and no vector — takes the one
 // other seeding there is: the named anchors' own members. The anchors are
@@ -446,15 +451,18 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 // and no anchor is observed, so the background is zero: the scorer folds
 // each member's own seed mass, and the recency decay ranks the results from
 // there.
-func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P) {
+func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P, error) {
 	candidates := make(scoring.Candidates[K, P])
 	if len(keywords) == 0 && vector.Empty() {
 		g.gatherMembers(topics, entities, candidates)
-		return candidates, 0
+		return candidates, 0, nil
 	}
-	seeds := g.gatherSeeds(keywords, vector, candidates, top)
+	seeds, err := g.gatherSeeds(keywords, vector, candidates, top)
+	if err != nil {
+		return nil, 0, err
+	}
 	background := g.findNeighbours(seeds, candidates, topics, entities, depth)
-	return candidates, background
+	return candidates, background, nil
 }
 
 // gatherMembers seeds the candidate pool from the named anchors' adjacency
@@ -517,7 +525,10 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topics []string, entities []string, 
 // The seed keys return in ascending key order: scorers fold contribution
 // lists as floats, so the traversal must observe in a deterministic order or
 // the low bits of a shared anchor's mass drift between identical queries.
-func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates scoring.Candidates[K, P], top int) []K {
+// An empty index seeds nothing; a vector of the wrong dimension is the error
+// returned, since the caller is asking with a different embedding model than
+// the graph was built with.
+func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates scoring.Candidates[K, P], top int) ([]K, error) {
 	seedK := g.config.DB.SeedSize
 	if top > seedK {
 		seedK = top
@@ -537,13 +548,17 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 
 	if !vector.Empty() {
-		if keys, distances, err := g.vectorIndex.Search(vector, seedK); err == nil {
+		keys, distances, err := g.vectorIndex.Search(vector, seedK)
+		switch {
+		case errors.Is(err, index.ErrInvalidDimension):
+			return nil, err
+		case err != nil:
+			logger.Debug("Vector index yielded no seeds", "error", err)
+		default:
 			vectorSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1})
 			}
-		} else {
-			logger.Debug("Vector index yielded no seeds", "error", err)
 		}
 	}
 
@@ -554,7 +569,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	sort.Slice(seeds, func(i, j int) bool { return seeds[i] < seeds[j] })
 	logger.Debug("Gathered search seeds",
 		"text", textSeeds, "vector", vectorSeeds, "unique", len(seeds))
-	return seeds
+	return seeds, nil
 }
 
 // depthOneAdmission is the depth-1 precision lane's multiplier on an anchor's
@@ -681,13 +696,17 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 		// Pass 2 (expand): anchors above their admitted share. depth 1 is the
 		// precision lane — it raises the bar to depthOneAdmission × fair share,
 		// so only strongly-above-chance anchors transmit; depth 2 admits at the
-		// plain fair share.
-		admitRate := background
+		// plain fair share. The test is cross-multiplied — M_A·Σd against
+		// d_A·ΣM, rather than M_A against d_A·ρ₀ — because the division rounds:
+		// an anchor holding exactly its share must stay silent, and a query
+		// reaching a single anchor (M_A = ΣM, d_A = Σd) used to clear d·(M/d)
+		// by a rounding error and transmit noise to its members.
+		admission := P(1)
 		if depth == 1 {
-			admitRate *= depthOneAdmission
+			admission = depthOneAdmission
 		}
 		for _, anchor := range touched {
-			if anchorMass[anchor] <= P(degree[anchor])*admitRate {
+			if anchorMass[anchor]*P(totalDegree) <= P(degree[anchor])*totalMass*admission {
 				continue
 			}
 			for _, member := range members[anchor] {

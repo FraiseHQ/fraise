@@ -4,7 +4,7 @@ description: "The container image, a compose service, and how a config file is m
 navIcon: "🚢"
 ---
 
-The image runs the binary directly as an unprivileged user and exposes 9876:
+The [published image](/docs/installation/docker) runs the binary directly as an unprivileged user and exposes 9876:
 
 <Tabs defaultValue="docker">
   <TabsList>
@@ -14,27 +14,29 @@ The image runs the binary directly as an unprivileged user and exposes 9876:
   <TabsContent value="docker">
 
   ```bash
-  docker run --rm -p 9876:9876 \
+  docker run --rm -p 127.0.0.1:9876:9876 \
     -v "$PWD/fraise.config.toml:/etc/fraise/fraise.config.toml:ro" \
-    fraise -config /etc/fraise/fraise.config.toml
+    ghcr.io/fraisehq/fraise:latest -config /etc/fraise/fraise.config.toml
   ```
 
   </TabsContent>
   <TabsContent value="compose">
 
-  Or with compose, as the test suites do:
-
   ```yaml
   services:
     fraise:
-      build:
-        context: .
-        dockerfile: Dockerfile.fraise
+      image: ghcr.io/fraisehq/fraise:latest
       ports:
-        - "9876:9876"
+        - "127.0.0.1:9876:9876"
       volumes:
         - ./fraise.config.toml:/etc/fraise/fraise.config.toml:ro
       command: ["-config", "/etc/fraise/fraise.config.toml"]
+      healthcheck:
+        test: ["CMD", "wget", "-qO-", "http://localhost:9876/"]
+        interval: 10s
+        timeout: 2s
+        retries: 3
+      stop_grace_period: 15s
   ```
 
   </TabsContent>
@@ -64,7 +66,7 @@ healthcheck:
 
 ## Stopping it
 
-`docker stop` sends SIGTERM, so the default path is the graceful one.
+`docker stop` sends SIGTERM, so the default path is the graceful one. It waits 10 seconds before SIGKILL by default — exactly the default `shutdown-grace` — so raise it with `--stop-timeout` or compose's `stop_grace_period`.
 
 <Note title="Container stop timeout" type="warning">
 

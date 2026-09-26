@@ -1,6 +1,6 @@
 ---
 title: "Errors"
-description: "One error shape, four status codes, and the two properties that make client errors precise and server errors opaque"
+description: "One error shape, five status codes, and the two properties that make client errors precise and server errors opaque"
 navIcon: "⚠️"
 ---
 
@@ -13,6 +13,7 @@ Every failure returns the same shape, with the status code carrying the category
 | Status | When |
 |--------|---------------------------------------------------------------------------------------------------------------------------------------|
 | 400 | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a vector whose dimension does not match its graph, a graph selector outside the allocated range |
+| 404 | no endpoint answers that method and path — the message names both |
 | 429 | the scheduler queue stayed full past `enqueue-timeout` — back off and retry |
 | 503 | the server is shutting down |
 | 500 | an internal failure |

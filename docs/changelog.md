@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.2.1](https://github.com/FraiseHQ/fraise/compare/v0.2.0...v0.2.1) (2026-09-25)
+
+
+### Bug fixes
+
+* name the command when a remember gets a recall clause ([#368](https://github.com/FraiseHQ/fraise/issues/368)) ([7495ced](https://github.com/FraiseHQ/fraise/commit/7495ceda04af6f20c2122131a6cec2a8b2d6368b))
+* reject a nul character outside a phrase ([#367](https://github.com/FraiseHQ/fraise/issues/367)) ([3efe8ee](https://github.com/FraiseHQ/fraise/commit/3efe8ee156966c6e9b6428847955b941252ca655))
+* reject a recall vector of the wrong dimension ([#366](https://github.com/FraiseHQ/fraise/issues/366)) ([b2091fb](https://github.com/FraiseHQ/fraise/commit/b2091fbdd11fb59e3f07b252013934fde48e2589))
+* reject durations longer than a duration can hold ([#364](https://github.com/FraiseHQ/fraise/issues/364)) ([e1d13a3](https://github.com/FraiseHQ/fraise/commit/e1d13a3d8f449325f0e0d1dcba0649317a679db4))
+
+
+### Maintenance
+
+* correct the install and changelog paths in release notes ([#380](https://github.com/FraiseHQ/fraise/issues/380)) ([1eaac47](https://github.com/FraiseHQ/fraise/commit/1eaac4793abef7bba86bd968564894ccdeae300a))
+* improve documentation (fix typos and incorrect statements) ([#362](https://github.com/FraiseHQ/fraise/issues/362)) ([14d8491](https://github.com/FraiseHQ/fraise/commit/14d84913dc058110355dee8fb76361863ce72323))
+* **main:** release python 0.1.0-rc.2 ([#360](https://github.com/FraiseHQ/fraise/issues/360)) ([8671713](https://github.com/FraiseHQ/fraise/commit/8671713d7667bfabf6819431ae82a0f9d523209c))
+
+## [0.2.0](https://github.com/FraiseHQ/fraise/compare/v0.1.0...v0.2.0) (2026-09-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* give writes and empty graphs their own responses ([#348](https://github.com/FraiseHQ/fraise/issues/348))
+
+### Features
+
+* give writes and empty graphs their own responses ([#348](https://github.com/FraiseHQ/fraise/issues/348)) ([6467184](https://github.com/FraiseHQ/fraise/commit/6467184326ac65b7dfddfa65914a7db10f3c1cda))
+
+
+### Maintenance
+
+* update gin router definition ([#300](https://github.com/FraiseHQ/fraise/issues/300)) ([76f0182](https://github.com/FraiseHQ/fraise/commit/76f01824018a3de13e834e5f08ffa59bec05aeae))
+* update readme badges ([#293](https://github.com/FraiseHQ/fraise/issues/293)) ([1731a31](https://github.com/FraiseHQ/fraise/commit/1731a319c296d7f822453692da2c1410b970b44a))
+
 ## [0.1.0](https://github.com/FraiseHQ/fraise/compare/v0.1.0-rc.4...v0.1.0) (2026-09-07)
 
 
