@@ -323,6 +323,39 @@ def test_reserved_word_where_a_value_is_required_names_the_clause(
     _reject(status, body, expected, text)
 
 
+@pytest.mark.parametrize(
+    "text,clause",
+    [
+        ("remember@1 'the ferry docks at dawn' since:7d", "since"),
+        ("remember@1 'the ferry docks at dawn' until:2026-01-15", "until"),
+        ("remember@1 'the ferry docks at dawn' top:3", "top"),
+        ("remember@1 'the ferry docks at dawn' depth:2", "depth"),
+        ("remember@1 'the ferry docks at dawn' topic:harbour since:7d", "since"),
+        ("remember@1 'the ferry docks at dawn' Since:7d", "since"),
+    ],
+)
+def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
+    """A well-formed recall clause on a remember says it is a recall clause
+    and which clauses a remember takes.
+
+    It used to get the keyword repair — "write since:<value> if a clause was
+    meant" — which tells the caller to write exactly what they wrote, so an
+    agent following it would send the same query back. The mistake is the
+    command the clause was given to, whatever its casing and wherever it sits
+    among the anchors.
+    """
+    status, body = query(text)
+    _reject(
+        status,
+        body,
+        f"{clause}: is a recall clause: a remember takes only topic:, entity: and vec:",
+        text,
+    )
+    assert f"write {clause}:<value>" not in body["error"], (
+        f"{text!r}: error {body['error']!r} repeats the clause back as the fix"
+    )
+
+
 # ---------------------------------------------------------------------------
 # The vec: clause. parseVecField produces precise positioned errors and both
 # call sites throw them away for a generic wrap — the exact mangling
@@ -472,7 +505,6 @@ def test_unterminated_phrase_is_reported_as_such(query, text):
         ("recall ferry until:0x10", "invalid until value"),
         ("recall ferry until:7 d", "invalid until value"),
         ("recall ferry until:--7d", "invalid until value"),
-        ("recall ferry since:99999999999999999999d", "invalid since value"),
         ("recall ferry since:", "expected"),
     ],
 )
@@ -482,6 +514,36 @@ def test_invalid_temporal_values_name_the_accepted_forms(query, text, expected):
 
     The existing message ("expected a duration like 7d or a date like
     2026-01-15") is the model for every other value error in this file.
+    """
+    status, body = query(text)
+    _reject(status, body, expected, text)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "recall ferry since:106752d",
+            'invalid since value "106752d": out of range (at most 106751d)',
+        ),
+        (
+            "recall ferry until:15251w",
+            'invalid until value "15251w": out of range (at most 15250w)',
+        ),
+        ("recall ferry since:2562048h", "out of range (at most 2562047h)"),
+        ("recall ferry since:153722868m", "out of range (at most 153722867m)"),
+        ("recall ferry since:9223372037s", "out of range (at most 9223372036s)"),
+        ("recall ferry since:99999999999999999999d", "out of range (at most 106751d)"),
+    ],
+)
+def test_durations_longer_than_a_duration_holds_are_rejected(query, text, expected):
+    """A duration past about 292 years is out of range, and the message says
+    how far each unit goes.
+
+    It used to wrap negative and resolve to a bound in the future, so
+    since:106752d ran as a window opening after now — a 200 with nothing in
+    it, answering a question nobody asked. The limit is per unit, so the
+    message names the largest count the caller's own unit allows.
     """
     status, body = query(text)
     _reject(status, body, expected, text)

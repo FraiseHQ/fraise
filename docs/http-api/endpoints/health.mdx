@@ -1,6 +1,6 @@
 ---
 title: "GET / — health check"
-description: "Liveness, readiness and the version handshake the SDKs rely on"
+description: "Liveness, readiness and the version handshake the SDK relies on"
 navLabel: "Health check"
 ---
 
@@ -9,7 +9,7 @@ curl localhost:9876/
 ```
 
 ```json
-{"status": "ok", "version": "0.1.0"}
+{"status": "ok", "version": "0.2.0"}
 ```
 
 ## What it tells you
@@ -32,8 +32,8 @@ healthcheck:
 
 ## The version field is a contract
 
-`version` is the SDKs' only handshake: they read it to check the server falls in the range they support, so the field is part of the contract rather than a convenience.
+`version` is the SDK's only handshake: its compatibility check reads it to confirm the server falls in the range the SDK supports, so the field is part of the contract rather than a convenience.
 
 ## When it does not answer
 
-If the process exits immediately after a deploy, read the first log line: a startup failure names the setting it could not honour, and no amount of restarting will fix it. See [Startup](/docs/operations/runbook/startup).
+If the process exits immediately after a deploy, read the last line it wrote to stderr: a startup failure names the setting it could not honour, and no amount of restarting will fix it. See [Startup](/docs/operations/runbook/startup).

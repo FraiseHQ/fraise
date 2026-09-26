@@ -33,13 +33,13 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python \
 # Interpreter in its own layer so editing the example does not re-download it.
 RUN uv python install 3.12
 
-# Install the SDK and its Claude Agent SDK dependencies. Copied first so this
-# layer is cached across changes to the example script. The group is addressed
-# by path because fraise-sdk declares [dependency-groups], not extras — the
-# older "[anthropic]" form resolved to no extra and silently installed nothing.
+# Install the SDK with its `anthropic` extra, which brings in the Claude Agent
+# SDK. Copied first so this layer is cached across changes to the example
+# script.
 COPY sdk/python /opt/fraise-sdk
 RUN uv venv --python 3.12 "$VIRTUAL_ENV" \
-    && uv pip install /opt/fraise-sdk \
-    --group /opt/fraise-sdk/pyproject.toml:anthropic
+    && uv pip install "/opt/fraise-sdk[anthropic]"
 
 COPY examples/claude-agent-sdk/agent.py .
+
+CMD ["python", "agent.py"]
