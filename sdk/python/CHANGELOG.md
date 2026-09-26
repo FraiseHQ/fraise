@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-rc.3](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-rc.2...python/v0.1.0-rc.3) (2026-09-26)
+
+
+### Maintenance
+
+* improve documentation (fix typos and incorrect statements) ([#362](https://github.com/FraiseHQ/fraise/issues/362)) ([14d8491](https://github.com/FraiseHQ/fraise/commit/14d84913dc058110355dee8fb76361863ce72323))
+
 ## [0.1.0-rc.2](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-rc.1...python/v0.1.0-rc.2) (2026-09-24)
 
 
