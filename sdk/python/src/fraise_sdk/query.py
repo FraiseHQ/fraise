@@ -138,6 +138,7 @@ def build_remember(
     graph: int = 0,
     topics: Sequence[str] | None = None,
     entities: Sequence[str] | None = None,
+    source: str | None = None,
     with_vector: bool = False,
 ) -> str:
     """Build a ``remember`` query string that stores ``value`` in ``graph``.
@@ -148,6 +149,8 @@ def build_remember(
     parts = [f"remember{_selector(graph)}", _quote_value(value)]
     parts += _clauses("topic", topics)
     parts += _clauses("entity", entities)
+    if source is not None:
+        parts.append(f"source:{_quote_value(source)}")
     if with_vector:
         parts.append(f"vec:${VECTOR_PARAM}")
     return " ".join(parts)
