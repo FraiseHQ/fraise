@@ -1321,22 +1321,25 @@ func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 	}
 }
 
-// selector
+// TestSelectorWithSpace pins the error message: a whitespace
+// between command and graph selector is a query error,
+// the error message returned specifies that a space after command
+// means end of comment specification (graph included) and search terms
+// are expected.
 func TestSelectorWithSpace(t *testing.T) {
 	cases := []struct {
 		query         string
 		expectedError string
 	}{
-		{"remember @2 signal", ""},
-		{"recall @3 'car park'", ""},
-		{"recall  @5 'names of'", ""},
+		{"remember @2 signal", "parse error at column 10: expected a quoted phrase, but found \"@\""},
+		{"recall @3 'car park'", "parse error at column 8: unexpected \"@\""},
+		{"recall  @5 'names of'", "parse error at column 9: unexpected \"@\""},
 	}
 
 	for _, c := range cases {
 		_, _, err := parser.Parse[uint64, float32](c.query)
-
-		if err == nil {
-			t.Fatal("Error excepted but got a nil value")
+		if err.Error() != c.expectedError {
+			t.Errorf("Errors do not match, got %s but expected %s", err.Error(), c.expectedError)
 		}
 	}
 }
