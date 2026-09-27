@@ -221,6 +221,20 @@ func (p *parser[K, P]) errKeywordAsClause(tok lexer.Token) error {
 		tok.Describe(), strings.ToLower(tok.Literal), tok.Literal)
 }
 
+// errKeywordAsTerm rejects a reserved word among a recall's terms. It is one
+// ':' from a filter — "recall x since 7d" against "recall x since:7d" — and
+// either reading, guessed, answers a differently-scoped question with nothing
+// in the response to say so; the message names both repairs and leaves the
+// choice to the caller. A command word has no filter reading, recall:<value>
+// being itself an error, so its message names only the quote.
+func (p *parser[K, P]) errKeywordAsTerm(tok lexer.Token) error {
+	if tok.Type.IsCommand() {
+		return p.errf(tok.Pos, "term %q is also a command: quote it ('%s') to search for the word", tok.Literal, tok.Literal)
+	}
+	return p.errf(tok.Pos, "term %q is also a keyword: write %s:<value> if a filter was meant, or quote it ('%s') to search the word",
+		tok.Literal, strings.ToLower(tok.Literal), tok.Literal)
+}
+
 // errRecallClauseOnWrite rejects a well-formed recall clause on a remember.
 // The clause is written correctly, so the keyword-as-clause repair ("write
 // since:<value>") would tell the caller to write exactly what they wrote; the
@@ -325,6 +339,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	// the whole '...' as a single PHRASE token, so consuming it also consumes
 	// the closing quote — no separate delimiter handling here.
 	phrase, err := p.parsePhrase()
+
 	if err != nil {
 		return nil, err
 	}
@@ -497,55 +512,36 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 // everywhere, and folding at the edge keeps every downstream spelling of the
 // query (index lookup, plan-cache key) agreeing on one form.
 //
-// Only the first term may spell a reserved word. That position is the one place
-// no clause can begin, which is what makes a bare keyword data there — and also
-// what makes a mistyped clause slip through as a search, so it warns. From the
-// second term on a keyword starts a clause, in any casing: folding "Since" into
-// a term there would let "recall x Since 7d" read as three terms — the silent
-// token-shift parseTimeValue guards against, back through the casing door.
+// A reserved word is never a bare term. What a keyword means is decided by the
+// token after it, not by the keyword alone: followed by ':' it starts a clause
+// and ends the terms — the rule isValue owns — and otherwise it is rejected by
+// errKeywordAsTerm, since "recall x since 7d" is one ':' from "recall x
+// since:7d" and neither reading can be guessed safely. Quoting is how a caller
+// searches for the word. A mis-cased keyword is rejected the same way: folding
+// "Since" into a term would let "recall x Since 7d" read as three terms — the
+// silent token-shift parseTimeValue guards against, back through the casing
+// door.
 func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
-	if !p.isValue() {
-		return nil, nil
-	}
-
-	terms := []LiteralFieldNode{}
-loop:
-	for {
-		if p.cur.IsMisCasedKeyword() {
+	var terms []LiteralFieldNode
+	for !p.isAtEnd() {
+		switch {
+		case p.cur.Type == lexer.WHITESPACE:
+			p.next()
+		case p.cur.IsMisCasedKeyword():
 			return nil, p.errUnexpected(p.cur)
-		}
-		switch p.cur.Type {
-		case lexer.LITERAL, lexer.PHRASE:
-			tok, err := p.parseValue()
-			if err != nil {
-				return nil, err
-			}
-			if err := p.errEmpty("a search term", tok.Literal, tok.Pos); err != nil {
-				return nil, err
-			}
-
-			// The ambiguity cannot be resolved here — "recall since 7d" is one ':' from
-			// "recall since:7d", and the wrong reading silently answers a
-			// differently-scoped question — so it is surfaced: the query runs as the
-			// term search and carries a warning naming both readings. A quoted phrase
-			// never warns; quoting is the deliberate form.
-			// A command word has no clause reading to offer — recall:<value> is
-			// itself an error — so its warning names only the quote.
-			if keyword, reserved := lexer.KeywordsMap[strings.ToLower(tok.Literal)]; reserved && tok.Type != lexer.PHRASE {
-				msg := fmt.Sprintf("term %q is also a keyword: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
-					tok.Literal, strings.ToLower(tok.Literal), tok.Literal)
-				if keyword.IsCommand() {
-					msg = fmt.Sprintf("term %q is also a command: quote it ('%s') to search for the word", tok.Literal, tok.Literal)
-				}
-				p.warns = append(p.warns, Warning{Msg: msg, Pos: tok.Pos})
-			}
+		case !p.isValue():
+			// A clause, or a token the clause loop diagnoses: the terms end here.
+			// vec names a parameter, not a filter, so the filter repair would
+			// mislead; parseVecField reports its own shape.
+			return terms, nil
+		case p.cur.Type.IsKeyword():
+			return nil, p.errKeywordAsTerm(p.cur)
+		default:
+			tok := p.take()
 			if err := p.errEmpty("a search term", tok.Literal, tok.Pos); err != nil {
 				return nil, err
 			}
 			terms = append(terms, TermNode{token: tok, value: strings.ToLower(tok.Literal)})
-			p.next()
-		default:
-			break loop
 		}
 	}
 	return terms, nil

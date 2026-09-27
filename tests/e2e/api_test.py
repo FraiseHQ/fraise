@@ -167,30 +167,39 @@ def test_query_rejects_invalid_modifier_value(query, text):
 
 
 @pytest.mark.parametrize(
-    "text",
+    "text,expected",
     [
-        "recall zebras topic food",
-        "recall zebras topic food extra",  # the ticket repro
-        "recall zebras entity alice",
-        "recall zebras since 7d",
-        "recall zebras until 2026-01-15",
-        "recall zebras top 5",
-        "recall zebras depth 2",
-        "recall zebras topic:food entity alice",  # one good field, one bad
-        "remember@5 'ulysse moved to quimper' topic relocation",
-        "remember@5 'ulysse moved to quimper' entity ulysse",
+        ("recall zebras topic food", "write topic:<value> if a filter was meant"),
+        (
+            "recall zebras topic food extra",  # the ticket repro
+            "write topic:<value> if a filter was meant",
+        ),
+        ("recall zebras entity alice", "write entity:<value> if a filter was meant"),
+        ("recall zebras since 7d", "write since:<value> if a filter was meant"),
+        ("recall zebras until 2026-01-15", "write until:<value> if a filter was meant"),
+        ("recall zebras top 5", "write top:<value> if a filter was meant"),
+        (
+            "recall@0 top",  # a leading keyword too
+            "write top:<value> if a filter was meant",
+        ),
+        ("recall zebras depth 2", "write depth:<value> if a filter was meant"),
+        ("recall zebras topic:food entity alice", "colon"),  # one good field, one bad
+        ("remember@5 'ulysse moved to quimper' topic relocation", "colon"),
+        ("remember@5 'ulysse moved to quimper' entity ulysse", "colon"),
     ],
 )
-def test_query_rejects_missing_field_separator(query, text):
+def test_query_rejects_missing_field_separator(query, text, expected):
     """A keyed field written without its ':' is a 400 naming the separator.
 
-    Anything else is the silent-parse failure mode: the query runs, returns
-    200, and answers a question nobody asked.
+    Among the terms the keyword error names it in the filter form a caller
+    would write (topic:<value>); where a clause is being read it names the
+    colon. Anything else is the silent-parse failure mode: the query runs,
+    returns 200, and answers a question nobody asked.
     """
     status, body = query(text)
 
     assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
-    assert "colon" in body.get("error", "").lower(), (
+    assert expected in body.get("error", "").lower(), (
         f"{text!r}: expected an error naming the missing ':', got {body.get('error')!r}"
     )
 
@@ -257,9 +266,8 @@ def test_missing_separator_write_does_not_land(query):
 @pytest.mark.parametrize(
     "text",
     [
-        "recall@0 top",  # keyword as the leading term: a search for the word "top"
-        "recall@0 Top",  # upper case is legal in data position, and folds to the same word
-        "recall@0 top top:3",  # same spelling as term and clause, told apart by the ':'
+        "recall@0 'Top'",  # upper case is legal in data position, and folds to the same word
+        "recall@0 'top' top:3",  # same spelling as term and clause, told apart by the ':'
         "recall@0 shelf entity:top",  # the bug-report repro, on the read side
         "recall@0 shelf topic:top",
         "recall@0 shelf entity:Top",  # an anchor value may carry any casing, keyword spelling or not
@@ -428,31 +436,6 @@ def test_a_miscased_repeat_is_still_a_duplicate(query):
     assert status == 400, body
     assert "duplicate" in body.get("error", "").lower(), body.get("error")
 
-
-def test_leading_keyword_term_warns_but_runs(query):
-    """`recall since 7d` runs as a two-term search and the response carries a
-    warning naming the clause it nearly is.
-
-    The leading term is the one position where a bare keyword legally reads
-    as a word — which makes it the one position where a mistyped clause can
-    slip through as data: `recall since 7d` is one ':' away from
-    `recall since:7d`, and the two answer differently-scoped questions. The
-    server cannot know which was meant, so it answers the query as written
-    and says what else it could have meant, naming the clause syntax and the
-    quoting escape so an agent can resolve the ambiguity from the response
-    alone. Neither erroring (which would reject legitimate one-word searches
-    like `recall top`) nor staying silent (a typo with no signal) is
-    acceptable here.
-    """
-    status, body = query("recall@0 since 7d")
-
-    assert status == 200, body.get("error")
-    warnings = body.get("warnings", [])
-    assert len(warnings) == 1, f"want exactly one warning, got {warnings}"
-    assert "since:<value>" in warnings[0], warnings[0]
-    assert "('since')" in warnings[0], warnings[0]
-
-
 @pytest.mark.parametrize(
     "text",
     [
@@ -562,14 +545,14 @@ def test_depth_without_an_anchor_runs_but_warns(query, text):
 @pytest.mark.parametrize(
     ("text", "blame"),
     [
-        ("recall zebras topic food extra", "food"),
-        ("recall zebras entity alice extra", "alice"),
-        ("recall zebras since 7d 30d", "7d"),
-        ("recall zebras top 5 depth:2", "5"),
-        ("recall zebras depth 2 top:3", "2"),
-        ("remember@5 'a colonprobe fact' topic food entity:x", "food"),
-        ("recall zebras since:soon top:3", "soon"),
-        ("recall zebras depth:abc top:3", "abc"),
+        ("recall zebras topic food extra", "topic"),
+        ("recall zebras entity alice extra", "entity"),
+        ("recall zebras since 7d 30d", "since"),
+        ("recall zebras top 5 depth:2", "top"),
+        ("recall zebras depth 2 top:3", "depth"),
+        ("remember@5 'a colonprobe fact' topic food entity:x", "topic"),
+        ("recall zebras since:soon top:3", "since"),
+        ("recall zebras depth:abc top:3", "depth"),
         ("recall@abc zebras top:3", "abc"),
     ],
 )

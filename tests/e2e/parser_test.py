@@ -219,13 +219,7 @@ def test_leading_reserved_word_runs_and_warns(query, text):
     mistyped queries silent.
     """
     status, body = query(text)
-    _accept(status, body, text)
-    warnings = body.get("warnings") or []
-    assert warnings, f"{text!r}: expected a keyword-ambiguity warning, got none"
-    joined = " ".join(str(w) for w in warnings).lower()
-    assert "keyword" in joined, (
-        f"{text!r}: warning {warnings!r} should name the keyword ambiguity"
-    )
+    _reject(status, body, f"term \"{text.split(' ')[1]}\" is also a keyword:", text)
 
 
 @pytest.mark.parametrize(
@@ -664,8 +658,6 @@ def test_grouping_is_rejected_as_unsupported(query, text):
 @pytest.mark.parametrize(
     "text",
     [
-        "recall ferry recall bridge",
-        "recall ferry remember 'x'",
         "remember@1 'a' remember@1 'b'",
         "recall ferry; recall bridge",
         "recall ferry\nrecall bridge",
@@ -688,6 +680,23 @@ def test_second_command_is_rejected_as_one_per_instruction(query, text):
     message = (body.get("error") or "").lower()
     assert "one command" in message or "end of query" in message, (
         f"{text!r}: error {body.get('error')!r} should say one command per instruction"
+    )
+
+
+@pytest.mark.parametrize(
+    "text,word",
+    [
+        ("recall ferry recall bridge", "recall"),
+        ("recall ferry remember 'x'", "remember"),
+    ],
+)
+def test_command_word_among_the_terms_is_a_word_to_quote(query, text, word):
+    """A command word among a recall's terms is the word the caller forgot to
+    quote, not a second command, so the error names the quote.
+    """
+    status, body = query(text)
+    _reject(
+        status, body, f"term \"{word}\" is also a command: quote it ('{word}')", text
     )
 
 

@@ -385,32 +385,37 @@ func TestRememberPhraseErrors(t *testing.T) {
 // cannot detect, let alone correct from; the whole family (topic, entity,
 // since, until, top, depth) is listed here so no field can regress alone.
 func TestFieldRequiresColonSeparator(t *testing.T) {
-	queries := []string{
-		"recall zebras topic food",
-		"recall zebras topic food extra",
-		"recall zebras entity alice",
-		"recall zebras since 7d",
-		"recall zebras until 2026-01-15",
-		"recall zebras top 5",
-		"recall zebras depth 2",
-		"recall zebras topic:food entity alice",
-		"remember 'zebras eat grass' topic food",
-		"remember 'zebras eat grass' entity zebras",
+	cases := []struct {
+		query string
+		want  string
+	}{
+		// Among the terms a bare keyword is one ':' from a filter, so the error
+		// names the colon form beside the quote.
+		{"recall zebras topic food", "write topic:<value> if a filter was meant"},
+		{"recall zebras topic food extra", "write topic:<value> if a filter was meant"},
+		{"recall zebras entity alice", "write entity:<value> if a filter was meant"},
+		{"recall zebras since 7d", "write since:<value> if a filter was meant"},
+		{"recall zebras until 2026-01-15", "write until:<value> if a filter was meant"},
+		{"recall zebras top 5", "write top:<value> if a filter was meant"},
+		{"recall zebras depth 2", "write depth:<value> if a filter was meant"},
+		{"recall zebras topic:food entity alice", "Expected colon"},
+		{"remember 'zebras eat grass' topic food", "Expected colon"},
+		{"remember 'zebras eat grass' entity zebras", "Expected colon"},
 		// The token-shifting shapes: each one used to parse without error, with
 		// the second value silently winning the field and the first swallowed.
-		"recall zebras since 7d 30d",
-		"recall zebras until 7d 30d",
-		"recall zebras since:7d until 30d 60d",
+		{"recall zebras since 7d 30d", "write since:<value> if a filter was meant"},
+		{"recall zebras until 7d 30d", "write until:<value> if a filter was meant"},
+		{"recall zebras since:7d until 30d 60d", "Expected colon"},
 	}
 
-	for _, q := range queries {
-		t.Run(q, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](q)
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", q)
+				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", tc.query)
 			}
-			if !strings.Contains(err.Error(), "Expected colon") {
-				t.Errorf("error %q does not name the missing ':' separator", err)
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not name the missing ':' separator: want %q", err, tc.want)
 			}
 		})
 	}
@@ -435,13 +440,14 @@ func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
 		query string
 		blame string // the token the error must quote and point at
 	}{
-		// Missing ':' — the whole keyed-field family.
-		{"recall zebras topic food extra", "food"},
-		{"recall zebras entity alice extra", "alice"},
-		{"recall zebras since 7d 30d", "7d"},
-		{"recall zebras until 7d 30d", "7d"},
-		{"recall zebras top 5 depth:2", "5"},
-		{"recall zebras depth 2 top:3", "2"},
+		// Missing ':' — the whole keyed-field family. Among the terms the
+		// keyword itself is blamed: it is the word to write as a filter or quote.
+		{"recall zebras topic food extra", "topic"},
+		{"recall zebras entity alice extra", "entity"},
+		{"recall zebras since 7d 30d", "since"},
+		{"recall zebras until 7d 30d", "until"},
+		{"recall zebras top 5 depth:2", "top"},
+		{"recall zebras depth 2 top:3", "depth"},
 		{"remember 'zebras eat grass' topic food entity:x", "food"},
 		// Unparseable values: the blamed token is the value, not the key.
 		{"recall zebras since:soon top:3", "soon"},
@@ -1050,9 +1056,11 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		{"recall zebras topic:(food)", "grouping is not supported"},
 		{"recall zebras )food(", "grouping is not supported"},
 		// A second command is one instruction too many, not a stray word.
-		{"recall zebras recall food", "one command per instruction"},
-		{"recall zebras remember 'x'", "one command per instruction"},
 		{"remember 'a' remember 'b'", "one command per instruction"},
+		// Among a recall's terms a command word is the word the caller forgot
+		// to quote.
+		{"recall zebras recall food", `term "recall" is also a command: quote it ('recall')`},
+		{"recall zebras remember 'x'", `term "remember" is also a command: quote it ('remember')`},
 		// A keyword with nothing after it can never finish a clause, so it is
 		// the word the caller forgot to quote.
 		{"recall zebras top", "quote it"},

@@ -376,7 +376,7 @@ def test_keyword_anchor_values_round_trip(query):
 
 
 def test_keyword_recalls_as_a_leading_term(query):
-    """In `recall top top:10`, the first "top" is a search term and the second
+    """In `recall 'top' top:10`, the first "top" is a search term and the second
     is the result-limit clause.
 
     The leading term is the one position where a bare keyword reads as a
@@ -388,7 +388,7 @@ def test_keyword_recalls_as_a_leading_term(query):
     status, body = query(f"remember@5 '{CAIRN_FACT}' topic:top entity:top")
     assert status == 200, body.get("error")
 
-    status, body = query("recall@5 top top:10")
+    status, body = query("recall@5 'top' top:10")
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
     assert CAIRN_FACT in values, (
