@@ -197,6 +197,33 @@ def test_a_leading_keyword_spelled_term_stays_bare():
     assert build_recall(["since", "7d"]) == "recall@0 since 7d"
 
 
+@pytest.mark.parametrize(
+    "kwargs, expected",
+    [
+        ({"keywords": ["e-mail"]}, "recall@0 'e-mail'"),
+        ({"keywords": ["ferry", "v1.2"]}, "recall@0 ferry 'v1.2'"),
+        ({"topics": ["machine-learning"]}, "recall@0 topic:'machine-learning'"),
+        ({"entities": ["o'brien"]}, "recall@0 entity:'o''brien'"),
+        ({"keywords": ["café", "東京"]}, "recall@0 café 東京"),
+    ],
+)
+def test_a_value_that_is_not_one_plain_word_is_quoted(kwargs, expected):
+    """Outside quotes a word is letters and digits only, so anything else is quoted.
+
+    The server rejects ``recall machine-learning`` at the ``-`` rather than
+    guess where the word ends; the caller passed one value, and the quoted form
+    carries it whole. Letters in any script are plain and stay bare.
+    """
+    assert build_recall(**kwargs) == expected
+
+
+def test_a_remembered_anchor_that_is_not_one_plain_word_is_quoted():
+    """Anchors on a write follow the same word rule as on a read."""
+    assert build_remember("x", topics=["machine-learning"]) == (
+        "remember@0 'x' topic:'machine-learning'"
+    )
+
+
 def test_a_query_phrase_takes_the_leading_slot_so_keywords_are_quoted():
     """With a phrase first, no keyword is in the position that reads as data."""
     assert build_recall(["top"], query="what is at the top") == (
@@ -212,6 +239,7 @@ def test_a_query_phrase_takes_the_leading_slot_so_keywords_are_quoted():
         {"entities": ["barometer"]},
         {"topics": ["weather", "instruments"]},
         {"topics": ["weather"], "entities": ["barometer"]},
+        {"topics": ["machine-learning"], "entities": ["o'brien"]},
     ],
 )
 @pytest.mark.integration
@@ -240,6 +268,7 @@ def test_every_remember_the_builder_emits_parses(kwargs, client, query_graph):
             "top": 3,
             "depth": 2,
         },
+        {"keywords": ["e-mail", "v1.2"], "topics": ["machine-learning"]},
     ],
 )
 @pytest.mark.integration

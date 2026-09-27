@@ -189,6 +189,8 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 		return p.errf(tok.Pos, "grouping is not supported: %s has no meaning in a query — there are no boolean operators to group, and terms are already a union", tok.Describe())
 	case tok.Type == lexer.NUL:
 		return p.errf(tok.Pos, "a NUL character is only allowed inside a quoted phrase")
+	case tok.Type == lexer.SPECIAL, tok.Type == lexer.PLUS, tok.Type == lexer.TILDE, tok.Type == lexer.MINUS:
+		return p.errf(tok.Pos, "%s is only allowed inside a quoted phrase", tok.Describe())
 	case tok.Type == lexer.NEWLINE:
 		return p.errf(tok.Pos, "unexpected %s: one command per instruction", tok.Describe())
 	case tok.Type.IsCommand():
@@ -361,15 +363,15 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		p.warnMisCasedKeyword(p.cur)
 		switch p.cur.Type {
 		case lexer.ENTITY, lexer.TOPIC:
-			key, value, err := p.parseAnchorField()
+			key, tok, value, err := p.parseAnchorField()
 			if err != nil {
 				return nil, err
 			}
 			var field FieldNode[string]
 			if key.Type == lexer.TOPIC {
-				field = TopicFieldNode{key: key, value: value}
+				field = TopicFieldNode{key: key, token: tok, value: value}
 			} else {
-				field = EntityFieldNode{key: key, value: value}
+				field = EntityFieldNode{key: key, token: tok, value: value}
 			}
 			anchors = append(anchors, AnchorFieldNode{field: field})
 		case lexer.VEC:
@@ -389,7 +391,6 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		case lexer.WHITESPACE, lexer.COLON:
 			p.next()
 		default:
-			fmt.Println("unexpected remember")
 			return nil, p.errUnexpected(p.cur)
 		}
 	}
@@ -434,35 +435,35 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		p.warnMisCasedKeyword(p.cur)
 		switch p.cur.Type {
 		case lexer.ENTITY:
-			key, value, err := p.parseAnchorField()
+			key, tok, value, err := p.parseAnchorField()
 			if err != nil {
 				return nil, err
 			}
-			r.entities = append(r.entities, AnchorFieldNode{field: EntityFieldNode{key: key, value: value}})
+			r.entities = append(r.entities, AnchorFieldNode{field: EntityFieldNode{key: key, token: tok, value: value}})
 		case lexer.TOPIC:
-			key, value, err := p.parseAnchorField()
+			key, tok, value, err := p.parseAnchorField()
 			if err != nil {
 				return nil, err
 			}
-			r.topics = append(r.topics, AnchorFieldNode{field: TopicFieldNode{key: key, value: value}})
+			r.topics = append(r.topics, AnchorFieldNode{field: TopicFieldNode{key: key, token: tok, value: value}})
 		case lexer.UNTIL:
 			if r.until.key.Type == lexer.UNTIL {
 				return nil, p.errDuplicate(p.cur)
 			}
-			key, t, err := p.parseTimeValue()
+			key, tok, t, err := p.parseTimeValue()
 			if err != nil {
 				return nil, err
 			}
-			r.until = UntilFieldNode[K]{key: key, value: t}
+			r.until = UntilFieldNode[K]{key: key, token: tok, value: t}
 		case lexer.SINCE:
 			if r.since.key.Type == lexer.SINCE {
 				return nil, p.errDuplicate(p.cur)
 			}
-			key, t, err := p.parseTimeValue()
+			key, tok, t, err := p.parseTimeValue()
 			if err != nil {
 				return nil, err
 			}
-			r.since = SinceFieldNode[K]{key: key, value: t}
+			r.since = SinceFieldNode[K]{key: key, token: tok, value: t}
 		case lexer.DEPTH:
 			if r.depth.key.Type == lexer.DEPTH {
 				return nil, p.errDuplicate(p.cur)
@@ -490,7 +491,7 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 				return nil, err
 			}
 			r.vec = vec
-		case lexer.WHITESPACE, lexer.COLON:
+		case lexer.WHITESPACE, lexer.COLON, lexer.NEWLINE:
 			p.next()
 		default:
 			return nil, p.errUnexpected(p.cur)
@@ -588,13 +589,13 @@ func (p *parser[K, P]) parseIntField() (lexer.Token, int, error) {
 // following token into the wrong role, so "since 7d 30d" parsed clean and
 // bounded the recall at 30d — a query silently answering a different question
 // than the one asked, which is worse than an error an agent can correct from.
-func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], error) {
+func (p *parser[K, P]) parseTimeValue() (lexer.Token, lexer.Token, containers.TimeValue[K], error) {
 	key := p.cur
 
 	p.next()
 
 	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, nil, p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
+		return lexer.Token{}, lexer.Token{}, nil, p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
 	}
 
 	tok := p.take()
@@ -603,12 +604,12 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 	var rangeErr *containers.DurationRangeError
 	switch {
 	case errors.As(err, &rangeErr):
-		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: out of range (at most %d%c)", strings.ToLower(key.Literal), tok.Describe(), rangeErr.Max, rangeErr.Unit)
+		return lexer.Token{}, lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: out of range (at most %d%c)", strings.ToLower(key.Literal), tok.Describe(), rangeErr.Max, rangeErr.Unit)
 	case err != nil:
-		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: expected a duration like 7d or a date like 2026-01-15", strings.ToLower(key.Literal), tok.Describe())
+		return lexer.Token{}, lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: expected a duration like 7d or a quoted date like '2026-01-15'", strings.ToLower(key.Literal), tok.Describe())
 	}
 
-	return key, t, nil
+	return key, tok, t, nil
 }
 
 func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
@@ -672,12 +673,13 @@ func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 	if p.isValue() {
 		return p.take(), nil
 	}
-	// A token with a diagnosis of its own keeps it: an unclosed quote and a
-	// parenthesis are not "the wrong kind of value", they are mistakes that
-	// name themselves, and saying so is worth more here than saying what a
-	// value slot wanted.
+	// A token with a diagnosis of its own keeps it: an unclosed quote, a
+	// parenthesis and a special character are not "the wrong kind of value",
+	// they are mistakes that name themselves, and saying so is worth more here
+	// than saying what a value slot wanted.
 	switch p.cur.Type {
-	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE, lexer.NUL:
+	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE, lexer.NUL,
+		lexer.SPECIAL, lexer.PLUS, lexer.TILDE, lexer.MINUS:
 		return p.cur, p.errUnexpected(p.cur)
 	}
 	return p.cur, p.errf(p.cur.Pos, "expected a word or quoted phrase, but found %s", p.cur.Describe())
@@ -686,13 +688,13 @@ func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 // parseAnchorField consumes a topic:/entity: clause. As in parseTimeValue, the
 // ':' is required: "topic food extra" used to shift tokens into the wrong roles
 // and return an unfiltered result set rather than a parse error.
-func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
+func (p *parser[K, P]) parseAnchorField() (lexer.Token, lexer.Token, string, error) {
 	key := p.cur
 
 	p.next()
 
 	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, "", p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
+		return lexer.Token{}, lexer.Token{}, "", p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
 	}
 
 	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my
@@ -703,14 +705,14 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 	tok, err := p.parseValue()
 
 	if err != nil {
-		return lexer.Token{}, "", err
+		return lexer.Token{}, lexer.Token{}, "", err
 	}
 
 	if err := p.errEmpty("an anchor value", tok.Literal, tok.Pos); err != nil {
-		return lexer.Token{}, "", err
+		return lexer.Token{}, lexer.Token{}, "", err
 	}
 
-	return key, strings.ToLower(tok.Literal), nil
+	return key, tok, strings.ToLower(tok.Literal), nil
 }
 
 // parseVecField consumes a vec:$name clause. Its errors are returned to the

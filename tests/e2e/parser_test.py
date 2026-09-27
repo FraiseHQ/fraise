@@ -458,6 +458,31 @@ def test_specials_inside_quotes_are_data(query, text):
 
 
 @pytest.mark.parametrize(
+    "text,char",
+    [
+        ("recall ferry; recall bridge", ";"),
+        ("recall e-mail", "-"),
+        ("recall ferry v1.2", "."),
+        ("recall ferry 🍊", "🍊"),
+        ("recall ferry topic:machine-learning", "-"),
+        ("recall ferry vec:$my_vec", "_"),
+        ("remember@1 'the ferry docks at dawn' topic:a.b", "."),
+    ],
+)
+def test_special_character_outside_quotes_is_rejected(query, text, char):
+    """Outside quotes a word is letters and digits only, and any other
+    character is a 400 naming it.
+
+    Absorbed into a word, a special character changed the query without an
+    error: "recall ferry; recall bridge" read "ferry;" as a term and the second
+    recall as a search for the word "recall". Quoting is the escape — the test
+    above pins that every one of these characters is data inside quotes.
+    """
+    status, body = query(text)
+    _reject(status, body, f'"{char}" is only allowed inside a quoted phrase', text)
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "remember@1 'the ferry docks at dawn'",
@@ -514,24 +539,26 @@ def test_unterminated_phrase_is_reported_as_such(query, text):
         ("recall ferry since:7", "invalid since value"),
         ("recall ferry since:d", "invalid since value"),
         ("recall ferry since:7dd", "invalid since value"),
-        ("recall ferry since:2026-13-45", "invalid since value"),
-        ("recall ferry since:2026-02-30", "invalid since value"),
-        ("recall ferry since:15-01-2026", "invalid since value"),
-        ("recall ferry since:2026/01/15", "invalid since value"),
+        ("recall ferry since:'2026-13-45'", "invalid since value"),
+        ("recall ferry since:'2026-02-30'", "invalid since value"),
+        ("recall ferry since:'15-01-2026'", "invalid since value"),
+        ("recall ferry since:'2026/01/15'", "invalid since value"),
         ("recall ferry until:later", "invalid until value"),
         ("recall ferry until:tomorrow", "invalid until value"),
         ("recall ferry until:0x10", "invalid until value"),
         ("recall ferry until:7 d", "invalid until value"),
         ("recall ferry until:--7d", "invalid until value"),
         ("recall ferry since:", "expected"),
+        # an unquoted date: the message shows the quoted form that parses
+        ("recall ferry since:2026-01-15", "a quoted date like '2026-01-15'"),
     ],
 )
 def test_invalid_temporal_values_name_the_accepted_forms(query, text, expected):
     """A temporal error has to teach the grammar, since duration-vs-date is
     exactly what an agent guesses wrong.
 
-    The existing message ("expected a duration like 7d or a date like
-    2026-01-15") is the model for every other value error in this file.
+    The existing message ("expected a duration like 7d or a quoted date like
+    '2026-01-15'") is the model for every other value error in this file.
     """
     status, body = query(text)
     _reject(status, body, expected, text)
@@ -573,10 +600,11 @@ def test_durations_longer_than_a_duration_holds_are_rejected(query, text, expect
         "recall ferry since:7d",
         "recall ferry since:0d",
         "recall ferry until:30d",
-        "recall ferry since:2026-01-15",
-        "recall ferry until:2026-12-31",
+        "recall ferry since:'2026-01-15'",
+        "recall ferry until:'2026-12-31'",
         "recall ferry since:7d until:30d",
-        "recall ferry since:2026-01-15 until:2026-12-31",
+        "recall ferry since:'2026-01-15' until:'2026-12-31'",
+        "recall ferry since:'2026-01-15T10:00:00Z'",  # quoted, a time of day fits
         "recall@1 ferry since:7d top:5",
     ],
 )
@@ -601,11 +629,11 @@ def test_valid_temporal_values_parse(query, text):
         ("recall@300 ferry", "out of range"),
         ("recall@99999 ferry", "out of range"),
         ("remember@256 'the ferry docks at dawn'", "out of range"),
-        ("recall@3.5 ferry", "whole number"),
+        ("recall@3.5 ferry", "expected a space after the command"),
         ("recall@abc ferry", "whole number"),
         ("recall@ ferry", "whole number"),
         ("recall@topic ferry", "whole number"),
-        ("recall@3@5 ferry", "unexpected"),
+        ("recall@3@5 ferry", "expected a space after the command"),
         ("recall@-1 ferry", "whole number"),
     ],
 )
@@ -684,7 +712,6 @@ def test_second_command_is_rejected_as_one_per_instruction(query, text):
     [
         ("recall ferry recall bridge", "recall"),
         ("recall ferry remember 'x'", "remember"),
-        ("recall ferry; recall bridge", "recall"),  # ';' is part of the word "ferry;"
     ],
 )
 def test_command_word_among_the_terms_is_a_word_to_quote(query, text, word):

@@ -138,12 +138,12 @@ test-integration-py: ## Run Python SDK integration tests (marked `integration`) 
 	@echo "$(CYAN)Starting fraise (docker) for Python SDK integration tests...$(RESET)"
 	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
 	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
-	  $(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m integration -v \
+	  $(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m integration -vvv \
 	    || ( $(FRAISE_LOGS); exit 1 )
 
 test-integration: build-go ## Run server + MCP bridge integration tests (pytest drives the built binary over stdio)
 	@echo "$(CYAN)Running server + MCP bridge integration tests...$(RESET)"
-	@FRAISE_BIN=$(CURDIR)/$(BIN_DIR)/$(BINARY_NAME) $(UV_CMD) run --package tests pytest tests/integration -v
+	@FRAISE_BIN=$(CURDIR)/$(BIN_DIR)/$(BINARY_NAME) $(UV_CMD) run --package tests pytest tests/integration -vvv
 
 test-py: ## Run Python unit tests with pytest (integration-marked tests excluded)
 	@echo "$(CYAN)Running Python tests...$(RESET)"

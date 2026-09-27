@@ -113,15 +113,32 @@ func Test_SpecialCharacters(t *testing.T) {
 		},
 		{
 			// The three anchor-clause markers are lexed but no production
-			// accepts them, so they exist only to be rejected by name. A term
-			// may still contain '-' and '+' — only a leading one is a token.
+			// accepts them, so they exist only to be rejected by name. A word is
+			// letters and digits, so a '-' inside one ends it rather than joining
+			// it: foo-bar is written 'foo-bar'.
 			name:  "anchor markers are their own tokens",
-			input: "+~- foo-bar",
+			input: "+~-foo-bar",
 			expected: []lexer.Token{
 				{Type: lexer.PLUS, Literal: "+"},
 				{Type: lexer.TILDE, Literal: "~"},
 				{Type: lexer.MINUS, Literal: "-"},
-				{Type: lexer.LITERAL, Literal: "foo-bar"},
+				{Type: lexer.LITERAL, Literal: "foo"},
+				{Type: lexer.MINUS, Literal: "-"},
+				{Type: lexer.LITERAL, Literal: "bar"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
+			// Any other character outside a phrase is a token of its own, one
+			// character long, so a word ends at it instead of absorbing it.
+			name:  "special characters are their own tokens",
+			input: "ferry;é_2",
+			expected: []lexer.Token{
+				{Type: lexer.LITERAL, Literal: "ferry"},
+				{Type: lexer.SPECIAL, Literal: ";"},
+				{Type: lexer.LITERAL, Literal: "é"},
+				{Type: lexer.SPECIAL, Literal: "_"},
+				{Type: lexer.LITERAL, Literal: "2"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -211,8 +228,8 @@ func Test_KeyLITERALsAsSubstrings(t *testing.T) {
 	}{
 		{"remembering"},
 		{"recall123"},
-		{"forget_me"},
-		{"and_then"},
+		{"forgetme"},
+		{"andthen"},
 		{"topical"},
 	}
 
@@ -424,16 +441,16 @@ func Test_ComplexQueries(t *testing.T) {
 		},
 		{
 			name:  "date filters",
-			input: "recall anna since:2024-01-01 until:2024-12-31",
+			input: "recall anna since:'2024-01-01' until:'2024-12-31'",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.SINCE, Literal: "since"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "2024-01-01"},
+				{Type: lexer.PHRASE, Literal: "2024-01-01"},
 				{Type: lexer.UNTIL, Literal: "until"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "2024-12-31"},
+				{Type: lexer.PHRASE, Literal: "2024-12-31"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -587,7 +604,7 @@ func TestPhrasePosIsLastCharacter(t *testing.T) {
 }
 
 func Test_VeryLongQuery(t *testing.T) {
-	input := "recall $vec anna bob charlie +topic:personal ~topic:draft since:2024-01-01 until:2024-12-31 top:10 depth:5"
+	input := "recall $vec anna bob charlie +topic:personal ~topic:draft since:'2024-01-01' until:'2024-12-31' top:10 depth:5"
 
 	expected := []lexer.Token{
 		{Type: lexer.RECALL, Literal: "recall"},
@@ -606,10 +623,10 @@ func Test_VeryLongQuery(t *testing.T) {
 		{Type: lexer.LITERAL, Literal: "draft"},
 		{Type: lexer.SINCE, Literal: "since"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.LITERAL, Literal: "2024-01-01"},
+		{Type: lexer.PHRASE, Literal: "2024-01-01"},
 		{Type: lexer.UNTIL, Literal: "until"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.LITERAL, Literal: "2024-12-31"},
+		{Type: lexer.PHRASE, Literal: "2024-12-31"},
 		{Type: lexer.TOP, Literal: "top"},
 		{Type: lexer.COLON, Literal: ":"},
 		{Type: lexer.LITERAL, Literal: "10"},
@@ -650,7 +667,7 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 		},
 		{
 			name:  "forget with multiple filters",
-			input: "forget anna topic:draft since:2023-01-01",
+			input: "forget anna topic:draft since:'2023-01-01'",
 			expected: []lexer.Token{
 				{Type: lexer.FORGET, Literal: "forget"},
 				{Type: lexer.LITERAL, Literal: "anna"},
@@ -659,7 +676,7 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 				{Type: lexer.LITERAL, Literal: "draft"},
 				{Type: lexer.SINCE, Literal: "since"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "2023-01-01"},
+				{Type: lexer.PHRASE, Literal: "2023-01-01"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},

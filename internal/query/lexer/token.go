@@ -79,6 +79,11 @@ const (
 	// than read as the end of input, so the rest of the query cannot be
 	// silently dropped after it.
 	NUL
+	// SPECIAL is any other character outside a phrase that is not a letter, a
+	// digit, whitespace or punctuation. It is its own token so a word ends at
+	// it and the parser can name it: a bare word that absorbed one read
+	// "ferry;" as a term, answering a query the caller never wrote.
+	SPECIAL
 
 	// end of line
 	EOL

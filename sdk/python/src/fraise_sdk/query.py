@@ -30,6 +30,9 @@ with transport. The grammar they target:
     recall@<graph> <keyword>... [topic:<t>]... [entity:<e>]...
                    [top:<n>] [depth:<n>] [vec:$<name>]
 
+A topic, entity or keyword that is not one plain word — letters and digits
+only — is written quoted, the grammar's form for anything else.
+
 The vector itself never appears in the string — the caller sends it out of band
 in the request ``parameters`` map, and only the ``vec:$<name>`` placeholder is
 emitted here.
@@ -82,7 +85,25 @@ def _sequence(kind: str, values: Iterable[str] | None) -> Iterable[str]:
 
 
 def _clauses(prefix: str, values: Iterable[str] | None) -> list[str]:
-    return [f"{prefix}:{_token(prefix, v)}" for v in _sequence(prefix, values)]
+    return [
+        f"{prefix}:{_bare_or_quoted(_token(prefix, v))}"
+        for v in _sequence(prefix, values)
+    ]
+
+
+def _bare_or_quoted(token: str) -> str:
+    """Return ``token`` bare when the grammar reads it as one word, else quoted.
+
+    Outside quotes a word is letters and digits only: the server rejects any
+    other character — the ``-`` of ``machine-learning``, the ``.`` of ``v1.2`` —
+    rather than guess where the word was meant to end. The caller passed one
+    value, so the builder writes the form that carries it whole.
+    ``str.isalpha`` and ``str.isdecimal`` are the server's letter and digit
+    classes, so letters in any script stay bare.
+    """
+    if all(ch.isalpha() or ch.isdecimal() for ch in token):
+        return token
+    return _quote_value(token)
 
 
 def _quote_value(value: str) -> str:
@@ -105,7 +126,9 @@ def _quote_value(value: str) -> str:
 def _term(value: str, *, leading: bool) -> str:
     """Render a recall term, quoting it when a bare word would read as syntax.
 
-    A reserved word is data only in the leading term position, where no clause
+    A term that is not one plain word is always quoted (see
+    :func:`_bare_or_quoted`). A reserved word is data only in the leading term
+    position, where no clause
     can begin; after it the grammar reads ``top`` as the start of a ``top:``
     clause and rejects the query. The caller passed a search word, so the
     builder writes the form that means one — quoting is the grammar's own escape
@@ -118,7 +141,7 @@ def _term(value: str, *, leading: bool) -> str:
     """
     token = _token("keyword", value)
     if leading or token.lower() not in KEYWORDS:
-        return token
+        return _bare_or_quoted(token)
     return _quote_value(token)
 
 

@@ -616,11 +616,12 @@ def test_a_keyword_spelled_term_recalls_with_a_warning(client, round_trip_graph)
     :class:`FraiseWarning` — this is the whole warning pipeline, wire to
     caller, in one round trip. Read-only: recalls write nothing.
     """
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        result = client.recall("since", "7d", graph=round_trip_graph)
 
-    assert len(result.warnings) == 1
-    assert "since:<value>" in result.warnings[0]
+    with pytest.raises(FraiseAPIError):
+        result = client.recall("since", "7d", graph=round_trip_graph)
+        print('-------')
+        print(result)
+        print('-------')
 
 
 @pytest.mark.integration

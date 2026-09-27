@@ -15,6 +15,8 @@ param_name = bare_word ;    (* matched exactly: never folded *)
 vec_field  = 'vec' ':' param_ref ;
 ```
 
+A name is a bare word, so it is letters and digits only: `$v2` binds the key `v2`, while `$my_vec` is rejected at the `_`.
+
 ## Only `vec` takes one
 
 <Note title="Dollar sign required" type="warning">

@@ -291,7 +291,7 @@ func TestRecallVectorDimensionMismatch(t *testing.T) {
 	}
 
 	w = s.do(http.MethodPost, "/api/v1/q",
-		`{"query":"recall@0 vec vec:$v","parameters":{"v":[0.1,0.2]}}`)
+		`{"query":"recall@0 'vec' vec:$v","parameters":{"v":[0.1,0.2]}}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
 	}

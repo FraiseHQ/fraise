@@ -106,7 +106,7 @@ func FuzzParseNeverPanics(f *testing.F) {
 		"recall '",
 		"@@@:::$$$",
 		"remember remember remember",
-		"recall x topic:'y' since:7d until:2026-01-15 depth:2 top:5",
+		"recall x topic:'y' since:7d until:'2026-01-15' depth:2 top:5",
 		"recall x \x00 y",
 		"recall 'a\x00b'",
 	} {
@@ -206,18 +206,18 @@ func TestRememberParser(t *testing.T) {
 
 // TestRecallParser checks that valid recall queries parse without error and
 // round-trip through String(). Fields are written in the order String() emits
-// them (terms, entities, topics, top, depth) so the reconstruction matches.
-//
-// since/until are intentionally omitted: the parser handles them, but a
-// containers.TimeValue cannot currently render back to its source text
-// (RelativeTime.String recurses, AbsoluteTime.String uses RFC822), so a
-// time field can't round-trip yet.
+// them (terms, entities, topics, top, depth, since, until) so the
+// reconstruction matches. A value that was quoted comes back quoted: printed
+// bare, 'e-mail' or '2026-01-15' is a query that no longer parses.
 func TestRecallParser(t *testing.T) {
 	queries := []string{
 		"recall anna",
 		"recall anna bob charlie",
 		"recall@2 anna",
 		"recall@2 anna bob entity:alice topic:job top:10 depth:5",
+		"recall 'e-mail' entity:'o''brien' topic:'machine-learning'",
+		"recall@2 anna since:7d until:'2026-01-15'",
+		"recall anna since:'2026-01-15T10:00:00Z'",
 	}
 
 	for _, q := range queries {
@@ -347,16 +347,25 @@ func TestRememberPhrase(t *testing.T) {
 }
 
 // TestRememberPhraseRoundTrip checks that a fact containing an apostrophe
-// survives String() reconstruction (the inner quote is re-escaped to ”).
+// survives String() reconstruction (the inner quote is re-escaped to ”), and
+// that a quoted anchor value comes back quoted.
 func TestRememberPhraseRoundTrip(t *testing.T) {
 	// String() always renders the graph selector (@0 by default), so include it.
-	q := "remember@0 'alice''s laptop' topic:devices"
-	cmd, _, err := parser.Parse[uint64, float32](q)
-	if err != nil {
-		t.Fatalf("Parse(%q) unexpected error: %v", q, err)
+	queries := []string{
+		"remember@0 'alice''s laptop' topic:devices",
+		"remember@0 'a fact' topic:'machine-learning' entity:'o''brien'",
 	}
-	if got := cmd.String(); got != q {
-		t.Errorf("String() = %q, want %q", got, q)
+
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](q)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", q, err)
+			}
+			if got := cmd.String(); got != q {
+				t.Errorf("String() = %q, want %q", got, q)
+			}
+		})
 	}
 }
 
@@ -515,6 +524,38 @@ func TestQuotedValues(t *testing.T) {
 	})
 }
 
+// TestBareWordIsLettersAndDigits pins the word rule from the accepting side: a
+// bare word is letters, in any script, and digits, and any other character a
+// value needs is written inside quotes, where it is data. Rejecting "e-mail"
+// bare is only safe while its quoted form reaches the same value.
+func TestBareWordIsLettersAndDigits(t *testing.T) {
+	cases := []struct {
+		query  string
+		terms  []string
+		topics []string
+	}{
+		{"recall café 東京 42", []string{"café", "東京", "42"}, nil},
+		{"recall 'e-mail' topic:'machine-learning' since:'2026-01-15'", []string{"e-mail"}, []string{"machine-learning"}},
+		{"recall 'ferry;' 'recall bridge'", []string{"ferry;", "recall bridge"}, nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+			}
+			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
+			if got := rc.Terms(); !slices.Equal(got, tc.terms) {
+				t.Errorf("Terms() = %q, want %q", got, tc.terms)
+			}
+			if got := rc.Topics(); !slices.Equal(got, tc.topics) {
+				t.Errorf("Topics() = %q, want %q", got, tc.topics)
+			}
+		})
+	}
+}
+
 // TestKeywordAsValue pins that a reserved word in value position parses as an
 // ordinary word. The lexer types "top" by spelling alone, so entity:top used
 // to be a 400 — and a single-word entity an LLM extracts (e.g. "top" from
@@ -532,13 +573,13 @@ func TestKeywordAsValue(t *testing.T) {
 	}{
 		{
 			name:     "entity top on remember",
-			query:    "remember 'a neutral test value.' topic:some-topic entity:top",
+			query:    "remember 'a neutral test value.' topic:'some-topic' entity:top",
 			entities: []string{"top"},
 			topics:   []string{"some-topic"},
 		},
 		{
 			name:   "topic top on remember",
-			query:  "remember 'a neutral test value.' topic:some-topic topic:top",
+			query:  "remember 'a neutral test value.' topic:'some-topic' topic:top",
 			topics: []string{"some-topic", "top"},
 		},
 		{
@@ -1077,6 +1118,14 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		// A NUL outside a phrase used to end the query where it stood, and
 		// everything after it was dropped without a word.
 		{"recall zebras\x00food", "NUL character is only allowed inside a quoted phrase"},
+		// Outside a phrase a word is letters and digits only. Any other
+		// character is rejected for itself: absorbed into a word, "ferry;" was
+		// a term and the recall after it ran as a search for the word "recall".
+		{"recall ferry; recall bridge", `";" is only allowed inside a quoted phrase`},
+		{"recall e-mail", `"-" is only allowed inside a quoted phrase`},
+		{"recall zebras topic:machine-learning", `"-" is only allowed inside a quoted phrase`},
+		{"recall zebras vec:$my_vec", `"_" is only allowed inside a quoted phrase`},
+		{"recall zebras since:2026-01-15", "a quoted date like '2026-01-15'"},
 		// A newline in a value slot is a second instruction starting early.
 		{"recall zebras topic:\nfood", "one command per instruction"},
 		// No better diagnosis exists for a stray '@'.

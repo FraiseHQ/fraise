@@ -24,6 +24,7 @@ package lexer
 
 import (
 	"strings"
+	"unicode"
 )
 
 type Position struct {
@@ -77,8 +78,11 @@ func isBlank(ch rune) bool {
 	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r') || ch == rune('\x00')
 }
 
-func isPunctuation(ch rune) bool {
-	return ch == rune('@') || ch == rune(':') || ch == rune('(') || ch == rune(')') || ch == rune('$')
+// isWordCharacter reports whether ch can appear in a bare word: a letter, in any
+// script, or a digit. Every other character outside a phrase is syntax or
+// special, so a word that needs one — "e-mail", "2026-01-15" — is quoted.
+func isWordCharacter(ch rune) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch)
 }
 
 func (l *Lexer) Next() Token {
@@ -114,7 +118,7 @@ func (l *Lexer) Next() Token {
 	case rune('\n'):
 		l.readCharacter()
 		tok = Token{Type: NEWLINE, Literal: string(l.Character)}
-	case rune(' '):
+	case rune(' '), rune('\t'), rune('\r'):
 		l.readCharacter()
 		tok = Token{Type: WHITESPACE, Literal: string(l.Character)}
 	case rune(0):
@@ -128,6 +132,11 @@ func (l *Lexer) Next() Token {
 			tok = Token{Type: EOL}
 		}
 	default:
+		if !isWordCharacter(l.peek()) {
+			l.readCharacter()
+			tok = Token{Type: SPECIAL, Literal: string(l.Character)}
+			break
+		}
 		tokLiteral := l.scanString()
 		tokType, reserved := KeywordsMap[tokLiteral]
 		if !reserved {
@@ -159,17 +168,11 @@ func (l *Lexer) peek() rune {
 	return l.Input[l.CurrentPos.Column]
 }
 
-// scans a string
+// scans a bare word: the run of word characters from the current position
 func (l *Lexer) scanString() string {
 	var res []rune
-f:
-	for {
-		switch isBlank(l.peek()) || isPunctuation(l.peek()) {
-		case true:
-			break f
-		default:
-			res = append(res, l.peek())
-		}
+	for isWordCharacter(l.peek()) {
+		res = append(res, l.peek())
 		l.readCharacter()
 	}
 	return string(res)

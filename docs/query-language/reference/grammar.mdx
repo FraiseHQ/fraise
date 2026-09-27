@@ -1,6 +1,6 @@
 ---
 title: "Grammar"
-description: "The complete EBNF grammar of the Fraise Query Language, v1"
+description: "The complete EBNF grammar of the Fraise Query Language, v2"
 navIcon: "📜"
 ---
 
@@ -8,7 +8,7 @@ The normative grammar. Everything else in this section is commentary on it.
 
 ```ebnf
 (* ============================================================ *)
-(* Fraise Query Language (FQL) — v1                             *)
+(* Fraise Query Language (FQL) — v2                             *)
 (* ============================================================ *)
 
 query           = recall_query | remember_query ;
@@ -72,15 +72,21 @@ graph_selector  = '@' integer ;                (* default 0; lexed WITH the comm
 (* LITERALS                                                     *)
 (* ------------------------------------------------------------ *)
 
-bare_word         = ?[^\s\0:'$()@+~-][^\s\0:'$()@]*? ; (* '-' may appear inside a word, never at its start *)
+(* Outside a phrase a word is letters and digits only. Space, tab *)
+(* and CR separate words, a newline ends the instruction, and     *)
+(* ':' "'" '$' '@' are syntax; every other character is special   *)
+(* and is rejected by name. A value that needs one is quoted.     *)
+bare_word         = ?[\p{L}\p{Nd}]+? ;         (* letters in any script, and digits *)
 phrase            = "'" { ?[^']? | "''" } "'" ; (* opaque: any char is literal; '' is an escaped quote *)
 identifier        = bare_word ;                (* folded to lower case on the way in *)
 quoted_identifier = "'" { ?[^']? | "''" } "'" ; (* same opaque rule as phrase *)
 integer           = ?[0-9]+? ;                 (* non-negative; '-' is its own token *)
-time_value        = duration | iso_date ;
+time_value        = duration | "'" absolute_time "'" ;   (* an absolute time carries '-', so it is quoted *)
 duration          = integer time_unit ;        (* at most ~292 years, e.g. 106751d: see Bounds *)
 time_unit         = 's' | 'm' | 'h' | 'd' | 'w' ;
-iso_date          = ?\d{4}-\d{2}-\d{2}? ;         (* date only: ':' would end the token *)
+absolute_time     = iso_date | rfc3339 ;
+iso_date          = ?\d{4}-\d{2}-\d{2}? ;
+rfc3339           = ?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})? ;
 param_ref         = '$' param_name ;
 param_name        = bare_word ;                (* matched exactly against a key of the request's parameters: never folded *)
 ```
