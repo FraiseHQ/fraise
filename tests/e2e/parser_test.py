@@ -219,7 +219,7 @@ def test_leading_reserved_word_runs_and_warns(query, text):
     mistyped queries silent.
     """
     status, body = query(text)
-    _reject(status, body, f"term \"{text.split(' ')[1]}\" is also a keyword:", text)
+    _reject(status, body, f'term "{text.split(" ")[1]}" is also a keyword:', text)
 
 
 @pytest.mark.parametrize(
@@ -231,25 +231,21 @@ def test_leading_reserved_word_runs_and_warns(query, text):
         "recall recall",
     ],
 )
-def test_leading_command_word_runs_and_warns_with_the_quote(query, text):
-    """A leading command word runs as a term search and warns, naming the quote.
+def test_leading_command_word_is_rejected_with_the_quote(query, text):
+    """A leading command word is a 400 naming the quote.
 
     A command word has no clause reading: recall:<value> is itself an error, so
-    the warning that used to offer it sent the caller from one rejection to the
-    next. It now says only what works — quote the word — and never suggests a
-    clause spelled with a command.
+    a message offering it sent the caller from one rejection to the next. It
+    says only what works — quote the word — and never suggests a clause spelled
+    with a command.
     """
     word = text.split()[1]
     status, body = query(text)
-    _accept(status, body, text)
-    warnings = body.get("warnings") or []
-    assert warnings, f"{text!r}: expected a warning naming the command word, got none"
-    joined = " ".join(str(w) for w in warnings)
-    assert f"quote it ('{word}')" in joined, (
-        f"{text!r}: warning {warnings!r} should tell the caller to quote the word"
+    _reject(
+        status, body, f"term \"{word}\" is also a command: quote it ('{word}')", text
     )
-    assert f"{word}:<value>" not in joined, (
-        f"{text!r}: warning {warnings!r} offers a clause no command word has"
+    assert f"{word}:<value>" not in body["error"], (
+        f"{text!r}: error {body['error']!r} offers a clause no command word has"
     )
 
 
@@ -391,7 +387,8 @@ def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
         ("recall ferry vec:v", "param field operator $"),
         ("recall ferry vec:query", "param field operator $"),
         ("recall ferry vec:$", "expected literal"),
-        ("recall ferry vec$:v", "expected colon"),
+        # without its ':', vec is a keyword among the terms, not a clause
+        ("recall ferry vec$:v", 'term "vec" is also a keyword'),
         ("recall ferry vec:$$", "expected literal"),
         ("recall ferry vec:$v extra", "unexpected"),
         ("remember@1 'the ferry docks at dawn' vec:v", "param field operator $"),
@@ -659,7 +656,6 @@ def test_grouping_is_rejected_as_unsupported(query, text):
     "text",
     [
         "remember@1 'a' remember@1 'b'",
-        "recall ferry; recall bridge",
         "recall ferry\nrecall bridge",
         "recall ferry\nbridge",
     ],
@@ -688,6 +684,7 @@ def test_second_command_is_rejected_as_one_per_instruction(query, text):
     [
         ("recall ferry recall bridge", "recall"),
         ("recall ferry remember 'x'", "remember"),
+        ("recall ferry; recall bridge", "recall"),  # ';' is part of the word "ferry;"
     ],
 )
 def test_command_word_among_the_terms_is_a_word_to_quote(query, text, word):

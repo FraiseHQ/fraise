@@ -333,7 +333,9 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
 
-	p.next()
+	if _, err := p.expect(lexer.WHITESPACE); err != nil {
+		return nil, p.errf(p.cur.Pos, "expected a space after the command, found %s", p.cur.Describe())
+	}
 
 	// Remember carries exactly one quoted phrase (the fact). The lexer returns
 	// the whole '...' as a single PHRASE token, so consuming it also consumes
@@ -412,7 +414,9 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		r.selector = GraphSelectorNode{key: key, value: value}
 	}
 
-	p.next()
+	if _, err := p.expect(lexer.WHITESPACE); err != nil {
+		return nil, p.errf(p.cur.Pos, "expected a space after the command, found %s", p.cur.Describe())
+	}
 
 	terms, err := p.parseTerms()
 	if err != nil {

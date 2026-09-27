@@ -436,6 +436,7 @@ def test_a_miscased_repeat_is_still_a_duplicate(query):
     assert status == 400, body
     assert "duplicate" in body.get("error", "").lower(), body.get("error")
 
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -551,8 +552,8 @@ def test_depth_without_an_anchor_runs_but_warns(query, text):
         ("recall zebras top 5 depth:2", "top"),
         ("recall zebras depth 2 top:3", "depth"),
         ("remember@5 'a colonprobe fact' topic food entity:x", "topic"),
-        ("recall zebras since:soon top:3", "since"),
-        ("recall zebras depth:abc top:3", "depth"),
+        ("recall zebras since:soon top:3", "soon"),
+        ("recall zebras depth:abc top:3", "abc"),
         ("recall@abc zebras top:3", "abc"),
     ],
 )
