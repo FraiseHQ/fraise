@@ -132,7 +132,7 @@ def test_parse_warnings_ride_beside_the_results(mcp):
     """A query that runs with a parse warning delivers the warning on both
     faces: in the structured payload and rendered for the model.
     """
-    result = mcp.call("recall", {"query": "recall@1 since 7d"})
+    result = mcp.call("recall", {"query": "recall@1 opera Since:7d"})
     assert not result.get("isError", False), result
     assert result["structuredContent"].get("warnings"), (
         "the keyword-shaped term must warn"
