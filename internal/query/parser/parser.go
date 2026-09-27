@@ -372,6 +372,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		case lexer.WHITESPACE, lexer.COLON:
 			p.next()
 		default:
+			fmt.Println("unexpected remember")
 			return nil, p.errUnexpected(p.cur)
 		}
 	}
@@ -509,43 +510,46 @@ func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
 		return nil, nil
 	}
 
-	tok, err := p.parseValue()
-	if err != nil {
-		return nil, err
-	}
-	if err := p.errEmpty("a search term", tok.Literal, tok.Pos); err != nil {
-		return nil, err
-	}
-
-	// The ambiguity cannot be resolved here — "recall since 7d" is one ':' from
-	// "recall since:7d", and the wrong reading silently answers a
-	// differently-scoped question — so it is surfaced: the query runs as the
-	// term search and carries a warning naming both readings. A quoted phrase
-	// never warns; quoting is the deliberate form.
-	// A command word has no clause reading to offer — recall:<value> is
-	// itself an error — so its warning names only the quote.
-	if keyword, reserved := lexer.KeywordsMap[strings.ToLower(tok.Literal)]; reserved && tok.Type != lexer.PHRASE {
-		msg := fmt.Sprintf("term %q is also a keyword: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
-			tok.Literal, strings.ToLower(tok.Literal), tok.Literal)
-		if keyword.IsCommand() {
-			msg = fmt.Sprintf("term %q is also a command: quote it ('%s') to search for the word", tok.Literal, tok.Literal)
-		}
-		p.warns = append(p.warns, Warning{Msg: msg, Pos: tok.Pos})
-	}
-
-	terms := []LiteralFieldNode{TermNode{token: tok, value: strings.ToLower(tok.Literal)}}
-
-	for p.cur.Type == lexer.LITERAL || p.cur.Type == lexer.PHRASE {
+	terms := []LiteralFieldNode{}
+loop:
+	for {
 		if p.cur.IsMisCasedKeyword() {
 			return nil, p.errUnexpected(p.cur)
 		}
-		if err := p.errEmpty("a search term", p.cur.Literal, p.cur.Pos); err != nil {
-			return nil, err
-		}
-		terms = append(terms, TermNode{token: p.cur, value: strings.ToLower(p.cur.Literal)})
-		p.next()
-	}
+		switch p.cur.Type {
+		case lexer.LITERAL, lexer.PHRASE:
+			tok, err := p.parseValue()
+			if err != nil {
+				return nil, err
+			}
+			if err := p.errEmpty("a search term", tok.Literal, tok.Pos); err != nil {
+				return nil, err
+			}
 
+			// The ambiguity cannot be resolved here — "recall since 7d" is one ':' from
+			// "recall since:7d", and the wrong reading silently answers a
+			// differently-scoped question — so it is surfaced: the query runs as the
+			// term search and carries a warning naming both readings. A quoted phrase
+			// never warns; quoting is the deliberate form.
+			// A command word has no clause reading to offer — recall:<value> is
+			// itself an error — so its warning names only the quote.
+			if keyword, reserved := lexer.KeywordsMap[strings.ToLower(tok.Literal)]; reserved && tok.Type != lexer.PHRASE {
+				msg := fmt.Sprintf("term %q is also a keyword: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
+					tok.Literal, strings.ToLower(tok.Literal), tok.Literal)
+				if keyword.IsCommand() {
+					msg = fmt.Sprintf("term %q is also a command: quote it ('%s') to search for the word", tok.Literal, tok.Literal)
+				}
+				p.warns = append(p.warns, Warning{Msg: msg, Pos: tok.Pos})
+			}
+			if err := p.errEmpty("a search term", tok.Literal, tok.Pos); err != nil {
+				return nil, err
+			}
+			terms = append(terms, TermNode{token: tok, value: strings.ToLower(tok.Literal)})
+			p.next()
+		default:
+			break loop
+		}
+	}
 	return terms, nil
 }
 
@@ -688,6 +692,8 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 	key := p.cur
 
 	p.next()
+
+	fmt.Println(p.cur.Literal)
 
 	if _, err := p.expect(lexer.COLON); err != nil {
 		return lexer.Token{}, "", p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
