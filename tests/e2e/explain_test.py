@@ -209,9 +209,7 @@ def test_explain_round_trips_fact_provenance(query, explain):
     """A remembered source comes back only from the explicit explain surface."""
     value = "deploy policy requires two approvals"
     source = "github:policy/17"
-    status, body = query(
-        f"remember@2 '{value}' topic:deploy-policy source:'{source}'"
-    )
+    status, body = query(f"remember@2 '{value}' topic:deploy-policy source:'{source}'")
     assert status == 200, body.get("error")
 
     status, body = query("recall@2 deploy topic:deploy-policy")

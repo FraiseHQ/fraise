@@ -418,10 +418,13 @@ def test_the_builders_agree_with_the_graphs_vector_dimension(
 
 def test_remember_with_source_quotes_the_provenance_reference():
     """A source is an opaque external reference, so spaces and case survive."""
-    assert build_remember(
-        "deploys need approval",
-        source="GitHub://Policy Docs/17",
-    ) == "remember@0 'deploys need approval' source:'GitHub://Policy Docs/17'"
+    assert (
+        build_remember(
+            "deploys need approval",
+            source="GitHub://Policy Docs/17",
+        )
+        == "remember@0 'deploys need approval' source:'GitHub://Policy Docs/17'"
+    )
 
 
 def test_remember_source_uses_phrase_escaping():

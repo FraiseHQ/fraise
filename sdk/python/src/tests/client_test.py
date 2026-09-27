@@ -795,9 +795,7 @@ def test_remember_posts_source_reference(session, sent):
     )
 
 
-def test_recall_explain_uses_explain_endpoint_and_parses_traceability(
-    session, respond
-):
+def test_recall_explain_uses_explain_endpoint_and_parses_traceability(session, respond):
     """explain=True opts into the debug endpoint and its typed evidence."""
     respond(
         session,
