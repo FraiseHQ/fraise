@@ -568,3 +568,46 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 		}
 	})
 }
+
+
+func TestStreamCommitProvenanceAppearsOnlyInExplain(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+	write := &Remember[uint64, float32]{
+		Value: "deploys require two approvals",
+		Source: "github:policy/17",
+	}
+	if err := NewStream[uint64, float32](write).Commit(g); err != nil {
+		t.Fatalf("write Commit() = %v", err)
+	}
+
+	recall := func(explain bool) *Stream[uint64, float32] {
+		s := NewStream[uint64, float32](&Recall[uint64, float32]{
+			Keywords: []string{"deploys", "approvals"},
+			Parameters: QueryParameters[uint64]{Top: 10},
+		})
+		s.Explain = explain
+		return s
+	}
+
+	plain := recall(false)
+	if err := plain.Commit(g); err != nil {
+		t.Fatalf("plain Commit() = %v", err)
+	}
+	if len(plain.Result.Hits) == 0 {
+		t.Fatal("plain recall returned no hits")
+	}
+	if plain.Result.Hits[0].Source != "" || plain.Result.ExplainVersion != "" {
+		t.Fatalf("plain recall leaked explain metadata: %+v", plain.Result.Hits[0])
+	}
+
+	explained := recall(true)
+	if err := explained.Commit(g); err != nil {
+		t.Fatalf("explained Commit() = %v", err)
+	}
+	if got := explained.Result.Hits[0].Source; got != "github:policy/17" {
+		t.Fatalf("explained source = %q, want github:policy/17", got)
+	}
+	if explained.Result.ExplainVersion != ExplainVersion {
+		t.Fatalf("explain version = %q, want %q", explained.Result.ExplainVersion, ExplainVersion)
+	}
+}

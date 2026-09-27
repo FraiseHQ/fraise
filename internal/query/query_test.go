@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -251,5 +252,48 @@ func TestHitMarshalSerializesContributions(t *testing.T) {
 		`{"source":"graph","score":2,"rank":0,"via":"weather","degree":3,"count":2}]}`
 	if got != want {
 		t.Errorf("Marshal(Hit) = %s, want %s", got, want)
+	}
+}
+
+
+func TestParseRememberCarriesAndBoundsSource(t *testing.T) {
+	cfg := config.New()
+	cfg.DB.MaxSourceLength = 16
+
+	got, _, err := query.Parse[string, float32](
+		"remember 'deploys need approval' source:'doc://policy/17'",
+		nil,
+		cfg,
+	)
+	if err != nil {
+		t.Fatalf("Parse() unexpected error: %v", err)
+	}
+	remember := got.(*query.Remember[string, float32])
+	if remember.Source != "doc://policy/17" {
+		t.Fatalf("Source = %q, want doc://policy/17", remember.Source)
+	}
+
+	_, _, err = query.Parse[string, float32](
+		"remember 'x' source:'doc://this-reference-is-too-long'",
+		nil,
+		cfg,
+	)
+	if !errors.Is(err, query.ErrLimitExceeded) {
+		t.Fatalf("overlong source error = %v, want ErrLimitExceeded", err)
+	}
+}
+
+func TestHitMarshalSourceIsOptIn(t *testing.T) {
+	var node graph.Node[string] = graph.Fact[string]{NodeAttributes: graph.NodeAttributes{
+		Value: "deploys need approval",
+		Timestamp: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+	}}
+	h := query.Hit[string, float32]{Node: &node, Score: 1, Source: "doc://policy/17"}
+	out, err := json.Marshal(h)
+	if err != nil {
+		t.Fatalf("Marshal(Hit) = %v", err)
+	}
+	if got := string(out); !strings.Contains(got, `"source":"doc://policy/17"`) {
+		t.Fatalf("Marshal(Hit) = %s, want provenance source", got)
 	}
 }

@@ -1320,3 +1320,27 @@ func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 		}
 	}
 }
+
+
+func TestRememberSourcePreservesReferenceAndRejectsDuplicates(t *testing.T) {
+	cmd, _, err := parser.Parse[uint64, float32]("remember 'deploys need approval' source:'GitHub://Policy/17'")
+	if err != nil {
+		t.Fatalf("Parse() unexpected error: %v", err)
+	}
+	remember := cmd.(*parser.RememberCommandNode[float32])
+	if got := remember.Source(); got != "GitHub://Policy/17" {
+		t.Fatalf("Source() = %q, want exact external reference", got)
+	}
+
+	_, _, err = parser.Parse[uint64, float32]("remember 'x' source:a source:b")
+	if err == nil || !strings.Contains(err.Error(), "duplicate source clause") {
+		t.Fatalf("duplicate source Parse() error = %v, want duplicate-source error", err)
+	}
+}
+
+func TestSourceIsRememberOnly(t *testing.T) {
+	_, _, err := parser.Parse[uint64, float32]("recall deploy source:'doc://17'")
+	if err == nil {
+		t.Fatal("recall source: parsed, want provenance to remain a remember-only clause")
+	}
+}
