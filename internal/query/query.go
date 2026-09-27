@@ -54,9 +54,14 @@ type QueryContext struct {
 	GraphID uint8
 }
 
+const ExplainVersion = "unstable-1"
+
 type QueryResult[K comparable, P float32 | float64] struct {
 	Count int         `json:"count"`
 	Hits  []Hit[K, P] `json:"hits"`
+
+	// ExplainVersion names the explicitly unstable explain envelope.
+	ExplainVersion string `json:"explain_version,omitempty"`
 
 	// Background is the query's background rate ρ₀ — the average seed mass
 	// per unit of anchor degree the traversal observed — attached only in
@@ -69,6 +74,9 @@ type QueryResult[K comparable, P float32 | float64] struct {
 type Hit[K comparable, P float32 | float64] struct {
 	Node  *graph.Node[K]
 	Score P
+
+	// Source is the fact provenance attached only in explain mode.
+	Source string
 
 	// Contributions is the hit's per-source breakdown, populated only when
 	// the stream ran in explain mode; nil otherwise. nil doubles as the
@@ -111,11 +119,13 @@ func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 		Value         string               `json:"value"`
 		Timestamp     time.Time            `json:"timestamp"`
 		Score         P                    `json:"score"`
+		Source        string               `json:"source,omitempty"`
 		Contributions []HitContribution[P] `json:"contributions,omitempty"`
 	}{
 		Value:         node.GetValue(),
 		Timestamp:     node.GetTimestamp(),
 		Score:         h.Score,
+		Source:        h.Source,
 		Contributions: h.Contributions,
 	})
 }
@@ -155,10 +165,15 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 
 	switch n := cmd.(type) {
 	case *parser.RememberCommandNode[P]:
+		if src := n.Source(); len(src) > c.DB.MaxSourceLength {
+			logger.Warn("Rejecting remember over source ceiling", "length", len(src), "max", c.DB.MaxSourceLength)
+			return nil, nil, fmt.Errorf("%w: source is %d bytes, max %d — record a reference to the origin, not the origin", ErrLimitExceeded, len(src), c.DB.MaxSourceLength)
+		}
 		qo := &Remember[K, P]{
 			Value:    n.Value(),
 			Entities: n.Entities(),
 			Topics:   n.Topics(),
+			Source:   n.Source(),
 		}
 		qo.SetGraphID(n.Selector())
 
