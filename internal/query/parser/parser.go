@@ -616,9 +616,7 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 
 	key := p.cur
 
-	if _, err := p.expect(lexer.AT); err != nil {
-		return lexer.Token{}, 0, p.errf(p.cur.Pos, "Expected @, but found %s", p.cur.Describe())
-	}
+	p.next()
 
 	tok := p.take()
 
@@ -722,13 +720,7 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, lexer.Token, string, err
 func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {
 	r := VecFieldNode[P]{}
 
-	tok, err := p.expect(lexer.VEC)
-
-	if err != nil {
-		return nil, err
-	}
-
-	r.key = tok
+	r.key = p.take()
 
 	if _, err := p.expect(lexer.COLON); err != nil {
 		return nil, p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
@@ -738,7 +730,7 @@ func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {
 		return nil, p.errf(p.cur.Pos, "expected param field operator $, but found %s", p.cur.Describe())
 	}
 
-	tok, err = p.expect(lexer.LITERAL)
+	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
 		return nil, err

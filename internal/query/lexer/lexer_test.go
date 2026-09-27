@@ -842,3 +842,16 @@ func TestScanPhraseUnterminatedRecordsPosition(t *testing.T) {
 		t.Fatalf("first token = {%v %q}, want LITERAL \"foo\"", got.Type, got.Literal)
 	}
 }
+
+// TestWhitespaceRunIsOneToken pins that a run of blanks — spaces, tabs,
+// carriage returns, in any mix — is one WHITESPACE token, so the parser sees
+// one separator however the caller spaced the query.
+func TestWhitespaceRunIsOneToken(t *testing.T) {
+	l := lexer.New("recall  \t \r zebras")
+	want := []lexer.TokenType{lexer.RECALL, lexer.WHITESPACE, lexer.LITERAL, lexer.EOL}
+	for i, typ := range want {
+		if got := l.Next(); got.Type != typ {
+			t.Fatalf("token %d = {%v %q}, want type %v", i, got.Type, got.Literal, typ)
+		}
+	}
+}
