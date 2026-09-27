@@ -42,7 +42,6 @@ from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
 from fraise_sdk.models import RecallResult
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
-
 QUERY_ENDPOINT = "/api/v1/q"
 EXPLAIN_ENDPOINT = "/api/v1/explain"
 
@@ -365,6 +364,7 @@ class FraiseClient:
             text: the raw query string.
             parameters: out-of-band vector bindings the query references.
             timeout: per-call override of the client's timeout.
+            endpoint: query route to post to; explain uses the same request body.
 
         Returns:
             The HTTP status code and the decoded JSON body, ``{}`` when the
