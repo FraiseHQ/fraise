@@ -405,8 +405,6 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	}
 	r.terms = terms
 
-	p.next()
-
 	// Clauses follow the terms. Each modifier is single-valued and each anchor
 	// is a list, so a repeat means opposite things for the two and only the
 	// modifiers reject it.
@@ -692,8 +690,6 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 	key := p.cur
 
 	p.next()
-
-	fmt.Println(p.cur.Literal)
 
 	if _, err := p.expect(lexer.COLON); err != nil {
 		return lexer.Token{}, "", p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
