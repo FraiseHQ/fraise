@@ -1,0 +1,103 @@
+---
+title: "Claude Desktop and ChatGPT"
+description: "Give the chat apps long-term memory: fraise mcp in Claude Desktop (including Cowork), and what it takes to reach it from ChatGPT"
+navIcon: "💬"
+---
+
+`fraise mcp` is the same stdio bridge the [coding agents](/docs/integrations/mcp) use. Claude Desktop runs local MCP servers directly, so it takes one config entry. ChatGPT only speaks to remote servers, so it needs a tunnel or an HTTP endpoint in front of the bridge, and a paid plan.
+
+<Note title="Before you register" type="note">
+Start the daemon first (`brew services start fraise`, or `systemctl --user start fraise` on Linux) and note the bridge's full path: `which fraise`. The bridge exits at startup when it cannot reach the daemon.
+</Note>
+
+## Claude Desktop (chat and Cowork)
+
+Claude Desktop starts the servers listed in `claude_desktop_config.json` when the app launches, and every chat and Cowork session started after that sees their tools.
+
+1. **Quit Claude fully** (Cmd+Q on macOS). The app rewrites this file on exit, so an edit made while it is running is lost.
+2. Add a `mcpServers` entry to the config file, keeping whatever else is in it:
+
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+   ```json
+   {
+     "mcpServers": {
+       "fraise": { "command": "/opt/homebrew/bin/fraise", "args": ["mcp"] }
+     }
+   }
+   ```
+
+   Use the absolute path from `which fraise`; the app does not inherit your shell's `PATH`. If the file already holds other keys, add `mcpServers` beside them rather than replacing the file. On macOS this does it in one step:
+
+   ```sh
+   python3 -c 'import json,os,subprocess as s
+   p=os.path.expanduser("~/Library/Application Support/Claude/claude_desktop_config.json")
+   d=json.load(open(p)) if os.path.exists(p) else {}
+   d.setdefault("mcpServers",{})["fraise"]={"command":s.check_output(["which","fraise"],text=True).strip(),"args":["mcp"]}
+   json.dump(d,open(p,"w"),indent=2)'
+   ```
+3. **Open Claude again.** In the chat box, **+** → **Connectors** lists `fraise` with its two tools. Settings → Developer shows the server's status and a link to its log if it failed to start.
+4. **Start a new session.** A session only sees the servers that were running when it began.
+
+To pick a graph other than 0, pass it to the bridge: `"args": ["mcp", "--graph", "1"]`. One graph per purpose (a project, a person) keeps recalls scoped.
+
+### Make the model use it
+
+The bridge carries the tool schemas, not the habit. Put the policy where Claude reads it at the start of a session:
+
+- **Cowork on a folder:** a `CLAUDE.md` in that folder with two lines:
+
+  ```
+  Memory: the fraise MCP server is the long-term memory for this project.
+  Run `recall topic:<project> top:20` before the first substantive answer; remember one self-contained, dated fact per decision under topic:<project>.
+  ```
+- **Any session:** a skill with the same policy, saved under Settings → Skills, so it applies whether or not a folder is connected.
+- **Scheduled tasks:** each runs fresh, so its prompt has to say it: `start with recall topic:<project> top:20`.
+
+Two habits are enough: `recall` before answering anything that leans on an earlier decision; `remember` only facts that will still matter in a later session, one per call, with the anchors that make it findable. See [Context engineering](/docs/getting-started/context-engineering).
+
+## ChatGPT
+
+ChatGPT does not run local MCP servers. It connects to a **remote** server over HTTPS (Streamable HTTP or SSE, OAuth or no auth), on the web app only, and custom servers are gated by plan:
+
+| Plan | Custom MCP servers |
+|---|---|
+| Free, Plus | not available |
+| Pro | developer mode, **read tools only**: `recall` works, `remember` is refused |
+| Business, Enterprise, Edu | full MCP including write tools, once an admin enables developer mode |
+
+So `remember` from ChatGPT needs a Business or Enterprise workspace. On Pro, ChatGPT can read a memory that Claude or your agents write.
+
+### Reach the bridge from ChatGPT
+
+Two ways to put a remote endpoint in front of `fraise mcp`:
+
+- **OpenAI's Secure MCP Tunnel** (their supported route for private servers): `tunnel-client` runs on your machine, connects outbound to OpenAI, and forwards to a local stdio command or HTTP URL. It takes the stdio bridge as it is: `tunnel-client init` with `--mcp-command "fraise mcp"`, then `tunnel-client doctor --profile <name> --explain`, then `tunnel-client run --profile <name>` and leave it running. Nothing is exposed to the public internet. Follow the [Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) for the install and login steps of your plan.
+- **A public HTTPS URL** in front of a Streamable HTTP MCP endpoint (a tunnel such as `cloudflared` or `ngrok`, or a hosted machine). `fraise mcp` is stdio-only today; the Python MCP server (#317) will expose Streamable HTTP. Until then a stdio-to-HTTP proxy works. Anyone with the URL can read and write your memory, so pair it with OAuth or keep the tunnel private.
+
+### Register it in ChatGPT
+
+1. Turn on developer mode: **Settings → Apps → Advanced settings → Developer mode** (Business workspaces: an admin enables it, and only admins can publish).
+2. **Settings → Apps → Create**: enter the endpoint (the tunnel or public URL), a name and description, and the authentication method.
+3. **Scan Tools**, then **Create**. The app appears under **Enabled Apps** with a `Dev` label; on Business and Enterprise an admin publishes it from **Workspace settings → Apps → Drafts** for others to use.
+4. In a chat, pick the app from the tools menu or @mention it. App selection applies per message, so mention it again when a follow-up needs memory. ChatGPT asks for confirmation before `remember`, since it is a write action.
+
+<Note title="Tool changes need a republish" type="warning">
+After approval, ChatGPT keeps a frozen snapshot of the server's tools. A new bridge version that changes a tool's schema does not apply until an admin refreshes and republishes the app.
+</Note>
+
+### What ChatGPT lacks
+
+There is no `CLAUDE.md` equivalent, so the recall-first habit has to live in a custom GPT's instructions or in your own prompt, and there is no policy file that applies to every chat. Expect to say "check memory" more often than in Claude.
+
+## Verify the round trip
+
+From either app, ask it to run these two and show the raw results:
+
+```
+remember 'the fraise bridge is connected from <app> on <date>' topic:setup
+recall topic:setup top:5
+```
+
+The first answers with a write acknowledgement; the second returns the fact, newest first. If `recall` returns it but `remember` was refused, you are on a read-only plan.
