@@ -152,6 +152,10 @@ const (
 	// index insert or search can be asked to do.
 	DefaultMaxVectorDimension int = 4096
 
+	// DefaultMaxSourceLength bounds a remembered fact's provenance reference.
+	// A source is a locator or identifier, not a copy of the origin.
+	DefaultMaxSourceLength int = 512
+
 	// DefaultHalflife is the time-decay half-life applied to fact scores.
 	DefaultHalflife time.Duration = 7 * 24 * time.Hour
 

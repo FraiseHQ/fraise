@@ -83,6 +83,7 @@ const (
 	UNTIL
 	TOP
 	DEPTH
+	SOURCE
 
 	// param ref
 	VEC
@@ -109,6 +110,7 @@ var TokenMap = map[TokenType]string{
 	UNTIL:    "until",
 	TOP:      "top",
 	DEPTH:    "depth",
+	SOURCE:   "source",
 	LITERAL:  "literal",
 	VEC:      "vec",
 	EOL:      "eol",
@@ -126,6 +128,7 @@ var KeywordsMap = map[string]TokenType{
 	"until":    UNTIL,
 	"top":      TOP,
 	"depth":    DEPTH,
+	"source":   SOURCE,
 	"vec":      VEC,
 }
 
@@ -136,7 +139,7 @@ var KeywordsMap = map[string]TokenType{
 // word that happens to be "top" or "entity" needs no quoting there.
 func (t TokenType) IsKeyword() bool {
 	switch t {
-	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC:
+	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, SOURCE, VEC:
 		return true
 	default:
 		return false

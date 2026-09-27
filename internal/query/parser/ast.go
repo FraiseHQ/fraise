@@ -184,6 +184,7 @@ type RememberCommandNode[P float32 | float64] struct {
 	selector GraphSelectorNode
 	value    PhraseNode
 	anchors  []AnchorFieldNode
+	source   *SourceFieldNode
 	vec      *VecFieldNode[P]
 	pos      lexer.Position
 	end      lexer.Position
@@ -215,6 +216,17 @@ func (r RememberCommandNode[P]) Topics() []string {
 	}
 
 	return res
+}
+
+func (r RememberCommandNode[P]) Source() string {
+	if r.source == nil {
+		return ""
+	}
+	return r.source.Value()
+}
+
+func (r RememberCommandNode[P]) HasSource() bool {
+	return r.source != nil
 }
 
 func (r RememberCommandNode[P]) Vector() []P {
@@ -281,6 +293,14 @@ type TopicFieldNode struct {
 	end   lexer.Position
 }
 
+// Source field stores a remember's provenance reference.
+type SourceFieldNode struct {
+	key   lexer.Token
+	value string
+	pos   lexer.Position
+	end   lexer.Position
+}
+
 // Since field
 type SinceFieldNode[K comparable] struct {
 	key   lexer.Token
@@ -341,6 +361,11 @@ func (n RememberCommandNode[P]) String() string {
 	// anchors
 	for _, e := range n.anchors {
 		s = append(s, e.String())
+	}
+
+	// provenance
+	if n.source != nil {
+		s = append(s, "source:'"+strings.ReplaceAll(n.source.Value(), "'", "''")+"'")
 	}
 
 	// vec
@@ -595,6 +620,16 @@ func (n TopicFieldNode) Pos() lexer.Position {
 func (n TopicFieldNode) End() lexer.Position {
 	return n.end
 }
+
+// source field node impl
+
+func (n SourceFieldNode) String() string {
+	return fmt.Sprintf("%s:'%s'", n.key.Literal, strings.ReplaceAll(n.value, "'", "''"))
+}
+func (n SourceFieldNode) Key() string { return n.key.Literal }
+func (n SourceFieldNode) Value() string { return n.value }
+func (n SourceFieldNode) Pos() lexer.Position { return n.pos }
+func (n SourceFieldNode) End() lexer.Position { return n.end }
 
 // since field node impl
 
