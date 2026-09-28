@@ -22,17 +22,23 @@ See [Durability](/docs/operations/durability) for what the store keeps across a 
 
 | Structure | Contents |
 |---|---|
-| nodes | facts, entities, relationships |
-| text index | full-text search over ingested data |
+| nodes | facts, entities and topics, keyed by a hash of their kind and value |
+| adjacency maps | incoming and outgoing edges: each fact's links to the entities it mentions and the topics it is about |
+| text index | full-text search over fact values |
 | vector index | RP-tree forest, when embeddings are provided |
-| adjacency maps | source and target maps for traversal |
 
 ```go
-type InMemoryGraph[K comparable, P float32 | float64] struct {
-    idToNodes     map[K]Node[K]
-    nodeToSources map[K]map[K]Relationship[K]
-    nodeToTargets map[K]map[K]Relationship[K]
-    mu            sync.RWMutex
+type InMemoryGraph[K ~uint64, P float32 | float64] struct {
+    idToNodes     map[K]Node[K] // all nodes
+    nodeToSources map[K]map[K]K // incoming: target -> source -> edge
+    nodeToTargets map[K]map[K]K // outgoing: source -> target -> edge
+
+    textIndex   *index.BTreeIndex[K, P]
+    vectorIndex *index.RPTreeIndex[K, P]
+
+    // search algorithms, hasher and config elided
+
+    mu sync.RWMutex
 }
 ```
 

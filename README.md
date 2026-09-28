@@ -73,8 +73,7 @@ answering the same questions. `k=10`, full data, run 2026-08-30.
 | graphiti 0.29.3 | 0.819 | 0.301 s | 9,866,183 |
 | cognee 1.5.3 | 0.790 | 6.273 s | 8,526,019 |
 
-**Fraise matches the best systems on recall, at 2× the speed and a third of the
-tokens.** Same evidence found; half the latency; a fraction of the cost.
+**Fraise comes within 0.004 of the best recall, at twice the speed of the two systems that reach it.** Near enough the same evidence, in half the time — and with fewer memory tokens than every system but letta.
 
 These come from a standalone multi-system harness — precision, recall and F1
 across `k` ∈ {1, 3, 5, 10}, per category, every run tagged and reproducible from
@@ -90,17 +89,14 @@ the tag. The harness and the full results are published separately, in October.
   vector search. One query, ranked across all three.
 - **Temporal by default.** Recent memories outrank older ones, so recall is
   recency-aware without asking for it.
-- **The fastest system measured.** 0.176 s p50 on LoCoMo, twice the next best.
-  Remember and recall mid-step, while the user waits.
+- **The fastest system measured.** 0.176 s p50 on LoCoMo, 1.7× faster than the next fastest. Remember and recall mid-step, while the user waits.
 - **No infrastructure.** A single binary. No database to provision, no service
   to stand up beside it.
 - **Open source, MIT.**
 
 ## Status
 
-**v0.1.0 — the first stable release.** The core loop works end to end, the
-install paths are verified on clean machines, and the benchmark row above is
-produced from this tag.
+**v0.2.0.** The core loop works end to end and the install paths are verified on clean machines. The benchmark row above was produced from v0.1.0, the first stable release.
 
 Good for building agent memory today. Not yet for long term production use.
 
@@ -129,8 +125,7 @@ addressed with `@N` — one per user, per session, per agent, however you like.
 
 ## Get Started
 
-Fraise is a single binary — no database to provision, nothing to configure.
-Every route below leaves you with a server listening on `127.0.0.1:9876`.
+Fraise is a single binary — no database to provision, nothing to configure. Every route below leaves you with a server listening on port 9876, at `localhost:9876`.
 
 ### With Homebrew
 
@@ -175,10 +170,10 @@ compiles the result.
 `.deb` and `.rpm` packages ship with every release, with a systemd user unit:
 
 ```sh
-VERSION=0.1.0
+VERSION=0.2.0
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -sSfLO "https://github.com/FraiseHQ/fraise/releases/download/v${VERSION}/fraise_${VERSION}_${ARCH}.deb"
-sudo dpkg -i "fraise_${VERSION}_${ARCH}.deb"
+curl -sSfLO "https://github.com/FraiseHQ/fraise/releases/download/v${VERSION}/fraise_${VERSION}_linux_${ARCH}.deb"
+sudo dpkg -i "fraise_${VERSION}_linux_${ARCH}.deb"
 systemctl --user enable --now fraise
 ```
 
@@ -187,7 +182,7 @@ Logs go to the journal (`journalctl --user -u fraise -f`), and the unit reads `~
 ### From a release binary
 
 ```sh
-VERSION=0.1.0
+VERSION=0.2.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')                # linux | darwin
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')  # amd64 | arm64
 ASSET="fraise_${VERSION}_${OS}_${ARCH}.tar.gz"

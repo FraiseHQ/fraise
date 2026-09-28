@@ -104,7 +104,15 @@ func (l *Lexer) Next() Token {
 		l.readCharacter()
 		tok = Token{Type: NEWLINE, Literal: string(l.Character)}
 	case rune(0):
-		tok = Token{Type: EOL}
+		// peek reads 0 both past the end and at a NUL in the input; only the
+		// first is the end. Reading a NUL as the end dropped everything after
+		// it without a word — "recall foo\x00bar baz" ran as a recall for foo.
+		if l.CurrentPos.Column < len(l.Input) {
+			l.readCharacter()
+			tok = Token{Type: NUL, Literal: string(l.Character)}
+		} else {
+			tok = Token{Type: EOL}
+		}
 	default:
 		tokLiteral := l.scanString()
 		tokType, reserved := KeywordsMap[tokLiteral]

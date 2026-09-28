@@ -84,6 +84,11 @@ const (
 	// DefaultLogFormat is the log output format.
 	DefaultLogFormat string = LogFormatText
 
+	// DefaultLogDisableTimestamp keeps timestamps on: a log read from a file
+	// or a terminal has no other clock, and a supervisor that stamps its own
+	// lines is the case that opts out.
+	DefaultLogDisableTimestamp bool = false
+
 	// DefaultHashingFunction is the hash used to derive node keys from values.
 	DefaultHashingFunction string = HashingXxhash
 

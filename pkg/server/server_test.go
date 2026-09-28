@@ -91,6 +91,40 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
+// TestFailuresOutsideTheHandlersKeepTheErrorShape pins that every failure
+// answers {"error": ...}, including the two gin produces itself: an unknown
+// route (or a known path with the wrong method) used to be a plain-text 404,
+// and a recovered panic a 500 with no body at all — neither parses as the
+// error shape a client decodes every other failure with. A panic's detail
+// stays in the log, never in the body.
+func TestFailuresOutsideTheHandlersKeepTheErrorShape(t *testing.T) {
+	s := newTestServer(t)
+	s.router.GET("/panics", func(*gin.Context) { panic("boom") })
+
+	cases := []struct {
+		method, target string
+		status         int
+		want           string
+	}{
+		{http.MethodGet, "/api/v1/nope", http.StatusNotFound, `{"error":"no endpoint GET /api/v1/nope"}`},
+		{http.MethodGet, "/api/v1/q", http.StatusNotFound, `{"error":"no endpoint GET /api/v1/q"}`},
+		{http.MethodGet, "/panics", http.StatusInternalServerError, `{"error":"internal server error"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
+			w := s.do(tc.method, tc.target, "")
+
+			if w.Code != tc.status {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, tc.status, w.Body.String())
+			}
+			if got := w.Body.String(); got != tc.want {
+				t.Errorf("body = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestQueryMalformedBody checks that a request with an invalid JSON body is
 // rejected with 400.
 func TestQueryMalformedBody(t *testing.T) {
@@ -239,6 +273,29 @@ func TestQueryVectorDimensionMismatch(t *testing.T) {
 		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), "expects 3, got 4") {
+		t.Errorf("body = %q, want the expected vs supplied dimensions", w.Body.String())
+	}
+}
+
+// TestRecallVectorDimensionMismatch is the read half of the dimension rule:
+// a recall carrying a vector of the wrong width is rejected with 400 naming
+// both dimensions, exactly as a write is. It used to answer 200 from the text
+// index alone, dropping the semantic half of the question without a word.
+func TestRecallVectorDimensionMismatch(t *testing.T) {
+	s := newTestServer(t)
+
+	w := s.do(http.MethodPost, "/api/v1/q",
+		`{"query":"remember@0 'vec one' vec:$v","parameters":{"v":[0.1,0.2,0.3]}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("seeding write status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	w = s.do(http.MethodPost, "/api/v1/q",
+		`{"query":"recall@0 vec vec:$v","parameters":{"v":[0.1,0.2]}}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "expects 3, got 2") {
 		t.Errorf("body = %q, want the expected vs supplied dimensions", w.Body.String())
 	}
 }

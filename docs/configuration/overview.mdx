@@ -24,10 +24,10 @@ The defaults plus the flags are a complete configuration, and containers routine
 
 ## An unusable value is an error
 
-The server exits non-zero **before it opens a port**, naming the setting and what it accepts:
+The server exits non-zero **before it opens a port**, naming the setting and what it accepts on stderr:
 
 ```text
-config: invalid value: db.precision = "floast32" (accepted: float32, float64)
+fraise: config: invalid value: db.precision = "floast32" (accepted: float32, float64)
 ```
 
 <Note title="Case-insensitive matching" type="note">
@@ -43,9 +43,9 @@ config: invalid value: db.precision = "floast32" (accepted: float32, float64)
 | [`[log]`](/docs/configuration/reference/log) | level, format, timestamps |
 | [`[server]`](/docs/configuration/reference/server) | port, timeouts, body cap, shutdown grace |
 | [`[scheduler]`](/docs/configuration/reference/scheduler) | workers, queue depth, enqueue timeout |
-| [`[engine]`](/docs/configuration/reference/engine) | decay half-life, plan cache, unanchored recalls |
+| [`[engine]`](/docs/configuration/reference/engine) | decay half-life, plan cache |
 | [`[db]`](/docs/configuration/reference/database) | precision, graphs, defaults and ceilings, hashing |
-| [algorithms](/docs/configuration/reference/algorithms) | search, ranking, scoring, relevance model |
+| [algorithms](/docs/configuration/reference/algorithms) | search, ranking, scoring and relevance model, each a table under `[db]` |
 | [`[db.vector-search]`](/docs/configuration/reference/vector-search) | the RP-tree forest |
 
-A complete file is in [Example configuration](/docs/configuration/example).
+An example file is in [Example configuration](/docs/configuration/example).

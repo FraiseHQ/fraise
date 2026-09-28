@@ -24,6 +24,7 @@ package parser_test
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -114,6 +115,37 @@ func FuzzParseNeverPanics(f *testing.F) {
 	f.Fuzz(func(t *testing.T, raw string) {
 		_, _, _ = parser.Parse[uint64, float32](raw) // must return, not panic
 	})
+}
+
+// TestDurationsAreBoundedWithTheRangeInTheMessage pins the duration bound at
+// the level an agent sees: a count past what its unit can hold is a parse
+// error naming the largest one allowed, at the value's column — never a
+// silent wrap into a future bound — and the largest count still parses.
+func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string // "" when the query must parse
+	}{
+		{"recall x since:106751d", ""},
+		{"recall x since:106752d", "invalid since value \"106752d\": out of range (at most 106751d)"},
+		{"recall x until:15251w", "invalid until value \"15251w\": out of range (at most 15250w)"},
+		{"recall x since:99999999999999999999d", "out of range (at most 106751d)"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("Parse(%q) = %v, want it to parse", tc.query, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse(%q) = %v, want an error containing %q", tc.query, err, tc.want)
+			}
+		})
+	}
 }
 
 // TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned
@@ -1028,10 +1060,15 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		{"remember 'a' topic", "quote it"},
 		// Casing still matters where a clause could start.
 		{"recall zebras Depth 2", "lower case"},
-		// A modifier is not a clause a remember has: the message names the
-		// keyword rather than complaining about the token after it.
-		{"remember 'a fact' top:3", "is a keyword"},
-		{"remember 'a fact' since:7d", "is a keyword"},
+		// A modifier is a recall clause: the message names the command it was
+		// given to and the clauses a remember takes, rather than telling the
+		// caller to write since:<value> — exactly what they wrote.
+		{"remember 'a fact' top:3", "top: is a recall clause: a remember takes only topic:, entity: and vec:"},
+		{"remember 'a fact' since:7d", "since: is a recall clause"},
+		{"remember 'a fact' depth:1", "depth: is a recall clause"},
+		// A NUL outside a phrase used to end the query where it stood, and
+		// everything after it was dropped without a word.
+		{"recall zebras\x00food", "NUL character is only allowed inside a quoted phrase"},
 		// A newline in a value slot is a second instruction starting early.
 		{"recall zebras topic:\nfood", "one command per instruction"},
 		// No better diagnosis exists for a stray '@'.
@@ -1049,6 +1086,38 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), `found ""`) {
 				t.Errorf("error %q reports end of input as an empty literal", err)
+			}
+		})
+	}
+}
+
+// TestCommandWordsAreNeverOfferedAsClauses pins the repair for a command word
+// in a recall: quote it. The keyword advice ("write recall:<value> if a clause
+// was meant") sent the caller from one rejection to the next, since no clause
+// is spelled with a command. Both the leading-term warning and the error
+// after the terms say only what works.
+func TestCommandWordsAreNeverOfferedAsClauses(t *testing.T) {
+	cases := []struct {
+		query, word string
+	}{
+		{"recall recall", "recall"},
+		{"recall forget", "forget"},
+		{"recall zebras recall", "recall"},
+		{"recall zebras remember", "remember"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			msg := fmt.Sprint(err, warns)
+			if err == nil && len(warns) == 0 {
+				t.Fatalf("Parse(%q) was silent, want a warning or an error naming the command word", tc.query)
+			}
+			if !strings.Contains(msg, "quote it ('"+tc.word+"')") {
+				t.Errorf("%s does not tell the caller to quote %q", msg, tc.word)
+			}
+			if strings.Contains(msg, tc.word+":<value>") {
+				t.Errorf("%s offers %s:<value>, which is itself an error", msg, tc.word)
 			}
 		})
 	}

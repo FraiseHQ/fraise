@@ -4,15 +4,25 @@ description: "The traversal, the fold and the relevance model — what each acce
 navLabel: "Algorithms"
 ---
 
+Each algorithm is its own table under `[db]`:
+
 | Setting | Flag | Default | Accepts |
-|---------------------------------------|----------------------|----------|----------------------------------|
-| `search-algorithm.name` | `-search-algorithm` | `excess` | `none` `bfs` `excess` |
-| `ranking-algorithm.name` | `-ranking-algorithm` | `none` | `none` `pagerank` |
-| `ranking-algorithm.pagerank-damping` | `-pagerank-damping` | `0.85` | probability of following an edge |
-| `ranking-algorithm.pagerank-max-iter` | `-pagerank-max-iter` | `100` | power-iteration cap |
-| `ranking-algorithm.pagerank-tol` | `-pagerank-tol` | `1e-6` | convergence threshold |
-| `scoring-algorithm.name` | `-scoring-algorithm` | `excess` | `excess` `rrf` |
-| `relevance-model.name` | `-relevance-model` | `bm25` | `bm25` `matchcount` |
+|------------------------------------------|----------------------|----------|----------------------------------|
+| `db.search-algorithm.name` | `-search-algorithm` | `excess` | `none` `bfs` `excess` |
+| `db.ranking-algorithm.name` | `-ranking-algorithm` | `none` | `none` `pagerank` |
+| `db.ranking-algorithm.pagerank-damping` | `-pagerank-damping` | `0.85` | probability of following an edge |
+| `db.ranking-algorithm.pagerank-max-iter` | `-pagerank-max-iter` | `100` | power-iteration cap |
+| `db.ranking-algorithm.pagerank-tol` | `-pagerank-tol` | `1e-6` | convergence threshold |
+| `db.scoring-algorithm.name` | `-scoring-algorithm` | `excess` | `excess` `rrf` |
+| `db.relevance-model.name` | `-relevance-model` | `bm25` | `bm25` `matchcount` |
+
+```toml
+[db.search-algorithm]
+name = "excess"
+
+[db.scoring-algorithm]
+name = "excess"
+```
 
 ## `search-algorithm`
 

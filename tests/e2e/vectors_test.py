@@ -121,6 +121,82 @@ def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim
     )
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall@4 dimension vec:$v",
+        "recall@4 vec:$v",
+        "recall@4 topic:size vec:$v",
+    ],
+)
+def test_recall_vector_incompatible_size_is_rejected(query, vector, vector_dim, text):
+    """A recall whose vector differs in width from the graph's is a 400 naming
+    both dimensions, exactly as a write is.
+
+    It used to answer 200 from the text index alone: "dimension" matches the
+    fact written below, so the first shape came back with a plausible hit and
+    the semantic half of the question dropped without a word. A vector on its
+    own, and a vector beside an anchor, fail the same way.
+
+    The write fixes graph 4 at the suite-wide dimension, idempotently, as in
+    test_remember_vector_incompatible_size_is_rejected.
+    """
+    status, body = query(
+        "remember@4 'establish the vector dimension' vec:$v topic:size",
+        parameters={"v": vector()},
+    )
+    assert status == 200, body.get("error")
+
+    status, body = query(text, parameters={"v": vector(vector_dim // 2)})
+    assert status == 400, (
+        f"{text!r}: expected a client error, not an answer without the vector, "
+        f"got {status}: {body}"
+    )
+    error = body.get("error", "")
+    assert f"expects {vector_dim}, got {vector_dim // 2}" in error, (
+        f"{text!r}: expected the error to name both dimensions, got {error!r}"
+    )
+
+
+def test_explain_rejects_a_recall_vector_of_the_wrong_size(
+    query, explain, vector, vector_dim
+):
+    """/explain runs the same pipeline as /q, so a mismatched recall vector is
+    the same 400 there — an explanation of a ranking the vector never entered
+    would explain the wrong question.
+    """
+    status, body = query(
+        "remember@4 'establish the vector dimension' vec:$v topic:size",
+        parameters={"v": vector()},
+    )
+    assert status == 200, body.get("error")
+
+    status, body = explain(
+        "recall@4 dimension vec:$v", parameters={"v": vector(vector_dim // 2)}
+    )
+    assert status == 400, f"expected a client error, got {status}: {body}"
+    assert f"expects {vector_dim}, got {vector_dim // 2}" in body.get("error", "")
+
+
+def test_recall_vector_on_a_graph_without_vectors_is_answered(
+    query, vector, planets_graph, planet_facts
+):
+    """A graph no vector was ever written to has no dimension to disagree
+    with, so a recall carrying one is answered, not rejected: the vector seeds
+    nothing, and the text match comes back as it would without it.
+
+    The planet graph is never given a vector (see the graph map in
+    conftest.py), so any width stands in for a vector from another model.
+    """
+    keyword, fact = next(iter(planet_facts.items()))
+    status, body = query(
+        f"recall@{planets_graph} {keyword} vec:$v", parameters={"v": vector(3)}
+    )
+    assert status == 200, body.get("error")
+    values = [hit["value"] for hit in body["results"]["hits"]]
+    assert fact in values, f"want the text match {fact!r}; got {values}"
+
+
 # Documents on three clearly distinct subjects. A real sentence embedding places
 # each far from the others, so a query close in meaning to one of them retrieves
 # that one by vector alone. Graph 3 carries no other vectors, so its embedding

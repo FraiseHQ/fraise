@@ -4,12 +4,12 @@ description: "What Fraise does differently from other agent memory systems, and 
 navIcon: "🎯"
 ---
 
-## Why Fraise?
+## What it does differently
 
 - **A query language agents can actually write.** FQL has two verbs — `remember` and `recall` — and one way to say each thing. Fewer degrees of freedom means fewer ways for a model to get it wrong, and fewer tokens spent saying it.
 - **Hybrid retrieval.** Facts are indexed for full-text, graph, and (optionally) vector search. One query, ranked across all three.
 - **Temporal by default.** Recent memories outrank older ones, so recall is recency-aware without asking for it.
-- **The fastest system measured.** 0.176 s p50 on LoCoMo, twice the next best. Remember and recall mid-step, while the user waits.
+- **The fastest system measured.** 0.176 s p50 on LoCoMo, 1.7× faster than the next fastest. Remember and recall mid-step, while the user waits.
 - **No infrastructure.** A single binary. No database to provision, no service to stand up beside it.
 - **Open source, MIT.**
 
@@ -26,7 +26,7 @@ Measured on [LoCoMo](https://github.com/snap-research/locomo) — 10 multi-sessi
 | graphiti 0.29.3 | 0.819 | 0.301 s | 9,866,183 |
 | cognee 1.5.3 | 0.790 | 6.273 s | 8,526,019 |
 
-**Fraise matches the best systems on recall, at 2× the speed and a third of the tokens.** Same evidence found; half the latency; a fraction of the cost.
+**Fraise comes within 0.004 of the best recall, at twice the speed of the two systems that reach it.** Near enough the same evidence, in half the time — and with fewer memory tokens than every system but letta.
 
 <Note title="Benchmark provenance" type="note">
 
@@ -36,6 +36,6 @@ Measured on [LoCoMo](https://github.com/snap-research/locomo) — 10 multi-sessi
 
 ## Ranking is not a black box
 
-A fact's score is its own match strength plus what it receives through anchors carrying *more* mass than their size would predict. The background rate that "more" is measured against is a property of the graph, not of the anchors one query happened to reach — so there is no relevance constant to tune, and no dataset-fitted magic number anywhere in the fold.
+A fact's score is its own match strength plus what it receives through anchors carrying *more* mass than their size would predict. The background rate that "more" is measured against is the query's own — its seed mass per unit of degree across the anchors it reached — so there is no relevance constant to tune, and no dataset-fitted magic number anywhere in the fold.
 
 [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval) is the short version; [Excess transmission](/docs/retrieval/ranking/excess-transmission) is the full model, and [Ranking guarantees](/docs/retrieval/ranking/guarantees) is the contract the test suite pins.

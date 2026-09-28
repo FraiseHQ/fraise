@@ -14,7 +14,7 @@ Four characters carry meaning. Each one is a single token, and each one also end
 
 ## Lexed but never accepted
 
-`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears.
+`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears. So is a NUL character outside a phrase: it is data only inside one.
 
 <Note title="Leading hyphen" type="warning">
 
@@ -24,7 +24,7 @@ Four characters carry meaning. Each one is a single token, and each one also end
 
 ## Consequences worth remembering
 
-- A colon inside a value ends it. `since:2026-01-15T10:00:00Z` does not parse: the first `:` ends the value and the rest of the timestamp arrives as stray tokens. See [Literals](/docs/query-language/tokens/literals).
+- A colon inside a value ends it. `since:2026-01-15T10:00:00Z` does not parse: the first `:` cuts the value to `2026-01-15T10`, which is rejected as neither a duration nor a date. See [Literals](/docs/query-language/tokens/literals).
 - A phrase is opaque. Inside quotes nothing is reserved, so `remember 'meeting at 3:30pm about the topic' topic:meetings` stores the colon and the word "topic" literally.
 - `''` inside a phrase is one apostrophe: `remember 'alice''s laptop' topic:devices` stores *alice's laptop*.
 - The graph selector is glued to the verb. `recall @3` is not a selector — the `@` must follow the command with no whitespace.

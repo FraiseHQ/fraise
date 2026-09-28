@@ -71,6 +71,10 @@ const (
 	RPAREN
 	DOLLAR
 	NEWLINE
+	// NUL is a NUL character outside a phrase. It is its own token, rather
+	// than read as the end of input, so the rest of the query cannot be
+	// silently dropped after it.
+	NUL
 
 	// fields
 	TOPIC
@@ -95,6 +99,7 @@ var TokenMap = map[TokenType]string{
 	DOLLAR:   "$",
 	PHRASE:   "phrase",
 	NEWLINE:  "\n",
+	NUL:      "\x00",
 	PLUS:     "+",
 	TILDE:    "~",
 	MINUS:    "-",

@@ -4,25 +4,29 @@ description: "Facts, entities, topics, streams and memory graphs — the vocabul
 navIcon: "📐"
 ---
 
-Fraise is an in-memory database with a query system flexible enough to store and retrieve contextual information. Memory is only one of many parts of a model's context, but any long-term memory storage can find its way into the model's short-term context — so the system has to keep track of and update existing memory.
+Memory is only one of many things competing for a model's context, but whatever long-term memory holds can find its way into it on any turn — so the store has to keep what an agent learns organised, current and cheap to search. Fraise does that with a small vocabulary, used throughout the rest of the documentation and collected in the [Glossary](/docs/getting-started/glossary).
 
-## Streams and the memory graph
+## Facts
 
-Updates arrive as **streams**. A stream contains a single update to the **temporal memory graph**. A memory graph is made of knowledge:
+A **fact** is one self-contained statement — `'acme moved to annual billing'` — stored exactly as written, with the time it was written. It is what a `remember` writes and what a `recall` returns.
 
-- `facts`
-- `entities`
-- `relationships`
-
-plus a memory retrieval system. Facts, entities and relationships are indexed for fast retrieval via graph, semantic and text representations. Those representations are gathered in indices, and a federated query engine manages retrieval and ranking.
-
-The graph is called **temporal** because short-term memories are by default deemed more relevant than older ones — see [Temporality](/docs/retrieval/memory-model/temporality).
-
-## Anchors
+## Anchors: topics and entities
 
 A fact is filed under **anchors**: `topic:` for what it is about, `entity:` for who or what it mentions. Anchors are what the graph channel expands through — a recall that reaches an anchor can reach every fact filed under it, and the ranking decides which of those were worth reaching.
 
 Anchors are optional on a write: a fact with none is stored and reachable by text search alone.
+
+## The temporal memory graph
+
+Facts, topics and entities are the vertices of a **memory graph**; its edges link each fact to the entities it mentions and the topics it is about. Every fact is also indexed for full-text search and, when a vector is supplied with it, for vector search — three representations of one store, which a single recall searches together (see [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval)).
+
+The graph is **temporal** because newer memories outrank older ones by default — see [Temporality](/docs/retrieval/memory-model/temporality).
+
+One instance holds several independent graphs, 8 by default, addressed with `@N`: one per user, per session or per agent. See [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+
+## Streams
+
+Every query becomes a **stream**: the unit of work the engine plans, the scheduler queues and the database applies to one graph. Reads and writes are both streams; the only thing that tells them apart on the way through is the lock a write takes.
 
 ## How a query travels
 

@@ -37,7 +37,7 @@ type Logger struct {
 
 var defaultLogger *Logger
 
-// NewLogger builds a logger from the level and format in cfg.
+// NewLogger builds a logger from the level, format and timestamp setting in cfg.
 //
 // It switches on config's canonical spellings, never on literals: a ConfigSet
 // that came through Parse has already been case-folded onto them and had
@@ -64,20 +64,28 @@ func NewLogger(cfg *config.ConfigSet) *Logger {
 		level = slog.LevelInfo
 	}
 
+	opts := &slog.HandlerOptions{Level: level}
+
+	// Drop the top-level time attribute when asked: a supervisor that stamps
+	// every line it collects (journald, docker) would otherwise carry two
+	// clocks per line.
+	if cfg.Log.DisableTimestamp {
+		opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && a.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return a
+		}
+	}
+
 	// set logging handler
 	switch cfg.Log.Format {
 	case config.LogFormatJSON:
-		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: level,
-		})
+		handler = slog.NewJSONHandler(os.Stdout, opts)
 	case config.LogFormatText:
-		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: level,
-		})
+		handler = slog.NewTextHandler(os.Stdout, opts)
 	default:
-		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: level,
-		})
+		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 
 	l := &Logger{

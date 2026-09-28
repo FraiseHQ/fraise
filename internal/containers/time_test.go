@@ -23,6 +23,7 @@
 package containers
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -273,6 +274,51 @@ func TestParseTimeValueErrors(t *testing.T) {
 			}
 			if got != nil {
 				t.Errorf("ParseTimeValue(%q) returned non-nil value %#v alongside error", tt.in, got)
+			}
+		})
+	}
+}
+
+// TestParseTimeValueBoundsRelativeDurations pins the range of a relative
+// duration: up to the largest count a time.Duration holds for its unit, and
+// no further. Past it the product used to wrap negative, and since:106752d
+// resolved to a bound in the future that emptied every window. The error
+// names the unit's limit and still reads as ErrInvalidTime.
+func TestParseTimeValueBoundsRelativeDurations(t *testing.T) {
+	tests := []struct {
+		in  string
+		max int64 // 0: the value is in range and must parse
+	}{
+		{"106751d", 0},
+		{"106752d", 106751},
+		{"15250w", 0},
+		{"15251w", 15250},
+		{"9223372036s", 0},
+		{"9223372037s", 9223372036},
+		{"99999999999999999999d", 106751}, // past int64 itself
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := ParseTimeValue[string](tt.in)
+
+			if tt.max == 0 {
+				rt, ok := got.(RelativeTime[string])
+				if err != nil || !ok || rt.Dur <= 0 {
+					t.Fatalf("ParseTimeValue(%q) = %#v, %v; want a positive relative duration", tt.in, got, err)
+				}
+				return
+			}
+
+			var rangeErr *DurationRangeError
+			if !errors.As(err, &rangeErr) {
+				t.Fatalf("ParseTimeValue(%q) = %#v, %v; want a DurationRangeError", tt.in, got, err)
+			}
+			if rangeErr.Max != tt.max || rangeErr.Unit != tt.in[len(tt.in)-1] {
+				t.Errorf("range = at most %d%c, want %d%c", rangeErr.Max, rangeErr.Unit, tt.max, tt.in[len(tt.in)-1])
+			}
+			if !errors.Is(err, ErrInvalidTime) {
+				t.Errorf("error %v is not an ErrInvalidTime", err)
 			}
 		})
 	}

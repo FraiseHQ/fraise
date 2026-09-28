@@ -8,7 +8,7 @@ navLabel: "Logging"
 |---------------------|--------------------------|---------|-------------------------------|
 | `level` | `-log-level` | `INFO` | `DEBUG` `INFO` `WARN` `ERROR` |
 | `format` | `-log-format` | `text` | `text` `json` |
-| `disable-timestamp` | `-log-disable-timestamp` | `true` | boolean |
+| `disable-timestamp` | `-log-disable-timestamp` | `false` | boolean |
 
 Logs go to stdout; **file logging is not supported.**
 
@@ -23,5 +23,6 @@ disable-timestamp = true
 
 - Values from the fixed vocabulary are matched without regard to case, so `-log-level error` and `-log-level ERROR` are the same request. A value outside it stops the server before it binds a port.
 - Run with `format = "json"` if you ship logs anywhere that parses them.
+- `disable-timestamp = true` drops the time from every line, for a supervisor that stamps what it collects — journald, docker — and would otherwise record two clocks per line.
 - The log is half the observability surface — `/api/v1/stats` is the other half. There are no metrics endpoints yet. See [Health and monitoring](/docs/operations/runbook/health-and-monitoring).
 - When a service manager owns the process, its own facility collects stdout: `$(brew --prefix)/var/log/fraise.log` under Homebrew, the journal under systemd.

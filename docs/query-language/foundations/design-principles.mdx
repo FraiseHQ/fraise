@@ -6,13 +6,13 @@ navIcon: "🧭"
 
 Fraise is designed to be queried by agents over and over again. The main decision was to create a simple query language for retrieving information: **FQL is designed for token economy while being LLM-friendly.**
 
-Human DSL design optimises for expressiveness and aesthetic flexibility. This query language optimises for simplicity and chooses to remove ambiguity wherever possible: for an AI agent, degrees of freedom are a potential source of failure.
+Human DSL design optimises for expressiveness and aesthetic flexibility. This query language optimises for simplicity and chooses to remove ambiguity wherever possible: for an AI agent, degrees of freedom are a potential source of failure. It takes its simplicity from Redis and borrows some syntax elements from Lucene, such as `field:value` clauses.
 
 ## The principles
 
 - **Commands and field names are written in lower case.** They are syntax, matched exactly, so `RECALL x` is a parse error rather than a query — nothing is silently rewritten on the way in.
 - **Everything else is data.** A remembered fact — the quoted phrase — is *stored* exactly as written and *matched* without regard to case: `remember 'MiXeD Case'` comes back spelled that way, and `recall mixed` finds it. Terms and anchor values are identity rather than prose, so the parser folds them to lower case on the way in — `topic:Billing` and `topic:billing` are the same anchor. An agent should not have to remember how it capitalised something a hundred turns ago.
-- **One command at a time.** Multiple commands in a single instruction lead to a runtime error.
+- **One command at a time.** A second command in the same instruction is a parse error: `recall x remember 'y'` is rejected at the column where `remember` starts.
 - **One line per instruction.** A new line ends the instruction: anything after it is a second one and is rejected, so `recall ferry\nbridge` is an error rather than a two-term search silently spanning both lines. Trailing blank lines are not an instruction and are ignored.
 - **A clause that takes one value may be given once.** Repeating it is an error, not a last-one-wins overwrite: a query that silently answers a differently-scoped question is the failure an agent cannot detect. Anchors are the exception — repeating `topic:`/`entity:` is a list by design.
 

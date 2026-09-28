@@ -227,7 +227,7 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K,
 		return nil, nil, ErrEmptyIndex
 	}
 	if query.Dim() != idx.dim {
-		return nil, nil, ErrInvalidDimension
+		return nil, nil, fmt.Errorf("%w: index expects %d, got %d", ErrInvalidDimension, idx.dim, query.Dim())
 	}
 
 	var zeroKey K

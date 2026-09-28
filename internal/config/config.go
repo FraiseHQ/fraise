@@ -89,7 +89,8 @@ type LogConfig struct {
 	// Note: all logs are printed in console. File logging not supported (yet)
 	Format string `toml:"format"`
 
-	// Disable log timestamp
+	// Omit the timestamp from every line (default = false). For a supervisor
+	// that stamps what it collects — journald, docker — a second time is noise.
 	DisableTimestamp bool `toml:"disable-timestamp"`
 }
 
@@ -245,7 +246,7 @@ func New() *ConfigSet {
 	// log
 	flagSet.StringVar(&config.Log.Level, "log-level", DefaultLogLevel, "Log level")
 	flagSet.StringVar(&config.Log.Format, "log-format", DefaultLogFormat, "Log Format")
-	flagSet.BoolVar(&config.Log.DisableTimestamp, "log-disable-timestamp", true, "Log Format")
+	flagSet.BoolVar(&config.Log.DisableTimestamp, "log-disable-timestamp", DefaultLogDisableTimestamp, "Omit the timestamp from every log line")
 
 	// engine
 	flagSet.DurationVar(&config.Engine.Halflife, "half-life", DefaultHalflife, "Half life for time decay")
@@ -375,8 +376,8 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// log
 	Adjust(&c.Log.Level, DefaultLogLevel)
 	Adjust(&c.Log.Format, DefaultLogFormat)
-	// Log.DisableTimestamp is intentionally not adjusted: its default is true,
-	// so Adjust would override any explicit false from the config file.
+	// Log.DisableTimestamp needs no Adjust: its default, false, is the zero
+	// value, so an absent key and an explicit false already agree.
 
 	// engine
 	Adjust(&c.Engine.Halflife, DefaultHalflife)

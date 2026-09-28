@@ -37,7 +37,7 @@ A duration is read as **"ago"**, so `since:7d` means "no older than seven days".
 
 <Note title="Dates carry no time of day" type="warning">
 
-  **A date carries no time of day.** `since:2026-01-15T10:00:00Z` does not parse — the first `:` ends the value, so the rest of the timestamp arrives as stray tokens. Whole days are the finest an absolute bound can be written to; use a duration when finer is needed.
+  **A date carries no time of day.** `since:2026-01-15T10:00:00Z` does not parse — the first `:` cuts the value to `2026-01-15T10`, which is rejected as neither a duration nor a date. Whole days are the finest an absolute bound can be written to; use a duration when finer is needed.
 
 </Note>
 
