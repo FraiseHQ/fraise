@@ -75,7 +75,7 @@ func (l *Lexer) readCharacter() {
 // instructions, and swallowing it as blank is what let "recall ferry\nbridge"
 // read as one two-term recall instead of the two commands it looks like.
 func isBlank(ch rune) bool {
-	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r') || ch == rune('\x00')
+	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r')
 }
 
 // isWordCharacter reports whether ch can appear in a bare word: a letter, in any
@@ -119,8 +119,8 @@ func (l *Lexer) Next() Token {
 		l.readCharacter()
 		tok = Token{Type: NEWLINE, Literal: string(l.Character)}
 	case rune(' '), rune('\t'), rune('\r'):
-		l.readCharacter()
-		tok = Token{Type: WHITESPACE, Literal: string(l.Character)}
+		literal := l.scanWhitespace()
+		tok = Token{Type: WHITESPACE, Literal: literal}
 	case rune(0):
 		// peek reads 0 both past the end and at a NUL in the input; only the
 		// first is the end. Reading a NUL as the end dropped everything after
@@ -166,6 +166,15 @@ func (l *Lexer) peek() rune {
 		return rune(0)
 	}
 	return l.Input[l.CurrentPos.Column]
+}
+
+func (l *Lexer) scanWhitespace() string {
+	var res []rune
+	for isBlank(l.peek()) {
+		res = append(res, l.peek())
+		l.readCharacter()
+	}
+	return string(res)
 }
 
 // scans a bare word: the run of word characters from the current position

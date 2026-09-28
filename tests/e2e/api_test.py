@@ -60,7 +60,7 @@ def test_query_rejects_out_of_range_graph(query, num_graphs):
     hang. The selector is taken from the server's own allocation so it stays
     out of range whatever the suite's config sets the count to.
     """
-    status, body = query(f"recall@{num_graphs} anything")
+    status, body = query(f"recall@{num_graphs} zebras")
 
     assert status == 400
     assert body.get("error"), "expected an out-of-range error message"
@@ -80,7 +80,7 @@ def test_query_rejects_selector_that_would_wrap(query):
     narrowed: @256 would wrap to graph 0 and @300 to graph 44, silently
     executing against another tenant's graph.
     """
-    for q in ("remember@256 'secret plan' topic:x", "recall@300 anything"):
+    for q in ("remember@256 'secret plan' topic:x", "recall@300 zebras"):
         status, body = query(q)
 
         assert status == 400, f"{q!r}: expected 400, got {status}"
@@ -93,7 +93,7 @@ def test_query_rejects_non_integer_selector(query):
     """A non-numeric selector is a parse error, not a silent fallback to a
     default graph.
     """
-    status, body = query("recall@abc anything")
+    status, body = query("recall@abc zebras")
 
     assert status == 400
     assert body.get("error"), "expected a parse error message"
@@ -105,7 +105,7 @@ def test_query_rejects_valid_uint8_selector_above_num_graphs(query):
     error. This is the layer boundary: type consistency in the parser,
     allocation policy in the handler.
     """
-    status, body = query("recall@255 anything")
+    status, body = query("recall@255 zebras")
 
     assert status == 400
     assert "does not exist" in body.get("error", ""), (
@@ -169,32 +169,32 @@ def test_query_rejects_invalid_modifier_value(query, text):
 @pytest.mark.parametrize(
     "text,expected",
     [
-        ("recall zebras topic food", "write topic:<value> if a filter was meant"),
+        ("recall zebras topic food", "write topic:food"),
+        ("recall zebras topic food extra", "write topic:food"),  # the ticket repro
+        ("recall zebras entity alice", "write entity:alice"),
+        ("recall zebras since 7d", "write since:7d"),
+        ("recall zebras until 30d", "write until:30d"),
+        ("recall zebras top 5", "write top:5"),
+        ("recall@0 top", "write top:<value>"),  # nothing follows, so no value to name
+        ("recall zebras depth 2", "write depth:2"),
         (
-            "recall zebras topic food extra",  # the ticket repro
-            "write topic:<value> if a filter was meant",
+            "recall zebras topic:food entity alice",  # one good field, one bad
+            "write entity:alice",
         ),
-        ("recall zebras entity alice", "write entity:<value> if a filter was meant"),
-        ("recall zebras since 7d", "write since:<value> if a filter was meant"),
-        ("recall zebras until 2026-01-15", "write until:<value> if a filter was meant"),
-        ("recall zebras top 5", "write top:<value> if a filter was meant"),
         (
-            "recall@0 top",  # a leading keyword too
-            "write top:<value> if a filter was meant",
+            "remember@5 'ulysse moved to quimper' topic relocation",
+            "write topic:relocation",
         ),
-        ("recall zebras depth 2", "write depth:<value> if a filter was meant"),
-        ("recall zebras topic:food entity alice", "colon"),  # one good field, one bad
-        ("remember@5 'ulysse moved to quimper' topic relocation", "colon"),
-        ("remember@5 'ulysse moved to quimper' entity ulysse", "colon"),
+        ("remember@5 'ulysse moved to quimper' entity ulysse", "write entity:ulysse"),
     ],
 )
 def test_query_rejects_missing_field_separator(query, text, expected):
-    """A keyed field written without its ':' is a 400 naming the separator.
+    """A keyed field written without its ':' is a 400 naming the fix.
 
-    Among the terms the keyword error names it in the filter form a caller
-    would write (topic:<value>); where a clause is being read it names the
-    colon. Anything else is the silent-parse failure mode: the query runs,
-    returns 200, and answers a question nobody asked.
+    The message writes the clause the caller meant, with the word they wrote
+    after the keyword as its value (topic:food), and falls back to <value> when
+    nothing follows. Anything else is the silent-parse failure mode: the query
+    runs, returns 200, and answers a question nobody asked.
     """
     status, body = query(text)
 
@@ -446,6 +446,12 @@ def test_a_miscased_repeat_is_still_a_duplicate(query):
         "recall@0 zebras since:7d",  # an actual clause is what it says it is
         "recall@0 zebras topic:food depth:2",  # a depth beside an anchor selects a lane that runs
         "recall@0 zebras depth:0",  # the floor asks for no graph at all
+        "recall@0 'top'",  # a quoted reserved word is a plain term
+        "recall@0 'Top' 'since'",
+        "recall@0 zebras 'topic' food",
+        "recall@0 'the parrot'",  # a phrase never warns for its content
+        "recall@0 'the'",
+        "recall@0 topic:birds",  # anchor-seeded, no term to warn about
     ],
 )
 def test_unambiguous_query_carries_no_warnings_key(query, text):
@@ -454,8 +460,8 @@ def test_unambiguous_query_carries_no_warnings_key(query, text):
     The key appears only when there is something to say, so the response
     shape for the common case is unchanged and a client checking
     `"warnings" in body` gets a real signal, not a constant empty list.
-    Quoting is the documented way to silence the leading-term warning, so
-    the quoted shape must genuinely be silent.
+    Quoting is how a reserved word or a stop word is searched for, so a
+    quoted term must genuinely be silent.
     """
     status, body = query(text)
 
@@ -635,7 +641,7 @@ def test_a_recall_of_an_empty_graph_is_204_with_no_body(query):
     answer is "nothing has been stored here", which no result set could say
     that an ordinary miss would not also say.
     """
-    status, body = query("recall@8 anything")
+    status, body = query("recall@8 zebras")
 
     assert status == 204, body.get("error")
     assert body == {}

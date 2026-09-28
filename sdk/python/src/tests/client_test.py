@@ -619,9 +619,6 @@ def test_a_keyword_spelled_term_recalls_with_a_warning(client, round_trip_graph)
 
     with pytest.raises(FraiseAPIError):
         result = client.recall("since", "7d", graph=round_trip_graph)
-        print('-------')
-        print(result)
-        print('-------')
 
 
 @pytest.mark.integration
@@ -738,7 +735,7 @@ def test_recall_of_an_empty_graph_says_the_graph_is_empty(client, empty_graph):
     empty result as a query that simply missed, and debugs the query when it
     should be checking whether it ever wrote.
     """
-    result = client.recall("anything", graph=empty_graph)
+    result = client.recall("zebras", graph=empty_graph)
 
     assert result.empty is True
     assert result.count == 0

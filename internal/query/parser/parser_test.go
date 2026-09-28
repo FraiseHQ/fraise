@@ -167,7 +167,7 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 		// call sites discarded parseVecField's positioned error for a generic
 		// wrap, which is the exact mangling the rest of these forbid.
 		{"recall x vec:v", "expected param field operator $"},
-		{"recall x vec$:v", "Expected colon"},
+		{"remember 'a fact' vec$:v", "Expected colon"}, // among a recall's terms a bare vec is a keyword term
 		{"recall x vec:$", "expected literal"},
 		{"remember 'a fact' vec:v", "expected param field operator $"},
 		{"remember 'a fact' vec:$", "expected literal"},
@@ -1760,7 +1760,7 @@ func TestStopWordTermWarns(t *testing.T) {
 				t.Fatalf("Parse(%q) warnings = %v, want %d", tc.query, warns, len(tc.warns))
 			}
 			for i, want := range tc.warns {
-				msg := fmt.Sprintf("term %q is a stop word: stored facts never contain it, so it cannot match; drop it", want.term)
+				msg := fmt.Sprintf("term %q is a stop word: stored facts never contain it, so it cannot match", want.term)
 				if warns[i].Msg != msg {
 					t.Errorf("warning %d = %q, want %q", i, warns[i].Msg, msg)
 				}

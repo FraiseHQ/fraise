@@ -84,7 +84,7 @@ def test_daemon_rejections_surface_in_band(mcp):
     daemon's own message — the text a model needs to correct itself — never
     as a protocol failure that would end the conversation.
     """
-    result = mcp.call("recall", {"query": "recall@1 anything top:0"})
+    result = mcp.call("recall", {"query": "recall@1 zebras top:0"})
     assert result.get("isError") is True
     assert "top:0 out of range" in result["content"][0]["text"]
 
@@ -102,7 +102,7 @@ def test_a_recall_of_an_empty_graph_tells_the_model_to_write(mcp):
     The structured half still satisfies the recall tool's output schema, which
     requires hits to be an array — a 204 must not leave it null.
     """
-    result = mcp.call("recall", {"query": "recall@7 anything"})
+    result = mcp.call("recall", {"query": "recall@7 zebras"})
     assert not result.get("isError", False), result
 
     assert result["structuredContent"]["results"] == {"count": 0, "hits": []}

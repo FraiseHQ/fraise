@@ -191,10 +191,10 @@ def test_empty_data_is_rejected(query, text):
 
 
 # ---------------------------------------------------------------------------
-# Reserved words by position. Leading position warns (both readings named),
-# value position is data, trailing position errors — and the trailing error is
-# where the quality collapses: the mis-cased branch produces an excellent
-# message while the lower-case one produces "Expected colon, but found """.
+# Reserved words by position. A reserved word is syntax everywhere a value
+# cannot stand: as a bare term it is a 400 naming both fixes (the clause, and
+# the quote that searches the word); after a clause has started it is a clause
+# missing its ':'; after a field's ':' it is data.
 # ---------------------------------------------------------------------------
 
 
@@ -210,13 +210,12 @@ def test_empty_data_is_rejected(query, text):
         "recall entity",
     ],
 )
-def test_leading_reserved_word_runs_and_warns(query, text):
-    """A leading keyword is legal data one ':' away from being a clause, so it
-    runs as a term search and carries a warning naming both readings.
+def test_leading_reserved_word_is_rejected(query, text):
+    """A leading keyword is a 400 like one anywhere else among the terms.
 
-    Pinned here because the warning is the only signal that separates "I meant
-    the word" from "I forgot the colon" — losing it makes a whole class of
-    mistyped queries silent.
+    It used to run as a term search with a warning, the one position where a
+    bare keyword was data. With terms and phrases free to come in any order a
+    positional exception has no reason to exist: data goes in quotes.
     """
     status, body = query(text)
     _reject(status, body, f'term "{text.split(" ")[1]}" is also a keyword:', text)
@@ -287,6 +286,59 @@ def test_trailing_reserved_word_error_is_actionable(query, text):
 
 
 @pytest.mark.parametrize(
+    "text,column,fixes",
+    [
+        ("recall top", 10, ["write top:<value>", "quote it ('top')"]),
+        ("recall Top", 10, ["write top:<value>", "quote it ('Top')"]),
+        ("recall since 7d", 12, ["write since:7d", "quote it ('since')"]),
+        ("recall zebras topic food", 19, ["write topic:food", "quote it ('topic')"]),
+        (
+            "recall zebras entity alice extra",
+            20,
+            ["write entity:alice", "quote it ('entity')"],
+        ),
+    ],
+)
+def test_reserved_word_as_a_term_names_both_fixes(query, text, column, fixes):
+    """A reserved word as a bare term is a 400 at the keyword, in any casing,
+    and the message offers both readings.
+
+    The clause fix takes the word written after the keyword as its value, since
+    that is the query the caller meant; the quote is how to search the word
+    itself. Either one alone would leave half the callers guessing.
+    """
+    status, body = query(text)
+    assert status == 400, f"{text!r}: expected 400, got {status} — {body!r}"
+    error = body.get("error") or ""
+    assert f"parse error at column {column}:" in error, (
+        f"{text!r}: error {error!r} should point at the keyword, column {column}"
+    )
+    for fix in fixes:
+        assert fix in error, f"{text!r}: error {error!r} should offer {fix!r}"
+
+
+@pytest.mark.parametrize(
+    "text,fix",
+    [
+        ("recall zebras since:7d topic food", "write topic:food"),
+        ("recall zebras top:5 depth 2", "write depth:2"),
+        ("remember@1 'zebras eat grass' topic food entity:x", "write topic:food"),
+    ],
+)
+def test_keyword_after_a_clause_is_a_missing_colon(query, text, fix):
+    """Once a clause has started a keyword has one reading: a clause missing
+    its ':'. Terms come first, so it cannot be a word to quote, and the message
+    names only the clause the caller meant.
+    """
+    status, body = query(text)
+    _reject(status, body, fix, text)
+    assert "quote it" not in body["error"], (
+        f"{text!r}: error {body['error']!r} suggests a quote, but no term can "
+        "stand after a clause"
+    )
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "recall ferry topic:top",
@@ -300,6 +352,7 @@ def test_trailing_reserved_word_error_is_actionable(query, text):
         "recall ferry entity:forget",
         "recall ferry topic:top entity:since",
         "recall@1 ferry topic:top",
+        "recall ferry topic:'since'",
     ],
 )
 def test_reserved_word_in_value_position_is_data(query, text):
@@ -443,6 +496,9 @@ def test_vec_clause_errors_surface_unmangled(query, text, expected):
         "recall ' leading space'",
         "recall 'MiXeD CaSe'",
         "recall 'hyphen-ated under_scored'",
+        "recall ferry topic:'US elections'",  # quoted anchor values follow the same rule
+        "recall ferry topic:'My Project'",
+        "recall ferry entity:'O''Brien'",
     ],
 )
 def test_specials_inside_quotes_are_data(query, text):
@@ -606,6 +662,7 @@ def test_durations_longer_than_a_duration_holds_are_rejected(query, text, expect
         "recall ferry since:'2026-01-15' until:'2026-12-31'",
         "recall ferry since:'2026-01-15T10:00:00Z'",  # quoted, a time of day fits
         "recall@1 ferry since:7d top:5",
+        "recall zebras since:7d until:'2026-01-15' depth:2 top:5",
     ],
 )
 def test_valid_temporal_values_parse(query, text):
@@ -633,7 +690,7 @@ def test_valid_temporal_values_parse(query, text):
         ("recall@abc ferry", "whole number"),
         ("recall@ ferry", "whole number"),
         ("recall@topic ferry", "whole number"),
-        ("recall@3@5 ferry", "expected a space after the command"),
+        ("recall@3@5 ferry", "one selector"),
         ("recall@-1 ferry", "whole number"),
     ],
 )
@@ -642,6 +699,74 @@ def test_graph_selector_errors_stay_specific(query, text, expected):
     handler rejects what fits but names no allocated graph — and both layers
     must keep their own message so a regression in one cannot hide behind the
     other.
+    """
+    status, body = query(text)
+    _reject(status, body, expected, text)
+
+
+# ---------------------------------------------------------------------------
+# Whitespace and adjacency. Any run of space, tab or carriage return separates
+# words, and a trailing newline ends the instruction. The parts of a command or
+# a clause are glued: the selector to its verb, a value to its ':' and a
+# parameter name to its '$', so a space inside one is rejected with a message
+# saying where it is not allowed.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall  zebras",
+        "recall\tzebras",
+        "recall zebras ",
+        "recall zebras \n  \n\t",  # trailing blank lines are not a second instruction
+        "recall 'zebras\x00food'",  # a NUL inside quotes is data
+    ],
+)
+def test_whitespace_separates_words(query, text):
+    """How a query is spaced is not what it means: every one of these is a
+    one-term recall and parses.
+
+    A client that pretty-prints, tab-separates or ends its payload with a
+    newline must not get a 400 for it.
+    """
+    status, body = query(text)
+    _accept(status, body, text)
+
+
+def test_nul_outside_quotes_is_rejected_by_name(query):
+    """A NUL outside a phrase is rejected for itself (#367): read as the end of
+    input, it used to drop everything after it without a word.
+    """
+    text = "recall zebras\x00food"
+    status, body = query(text)
+    _reject(
+        status, body, "a NUL character is only allowed inside a quoted phrase", text
+    )
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("remember @1 'x'", "no space allowed between remember and @"),
+        ("recall @1 zebras", "no space allowed between recall and @"),
+        ("remember@ 1 'x'", "no space allowed between @ and the selector"),
+        ("recall zebras topic :food", "no space allowed before :"),
+        ("recall zebras topic: food", "no space allowed after :"),
+        ("recall zebras since :7d", "no space allowed before :"),
+        ("recall zebras vec: $v", "no space allowed after :"),
+        ("recall zebras vec:$ v", "no space allowed after $"),
+        ("recall zebras : topic:food", "stray"),
+    ],
+)
+def test_no_space_inside_a_command_or_clause(query, text, expected):
+    """A space inside a command or clause is a 400 that says where it is not
+    allowed.
+
+    "unexpected" or a blamed '@' leaves the caller to work out that the only
+    fix is deleting a space; the message should say so. Rejected writes are
+    pinned to graph 1, so a regression that accepts one lands among the loose
+    remembers.
     """
     status, body = query(text)
     _reject(status, body, expected, text)
@@ -722,6 +847,78 @@ def test_command_word_among_the_terms_is_a_word_to_quote(query, text, word):
     _reject(
         status, body, f"term \"{word}\" is also a command: quote it ('{word}')", text
     )
+
+
+# ---------------------------------------------------------------------------
+# Stop words. Stored facts are cleaned of English stop words at index time, so
+# a bare stop word can never match: it runs with a warning at the term, and a
+# recall whose only search terms are stop words is a 400 rather than an empty
+# result that looks like a miss. A phrase never warns for its content.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,warnings",
+    [
+        ("recall the parrot", [(10, "the")]),
+        ("recall parrot and the zebra", [(17, "and"), (21, "the")]),
+        ("recall the 'parrot'", [(10, "the")]),  # a phrase is a real seed
+    ],
+)
+def test_stop_word_term_runs_and_warns(query, text, warnings):
+    """One warning per bare stop word, positioned at the term, naming why it
+    cannot match and what to do.
+    """
+    status, body = query(text)
+    _accept(status, body, text)
+    assert body.get("warnings") == [
+        f'parse warning at column {column}: term "{term}" is a stop word: '
+        "stored facts never contain it, so it cannot match"
+        for column, term in warnings
+    ], f"{text!r}: warnings {body.get('warnings')!r}"
+
+
+def test_stop_word_beside_a_vector_warns(query, vector, planets_graph):
+    """A vector is a seed, so a stop word beside it only warns.
+
+    The planet graph is never given a vector, so a vector of any width is
+    answered there rather than rejected for its dimension.
+    """
+    text = f"recall@{planets_graph} the vec:$v"
+    status, body = query(text, parameters={"v": vector(3)})
+    _accept(status, body, text)
+    column = len(f"recall@{planets_graph} the")
+    assert body.get("warnings") == [
+        f'parse warning at column {column}: term "the" is a stop word: '
+        "stored facts never contain it, so it cannot match"
+    ], f"{text!r}: warnings {body.get('warnings')!r}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall the",
+        "recall the and",
+        "recall the topic:birds",  # anchors do not rescue it
+    ],
+)
+def test_stop_word_only_recall_is_rejected(query, text):
+    """A recall whose every bare term is a stop word, with no phrase and no
+    vector, can match nothing, so it is a 400 naming the fix rather than an
+    empty result that looks like a miss.
+
+    Anchors do not change that: `recall topic:birds` is the query that was
+    meant, and it is accepted on its own.
+    """
+    status, body = query(text)
+    _reject(
+        status,
+        body,
+        "so nothing can match; give a term that is not a stop word, a phrase, "
+        "or a vector",
+        text,
+    )
+    assert 'term "the" is a stop word' in body["error"], body["error"]
 
 
 # ---------------------------------------------------------------------------
