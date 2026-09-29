@@ -414,3 +414,21 @@ def test_the_builders_agree_with_the_graphs_vector_dimension(
     text = build_remember("a mis-sized vector", graph=query_graph, with_vector=True)
     with pytest.raises(FraiseAPIError):
         client.query(text, parameters={VECTOR_PARAM: [0.5] * (vector_dim // 2)})
+
+
+def test_remember_with_source_quotes_the_provenance_reference():
+    """A source is an opaque external reference, so spaces and case survive."""
+    assert (
+        build_remember(
+            "deploys need approval",
+            source="GitHub://Policy Docs/17",
+        )
+        == "remember@0 'deploys need approval' source:'GitHub://Policy Docs/17'"
+    )
+
+
+def test_remember_source_uses_phrase_escaping():
+    """Apostrophes in a provenance reference use the FQL phrase escape."""
+    assert build_remember("x", source="session:O'Brien") == (
+        "remember@0 'x' source:'session:O''Brien'"
+    )

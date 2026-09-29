@@ -4,7 +4,7 @@ description: "The same pipeline as /q, with the per-source contributions each hi
 navLabel: "Explain"
 ---
 
-The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from, and the result carries the query's `background` rate.
+The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from, and — when the fact was remembered with `source:` — its provenance reference. The result carries the query's `background` rate and an `explain_version` beginning with `unstable-`; callers that consume debug fields should check that version rather than treating the envelope as stable API.
 
 Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
 
@@ -64,3 +64,37 @@ $$
 In the example, `polly` holds $2.9682 - 0.9762 - 3 \times 0.6596 \approx 0.013$ above background, which spread over its 3 edges and attenuated adds about $0.0011$ to the text mass — hence $0.9773$. A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score.
 
 A hit with only `graph` contributions matched nothing itself and was preempted in on transmitted surplus alone — which the model only permits when the surplus was genuinely above background. The formula and the lanes are introduced in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).
+
+
+## Provenance
+
+A fact can be remembered with one bounded provenance reference:
+
+```text
+remember@2 'deploys require two approvals' topic:deploy-policy source:'github:policy/17'
+```
+
+`source:` is metadata, not graph identity or an anchor. Re-remembering the same fact from a different source updates the fact's provenance instead of creating a duplicate fact, and the source does not participate in traversal. The reference is intentionally bounded; store a URI, document id, session id, or tool-call id rather than copying the source document or tool payload into it.
+
+Ordinary `/api/v1/q` recall stays lean and does not expose provenance. An explained recall adds the reference to the hit:
+
+```json
+{
+  "results": {
+    "count": 1,
+    "explain_version": "unstable-1",
+    "hits": [
+      {
+        "value": "deploys require two approvals",
+        "score": 1.0,
+        "source": "github:policy/17",
+        "contributions": [
+          { "source": "text", "score": 1.0, "rank": 0, "count": 1 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The Python SDK exposes the same boundary with `remember(..., source="github:policy/17")` and `recall(..., explain=True)`. In the typed model, `Hit.source` means provenance while each `HitContribution.channel` names the retrieval channel, avoiding two unrelated meanings of “source” in application code.

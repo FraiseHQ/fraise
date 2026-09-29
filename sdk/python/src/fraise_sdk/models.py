@@ -29,19 +29,51 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class HitContribution:
+    """One retrieval channel's evidence in an explained hit."""
+
+    channel: str
+    score: float
+    rank: int = 0
+    via: str | None = None
+    degree: int = 0
+    count: int = 0
+
+    @classmethod
+    def from_json(cls, data: dict) -> HitContribution:  # noqa: D102
+        return cls(
+            channel=data["source"],
+            score=float(data["score"]),
+            rank=int(data.get("rank", 0)),
+            via=data.get("via"),
+            degree=int(data.get("degree", 0)),
+            count=int(data.get("count", 0)),
+        )
+
+
+@dataclass(frozen=True)
 class Hit:
     """One recalled fact and how strongly it matched the query."""
 
     value: str
     score: float
     timestamp: str | None = None
+    source: str | None = None
+    contributions: tuple[HitContribution, ...] | None = None
 
     @classmethod
     def from_json(cls, data: dict) -> Hit:  # noqa: D102
+        contributions = data.get("contributions")
         return cls(
             value=data["value"],
             score=float(data["score"]),
             timestamp=data.get("timestamp"),
+            source=data.get("source"),
+            contributions=(
+                tuple(HitContribution.from_json(item) for item in contributions)
+                if contributions is not None
+                else None
+            ),
         )
 
 
@@ -69,6 +101,8 @@ class RecallResult:
     hits: list[Hit]
     warnings: list[str] = field(default_factory=list)
     empty: bool = False
+    background: float = 0.0
+    explain_version: str | None = None
 
     @classmethod
     def from_json(
@@ -102,6 +136,8 @@ class RecallResult:
             hits=hits,
             warnings=list(warnings or []),
             empty=empty,
+            background=float(results.get("background", 0.0)),
+            explain_version=results.get("explain_version"),
         )
 
     def __bool__(self) -> bool:

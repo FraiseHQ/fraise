@@ -781,3 +781,54 @@ def test_an_unreachable_server_raises_fraise_error(dead_url, round_trip_graph):
     """
     with pytest.raises(FraiseError, match="could not reach fraise"):
         FraiseClient(dead_url).query(f"recall@{round_trip_graph} anything")
+
+
+def test_remember_posts_source_reference(session, sent):
+    """The typed remember helper carries source: without changing transport."""
+    FraiseClient().remember(
+        "deploys need approval",
+        source="github:policy/17",
+    )
+
+    assert sent(session)["query"] == (
+        "remember@0 'deploys need approval' source:'github:policy/17'"
+    )
+
+
+def test_recall_explain_uses_explain_endpoint_and_parses_traceability(session, respond):
+    """explain=True opts into the debug endpoint and its typed evidence."""
+    respond(
+        session,
+        {
+            "results": {
+                "count": 1,
+                "hits": [
+                    {
+                        "value": "deploys need approval",
+                        "score": 1.0,
+                        "source": "github:policy/17",
+                        "contributions": [
+                            {"source": "text", "score": 1.0, "rank": 0, "count": 1}
+                        ],
+                    }
+                ],
+                "background": 0.1,
+                "explain_version": "unstable-1",
+            }
+        },
+    )
+
+    result = FraiseClient().recall("deploys", explain=True)
+
+    assert session.post.call_args.args[0].endswith("/api/v1/explain")
+    assert result.explain_version == "unstable-1"
+    assert result.background == 0.1
+    assert result.hits[0].source == "github:policy/17"
+    assert result.hits[0].contributions[0].channel == "text"
+
+
+def test_plain_recall_still_uses_query_endpoint(session):
+    """Traceability remains opt-in; the default route is unchanged."""
+    FraiseClient().recall("deploys")
+
+    assert session.post.call_args.args[0].endswith("/api/v1/q")

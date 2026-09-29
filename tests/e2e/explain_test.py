@@ -203,3 +203,22 @@ def test_explain_rejects_unparsable_queries(explain, bad_query):
     status, body = explain(bad_query)
     assert status == 400
     assert "error" in body
+
+
+def test_explain_round_trips_fact_provenance(query, explain):
+    """A remembered source comes back only from the explicit explain surface."""
+    value = "deploy policy requires two approvals"
+    source = "github:policy/17"
+    status, body = query(f"remember@2 '{value}' topic:deploy-policy source:'{source}'")
+    assert status == 200, body.get("error")
+
+    status, body = query("recall@2 deploy topic:deploy-policy")
+    assert status == 200, body.get("error")
+    hit = next(h for h in body["results"]["hits"] if h["value"] == value)
+    assert "source" not in hit
+
+    status, body = explain("recall@2 deploy topic:deploy-policy")
+    assert status == 200, body.get("error")
+    assert body["results"]["explain_version"] == "unstable-1"
+    hit = next(h for h in body["results"]["hits"] if h["value"] == value)
+    assert hit["source"] == source

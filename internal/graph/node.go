@@ -53,6 +53,12 @@ type Node[K comparable] interface {
 	GetAttributes() *NodeAttributes
 }
 
+// Sourced is implemented by stored nodes carrying provenance. Facts do;
+ // graph-derived anchors and relationships do not.
+type Sourced interface {
+	GetSource() string
+}
+
 type Entity[K comparable] interface {
 	Node[K]
 

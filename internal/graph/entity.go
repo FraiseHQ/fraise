@@ -30,6 +30,11 @@ import (
 
 type Fact[K comparable] struct {
 	NodeAttributes
+
+	// Source is a bounded reference to the fact's origin. It is metadata, not
+	// identity, so re-remembering the same fact refreshes provenance in place.
+	Source string
+
 	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
@@ -47,6 +52,10 @@ func (f Fact[K]) GetTimestamp() time.Time {
 
 func (f Fact[K]) GetAttributes() *NodeAttributes {
 	return &f.NodeAttributes
+}
+
+func (f Fact[K]) GetSource() string {
+	return f.Source
 }
 
 // Hash keys the fact by its text in the fact namespace, so a topic or entity

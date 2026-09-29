@@ -127,6 +127,9 @@ type DBConfig struct {
 	// parse time).
 	MaxVectorDimension int `toml:"max-vector-dimension"`
 
+	// Ceiling on a remember's provenance reference.
+	MaxSourceLength int `toml:"max-source-length"`
+
 	// The *minimum* candidate budget pulled from each source (keywords and
 	// vector). Search widens it to the requested result size — the effective
 	// budget is max(seed-size, top) — so a recall asking for more results
@@ -259,6 +262,7 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.MaxTop, "max-top", DefaultMaxTop, "Ceiling on a recall's top clause")
 	flagSet.IntVar(&config.DB.MaxDepth, "max-depth", DefaultMaxDepth, "Ceiling on a recall's depth clause")
 	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
+	flagSet.IntVar(&config.DB.MaxSourceLength, "max-source-length", DefaultMaxSourceLength, "Ceiling on a remember's source reference length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")

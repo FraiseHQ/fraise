@@ -42,6 +42,9 @@ from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
 from fraise_sdk.models import RecallResult
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
+QUERY_ENDPOINT = "/api/v1/q"
+EXPLAIN_ENDPOINT = "/api/v1/explain"
+
 
 def _parse_version(text: str) -> tuple[int, int, int] | None:
     """Parse ``major.minor.patch`` into a tuple, ignoring any pre-release suffix.
@@ -180,6 +183,7 @@ class FraiseClient:
         graph: int = 0,
         topics: Sequence[str] | None = None,
         entities: Sequence[str] | None = None,
+        source: str | None = None,
         vector: Sequence[float] | None = None,
         embed: bool | None = None,
         timeout: float | None = None,
@@ -208,6 +212,7 @@ class FraiseClient:
             graph=graph,
             topics=topics,
             entities=entities,
+            source=source,
             with_vector=resolved is not None,
         )
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
@@ -224,6 +229,7 @@ class FraiseClient:
         depth: int | None = None,
         vector: Sequence[float] | None = None,
         embed: bool | None = None,
+        explain: bool = False,
         timeout: float | None = None,
     ) -> RecallResult:
         """Search ``graph`` for facts and return them ranked by relevance.
@@ -264,7 +270,12 @@ class FraiseClient:
             with_vector=resolved is not None,
         )
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
-        status, body = self._post(text, parameters=parameters, timeout=timeout)
+        status, body = self._post(
+            text,
+            parameters=parameters,
+            timeout=timeout,
+            endpoint=EXPLAIN_ENDPOINT if explain else QUERY_ENDPOINT,
+        )
         results = body.get("results") or {}
         return RecallResult.from_json(
             results,
@@ -339,6 +350,7 @@ class FraiseClient:
         *,
         parameters: dict[str, list[float]] | None = None,
         timeout: float | None = None,
+        endpoint: str = QUERY_ENDPOINT,
     ) -> tuple[int, dict]:
         """Send a query and return the response status beside its decoded body.
 
@@ -352,6 +364,7 @@ class FraiseClient:
             text: the raw query string.
             parameters: out-of-band vector bindings the query references.
             timeout: per-call override of the client's timeout.
+            endpoint: query route to post to; explain uses the same request body.
 
         Returns:
             The HTTP status code and the decoded JSON body, ``{}`` when the
@@ -368,7 +381,7 @@ class FraiseClient:
         effective_timeout = self.timeout if timeout is None else timeout
         try:
             response = self._session.post(
-                f"{self.base_url}/api/v1/q",
+                f"{self.base_url}{endpoint}",
                 json=payload,
                 timeout=effective_timeout,
             )

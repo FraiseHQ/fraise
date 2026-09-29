@@ -35,6 +35,7 @@ type Remember[K comparable, P float32 | float64] struct {
 	Value    string
 	Entities []string
 	Topics   []string
+	Source   string
 	Vector   containers.Vector[K, P]
 
 	context QueryContext
@@ -67,6 +68,8 @@ func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	b.WriteString(strings.Join(r.Entities, "\x00"))
 	b.WriteString("|to=")
 	b.WriteString(strings.Join(r.Topics, "\x00"))
+	b.WriteString("|src=")
+	b.WriteString(r.Source)
 	b.WriteString("|vec=")
 	b.WriteString(r.Vector.Hash(h))
 	return h.Hash(b.String())

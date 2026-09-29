@@ -1063,7 +1063,7 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		// A modifier is a recall clause: the message names the command it was
 		// given to and the clauses a remember takes, rather than telling the
 		// caller to write since:<value> — exactly what they wrote.
-		{"remember 'a fact' top:3", "top: is a recall clause: a remember takes only topic:, entity: and vec:"},
+		{"remember 'a fact' top:3", "top: is a recall clause: a remember takes only topic:, entity:, source: and vec:"},
 		{"remember 'a fact' since:7d", "since: is a recall clause"},
 		{"remember 'a fact' depth:1", "depth: is a recall clause"},
 		// A NUL outside a phrase used to end the query where it stood, and
@@ -1318,5 +1318,29 @@ func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 		if !strings.Contains(msg, want) {
 			t.Errorf("warning %q does not contain %q", msg, want)
 		}
+	}
+}
+
+
+func TestRememberSourcePreservesReferenceAndRejectsDuplicates(t *testing.T) {
+	cmd, _, err := parser.Parse[uint64, float32]("remember 'deploys need approval' source:'GitHub://Policy/17'")
+	if err != nil {
+		t.Fatalf("Parse() unexpected error: %v", err)
+	}
+	remember := cmd.(*parser.RememberCommandNode[float32])
+	if got := remember.Source(); got != "GitHub://Policy/17" {
+		t.Fatalf("Source() = %q, want exact external reference", got)
+	}
+
+	_, _, err = parser.Parse[uint64, float32]("remember 'x' source:a source:b")
+	if err == nil || !strings.Contains(err.Error(), "duplicate source clause") {
+		t.Fatalf("duplicate source Parse() error = %v, want duplicate-source error", err)
+	}
+}
+
+func TestSourceIsRememberOnly(t *testing.T) {
+	_, _, err := parser.Parse[uint64, float32]("recall deploy source:'doc://17'")
+	if err == nil {
+		t.Fatal("recall source: parsed, want provenance to remain a remember-only clause")
 	}
 }

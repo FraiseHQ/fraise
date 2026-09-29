@@ -116,6 +116,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 				Value:     remember.Value,
 				Timestamp: time.Now(),
 			},
+			Source: remember.Source,
 			Hasher: g.GetHasher(),
 		}
 
@@ -224,8 +225,9 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		Hits:  make([]Hit[K, P], n),
 	}
 	if s.Explain {
-		// Explain explains through the anchors, so the payload carries the
-		// query-level background rate alongside each hit's breakdown.
+		// Explain is explicitly unstable: clients consuming its extra fields
+		// can gate on this token while ordinary recalls remain unchanged.
+		r.ExplainVersion = ExplainVersion
 		r.Background = background
 	}
 	for i := 0; i < n; i++ {
@@ -239,6 +241,11 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		// graph can turn it into the topic/entity value a client can read.
 		if s.Explain {
 			r.Hits[i].Contributions = resolveContributions(g, contributions[i])
+			if n := nodes[i]; n != nil {
+				if sourced, ok := (*n).(graph.Sourced); ok {
+					r.Hits[i].Source = sourced.GetSource()
+				}
+			}
 		}
 	}
 

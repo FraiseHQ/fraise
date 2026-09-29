@@ -65,7 +65,7 @@ func TestRememberHash(t *testing.T) {
 	// Hash folds in graph, value, the delimited entity/topic lists and the
 	// bound vector so writes that differ in any of those get distinct cache
 	// keys.
-	const want = "g=2|v=hello world|en=alice|to=greeting|vec=H(0x1p-01)"
+	const want = "g=2|v=hello world|en=alice|to=greeting|src=|vec=H(0x1p-01)"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -87,6 +87,7 @@ func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 		"graph":  func() Remember[string, float32] { r := base(); r.context.GraphID = 5; return r }(),
 		"topic":  func() Remember[string, float32] { r := base(); r.Topics = []string{"birds"}; return r }(),
 		"entity": func() Remember[string, float32] { r := base(); r.Entities = []string{"polly"}; return r }(),
+		"source": func() Remember[string, float32] { r := base(); r.Source = "doc://policy/17"; return r }(),
 		"vector-a": func() Remember[string, float32] {
 			r := base()
 			r.Vector = containers.NewVector[string]([]float32{1, 0})

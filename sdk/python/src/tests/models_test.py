@@ -200,3 +200,49 @@ def test_scores_are_raw_fused_quantities(tide_result):
     ordering, not probability.
     """
     assert all(hit.score > 0 for hit in tide_result)
+
+
+def test_explain_payload_parses_provenance_and_contributions():
+    """The unstable explain envelope is typed without changing plain hits."""
+    result = RecallResult.from_json(
+        {
+            "count": 1,
+            "hits": [
+                {
+                    "value": "deploys need approval",
+                    "score": 1.25,
+                    "source": "github:policy/17",
+                    "contributions": [
+                        {
+                            "source": "text",
+                            "score": 1.25,
+                            "rank": 0,
+                            "count": 1,
+                        }
+                    ],
+                }
+            ],
+            "background": 0.2,
+            "explain_version": "unstable-1",
+        }
+    )
+
+    hit = result.hits[0]
+    assert hit.source == "github:policy/17"
+    assert hit.contributions is not None
+    assert hit.contributions[0].channel == "text"
+    assert hit.contributions[0].score == 1.25
+    assert result.background == 0.2
+    assert result.explain_version == "unstable-1"
+
+
+def test_plain_payload_keeps_traceability_fields_absent():
+    """Old and ordinary recall payloads still parse with no debug metadata."""
+    result = RecallResult.from_json(
+        {"count": 1, "hits": [{"value": "x", "score": 1.0}]}
+    )
+
+    assert result.hits[0].source is None
+    assert result.hits[0].contributions is None
+    assert result.background == 0.0
+    assert result.explain_version is None

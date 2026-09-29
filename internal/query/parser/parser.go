@@ -227,7 +227,7 @@ func (p *parser[K, P]) errKeywordAsClause(tok lexer.Token) error {
 // mistake is the command it was given to, and the message says which clauses
 // that command takes.
 func (p *parser[K, P]) errRecallClauseOnWrite(tok lexer.Token) error {
-	return p.errf(tok.Pos, "%s: is a recall clause: a remember takes only topic:, entity: and vec:", strings.ToLower(tok.Literal))
+	return p.errf(tok.Pos, "%s: is a recall clause: a remember takes only topic:, entity:, source: and vec:", strings.ToLower(tok.Literal))
 }
 
 // errDuplicate rejects a single-valued clause given twice. Last-wins is the
@@ -350,6 +350,15 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 				field = EntityFieldNode{key: key, value: value}
 			}
 			anchors = append(anchors, AnchorFieldNode{field: field})
+		case lexer.SOURCE:
+			if r.source != nil {
+				return nil, p.errDuplicate(p.cur)
+			}
+			key, value, err := p.parseSourceField()
+			if err != nil {
+				return nil, err
+			}
+			r.source = &SourceFieldNode{key: key, value: value, pos: key.Pos}
 		case lexer.VEC:
 			if r.vec != nil {
 				return nil, p.errDuplicate(p.cur)
@@ -668,6 +677,22 @@ func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 // parseAnchorField consumes a topic:/entity: clause. As in parseTimeValue, the
 // ':' is required: "topic food extra" used to shift tokens into the wrong roles
 // and return an unfiltered result set rather than a parse error.
+func (p *parser[K, P]) parseSourceField() (lexer.Token, string, error) {
+	key := p.cur
+	p.next()
+	if _, err := p.expect(lexer.COLON); err != nil {
+		return lexer.Token{}, "", p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
+	}
+	tok, err := p.parseValue()
+	if err != nil {
+		return lexer.Token{}, "", err
+	}
+	if err := p.errEmpty("a source reference", tok.Literal, tok.Pos); err != nil {
+		return lexer.Token{}, "", err
+	}
+	return key, tok.Literal, nil
+}
+
 func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 	key := p.cur
 
