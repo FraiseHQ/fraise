@@ -286,7 +286,7 @@ func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 	doc1 := model.Increment(idfRed, 1, 1, n2) + model.Increment(idfGreen, 1, 1, n2)
 	doc2 := model.Increment(idfGreen, 2, 1, n2)
 	denom := int((idfRed+idfGreen)*1024) + 1
-	want := []P{model.Finalize(doc1, 2048, denom), model.Finalize(doc2, 1024, denom)}
+	want := []P{model.Finalize(doc1, int((idfRed+idfGreen)*1024), denom), model.Finalize(doc2, int((idfGreen)*1024), denom)}
 	if !reflect.DeepEqual(scores, want) {
 		t.Errorf("Search scores = %v, want %v (BM25 × coverage at %T)", scores, want, *new(P))
 	}
