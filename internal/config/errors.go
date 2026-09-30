@@ -25,14 +25,22 @@ package config
 import "errors"
 
 var (
-	// ErrParsingFailed is returned when the config file cannot be parsed or
-	// contains keys that map to no known field.
+	// ErrMissingFile is returned when the config file does not exist. It is
+	// the one config failure that is survivable: the built-in defaults plus
+	// the flags are a complete configuration, and containers routinely ship
+	// without a file.
+	ErrMissingFile = errors.New("config: config file not found")
+	// ErrParsingFailed is returned when the config file exists but cannot be
+	// used: it is not valid TOML, a value has the wrong type, or a key maps to
+	// no known setting. It stops startup like an invalid value does — a file
+	// the server half-read would run with defaults the operator believes they
+	// overrode, and a mistyped key is exactly the edit they meant to make.
 	ErrParsingFailed = errors.New("config: error while parsing config file")
 	// ErrInvalidFlag is returned when the command line carries an unexpected
 	// positional argument (i.e. an unknown/invalid flag).
 	ErrInvalidFlag = errors.New("config: invalid flag")
 	// ErrInvalidValue is returned when a setting names something outside the
-	// values it accepts. It is deliberately distinct from ErrParsingFailed: a
+	// values it accepts. It is deliberately distinct from ErrMissingFile: a
 	// missing config file is survivable (the defaults are a valid
 	// configuration), but a value the server cannot honour is not, so the
 	// startup path stops on this one instead of warning and carrying on.
