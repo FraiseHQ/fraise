@@ -65,6 +65,8 @@ type Relevance[K comparable, P float32 | float64] interface {
 	Increment(weight P, key K, tf int, prepared P) P
 
 	// Finalize folds the accumulated score and match breadth into the final
-	// relevance; coverage lives here.
-	Finalize(score P, matched, terms int) P
+	// relevance; coverage lives here. matched and total are the idf mass of
+	// the query terms the document matched and of all of them, in the 1/1024
+	// fixed point Search hands in.
+	Finalize(score P, matched, total int) P
 }
