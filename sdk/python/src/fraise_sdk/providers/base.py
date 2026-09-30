@@ -20,12 +20,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""The embedder contract every provider implements, and the resolver for it.
+"""The provider contracts — embedder and extractor — and their resolvers.
 
-:class:`Embedder` is the abstract base a provider subclasses: implement
-``embed(text) -> Sequence[float]`` and instances are usable directly and as a
-callable. :class:`~fraise_sdk.client.FraiseClient` accepts an ``Embedder`` or,
-for convenience, any bare ``callable(text) -> Sequence[float]``.
+:class:`Embedder` is the abstract base an embedding provider subclasses:
+implement ``embed(text) -> Sequence[float]`` and instances are usable directly
+and as a callable. :class:`Extractor` is its counterpart for anchors:
+implement ``extract(text) -> list[Anchor]``.
+:class:`~fraise_sdk.client.FraiseClient` accepts either, or for convenience any
+bare callable of the same shape.
 
 Concrete providers live in sibling modules and import from here, never from the
 package root — that keeps ``providers/__init__.py`` a pure re-export and avoids
@@ -36,9 +38,29 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Literal
 
 # For callers who would rather pass a plain function than subclass Embedder.
 EmbedderLike = Callable[[str], Sequence[float]]
+
+
+@dataclass(frozen=True)
+class Anchor:
+    """One anchor a message is filed under: a topic or an entity.
+
+    ``type`` says which clause it becomes on ``remember`` — ``topic:`` or
+    ``entity:`` — and ``value`` is what follows the ``:``. Anchors drive the
+    server's filtering and graph walk; the message text itself is never
+    rewritten to carry them.
+    """
+
+    value: str
+    type: Literal["topic", "entity"]
+
+
+# For callers who would rather pass a plain function than subclass Extractor.
+ExtractorLike = Callable[[str], Sequence[Anchor]]
 
 
 class Embedder(ABC):
@@ -56,6 +78,25 @@ class Embedder(ABC):
     def __call__(self, text: str) -> Sequence[float]:
         """Encode ``text``, so an instance is usable as a bare callable."""
         return self.embed(text)
+
+
+class Extractor(ABC):
+    """Abstract base for anything that finds the anchors a message belongs under.
+
+    Subclasses implement :meth:`extract`; :meth:`__call__` then comes for free,
+    so an instance works anywhere a plain ``callable(text)`` is expected. An
+    extractor may raise when it cannot read a message: the client stores the
+    message anyway, without the extracted anchors, and warns.
+    """
+
+    @abstractmethod
+    def extract(self, text: str) -> list[Anchor]:
+        """Return the topics and entities ``text`` is about, as anchors."""
+        raise NotImplementedError
+
+    def __call__(self, text: str) -> list[Anchor]:
+        """Extract ``text``'s anchors, so an instance is usable as a callable."""
+        return self.extract(text)
 
 
 def resolve_embedder(embedder: Embedder | EmbedderLike | None) -> EmbedderLike | None:
@@ -77,4 +118,28 @@ def resolve_embedder(embedder: Embedder | EmbedderLike | None) -> EmbedderLike |
     raise TypeError(
         "embedder must be an Embedder (with an .embed method) or a callable, "
         f"got {type(embedder).__name__}"
+    )
+
+
+def resolve_extractor(
+    extractor: Extractor | ExtractorLike | None,
+) -> ExtractorLike | None:
+    """Normalize an :class:`Extractor`, a bare callable, or None to one function.
+
+    Prefers an ``.extract`` method (an :class:`Extractor`) over calling the
+    object directly, so an extractor exposing both stays on its named method.
+
+    Raises:
+        TypeError: if extractor is neither an Extractor nor a callable
+    """
+    if extractor is None:
+        return None
+    extract = getattr(extractor, "extract", None)
+    if callable(extract):
+        return extract
+    if callable(extractor):
+        return extractor
+    raise TypeError(
+        "extractor must be an Extractor (with an .extract method) or a callable, "
+        f"got {type(extractor).__name__}"
     )

@@ -107,11 +107,13 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 	// operator can only detect by noticing the behaviour they asked for is
 	// missing. The error lists what the setting accepts.
 	//
-	// An unrecognised flag is fatal for the same reason. It has to be named
-	// explicitly because everything below merely warns: a mistyped flag that
-	// warned would start the server with a default the operator never asked
-	// for, silently.
-	if errors.Is(cfgErr, config.ErrInvalidValue) || errors.Is(cfgErr, config.ErrInvalidFlag) {
+	// An unrecognised flag is fatal for the same reason, and so is a config
+	// file that exists but cannot be used — malformed, or naming a key no
+	// setting has. They have to be named explicitly because everything below
+	// merely warns: a mistyped flag or key that warned would start the server
+	// with a default the operator never asked for, silently. The one survivable
+	// failure is a missing file.
+	if errors.Is(cfgErr, config.ErrInvalidValue) || errors.Is(cfgErr, config.ErrInvalidFlag) || errors.Is(cfgErr, config.ErrParsingFailed) {
 		return cfgErr
 	}
 
@@ -127,10 +129,10 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 		logger.SetDefault(logger.NewLogger(c))
 		logger.Info("Starting server...")
 		if cfgErr != nil {
-			// Parse falls back to built-in defaults on a missing/invalid
-			// file; log so a silently-defaulted config is visible rather
-			// than a surprise.
-			logger.Warn("Config not fully loaded, using defaults", "error", cfgErr)
+			// All that survives to here is a missing file: Parse fell back to
+			// the built-in defaults, and saying so keeps a silently-defaulted
+			// config visible rather than a surprise.
+			logger.Warn("Config file not found, using defaults", "error", cfgErr)
 		}
 		logger.Debug("Config loaded", "config", c)
 

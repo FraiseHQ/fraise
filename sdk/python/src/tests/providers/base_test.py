@@ -20,12 +20,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Tests for the embedder resolver and the Embedder base class."""
+"""Tests for the provider resolvers and the Embedder and Extractor bases."""
 
 from unittest.mock import MagicMock
 
 import pytest
-from fraise_sdk.providers.base import Embedder, resolve_embedder
+from fraise_sdk.providers.base import (
+    Embedder,
+    Extractor,
+    resolve_embedder,
+    resolve_extractor,
+)
 
 
 def test_resolve_none():
@@ -58,3 +63,50 @@ def test_resolve_rejects_non_embedder():
 def test_embedder_abc_cannot_be_instantiated():
     with pytest.raises(TypeError):
         Embedder()  # abstract
+
+
+def test_resolve_extractor_none():
+    """No extractor resolves to None, so the client never extracts."""
+    assert resolve_extractor(None) is None
+
+
+def test_resolve_extractor_callable():
+    """A bare callable is used as it is."""
+    extractor = MagicMock(return_value=[])
+    # A plain callable has no .extract; deleting it is what makes this mock the
+    # bare-callable shape rather than the Extractor one.
+    del extractor.extract
+    assert resolve_extractor(extractor) is extractor
+
+
+def test_resolve_extractor_prefers_extract_method():
+    """An Extractor resolves to its bound ``extract``, never its ``__call__``.
+
+    ``__call__`` delegates to ``extract``, so resolving to it would only add a
+    hop — and a subclass overriding one of the two would split them.
+    """
+    extractor = MagicMock()
+    resolved = resolve_extractor(extractor)
+    assert resolved is extractor.extract
+    resolved("abc")
+    extractor.extract.assert_called_once_with("abc")
+    extractor.assert_not_called()
+
+
+def test_resolve_extractor_rejects_non_extractor():
+    """Anything neither an Extractor nor callable is refused at construction."""
+    with pytest.raises(TypeError, match="extractor must be"):
+        resolve_extractor(object())
+
+
+def test_extractor_abc_cannot_be_instantiated():
+    """Extractor is a contract: it has no ``extract`` of its own."""
+    with pytest.raises(TypeError):
+        Extractor()  # abstract
+
+
+def test_calling_an_extractor_extracts():
+    """``__call__`` is ``extract``, so an Extractor works wherever a callable does."""
+    extractor = MagicMock()
+    Extractor.__call__(extractor, "the heron fishes at dawn")
+    extractor.extract.assert_called_once_with("the heron fishes at dawn")

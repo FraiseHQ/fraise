@@ -114,10 +114,54 @@ name = "xxhash"
 	}
 }
 
+// TestConfigSet_FromFile_Missing pins that a file that is not there is told
+// apart from one that is there and broken: only the first is survivable, so
+// it must not read as ErrParsingFailed.
 func TestConfigSet_FromFile_Missing(t *testing.T) {
 	c := config.New()
-	if _, err := c.FromFile(filepath.Join(t.TempDir(), "does-not-exist.toml")); err == nil {
-		t.Fatal("expected error for missing file, got nil")
+	_, err := c.FromFile(filepath.Join(t.TempDir(), "does-not-exist.toml"))
+	if !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("FromFile(missing) = %v, want ErrMissingFile", err)
+	}
+	if errors.Is(err, config.ErrParsingFailed) {
+		t.Errorf("a missing file read as ErrParsingFailed, which stops startup: %v", err)
+	}
+}
+
+// TestParseRejectsAnUnusableConfigFile pins the other side: a file that
+// exists but cannot be used stops Parse with ErrParsingFailed, and the error
+// names the file and what was wrong, so the operator can find the line. Each
+// of these used to be survivable — logged, then the server started on
+// defaults the operator believed they had overridden. The unknown key is the
+// one the documentation's own example carried after the setting was removed.
+func TestParseRejectsAnUnusableConfigFile(t *testing.T) {
+	cases := []struct {
+		name, contents, detail string
+	}{
+		{"not TOML", "[log\nlevel = \"DEBUG\"\n", "toml"},
+		{"wrong type", "[server]\nport = \"9876\"\n", "port"},
+		{"unknown key", "[engine]\nallow-unanchored-recall = true\n", "engine.allow-unanchored-recall"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), config.DefaultConfigFile)
+			if err := os.WriteFile(path, []byte(tc.contents), 0o644); err != nil {
+				t.Fatalf("writing config file: %v", err)
+			}
+
+			err := config.New().Parse([]string{"-config", path})
+
+			if !errors.Is(err, config.ErrParsingFailed) {
+				t.Fatalf("Parse = %v, want ErrParsingFailed", err)
+			}
+			if !strings.Contains(err.Error(), path) {
+				t.Errorf("error %q does not name the file %q", err, path)
+			}
+			if !strings.Contains(err.Error(), tc.detail) {
+				t.Errorf("error %q does not say what was wrong (%q)", err, tc.detail)
+			}
+		})
 	}
 }
 
@@ -368,17 +412,18 @@ func TestParseCanonicalisesConfigFileValues(t *testing.T) {
 
 // TestParseAppliesDefaultsWithoutAConfigFile guards the flip side of running
 // validation on the no-file path: a missing config file must still be
-// survivable, reported as a parse failure and not as an invalid value, with
-// every default in place. The server keeps starting in that case.
+// survivable, reported as ErrMissingFile and not as a parse failure or an
+// invalid value, with every default in place. The server keeps starting in
+// that case.
 func TestParseAppliesDefaultsWithoutAConfigFile(t *testing.T) {
 	c := config.New()
 	err := c.Parse([]string{"-config", missingConfig(t)})
 
-	if !errors.Is(err, config.ErrParsingFailed) {
-		t.Fatalf("Parse with no config file = %v, want ErrParsingFailed", err)
+	if !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse with no config file = %v, want ErrMissingFile", err)
 	}
-	if errors.Is(err, config.ErrInvalidValue) {
-		t.Error("a missing config file must not read as an invalid value: that stops startup")
+	if errors.Is(err, config.ErrParsingFailed) || errors.Is(err, config.ErrInvalidValue) {
+		t.Error("a missing config file must not read as a parse failure or an invalid value: both stop startup")
 	}
 	if c.Log.Level != config.DefaultLogLevel || c.Log.Format != config.DefaultLogFormat {
 		t.Errorf("log defaults not applied: level %q, format %q", c.Log.Level, c.Log.Format)
@@ -390,5 +435,32 @@ func TestParseAppliesDefaultsWithoutAConfigFile(t *testing.T) {
 	wantWorkers := max(config.MinWorkersCount, runtime.GOMAXPROCS(0))
 	if c.Scheduler.Workers != wantWorkers {
 		t.Errorf("Scheduler.Workers = %d, want max(MinWorkersCount, GOMAXPROCS) = %d", c.Scheduler.Workers, wantWorkers)
+	}
+}
+
+// TestParseDerivesTheMCPAddressFromThePort pins the bridge's default: with no
+// address configured it forwards to the daemon the same config describes, so
+// a port moved in the shared file moves the bridge with it — while an
+// explicit -addr wins over the derivation.
+func TestParseDerivesTheMCPAddressFromThePort(t *testing.T) {
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-port", "4242"}, "http://127.0.0.1:4242"},
+		{nil, "http://127.0.0.1:9876"},
+		{[]string{"-port", "4242", "-addr", "http://10.0.0.5:9876"}, "http://10.0.0.5:9876"},
+	}
+
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			c := config.New()
+			if err := c.Parse(append([]string{"-config", missingConfig(t)}, tc.args...)); errors.Is(err, config.ErrInvalidValue) || errors.Is(err, config.ErrInvalidFlag) {
+				t.Fatalf("Parse(%v) = %v, want the flags accepted", tc.args, err)
+			}
+			if c.MCP.Address != tc.want {
+				t.Errorf("MCP.Address = %q, want %q", c.MCP.Address, tc.want)
+			}
+		})
 	}
 }
