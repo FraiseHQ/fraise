@@ -4,7 +4,7 @@ description: "fraise mcp is a stdio MCP server bridging any MCP client to a runn
 navIcon: "🔌"
 ---
 
-`fraise mcp` is a stdio MCP server — a thin bridge to a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, and needs no flags when the daemon is on its default address.
+`fraise mcp` is a stdio MCP server — a thin bridge to a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, and needs no flags when the daemon runs on the same machine.
 
 <Note title="Before you register" type="note">
 
@@ -59,6 +59,23 @@ Add it to `opencode.json` in your project root:
   }
 }
 ```
+
+## A daemon elsewhere
+
+The bridge reads the same configuration as the daemon, so on the same machine it finds the daemon on whatever port that configuration gives it. To reach one somewhere else — another port, another host — pass its address:
+
+```sh
+claude mcp add fraise -- fraise mcp -addr http://10.0.0.5:9876
+```
+
+or set it in the config file the bridge reads (`fraise.config.toml` in its working directory, or the one `-config` names):
+
+```toml
+[mcp]
+address = "http://10.0.0.5:9876"
+```
+
+The address carries no graph: each query names its own with `@N`.
 
 ## What the bridge carries, and what it cannot
 
