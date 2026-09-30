@@ -47,6 +47,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk.client import DEFAULT_BASE_URL, FraiseClient
+from fraise_sdk.providers import Anchor
 
 
 def pytest_configure(config):
@@ -389,6 +390,67 @@ def callable_embedder():
         return embedder
 
     return _callable_embedder
+
+
+# -- extractors --------------------------------------------------------------
+
+
+# What the suite's extractor finds in any text. "travel" and "Anne" repeat
+# anchors a test gives in another casing, and "Lisbon airport" is not one plain
+# word, so one remember shows the repeat dropped and the value quoted.
+_EXTRACTED_ANCHORS = (
+    Anchor(value="travel", type="topic"),
+    Anchor(value="trips", type="topic"),
+    Anchor(value="Anne", type="entity"),
+    Anchor(value="Lisbon airport", type="entity"),
+)
+
+
+@pytest.fixture
+def callable_extractor():
+    """Callable building a mock of the bare ``callable(text) -> anchors`` shape.
+
+    Returns:
+        ``callable() -> MagicMock`` answering every text with the same four
+        anchors — two topics, two entities. A fresh mock per call, so a test
+        can assert on the text its own extractor was given.
+    """
+
+    def _callable_extractor() -> MagicMock:
+        extractor = MagicMock(return_value=list(_EXTRACTED_ANCHORS))
+        # A plain callable has no .extract — deleting it is what sends
+        # resolve_extractor down the callable branch instead of the Extractor one.
+        del extractor.extract
+        return extractor
+
+    return _callable_extractor
+
+
+@pytest.fixture
+def chat_client():
+    """Callable building a mock ``openai.OpenAI`` answering one chat completion.
+
+    The suite makes no vendor calls, so the model's answer is scripted: the
+    extractor under test sees exactly the response shape the real client
+    returns, down to ``choices[0].message.content`` and ``finish_reason``.
+
+    Returns:
+        ``callable(content, finish_reason="stop") -> MagicMock``, where
+        ``content`` is the answer's text, or ``None`` for a refusal.
+    """
+
+    def _chat_client(content: str | None, finish_reason: str = "stop") -> MagicMock:
+        client = MagicMock()
+        client.chat.completions.create.return_value = MagicMock(
+            choices=[
+                MagicMock(
+                    message=MagicMock(content=content), finish_reason=finish_reason
+                )
+            ]
+        )
+        return client
+
+    return _chat_client
 
 
 # -- live server (integration fixtures) --------------------------------------

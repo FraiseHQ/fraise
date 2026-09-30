@@ -73,6 +73,21 @@ hits = fraise.recall(query="small bright bird", graph=6)
 
 An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Two ship ready-made: `OpenAIEmbedder` (`fraise-sdk[openai]`) and `HuggingFaceEmbedder` (`fraise-sdk[huggingface]`); Anthropic has no embeddings API.
 
+## Extraction (optional)
+
+Give the client an **extractor** and `remember` files each fact under the topics and entities it is about, without you choosing them:
+
+```python
+from fraise_sdk import FraiseClient
+from fraise_sdk.providers import OpenAIExtractor   # needs fraise-sdk[openai]
+
+fraise = FraiseClient("http://localhost:9876", extractor=OpenAIExtractor())
+
+fraise.remember("Anne's flight lands at Lisbon airport")   # stored verbatim, anchored for you
+```
+
+An extractor is anything implementing the `Extractor` ABC (subclass it and define `extract(text) -> list[Anchor]`) or a plain `callable(text) -> list[Anchor]`, where an `Anchor` has a `value` and a `type`, `"topic"` or `"entity"`. Extracted anchors are added after any `topics=`/`entities=` you pass, without repeating one you gave, and the text itself is never rewritten. If extraction fails, the fact is stored anyway under the anchors you gave, with a `FraiseWarning`. Per call, `extract=True` requires an extractor and `extract=False` skips it. `OpenAIExtractor` (`gpt-5-mini` by default) uses the same instructions the published benchmark ingests with.
+
 ## OpenAI Agents tools
 
 `memory_tools(client)` returns two `FunctionTool`s, `recall_memory` and `remember_fact`, bound to one memory graph, so the agent decides *what* to store and retrieve:

@@ -20,24 +20,37 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Embedding providers — backends that turn text into vectors.
+"""Providers — backends that embed text into vectors or find its anchors.
 
-The contract lives in :mod:`fraise_sdk.providers.base`; concrete providers live
+The contracts live in :mod:`fraise_sdk.providers.base`; concrete providers live
 in their own modules and depend on their own optional extras — currently
-:class:`OpenAIEmbedder` (``fraise-sdk[openai]``) and
-:class:`HuggingFaceEmbedder` (``fraise-sdk[huggingface]``). Importing this
+:class:`OpenAIEmbedder` and :class:`OpenAIExtractor` (``fraise-sdk[openai]``),
+and :class:`HuggingFaceEmbedder` (``fraise-sdk[huggingface]``). Importing this
 package pulls in no vendor SDK: each provider imports its client inside
 ``__init__``, not at module scope.
 """
 
-from fraise_sdk.providers.base import Embedder, EmbedderLike, resolve_embedder
+from fraise_sdk.providers.base import (
+    Anchor,
+    Embedder,
+    EmbedderLike,
+    Extractor,
+    ExtractorLike,
+    resolve_embedder,
+    resolve_extractor,
+)
 from fraise_sdk.providers.huggingface import HuggingFaceEmbedder
-from fraise_sdk.providers.openai import OpenAIEmbedder
+from fraise_sdk.providers.openai import OpenAIEmbedder, OpenAIExtractor
 
 __all__ = [
+    "Anchor",
     "Embedder",
     "EmbedderLike",
+    "Extractor",
+    "ExtractorLike",
     "HuggingFaceEmbedder",
     "OpenAIEmbedder",
+    "OpenAIExtractor",
     "resolve_embedder",
+    "resolve_extractor",
 ]

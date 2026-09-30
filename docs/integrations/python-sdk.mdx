@@ -64,6 +64,20 @@ client.recall(query="colourful birds")                         # encoded for you
 
 A client without an embedder still works; it simply writes and recalls without vectors, on text and graph structure alone. Per call, `embed=True` forces encoding and `embed=False` skips it, and an explicit `vector=` always wins. See [Producing vectors](/docs/retrieval/embeddings/producing-vectors).
 
+## With an extractor
+
+```python
+from fraise_sdk import FraiseClient
+from fraise_sdk.providers import OpenAIExtractor
+
+client = FraiseClient("http://localhost:9876", extractor=OpenAIExtractor())
+client.remember("Anne's flight lands at Lisbon airport")   # filed under what it is about
+```
+
+An extractor reads each fact `remember` stores and returns the anchors it belongs under — a list of `Anchor(value, type)`, where `type` is `"topic"` or `"entity"` — and the fact is filed under them, after any `topics=` and `entities=` you pass; one you already gave is not repeated. The fact's text is stored verbatim: the extractor only chooses anchors, which drive filtering and the [graph walk](/docs/retrieval/ranking/depth). `OpenAIExtractor` (`fraise-sdk[openai]`) is the one that ships, with `gpt-5-mini` by default and the same instructions the published benchmark ingests with; any `callable(text) -> list[Anchor]`, or a subclass of `Extractor`, works too.
+
+Extraction never costs a fact: if the extractor fails — an API error, or an answer it cannot read — the fact is stored under the anchors you gave, and a `FraiseWarning` names the failure. Per call, `extract=True` requires an extractor and `extract=False` skips it. `recall` never extracts.
+
 ## Telling an empty graph from a miss
 
 `recall` always returns a `RecallResult`, even when nothing came back, so iterating or reading `.count` never has to be guarded. `bool(result)` tells you whether anything matched; `result.empty` tells you about the graph it searched:
