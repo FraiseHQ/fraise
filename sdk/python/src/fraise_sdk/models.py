@@ -29,12 +29,51 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class Contribution:
+    """One retrieval source's sighting of a hit, as ``explain`` reports it.
+
+    ``source`` names the stage that saw the fact — ``text``, ``vector``,
+    ``graph`` or ``anchor`` — and ``score`` is that stage's raw mass, not a share
+    of the hit's final score: contributions are the ingredients the score was
+    folded from, after transmission and recency decay, and do not sum to it.
+    ``rank`` is the hit's place in that source's own list, 0 first, and
+    ``count`` how many seeds funded the sighting. A ``graph`` or ``anchor``
+    sighting also names the anchor it came through (``via``) and that anchor's
+    ``degree``; a ``text`` or ``vector`` one has neither.
+    """
+
+    source: str
+    score: float
+    rank: int
+    count: int
+    via: str | None = None
+    degree: int | None = None
+
+    @classmethod
+    def from_json(cls, data: dict) -> Contribution:  # noqa: D102
+        return cls(
+            source=data["source"],
+            score=float(data["score"]),
+            rank=int(data["rank"]),
+            count=int(data["count"]),
+            via=data.get("via"),
+            degree=data.get("degree"),
+        )
+
+
+@dataclass(frozen=True)
 class Hit:
-    """One recalled fact and how strongly it matched the query."""
+    """One recalled fact and how strongly it matched the query.
+
+    ``contributions`` is the per-source breakdown of the score, filled by
+    :meth:`~fraise_sdk.client.FraiseClient.explain` and empty on a plain recall,
+    which does not ask the server for it.
+    """
 
     value: str
     score: float
     timestamp: str | None = None
+    contributions: list[Contribution] = field(default_factory=list)
 
     @classmethod
     def from_json(cls, data: dict) -> Hit:  # noqa: D102
@@ -42,6 +81,9 @@ class Hit:
             value=data["value"],
             score=float(data["score"]),
             timestamp=data.get("timestamp"),
+            contributions=[
+                Contribution.from_json(c) for c in data.get("contributions") or []
+            ],
         )
 
 
@@ -63,12 +105,18 @@ class RecallResult:
     the status line (204 for the empty graph), because the two were otherwise
     the same empty result set, and a caller could not tell a graph it had never
     written to from a question it had asked badly.
+
+    ``background`` is the query's background rate, the seed mass per unit of
+    anchor degree the search observed. With each hit's contributions it is
+    every input of the scoring fold, so a caller can see why a fact ranked
+    where it did. It is set by ``explain`` and ``None`` on a plain recall.
     """
 
     count: int
     hits: list[Hit]
     warnings: list[str] = field(default_factory=list)
     empty: bool = False
+    background: float | None = None
 
     @classmethod
     def from_json(
@@ -77,6 +125,7 @@ class RecallResult:
         warnings: Sequence[str] | None = None,
         *,
         empty: bool = False,
+        explain: bool = False,
     ) -> RecallResult:
         """Parse the server's ``results`` object, with any response warnings.
 
@@ -90,6 +139,9 @@ class RecallResult:
             empty: whether the server answered 204, i.e. the graph searched
                 holds nothing. It rides the status line rather than the body,
                 so the caller that saw the response passes it in.
+            explain: whether the response came from the explain route. The
+                server omits a background rate of zero, so its absence reads
+                as 0.0 on an explained result and as ``None`` on a plain one.
 
         Returns:
             The typed result, warnings included.
@@ -102,6 +154,7 @@ class RecallResult:
             hits=hits,
             warnings=list(warnings or []),
             empty=empty,
+            background=float(results.get("background", 0.0)) if explain else None,
         )
 
     def __bool__(self) -> bool:

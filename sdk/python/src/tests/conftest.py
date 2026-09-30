@@ -37,6 +37,7 @@ FRAISE_URL, health-checked before the first test. `-m "not integration"` is
 the unit run and touches nothing live; `-m integration` needs the daemon up.
 """
 
+import copy
 import hashlib
 import json
 import math
@@ -58,7 +59,136 @@ def pytest_configure(config):
 
 
 _QUERY_URL = f"{DEFAULT_BASE_URL}/api/v1/q"
+_EXPLAIN_URL = f"{DEFAULT_BASE_URL}/api/v1/explain"
 _NO_HITS = {"results": {"count": 0, "hits": []}}
+
+# Recorded from a live server, not written by hand, so the parser is tested
+# against the shape the server really sends. The graph behind both: three facts
+# filed under entity:polly, two of them mentioning "polly".
+#
+# `recall polly entity:polly depth:2` — two hits matched the text and were also
+# reached through the polly anchor, and the third matched nothing itself and
+# was reached through the anchor alone: a graph-only hit.
+_EXPLAIN_RESPONSE = {
+    "results": {
+        "count": 3,
+        "hits": [
+            {
+                "value": "polly whistles at dawn",
+                "timestamp": "2026-09-30T22:57:46.062614+01:00",
+                "score": 1.0499525788004205,
+                "contributions": [
+                    {
+                        "source": "text",
+                        "score": 1.0499527612542656,
+                        "rank": 0,
+                        "count": 1,
+                    },
+                    {
+                        "source": "graph",
+                        "score": 1.9820803996745116,
+                        "rank": 0,
+                        "via": "polly",
+                        "degree": 3,
+                        "count": 2,
+                    },
+                ],
+            },
+            {
+                "value": "polly eats sunflower seeds",
+                "timestamp": "2026-09-30T22:57:46.021977+01:00",
+                "score": 0.9321274330290991,
+                "contributions": [
+                    {
+                        "source": "text",
+                        "score": 0.9321276384202458,
+                        "rank": 1,
+                        "count": 1,
+                    },
+                    {
+                        "source": "graph",
+                        "score": 1.9820803996745116,
+                        "rank": 0,
+                        "via": "polly",
+                        "degree": 3,
+                        "count": 2,
+                    },
+                ],
+            },
+            {
+                "value": "the parrot sleeps in the kitchen",
+                "timestamp": "2026-09-30T22:57:45.982021+01:00",
+                "score": 0.04374802007585447,
+                "contributions": [
+                    {
+                        "source": "graph",
+                        "score": 1.9820803996745116,
+                        "rank": 0,
+                        "via": "polly",
+                        "degree": 3,
+                        "count": 2,
+                    },
+                ],
+            },
+        ],
+        "background": 0.4857013396824596,
+    }
+}
+
+# `recall entity:polly` — seeded by the anchor alone, so every hit is an anchor
+# sighting, and the background rate is zero, which the server omits.
+_ANCHOR_EXPLAIN_RESPONSE = {
+    "results": {
+        "count": 3,
+        "hits": [
+            {
+                "value": "polly whistles at dawn",
+                "timestamp": "2026-09-30T22:57:46.062614+01:00",
+                "score": 0.9999997409465425,
+                "contributions": [
+                    {
+                        "source": "anchor",
+                        "score": 1,
+                        "rank": 0,
+                        "via": "polly",
+                        "degree": 3,
+                        "count": 1,
+                    },
+                ],
+            },
+            {
+                "value": "polly eats sunflower seeds",
+                "timestamp": "2026-09-30T22:57:46.021977+01:00",
+                "score": 0.999999694373341,
+                "contributions": [
+                    {
+                        "source": "anchor",
+                        "score": 1,
+                        "rank": 0,
+                        "via": "polly",
+                        "degree": 3,
+                        "count": 1,
+                    },
+                ],
+            },
+            {
+                "value": "the parrot sleeps in the kitchen",
+                "timestamp": "2026-09-30T22:57:45.982021+01:00",
+                "score": 0.9999996485805727,
+                "contributions": [
+                    {
+                        "source": "anchor",
+                        "score": 1,
+                        "rank": 0,
+                        "via": "polly",
+                        "degree": 3,
+                        "count": 1,
+                    },
+                ],
+            },
+        ],
+    }
+}
 
 # The shape the server sends for a query that ran with a term that cannot help
 # it: "the" in "recall@0 ferry the" is a stop word, which stored facts never
@@ -76,6 +206,24 @@ _SERVER_WARNING = (
 def query_url():
     """The URL every query the client sends must be posted to."""
     return _QUERY_URL
+
+
+@pytest.fixture(scope="session")
+def explain_url():
+    """The URL an explained recall must be posted to."""
+    return _EXPLAIN_URL
+
+
+@pytest.fixture
+def explain_response():
+    """A recorded explain response with text, graph and graph-only hits."""
+    return copy.deepcopy(_EXPLAIN_RESPONSE)
+
+
+@pytest.fixture
+def anchor_explain_response():
+    """A recorded explain response for an anchor-only recall, zero background."""
+    return copy.deepcopy(_ANCHOR_EXPLAIN_RESPONSE)
 
 
 @pytest.fixture(scope="session")
