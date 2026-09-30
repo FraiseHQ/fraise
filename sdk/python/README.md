@@ -47,6 +47,16 @@ warnings.filterwarnings("ignore", category=FraiseWarning)  # silence wholesale
 
 The query shapes that warn (and the neighbouring ones that stay silent) are catalogued in [Warnings](https://docs.getfraise.dev/docs/query-language/reference/warnings).
 
+To see why a fact ranked where it did, `explain` takes the same arguments as `recall` and returns the same ranking, with each hit's `contributions` — the text, vector, graph or anchor sightings its score was folded from — and the query's `background` rate on the result:
+
+```python
+result = fraise.explain("polly", entities=["polly"], depth=2)
+for hit in result:
+    print(hit.value, [(c.source, c.score, c.via) for c in hit.contributions])
+```
+
+A hit whose only contribution is `graph` was reached through an anchor without matching the query itself. See [Explain](https://docs.getfraise.dev/docs/http-api/endpoints/explain) for how the contributions fold into the score.
+
 ## Embeddings (optional)
 
 Give the client an **embedder** and it encodes text to a vector automatically — `remember` embeds its value, `recall` embeds its query phrase (or its keywords):

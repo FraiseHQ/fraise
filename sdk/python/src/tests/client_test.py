@@ -97,6 +97,47 @@ def test_recall_parses_hits(session, respond, sent):
     assert bool(result) is True
 
 
+@pytest.mark.parametrize(
+    "keywords, kwargs",
+    [
+        (["polly"], {"entities": ["polly"], "depth": 2}),
+        ([], {"query": "where does the parrot sleep", "topics": ["birds"], "top": 3}),
+        (["kettle"], {"graph": 4, "vector": [0.5, 0.5]}),
+    ],
+)
+def test_explain_sends_the_recall_query_to_the_explain_route(
+    session, query_url, explain_url, keywords, kwargs
+):
+    """explain posts exactly what recall posts, to the explain route instead.
+
+    The two share one builder so an explanation is always of the ranking recall
+    would return; if they ever sent different query strings or vectors, the
+    breakdown would explain a different question.
+    """
+    client = FraiseClient()
+    client.recall(*keywords, **kwargs)
+    client.explain(*keywords, **kwargs)
+
+    recalled, explained = session.post.call_args_list
+    assert recalled.args == (query_url,)
+    assert explained.args == (explain_url,)
+    assert explained.kwargs == recalled.kwargs
+
+
+def test_explain_returns_each_hit_with_its_contributions(
+    session, respond, explain_response
+):
+    """An explained recall comes back typed: contributions on every hit, and
+    the background rate on the result."""
+    respond(session, explain_response)
+
+    result = FraiseClient().explain("polly", entities=["polly"], depth=2)
+
+    assert result.count == 3
+    assert all(hit.contributions for hit in result)
+    assert result.background == 0.4857013396824596
+
+
 def test_recall_empty_results(session):
     """A populated graph that matched nothing is an empty, falsey result.
 
@@ -599,6 +640,28 @@ def test_health_is_false_when_the_server_is_unreachable(dead_url):
 def test_server_version_is_none_when_the_server_is_unreachable(dead_url):
     """An unreachable server reports no version rather than raising."""
     assert FraiseClient(dead_url).server_version() is None
+
+
+@pytest.mark.integration
+def test_explain_breaks_down_the_ranking_recall_returns(
+    instrument_graph, instrument_topic, client
+):
+    """Against the live server, explain ranks what recall ranks and says why.
+
+    The same arguments reach the same facts in the same order, since both run
+    one pipeline; only explain carries the breakdown, and every hit it returns
+    was seen by at least one source. Read-only: recalls write nothing.
+    """
+    kwargs = {"graph": instrument_graph, "topics": [instrument_topic], "depth": 2}
+    recalled = client.recall("cello", **kwargs)
+    explained = client.explain("cello", **kwargs)
+
+    assert [hit.value for hit in explained] == [hit.value for hit in recalled]
+    assert explained.count >= 1
+    assert all(hit.contributions for hit in explained)
+    assert "text" in {c.source for c in explained.hits[0].contributions}
+    assert explained.background is not None
+    assert recalled.background is None
 
 
 @pytest.mark.integration

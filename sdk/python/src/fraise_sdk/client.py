@@ -34,7 +34,9 @@ from fraise_sdk.compat import warn
 from fraise_sdk.constants import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT_SECONDS,
+    EXPLAIN_PATH,
     NO_CONTENT,
+    QUERY_PATH,
     SDK_FILES,
     SERVER_MAX_EXCLUSIVE,
     SERVER_MIN,
@@ -97,9 +99,11 @@ def _parse_version(text: str) -> tuple[int, int, int] | None:
 class FraiseClient:
     """A thin, synchronous client over the Fraise query API.
 
-    All memory operations funnel through the single ``POST /api/v1/q`` endpoint;
-    :meth:`remember` and :meth:`recall` are typed conveniences over it, and
-    :meth:`query` is the escape hatch for raw query strings.
+    Memory operations funnel through ``POST /api/v1/q``: :meth:`remember` and
+    :meth:`recall` are typed conveniences over it, and :meth:`query` is the
+    escape hatch for raw query strings. :meth:`explain` sends the query
+    :meth:`recall` would to ``POST /api/v1/explain``, which answers with the
+    breakdown of every hit's score.
 
     The client owns a :class:`requests.Session` for connection reuse. Use it as a
     context manager (``with FraiseClient() as f: ...``) to close that session, or
@@ -298,6 +302,85 @@ class FraiseClient:
         a near-miss of a different one — are listed on the result's
         ``warnings`` and emitted as :class:`FraiseWarning` (see :meth:`query`).
         """
+        return self._recall(
+            keywords,
+            explain=False,
+            graph=graph,
+            query=query,
+            topics=topics,
+            entities=entities,
+            top=top,
+            depth=depth,
+            vector=vector,
+            embed=embed,
+            timeout=timeout,
+        )
+
+    def explain(
+        self,
+        *keywords: str,
+        graph: int = 0,
+        query: str | None = None,
+        topics: Sequence[str] | None = None,
+        entities: Sequence[str] | None = None,
+        top: int | None = None,
+        depth: int | None = None,
+        vector: Sequence[float] | None = None,
+        embed: bool | None = None,
+        timeout: float | None = None,
+    ) -> RecallResult:
+        """Recall exactly as :meth:`recall` does, with each hit's score explained.
+
+        Takes the same arguments and sends the same query, to the server's
+        explain route: the search runs through the same pipeline, and each hit
+        comes back with ``contributions``, the per-source sightings its score
+        was folded from — text, vector, graph or anchor — while the result
+        carries the query's ``background`` rate. Use it to see why a fact
+        ranked where it did, e.g. whether a multi-hop miss was reached through
+        the graph and ranked out, or never reached at all; use :meth:`recall`
+        when the ranking is all you need, since the breakdown costs response
+        size.
+
+        Returns:
+            The ranked result, as :meth:`recall` returns it, with
+            ``contributions`` on every hit and ``background`` set.
+        """
+        return self._recall(
+            keywords,
+            explain=True,
+            graph=graph,
+            query=query,
+            topics=topics,
+            entities=entities,
+            top=top,
+            depth=depth,
+            vector=vector,
+            embed=embed,
+            timeout=timeout,
+        )
+
+    def _recall(
+        self,
+        keywords: Sequence[str],
+        *,
+        explain: bool,
+        graph: int,
+        query: str | None,
+        topics: Sequence[str] | None,
+        entities: Sequence[str] | None,
+        top: int | None,
+        depth: int | None,
+        vector: Sequence[float] | None,
+        embed: bool | None,
+        timeout: float | None,
+    ) -> RecallResult:
+        """Build, send and parse a recall, on the query or the explain route.
+
+        :meth:`recall` and :meth:`explain` both come through here, so the
+        vector they attach and the query string they send are built once: the
+        two cannot drift into asking different questions, and an explanation is
+        always of the ranking :meth:`recall` would return.
+        """
         embed_text = query if query is not None else " ".join(keywords)
         resolved = self._resolve_vector(vector, embed_text, embed)
         text = _query.build_recall(
@@ -311,12 +394,18 @@ class FraiseClient:
             with_vector=resolved is not None,
         )
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
-        status, body = self._post(text, parameters=parameters, timeout=timeout)
+        status, body = self._post(
+            text,
+            parameters=parameters,
+            timeout=timeout,
+            path=EXPLAIN_PATH if explain else QUERY_PATH,
+        )
         results = body.get("results") or {}
         return RecallResult.from_json(
             results,
             warnings=body.get("warnings"),
             empty=status == NO_CONTENT,
+            explain=explain,
         )
 
     # -- embedding ---------------------------------------------------------
@@ -386,6 +475,7 @@ class FraiseClient:
         *,
         parameters: dict[str, list[float]] | None = None,
         timeout: float | None = None,
+        path: str = QUERY_PATH,
     ) -> tuple[int, dict]:
         """Send a query and return the response status beside its decoded body.
 
@@ -399,6 +489,7 @@ class FraiseClient:
             text: the raw query string.
             parameters: out-of-band vector bindings the query references.
             timeout: per-call override of the client's timeout.
+            path: the route to post to, the query route unless explaining.
 
         Returns:
             The HTTP status code and the decoded JSON body, ``{}`` when the
@@ -415,7 +506,7 @@ class FraiseClient:
         effective_timeout = self.timeout if timeout is None else timeout
         try:
             response = self._session.post(
-                f"{self.base_url}/api/v1/q",
+                f"{self.base_url}{path}",
                 json=payload,
                 timeout=effective_timeout,
             )
