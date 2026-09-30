@@ -462,6 +462,42 @@ func BenchmarkRememberCommit(b *testing.B) {
 	}
 }
 
+// BenchmarkRecallCommit measures a two-keyword read commit against graphs of
+// different sizes. The search itself grows with the postings it scores; what
+// must not ride along is a walk of the whole graph on a read that returned
+// hits — the emptiness check once derived from Stats did exactly that, on
+// every read, and showed up here as a per-node cost on top of the search.
+func BenchmarkRecallCommit(b *testing.B) {
+	for _, size := range []int{1_000, 10_000} {
+		b.Run(fmt.Sprintf("size-%d", size), func(b *testing.B) {
+			g := graph.NewGraph[uint64, float32](config.New())
+			for i := 0; i < size; i++ {
+				pre := &Remember[uint64, float32]{
+					Value:  fmt.Sprintf("pre-existing fact number %d", i),
+					Topics: []string{fmt.Sprintf("topic%d", i%13)},
+				}
+				if err := NewStream[uint64, float32](pre).Commit(g); err != nil {
+					b.Fatalf("prepopulate Commit = %v", err)
+				}
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				r := &Recall[uint64, float32]{
+					Keywords:   []string{"fact", "number"},
+					Parameters: QueryParameters[uint64]{Top: 10},
+				}
+				s := NewStream[uint64, float32](r)
+				if err := s.Commit(g); err != nil {
+					b.Fatalf("Commit = %v", err)
+				}
+				if s.Result.Count == 0 {
+					b.Fatalf("Result.Count = 0, want hits: the benchmark measures a read that matched")
+				}
+			}
+		})
+	}
+}
+
 // TestCommitSeedsFromAnchorsStoredByCommit drives the production write path
 // and then the anchor-only read it makes possible: a Recall naming a topic
 // and no term reaches Search with nil keywords and an empty vector, and the
