@@ -81,7 +81,7 @@ def test_the_backport_counts_a_plain_stacklevel_as_the_standard_library_does(
     """
     seen = []
     for implementation in (_warn, warnings.warn):
-        with pytest.warns(UserWarning) as record:
+        with pytest.warns(UserWarning, match="probe") as record:
             implementation("probe", stacklevel=stacklevel)
         seen.append((record[0].filename, record[0].lineno))
     assert seen[0] == seen[1]

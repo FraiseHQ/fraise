@@ -77,7 +77,7 @@ def _warn(
     warnings.warn(message, category, stacklevel=level, source=source)
 
 
-if sys.version_info >= (3, 12):
-    warn = warnings.warn
-else:
+if sys.version_info < (3, 12):  # noqa: UP036
     warn = _warn
+else:
+    warn = warnings.warn
