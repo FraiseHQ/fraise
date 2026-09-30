@@ -52,3 +52,19 @@ func TestVectorHashDistinguishesVectors(t *testing.T) {
 		t.Errorf("Hash collision: [1,0] and [0,1] both produced %q", a)
 	}
 }
+
+// TestVectorDistance pins the metric as Euclidean: the 3-4-5 triangle, zero
+// for a vector against itself, and symmetric.
+func TestVectorDistance(t *testing.T) {
+	a := NewVector[string]([]float64{0, 0})
+	b := NewVector[string]([]float64{3, 4})
+	if got := a.Distance(b); got != 5 {
+		t.Errorf("Distance([0,0],[3,4]) = %v, want 5", got)
+	}
+	if got := b.Distance(a); got != 5 {
+		t.Errorf("Distance([3,4],[0,0]) = %v, want 5 (symmetric)", got)
+	}
+	if got := b.Distance(b); got != 0 {
+		t.Errorf("Distance(v, v) = %v, want 0", got)
+	}
+}
