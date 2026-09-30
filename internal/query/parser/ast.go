@@ -265,33 +265,41 @@ type PhraseNode struct {
 	end   lexer.Position
 }
 
-// Entity field
+// Entity field. token is the value as written, which String needs: a value
+// that was quoted is folded to value but has to be quoted again to parse back.
 type EntityFieldNode struct {
 	key   lexer.Token
+	token lexer.Token
 	value string
 	pos   lexer.Position
 	end   lexer.Position
 }
 
-// Topic field
+// Topic field. token is the value as written, which String needs: a value
+// that was quoted is folded to value but has to be quoted again to parse back.
 type TopicFieldNode struct {
 	key   lexer.Token
+	token lexer.Token
 	value string
 	pos   lexer.Position
 	end   lexer.Position
 }
 
-// Since field
+// Since field. token is the bound as written: a TimeValue does not render
+// back to FQL, so String reproduces the source instead.
 type SinceFieldNode[K comparable] struct {
 	key   lexer.Token
+	token lexer.Token
 	value containers.TimeValue[K]
 	pos   lexer.Position
 	end   lexer.Position
 }
 
-// Until field
+// Until field. token is the bound as written: a TimeValue does not render
+// back to FQL, so String reproduces the source instead.
 type UntilFieldNode[K comparable] struct {
 	key   lexer.Token
+	token lexer.Token
 	value containers.TimeValue[K]
 	pos   lexer.Position
 	end   lexer.Position
@@ -322,6 +330,14 @@ type VecFieldNode[P float32 | float64] struct {
 	end   lexer.Position
 }
 
+// quote renders s as an FQL phrase: wrapped in quotes, with each apostrophe
+// doubled back into the escape the lexer decoded. Every value that was quoted
+// in the source prints through it, so String() is a query that parses back to
+// the same node — a bare 'e-mail' or 'my project' would not parse at all.
+func quote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
 // remember impl
 
 func (n RememberCommandNode[P]) Selector() uint8 {
@@ -334,9 +350,8 @@ func (n RememberCommandNode[P]) String() string {
 	// command + selector
 	s = append(s, n.key.Literal+n.selector.String())
 
-	// value, re-quoted as in the source query (PhraseNode.String is unquoted);
-	// inner quotes are re-escaped ('') so the reconstruction is valid FQL.
-	s = append(s, "'"+strings.ReplaceAll(n.value.String(), "'", "''")+"'")
+	// value, re-quoted as in the source query (PhraseNode.String is unquoted)
+	s = append(s, quote(n.value.String()))
 
 	// anchors
 	for _, e := range n.anchors {
@@ -377,7 +392,7 @@ func (n RecallCommandNode[K, P]) String() string {
 
 	// terms
 	for _, t := range n.terms {
-		s = append(s, t.Literal())
+		s = append(s, t.String())
 	}
 
 	// entities
@@ -459,7 +474,7 @@ func (n AnchorFieldNode) String() string {
 	if n.clause != nil {
 		c = n.clause.value.Literal
 	}
-	return fmt.Sprintf("%s%s%s:%s", c, n.token.Literal, n.field.Key(), n.field.Value())
+	return fmt.Sprintf("%s%s%s", c, n.token.Literal, n.field.String())
 }
 
 func (n AnchorFieldNode) Pos() lexer.Position {
@@ -497,6 +512,9 @@ func (n TermNode) End() lexer.Position {
 }
 
 func (n TermNode) String() string {
+	if n.token.Type == lexer.PHRASE {
+		return quote(n.Literal())
+	}
 	return n.Literal()
 }
 
@@ -555,6 +573,9 @@ func (n PhraseNode) String() string {
 // entity field node impl
 
 func (n EntityFieldNode) String() string {
+	if n.token.Type == lexer.PHRASE {
+		return fmt.Sprintf("%s:%s", n.key.Literal, quote(n.value))
+	}
 	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
@@ -577,6 +598,9 @@ func (n EntityFieldNode) Value() string {
 // topic field node impl
 
 func (n TopicFieldNode) String() string {
+	if n.token.Type == lexer.PHRASE {
+		return fmt.Sprintf("%s:%s", n.key.Literal, quote(n.value))
+	}
 	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
@@ -599,7 +623,10 @@ func (n TopicFieldNode) End() lexer.Position {
 // since field node impl
 
 func (n SinceFieldNode[K]) String() string {
-	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
+	if n.token.Type == lexer.PHRASE {
+		return fmt.Sprintf("%s:%s", n.key.Literal, quote(n.token.Literal))
+	}
+	return fmt.Sprintf("%s:%s", n.key.Literal, n.token.Literal)
 }
 
 func (n SinceFieldNode[K]) Key() string {
@@ -625,7 +652,10 @@ func (n SinceFieldNode[K]) End() lexer.Position {
 // until field node impl
 
 func (n UntilFieldNode[K]) String() string {
-	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
+	if n.token.Type == lexer.PHRASE {
+		return fmt.Sprintf("%s:%s", n.key.Literal, quote(n.token.Literal))
+	}
+	return fmt.Sprintf("%s:%s", n.key.Literal, n.token.Literal)
 }
 
 func (n UntilFieldNode[K]) Key() string {

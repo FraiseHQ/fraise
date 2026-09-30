@@ -22,9 +22,11 @@
 
 """Unit tests for the pure query-string builders."""
 
+import warnings
+
 import pytest
 from fraise_sdk.constants import VECTOR_PARAM
-from fraise_sdk.errors import FraiseAPIError, FraiseQueryError
+from fraise_sdk.errors import FraiseAPIError, FraiseQueryError, FraiseWarning
 from fraise_sdk.query import build_recall, build_remember
 
 
@@ -110,11 +112,6 @@ def test_recall_requires_a_seed():
         build_recall(graph=1)
 
 
-def test_recall_rejects_whitespace_in_keyword():
-    with pytest.raises(FraiseQueryError, match="whitespace"):
-        build_recall(["two words"])
-
-
 @pytest.mark.parametrize(
     ("build", "args", "param", "kind"),
     [
@@ -177,31 +174,83 @@ def test_graph_above_the_uint8_range_is_rejected(bad):
         build_remember("x", graph=bad)
 
 
-def test_a_keyword_spelled_term_is_quoted_after_the_first():
-    """A search word that spells a keyword is quoted where a bare one is syntax.
+@pytest.mark.parametrize(
+    "kwargs, expected",
+    [
+        ({"keywords": ["since", "7d"]}, "recall@0 'since' 7d"),
+        ({"keywords": ["ferry", "top"]}, "recall@0 ferry 'top'"),
+        ({"keywords": ["Top"]}, "recall@0 'Top'"),
+        (
+            {"keywords": ["top"], "query": "what is at the top"},
+            "recall@0 'what is at the top' 'top'",
+        ),
+    ],
+)
+def test_a_keyword_spelled_search_word_is_quoted_and_warns(kwargs, expected):
+    """A search word that spells a reserved word is quoted and warns, anywhere.
 
-    ``recall@0 ferry top`` is a parse error — after the first term the grammar
-    reads ``top`` as an unfinished ``top:`` clause — so a caller passing "top"
-    as a search word gets the quoted form that means the word.
+    The server reads a bare reserved word as syntax in every position and in
+    any casing, and rejects it as a term; the caller passed a search word, so
+    the builder writes the quoted form that means the word. It warns because
+    the caller may have meant the clause instead, which only ``client.query``
+    can send, and the warning names the caller's line, not the SDK's.
     """
-    assert build_recall(["ferry", "top"]) == "recall@0 ferry 'top'"
+    with pytest.warns(FraiseWarning, match="is a reserved word") as record:
+        assert build_recall(**kwargs) == expected
+    assert record[0].filename == __file__
 
 
-def test_a_leading_keyword_spelled_term_stays_bare():
-    """The first term is left bare so the server's ambiguity warning survives.
+@pytest.mark.parametrize(
+    "keywords, expected",
+    [
+        (["e-mail"], "recall@0 'e-mail'"),
+        (["ferry", "v1.2"], "recall@0 ferry 'v1.2'"),
+        (["new york"], "recall@0 'new york'"),
+        (["café", "東京"], "recall@0 café 東京"),
+    ],
+)
+def test_a_search_word_that_is_not_one_plain_word_is_quoted(keywords, expected):
+    """Outside quotes a word is letters and digits only, so anything else is quoted.
 
-    ``recall since 7d`` parses as a two-term search and warns that it is one
-    ``:`` from ``since:7d``. Quoting it here would silence the only signal the
-    caller gets that their two search words read like a time bound.
+    The server rejects ``recall e-mail`` at the ``-`` rather than guess where
+    the word ends; the caller passed one search word, and the quoted form
+    carries it whole. Letters in any script are plain and stay bare. None of
+    these can be read as syntax, so none of them warns.
     """
-    assert build_recall(["since", "7d"]) == "recall@0 since 7d"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FraiseWarning)
+        assert build_recall(keywords) == expected
 
 
-def test_a_query_phrase_takes_the_leading_slot_so_keywords_are_quoted():
-    """With a phrase first, no keyword is in the position that reads as data."""
-    assert build_recall(["top"], query="what is at the top") == (
-        "recall@0 'what is at the top' 'top'"
-    )
+@pytest.mark.parametrize(
+    "value, rendered",
+    [
+        ("billing", "billing"),
+        ("Harbour", "Harbour"),
+        ("top", "top"),
+        ("US elections", "'US elections'"),
+        ("ratio:odds", "'ratio:odds'"),
+        ("o'brien", "'o''brien'"),
+        ("machine-learning", "'machine-learning'"),
+    ],
+)
+def test_an_anchor_value_is_quoted_only_when_a_bare_word_cannot_hold_it(
+    value, rendered
+):
+    """A topic or entity is bare when it is one plain word, quoted otherwise.
+
+    A space, a colon, an apostrophe or a hyphen cannot stand in a bare word,
+    so those values are quoted and travel whole. A reserved word stays bare:
+    after the ``:`` only a value can appear, so ``topic:top`` is data and does
+    not warn. The rule is the same on a read and on a write.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FraiseWarning)
+        assert build_recall(topics=[value]) == f"recall@0 topic:{rendered}"
+        assert build_recall(entities=[value]) == f"recall@0 entity:{rendered}"
+        assert build_remember("x", topics=[value]) == (
+            f"remember@0 'x' topic:{rendered}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -212,6 +261,8 @@ def test_a_query_phrase_takes_the_leading_slot_so_keywords_are_quoted():
         {"entities": ["barometer"]},
         {"topics": ["weather", "instruments"]},
         {"topics": ["weather"], "entities": ["barometer"]},
+        {"topics": ["machine-learning"], "entities": ["o'brien"]},
+        {"topics": ["my project"], "entities": ["anna smith"]},
     ],
 )
 @pytest.mark.integration
@@ -239,6 +290,12 @@ def test_every_remember_the_builder_emits_parses(kwargs, client, query_graph):
             "entities": ["barometer"],
             "top": 3,
             "depth": 2,
+        },
+        {"keywords": ["e-mail", "v1.2"], "topics": ["machine-learning"]},
+        {
+            "keywords": ["new york"],
+            "topics": ["my project"],
+            "entities": ["anna smith"],
         },
     ],
 )
@@ -356,6 +413,8 @@ def test_a_recall_seeded_without_keywords_parses(kwargs, client, query_graph, en
 @pytest.mark.parametrize(
     "keywords",
     [
+        ["since", "7d"],
+        ["Top", "shelf"],
         ["barometer", "top"],
         ["barometer", "since"],
         ["barometer", "depth", "entity"],
@@ -368,12 +427,42 @@ def test_a_keyword_spelled_search_word_survives_the_grammar(
 ):
     """A search word that spells a keyword reaches the engine as a word.
 
-    The builder quotes these because a bare one reads as a clause after the
-    first term — ``recall@2 barometer top`` is a parse error. Only a live parser
-    can prove the quoting is the right escape, which is what this file is for.
+    The builder quotes these because a bare reserved word is syntax in every
+    position and in any casing — ``recall@2 since 7d`` is a parse error. Only a
+    live parser can prove the quoting is the right escape, which is what this
+    file is for.
     """
-    body = client.query(build_recall(keywords, graph=query_graph))
+    with pytest.warns(FraiseWarning, match="is a reserved word"):
+        text = build_recall(keywords, graph=query_graph)
+    body = client.query(text)
     assert "results" in body
+
+
+@pytest.mark.parametrize(
+    "value, anchor",
+    [
+        ("billing", "topic:billing"),
+        ("top", "topic:top"),
+        ("US elections", "topic:'us elections'"),
+        ("ratio:odds", "topic:'ratio:odds'"),
+        ("o'brien", "topic:'o''brien'"),
+        ("Harbour", "topic:harbour"),
+    ],
+)
+@pytest.mark.integration
+def test_a_quoted_anchor_is_the_anchor_fql_names(value, anchor, client, query_graph):
+    """A topic written through the builder is the anchor hand-written FQL names.
+
+    The builder writes an anchor bare or quoted depending on what it holds, so
+    this pins that either form lands on the same anchor a caller writing FQL
+    would name — folded to lower case — that a reserved word is an ordinary
+    anchor after the ``:``, and that a space, a colon or an apostrophe survives
+    the trip.
+    """
+    fact = f"the anchor probe for {value}"
+    client.query(build_remember(fact, graph=query_graph, topics=[value]))
+    body = client.query(f"recall@{query_graph} {anchor}")
+    assert fact in [hit["value"] for hit in body["results"]["hits"]]
 
 
 @pytest.mark.parametrize(

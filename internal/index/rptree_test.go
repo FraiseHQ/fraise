@@ -225,6 +225,43 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexFlushIsReproducible pins that a fixed seed reproduces the
+// index across a rebuild: two indexes fed the same writes, both flushed, must
+// answer every query identically. Flush used to replay the live set in Go map
+// order, and a tree's splits depend on arrival order, so the two forests
+// diverged after the first rebuild. The settings keep the search approximate
+// — small leaves, two trees, no over-fetch — so a different forest shows up
+// as a different answer rather than being hidden by an exhaustive scan.
+func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
+	build := func() *index.RPTreeIndex[int, float64] {
+		rng := rand.New(rand.NewSource(7))
+		idx := index.NewRPTreeIndex[int, float64](16, 8, 2, 3, 2, 4, 1, comparator.OrderedComparator[int])
+		for i := 0; i < 400; i++ {
+			if err := idx.Insert(i, randVector(rng, 16)); err != nil {
+				t.Fatalf("Insert(%d) = %v, want nil", i, err)
+			}
+		}
+		if err := idx.Flush(); err != nil {
+			t.Fatalf("Flush = %v, want nil", err)
+		}
+		return idx
+	}
+
+	a, b := build(), build()
+	queries := rand.New(rand.NewSource(8))
+	for q := 0; q < 50; q++ {
+		query := randVector(queries, 16)
+		gotA, _, errA := a.Search(query, 5)
+		gotB, _, errB := b.Search(query, 5)
+		if errA != nil || errB != nil {
+			t.Fatalf("Search = %v, %v; want nil", errA, errB)
+		}
+		if !reflect.DeepEqual(gotA, gotB) {
+			t.Fatalf("query %d: identical writes answered %v and %v after a rebuild, want the same forest", q, gotA, gotB)
+		}
+	}
+}
+
 func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 	rng := rand.New(rand.NewSource(21))
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2, 32, 8, comparator.OrderedComparator[int])

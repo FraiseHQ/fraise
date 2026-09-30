@@ -21,8 +21,16 @@
 # SOFTWARE.
 """Constants used in this project."""
 
+import os
+
 DEFAULT_BASE_URL = "http://localhost:9876"
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+# The routes a query is posted to. The explain route runs a recall through the
+# same pipeline as the query route and answers with each hit's contribution
+# breakdown, so a read sent to either is the same query string.
+QUERY_PATH = "/api/v1/q"
+EXPLAIN_PATH = "/api/v1/explain"
 
 # 204 No Content is how the server answers a recall of a graph that holds
 # nothing. It is a success, not an error, and it has no body: the distinction
@@ -45,8 +53,8 @@ VECTOR_PARAM = "v"
 MAX_GRAPH = 255
 
 # The grammar's reserved words, mirroring the server's keyword table. A bare term
-# spelling one of these reads as the start of a clause everywhere except the
-# first term of a recall, so the builder has to know them to quote around them.
+# spelling one of these is syntax wherever a term stands, so the builder has to
+# know them to quote around them.
 KEYWORDS = frozenset(
     {
         "recall",
@@ -83,3 +91,8 @@ DEFAULT_TOP = 5
 # rather than a round trip that fails. An operator can only lower the ceiling
 # (max-depth), and the server's own rejection still surfaces as a tool error.
 MAX_DEPTH = 2
+
+# The SDK's own files. A warning is attributed to the first frame outside them —
+# the caller's line, however deep in the SDK the warning was decided — which a
+# fixed stacklevel gets right for one call path only.
+SDK_FILES = (os.path.dirname(os.path.abspath(__file__)) + os.sep,)
