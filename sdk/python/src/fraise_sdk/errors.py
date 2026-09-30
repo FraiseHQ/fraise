@@ -45,9 +45,9 @@ class FraiseWarning(UserWarning):
 class FraiseQueryError(FraiseError):
     """A query could not be built from the given arguments.
 
-    Raised before any request leaves the client — e.g. an empty fact value, or
-    a keyword with embedded whitespace, which the server's query grammar cannot
-    represent.
+    Raised before any request leaves the client — e.g. an empty fact value or
+    anchor, or a graph id outside 0–255, none of which the server's query
+    grammar can represent.
     """
 
 

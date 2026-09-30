@@ -606,17 +606,17 @@ def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):
 
 
 @pytest.mark.integration
-def test_a_keyword_spelled_term_recalls_with_a_warning(client, round_trip_graph):
-    """recall("since", "7d") runs, and the server's parse warning surfaces on
-    both channels the SDK offers.
+def test_a_leading_keyword_spelled_term_is_rejected_by_the_server(
+    client, round_trip_graph
+):
+    """recall("since", "7d") reaches the server as written and comes back as its 400.
 
-    The leading term "since" is legal data but one ':' from a since clause,
-    so the live server answers the search and attaches a warning naming both
-    readings. The SDK lists it on ``result.warnings`` and re-emits it as a
-    :class:`FraiseWarning` — this is the whole warning pipeline, wire to
-    caller, in one round trip. Read-only: recalls write nothing.
+    The builder does not re-implement the server's keyword rule, so the leading
+    "since" goes out bare and the server rejects it: a reserved word is never a
+    bare term. Its message names both fixes — the since:7d clause, and the quote
+    that searches the word — and the SDK's job is to hand that message to the
+    caller intact on :class:`FraiseAPIError`. Read-only: recalls write nothing.
     """
-
     with pytest.raises(FraiseAPIError) as excinfo:
         client.recall("since", "7d", graph=round_trip_graph)
     assert excinfo.value.status_code == 400

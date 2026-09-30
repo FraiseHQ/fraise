@@ -110,11 +110,6 @@ def test_recall_requires_a_seed():
         build_recall(graph=1)
 
 
-def test_recall_rejects_whitespace_in_keyword():
-    with pytest.raises(FraiseQueryError, match="whitespace"):
-        build_recall(["two words"])
-
-
 @pytest.mark.parametrize(
     ("build", "args", "param", "kind"),
     [
@@ -188,11 +183,11 @@ def test_a_keyword_spelled_term_is_quoted_after_the_first():
 
 
 def test_a_leading_keyword_spelled_term_stays_bare():
-    """The first term is left bare so the server's ambiguity warning survives.
+    """The first term is passed through as written, keyword or not.
 
-    ``recall since 7d`` parses as a two-term search and warns that it is one
-    ``:`` from ``since:7d``. Quoting it here would silence the only signal the
-    caller gets that their two search words read like a time bound.
+    The builder does not re-implement the server's keyword rule: ``recall@0
+    since 7d`` is the server's to reject, and its 400 names both fixes —
+    ``since:7d``, or ``'since'`` to search the word.
     """
     assert build_recall(["since", "7d"]) == "recall@0 since 7d"
 
@@ -205,6 +200,9 @@ def test_a_leading_keyword_spelled_term_stays_bare():
         ({"topics": ["machine-learning"]}, "recall@0 topic:'machine-learning'"),
         ({"entities": ["o'brien"]}, "recall@0 entity:'o''brien'"),
         ({"keywords": ["café", "東京"]}, "recall@0 café 東京"),
+        ({"keywords": ["new york"]}, "recall@0 'new york'"),
+        ({"topics": ["my project"]}, "recall@0 topic:'my project'"),
+        ({"entities": ["anna smith"]}, "recall@0 entity:'anna smith'"),
     ],
 )
 def test_a_value_that_is_not_one_plain_word_is_quoted(kwargs, expected):
@@ -212,7 +210,10 @@ def test_a_value_that_is_not_one_plain_word_is_quoted(kwargs, expected):
 
     The server rejects ``recall machine-learning`` at the ``-`` rather than
     guess where the word ends; the caller passed one value, and the quoted form
-    carries it whole. Letters in any script are plain and stay bare.
+    carries it whole. A space is no different: ``my project`` is one anchor,
+    and a quoted search term is joined and tokenized like separate words, so
+    ``'new york'`` matches what ``new york`` would. Letters in any script are
+    plain and stay bare.
     """
     assert build_recall(**kwargs) == expected
 
@@ -240,6 +241,7 @@ def test_a_query_phrase_takes_the_leading_slot_so_keywords_are_quoted():
         {"topics": ["weather", "instruments"]},
         {"topics": ["weather"], "entities": ["barometer"]},
         {"topics": ["machine-learning"], "entities": ["o'brien"]},
+        {"topics": ["my project"], "entities": ["anna smith"]},
     ],
 )
 @pytest.mark.integration
@@ -269,6 +271,11 @@ def test_every_remember_the_builder_emits_parses(kwargs, client, query_graph):
             "depth": 2,
         },
         {"keywords": ["e-mail", "v1.2"], "topics": ["machine-learning"]},
+        {
+            "keywords": ["new york"],
+            "topics": ["my project"],
+            "entities": ["anna smith"],
+        },
     ],
 )
 @pytest.mark.integration

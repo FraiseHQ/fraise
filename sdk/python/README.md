@@ -111,6 +111,6 @@ See [`examples/claude-agent-sdk/`](../../examples/claude-agent-sdk) for a comple
 ## Notes & limits
 
 - A fact value is stored inside a single-quoted phrase where every character is literal; the SDK escapes apostrophes for you, so `remember("it's blue")` stores the text exactly as written.
-- Keywords, topics, and entities are single whitespace-free tokens.
+- Keywords, topics, and entities may contain spaces and punctuation: a value that is not one plain word (letters and digits only), such as `my project` or `machine-learning`, is quoted for you.
 - The first vector written to a graph fixes that graph's embedding dimension; later writes to the same graph must match it.
 - `FraiseClient` defaults to a 30s request timeout (`timeout=` on the constructor or on individual `query`/`remember`/`recall` calls overrides it); a request that exceeds it raises `FraiseError` naming the timeout, distinct from the error raised when the server can't be reached at all.
