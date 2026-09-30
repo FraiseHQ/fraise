@@ -30,7 +30,9 @@ import (
 	"strings"
 
 	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/FraiseHQ/fraise/internal/index/nlp/stopwords"
 	"github.com/FraiseHQ/fraise/internal/query/lexer"
+	"golang.org/x/text/language"
 )
 
 // Warning is a parse-time observation about a query that ran anyway: the
@@ -81,10 +83,11 @@ func Parse[K comparable, P float32 | float64](q string) (cmd CommandNode, warns 
 	}
 
 	// A query is one instruction, and a newline ends it. Blank lines after the
-	// command are not a second instruction, so they are skipped; text on the
-	// next line is, and saying so is the whole point of lexing the newline —
-	// folded into whitespace it made "recall ferry\nbridge" a two-term recall.
-	for p.cur.Type == lexer.NEWLINE {
+	// command are not a second instruction, so they are skipped, blanks on them
+	// included; text on the next line is, and saying so is the whole point of
+	// lexing the newline — folded into whitespace it made "recall ferry\nbridge"
+	// a two-term recall.
+	for p.cur.Type == lexer.NEWLINE || p.cur.Type == lexer.WHITESPACE {
 		p.next()
 	}
 
@@ -124,6 +127,17 @@ func (p *parser[K, P]) expect(t lexer.TokenType) (lexer.Token, error) {
 	tok := p.cur
 	p.next()
 	return tok, nil
+}
+
+// afterBlank is the token a reader meets next once a blank is passed over: the
+// current one, or the one after it when the current one is whitespace. The
+// lexer folds a run of blanks into one token, so a single step is enough. It
+// only looks; the window does not move.
+func (p *parser[K, P]) afterBlank() lexer.Token {
+	if p.cur.Type == lexer.WHITESPACE {
+		return p.peek
+	}
+	return p.cur
 }
 
 // isAtEnd reports whether the current token ends the command's clause list: end
@@ -187,8 +201,14 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 		return p.errf(tok.Pos, "unterminated quoted phrase")
 	case tok.Type == lexer.LPAREN, tok.Type == lexer.RPAREN:
 		return p.errf(tok.Pos, "grouping is not supported: %s has no meaning in a query — there are no boolean operators to group, and terms are already a union", tok.Describe())
+	case tok.Type == lexer.NUL:
+		return p.errf(tok.Pos, "a NUL character is only allowed inside a quoted phrase")
+	case tok.Type == lexer.SPECIAL, tok.Type == lexer.PLUS, tok.Type == lexer.TILDE, tok.Type == lexer.MINUS:
+		return p.errf(tok.Pos, "%s is only allowed inside a quoted phrase", tok.Describe())
 	case tok.Type == lexer.NEWLINE:
 		return p.errf(tok.Pos, "unexpected %s: one command per instruction", tok.Describe())
+	case tok.Type == lexer.COLON:
+		return p.errf(tok.Pos, "stray %s: a ':' only joins a clause keyword to its value", tok.Describe())
 	case tok.Type.IsCommand():
 		return p.errf(tok.Pos, "%s starts a second command: one command per instruction", tok.Describe())
 	case tok.Type.IsKeyword():
@@ -207,9 +227,66 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 // colon is missing: "recall ferry top" is a caller who meant the word "top"
 // far more often than one who abandoned a top:<n> clause mid-write, and either
 // way the fix is a colon or a quote.
+//
+// A command word gets no clause to suggest: recall:<value> is itself an error,
+// so pointing at it sent the caller from one rejection to the next.
 func (p *parser[K, P]) errKeywordAsClause(tok lexer.Token) error {
+	if tok.Type.IsCommand() {
+		return p.errf(tok.Pos, "%s starts a second command: one command per instruction — quote it ('%s') to search for the word",
+			tok.Describe(), tok.Literal)
+	}
 	return p.errf(tok.Pos, "%s is a keyword and starts no clause here: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
 		tok.Describe(), strings.ToLower(tok.Literal), tok.Literal)
+}
+
+// errKeywordAsTerm rejects a reserved word among a recall's terms. It is one
+// ':' from a filter — "recall x since 7d" against "recall x since:7d" — and
+// either reading, guessed, answers a differently-scoped question with nothing
+// in the response to say so; the message names both repairs and leaves the
+// choice to the caller. The filter repair is spelled with value, the word the
+// caller wrote after the keyword (see clauseValue), so it is the query they
+// meant rather than a template to fill. A command word has no filter reading,
+// recall:<value> being itself an error, so its message names only the quote.
+func (p *parser[K, P]) errKeywordAsTerm(tok lexer.Token, value string) error {
+	if tok.Type.IsCommand() {
+		return p.errf(tok.Pos, "term %q is also a command: quote it ('%s') to search for the word", tok.Literal, tok.Literal)
+	}
+	return p.errf(tok.Pos, "term %q is also a keyword: write %s:%s if a filter was meant, or quote it ('%s') to search the word",
+		tok.Literal, strings.ToLower(tok.Literal), value, tok.Literal)
+}
+
+// errMissingColon rejects a clause keyword written with a value but without
+// the ':' between them. Once a clause has started a keyword has that one
+// reading — terms come first, so it cannot be a word to search — and the
+// message names only the clause the caller meant, spelled with the value they
+// wrote. Offering a quote here would send the caller to a query that is itself
+// an error.
+func (p *parser[K, P]) errMissingColon(key lexer.Token, value string) error {
+	return p.errf(key.Pos, "%s is missing its ':': write %s:%s", key.Describe(), strings.ToLower(key.Literal), value)
+}
+
+// clauseValue spells tok the way a repair should write it after a keyword's
+// ':'. The caller wrote "since 7d" and meant since:7d, so the fix offers
+// exactly that: a word as written, a phrase with its quotes back. Any other
+// token, or none, is no value at all, and the placeholder stands in for it.
+func (p *parser[K, P]) clauseValue(tok lexer.Token) string {
+	switch tok.Type {
+	case lexer.LITERAL:
+		return tok.Literal
+	case lexer.PHRASE:
+		return quote(tok.Literal)
+	default:
+		return "<value>"
+	}
+}
+
+// errRecallClauseOnWrite rejects a well-formed recall clause on a remember.
+// The clause is written correctly, so the keyword-as-clause repair ("write
+// since:<value>") would tell the caller to write exactly what they wrote; the
+// mistake is the command it was given to, and the message says which clauses
+// that command takes.
+func (p *parser[K, P]) errRecallClauseOnWrite(tok lexer.Token) error {
+	return p.errf(tok.Pos, "%s: is a recall clause: a remember takes only topic:, entity: and vec:", strings.ToLower(tok.Literal))
 }
 
 // errDuplicate rejects a single-valued clause given twice. Last-wins is the
@@ -260,6 +337,45 @@ func (p *parser[K, P]) warnDepthWithoutGraph(r *RecallCommandNode[K, P]) {
 	})
 }
 
+// warnStopWords flags each bare term that is an English stop word, and
+// rejects a recall left with nothing to search. Stored facts are cleaned of
+// stop words on their way into the index, through CleanContent with the same
+// tag, so the parser and the index cannot disagree about what one is: a bare
+// stop word can never match, and it warns at the term. When every bare term is
+// one and the recall has no phrase and no vector, nothing can match at all,
+// and that is an error rather than an empty result that reads like a miss.
+// Named anchors do not change it — the query that was meant is the anchor
+// alone. A phrase is a seed whatever its words, and is never judged by them.
+func (p *parser[K, P]) warnStopWords(r *RecallCommandNode[K, P]) error {
+	var stops []lexer.Token
+	seeded := r.vec != nil
+	for _, t := range r.terms {
+		term, ok := t.(TermNode)
+		if !ok || term.token.Type != lexer.LITERAL || stopwords.CleanContent(term.token.Literal, language.English) != "" {
+			seeded = true
+			continue
+		}
+		stops = append(stops, term.token)
+	}
+	if len(stops) == 0 {
+		return nil
+	}
+	const fix = "so nothing can match; give a term that is not a stop word, a phrase, or a vector"
+	switch {
+	case !seeded && len(stops) == 1:
+		return p.errf(stops[0].Pos, "term %q is a stop word and the only search term: stored facts never contain it, %s", stops[0].Literal, fix)
+	case !seeded:
+		return p.errf(stops[0].Pos, "term %q is a stop word, and so is every other search term: stored facts never contain them, %s", stops[0].Literal, fix)
+	}
+	for _, tok := range stops {
+		p.warns = append(p.warns, Warning{
+			Msg: fmt.Sprintf("term %q is a stop word: stored facts never contain it, so it cannot match", tok.Literal),
+			Pos: tok.Pos,
+		})
+	}
+	return nil
+}
+
 // errEmpty builds the error for an empty or whitespace-only value, and returns
 // nil for any other. Quoting is the only way to write one and it is never what a
 // caller meant: an empty fact can never be retrieved, and an empty anchor is an
@@ -291,19 +407,19 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	r := RememberCommandNode[P]{}
 
 	r.key = p.cur
-
 	p.next()
-	if p.cur.Type == lexer.AT {
-		key, value, err := p.parseGraphSelector()
-		if err != nil {
-			return nil, err
-		}
-		r.selector = GraphSelectorNode{key: key, value: value}
+
+	selector, err := p.parseSelector(r.key)
+	if err != nil {
+		return nil, err
 	}
+	r.selector = selector
+
 	// Remember carries exactly one quoted phrase (the fact). The lexer returns
 	// the whole '...' as a single PHRASE token, so consuming it also consumes
 	// the closing quote — no separate delimiter handling here.
 	phrase, err := p.parsePhrase()
+
 	if err != nil {
 		return nil, err
 	}
@@ -311,6 +427,8 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		return nil, err
 	}
 	r.value = *phrase
+
+	p.next()
 
 	var anchors []AnchorFieldNode
 
@@ -321,15 +439,15 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 		p.warnMisCasedKeyword(p.cur)
 		switch p.cur.Type {
 		case lexer.ENTITY, lexer.TOPIC:
-			key, value, err := p.parseAnchorField()
+			key, tok, value, err := p.parseAnchorField()
 			if err != nil {
 				return nil, err
 			}
 			var field FieldNode[string]
 			if key.Type == lexer.TOPIC {
-				field = TopicFieldNode{key: key, value: value}
+				field = TopicFieldNode{key: key, token: tok, value: value}
 			} else {
-				field = EntityFieldNode{key: key, value: value}
+				field = EntityFieldNode{key: key, token: tok, value: value}
 			}
 			anchors = append(anchors, AnchorFieldNode{field: field})
 		case lexer.VEC:
@@ -341,6 +459,13 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 				return nil, err
 			}
 			r.vec = vec
+		case lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH:
+			if p.peek.Type == lexer.COLON {
+				return nil, p.errRecallClauseOnWrite(p.cur)
+			}
+			return nil, p.errUnexpected(p.cur)
+		case lexer.WHITESPACE:
+			p.next()
 		default:
 			return nil, p.errUnexpected(p.cur)
 		}
@@ -358,16 +483,11 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	r.key = p.cur
 	p.next()
 
-	if p.cur.Type == lexer.AT {
-		key, value, err := p.parseGraphSelector()
-		if err != nil {
-			// parseGraphSelector already returns a positioned parse error with a
-			// clear message; surface it as-is rather than re-wrapping (which lost
-			// the column and mangled the message via a bad %e verb).
-			return nil, err
-		}
-		r.selector = GraphSelectorNode{key: key, value: value}
+	selector, err := p.parseSelector(r.key)
+	if err != nil {
+		return nil, err
 	}
+	r.selector = selector
 
 	terms, err := p.parseTerms()
 	if err != nil {
@@ -385,35 +505,35 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		p.warnMisCasedKeyword(p.cur)
 		switch p.cur.Type {
 		case lexer.ENTITY:
-			key, value, err := p.parseAnchorField()
+			key, tok, value, err := p.parseAnchorField()
 			if err != nil {
 				return nil, err
 			}
-			r.entities = append(r.entities, AnchorFieldNode{field: EntityFieldNode{key: key, value: value}})
+			r.entities = append(r.entities, AnchorFieldNode{field: EntityFieldNode{key: key, token: tok, value: value}})
 		case lexer.TOPIC:
-			key, value, err := p.parseAnchorField()
+			key, tok, value, err := p.parseAnchorField()
 			if err != nil {
 				return nil, err
 			}
-			r.topics = append(r.topics, AnchorFieldNode{field: TopicFieldNode{key: key, value: value}})
+			r.topics = append(r.topics, AnchorFieldNode{field: TopicFieldNode{key: key, token: tok, value: value}})
 		case lexer.UNTIL:
 			if r.until.key.Type == lexer.UNTIL {
 				return nil, p.errDuplicate(p.cur)
 			}
-			key, t, err := p.parseTimeValue()
+			key, tok, t, err := p.parseTimeValue()
 			if err != nil {
 				return nil, err
 			}
-			r.until = UntilFieldNode[K]{key: key, value: t}
+			r.until = UntilFieldNode[K]{key: key, token: tok, value: t}
 		case lexer.SINCE:
 			if r.since.key.Type == lexer.SINCE {
 				return nil, p.errDuplicate(p.cur)
 			}
-			key, t, err := p.parseTimeValue()
+			key, tok, t, err := p.parseTimeValue()
 			if err != nil {
 				return nil, err
 			}
-			r.since = SinceFieldNode[K]{key: key, value: t}
+			r.since = SinceFieldNode[K]{key: key, token: tok, value: t}
 		case lexer.DEPTH:
 			if r.depth.key.Type == lexer.DEPTH {
 				return nil, p.errDuplicate(p.cur)
@@ -441,6 +561,8 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 				return nil, err
 			}
 			r.vec = vec
+		case lexer.WHITESPACE:
+			p.next()
 		default:
 			return nil, p.errUnexpected(p.cur)
 		}
@@ -455,9 +577,42 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		return nil, p.errf(r.key.Pos, "a recall needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>")
 	}
 
+	if err := p.warnStopWords(&r); err != nil {
+		return nil, err
+	}
+
 	p.warnDepthWithoutGraph(&r)
 
 	return &r, nil
+}
+
+// parseSelector reads what follows a command verb: an optional graph selector
+// glued to it, then the space that ends the command. Each part is glued to the
+// last, so a space inside one is reported where it stands rather than as a
+// token the next production cannot use: before the '@' ("recall @3"), and a
+// second selector ("recall@3@5") is named as one, since an agent otherwise
+// reads the second number as silently ignored. A command with no selector
+// returns the zero node, which String and the handler read as the default.
+func (p *parser[K, P]) parseSelector(cmd lexer.Token) (GraphSelectorNode, error) {
+	var selector GraphSelectorNode
+	if p.cur.Type == lexer.AT {
+		key, value, err := p.parseGraphSelector()
+		if err != nil {
+			return GraphSelectorNode{}, err
+		}
+		selector = GraphSelectorNode{key: key, value: value}
+		if p.cur.Type == lexer.AT {
+			return GraphSelectorNode{}, p.errf(p.cur.Pos, "unexpected %s: a command takes one selector", p.cur.Describe())
+		}
+	}
+
+	if _, err := p.expect(lexer.WHITESPACE); err != nil {
+		return GraphSelectorNode{}, p.errf(p.cur.Pos, "expected a space after the command, found %s", p.cur.Describe())
+	}
+	if p.cur.Type == lexer.AT {
+		return GraphSelectorNode{}, p.errf(p.cur.Pos, "no space allowed between %s and @", cmd.Literal)
+	}
+	return selector, nil
 }
 
 // parseTerms reads a recall's leading term list, which may be empty. Terms are
@@ -465,52 +620,75 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 // everywhere, and folding at the edge keeps every downstream spelling of the
 // query (index lookup, plan-cache key) agreeing on one form.
 //
-// Only the first term may spell a reserved word. That position is the one place
-// no clause can begin, which is what makes a bare keyword data there — and also
-// what makes a mistyped clause slip through as a search, so it warns. From the
-// second term on a keyword starts a clause, in any casing: folding "Since" into
-// a term there would let "recall x Since 7d" read as three terms — the silent
-// token-shift parseTimeValue guards against, back through the casing door.
+// A reserved word is never a bare term. What a keyword means is decided by the
+// token after it, not by the keyword alone: followed by ':' it starts a clause
+// and ends the terms — the rule isValue owns — and otherwise it is rejected by
+// errKeywordAsTerm, since "recall x since 7d" is one ':' from "recall x
+// since:7d" and neither reading can be guessed safely; the repair is spelled
+// with the word after the keyword. A ':' past a blank is the clause written
+// with a space in it, and says so. Quoting is how a caller searches for the
+// word. A mis-cased keyword is rejected the same way: folding
+// "Since" into a term would let "recall x Since 7d" read as three terms — the
+// silent token-shift parseTimeValue guards against, back through the casing
+// door.
 func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
-	if !p.isValue() {
-		return nil, nil
-	}
-
-	tok, err := p.parseValue()
-	if err != nil {
-		return nil, err
-	}
-	if err := p.errEmpty("a search term", tok.Literal, tok.Pos); err != nil {
-		return nil, err
-	}
-
-	// The ambiguity cannot be resolved here — "recall since 7d" is one ':' from
-	// "recall since:7d", and the wrong reading silently answers a
-	// differently-scoped question — so it is surfaced: the query runs as the
-	// term search and carries a warning naming both readings. A quoted phrase
-	// never warns; quoting is the deliberate form.
-	if _, reserved := lexer.KeywordsMap[strings.ToLower(tok.Literal)]; reserved && tok.Type != lexer.PHRASE {
-		p.warns = append(p.warns, Warning{
-			Msg: fmt.Sprintf("term %q is also a keyword: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
-				tok.Literal, strings.ToLower(tok.Literal), tok.Literal),
-			Pos: tok.Pos,
-		})
-	}
-
-	terms := []LiteralFieldNode{TermNode{token: tok, value: strings.ToLower(tok.Literal)}}
-
-	for p.cur.Type == lexer.LITERAL || p.cur.Type == lexer.PHRASE {
-		if p.cur.IsMisCasedKeyword() {
+	var terms []LiteralFieldNode
+	for !p.isAtEnd() {
+		switch {
+		case p.cur.Type == lexer.WHITESPACE:
+			p.next()
+		case p.cur.IsMisCasedKeyword():
 			return nil, p.errUnexpected(p.cur)
+		case !p.isValue():
+			// A clause, or a token the clause loop diagnoses: the terms end here.
+			// vec names a parameter, not a filter, so the filter repair would
+			// mislead; parseVecField reports its own shape.
+			return terms, nil
+		case p.cur.Type.IsKeyword():
+			key := p.take()
+			if p.cur.Type == lexer.WHITESPACE && p.peek.Type == lexer.COLON {
+				return nil, p.errf(p.cur.Pos, "no space allowed before :")
+			}
+			return nil, p.errKeywordAsTerm(key, p.clauseValue(p.afterBlank()))
+		default:
+			tok := p.take()
+			if err := p.errEmpty("a search term", tok.Literal, tok.Pos); err != nil {
+				return nil, err
+			}
+			terms = append(terms, TermNode{token: tok, value: strings.ToLower(tok.Literal)})
 		}
-		if err := p.errEmpty("a search term", p.cur.Literal, p.cur.Pos); err != nil {
-			return nil, err
-		}
-		terms = append(terms, TermNode{token: p.cur, value: strings.ToLower(p.cur.Literal)})
-		p.next()
 	}
-
 	return terms, nil
+}
+
+// parseSeparator consumes the ':' that joins a clause keyword to its value, key
+// having just been taken. The ':' is required and checked, never skipped:
+// advancing blindly past it shifts every later token into the wrong role, so
+// "since 7d 30d" parsed clean and bounded the recall at 30d. Where a clause
+// starts a keyword has one reading, so a blank after it is diagnosed rather
+// than blamed as a wrong token: before a ':' it is a space inside the clause,
+// before a value it is the ':' the caller left out (errMissingColon names the
+// clause they meant), and before the end it is the dangling keyword
+// errKeywordAsClause covers. A blank after the ':' is a space inside the
+// clause too.
+func (p *parser[K, P]) parseSeparator(key lexer.Token) error {
+	if p.cur.Type == lexer.WHITESPACE {
+		switch p.peek.Type {
+		case lexer.COLON:
+			return p.errf(p.cur.Pos, "no space allowed before :")
+		case lexer.EOL, lexer.NEWLINE:
+			return p.errKeywordAsClause(key)
+		default:
+			return p.errMissingColon(key, p.clauseValue(p.peek))
+		}
+	}
+	if _, err := p.expect(lexer.COLON); err != nil {
+		return p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
+	}
+	if p.cur.Type == lexer.WHITESPACE {
+		return p.errf(p.cur.Pos, "no space allowed after :")
+	}
+	return nil
 }
 
 // parseIntField consumes a depth:/top: clause. One function serves both, as
@@ -522,8 +700,8 @@ func (p *parser[K, P]) parseIntField() (lexer.Token, int, error) {
 
 	p.next()
 
-	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, 0, p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
+	if err := p.parseSeparator(key); err != nil {
+		return lexer.Token{}, 0, err
 	}
 
 	tok := p.take()
@@ -550,13 +728,13 @@ func (p *parser[K, P]) parseIntField() (lexer.Token, int, error) {
 // following token into the wrong role, so "since 7d 30d" parsed clean and
 // bounded the recall at 30d — a query silently answering a different question
 // than the one asked, which is worse than an error an agent can correct from.
-func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], error) {
+func (p *parser[K, P]) parseTimeValue() (lexer.Token, lexer.Token, containers.TimeValue[K], error) {
 	key := p.cur
 
 	p.next()
 
-	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, nil, p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
+	if err := p.parseSeparator(key); err != nil {
+		return lexer.Token{}, lexer.Token{}, nil, err
 	}
 
 	tok := p.take()
@@ -565,18 +743,29 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, containers.TimeValue[K], e
 	var rangeErr *containers.DurationRangeError
 	switch {
 	case errors.As(err, &rangeErr):
-		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: out of range (at most %d%c)", strings.ToLower(key.Literal), tok.Describe(), rangeErr.Max, rangeErr.Unit)
+		return lexer.Token{}, lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: out of range (at most %d%c)", strings.ToLower(key.Literal), tok.Describe(), rangeErr.Max, rangeErr.Unit)
 	case err != nil:
-		return lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: expected a duration like 7d or a date like 2026-01-15", strings.ToLower(key.Literal), tok.Describe())
+		return lexer.Token{}, lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: expected a duration like 7d or a quoted date like '2026-01-15'", strings.ToLower(key.Literal), tok.Describe())
 	}
 
-	return key, t, nil
+	return key, tok, t, nil
 }
 
 func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
+
 	key := p.cur
 
 	p.next()
+
+	// The number is glued to its '@' as the '@' is to the verb. A space before
+	// a number is reported as a space, since that number is the selector the
+	// caller meant; before anything else there is no selector at all, and the
+	// whole-number check below says so.
+	if p.cur.Type == lexer.WHITESPACE && p.peek.Type == lexer.LITERAL {
+		if _, err := strconv.Atoi(p.peek.Literal); err == nil {
+			return lexer.Token{}, 0, p.errf(p.cur.Pos, "no space allowed between @ and the selector")
+		}
+	}
 
 	tok := p.take()
 
@@ -606,10 +795,18 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 	if p.cur.Type == lexer.ILLEGAL {
 		return nil, p.errf(p.cur.Pos, "unterminated quoted phrase")
 	}
+	// A NUL where the fact should start is rejected for itself, not reported
+	// as a missing phrase.
+	if p.cur.Type == lexer.NUL {
+		return nil, p.errUnexpected(p.cur)
+	}
+
 	tok, err := p.expect(lexer.PHRASE)
+
 	if err != nil {
 		return nil, p.errf(p.cur.Pos, "expected a quoted phrase, but found %s", p.cur.Describe())
 	}
+
 	return &PhraseNode{value: tok.Literal, pos: tok.Pos}, nil
 }
 
@@ -623,12 +820,13 @@ func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 	if p.isValue() {
 		return p.take(), nil
 	}
-	// A token with a diagnosis of its own keeps it: an unclosed quote and a
-	// parenthesis are not "the wrong kind of value", they are mistakes that
-	// name themselves, and saying so is worth more here than saying what a
-	// value slot wanted.
+	// A token with a diagnosis of its own keeps it: an unclosed quote, a
+	// parenthesis and a special character are not "the wrong kind of value",
+	// they are mistakes that name themselves, and saying so is worth more here
+	// than saying what a value slot wanted.
 	switch p.cur.Type {
-	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE:
+	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE, lexer.NUL,
+		lexer.SPECIAL, lexer.PLUS, lexer.TILDE, lexer.MINUS:
 		return p.cur, p.errUnexpected(p.cur)
 	}
 	return p.cur, p.errf(p.cur.Pos, "expected a word or quoted phrase, but found %s", p.cur.Describe())
@@ -637,13 +835,13 @@ func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 // parseAnchorField consumes a topic:/entity: clause. As in parseTimeValue, the
 // ':' is required: "topic food extra" used to shift tokens into the wrong roles
 // and return an unfiltered result set rather than a parse error.
-func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
+func (p *parser[K, P]) parseAnchorField() (lexer.Token, lexer.Token, string, error) {
 	key := p.cur
 
 	p.next()
 
-	if _, err := p.expect(lexer.COLON); err != nil {
-		return lexer.Token{}, "", p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
+	if err := p.parseSeparator(key); err != nil {
+		return lexer.Token{}, lexer.Token{}, "", err
 	}
 
 	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my
@@ -654,14 +852,14 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 	tok, err := p.parseValue()
 
 	if err != nil {
-		return lexer.Token{}, "", err
+		return lexer.Token{}, lexer.Token{}, "", err
 	}
 
 	if err := p.errEmpty("an anchor value", tok.Literal, tok.Pos); err != nil {
-		return lexer.Token{}, "", err
+		return lexer.Token{}, lexer.Token{}, "", err
 	}
 
-	return key, strings.ToLower(tok.Literal), nil
+	return key, tok, strings.ToLower(tok.Literal), nil
 }
 
 // parseVecField consumes a vec:$name clause. Its errors are returned to the
@@ -671,23 +869,20 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, string, error) {
 func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {
 	r := VecFieldNode[P]{}
 
-	tok, err := p.expect(lexer.VEC)
+	r.key = p.take()
 
-	if err != nil {
+	if err := p.parseSeparator(r.key); err != nil {
 		return nil, err
-	}
-
-	r.key = tok
-
-	if _, err := p.expect(lexer.COLON); err != nil {
-		return nil, p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
 	}
 
 	if _, err := p.expect(lexer.DOLLAR); err != nil {
 		return nil, p.errf(p.cur.Pos, "expected param field operator $, but found %s", p.cur.Describe())
 	}
+	if p.cur.Type == lexer.WHITESPACE {
+		return nil, p.errf(p.cur.Pos, "no space allowed after $")
+	}
 
-	tok, err = p.expect(lexer.LITERAL)
+	tok, err := p.expect(lexer.LITERAL)
 
 	if err != nil {
 		return nil, err

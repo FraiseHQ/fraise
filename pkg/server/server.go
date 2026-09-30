@@ -25,6 +25,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -79,7 +80,13 @@ func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.H
 	}
 
 	r := gin.New()
-	r.Use(gin.Recovery())
+	// Every failure answers in the one documented shape, {"error": ...}: a
+	// recovered panic is an internal failure like any other — generic body,
+	// detail in the log — where gin's own recovery answered 500 with no body.
+	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		logger.Error("Recovered from panic in handler", "path", c.Request.URL.Path, "panic", recovered)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
+	}))
 
 	s := &Server[K, P]{
 		Config: config,
@@ -203,6 +210,13 @@ func (s *Server[K, P]) setupRoutes() {
 
 	// Stats endpoint: per-graph snapshots (nodes, edges, vectors, forest).
 	v1.GET("/stats", s.handleStats())
+
+	// Anything else — an unknown path, or a known one with the wrong method —
+	// is a 404 in the same {"error": ...} shape as every other failure, naming
+	// what was asked for, where gin answered in plain text.
+	s.router.NoRoute(func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("no endpoint %s %s", c.Request.Method, c.Request.URL.Path)})
+	})
 }
 
 // limitBody caps how much of a request body a handler will read: it wraps the

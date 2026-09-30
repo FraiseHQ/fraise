@@ -228,7 +228,7 @@ make dev
 ```sh
 curl -X POST localhost:9876/api/v1/q \
   -H 'content-type: application/json' \
-  -d '{"query":"remember \"the parrot is turquoise\" topic:color"}'
+  -d "{\"query\": \"remember 'the parrot is turquoise' topic:color\"}"
 
 curl -X POST localhost:9876/api/v1/q \
   -H 'content-type: application/json' \

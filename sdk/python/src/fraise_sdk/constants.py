@@ -21,6 +21,8 @@
 # SOFTWARE.
 """Constants used in this project."""
 
+import os
+
 DEFAULT_BASE_URL = "http://localhost:9876"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
@@ -45,8 +47,8 @@ VECTOR_PARAM = "v"
 MAX_GRAPH = 255
 
 # The grammar's reserved words, mirroring the server's keyword table. A bare term
-# spelling one of these reads as the start of a clause everywhere except the
-# first term of a recall, so the builder has to know them to quote around them.
+# spelling one of these is syntax wherever a term stands, so the builder has to
+# know them to quote around them.
 KEYWORDS = frozenset(
     {
         "recall",
@@ -83,3 +85,8 @@ DEFAULT_TOP = 5
 # rather than a round trip that fails. An operator can only lower the ceiling
 # (max-depth), and the server's own rejection still surfaces as a tool error.
 MAX_DEPTH = 2
+
+# The SDK's own files. A warning is attributed to the first frame outside them —
+# the caller's line, however deep in the SDK the warning was decided — which a
+# fixed stacklevel gets right for one call path only.
+SDK_FILES = (os.path.dirname(os.path.abspath(__file__)) + os.sep,)

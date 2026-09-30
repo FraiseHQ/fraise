@@ -162,26 +162,41 @@ def test_recall_surfaces_server_warnings(session, respond, server_warning):
     result for programmatic use, and emitted as a FraiseWarning so it is
     visible by default without any code changes.
 
-    The armed response mimics ``recall since 7d``: the query ran — hits and
-    all — while the server flagged that it is one ':' away from a since
-    clause. Warnings ride beside the results, they do not replace them.
+    The armed response mimics ``recall ferry the``: the query ran — hits and
+    all — while the server flagged a stop word that can never match. Warnings
+    ride beside the results, they do not replace them.
     """
     respond(
         session,
         {
             "results": {
                 "count": 1,
-                "hits": [{"value": "since the storm", "score": 1.0}],
+                "hits": [{"value": "the ferry docks at dawn", "score": 1.0}],
             },
             "warnings": [server_warning],
         },
     )
 
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        result = FraiseClient().recall("since", "7d")
+    with pytest.warns(FraiseWarning, match="is a stop word") as record:
+        result = FraiseClient().recall("ferry", "the")
 
+    assert record[0].filename == __file__
     assert result.warnings == [server_warning]
     assert result.count == 1
+
+
+def test_a_reserved_word_keyword_warns_at_the_callers_line(session, sent):
+    """``recall("since", "7d")`` is sent quoted and warns before it is sent.
+
+    The warning is decided three frames deep, in the query builder, and still
+    names this file: the caller's own call is the line they can change, and a
+    warning pointing into the SDK would leave them looking for it.
+    """
+    with pytest.warns(FraiseWarning, match="is a reserved word") as record:
+        FraiseClient().recall("since", "7d")
+
+    assert record[0].filename == __file__
+    assert sent(session)["query"] == "recall@0 'since' 7d"
 
 
 def test_recall_without_warnings_is_silent(session):
@@ -205,8 +220,8 @@ def test_raw_query_emits_server_warnings(session, respond, server_warning):
         session, {"results": {"count": 0, "hits": []}, "warnings": [server_warning]}
     )
 
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        body = FraiseClient().query("recall@0 since 7d")
+    with pytest.warns(FraiseWarning, match="is a stop word"):
+        body = FraiseClient().query("recall@0 ferry the")
 
     assert body["warnings"] == [server_warning]
 
@@ -584,16 +599,20 @@ def test_recall_is_reachable_with_an_anchor_and_no_keyword(
     assert result.count >= 0
 
 
+@pytest.mark.parametrize("words", [["kettle", "top"], ["since", "7d"], ["Top"]])
 @pytest.mark.integration
-def test_a_keyword_spelled_search_word_is_not_a_clause(client, round_trip_graph):
+def test_a_keyword_spelled_search_word_is_not_a_clause(words, client, round_trip_graph):
     """A search word that spells a keyword is a word, wherever it is passed.
 
-    ``recall("kettle", "top")`` used to build ``recall@0 kettle top``, which the
-    grammar reads as an unfinished ``top:`` clause and rejects. The builder
-    quotes it now, so the position a caller happens to pass a word in no longer
-    decides whether their query parses.
+    The server reads a bare reserved word as syntax in every position and in
+    any casing, so ``recall("since", "7d")`` built bare would be a 400 asking
+    whether ``since:7d`` was meant. The builder quotes it and warns, so
+    neither the position nor the casing a caller passes a word in decides
+    whether their query parses, and the other reading is still named.
+    Read-only: recalls write nothing.
     """
-    result = client.recall("kettle", "top", graph=round_trip_graph)
+    with pytest.warns(FraiseWarning, match="is a reserved word"):
+        result = client.recall(*words, graph=round_trip_graph)
     assert result.count >= 0
 
 
@@ -603,24 +622,6 @@ def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):
     result = client.recall(no_match, graph=round_trip_graph)
     assert result.count == 0
     assert bool(result) is False
-
-
-@pytest.mark.integration
-def test_a_keyword_spelled_term_recalls_with_a_warning(client, round_trip_graph):
-    """recall("since", "7d") runs, and the server's parse warning surfaces on
-    both channels the SDK offers.
-
-    The leading term "since" is legal data but one ':' from a since clause,
-    so the live server answers the search and attaches a warning naming both
-    readings. The SDK lists it on ``result.warnings`` and re-emits it as a
-    :class:`FraiseWarning` — this is the whole warning pipeline, wire to
-    caller, in one round trip. Read-only: recalls write nothing.
-    """
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        result = client.recall("since", "7d", graph=round_trip_graph)
-
-    assert len(result.warnings) == 1
-    assert "since:<value>" in result.warnings[0]
 
 
 @pytest.mark.integration
@@ -737,7 +738,7 @@ def test_recall_of_an_empty_graph_says_the_graph_is_empty(client, empty_graph):
     empty result as a query that simply missed, and debugs the query when it
     should be checking whether it ever wrote.
     """
-    result = client.recall("anything", graph=empty_graph)
+    result = client.recall("zebras", graph=empty_graph)
 
     assert result.empty is True
     assert result.count == 0

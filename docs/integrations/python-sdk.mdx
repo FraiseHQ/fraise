@@ -30,6 +30,27 @@ The Python SDK is dependency-light and supports vector search when you supply an
 
 `recall` takes bare keywords positionally — `recall("parrot", "turquoise")` — and a natural-language question as `query=`, sent as one quoted phrase so its words never collide with the grammar's keywords. Anchors go in `topics=` and `entities=`, the graph in `graph=` (0 by default), and `top=` and `depth=` map to their clauses.
 
+## Typed helpers and raw FQL
+
+There are two ways to send a query, and they differ in how much the SDK does for you.
+
+`remember` and `recall` write the FQL for you and take any value. A topic or entity is sent bare when it is one plain word — letters and digits only — and quoted when it holds anything else, so `topics=["US elections"]`, `topics=["machine-learning"]` and `entities=["O'Brien"]` all work; a reserved word is an ordinary anchor, since after the `:` only a value can appear. A keyword follows the same rule, so `recall("e-mail")` and `recall("new york")` search for exactly those words. A keyword that spells a [reserved word](/docs/query-language/tokens/keywords) is quoted too, and raises a `FraiseWarning`: `recall("since", "7d")` searches for the word "since", though it may have been meant as a `since:7d` bound, which only `query` can send. An argument no query can carry — an empty value, a graph outside 0–255 — raises `FraiseQueryError` before anything is sent.
+
+```python
+client.recall("since", "7d", topics=["US elections"])
+# FraiseWarning: keyword "since" is a reserved word, so it was searched as the
+# word 'since'; to use it as FQL syntax, write the query with client.query
+# sends: recall@0 'since' 7d topic:'US elections'
+```
+
+`query` sends the FQL you wrote, exactly as written: nothing is quoted or checked on the way out. It is the route for everything the typed helpers do not cover, such as a `since:`/`until:` time bound. When the server rejects a query, the error comes back as `FraiseAPIError` carrying the server's message, which names the fix.
+
+```python
+client.query("recall@0 ferry since:'2026-01-15'")
+```
+
+See [Identifiers](/docs/query-language/tokens/identifiers) for what counts as a plain word.
+
 ## With embeddings
 
 ```python

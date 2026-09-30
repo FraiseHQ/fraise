@@ -30,10 +30,12 @@ from collections.abc import Sequence
 import requests
 
 from fraise_sdk import query as _query
+from fraise_sdk.compat import warn
 from fraise_sdk.constants import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT_SECONDS,
     NO_CONTENT,
+    SDK_FILES,
     SERVER_MAX_EXCLUSIVE,
     SERVER_MIN,
     SUPPORTED_SERVER,
@@ -402,9 +404,7 @@ class FraiseClient:
         # query ran and the results are valid, but the server flagged a reading
         # the caller may not have meant. Emitted per message, category-scoped,
         # so a caller can react to one or silence them all.
-        # stacklevel 3 is the caller of the public method that called _post
-        # (query, recall or remember), which is the line a user can act on.
         for message in body.get("warnings") or []:
-            warnings.warn(message, FraiseWarning, stacklevel=3)
+            warn(message, FraiseWarning, skip_file_prefixes=SDK_FILES)
 
         return response.status_code, body

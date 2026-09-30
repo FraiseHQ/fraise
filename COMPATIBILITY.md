@@ -30,6 +30,6 @@ client.check_compatibility(strict=True)  # raises FraiseError on mismatch
 
 When cutting an SDK release that starts relying on newer server behaviour:
 
-1. Bump the declared range in the SDK — `SUPPORTED_SERVER` (and the `_SERVER_MIN` / `_SERVER_MAX_EXCLUSIVE` bounds) in [`sdk/python/src/fraise_sdk/client.py`](sdk/python/src/fraise_sdk/client.py).
+1. Bump the declared range in the SDK — `SUPPORTED_SERVER` (and the `SERVER_MIN` / `SERVER_MAX_EXCLUSIVE` bounds) in [`sdk/python/src/fraise_sdk/constants.py`](sdk/python/src/fraise_sdk/constants.py).
 2. Update the row above.
 3. Tag the SDK release (`python/vX.Y.Z`).

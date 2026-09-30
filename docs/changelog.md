@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.2.2](https://github.com/FraiseHQ/fraise/compare/v0.2.1...v0.2.2) (2026-09-28)
+
+
+### Bug fixes
+
+* answer unknown routes and panics with the error shape ([#373](https://github.com/FraiseHQ/fraise/issues/373)) ([edf2910](https://github.com/FraiseHQ/fraise/commit/edf29101b51b39a6fbfdbf95deb7fc226d0f58ff))
+* count only vertices in the stats order ([#375](https://github.com/FraiseHQ/fraise/issues/375)) ([f939065](https://github.com/FraiseHQ/fraise/commit/f9390659e1d61516998735a78c98510cd44bb15e))
+* honour log.disable-timestamp ([#371](https://github.com/FraiseHQ/fraise/issues/371)) ([dcfed6a](https://github.com/FraiseHQ/fraise/commit/dcfed6a2ee4bb5af19be19268e7bb303a35d857d))
+* keep a lone anchor at its fair share silent ([#370](https://github.com/FraiseHQ/fraise/issues/370)) ([f6ef21a](https://github.com/FraiseHQ/fraise/commit/f6ef21a777a9ba78b84a4d94640a897c30a47c32))
+* stop offering command words as clauses ([#372](https://github.com/FraiseHQ/fraise/issues/372)) ([4e3c660](https://github.com/FraiseHQ/fraise/commit/4e3c6604446061119d2cbc4f8a3ac872553449c1))
+
+## [0.2.1](https://github.com/FraiseHQ/fraise/compare/v0.2.0...v0.2.1) (2026-09-25)
+
+
+### Bug fixes
+
+* name the command when a remember gets a recall clause ([#368](https://github.com/FraiseHQ/fraise/issues/368)) ([7495ced](https://github.com/FraiseHQ/fraise/commit/7495ceda04af6f20c2122131a6cec2a8b2d6368b))
+* reject a nul character outside a phrase ([#367](https://github.com/FraiseHQ/fraise/issues/367)) ([3efe8ee](https://github.com/FraiseHQ/fraise/commit/3efe8ee156966c6e9b6428847955b941252ca655))
+* reject a recall vector of the wrong dimension ([#366](https://github.com/FraiseHQ/fraise/issues/366)) ([b2091fb](https://github.com/FraiseHQ/fraise/commit/b2091fbdd11fb59e3f07b252013934fde48e2589))
+* reject durations longer than a duration can hold ([#364](https://github.com/FraiseHQ/fraise/issues/364)) ([e1d13a3](https://github.com/FraiseHQ/fraise/commit/e1d13a3d8f449325f0e0d1dcba0649317a679db4))
+
+
+### Maintenance
+
+* correct the install and changelog paths in release notes ([#380](https://github.com/FraiseHQ/fraise/issues/380)) ([1eaac47](https://github.com/FraiseHQ/fraise/commit/1eaac4793abef7bba86bd968564894ccdeae300a))
+* improve documentation (fix typos and incorrect statements) ([#362](https://github.com/FraiseHQ/fraise/issues/362)) ([14d8491](https://github.com/FraiseHQ/fraise/commit/14d84913dc058110355dee8fb76361863ce72323))
+* **main:** release python 0.1.0-rc.2 ([#360](https://github.com/FraiseHQ/fraise/issues/360)) ([8671713](https://github.com/FraiseHQ/fraise/commit/8671713d7667bfabf6819431ae82a0f9d523209c))
+
 ## [0.2.0](https://github.com/FraiseHQ/fraise/compare/v0.1.0...v0.2.0) (2026-09-22)
 
 

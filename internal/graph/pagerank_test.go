@@ -155,7 +155,7 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 	// Without a ranking the two matches tie to the bit: same term frequency,
 	// same document length, no decay — nothing separates them.
 	g := build()
-	nodes, scores, _, _ := g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 || scores[0] != scores[1] {
 		t.Fatalf("Search without ranking = %d nodes, scores %v, want the two matches tied", len(nodes), scores)
 	}
@@ -164,7 +164,7 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 	// lifts it above the equally-relevant plain fact.
 	g = build()
 	g.SetRanking(graph.NewPageRank[uint64, float64](0.85, 100, 1e-9))
-	nodes, _, _, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
 	if len(nodes) != 2 || (*nodes[0]).GetValue() != "alpha central note" {
 		t.Errorf("Search with PageRank ranking did not put the central fact first")
 	}

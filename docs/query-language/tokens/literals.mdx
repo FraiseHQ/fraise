@@ -8,7 +8,7 @@ description: "Phrases, integers, durations and dates — the value forms FQL acc
 | phrase | `'...'` | opaque: every character is literal, `''` is one apostrophe |
 | integer | `0`, `10`, `1000` | non-negative only; a leading `-` is a separate token |
 | duration | `7d`, `30m`, `1w` | `<integer><unit>`, units `s` `m` `h` `d` `w`, read as "ago" |
-| date | `2026-01-15` | `YYYY-MM-DD` |
+| date | `'2026-01-15'` | `YYYY-MM-DD` or RFC3339, always quoted |
 | param ref | `$v` | see [Parameters](/docs/query-language/tokens/parameters) |
 
 ## Phrases
@@ -24,20 +24,22 @@ The first stores a colon and the reserved word "topic" as part of the fact; the 
 
 ## Time values
 
-A time value is either a duration or a date:
+A time value is either a duration or a quoted absolute time:
 
 ```ebnf
-time_value = duration | iso_date ;
-duration   = integer time_unit ;
-time_unit  = 's' | 'm' | 'h' | 'd' | 'w' ;
-iso_date   = ?\d{4}-\d{2}-\d{2}? ;
+time_value    = duration | "'" absolute_time "'" ;
+duration      = integer time_unit ;
+time_unit     = 's' | 'm' | 'h' | 'd' | 'w' ;
+absolute_time = iso_date | rfc3339 ;
+iso_date      = ?\d{4}-\d{2}-\d{2}? ;
+rfc3339       = ?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})? ;
 ```
 
 A duration is read as **"ago"**, so `since:7d` means "no older than seven days".
 
-<Note title="Dates carry no time of day" type="warning">
+<Note title="Dates are quoted" type="warning">
 
-  **A date carries no time of day.** `since:2026-01-15T10:00:00Z` does not parse — the first `:` cuts the value to `2026-01-15T10`, which is rejected as neither a duration nor a date. Whole days are the finest an absolute bound can be written to; use a duration when finer is needed.
+  **A date is written inside quotes.** A bare word is letters and digits only, so the `-` in `since:2026-01-15` is rejected, and the error shows the quoted form: `since:'2026-01-15'`. Inside the quotes a time of day may follow as RFC3339, `since:'2026-01-15T10:00:00Z'`, which a bare value could never carry past its first `:`.
 
 </Note>
 
