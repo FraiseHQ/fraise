@@ -162,23 +162,23 @@ def test_recall_surfaces_server_warnings(session, respond, server_warning):
     result for programmatic use, and emitted as a FraiseWarning so it is
     visible by default without any code changes.
 
-    The armed response mimics ``recall since 7d``: the query ran — hits and
-    all — while the server flagged that it is one ':' away from a since
-    clause. Warnings ride beside the results, they do not replace them.
+    The armed response mimics ``recall ferry the``: the query ran — hits and
+    all — while the server flagged a stop word that can never match. Warnings
+    ride beside the results, they do not replace them.
     """
     respond(
         session,
         {
             "results": {
                 "count": 1,
-                "hits": [{"value": "since the storm", "score": 1.0}],
+                "hits": [{"value": "the ferry docks at dawn", "score": 1.0}],
             },
             "warnings": [server_warning],
         },
     )
 
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        result = FraiseClient().recall("since", "7d")
+    with pytest.warns(FraiseWarning, match="is a stop word"):
+        result = FraiseClient().recall("ferry", "the")
 
     assert result.warnings == [server_warning]
     assert result.count == 1
@@ -205,8 +205,8 @@ def test_raw_query_emits_server_warnings(session, respond, server_warning):
         session, {"results": {"count": 0, "hits": []}, "warnings": [server_warning]}
     )
 
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        body = FraiseClient().query("recall@0 since 7d")
+    with pytest.warns(FraiseWarning, match="is a stop word"):
+        body = FraiseClient().query("recall@0 ferry the")
 
     assert body["warnings"] == [server_warning]
 
@@ -584,16 +584,20 @@ def test_recall_is_reachable_with_an_anchor_and_no_keyword(
     assert result.count >= 0
 
 
+@pytest.mark.parametrize("words", [["kettle", "top"], ["since", "7d"], ["Top"]])
 @pytest.mark.integration
-def test_a_keyword_spelled_search_word_is_not_a_clause(client, round_trip_graph):
+def test_a_keyword_spelled_search_word_is_not_a_clause(words, client, round_trip_graph):
     """A search word that spells a keyword is a word, wherever it is passed.
 
-    ``recall("kettle", "top")`` used to build ``recall@0 kettle top``, which the
-    grammar reads as an unfinished ``top:`` clause and rejects. The builder
-    quotes it now, so the position a caller happens to pass a word in no longer
-    decides whether their query parses.
+    The server reads a bare reserved word as syntax in every position and in
+    any casing, so ``recall("since", "7d")`` built bare would be a 400 asking
+    whether ``since:7d`` was meant. The builder quotes it and warns, so
+    neither the position nor the casing a caller passes a word in decides
+    whether their query parses, and the other reading is still named.
+    Read-only: recalls write nothing.
     """
-    result = client.recall("kettle", "top", graph=round_trip_graph)
+    with pytest.warns(FraiseWarning, match="is a reserved word"):
+        result = client.recall(*words, graph=round_trip_graph)
     assert result.count >= 0
 
 
@@ -603,26 +607,6 @@ def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):
     result = client.recall(no_match, graph=round_trip_graph)
     assert result.count == 0
     assert bool(result) is False
-
-
-@pytest.mark.integration
-def test_a_leading_keyword_spelled_term_is_rejected_by_the_server(
-    client, round_trip_graph
-):
-    """recall("since", "7d") reaches the server as written and comes back as its 400.
-
-    The builder does not re-implement the server's keyword rule, so the leading
-    "since" goes out bare and the server rejects it: a reserved word is never a
-    bare term. Its message names both fixes — the since:7d clause, and the quote
-    that searches the word — and the SDK's job is to hand that message to the
-    caller intact on :class:`FraiseAPIError`. Read-only: recalls write nothing.
-    """
-    with pytest.raises(FraiseAPIError) as excinfo:
-        client.recall("since", "7d", graph=round_trip_graph)
-    assert excinfo.value.status_code == 400
-    assert 'term "since" is also a keyword' in excinfo.value.message
-    assert "write since:7d" in excinfo.value.message
-    assert "quote it ('since')" in excinfo.value.message
 
 
 @pytest.mark.integration

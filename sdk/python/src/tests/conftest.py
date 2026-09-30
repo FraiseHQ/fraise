@@ -60,13 +60,12 @@ def pytest_configure(config):
 _QUERY_URL = f"{DEFAULT_BASE_URL}/api/v1/q"
 _NO_HITS = {"results": {"count": 0, "hits": []}}
 
-# The shape the server sends for the grammar's one surviving ambiguity: a
-# leading recall term that spells a keyword ran as a term search, and the
-# warning names the clause it nearly is.
+# The shape the server sends for a query that ran with a term that cannot help
+# it: "the" in "recall@0 ferry the" is a stop word, which stored facts never
+# contain, and the warning says so at the term.
 _SERVER_WARNING = (
-    'parse warning at column 15: term "since" is also a keyword: write '
-    "since:<value> if a clause was meant, or quote it ('since') to search "
-    "for the word"
+    'parse warning at column 18: term "the" is a stop word: stored facts '
+    "never contain it, so it cannot match"
 )
 
 
