@@ -25,7 +25,7 @@
 from datetime import datetime
 
 import pytest
-from fraise_sdk.models import Hit, RecallResult
+from fraise_sdk.models import Contribution, Hit, RecallResult
 
 
 def test_from_json_defaults_to_no_warnings():
@@ -79,6 +79,78 @@ def test_from_json_carries_the_empty_graph_flag():
     assert result.count == 0
     assert result.hits == []
     assert bool(result) is False
+
+
+def test_an_explained_hit_carries_its_contributions(explain_response):
+    """Each hit parses its breakdown into typed contributions, in the order sent.
+
+    The first hit matched the text and was also reached through the polly
+    anchor; ``via`` and ``degree`` ride only on the graph sighting, and a text
+    sighting leaves them unset rather than zero, since no anchor was involved.
+    """
+    result = RecallResult.from_json(explain_response["results"], explain=True)
+
+    assert result.hits[0].contributions == [
+        Contribution(source="text", score=1.0499527612542656, rank=0, count=1),
+        Contribution(
+            source="graph",
+            score=1.9820803996745116,
+            rank=0,
+            count=2,
+            via="polly",
+            degree=3,
+        ),
+    ]
+
+
+def test_a_hit_reached_through_the_graph_alone_says_so(explain_response):
+    """A graph-only hit matched nothing itself: its one sighting is the anchor.
+
+    This is the case explain exists to separate — a fact the graph reached and
+    ranked low, rather than one the search never reached at all.
+    """
+    result = RecallResult.from_json(explain_response["results"], explain=True)
+
+    graph_only = result.hits[2]
+    assert graph_only.value == "the parrot sleeps in the kitchen"
+    assert [c.source for c in graph_only.contributions] == ["graph"]
+    assert graph_only.contributions[0].via == "polly"
+
+
+def test_an_explained_result_carries_the_background_rate(explain_response):
+    """The query-level background rate lands on the result, as a float."""
+    result = RecallResult.from_json(explain_response["results"], explain=True)
+
+    assert result.background == 0.4857013396824596
+
+
+def test_an_omitted_background_is_zero_on_an_explained_result(
+    anchor_explain_response,
+):
+    """The server omits a background rate of zero, and explain reads it as 0.0.
+
+    An anchor-only recall observes no seed mass per unit of degree, so the rate
+    is zero and the key is absent. On an explained result that absence is a
+    value, not a missing one — ``None`` would read as "not asked for".
+    """
+    result = RecallResult.from_json(anchor_explain_response["results"], explain=True)
+
+    assert result.background == 0.0
+    assert {c.source for hit in result for c in hit.contributions} == {"anchor"}
+
+
+def test_a_plain_recall_carries_no_breakdown():
+    """Without explain there is no breakdown: no contributions, no background.
+
+    ``background`` is ``None`` rather than 0.0 so a caller can tell a result
+    that was never explained from one whose background rate was zero.
+    """
+    result = RecallResult.from_json(
+        {"count": 1, "hits": [{"value": "polly whistles at dawn", "score": 1.0}]}
+    )
+
+    assert result.hits[0].contributions == []
+    assert result.background is None
 
 
 @pytest.mark.integration
