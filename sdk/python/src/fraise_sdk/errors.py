@@ -41,6 +41,8 @@ class FraiseWarning(UserWarning):
     category::
 
         warnings.filterwarnings("ignore", category=FraiseWarning)
+
+    Either way it names the caller's own line, never a line inside the SDK.
     """
 
 

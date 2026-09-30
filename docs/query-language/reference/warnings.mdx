@@ -3,36 +3,24 @@ title: "Warnings"
 description: "The query shapes that run but carry a warning, and the neighbouring shapes that stay silent"
 ---
 
-An error rejects a query; a warning accompanies one that ran. The bar for a warning is deliberately high: the query must be valid with exactly one reading, *and* sit one typo away from a different valid query — close enough that a slip of a colon would change the results without changing the status code. The hits are real and complete either way; the warning only says what else the query could have meant.
-
-One further shape warns for a neighbouring reason: a clause that is valid but, in that query, has nothing to act on. It changes no result, and the warning keeps the caller from believing it asked for something and got it.
+An error rejects a query; a warning accompanies one that ran. A query that could mean two things is never a warning — the parser does not guess, so `recall since 7d`, one `:` away from `recall since:7d`, is an [error](/docs/http-api/errors) naming both repairs. A warning is only ever about a query with exactly one reading that carries something it should not: a keyword spelled against the language, or a term or clause that, in that query, has nothing to act on. The hits are real and complete either way; the warning says what to change so the next query is clean.
 
 Warnings travel beside the results, never instead of them, and the key is absent when there is nothing to say — the response shape of a clean query is unchanged:
 
 ```json
 {
   "results": {"count": 1, "hits": ["..."]},
-  "warnings": ["parse warning at column 12: term \"since\" is also a keyword: write since:<value> if a clause was meant, or quote it ('since') to search for the word"]
+  "warnings": ["parse warning at column 10: term \"the\" is a stop word: stored facts never contain it, so it cannot match"]
 }
 ```
 
-Each entry is positioned like a parse error — `parse warning at column N:`, the column naming the last character of the token it is about — and says how to resolve it from the message alone: a near-miss names both readings with the syntax that selects each one.
+Each entry is positioned like a parse error — `parse warning at column N:`, the column naming the last character of the token it is about — and says how to resolve it from the message alone.
 
 ## Queries that warn
 
-Three shapes warn: two near-misses, and one inert clause.
+Three shapes warn: one mis-spelled clause, and two that carry something with nothing to act on.
 
-### 1. A recall whose leading term spells a reserved keyword
-
-Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`, in any casing. The leading term is the one position where a bare reserved word legally reads as data — a recall must start with a term, so no clause can begin there — which also makes it the one position where a mistyped clause slips through as a search instead of an error. A command word — `recall`, `remember`, `forget`, `update` — has no clause reading to offer, so its warning names only the quote.
-
-| query | reading that runs | near-miss it warns about |
-|--------------------|--------------------------------|---------------------------------|
-| `recall since 7d` | a search for "since" and "7d" | `recall since:7d`, a time bound |
-| `recall top` | a search for "top" | an unfinished `top:<n>` clause |
-| `recall Top shelf` | a search for "top" and "shelf" | the same, mis-cased |
-
-### 2. A clause whose keyword is not lower case
+### 1. A clause whose keyword is not lower case
 
 A word glued to a `:` has exactly one reading, so the clause runs — see [Keywords](/docs/query-language/tokens/keywords) for why erroring there would report the shallower of two problems. But this language is lower case, and accepting the spelling in silence teaches the opposite. The warning names the clause that ran, and there is one per mis-cased clause so a query with several can be fixed in a single pass.
 
@@ -48,7 +36,7 @@ A word glued to a `:` has exactly one reading, so the clause runs — see [Keywo
 
 </Note>
 
-### 3. A retrieval lane with no anchor to act through
+### 2. A retrieval lane with no anchor to act through
 
 `depth:1` and `depth:2` choose how anchors pass evidence on, and a recall enters the graph only through the `topic:`/`entity:` anchors it names. On a recall that names none, the lane is valid but has nothing to act through: the query runs on the text and vector indexes alone, exactly as `depth:0` would, and the warning says so at the `depth` clause.
 
@@ -59,14 +47,26 @@ A word glued to a `:` has exactly one reading, so the clause runs — see [Keywo
 
 See [Retrieval lanes](/docs/retrieval/ranking/depth).
 
+### 3. A search term that is a stop word
+
+Stored facts are cleaned of English stop words on their way into the index, so a bare stop word among a recall's terms can never match. The recall runs on its other seeds, and there is one warning per stop word, at its column. The parser decides what a stop word is with the same list and the same word boundaries the index uses, so the two cannot disagree.
+
+| query | reading that runs | what it warns about |
+|--------------------------|----------------------------|--------------------------------------------|
+| `recall the parrot` | a search for "parrot" | `the` can never match |
+| `recall 'the parrot'` | — | nothing: a phrase is never judged by its words |
+
+When every search term is a stop word and the recall carries no phrase and no vector, nothing can match at all. That is an [error](/docs/http-api/errors), not a warning — an empty result would read like a miss — and a named anchor does not change it: `recall the topic:birds` is meant as `recall topic:birds`.
+
 ## Queries that stay silent
 
-Every neighbouring shape resolves without ambiguity, so it carries no warning — the grammar either runs it silently or rejects it outright:
+Every neighbouring shape has one reading and nothing inert in it, so it carries no warning — the grammar either runs it silently or rejects it outright:
 
-- `recall 'since' 7d` — quoting the term states the intent, and is the way to silence the warning above.
+- `recall 'since' 7d` — quoting a reserved word is how to search for it.
 - `recall x since:7d` — an actual clause is what it says it is.
 - `entity:top`, `entity:Top` — value position: after a field's `:` only a value can appear, so there is nothing to mistake it for.
-- `recall x since 7d` — clause position: a missing `:` is an **error**, not a warning; results scoped by nothing would be worse than either.
-- `recall x Since 7d` — clause position, mis-cased: an error naming the casing.
+- `recall 'the'` — a phrase is a seed whatever its words.
+- `recall since 7d`, `recall x since 7d` — a bare reserved word among the terms is an **error** naming both repairs, not a warning; running either reading would answer a question the caller may not have asked.
+- `recall x Since 7d` — the same, mis-cased: an error naming the casing.
 
-The bar is meant to keep warnings rare and the list short: a shape joins it only when it is a valid query one typo from a different valid query *and* the grammar has no way to resolve which was meant, or when a valid clause has nothing to act on. Anything the grammar can settle is settled — as a parse, or as an error.
+The bar keeps warnings rare and the list short: a shape joins it only when the query has exactly one reading and something in it is spelled against the language or has nothing to act on. Anything that could be read two ways is settled as an error.

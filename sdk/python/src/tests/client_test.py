@@ -177,11 +177,26 @@ def test_recall_surfaces_server_warnings(session, respond, server_warning):
         },
     )
 
-    with pytest.warns(FraiseWarning, match="is a stop word"):
+    with pytest.warns(FraiseWarning, match="is a stop word") as record:
         result = FraiseClient().recall("ferry", "the")
 
+    assert record[0].filename == __file__
     assert result.warnings == [server_warning]
     assert result.count == 1
+
+
+def test_a_reserved_word_keyword_warns_at_the_callers_line(session, sent):
+    """``recall("since", "7d")`` is sent quoted and warns before it is sent.
+
+    The warning is decided three frames deep, in the query builder, and still
+    names this file: the caller's own call is the line they can change, and a
+    warning pointing into the SDK would leave them looking for it.
+    """
+    with pytest.warns(FraiseWarning, match="is a reserved word") as record:
+        FraiseClient().recall("since", "7d")
+
+    assert record[0].filename == __file__
+    assert sent(session)["query"] == "recall@0 'since' 7d"
 
 
 def test_recall_without_warnings_is_silent(session):

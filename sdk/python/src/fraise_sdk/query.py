@@ -43,10 +43,10 @@ emitted here.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Iterable, Sequence
 
-from fraise_sdk.constants import KEYWORDS, MAX_GRAPH, VECTOR_PARAM
+from fraise_sdk.compat import warn
+from fraise_sdk.constants import KEYWORDS, MAX_GRAPH, SDK_FILES, VECTOR_PARAM
 from fraise_sdk.errors import FraiseQueryError, FraiseWarning
 
 
@@ -150,14 +150,12 @@ def _term(value: str) -> str:
     """
     token = _token("keyword", value)
     if token.lower() in KEYWORDS:
-        # stacklevel 4 is the caller of FraiseClient.recall (_term, build_recall,
-        # recall, caller), which is the line a user can act on.
-        warnings.warn(
+        warn(
             f'keyword "{token}" is a reserved word, so it was searched as the '
             f"word '{token}'; to use it as FQL syntax, write the query with "
             "client.query",
             FraiseWarning,
-            stacklevel=4,
+            skip_file_prefixes=SDK_FILES,
         )
         return _quote_value(token)
     return _bare_or_quoted(token)

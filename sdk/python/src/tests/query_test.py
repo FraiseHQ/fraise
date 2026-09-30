@@ -193,10 +193,11 @@ def test_a_keyword_spelled_search_word_is_quoted_and_warns(kwargs, expected):
     any casing, and rejects it as a term; the caller passed a search word, so
     the builder writes the quoted form that means the word. It warns because
     the caller may have meant the clause instead, which only ``client.query``
-    can send.
+    can send, and the warning names the caller's line, not the SDK's.
     """
-    with pytest.warns(FraiseWarning, match="is a reserved word"):
+    with pytest.warns(FraiseWarning, match="is a reserved word") as record:
         assert build_recall(**kwargs) == expected
+    assert record[0].filename == __file__
 
 
 @pytest.mark.parametrize(
