@@ -617,8 +617,12 @@ def test_a_keyword_spelled_term_recalls_with_a_warning(client, round_trip_graph)
     caller, in one round trip. Read-only: recalls write nothing.
     """
 
-    with pytest.raises(FraiseAPIError):
-        result = client.recall("since", "7d", graph=round_trip_graph)
+    with pytest.raises(FraiseAPIError) as excinfo:
+        client.recall("since", "7d", graph=round_trip_graph)
+    assert excinfo.value.status_code == 400
+    assert 'term "since" is also a keyword' in excinfo.value.message
+    assert "write since:7d" in excinfo.value.message
+    assert "quote it ('since')" in excinfo.value.message
 
 
 @pytest.mark.integration
