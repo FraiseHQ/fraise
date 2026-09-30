@@ -167,7 +167,7 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		totalW += weight
 		for key, tf := range posting {
 			scores[key] += idx.relevance.Increment(weight, key, tf, prepared)
-			matched[key]++
+			matched[key] += weight
 		}
 	}
 	for key := range scores {
