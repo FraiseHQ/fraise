@@ -59,17 +59,37 @@ func (r *Remember[K, P]) SetGraphID(id uint8) {
 // and write to the wrong graph.
 func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
-	b.WriteString("g=")
-	b.WriteString(strconv.Itoa(int(r.context.GraphID)))
-	b.WriteString("|v=")
-	b.WriteString(r.Value)
-	b.WriteString("|en=")
-	b.WriteString(strings.Join(r.Entities, "\x00"))
-	b.WriteString("|to=")
-	b.WriteString(strings.Join(r.Topics, "\x00"))
-	b.WriteString("|vec=")
-	b.WriteString(r.Vector.Hash(h))
+	writeField(&b, "g", strconv.Itoa(int(r.context.GraphID)))
+	writeField(&b, "v", r.Value)
+	writeList(&b, "en", r.Entities)
+	writeList(&b, "to", r.Topics)
+	writeField(&b, "vec", r.Vector.Hash(h))
 	return h.Hash(b.String())
+}
+
+// SameAs reports whether other is an equivalent Remember for plan-cache hits.
+func (r Remember[K, P]) SameAs(other Query[K, P]) bool {
+	o, ok := other.(*Remember[K, P])
+	if !ok {
+		return false
+	}
+	if r.context.GraphID != o.context.GraphID || r.Value != o.Value {
+		return false
+	}
+	if len(r.Entities) != len(o.Entities) || len(r.Topics) != len(o.Topics) {
+		return false
+	}
+	for i := range r.Entities {
+		if r.Entities[i] != o.Entities[i] {
+			return false
+		}
+	}
+	for i := range r.Topics {
+		if r.Topics[i] != o.Topics[i] {
+			return false
+		}
+	}
+	return r.Vector.Equal(o.Vector)
 }
 
 func (r Remember[K, P]) IsWrite() bool {

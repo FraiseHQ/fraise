@@ -84,7 +84,7 @@ func (e *Engine[K, P]) Stop() {
 
 func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
-	if cached, ok := e.Cache.Get(q.Hash(e.Hasher)); ok {
+	if cached, ok := e.Cache.Get(q.Hash(e.Hasher)); ok && cached.SameAs(q) {
 		q = cached
 	} else {
 		// NOTE: run optimisaitons on query and cache optimised query
