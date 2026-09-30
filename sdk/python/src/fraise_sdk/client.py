@@ -349,53 +349,6 @@ class FraiseClient:
             return None
         return [float(x) for x in self._embed_fn(text)]
 
-    # -- extraction --------------------------------------------------------
-
-    def _resolve_anchors(
-        self,
-        value: str,
-        topics: Sequence[str] | None,
-        entities: Sequence[str] | None,
-        extract: bool | None,
-    ) -> tuple[Sequence[str] | None, Sequence[str] | None]:
-        """Decide the anchors to file ``value`` under: given, plus extracted.
-
-        ``extract`` is the same three-way switch as ``embed``: ``True`` requires
-        an extractor, ``False`` never extracts, ``None`` extracts only if one is
-        configured. Any failure of the extractor — a raised error or an answer
-        that is not a list of anchors — costs the extracted anchors and nothing
-        else: the given ones are returned, and a :class:`FraiseWarning` says
-        why, so the fact is never lost to its tagging.
-
-        Raises:
-            FraiseError: if extraction is required with no extractor configured
-        """
-        if extract is False:
-            return topics, entities
-        if extract is True and self._extract_fn is None:
-            raise FraiseError(
-                "extract=True but this client has no extractor; construct it with "
-                "FraiseClient(..., extractor=...)"
-            )
-        if self._extract_fn is None:
-            return topics, entities
-        try:
-            found = [(anchor.type, anchor.value) for anchor in self._extract_fn(value)]
-        except Exception as exc:
-            warn(
-                f"anchor extraction failed ({exc!r}); the fact is stored without "
-                "extracted anchors",
-                FraiseWarning,
-                skip_file_prefixes=SDK_FILES,
-            )
-            return topics, entities
-        return (
-            _with_extracted(topics, [v for kind, v in found if kind == "topic"]),
-            _with_extracted(entities, [v for kind, v in found if kind == "entity"]),
-        )
-
-    # -- transport ---------------------------------------------------------
-
     def query(
         self,
         text: str,
@@ -500,3 +453,48 @@ class FraiseClient:
             warn(message, FraiseWarning, skip_file_prefixes=SDK_FILES)
 
         return response.status_code, body
+
+    # -- extraction --------------------------------------------------------
+
+    def _resolve_anchors(
+        self,
+        value: str,
+        topics: Sequence[str] | None,
+        entities: Sequence[str] | None,
+        extract: bool | None,
+    ) -> tuple[Sequence[str] | None, Sequence[str] | None]:
+        """Decide the anchors to file ``value`` under: given, plus extracted.
+
+        ``extract`` is the same three-way switch as ``embed``: ``True`` requires
+        an extractor, ``False`` never extracts, ``None`` extracts only if one is
+        configured. Any failure of the extractor — a raised error or an answer
+        that is not a list of anchors — costs the extracted anchors and nothing
+        else: the given ones are returned, and a :class:`FraiseWarning` says
+        why, so the fact is never lost to its tagging.
+
+        Raises:
+            FraiseError: if extraction is required with no extractor configured
+        """
+        if extract is False:
+            return topics, entities
+        if extract is True and self._extract_fn is None:
+            raise FraiseError(
+                "extract=True but this client has no extractor; construct it with "
+                "FraiseClient(..., extractor=...)"
+            )
+        if self._extract_fn is None:
+            return topics, entities
+        try:
+            found = [(anchor.type, anchor.value) for anchor in self._extract_fn(value)]
+        except Exception as exc:
+            warn(
+                f"anchor extraction failed ({exc!r}); the fact is stored without "
+                "extracted anchors",
+                FraiseWarning,
+                skip_file_prefixes=SDK_FILES,
+            )
+            return topics, entities
+        return (
+            _with_extracted(topics, [v for kind, v in found if kind == "topic"]),
+            _with_extracted(entities, [v for kind, v in found if kind == "entity"]),
+        )
