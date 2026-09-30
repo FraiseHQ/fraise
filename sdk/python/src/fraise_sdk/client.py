@@ -42,7 +42,35 @@ from fraise_sdk.constants import (
 )
 from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
 from fraise_sdk.models import RecallResult
-from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
+from fraise_sdk.providers import (
+    Embedder,
+    EmbedderLike,
+    Extractor,
+    ExtractorLike,
+    resolve_embedder,
+    resolve_extractor,
+)
+
+
+def _with_extracted(
+    given: Sequence[str] | None, extracted: Sequence[str]
+) -> Sequence[str] | None:
+    """Return ``given`` followed by the extracted values it does not already carry.
+
+    The server folds anchors to lower case, so a value is a repeat whatever its
+    casing, and a repeat would only file the fact twice under one anchor. A
+    bare string is returned untouched, for the builder to refuse by name.
+    """
+    if not extracted or isinstance(given, str):
+        return given
+    merged = list(given or [])
+    seen = {value.strip().lower() for value in merged}
+    for value in extracted:
+        key = value.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            merged.append(value.strip())
+    return merged
 
 
 def _parse_version(text: str) -> tuple[int, int, int] | None:
@@ -82,6 +110,11 @@ class FraiseClient:
     :meth:`recall` encode their text into a vector automatically. It stays
     optional: without one, both operate on text/keywords alone, and any call can
     still override with an explicit ``vector`` or opt out with ``embed=False``.
+
+    Pass ``extractor`` — an object with an ``extract(text)`` method or a plain
+    ``callable(text) -> Sequence[Anchor]`` — to have :meth:`remember` file each
+    fact under the topics and entities it finds in the text, beside any given
+    ones. The text itself is stored verbatim; ``extract=False`` opts a call out.
     """
 
     def __init__(
@@ -91,6 +124,7 @@ class FraiseClient:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         session: requests.Session | None = None,
         embedder: Embedder | EmbedderLike | None = None,
+        extractor: Extractor | ExtractorLike | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -98,6 +132,7 @@ class FraiseClient:
         self._owns_session = session is None
         self._session = session or requests.Session()
         self._embed_fn = resolve_embedder(embedder)
+        self._extract_fn = resolve_extractor(extractor)
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -184,12 +219,21 @@ class FraiseClient:
         entities: Sequence[str] | None = None,
         vector: Sequence[float] | None = None,
         embed: bool | None = None,
+        extract: bool | None = None,
         timeout: float | None = None,
     ) -> None:
         """Store ``value`` as a fact in ``graph``.
 
         ``topics`` and ``entities`` attach the fact to shared hubs so related
         facts become reachable from one another on recall.
+
+        If the client has an extractor, the fact is also filed under the
+        anchors it finds in ``value``, after the given ``topics`` and
+        ``entities``; ``value`` itself is stored verbatim. ``extract`` overrides
+        that default per call — ``True`` forces extraction (and errors if no
+        extractor is set), ``False`` skips it. A failed extraction costs the
+        extracted anchors, never the fact: it is stored under the given ones,
+        and a :class:`FraiseWarning` names the failure.
 
         A vector is attached when one is available: an explicit ``vector`` always
         wins; otherwise, if the client has an embedder, ``value`` is encoded
@@ -204,6 +248,7 @@ class FraiseClient:
         so a stored fact is no longer the same bytes on the wire as a recall
         that matched nothing.
         """
+        topics, entities = self._resolve_anchors(value, topics, entities, extract)
         resolved = self._resolve_vector(vector, value, embed)
         text = _query.build_remember(
             value,
@@ -303,6 +348,53 @@ class FraiseClient:
         if self._embed_fn is None or not text.strip():
             return None
         return [float(x) for x in self._embed_fn(text)]
+
+    # -- extraction --------------------------------------------------------
+
+    def _resolve_anchors(
+        self,
+        value: str,
+        topics: Sequence[str] | None,
+        entities: Sequence[str] | None,
+        extract: bool | None,
+    ) -> tuple[Sequence[str] | None, Sequence[str] | None]:
+        """Decide the anchors to file ``value`` under: given, plus extracted.
+
+        ``extract`` is the same three-way switch as ``embed``: ``True`` requires
+        an extractor, ``False`` never extracts, ``None`` extracts only if one is
+        configured. Any failure of the extractor — a raised error or an answer
+        that is not a list of anchors — costs the extracted anchors and nothing
+        else: the given ones are returned, and a :class:`FraiseWarning` says
+        why, so the fact is never lost to its tagging.
+
+        Raises:
+            FraiseError: if extraction is required with no extractor configured
+        """
+        if extract is False:
+            return topics, entities
+        if extract is True and self._extract_fn is None:
+            raise FraiseError(
+                "extract=True but this client has no extractor; construct it with "
+                "FraiseClient(..., extractor=...)"
+            )
+        if self._extract_fn is None:
+            return topics, entities
+        try:
+            found = [(anchor.type, anchor.value) for anchor in self._extract_fn(value)]
+        except Exception as exc:
+            warn(
+                f"anchor extraction failed ({exc!r}); the fact is stored without "
+                "extracted anchors",
+                FraiseWarning,
+                skip_file_prefixes=SDK_FILES,
+            )
+            return topics, entities
+        return (
+            _with_extracted(topics, [v for kind, v in found if kind == "topic"]),
+            _with_extracted(entities, [v for kind, v in found if kind == "entity"]),
+        )
+
+    # -- transport ---------------------------------------------------------
 
     def query(
         self,

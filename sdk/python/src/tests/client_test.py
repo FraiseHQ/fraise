@@ -33,6 +33,7 @@ import requests
 from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
 from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
+from fraise_sdk.providers import Anchor
 
 
 def test_remember_posts_expected_query(session, query_url):
@@ -462,6 +463,100 @@ def test_embedder_object_is_called_through_its_embed_method(session, sent):
     embedder.assert_not_called()
 
 
+# -- extraction -------------------------------------------------------------
+
+
+def test_configured_extractor_files_the_fact_under_its_anchors(
+    session, sent, callable_extractor
+):
+    """Extracted anchors follow the given ones, and the text is stored verbatim.
+
+    The extractor reads the text exactly as passed, apostrophe included. It
+    finds "travel" and "Anne", which were given already in another casing —
+    the server folds anchors to lower case, so they would be repeats and are
+    dropped — and "Lisbon airport", which is not one plain word and is quoted.
+    """
+    extractor = callable_extractor()
+    FraiseClient(extractor=extractor).remember(
+        "Anne's flight lands at Lisbon airport", topics=["travel"], entities=["anne"]
+    )
+
+    extractor.assert_called_once_with("Anne's flight lands at Lisbon airport")
+    assert sent(session)["query"] == (
+        "remember@0 'Anne''s flight lands at Lisbon airport' "
+        "topic:travel topic:trips entity:anne entity:'Lisbon airport'"
+    )
+
+
+@pytest.mark.parametrize(
+    "behaviour",
+    [
+        {"side_effect": RuntimeError("rate limited")},
+        {"side_effect": FraiseError("anchor extraction answer unparseable")},
+        {"return_value": None},
+        {"return_value": ["travel"]},
+    ],
+)
+def test_a_failed_extraction_costs_the_anchors_never_the_fact(session, sent, behaviour):
+    """Whatever goes wrong in the extractor, the fact is still stored.
+
+    A raised error, or an answer that is not a list of anchors, leaves the
+    fact with only the anchors it was given, and a FraiseWarning names the
+    failure at the caller's line. Losing a message to its tagging would be
+    the worse trade: the anchors only help find a fact that has to exist.
+    """
+    extractor = MagicMock(**behaviour)
+    del extractor.extract
+    with pytest.warns(FraiseWarning, match="anchor extraction failed") as record:
+        FraiseClient(extractor=extractor).remember(
+            "the kettle whistles", topics=["kitchen"]
+        )
+
+    assert record[0].filename == __file__
+    assert sent(session)["query"] == "remember@0 'the kettle whistles' topic:kitchen"
+
+
+def test_extract_false_skips_a_configured_extractor(session, sent, callable_extractor):
+    """``extract=False`` stores the fact under the given anchors alone."""
+    extractor = callable_extractor()
+    FraiseClient(extractor=extractor).remember(
+        "the kettle whistles", topics=["kitchen"], extract=False
+    )
+
+    extractor.assert_not_called()
+    assert sent(session)["query"] == "remember@0 'the kettle whistles' topic:kitchen"
+
+
+def test_extract_true_without_extractor_raises(session):
+    """Asking for extraction with nothing to extract with fails before sending."""
+    with pytest.raises(FraiseError, match="no extractor"):
+        FraiseClient().remember("the kettle whistles", extract=True)
+    session.post.assert_not_called()
+
+
+def test_extractor_object_is_called_through_its_extract_method(session, sent):
+    """An Extractor is called by its named method, never through ``__call__``.
+
+    It exposes both, and ``__call__`` delegates to ``extract``; taking the
+    named method is what keeps a subclass that overrides one of them honest.
+    """
+    extractor = MagicMock()
+    extractor.extract.return_value = [Anchor(value="birds", type="topic")]
+    FraiseClient(extractor=extractor).remember("the heron fishes at dawn")
+
+    extractor.extract.assert_called_once_with("the heron fishes at dawn")
+    extractor.assert_not_called()
+    assert sent(session)["query"] == "remember@0 'the heron fishes at dawn' topic:birds"
+
+
+def test_recall_never_extracts(session, callable_extractor):
+    """Extraction belongs to the write path: a recall's text is never tagged."""
+    extractor = callable_extractor()
+    FraiseClient(extractor=extractor).recall("heron")
+
+    extractor.assert_not_called()
+
+
 @pytest.mark.integration
 def test_client_works_as_a_context_manager(fraise_url):
     """A client built by ``with`` reaches the server inside the block."""
@@ -531,6 +626,44 @@ def test_remember_then_recall_returns_the_fact(client, round_trip_graph):
     client.remember("the kettle whistles when the water boils", graph=round_trip_graph)
     result = client.recall("kettle", graph=round_trip_graph)
     assert "the kettle whistles when the water boils" in [h.value for h in result]
+
+
+@pytest.mark.integration
+def test_a_fact_is_found_under_the_anchors_extracted_for_it(
+    fraise_url, round_trip_graph, callable_extractor
+):
+    """A fact the extractor tagged is recalled by those anchors, verbatim.
+
+    The anchors are the extractor's, not the caller's — none were given — and
+    a recall by either one, the multi-word entity included, returns the fact
+    exactly as written.
+    """
+    fact = "Anne's flight lands at Lisbon airport at noon"
+    with FraiseClient(fraise_url, extractor=callable_extractor()) as client:
+        client.remember(fact, graph=round_trip_graph)
+        by_topic = client.recall(graph=round_trip_graph, topics=["trips"])
+        by_entity = client.recall(graph=round_trip_graph, entities=["lisbon airport"])
+
+    assert fact in [hit.value for hit in by_topic]
+    assert fact in [hit.value for hit in by_entity]
+
+
+@pytest.mark.integration
+def test_a_failed_extraction_still_stores_the_fact(fraise_url, round_trip_graph):
+    """An extractor that fails costs the anchors: the fact itself is stored.
+
+    It is found by its own words afterwards, which is the whole promise — a
+    failed extraction never loses the message it was reading.
+    """
+    extractor = MagicMock(side_effect=RuntimeError("rate limited"))
+    del extractor.extract
+    fact = "the lighthouse keeper logs every passing ship"
+    with FraiseClient(fraise_url, extractor=extractor) as client:
+        with pytest.warns(FraiseWarning, match="anchor extraction failed"):
+            client.remember(fact, graph=round_trip_graph)
+        result = client.recall("lighthouse", graph=round_trip_graph)
+
+    assert fact in [hit.value for hit in result]
 
 
 @pytest.mark.integration
