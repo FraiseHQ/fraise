@@ -97,7 +97,7 @@ test-all: test-go test-py ## Run tests for Go and all SDKs
 
 test-go: ## Run Go tests with verbose output
 	@echo "$(CYAN)Running Go tests...$(RESET)"
-	$(GO_TEST) -v ./...
+	$(GO_TEST) ./...
 
 coverage-go: ## Run Go tests with coverage report
 	@echo "$(CYAN)Running Go tests with coverage...$(RESET)"
@@ -116,7 +116,7 @@ test-go-bench: ## Run Go benchmarks
 
 # Host port fraise binds to for the test suites (override if 9876 is taken).
 # Both suites run pytest locally and reach the container through this port.
-FRAISE_E2E_PORT ?= 9876
+FRAISE_E2E_PORT ?= 9877
 
 COMPOSE        := docker compose -f docker-compose.yaml
 
@@ -131,19 +131,19 @@ test-e2e: ## Run end-to-end tests against fraise in Docker
 	@echo "$(CYAN)Starting fraise (docker) for end-to-end tests...$(RESET)"
 	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
 	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
-	  $(UV_CMD) run --package tests pytest tests/e2e -v \
+	  FRAISE_URL=http://localhost:$(FRAISE_E2E_PORT) $(UV_CMD) run --package tests pytest tests/e2e -v \
 	    || ( $(FRAISE_LOGS); exit 1 )
 
 test-integration-py: ## Run Python SDK integration tests (marked `integration`) against fraise in Docker
 	@echo "$(CYAN)Starting fraise (docker) for Python SDK integration tests...$(RESET)"
 	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
 	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
-	  $(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m integration -v \
+	  FRAISE_URL=http://localhost:$(FRAISE_E2E_PORT) $(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m integration -vvv \
 	    || ( $(FRAISE_LOGS); exit 1 )
 
 test-integration: build-go ## Run server + MCP bridge integration tests (pytest drives the built binary over stdio)
 	@echo "$(CYAN)Running server + MCP bridge integration tests...$(RESET)"
-	@FRAISE_BIN=$(CURDIR)/$(BIN_DIR)/$(BINARY_NAME) $(UV_CMD) run --package tests pytest tests/integration -v
+	@FRAISE_BIN=$(CURDIR)/$(BIN_DIR)/$(BINARY_NAME) $(UV_CMD) run --package tests pytest tests/integration -vvv
 
 test-py: ## Run Python unit tests with pytest (integration-marked tests excluded)
 	@echo "$(CYAN)Running Python tests...$(RESET)"

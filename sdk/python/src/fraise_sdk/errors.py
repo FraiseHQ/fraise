@@ -30,24 +30,28 @@ class FraiseError(Exception):
 
 
 class FraiseWarning(UserWarning):
-    """A warning the server attached to a successful response.
+    """A warning about a query that ran, from the server or from the SDK.
 
-    The query ran and its results are valid; the server is flagging a reading
-    the caller may not have meant — e.g. a leading recall term that spells a
-    grammar keyword, where ``recall since 7d`` is one ``:`` away from
-    ``recall since:7d``. Emitted through :mod:`warnings` so it is visible by
-    default and silenceable by category::
+    The query ran and its results are valid; something in it may not be what
+    the caller meant. The server attaches one to a successful response — e.g. a
+    stop-word term that can never match — and the typed helpers raise one
+    before sending — e.g. ``recall("since", "7d")``, which searches the word
+    "since" though it is one ``:`` away from a ``since:7d`` bound. Emitted
+    through :mod:`warnings` so it is visible by default and silenceable by
+    category::
 
         warnings.filterwarnings("ignore", category=FraiseWarning)
+
+    Either way it names the caller's own line, never a line inside the SDK.
     """
 
 
 class FraiseQueryError(FraiseError):
     """A query could not be built from the given arguments.
 
-    Raised before any request leaves the client — e.g. an empty fact value, or
-    a keyword with embedded whitespace, which the server's query grammar cannot
-    represent.
+    Raised before any request leaves the client — e.g. an empty fact value or
+    anchor, or a graph id outside 0–255, none of which the server's query
+    grammar can represent.
     """
 
 

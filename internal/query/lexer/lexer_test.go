@@ -39,17 +39,21 @@ func Test_Next(t *testing.T) {
 	l := lexer.New("remember anna 'I work at Google' topic:job")
 	token1 := l.Next()
 	token2 := l.Next()
+	token3 := l.Next()
 	if token1.Literal != "remember" || token1.Type != lexer.REMEMBER {
 		t.Error("Wrong Value")
 	}
-	if token2.Literal != "anna" || token2.Type != lexer.LITERAL {
+	if token2.Literal != " " || token2.Type != lexer.WHITESPACE {
+		t.Error("Wrong Value")
+	}
+	if token3.Literal != "anna" || token3.Type != lexer.LITERAL {
 		t.Error("Wrong Value")
 	}
 }
 
 func Test_NextUntilEol(t *testing.T) {
 	l := lexer.New("recall anna topic:job")
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 7; i++ {
 		_ = l.Next()
 	}
 	token := l.Next()
@@ -113,15 +117,32 @@ func Test_SpecialCharacters(t *testing.T) {
 		},
 		{
 			// The three anchor-clause markers are lexed but no production
-			// accepts them, so they exist only to be rejected by name. A term
-			// may still contain '-' and '+' — only a leading one is a token.
+			// accepts them, so they exist only to be rejected by name. A word is
+			// letters and digits, so a '-' inside one ends it rather than joining
+			// it: foo-bar is written 'foo-bar'.
 			name:  "anchor markers are their own tokens",
-			input: "+~- foo-bar",
+			input: "+~-foo-bar",
 			expected: []lexer.Token{
 				{Type: lexer.PLUS, Literal: "+"},
 				{Type: lexer.TILDE, Literal: "~"},
 				{Type: lexer.MINUS, Literal: "-"},
-				{Type: lexer.LITERAL, Literal: "foo-bar"},
+				{Type: lexer.LITERAL, Literal: "foo"},
+				{Type: lexer.MINUS, Literal: "-"},
+				{Type: lexer.LITERAL, Literal: "bar"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		{
+			// Any other character outside a phrase is a token of its own, one
+			// character long, so a word ends at it instead of absorbing it.
+			name:  "special characters are their own tokens",
+			input: "ferry;é_2",
+			expected: []lexer.Token{
+				{Type: lexer.LITERAL, Literal: "ferry"},
+				{Type: lexer.SPECIAL, Literal: ";"},
+				{Type: lexer.LITERAL, Literal: "é"},
+				{Type: lexer.SPECIAL, Literal: "_"},
+				{Type: lexer.LITERAL, Literal: "2"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -211,8 +232,8 @@ func Test_KeyLITERALsAsSubstrings(t *testing.T) {
 	}{
 		{"remembering"},
 		{"recall123"},
-		{"forget_me"},
-		{"and_then"},
+		{"forgetme"},
+		{"andthen"},
 		{"topical"},
 	}
 
@@ -227,6 +248,9 @@ func Test_KeyLITERALsAsSubstrings(t *testing.T) {
 	}
 }
 
+// Test_WhitespaceHandling pins that a run of blanks is kept, not skipped: it is
+// one WHITESPACE token carrying the run verbatim, wherever it sits — between
+// words, before the first or after the last.
 func Test_WhitespaceHandling(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -238,6 +262,7 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "recall    anna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: "    "},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
@@ -247,6 +272,7 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "recall\t\tanna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: "\t\t"},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
@@ -256,6 +282,7 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "recall \t \r anna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " \t \r "},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
@@ -264,7 +291,9 @@ func Test_WhitespaceHandling(t *testing.T) {
 			name:  "leading whitespace",
 			input: "   recall anna",
 			expected: []lexer.Token{
+				{Type: lexer.WHITESPACE, Literal: "   "},
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
@@ -274,7 +303,9 @@ func Test_WhitespaceHandling(t *testing.T) {
 			input: "recall anna   ",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
+				{Type: lexer.WHITESPACE, Literal: "   "},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -311,6 +342,7 @@ func Test_BoundaryConditions(t *testing.T) {
 			name:  "whitespace only",
 			input: "   \t\r  ",
 			expected: []lexer.Token{
+				{Type: lexer.WHITESPACE, Literal: "   \t\r  "},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -381,7 +413,9 @@ func Test_ComplexQueries(t *testing.T) {
 			input: "recall anna topic:job",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "job"},
@@ -394,12 +428,17 @@ func Test_ComplexQueries(t *testing.T) {
 			input: "recall (anna or bob) and topic:job",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LPAREN, Literal: "("},
 				{Type: lexer.LITERAL, Literal: "anna"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "or"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "bob"},
 				{Type: lexer.RPAREN, Literal: ")"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "and"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "job"},
@@ -411,11 +450,14 @@ func Test_ComplexQueries(t *testing.T) {
 			input: "recall $vec top:5 depth:3",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.DOLLAR, Literal: "$"},
 				{Type: lexer.VEC, Literal: "vec"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.TOP, Literal: "top"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "5"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.DEPTH, Literal: "depth"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "3"},
@@ -424,16 +466,19 @@ func Test_ComplexQueries(t *testing.T) {
 		},
 		{
 			name:  "date filters",
-			input: "recall anna since:2024-01-01 until:2024-12-31",
+			input: "recall anna since:'2024-01-01' until:'2024-12-31'",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.SINCE, Literal: "since"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "2024-01-01"},
+				{Type: lexer.PHRASE, Literal: "2024-01-01"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.UNTIL, Literal: "until"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "2024-12-31"},
+				{Type: lexer.PHRASE, Literal: "2024-12-31"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -526,7 +571,8 @@ func Test_PositionTracking(t *testing.T) {
 // wrong word while still reading like a precise message.
 func TestTokenPosIsLastCharacter(t *testing.T) {
 	// The columns below are the 1-based index of each token's final character:
-	// "recall" ends at 6, "@" at 7, "2" at 8, "anna" at 13, and so on.
+	// "recall" ends at 6, "@" at 7, "2" at 8, the space after it at 9, "anna"
+	// at 13, and so on.
 	input := "recall@2 anna topic:food top:10"
 	want := []struct {
 		literal string
@@ -535,10 +581,13 @@ func TestTokenPosIsLastCharacter(t *testing.T) {
 		{"recall", 6},
 		{"@", 7},
 		{"2", 8},
+		{" ", 9},
 		{"anna", 13},
+		{" ", 14},
 		{"topic", 19},
 		{":", 20},
 		{"food", 24},
+		{" ", 25},
 		{"top", 28},
 		{":", 29},
 		{"10", 31},
@@ -567,7 +616,7 @@ func TestTokenPosIsLastCharacter(t *testing.T) {
 // for every token type.
 //
 // NOTE: scanPhrase does record the *opening* quote (`Pos: start`), meaning to
-// report an unterminated phrase where it began, but Next() assigns tok.Pos
+// report an unterminated phrase where it began, but Next(true) assigns tok.Pos
 // after the switch and overwrites it — so that position never reaches the
 // parser. If that assignment is ever made conditional, the phrase cases here
 // and in TestScanPhraseUnterminatedRecordsPosition are what should change,
@@ -576,6 +625,7 @@ func TestPhrasePosIsLastCharacter(t *testing.T) {
 	// "remember 'a fact' topic:x" — the closing quote is the 17th character.
 	l := lexer.New("remember 'a fact' topic:x")
 	l.Next() // remember
+	l.Next() // the space before the phrase
 
 	tok := l.Next()
 	if tok.Type != lexer.PHRASE {
@@ -587,32 +637,42 @@ func TestPhrasePosIsLastCharacter(t *testing.T) {
 }
 
 func Test_VeryLongQuery(t *testing.T) {
-	input := "recall $vec anna bob charlie +topic:personal ~topic:draft since:2024-01-01 until:2024-12-31 top:10 depth:5"
+	input := "recall $vec anna bob charlie +topic:personal ~topic:draft since:'2024-01-01' until:'2024-12-31' top:10 depth:5"
 
 	expected := []lexer.Token{
 		{Type: lexer.RECALL, Literal: "recall"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.DOLLAR, Literal: "$"},
 		{Type: lexer.VEC, Literal: "vec"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.LITERAL, Literal: "anna"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.LITERAL, Literal: "bob"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.LITERAL, Literal: "charlie"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.PLUS, Literal: "+"},
 		{Type: lexer.TOPIC, Literal: "topic"},
 		{Type: lexer.COLON, Literal: ":"},
 		{Type: lexer.LITERAL, Literal: "personal"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.TILDE, Literal: "~"},
 		{Type: lexer.TOPIC, Literal: "topic"},
 		{Type: lexer.COLON, Literal: ":"},
 		{Type: lexer.LITERAL, Literal: "draft"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.SINCE, Literal: "since"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.LITERAL, Literal: "2024-01-01"},
+		{Type: lexer.PHRASE, Literal: "2024-01-01"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.UNTIL, Literal: "until"},
 		{Type: lexer.COLON, Literal: ":"},
-		{Type: lexer.LITERAL, Literal: "2024-12-31"},
+		{Type: lexer.PHRASE, Literal: "2024-12-31"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.TOP, Literal: "top"},
 		{Type: lexer.COLON, Literal: ":"},
 		{Type: lexer.LITERAL, Literal: "10"},
+		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.DEPTH, Literal: "depth"},
 		{Type: lexer.COLON, Literal: ":"},
 		{Type: lexer.LITERAL, Literal: "5"},
@@ -640,8 +700,11 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 			input: "remember anna 'worked at Google from 2020 to 2023' topic:job",
 			expected: []lexer.Token{
 				{Type: lexer.REMEMBER, Literal: "remember"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.PHRASE, Literal: "worked at Google from 2020 to 2023"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "job"},
@@ -650,16 +713,19 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 		},
 		{
 			name:  "forget with multiple filters",
-			input: "forget anna topic:draft since:2023-01-01",
+			input: "forget anna topic:draft since:'2023-01-01'",
 			expected: []lexer.Token{
 				{Type: lexer.FORGET, Literal: "forget"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "draft"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.SINCE, Literal: "since"},
 				{Type: lexer.COLON, Literal: ":"},
-				{Type: lexer.LITERAL, Literal: "2023-01-01"},
+				{Type: lexer.PHRASE, Literal: "2023-01-01"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
@@ -668,8 +734,11 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 			input: "update anna 'new information' topic:job",
 			expected: []lexer.Token{
 				{Type: lexer.UPDATE, Literal: "update"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.PHRASE, Literal: "new information"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "job"},
@@ -696,8 +765,9 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 // blending into the whitespace around it. Folded into blank, "recall anna\nbob"
 // lexed as one two-term recall — a second line silently joining the first, which
 // is exactly the multi-command shape the grammar forbids. Spaces, tabs and CR
-// stay blank; only the newline is a token, and the parser decides whether a
-// trailing one is a second instruction or just the end of the text.
+// stay blank — a WHITESPACE token on either side of the newline, never part of
+// it — and the parser decides whether a trailing newline is a second
+// instruction or just the end of the text.
 func Test_NewlineIsItsOwnToken(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -709,6 +779,7 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 			input: "recall anna\ntopic:job",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.NEWLINE, Literal: "\n"},
 				{Type: lexer.TOPIC, Literal: "topic"},
@@ -734,7 +805,9 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 			input: "recall  \n\t  anna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: "  "},
 				{Type: lexer.NEWLINE, Literal: "\n"},
+				{Type: lexer.WHITESPACE, Literal: "\t  "},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
@@ -744,6 +817,7 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 			input: "recall\r\nanna",
 			expected: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: "\r"},
 				{Type: lexer.NEWLINE, Literal: "\n"},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
@@ -754,6 +828,7 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 			input: "remember 'line one\nline two'",
 			expected: []lexer.Token{
 				{Type: lexer.REMEMBER, Literal: "remember"},
+				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.PHRASE, Literal: "line one\nline two"},
 				{Type: lexer.EOL, Literal: ""},
 			},
@@ -809,7 +884,7 @@ func TestScanPhrase(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := lexer.New(tc.input).Next()
 			if got.Type != tc.wantTyp || got.Literal != tc.wantLit {
-				t.Errorf("Next() = {%v %q}, want {%v %q}",
+				t.Errorf("Next(true) = {%v %q}, want {%v %q}",
 					got.Type, got.Literal, tc.wantTyp, tc.wantLit)
 			}
 		})
@@ -823,5 +898,18 @@ func TestScanPhraseUnterminatedRecordsPosition(t *testing.T) {
 	got := lexer.New("foo 'bar").Next() // first token is the bare word "foo"
 	if got.Type != lexer.LITERAL || got.Literal != "foo" {
 		t.Fatalf("first token = {%v %q}, want LITERAL \"foo\"", got.Type, got.Literal)
+	}
+}
+
+// TestWhitespaceRunIsOneToken pins that a run of blanks — spaces, tabs,
+// carriage returns, in any mix — is one WHITESPACE token, so the parser sees
+// one separator however the caller spaced the query.
+func TestWhitespaceRunIsOneToken(t *testing.T) {
+	l := lexer.New("recall  \t \r zebras")
+	want := []lexer.TokenType{lexer.RECALL, lexer.WHITESPACE, lexer.LITERAL, lexer.EOL}
+	for i, typ := range want {
+		if got := l.Next(); got.Type != typ {
+			t.Fatalf("token %d = {%v %q}, want type %v", i, got.Type, got.Literal, typ)
+		}
 	}
 }

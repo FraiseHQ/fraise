@@ -14,17 +14,17 @@ Four characters carry meaning. Each one is a single token, and each one also end
 
 ## Lexed but never accepted
 
-`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears. So is a NUL character outside a phrase: it is data only inside one.
+`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears. So is every other character that is not a letter or a digit — `;`, `,`, `.`, `_`, `!`, an emoji, a NUL — outside a phrase: each is a token of its own, rejected by name (`";" is only allowed inside a quoted phrase`), and each is data inside quotes. Space, tab, carriage return and newline are the only exceptions: they separate words and instructions.
 
-<Note title="Leading hyphen" type="warning">
+<Note title="Punctuation inside a word" type="warning">
 
-  `-` is the exception worth knowing, since it is ordinary *inside* a word — `foo-bar` is a single term, while a leading `-` starts a token nothing can consume.
+  A word is letters and digits only, so punctuation never joins one. `foo-bar`, `v1.2` and `2026-01-15` are each rejected at their first special character rather than read as one word — quote the value instead: `'foo-bar'`, `since:'2026-01-15'`. See [Identifiers](/docs/query-language/tokens/identifiers).
 
 </Note>
 
 ## Consequences worth remembering
 
-- A colon inside a value ends it. `since:2026-01-15T10:00:00Z` does not parse: the first `:` cuts the value to `2026-01-15T10`, which is rejected as neither a duration nor a date. See [Literals](/docs/query-language/tokens/literals).
+- A date or a time is quoted. `since:'2026-01-15'` and `since:'2026-01-15T10:00:00Z'` parse; bare, the `-` is rejected before the value is read. See [Literals](/docs/query-language/tokens/literals).
 - A phrase is opaque. Inside quotes nothing is reserved, so `remember 'meeting at 3:30pm about the topic' topic:meetings` stores the colon and the word "topic" literally.
 - `''` inside a phrase is one apostrophe: `remember 'alice''s laptop' topic:devices` stores *alice's laptop*.
 - The graph selector is glued to the verb. `recall @3` is not a selector — the `@` must follow the command with no whitespace.

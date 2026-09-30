@@ -22,7 +22,10 @@
 
 package lexer
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 type Position struct {
 	Column int
@@ -42,10 +45,17 @@ func New(input string) *Lexer {
 		Input: []rune(input),
 	}
 	l.readCharacter()
+	// initalise positions
+	l.CurrentPos = Position{
+		Column: 0,
+	}
+	l.NextPos = Position{
+		Column: 1,
+	}
 	return &l
 }
 
-func (l *Lexer) skipBlank() {
+func (l *Lexer) SkipBlank() {
 	for isBlank(l.peek()) {
 		l.readCharacter()
 	}
@@ -68,10 +78,15 @@ func isBlank(ch rune) bool {
 	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r')
 }
 
+// isWordCharacter reports whether ch can appear in a bare word: a letter, in any
+// script, or a digit. Every other character outside a phrase is syntax or
+// special, so a word that needs one — "e-mail", "2026-01-15" — is quoted.
+func isWordCharacter(ch rune) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch)
+}
+
 func (l *Lexer) Next() Token {
 	var tok Token
-
-	l.skipBlank()
 
 	switch l.peek() {
 	case rune(':'):
@@ -103,6 +118,9 @@ func (l *Lexer) Next() Token {
 	case rune('\n'):
 		l.readCharacter()
 		tok = Token{Type: NEWLINE, Literal: string(l.Character)}
+	case rune(' '), rune('\t'), rune('\r'):
+		literal := l.scanWhitespace()
+		tok = Token{Type: WHITESPACE, Literal: literal}
 	case rune(0):
 		// peek reads 0 both past the end and at a NUL in the input; only the
 		// first is the end. Reading a NUL as the end dropped everything after
@@ -114,6 +132,11 @@ func (l *Lexer) Next() Token {
 			tok = Token{Type: EOL}
 		}
 	default:
+		if !isWordCharacter(l.peek()) {
+			l.readCharacter()
+			tok = Token{Type: SPECIAL, Literal: string(l.Character)}
+			break
+		}
 		tokLiteral := l.scanString()
 		tokType, reserved := KeywordsMap[tokLiteral]
 		if !reserved {
@@ -145,17 +168,20 @@ func (l *Lexer) peek() rune {
 	return l.Input[l.CurrentPos.Column]
 }
 
-// scans a string
+func (l *Lexer) scanWhitespace() string {
+	var res []rune
+	for isBlank(l.peek()) {
+		res = append(res, l.peek())
+		l.readCharacter()
+	}
+	return string(res)
+}
+
+// scans a bare word: the run of word characters from the current position
 func (l *Lexer) scanString() string {
 	var res []rune
-f:
-	for {
-		switch l.peek() {
-		case rune(':'), rune('$'), rune('\''), rune('('), rune(')'), rune(' '), rune('\t'), rune('\r'), rune('\n'), rune(0), rune('@'):
-			break f
-		default:
-			res = append(res, l.peek())
-		}
+	for isWordCharacter(l.peek()) {
+		res = append(res, l.peek())
 		l.readCharacter()
 	}
 	return string(res)
