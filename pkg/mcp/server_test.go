@@ -23,22 +23,33 @@
 package mcp
 
 import (
+	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 )
 
-// TestNewWiresTheBridgeFromConfig pins New's wiring: the daemon address
-// derives from the same config the daemon reads — `fraise mcp -config x`
-// must find whatever `fraise -config x` serves — and construction doubles as
-// the schema smoke test, because the SDK's AddTool panics on a tool schema
+// parsed builds a config the way `fraise mcp` does — through Parse, with no
+// config file — so the bridge sees the address Parse derives, not a zero value.
+func parsed(t *testing.T, args ...string) *config.ConfigSet {
+	t.Helper()
+	c := config.New()
+	missing := filepath.Join(t.TempDir(), "does-not-exist.toml")
+	if err := c.Parse(append([]string{"-config", missing}, args...)); errors.Is(err, config.ErrInvalidValue) || errors.Is(err, config.ErrInvalidFlag) {
+		t.Fatalf("Parse(%v) = %v, want the flags accepted", args, err)
+	}
+	return c
+}
+
+// TestNewWiresTheBridgeFromConfig pins New's wiring: with no -addr the daemon
+// address derives from the same config the daemon reads — `fraise mcp -config
+// x` must find whatever `fraise -config x` serves — and construction doubles
+// as the schema smoke test, because the SDK's AddTool panics on a tool schema
 // that fails to compile. A schema edit that breaks registration fails here,
 // at unit speed, not at the first live handshake.
 func TestNewWiresTheBridgeFromConfig(t *testing.T) {
-	c := config.New()
-	c.Server.Port = 4242
-
-	s := New(c)
+	s := New(parsed(t, "-port", "4242"))
 
 	if want := "http://127.0.0.1:4242"; s.baseURL != want {
 		t.Errorf("baseURL = %q, want %q (derived from the config's port)", s.baseURL, want)
@@ -48,5 +59,17 @@ func TestNewWiresTheBridgeFromConfig(t *testing.T) {
 	}
 	if s.Server == nil {
 		t.Error("Server = nil, want the MCP server with both tools registered")
+	}
+}
+
+// TestNewForwardsToAddr pins -addr: the bridge forwards to the daemon it
+// names, remote or on another port, rather than to the local one the config
+// describes. A trailing slash is dropped, since the query path is appended to
+// it and a doubled slash is a 404.
+func TestNewForwardsToAddr(t *testing.T) {
+	s := New(parsed(t, "-addr", "http://10.0.0.5:9876/"))
+
+	if want := "http://10.0.0.5:9876"; s.baseURL != want {
+		t.Errorf("baseURL = %q, want %q", s.baseURL, want)
 	}
 }

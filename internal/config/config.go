@@ -27,6 +27,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"runtime"
 	"time"
 
@@ -210,11 +211,11 @@ type VectorSearch struct {
 }
 
 type MCPConfig struct {
-	// fraise daemon address
-	addr string `toml:"address"`
-
-	// memory graph index
-	graph uint `toml:"graph"`
+	// Address of the daemon the `fraise mcp` bridge forwards to. Unset, it is
+	// the daemon this same config describes — 127.0.0.1 on server.port — so
+	// `fraise mcp -config x` finds whatever `fraise -config x` serves. The
+	// graph is not configured here: every query names its own with @N.
+	Address string `toml:"address"`
 }
 
 // Instanciates new configset
@@ -279,9 +280,8 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.VectorSearch.LeafSize, "rptree-leaf-size", DefaultLeafSize, "Points an RP-tree leaf holds before it splits")
 	flagSet.IntVar(&config.DB.VectorSearch.Overfetch, "rptree-overfetch", DefaultOverfetch, "Candidates gathered per result before a vector search stops probing")
 
-	// mcp server
-	flagSet.StringVar(&config.MCP.addr, "addr", DefaultMCPAddress, "address of the fraise daemon")
-	flagSet.UintVar(&config.MCP.graph, "graph", DefaultMCPGraph, "which memory graph to use")
+	// mcp bridge (unset: derived from -port in adjust)
+	flagSet.StringVar(&config.MCP.Address, "addr", "", "Address of the fraise daemon the mcp bridge forwards to (default: 127.0.0.1 on -port)")
 
 	return config
 }
@@ -319,13 +319,17 @@ func (c *ConfigSet) Parse(arguments []string) error {
 		c.configFile = DefaultConfigFile
 	}
 
-	// A missing or unreadable config file is survivable — the flags already
-	// parsed, plus the built-in defaults, are a complete configuration — so the
-	// failure is carried to the end instead of returned here. Returning early
-	// used to skip adjust and validate entirely, which is how `-log-level error`
-	// with no config file reached the logger unchecked: the very case an
-	// operator hits first.
+	// A missing config file is survivable — the flags already parsed, plus the
+	// built-in defaults, are a complete configuration — so that failure is
+	// carried to the end instead of returned here. Returning early used to skip
+	// adjust and validate entirely, which is how `-log-level error` with no
+	// config file reached the logger unchecked: the very case an operator hits
+	// first. A file that exists but cannot be used is the opposite case: it
+	// stops here, since nothing after it would run with what the operator wrote.
 	meta, fileErr := c.FromFile(c.configFile)
+	if errors.Is(fileErr, ErrParsingFailed) {
+		return fileErr
+	}
 
 	// Parse again to replace with command line options
 	err = c.FlagSet.Parse(arguments)
@@ -342,7 +346,7 @@ func (c *ConfigSet) Parse(arguments []string) error {
 	}
 
 	// An invalid value outranks a missing file: it is the one the caller must
-	// stop on, so it is the one returned.
+	// stop on, so it is the one returned. What remains is ErrMissingFile or nil.
 	if err = c.validate(); err != nil {
 		return err
 	}
@@ -355,7 +359,7 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// Reject keys present in the config file that map to no known field.
 	if meta != nil {
 		if undecoded := meta.Undecoded(); len(undecoded) != 0 {
-			return fmt.Errorf("%w: unknown keys %v", ErrParsingFailed, undecoded)
+			return fmt.Errorf("%w: %s: unknown keys %v", ErrParsingFailed, c.configFile, undecoded)
 		}
 	}
 
@@ -378,6 +382,9 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.Log.Format, DefaultLogFormat)
 	// Log.DisableTimestamp needs no Adjust: its default, false, is the zero
 	// value, so an absent key and an explicit false already agree.
+
+	// mcp: after server.port, which the default address is derived from
+	Adjust(&c.MCP.Address, fmt.Sprintf(DefaultMCPAddressFormat, c.Server.Port))
 
 	// engine
 	Adjust(&c.Engine.Halflife, DefaultHalflife)
@@ -413,10 +420,17 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	return nil
 }
 
+// FromFile decodes the TOML file at path over c. A file that does not exist
+// is ErrMissingFile, which the caller may survive; any other failure — the
+// file is unreadable, not TOML, or holds a value of the wrong type — is
+// ErrParsingFailed, naming the file and what was wrong with it.
 func (c *ConfigSet) FromFile(path string) (*toml.MetaData, error) {
 	meta, err := toml.DecodeFile(path, c)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("%w: %s", ErrMissingFile, path)
+	}
 	if err != nil {
-		return nil, ErrParsingFailed
+		return nil, fmt.Errorf("%w: %s: %v", ErrParsingFailed, path, err)
 	}
 	return &meta, nil
 }
