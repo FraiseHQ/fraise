@@ -79,6 +79,23 @@ if not result:
 
 The server carries the distinction in the status line — 204 for a graph holding nothing — and the SDK reads it there. It is worth branching on: the first case is answered by writing something, the second by asking differently, and they are easy to spend an afternoon confusing. See [the query endpoint](/docs/http-api/endpoints/query).
 
+## Explaining a ranking
+
+`explain` takes exactly the arguments of `recall` and sends the same query to [`/api/v1/explain`](/docs/http-api/endpoints/explain), which runs it through the same pipeline: the hits and their order are the ones `recall` returns, and each hit also carries `contributions`, the per-source sightings its score was folded from, while the result carries the query's `background` rate.
+
+```python
+result = client.explain("polly", entities=["polly"], depth=2)
+for hit in result:
+    print(hit.value, hit.score)
+    for c in hit.contributions:
+        print(" ", c.source, c.score, c.via)
+print(result.background)
+```
+
+A `Contribution` has a `source` — `text`, `vector`, `graph` or `anchor` — with that source's raw `score`, the hit's `rank` in the source's own list and the `count` of seeds that funded it; a `graph` or `anchor` sighting also names the anchor it came through (`via`) and that anchor's `degree`. A hit whose only contribution is `graph` matched nothing itself and was reached through an anchor, which is what separates a multi-hop fact the graph reached and ranked low from one it never reached. The contributions are the ingredients of the final score, not shares of it; see [the explain endpoint](/docs/http-api/endpoints/explain) for how they fold together.
+
+On a plain `recall` the breakdown is not asked for: each hit's `contributions` is empty and `background` is `None`. Use `recall` when the ranking is all you need, since the breakdown costs response size.
+
 ## Version compatibility
 
 `client.check_compatibility()` reads the `version` field from `GET /` and checks the server falls in the range this SDK supports: on a mismatch it warns and returns `False`, and `strict=True` raises instead. It is one request, made only when you call it — a good fit for startup. The field is part of the contract for exactly this reason; see [Health check](/docs/http-api/endpoints/health).

@@ -26,6 +26,12 @@ import os
 DEFAULT_BASE_URL = "http://localhost:9876"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
+# The routes a query is posted to. The explain route runs a recall through the
+# same pipeline as the query route and answers with each hit's contribution
+# breakdown, so a read sent to either is the same query string.
+QUERY_PATH = "/api/v1/q"
+EXPLAIN_PATH = "/api/v1/explain"
+
 # 204 No Content is how the server answers a recall of a graph that holds
 # nothing. It is a success, not an error, and it has no body: the distinction
 # between "nothing is stored here" and "nothing matched" is the status itself.
