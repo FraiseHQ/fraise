@@ -43,9 +43,9 @@ const (
 )
 
 // BM25 is the Robertson–Walker relevance model scaled by query coverage:
-// idf-weighted, length-normalized term frequency, times the fraction of
-// distinct query terms the document matched, so a document matching more of
-// the query outranks one repeating a single term. It owns the length
+// idf-weighted, length-normalized term frequency, times the share of the
+// query's idf mass the document matched, so a document matching more of the
+// query — and its rarer terms — outranks one repeating a single term. It owns the length
 // statistics its normalization needs and maintains them through the
 // lifecycle hooks.
 type BM25[K comparable, P float32 | float64] struct {
@@ -74,7 +74,8 @@ func (b *BM25[K, P]) Removed(key K, _ []string) {
 
 // Terms deduplicates to distinct query terms, first occurrence order: idf
 // already prices a term's informativeness, so a term repeated in the query
-// must not count twice — and coverage is a fraction of the distinct terms.
+// must not count twice — and coverage is a share of the distinct terms' idf
+// mass.
 func (b *BM25[K, P]) Terms(tokens []string) []string {
 	seen := make(map[string]struct{}, len(tokens))
 	terms := make([]string, 0, len(tokens))
@@ -114,11 +115,13 @@ func (b *BM25[K, P]) Increment(weight P, key K, tf int, n2 P) P {
 	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*P(b.lengths[key]))
 }
 
-// Finalize scales by coverage: the fraction of distinct query terms the
-// document matched. An alternative coverage multiplier is a one-line swap in
-// this slot.
-func (b *BM25[K, P]) Finalize(score P, matched, terms int) P {
-	return score * P(matched) / P(terms)
+// Finalize scales by coverage: matched over total, the idf mass of the query
+// terms the document matched over that of all of them, both in the fixed
+// point Search hands in. A full match scales by just under 1, and a rare
+// term covers more of the query than a common one. An alternative coverage
+// multiplier is a one-line swap in this slot.
+func (b *BM25[K, P]) Finalize(score P, matched, total int) P {
+	return score * P(matched) / P(total)
 }
 
 // TotalLen returns the sum of recorded document lengths in tokens.

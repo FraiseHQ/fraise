@@ -174,10 +174,10 @@ release:
   header: |
     ## Fraise {{ .Tag }}
 
-    See [CHANGELOG.md](https://github.com/FraiseHQ/fraise/blob/main/docs/CHANGELOG.md)
+    See [changelog.md](https://github.com/FraiseHQ/fraise/blob/main/docs/changelog.md)
     for the curated summary.
   footer: |
-    **Install**: download a binary below, or `go install github.com/FraiseHQ/fraise/cmd/fraise@{{ .Tag }}`
+    **Install**: download a binary below, or `go install github.com/FraiseHQ/fraise/cmd/server@{{ .Tag }}`
 
 # Announcement — Discord enabled; swap to the slack block if you land on Slack.
 announce:

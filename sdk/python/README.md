@@ -34,9 +34,9 @@ hits = fraise.recall(graph=6, vector=embedding)  # seeded only by the vector
 
 A recall needs a seed, not a keyword: a vector or a `topics`/`entities` filter is one on its own, so `fraise.recall(topics=["birds"])` — everything about a topic — is a query in its own right.
 
-Anything the typed helpers do not cover is reachable through the raw `fraise.query("recall@3 ...")` escape hatch.
+The typed helpers take any value and write the FQL for you: a topic, entity or keyword is quoted whenever it is not letters and digits only, such as `e-mail` or `new york`, and a keyword is also quoted when it spells a reserved word such as `since` — with a `FraiseWarning`, since `recall("since", "7d")` may have meant a `since:7d` bound rather than the word. Anything they do not cover, such as a `since:`/`until:` time bound, goes through the raw `fraise.query("recall@3 ...")` escape hatch, which sends the FQL exactly as written and leaves the checking to the server.
 
-Some queries run but read like a near-miss of a different query — a recall whose first keyword is also a grammar keyword, e.g. `fraise.recall("since", "7d")`, one `:` away from a `since:7d` time filter. The server answers them and attaches a warning; the SDK lists it on `result.warnings` and re-emits it as a `FraiseWarning`:
+Some queries run but carry something that cannot help them — a keyword that is an English stop word, e.g. `fraise.recall("ferry", "the")`: stored facts never contain "the", so it cannot match. The server answers them and attaches a warning; the SDK lists it on `result.warnings` and re-emits it as a `FraiseWarning`:
 
 ```python
 import warnings
@@ -46,6 +46,16 @@ warnings.filterwarnings("ignore", category=FraiseWarning)  # silence wholesale
 ```
 
 The query shapes that warn (and the neighbouring ones that stay silent) are catalogued in [Warnings](https://docs.getfraise.dev/docs/query-language/reference/warnings).
+
+To see why a fact ranked where it did, `explain` takes the same arguments as `recall` and returns the same ranking, with each hit's `contributions` — the text, vector, graph or anchor sightings its score was folded from — and the query's `background` rate on the result:
+
+```python
+result = fraise.explain("polly", entities=["polly"], depth=2)
+for hit in result:
+    print(hit.value, [(c.source, c.score, c.via) for c in hit.contributions])
+```
+
+A hit whose only contribution is `graph` was reached through an anchor without matching the query itself. See [Explain](https://docs.getfraise.dev/docs/http-api/endpoints/explain) for how the contributions fold into the score.
 
 ## Embeddings (optional)
 
@@ -58,14 +68,14 @@ from fraise_sdk.providers import OpenAIEmbedder   # needs fraise-sdk[openai]
 fraise = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder(dimensions=128))
 
 fraise.remember("the kingfisher is electric blue", graph=6)          # stored with its vector
-hits = fraise.recall("small bright bird", graph=6, query="small bright bird")
+hits = fraise.recall(query="small bright bird", graph=6)
 ```
 
-An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Only OpenAI is provided today — Anthropic has no embeddings API.
+An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Two ship ready-made: `OpenAIEmbedder` (`fraise-sdk[openai]`) and `HuggingFaceEmbedder` (`fraise-sdk[huggingface]`); Anthropic has no embeddings API.
 
 ## OpenAI Agents tools
 
-`memory_tools(client)` returns a `recall` and a `remember` `FunctionTool` bound to one memory graph, so the agent decides *what* to store and retrieve:
+`memory_tools(client)` returns two `FunctionTool`s, `recall_memory` and `remember_fact`, bound to one memory graph, so the agent decides *what* to store and retrieve:
 
 ```python
 from agents import Agent, Runner
@@ -111,6 +121,6 @@ See [`examples/claude-agent-sdk/`](../../examples/claude-agent-sdk) for a comple
 ## Notes & limits
 
 - A fact value is stored inside a single-quoted phrase where every character is literal; the SDK escapes apostrophes for you, so `remember("it's blue")` stores the text exactly as written.
-- Keywords, topics, and entities are single whitespace-free tokens.
+- Keywords, topics, and entities may contain spaces and punctuation: a value that is not one plain word (letters and digits only) is quoted for you, and so is a keyword that spells a reserved word.
 - The first vector written to a graph fixes that graph's embedding dimension; later writes to the same graph must match it.
 - `FraiseClient` defaults to a 30s request timeout (`timeout=` on the constructor or on individual `query`/`remember`/`recall` calls overrides it); a request that exceeds it raises `FraiseError` naming the timeout, distinct from the error raised when the server can't be reached at all.

@@ -23,6 +23,7 @@
 package query
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -56,6 +57,7 @@ type fakeGraph struct {
 	searchScores     []float32
 	searchContribs   [][]scoring.Contribution[string, float32]
 	searchBackground float32
+	searchErr        error
 }
 
 var _ graph.Graph[string, float32] = (*fakeGraph)(nil)
@@ -70,9 +72,12 @@ func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32])     { g.merged = 
 func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32, [][]scoring.Contribution[string, float32], float32) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32, [][]scoring.Contribution[string, float32], float32, error) {
 	g.searchCalled = true
-	return g.searchNodes, g.searchScores, g.searchContribs, g.searchBackground
+	if g.searchErr != nil {
+		return nil, nil, nil, 0, g.searchErr
+	}
+	return g.searchNodes, g.searchScores, g.searchContribs, g.searchBackground, nil
 }
 
 // --- inert stubs (unused by Stream) ----------------------------------------
@@ -117,6 +122,24 @@ func isClosed(ch <-chan struct{}) bool {
 }
 
 // --- Commit (read path) ----------------------------------------------------
+
+// TestStreamCommitReadSurfacesASearchError pins that a read fails the way a
+// write does: a search the graph cannot answer as asked (its vector's
+// dimension disagrees with the graph's) is returned from Commit, wrapped so
+// the cause survives to the HTTP boundary, and no result is built from it.
+func TestStreamCommitReadSurfacesASearchError(t *testing.T) {
+	g := &fakeGraph{searchErr: fmt.Errorf("%w: index expects 3, got 2", index.ErrInvalidDimension)}
+	s := newStream(readQuery())
+
+	err := s.Commit(g)
+
+	if !errors.Is(err, index.ErrInvalidDimension) {
+		t.Fatalf("Commit() err = %v, want it to wrap ErrInvalidDimension", err)
+	}
+	if s.Result != nil {
+		t.Errorf("Commit built a result %+v from a failed search, want nil", s.Result)
+	}
+}
 
 func TestStreamCommitReadBuildsResult(t *testing.T) {
 	g := &fakeGraph{
@@ -274,7 +297,7 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	}
 
 	// The report's repro: recall with since covering only the re-assertion.
-	nodes, _, _, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
+	nodes, _, _, _, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
 	if len(nodes) != 1 {
 		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(nodes))
 	}
@@ -394,7 +417,7 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			nodes, _, _, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			nodes, _, _, _, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
 				got = append(got, (*n).GetValue())

@@ -1,6 +1,6 @@
 ---
 title: "Example configuration"
-description: "A complete fraise.config.toml, and where each install route expects to find it"
+description: "An example fraise.config.toml, and where each install route expects to find it"
 navIcon: "📄"
 ---
 
@@ -18,7 +18,6 @@ format = "json"
 disable-timestamp = true
 
 [engine]
-allow-unanchored-recall = true
 half-life = "168h"
 cache-capacity = 1024
 
@@ -54,6 +53,6 @@ A file only needs the settings you are changing; everything else stays at its de
 
 <Note title="Unknown keys and bad values" type="warning">
 
-  But a key that maps to no known setting **is** an error, and so is a value outside a fixed vocabulary: the server exits non-zero before binding a port. See [How configuration works](/docs/configuration/overview).
+  But a key that maps to no known setting **is** an error, and so is a file that is not valid TOML or a value outside a fixed vocabulary: the server exits non-zero before binding a port. See [How configuration works](/docs/configuration/overview).
 
 </Note>

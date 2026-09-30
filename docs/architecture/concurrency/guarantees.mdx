@@ -5,7 +5,7 @@ description: "What is guaranteed per graph, what is guaranteed across graphs, an
 
 ## Per-graph atomicity
 
-All operations on a single graph are serialized through its lock:
+Every operation on a graph goes through its read-write lock:
 
 - concurrent writes to the same graph **will serialize**;
 - concurrent reads do not block each other;
@@ -20,15 +20,13 @@ Operations on different graphs are fully independent:
 
 ## Stream ordering within a graph
 
-Streams submitted to the scheduler are processed **in FIFO order** (per worker). However, because there are multiple workers:
+The queue is FIFO: workers take streams in the order they were submitted. Execution order is not guaranteed, because several workers take from the queue at once and whichever reaches the graph's lock first runs first — `sync.RWMutex` makes no promise that acquisition follows arrival. **Streams in flight at the same time have no order between them, even on the same graph.**
 
-- streams targeting the same graph may be processed by different workers;
-- lock ordering is still FIFO — whoever acquires the lock first goes first;
-- **there is no guaranteed ordering across multiple workers.**
+What is guaranteed is that a request is answered only after its stream has been applied. An acknowledged write is therefore visible to every request sent after the acknowledgement.
 
-<Note title="No cross-worker ordering" type="warning">
+<Note title="Ordering is the caller's" type="warning">
 
-  If strict ordering is required, submit streams to a single worker or use a dedicated queue.
+  When a sequence of writes matters, send each one after the previous one has answered. Running with `workers = 1` orders execution globally, at the cost of all concurrency.
 
 </Note>
 
@@ -65,9 +63,8 @@ Streams submitted to the scheduler are processed **in FIFO order** (per worker).
 ## Avoiding lock contention
 
 1. **Distribute data** — use multiple graphs; partition by agent, conversation, or domain.
-2. **Batch reads** — use `RLock()` to read multiple entities in one critical section.
-3. **Minimize lock hold time** — writes commit in place, so hold time is proportional to the fact being written; keep facts small rather than batching many into one stream.
-4. **Monitor queue depth** — if the queue fills up, consider raising `buffer-size` or `workers`. If one *graph* is hot, more workers will not help — spread the load across graphs, which is what they are for.
+2. **Minimize lock hold time** — writes commit in place, so hold time is proportional to the fact being written; keep each fact to one self-contained statement.
+3. **Watch for 429s** — they mean the queue is filling up; consider raising `buffer-size` or `workers`. If one *graph* is hot, more workers will not help — spread the load across graphs, which is what they are for.
 
 ## Future considerations
 

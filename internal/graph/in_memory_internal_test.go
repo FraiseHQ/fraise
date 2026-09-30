@@ -142,6 +142,49 @@ func TestCollectBackgroundWeighsAllTouchedAnchors(t *testing.T) {
 	}
 }
 
+// TestCollectSilencesALoneAnchorExactly pins the one case where admission
+// is decided by arithmetic alone: a query that reaches a single anchor gives
+// it exactly its fair share (M = d·(M/d)), so it must stay silent. With M =
+// 0.1 + 0.8 on a degree-3 topic, 3·(0.9/3) rounds to 0.8999999999999999, and
+// the division-based test admitted the anchor and handed its unmatched
+// member a surplus of ~4e-17. The masses are chosen to hit that rounding,
+// which BM25 masses from the public surface cannot be made to do on purpose.
+func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
+	g := NewGraph[uint64, float64](config.New())
+	g.SetTraversal(NewExcessTraversal[uint64, float64]())
+	now := time.Now()
+
+	facts := make([]Fact[uint64], 3)
+	for i, value := range []string{"lone fact one", "lone fact two", "lone fact three"} {
+		facts[i] = Fact[uint64]{NodeAttributes: NodeAttributes{Value: value, Timestamp: now}, Hasher: g.hasher}
+		if err := g.Set(facts[i]); err != nil {
+			t.Fatalf("Set(%q) = %v, want nil", value, err)
+		}
+	}
+	tp := &Topic[uint64]{NodeAttributes: NodeAttributes{Value: "lone", Timestamp: now}, Hasher: g.hasher}
+	if err := g.Set(tp); err != nil {
+		t.Fatalf("Set(topic) = %v, want nil", err)
+	}
+	for i := range facts {
+		edge := IsAbout[uint64]{NodeAttributes: NodeAttributes{Timestamp: now}, Fact: &facts[i], Topic: tp, Hasher: g.hasher}
+		if err := g.Set(edge); err != nil {
+			t.Fatalf("Set(edge) = %v, want nil", err)
+		}
+	}
+
+	candidates := scoring.Candidates[uint64, float64]{
+		facts[0].Key(): {{Src: scoring.SrcText, Score: 0.1, Rank: 0, Count: 1}},
+		facts[1].Key(): {{Src: scoring.SrcText, Score: 0.8, Rank: 1, Count: 1}},
+	}
+	g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, candidates, []string{"lone"}, nil, 2)
+
+	for i, f := range facts {
+		if got := graphContributions(candidates, f.Key()); len(got) != 0 {
+			t.Errorf("fact %d received graph observations %+v from a lone anchor at its fair share, want none", i, got)
+		}
+	}
+}
+
 // TestCollectExpandsOnlyAboveBackgroundAnchors is the admission prune,
 // Property 5.3's collection half: the fair-share hub is never expanded — its
 // members pool nothing, its own seed keeps a graph-free list — while the

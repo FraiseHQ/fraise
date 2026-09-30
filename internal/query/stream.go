@@ -94,7 +94,9 @@ func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, e
 // Failure ordering: the vector insert runs before any graph mutation, so the
 // one realistic commit failure (a vector-dimension mismatch) rejects the write
 // with g untouched. Later index errors are pathological; they surface in the
-// returned error with the write partially applied.
+// returned error with the write partially applied. A read fails the same way
+// and for the same reason — its vector's dimension differs from the graph's —
+// rather than answering from the text index alone.
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 	s.IsGraphEmpty = g.IsEmpty()
@@ -201,7 +203,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		"vector", !recall.Vector.Empty(),
 		"depth", recall.Parameters.Depth,
 		"top", recall.Parameters.Top)
-	nodes, scores, contributions, background := g.Search(
+	nodes, scores, contributions, background, err := g.Search(
 		recall.Keywords,
 		recall.Vector,
 		recall.Topics,
@@ -211,6 +213,9 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		recall.Since(time.Now()),
 		recall.Until(time.Now()),
 	)
+	if err != nil {
+		return fmt.Errorf("searching with the recall's vector: %w", err)
+	}
 
 	// copy results to Hit object
 	n := len(nodes)

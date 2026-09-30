@@ -23,7 +23,9 @@
 package containers
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -93,7 +95,16 @@ func ParseTimeValue[K comparable](s string) (TimeValue[K], error) {
 
 	// Relative: <int><unit>. A date never ends in a unit letter.
 	if mult, ok := unitDuration(s[len(s)-1]); ok {
-		if n, err := strconv.Atoi(s[:len(s)-1]); err == nil && n >= 0 {
+		n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
+		// A count past what a time.Duration holds would wrap negative and
+		// resolve to a bound in the future — since:106752d silently emptied
+		// the window — so it is refused, with the unit's limit, rather than
+		// wrapped or read as a date.
+		limit := int64(math.MaxInt64 / mult)
+		if (err == nil && n > limit) || errors.Is(err, strconv.ErrRange) {
+			return nil, &DurationRangeError{Value: s, Max: limit, Unit: s[len(s)-1]}
+		}
+		if err == nil && n >= 0 {
 			return RelativeTime[K]{Dur: time.Duration(n) * mult}, nil
 		}
 	}

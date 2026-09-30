@@ -44,7 +44,6 @@ type TokenType int
 
 const (
 	ILLEGAL TokenType = iota
-	EOL
 
 	// literal
 	LITERAL
@@ -59,17 +58,35 @@ const (
 	FORGET
 	UPDATE
 
-	// anchors
+	// operators
 	PLUS
 	TILDE
 	MINUS
 
 	// punctuation
-	AT
-	COLON
 	LPAREN
 	RPAREN
+	COMMA
+
+	// separators (between two statements)
+	AT
+	COLON
 	DOLLAR
+
+	// blank characters
+	WHITESPACE
+	// NUL is a NUL character outside a phrase. It is its own token, rather
+	// than read as the end of input, so the rest of the query cannot be
+	// silently dropped after it.
+	NUL
+	// SPECIAL is any other character outside a phrase that is not a letter, a
+	// digit, whitespace or punctuation. It is its own token so a word ends at
+	// it and the parser can name it: a bare word that absorbed one read
+	// "ferry;" as a term, answering a query the caller never wrote.
+	SPECIAL
+
+	// end of line
+	EOL
 	NEWLINE
 
 	// fields
@@ -95,6 +112,7 @@ var TokenMap = map[TokenType]string{
 	DOLLAR:   "$",
 	PHRASE:   "phrase",
 	NEWLINE:  "\n",
+	NUL:      "\x00",
 	PLUS:     "+",
 	TILDE:    "~",
 	MINUS:    "-",
@@ -108,6 +126,7 @@ var TokenMap = map[TokenType]string{
 	VEC:      "vec",
 	EOL:      "eol",
 	AT:       "@",
+	COMMA:    "'",
 }
 
 var KeywordsMap = map[string]TokenType{
@@ -137,6 +156,8 @@ func (t TokenType) IsKeyword() bool {
 		return false
 	}
 }
+
+// func (t Token)
 
 // IsCommand reports whether t is one of the verbs a query can open with. A
 // query is one instruction, so a command token anywhere but the first position
@@ -170,6 +191,36 @@ func (t Token) Describe() string {
 		return "a new line"
 	default:
 		return strconv.Quote(t.Literal)
+	}
+}
+
+// checks that a token is a blank
+func (t TokenType) IsBlank() bool {
+	switch t {
+	case WHITESPACE, NUL:
+		return true
+	default:
+		return false
+	}
+}
+
+// checks that a token is an end of line character
+func (t TokenType) IsEndOfLine() bool {
+	switch t {
+	case EOL, NEWLINE:
+		return true
+	default:
+		return false
+	}
+}
+
+// checks that a token is a separator
+func (t TokenType) IsSeparator() bool {
+	switch t {
+	case AT, COLON, DOLLAR:
+		return true
+	default:
+		return false
 	}
 }
 

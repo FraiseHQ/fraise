@@ -55,7 +55,16 @@ func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struc
             }
         case <-quit:
             // drain what is already buffered, then return
-            return
+            for {
+                select {
+                case stream := <-queue:
+                    if err := s.execute(stream); err != nil {
+                        logger.Error("Failed to execute stream", "error", err)
+                    }
+                default:
+                    return
+                }
+            }
         }
     }
 }
@@ -70,7 +79,7 @@ func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struc
 The `execute()` method:
 
 1. **Selects the graph** — `DB.Select(stream.Query.GetGraphID())`
-2. **Acquires the graph's lock** — `stream.Acquire(g)`: the write lock for writes, a read lock for reads
+2. **Acquires the graph's lock** — `stream.Acquire(g)`: the write lock for writes, a read lock for reads, released by a deferred `stream.Release(g)`
 3. **Commits in place** — `stream.Commit(g)`: reads run the search against the live graph; writes mutate it directly under the exclusive lock, costing O(fact + incremental index updates) regardless of graph size.
 
 The lock is already exclusive, so no staging copy is needed: nothing can observe intermediate state. On error the stream records it and completes; the one realistic write failure (vector-dimension mismatch) is checked before any mutation, leaving the graph untouched.

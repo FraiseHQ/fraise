@@ -301,8 +301,9 @@ def test_recall_by_emoji_finds_the_fact(query):
     the bug-report repro, taken through the store.
 
     The text index keeps symbols (Unicode category So: emoji, check marks and
-    the like) as terms of their own, so ``recall 🍊`` reaches the fruit fact
-    through the index like any word would. Before, the tokenizer kept only
+    the like) as terms of their own, so ``recall '🍊'`` reaches the fruit fact
+    through the index like any word would. An emoji is not a letter, so the
+    grammar takes it quoted. Before, the tokenizer kept only
     letters and digits: the fact was accepted and stored verbatim but indexed
     under no term at all, so it looked stored and could never be found. Graph
     8 is otherwise written with prose only, so the emoji term is unique to
@@ -312,7 +313,7 @@ def test_recall_by_emoji_finds_the_fact(query):
     status, body = query(f"remember@6 '{fact}' topic:fruit")
     assert status == 200, body.get("error")
 
-    status, body = query("recall@6 🍊")
+    status, body = query("recall@6 '🍊'")
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
     assert values == [fact], f"recall by emoji should find the fruit fact; got {values}"
@@ -376,7 +377,7 @@ def test_keyword_anchor_values_round_trip(query):
 
 
 def test_keyword_recalls_as_a_leading_term(query):
-    """In `recall top top:10`, the first "top" is a search term and the second
+    """In `recall 'top' top:10`, the first "top" is a search term and the second
     is the result-limit clause.
 
     The leading term is the one position where a bare keyword reads as a
@@ -388,7 +389,7 @@ def test_keyword_recalls_as_a_leading_term(query):
     status, body = query(f"remember@5 '{CAIRN_FACT}' topic:top entity:top")
     assert status == 200, body.get("error")
 
-    status, body = query("recall@5 top top:10")
+    status, body = query("recall@5 'top' top:10")
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
     assert CAIRN_FACT in values, (
@@ -652,14 +653,23 @@ def test_anchor_seeded_recall_without_top_takes_the_configured_default(
 
 @pytest.mark.parametrize(
     ("clause", "count"),
-    [("since:1d", 4), ("since:2999-01-01", 0), ("until:1d", 0)],
+    [
+        ("since:1d", 4),
+        ("since:'2999-01-01'", 0),
+        ("until:1d", 0),
+        ("since:106751d", 4),
+        ("since:15250w", 4),
+        ("until:106751d", 0),
+    ],
 )
 def test_anchor_seeded_recall_honours_time_bounds(clause, count, planets_graph, query):
     """since:/until: bound an anchor-seeded recall as they bound any other.
 
     The star was written moments ago: a window opening a day ago holds all of
     it, one opening in 2999 holds nothing, and one closing a day ago holds
-    nothing either.
+    nothing either. The longest duration each unit can hold still opens in the
+    past, about 292 years ago, so it holds the whole star — one day more used
+    to wrap into the future and hold nothing (see parser_test.py).
     """
     assert (
         _recall_count(query, f"recall@{planets_graph} topic:planets {clause}") == count

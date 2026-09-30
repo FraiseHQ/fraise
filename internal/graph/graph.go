@@ -158,7 +158,14 @@ type Graph[K comparable, P float32 | float64] interface {
 	// observed, so the returned background is zero. An anchor nothing is
 	// filed under seeds nothing, so an unknown anchor is exactly an empty
 	// result.
-	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P)
+	//
+	// The error is a question that cannot be answered as asked, never an
+	// empty answer: a vector whose dimension differs from the one the graph's
+	// vector index was built at is index.ErrInvalidDimension. Dropping the
+	// vector instead would return plausible text-only hits with no sign that
+	// the semantic half of the question was ignored. A graph with nothing
+	// indexed yet is not an error — it simply seeds nothing.
+	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error)
 
 	// Graphs expose their read-write lock so callers can hold a single
 	// lock across a sequence of calls (e.g. Get-then-Put) instead of

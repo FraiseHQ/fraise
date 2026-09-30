@@ -96,6 +96,47 @@ def test_recall_parses_hits(session, respond, sent):
     assert bool(result) is True
 
 
+@pytest.mark.parametrize(
+    "keywords, kwargs",
+    [
+        (["polly"], {"entities": ["polly"], "depth": 2}),
+        ([], {"query": "where does the parrot sleep", "topics": ["birds"], "top": 3}),
+        (["kettle"], {"graph": 4, "vector": [0.5, 0.5]}),
+    ],
+)
+def test_explain_sends_the_recall_query_to_the_explain_route(
+    session, query_url, explain_url, keywords, kwargs
+):
+    """explain posts exactly what recall posts, to the explain route instead.
+
+    The two share one builder so an explanation is always of the ranking recall
+    would return; if they ever sent different query strings or vectors, the
+    breakdown would explain a different question.
+    """
+    client = FraiseClient()
+    client.recall(*keywords, **kwargs)
+    client.explain(*keywords, **kwargs)
+
+    recalled, explained = session.post.call_args_list
+    assert recalled.args == (query_url,)
+    assert explained.args == (explain_url,)
+    assert explained.kwargs == recalled.kwargs
+
+
+def test_explain_returns_each_hit_with_its_contributions(
+    session, respond, explain_response
+):
+    """An explained recall comes back typed: contributions on every hit, and
+    the background rate on the result."""
+    respond(session, explain_response)
+
+    result = FraiseClient().explain("polly", entities=["polly"], depth=2)
+
+    assert result.count == 3
+    assert all(hit.contributions for hit in result)
+    assert result.background == 0.4857013396824596
+
+
 def test_recall_empty_results(session):
     """A populated graph that matched nothing is an empty, falsey result.
 
@@ -162,26 +203,41 @@ def test_recall_surfaces_server_warnings(session, respond, server_warning):
     result for programmatic use, and emitted as a FraiseWarning so it is
     visible by default without any code changes.
 
-    The armed response mimics ``recall since 7d``: the query ran — hits and
-    all — while the server flagged that it is one ':' away from a since
-    clause. Warnings ride beside the results, they do not replace them.
+    The armed response mimics ``recall ferry the``: the query ran — hits and
+    all — while the server flagged a stop word that can never match. Warnings
+    ride beside the results, they do not replace them.
     """
     respond(
         session,
         {
             "results": {
                 "count": 1,
-                "hits": [{"value": "since the storm", "score": 1.0}],
+                "hits": [{"value": "the ferry docks at dawn", "score": 1.0}],
             },
             "warnings": [server_warning],
         },
     )
 
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        result = FraiseClient().recall("since", "7d")
+    with pytest.warns(FraiseWarning, match="is a stop word") as record:
+        result = FraiseClient().recall("ferry", "the")
 
+    assert record[0].filename == __file__
     assert result.warnings == [server_warning]
     assert result.count == 1
+
+
+def test_a_reserved_word_keyword_warns_at_the_callers_line(session, sent):
+    """``recall("since", "7d")`` is sent quoted and warns before it is sent.
+
+    The warning is decided three frames deep, in the query builder, and still
+    names this file: the caller's own call is the line they can change, and a
+    warning pointing into the SDK would leave them looking for it.
+    """
+    with pytest.warns(FraiseWarning, match="is a reserved word") as record:
+        FraiseClient().recall("since", "7d")
+
+    assert record[0].filename == __file__
+    assert sent(session)["query"] == "recall@0 'since' 7d"
 
 
 def test_recall_without_warnings_is_silent(session):
@@ -205,8 +261,8 @@ def test_raw_query_emits_server_warnings(session, respond, server_warning):
         session, {"results": {"count": 0, "hits": []}, "warnings": [server_warning]}
     )
 
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        body = FraiseClient().query("recall@0 since 7d")
+    with pytest.warns(FraiseWarning, match="is a stop word"):
+        body = FraiseClient().query("recall@0 ferry the")
 
     assert body["warnings"] == [server_warning]
 
@@ -324,7 +380,7 @@ def test_check_compatibility_strict_raises_when_the_version_is_unknown(session):
         FraiseClient().check_compatibility(strict=True)
 
 
-@pytest.mark.parametrize("version", ["0.2.0", "99.0.0", "0.0.9", "0.1", "abc", "x.y.z"])
+@pytest.mark.parametrize("version", ["0.1.0", "99.0.0", "0.0.9", "0.1", "abc", "x.y.z"])
 def test_check_compatibility_warns_outside_the_supported_range(
     session, respond_get, version
 ):
@@ -345,7 +401,7 @@ def test_check_compatibility_strict_raises_outside_the_supported_range(
         FraiseClient().check_compatibility(strict=True)
 
 
-@pytest.mark.parametrize("version", ["0.1.0", "v0.1.5", "0.1.9-beta.2"])
+@pytest.mark.parametrize("version", ["0.2.1", "v0.2.15", "v0.2.0"])
 def test_check_compatibility_accepts_a_supported_version(session, respond_get, version):
     """An in-range version answers True with no warning — a ``v`` prefix and
     a pre-release suffix are spelling, not incompatibility. The literals sit
@@ -492,6 +548,28 @@ def test_server_version_is_none_when_the_server_is_unreachable(dead_url):
 
 
 @pytest.mark.integration
+def test_explain_breaks_down_the_ranking_recall_returns(
+    instrument_graph, instrument_topic, client
+):
+    """Against the live server, explain ranks what recall ranks and says why.
+
+    The same arguments reach the same facts in the same order, since both run
+    one pipeline; only explain carries the breakdown, and every hit it returns
+    was seen by at least one source. Read-only: recalls write nothing.
+    """
+    kwargs = {"graph": instrument_graph, "topics": [instrument_topic], "depth": 2}
+    recalled = client.recall("cello", **kwargs)
+    explained = client.explain("cello", **kwargs)
+
+    assert [hit.value for hit in explained] == [hit.value for hit in recalled]
+    assert explained.count >= 1
+    assert all(hit.contributions for hit in explained)
+    assert "text" in {c.source for c in explained.hits[0].contributions}
+    assert explained.background is not None
+    assert recalled.background is None
+
+
+@pytest.mark.integration
 def test_check_compatibility_accepts_the_live_server(client):
     """The running server falls inside SUPPORTED_SERVER, silently.
 
@@ -584,16 +662,20 @@ def test_recall_is_reachable_with_an_anchor_and_no_keyword(
     assert result.count >= 0
 
 
+@pytest.mark.parametrize("words", [["kettle", "top"], ["since", "7d"], ["Top"]])
 @pytest.mark.integration
-def test_a_keyword_spelled_search_word_is_not_a_clause(client, round_trip_graph):
+def test_a_keyword_spelled_search_word_is_not_a_clause(words, client, round_trip_graph):
     """A search word that spells a keyword is a word, wherever it is passed.
 
-    ``recall("kettle", "top")`` used to build ``recall@0 kettle top``, which the
-    grammar reads as an unfinished ``top:`` clause and rejects. The builder
-    quotes it now, so the position a caller happens to pass a word in no longer
-    decides whether their query parses.
+    The server reads a bare reserved word as syntax in every position and in
+    any casing, so ``recall("since", "7d")`` built bare would be a 400 asking
+    whether ``since:7d`` was meant. The builder quotes it and warns, so
+    neither the position nor the casing a caller passes a word in decides
+    whether their query parses, and the other reading is still named.
+    Read-only: recalls write nothing.
     """
-    result = client.recall("kettle", "top", graph=round_trip_graph)
+    with pytest.warns(FraiseWarning, match="is a reserved word"):
+        result = client.recall(*words, graph=round_trip_graph)
     assert result.count >= 0
 
 
@@ -603,24 +685,6 @@ def test_recall_without_a_match_is_empty(client, round_trip_graph, no_match):
     result = client.recall(no_match, graph=round_trip_graph)
     assert result.count == 0
     assert bool(result) is False
-
-
-@pytest.mark.integration
-def test_a_keyword_spelled_term_recalls_with_a_warning(client, round_trip_graph):
-    """recall("since", "7d") runs, and the server's parse warning surfaces on
-    both channels the SDK offers.
-
-    The leading term "since" is legal data but one ':' from a since clause,
-    so the live server answers the search and attaches a warning naming both
-    readings. The SDK lists it on ``result.warnings`` and re-emits it as a
-    :class:`FraiseWarning` — this is the whole warning pipeline, wire to
-    caller, in one round trip. Read-only: recalls write nothing.
-    """
-    with pytest.warns(FraiseWarning, match="also a keyword"):
-        result = client.recall("since", "7d", graph=round_trip_graph)
-
-    assert len(result.warnings) == 1
-    assert "since:<value>" in result.warnings[0]
 
 
 @pytest.mark.integration
@@ -737,7 +801,7 @@ def test_recall_of_an_empty_graph_says_the_graph_is_empty(client, empty_graph):
     empty result as a query that simply missed, and debugs the query when it
     should be checking whether it ever wrote.
     """
-    result = client.recall("anything", graph=empty_graph)
+    result = client.recall("zebras", graph=empty_graph)
 
     assert result.empty is True
     assert result.count == 0

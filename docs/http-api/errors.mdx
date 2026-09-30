@@ -1,18 +1,19 @@
 ---
 title: "Errors"
-description: "One error shape, four status codes, and the two properties that make client errors precise and server errors opaque"
+description: "One error shape, five status codes, and the two properties that make client errors precise and server errors opaque"
 navIcon: "⚠️"
 ---
 
 Every failure returns the same shape, with the status code carrying the category:
 
 ```json
-{"error": "parse error at column 24: Expected colon, but found \"food\""}
+{"error": "parse error at column 28: \"topic\" is missing its ':': write topic:food"}
 ```
 
 | Status | When |
 |--------|---------------------------------------------------------------------------------------------------------------------------------------|
 | 400 | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a vector whose dimension does not match its graph, a graph selector outside the allocated range |
+| 404 | no endpoint answers that method and path — the message names both |
 | 429 | the scheduler queue stayed full past `enqueue-timeout` — back off and retry |
 | 503 | the server is shutting down |
 | 500 | an internal failure |
@@ -38,3 +39,30 @@ The message names the fix. Common cases:
 | a missing parameter | bind it in the request's `parameters` object |
 | a dimension mismatch | the graph was built with a different embedding model — see [Dimensions](/docs/retrieval/embeddings/dimensions) |
 | the graphs that exist | the selector named an unallocated graph; raise `num-graphs` or pick another |
+
+### A reserved word as a search term
+
+Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`, in any casing, is syntax wherever a search term stands. `recall since 7d` is one `:` away from `recall since:7d`, and running either reading would answer a question the caller may not have asked, so it is an error naming both repairs, spelled with the word written after the keyword:
+
+```json
+{"error": "parse error at column 12: term \"since\" is also a keyword: write since:7d if a filter was meant, or quote it ('since') to search the word"}
+```
+
+| query | the message names |
+|--------------------|------------------------------------------------------|
+| `recall since 7d` | `since:7d` for a time bound, or `'since'` to search the word |
+| `recall top` | `top:<value>`, or `'top'`: nothing follows, so the value is a placeholder |
+| `recall Top shelf` | the same two repairs, and the casing |
+| `recall recall` | only the quote: a command has no clause reading |
+
+Once a clause has started, a keyword without its `:` has one reading left, so the message names only the clause: `recall zebras since:7d topic food` answers `write topic:food`. See [Keywords](/docs/query-language/tokens/keywords).
+
+### A recall that cannot match
+
+Stored facts never contain English stop words, so a recall whose every search term is one, and that carries no phrase and no vector, can match nothing. That is an error rather than an empty result that reads like a miss, and a named anchor does not change it: `recall the topic:birds` is meant as `recall topic:birds`.
+
+```json
+{"error": "parse error at column 10: term \"the\" is a stop word and the only search term: stored facts never contain it, so nothing can match; give a term that is not a stop word, a phrase, or a vector"}
+```
+
+A stop word beside a term that can match is only a [warning](/docs/query-language/reference/warnings): `recall the parrot` runs as a search for "parrot".
