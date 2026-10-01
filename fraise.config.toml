@@ -40,6 +40,7 @@
 # max-depth = 2
 # max-vector-dimension = 4096
 # seed-size = 10
+# relevance-feedback = false  # true runs a second text pass seeded by the top hits
 
 [db.hashing-function]
 # name = "xxhash"             # xxhash t1ha

@@ -134,6 +134,12 @@ type DBConfig struct {
 	// than this can never be silently starved of candidates.
 	SeedSize int `toml:"seed-size"`
 
+	// Pseudo-relevance feedback on the text channel: after the first text
+	// pass, a second one seeded by the top hits' entities and rarest terms,
+	// fused as further text contributions on the same candidates. Off by
+	// default until measured.
+	RelevanceFeedback bool `toml:"relevance-feedback"`
+
 	// database hashing function
 	HashingFunction HashingFunction `toml:"hashing-function"`
 
@@ -262,6 +268,7 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
+	flagSet.BoolVar(&config.DB.RelevanceFeedback, "relevance-feedback", DefaultRelevanceFeedback, "Run a second text pass seeded by the first pass's top hits")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
@@ -399,6 +406,8 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
+	// DB.RelevanceFeedback needs no Adjust: its default, false, is the zero
+	// value, so an absent key and an explicit false already agree.
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)

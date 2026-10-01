@@ -26,6 +26,7 @@ import (
 	"errors"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/FraiseHQ/fraise/internal/comparator"
 	"github.com/FraiseHQ/fraise/internal/containers"
@@ -220,6 +221,106 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	}
 	logger.Debug("Text search matched documents", "matches", len(keys), "k", k)
 	return keys, out, nil
+}
+
+// Expand returns up to n spellings to add to query from the documents under
+// keys — the feedback set of a pseudo-relevance round — ranked by the
+// installed Relevance model's term weight (the idf, under BM25) descending,
+// then by spelling, so the choice is a total order and two identical rounds
+// expand identically. A spelling is a word as it appears in the document
+// rather than the stem the postings hold, because the expanded query goes
+// back through Search and so through the tokenizer: re-stemming a stem is not
+// guaranteed to land on itself, and a term returned as its stem could then
+// miss the very posting it was chosen from.
+//
+// Two kinds of term are left out. One already in the query adds no reach
+// and the query carries it anyway. One whose posting holds no document
+// outside the feedback set can surface no new candidate — under pure idf the
+// rarest terms are exactly the ones confined to a single document, so without
+// this rule the budget would go to spellings that only re-find the seeds. A
+// key with no document is skipped, not an error: the feedback set is whatever
+// the first pass ranked, and a document retired between the passes is not
+// the caller's fault.
+func (idx *BTreeIndex[K, P]) Expand(query string, keys []K, n int) []string {
+	if n <= 0 || len(keys) == 0 {
+		return nil
+	}
+
+	asked := make(map[string]struct{})
+	for _, term := range idx.tokenizer.Tokenize(query) {
+		asked[term] = struct{}{}
+	}
+	feedback := make(map[K]struct{}, len(keys))
+	for _, key := range keys {
+		feedback[key] = struct{}{}
+	}
+
+	type candidate struct {
+		spelling string
+		weight   P
+	}
+	candidates := make([]candidate, 0)
+	seen := make(map[string]struct{})
+	for _, key := range keys {
+		document, ok := idx.documents[key]
+		if !ok {
+			continue
+		}
+		for _, word := range nlp.Words(document) {
+			// A word is one run of term characters, so it tokenizes to a
+			// single term — the same one the document's indexing produced
+			// for it, since tokenization is per word.
+			terms := idx.tokenizer.Tokenize(word)
+			if len(terms) != 1 {
+				continue
+			}
+			term := terms[0]
+			if _, dup := seen[term]; dup {
+				continue
+			}
+			seen[term] = struct{}{}
+			if _, inQuery := asked[term]; inQuery {
+				continue
+			}
+			list, ok := idx.postings[term]
+			if !ok || list.live == 0 {
+				continue
+			}
+			reaches := false
+			for _, p := range list.entries {
+				if p.tf == 0 {
+					continue
+				}
+				if _, confined := feedback[p.key]; !confined {
+					reaches = true
+					break
+				}
+			}
+			if !reaches {
+				continue
+			}
+			candidates = append(candidates, candidate{
+				spelling: strings.ToLower(word),
+				weight:   idx.relevance.Weight(list.live, len(idx.documents)),
+			})
+		}
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].weight != candidates[j].weight {
+			return candidates[i].weight > candidates[j].weight
+		}
+		return candidates[i].spelling < candidates[j].spelling
+	})
+	if len(candidates) > n {
+		candidates = candidates[:n]
+	}
+	out := make([]string, len(candidates))
+	for i, c := range candidates {
+		out[i] = c.spelling
+	}
+	logger.Debug("Text index expanded a query", "feedback", len(keys), "terms", len(out))
+	return out
 }
 
 // Size reports the approximate in-memory footprint of the index in MiB.
