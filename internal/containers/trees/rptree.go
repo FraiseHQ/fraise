@@ -453,8 +453,14 @@ func (v VectorPoint[K, P]) Dim() int         { return v.vector.Dim() }
 func (v VectorPoint[K, P]) GetValue(d int) P { return v.vector.Data[d] }
 func (v VectorPoint[K, P]) Key() K           { return v.key }
 
-// Distance returns the Euclidean distance between v and p.
+// Distance returns the Euclidean distance between v and p. Another
+// VectorPoint measures through its vector directly, which is the one metric
+// stated once in containers.Vector; any other Point goes coordinate by
+// coordinate through the interface.
 func (v VectorPoint[K, P]) Distance(p Point[K, P]) P {
+	if o, ok := p.(VectorPoint[K, P]); ok {
+		return v.vector.Distance(o.vector)
+	}
 	var sum P
 	for d := 0; d < v.Dim(); d++ {
 		diff := v.GetValue(d) - p.GetValue(d)

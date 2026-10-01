@@ -24,6 +24,7 @@ package containers
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -62,6 +63,19 @@ func (v Vector[K, P]) Equal(other Vector[K, P]) bool {
 		}
 	}
 	return true
+}
+
+// Distance returns the Euclidean distance from v to other, the metric the
+// vector index ranks its neighbours by. It is defined on the vector itself so
+// the index can re-rank its candidates straight from the live vectors it
+// holds, without boxing each one into a tree point first.
+func (v Vector[K, P]) Distance(other Vector[K, P]) P {
+	var sum P
+	for i, x := range v.Data {
+		diff := x - other.Data[i]
+		sum += diff * diff
+	}
+	return P(math.Sqrt(float64(sum)))
 }
 
 // Hash keys the vector through h and renders the key for folding into an

@@ -25,6 +25,7 @@ package graph
 import (
 	"errors"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -457,46 +458,63 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 // and no anchor is observed, so the background is zero: the scorer folds
 // each member's own seed mass, and the recency decay ranks the results from
 // there.
+//
+// The named topics and entities are resolved to their anchor keys here, once
+// per query, and every stage works on the keys: the door (gatherMembers) and
+// the filter (findNeighbours) then agree by construction on which node a
+// name denotes, and the filter tests adjacency by lookup instead of comparing
+// values around every candidate.
 func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P, error) {
+	topicKeys, entityKeys := g.anchorKeys(topics, entities)
 	candidates := make(scoring.Candidates[K, P])
 	if len(keywords) == 0 && vector.Empty() {
-		g.gatherMembers(topics, entities, candidates)
+		g.gatherMembers(topicKeys, entityKeys, candidates)
 		return candidates, 0, nil
 	}
 	seeds, err := g.gatherSeeds(keywords, vector, candidates, top)
 	if err != nil {
 		return nil, 0, err
 	}
-	background := g.findNeighbours(seeds, candidates, topics, entities, depth)
+	background := g.findNeighbours(seeds, candidates, topicKeys, entityKeys, depth)
 	return candidates, background, nil
+}
+
+// anchorKeys resolves each named value to the key the store files it under —
+// the Topic or NamedEntity hash of the value — in query order. A topic and an
+// entity of one name are two anchors, and a name nothing is filed under
+// resolves to a key no node holds, so it seeds nothing and filters
+// everything out, the same as a value no node carries.
+func (g *InMemoryGraph[K, P]) anchorKeys(topics []string, entities []string) (topicKeys []K, entityKeys []K) {
+	topicKeys = make([]K, 0, len(topics))
+	for _, value := range topics {
+		topicKeys = append(topicKeys, Topic[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+	}
+	entityKeys = make([]K, 0, len(entities))
+	for _, value := range entities {
+		entityKeys = append(entityKeys, NamedEntity[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+	}
+	return topicKeys, entityKeys
 }
 
 // gatherMembers seeds the candidate pool from the named anchors' adjacency
 // rows: every fact filed under a named topic or entity, carrying one
 // SrcAnchor contribution of unit mass per named anchor it is filed under, so
 // a fact under two of them holds twice the seed mass of a fact under one —
-// it answers more of the question. Each anchor resolves to the key store
-// filed it under, the Topic or NamedEntity hash of its value: a topic and an
-// entity of one name are two anchors, and an anchor nothing is filed under
-// resolves to an empty row, so an unknown anchor seeds nothing. Anchors are
-// visited in query order and a repeated one once, so a candidate's list is
-// appended in a fixed order for the scorer's fold. Only facts seed: an
-// anchor's row holds facts by construction, and only facts are memories.
-func (g *InMemoryGraph[K, P]) gatherMembers(topics []string, entities []string, candidates scoring.Candidates[K, P]) {
-	anchors := make([]K, 0, len(topics)+len(entities))
-	named := make(map[K]struct{}, len(topics)+len(entities))
-	name := func(anchor K) {
+// it answers more of the question. An anchor nothing is filed under has an
+// empty row, so an unknown anchor seeds nothing. Anchors are visited in
+// query order — topics, then entities — and a repeated one once, so a
+// candidate's list is appended in a fixed order for the scorer's fold. Only
+// facts seed: an anchor's row holds facts by construction, and only facts
+// are memories.
+func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candidates scoring.Candidates[K, P]) {
+	anchors := make([]K, 0, len(topicKeys)+len(entityKeys))
+	named := make(map[K]struct{}, len(topicKeys)+len(entityKeys))
+	for _, anchor := range slices.Concat(topicKeys, entityKeys) {
 		if _, dup := named[anchor]; dup {
-			return
+			continue
 		}
 		named[anchor] = struct{}{}
 		anchors = append(anchors, anchor)
-	}
-	for _, value := range topics {
-		name(Topic[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
-	}
-	for _, value := range entities {
-		name(NamedEntity[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
 	}
 
 	var members int
@@ -611,8 +629,8 @@ const depthOneAdmission = 2
 // single anchor-mediated round, depth 1 admitting anchors only above
 // depthOneAdmission * fair share (the precision lane) and depth 2 at plain
 // fair share (max recall). The pooled candidates are then filtered by
-// topics and entities regardless of the lane.
-func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candidates[K, P], topics []string, entities []string, depth int) P {
+// the named topic and entity anchors regardless of the lane.
+func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candidates[K, P], topicKeys []K, entityKeys []K, depth int) P {
 	// depth 0 completes no transmission: the candidates are the text/vector
 	// seeds alone, scored by their own mass (the floor), the anchor expansion
 	// skipped entirely — the fast, text-only lane. depth 1 and 2 both run the
@@ -625,7 +643,7 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 	// its depth — the parser says so with a warning when a depth clause asked
 	// for more — so the traversal is gated on the filters as well as the lane.
 	var background P
-	if depth >= 1 && g.traversal != nil && len(seeds) > 0 && (len(topics) > 0 || len(entities) > 0) {
+	if depth >= 1 && g.traversal != nil && len(seeds) > 0 && (len(topicKeys) > 0 || len(entityKeys) > 0) {
 		// Every seed's fused mass is fixed before any traversal appends
 		// SrcGraph contributions; seed fusion runs the unbound scorer — no
 		// traversal has observed anything yet, so there is no null to bind.
@@ -733,7 +751,7 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 	}
 
 	for key := range candidates {
-		if !g.matchesFilter(key, topics) || !g.matchesFilter(key, entities) {
+		if !g.matchesFilter(key, topicKeys) || !g.matchesFilter(key, entityKeys) {
 			delete(candidates, key)
 		}
 	}
@@ -761,42 +779,25 @@ func (g *InMemoryGraph[K, P]) boost(scores map[K]P) {
 	}
 }
 
-// matchesFilter reports whether the node passes a value filter: trivially if
-// values is empty, otherwise if its own value or any direct neighbour's value
-// is one of values (facts are tagged with topics/entities by being linked to
-// the Topic/NamedEntity node carrying that value).
-func (g *InMemoryGraph[K, P]) matchesFilter(key K, values []string) bool {
-	if len(values) == 0 {
+// matchesFilter reports whether the node passes an anchor filter: trivially
+// if anchors is empty, otherwise if it is one of the anchors or is adjacent to
+// one (facts are tagged with topics/entities by being linked to the Topic/
+// NamedEntity node carrying that value). The anchors are the keys the query's
+// names resolve to under anchorKeys — the same keys the door opens — so a
+// candidate is tested by adjacency lookup, O(1) per anchor, and never by
+// comparing values around it.
+func (g *InMemoryGraph[K, P]) matchesFilter(key K, anchors []K) bool {
+	if len(anchors) == 0 {
 		return true
 	}
-
-	match := func(k K) bool {
-		node, ok := g.idToNodes[k]
-		if !ok {
-			return false
-		}
-		attrs := node.GetAttributes()
-		if attrs == nil {
-			return false
-		}
-		for _, v := range values {
-			if strings.EqualFold(attrs.Value, v) {
-				return true
-			}
-		}
-		return false
-	}
-
-	if match(key) {
-		return true
-	}
-	for neighbor := range g.nodeToTargets[key] {
-		if match(neighbor) {
+	for _, anchor := range anchors {
+		if key == anchor {
 			return true
 		}
-	}
-	for neighbor := range g.nodeToSources[key] {
-		if match(neighbor) {
+		if _, ok := g.nodeToTargets[key][anchor]; ok {
+			return true
+		}
+		if _, ok := g.nodeToSources[key][anchor]; ok {
 			return true
 		}
 	}
