@@ -15,6 +15,7 @@ navLabel: "Database"
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
 | `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
+| `relevance-feedback` | `-relevance-feedback` | `false` | a second text pass seeded by the first pass's top hits |
 
 ```toml
 [db]
@@ -46,6 +47,10 @@ min-score-ratio = 0.3
 ```
 
 The cutoff is **off by default** because the trade is yours to make: it buys precision with a little recall. [`/explain`](/docs/http-api/endpoints/explain) breaks a hit down into the contributions its relevance is folded from.
+
+## `relevance-feedback`
+
+Off, a recall's text channel is one pass over the index. On, the top three hits of that pass lend the query the entities they mention and their rarest terms, and a second pass over the widened query adds its matches as further text contributions on the same candidates: a fact that shares no word with the question becomes reachable through the words the first hop introduces. The first pass's ranking is never lowered, only built on. See [Pseudo-relevance feedback](/docs/retrieval/ranking/hybrid-retrieval#pseudo-relevance-feedback).
 
 ## `num-graphs`
 
