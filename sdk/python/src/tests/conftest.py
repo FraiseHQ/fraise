@@ -760,7 +760,10 @@ def tide_result(client):
     """Store the tide facts and return the RecallResult a two-hit recall parses.
 
     Shared by every response-shape assertion so they all read the same live
-    response rather than each provoking their own.
+    response rather than each provoking their own. The recall carries the bare
+    stop word "the" beside its phrase so the response also carries a warning,
+    for the assertion that reads one; the term matches nothing and changes no
+    hit.
 
     Args:
         client: the plain client to write and recall through.
@@ -770,7 +773,7 @@ def tide_result(client):
     """
     for phrase in _TIDE_FACTS.values():
         client.remember(phrase, graph=_MODELS_GRAPH, topics=[_TIDE_TOPIC])
-    return client.recall("tide", graph=_MODELS_GRAPH, depth=2)
+    return client.recall("tide", "the", graph=_MODELS_GRAPH, depth=2)
 
 
 @pytest.fixture(scope="module")

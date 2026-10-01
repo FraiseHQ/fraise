@@ -586,9 +586,15 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 // configuration — tune it here.
 const depthOneAdmission = 2
 
-// findNeighbours runs the installed traversal from every seed — when the
-// query names an anchor, the graph's only door — and pools what it observes,
-// in two passes. Pass 1 observes: each seed's mass — the
+// findNeighbours runs the installed traversal from every seed and pools what
+// it observes, in two passes. The door into the graph is the seeds
+// themselves: each traversal opens from the anchors its seed is filed under,
+// so a recall enters the graph through whatever its matches are about
+// whether or not it names a topic or entity. An anchor the query names is a
+// filter on the pooled candidates, applied after the round; it is not what
+// lets the round run, because an agent asking a question rarely knows how
+// the answer was filed, and a lane that only acted through a name it had to
+// guess would never engage. Pass 1 observes: each seed's mass — the
 // scorer's fold of the seed's own contributions, fixed before any traversal
 // so scores cannot depend on traversal order — is accumulated onto every
 // anchor the traversal reaches at depth 1, alongside the anchor's degree and
@@ -606,7 +612,8 @@ const depthOneAdmission = 2
 // single anchor-mediated round, depth 1 admitting anchors only above
 // depthOneAdmission * fair share (the precision lane) and depth 2 at plain
 // fair share (max recall). The pooled candidates are then filtered by
-// topics and entities regardless of the lane.
+// topics and entities regardless of the lane, so a named anchor narrows what
+// the round may return without deciding whether it runs.
 func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candidates[K, P], topics []string, entities []string, depth int) P {
 	// depth 0 completes no transmission: the candidates are the text/vector
 	// seeds alone, scored by their own mass (the floor), the anchor expansion
@@ -615,12 +622,13 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 	// 2's admission bar (see depthOneAdmission). Neither iterates — a second
 	// round re-observes the first round's concentrated mass through sibling
 	// anchors and collapses recall (measured), so depth is capped at 2. The
-	// round also needs a door into the graph: an anchor the query names. A
-	// recall naming no topic or entity is a text and vector search whatever
-	// its depth — the parser says so with a warning when a depth clause asked
-	// for more — so the traversal is gated on the filters as well as the lane.
+	// round is gated on the lane and on having a seed to open from, never on
+	// the filters: the admission prune against the background rate is what
+	// keeps a hub the seeds happen to share from transmitting, so opening
+	// from every seed's anchors costs nothing the method does not already
+	// bound.
 	var background P
-	if depth >= 1 && g.traversal != nil && len(seeds) > 0 && (len(topics) > 0 || len(entities) > 0) {
+	if depth >= 1 && g.traversal != nil && len(seeds) > 0 {
 		// Every seed's fused mass is fixed before any traversal appends
 		// SrcGraph contributions; seed fusion runs the unbound scorer — no
 		// traversal has observed anything yet, so there is no null to bind.

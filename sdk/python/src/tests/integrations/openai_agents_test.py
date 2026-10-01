@@ -132,9 +132,9 @@ def test_recall_passes_graph_and_budgets_through():
 
 def test_recall_defaults_top_and_leaves_depth_to_the_server():
     """An omitted top takes the tool's ceiling; an omitted depth is passed as
-    None so no clause is emitted and the server's configured lane applies. A
-    tool-side depth would be a lane the tool cannot use, since it names no
-    topic or entity, and any value above the floor draws a warning per call.
+    None so no clause is emitted and the server's configured lane applies: how
+    much graph a plain question gets is the operator's setting, not a choice
+    the tool makes on every call.
     """
     client = _client()
     _invoke(recall_tool(client), keywords=["a"])

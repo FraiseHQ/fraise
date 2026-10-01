@@ -111,9 +111,8 @@ func newCollectFixture(t *testing.T) *collectFixture {
 		fx.h[0]: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	fx.seeds = []uint64{fx.f1, fx.f2, fx.h[0]}
-	// The fixture's topics are named: the traversal runs only through an
-	// anchor the query names, and naming all three keeps the filter from
-	// narrowing anything.
+	// The fixture's topics are all named so the filter narrows nothing: the
+	// traversal opens from the seeds' own anchors either way.
 	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, []string{"cluster", "hub", "giant"}, nil, 2)
 	return fx
 }

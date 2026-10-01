@@ -166,8 +166,8 @@ func TestSearchWithConfiguredTraversal(t *testing.T) {
 	// No traversal: text-only, the silent member cannot surface. NewGraph
 	// installs none — the traversal arrives from configuration at db.Start —
 	// so a bare graph is exactly the channel-off case. The fixture's topics
-	// are named on both searches: the graph is entered only through an
-	// anchor the query names, so the traversal seam is what is left to vary.
+	// are named on both searches so the filter is held fixed and the
+	// traversal seam is what is left to vary.
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	bare := graph.NewGraph[uint64, float64](cfg)

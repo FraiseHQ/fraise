@@ -37,13 +37,15 @@ Because transmission only ever adds, raising the lane cannot push a result below
 
 </Note>
 
-## Lanes act through anchors
+## Lanes open from the seeds
 
-A recall enters the graph through the `topic:` and `entity:` anchors it names. A recall that names none has nothing for a lane to act through: it runs on the text and vector indexes alone, exactly as `depth:0` would, and a `depth:1` or `depth:2` on it comes back with a [warning](/docs/query-language/reference/warnings) saying so.
+A recall enters the graph through the anchors its seeds are filed under: every topic and entity the top text and vector matches are about is observed, whether or not the recall names it. An agent asking a question rarely knows how the answer was filed, and a lane that only acted through a name it had to guess would never engage — so the door is the matches themselves. Admission against the background rate is what bounds the expansion: a hub the matches merely share holds its fair share and stays silent, named or not, so opening from every seed costs nothing the method does not already price.
+
+A named `topic:` or `entity:` is a filter on what the lane returns, not what lets it run: the round observes every anchor the seeds touch, then only facts filed under a named anchor are kept.
 
 | Query | What runs |
 |---|---|
-| `recall billing depth:2` | text and vector search only, with a warning |
-| `recall billing entity:acme depth:2` | the `depth:2` lane, through `acme` |
+| `recall billing depth:2` | the `depth:2` lane, through whatever the `billing` matches are filed under |
+| `recall billing entity:acme depth:2` | the same round, keeping only facts filed under `acme` |
 
 A recall seeded by anchors alone — no term and no vector — takes its candidates straight from the facts filed under those anchors, so there is no further step for a lane to add.

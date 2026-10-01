@@ -175,29 +175,35 @@ def test_floor_lane_returns_only_what_the_text_index_matched(
 
 
 @pytest.mark.parametrize("clause", ["depth:1", "depth:2"])
+@pytest.mark.parametrize("anchors", ["topic:lanterns topic:almanac", ""])
 def test_graph_lanes_transmit_to_a_fact_the_floor_cannot_reach(
-    lantern_graph, lantern_silent, query, clause
+    lantern_graph, lantern_silent, query, clause, anchors
 ):
     """depth:1 and depth:2 both run the round, and the difference from the
-    floor is visible in the hits.
+    floor is visible in the hits — with the topics named and without.
 
     The silent member arrives funded by its cluster's surplus alone, while the
     almanac hub — holding a fair share of the query's mass across eight
     members — transmits nothing, so its memos stay out. Same query, same graph,
     one clause apart from the floor test above: this is the pair that proves
     the lane switch reaches the engine rather than being parsed and dropped.
-    Both topics are named because the graph is entered only through an anchor
-    the recall names; naming the hub too keeps its memos in the candidate set,
-    so their absence is the hub's silence and not the filter's doing.
+    The round opens from the anchors the matches are filed under, so the recall
+    that names no topic reaches the silent member just the same: an agent asks
+    the question without knowing how the answer was filed. Naming both topics
+    holds the filter to the same candidate set, so the memos' absence is the
+    hub's silence either way and not the filter's doing.
 
     This cluster is strongly above chance, so it clears both admission bars.
     What separates depth:1 (precision) from depth:2 (max recall) is an anchor
     between one and two times its fair share, which needs mass arithmetic too
     delicate to pin over HTTP — TestSearchDepthOnePrecisionBar covers it.
     """
-    status, body = query(
-        f"recall@{lantern_graph} lantern topic:lanterns topic:almanac {clause} top:20"
+    text = " ".join(
+        part
+        for part in (f"recall@{lantern_graph} lantern", anchors, clause, "top:20")
+        if part
     )
+    status, body = query(text)
     assert status == 200, body.get("error")
 
     values = [hit["value"] for hit in body["results"]["hits"]]

@@ -133,10 +133,10 @@ type Graph[K comparable, P float32 | float64] interface {
 	//               anchor-mediated round and differ only in how much
 	//               above-chance evidence an anchor needs to transmit: 1 is
 	//               the precision lane, 2 admits at the plain fair share for
-	//               maximum recall. It does not iterate, and it runs only
-	//               through an anchor the query names: with no topic or
-	//               entity named the call is a text and vector search
-	//               whatever its depth
+	//               maximum recall. It does not iterate. The round opens
+	//               from the anchors the seeds are filed under, so it runs
+	//               whether or not a topic or entity is named; a named one
+	//               filters the candidates it returns
 	//   - top:      maximum number of results returned
 	//   - since:    inclusive lower time bound; zero value = unbounded
 	//   - until:    exclusive upper time bound; zero value = unbounded

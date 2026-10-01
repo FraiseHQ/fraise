@@ -78,9 +78,9 @@ def test_explain_breaks_down_each_hit_by_source(query, explain):
 # The surplus fixture: a small "weather" cluster concentrates the query's mass
 # while a larger "archive" hub holds a fair share of it, so exactly one anchor
 # speaks and its silent member is funded by transmission alone. Both topics are
-# named on the recalls below because the graph is entered only through an
-# anchor the recall names; naming the hub keeps its memos in the candidate set,
-# so their absence is its silence and not the filter's doing.
+# named on the recalls below so the filter holds the candidate set fixed with
+# the hub's memos in it: their absence is then its silence and not the filter's
+# doing.
 STORM_CLUSTER = (
     "the barometer falls before the storm",
     "storm clouds gather at sea",
