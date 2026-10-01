@@ -25,8 +25,11 @@ package graph_test
 import (
 	"errors"
 	"math"
+	"math/rand"
 	"reflect"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1484,4 +1487,122 @@ func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
 	if !funded {
 		t.Errorf("Search(topics named) = %v, want the silent member %q funded once the graph is entered", values(nodes), calm)
 	}
+}
+
+// TestInMemoryGraphSearchFilterIsTheAnchorTheDoorOpens pins that a filter
+// names the same node the door does: topic:work admits facts filed under the
+// Topic "work", not facts mentioning a NamedEntity spelled "work". A topic
+// and an entity of one name are two anchors everywhere else in the graph —
+// two keys, two rows — and a filter that matched on the value alone would be
+// the one place the two were confused, admitting through a topic filter a
+// fact the topic's own row does not hold.
+func TestInMemoryGraphSearchFilterIsTheAnchorTheDoorOpens(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+
+	fact := mkFact(g, "alice works at acme", now)
+	entity := mkEntity(g, "work", now)
+	mustSet(t, g, fact)
+	mustSet(t, g, entity)
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+
+	nodes, _, _, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
+	if len(nodes) != 0 {
+		t.Errorf("Search(alice, topic=work) = %v, want nothing: the fact mentions an entity named work, it is not filed under a topic", values(nodes))
+	}
+	nodes, _, _, _, _ = g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, []string{"work"}, 0, 10, time.Time{}, time.Time{})
+	if len(nodes) != 1 {
+		t.Errorf("Search(alice, entity=work) = %v, want [alice works at acme]", values(nodes))
+	}
+}
+
+// benchmarkGraph builds a graph of n facts for the Search benchmarks: each
+// fact is eight to twelve words from a Zipf-distributed vocabulary, filed
+// under one of fifty topics and mentioning one of five hundred entities, with
+// a 32-dimensional embedding in the forest. The generator is seeded, so every
+// run searches the same graph. It returns the graph and the vocabulary's most
+// frequent words, the terms with the longest posting lists.
+func benchmarkGraph(b *testing.B, n int) (g *graph.InMemoryGraph[uint64, float64], query []string) {
+	b.Helper()
+	g = newGraph()
+	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
+	rng := rand.New(rand.NewSource(1))
+	zipf := rand.NewZipf(rng, 1.1, 1, 4999)
+	now := time.Now()
+
+	topics := make([]*graph.Topic[uint64], 50)
+	for i := range topics {
+		topics[i] = mkTopic(g, "topic"+strconv.Itoa(i), now)
+		if err := g.Set(topics[i]); err != nil {
+			b.Fatalf("Set(topic %d) = %v, want nil", i, err)
+		}
+	}
+	entities := make([]*graph.NamedEntity[uint64], 500)
+	for i := range entities {
+		entities[i] = mkEntity(g, "entity"+strconv.Itoa(i), now)
+		if err := g.Set(entities[i]); err != nil {
+			b.Fatalf("Set(entity %d) = %v, want nil", i, err)
+		}
+	}
+	for i := range n {
+		words := make([]string, 8+rng.Intn(5))
+		for w := range words {
+			words[w] = "w" + strconv.FormatUint(zipf.Uint64(), 10)
+		}
+		ts := now.Add(-time.Duration(i) * time.Minute)
+		fact := mkFact(g, strings.Join(words, " "), ts)
+		if err := g.Set(fact); err != nil {
+			b.Fatalf("Set(fact %d) = %v, want nil", i, err)
+		}
+		topic := topics[rng.Intn(len(topics))]
+		if err := g.Set(graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()}); err != nil {
+			b.Fatalf("Set(isabout %d) = %v, want nil", i, err)
+		}
+		entity := entities[rng.Intn(len(entities))]
+		if err := g.Set(graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()}); err != nil {
+			b.Fatalf("Set(mentions %d) = %v, want nil", i, err)
+		}
+		vec := make([]float64, 32)
+		for d := range vec {
+			vec[d] = rng.NormFloat64()
+		}
+		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](vec)); err != nil {
+			b.Fatalf("vector Insert(fact %d) = %v, want nil", i, err)
+		}
+	}
+	return g, []string{"w0", "w1", "w2"}
+}
+
+// BenchmarkSearch measures the graph's Search over ten thousand facts on
+// each lane — depth 0 seeds only, depth 1 the precision lane, depth 2 the
+// full anchor-mediated round — for a three-term query filtered by one topic,
+// and a vector variant seeding from the forest instead of the text index.
+func BenchmarkSearch(b *testing.B) {
+	g, query := benchmarkGraph(b, 10000)
+	rng := rand.New(rand.NewSource(2))
+	vec := make([]float64, 32)
+	for d := range vec {
+		vec[d] = rng.NormFloat64()
+	}
+	vector := containers.NewVector[uint64](vec)
+	none := containers.Vector[uint64, float64]{}
+
+	for depth := range 3 {
+		b.Run("depth"+strconv.Itoa(depth), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, _, _, err := g.Search(query, none, []string{"topic7"}, nil, depth, 10, time.Time{}, time.Time{}); err != nil {
+					b.Fatalf("Search = %v, want nil", err)
+				}
+			}
+		})
+	}
+	b.Run("vector", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, _, _, _, err := g.Search(nil, vector, []string{"topic7"}, nil, 1, 10, time.Time{}, time.Time{}); err != nil {
+				b.Fatalf("Search = %v, want nil", err)
+			}
+		}
+	})
 }

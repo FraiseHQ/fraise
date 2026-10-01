@@ -27,6 +27,7 @@ import (
 	"math/rand"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -505,6 +506,124 @@ func TestMatchCountEquivalentToPrePluginRanking(t *testing.T) {
 				t.Fatalf("corpus %d, Search(%q):\n got %v %v\nwant %v %v",
 					corpus, query, gotKeys, gotScores, wantKeys, wantScores)
 			}
+		}
+	}
+}
+
+// TestBTreeIndexDeleteTombstonesUntilFlush pins the compaction contract:
+// a delete leaves its postings in place as garbage — Entries counts the dead
+// document until Flush reclaims it — and the garbage is invisible to
+// ranking, so the results and scores before and after the Flush are
+// identical. If a tombstone ever leaked into a score, a deleted memory would
+// still be shaping what its neighbours are worth.
+func TestBTreeIndexDeleteTombstonesUntilFlush(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetRelevance(relevance.NewBM25[int, float64]())
+	docs := map[int]string{
+		1: "the quick brown fox",
+		2: "the quick brown fox jumps over the lazy dog",
+		3: "a slow brown bear",
+		4: "quick quick quick",
+	}
+	for key, doc := range docs {
+		if err := idx.Insert(key, doc); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+
+	if err := idx.Delete(4); err != nil {
+		t.Fatalf("Delete(4) = %v, want nil", err)
+	}
+	if got, want := idx.Entries(), idx.Count()+1; got != want {
+		t.Fatalf("Entries() after one delete = %d, want Count()+1 = %d (the tombstones wait for Flush)", got, want)
+	}
+
+	before, beforeScores, err := idx.Search("quick brown", 0)
+	if err != nil {
+		t.Fatalf("Search before Flush = %v, want nil", err)
+	}
+	if err := idx.Flush(); err != nil {
+		t.Fatalf("Flush = %v, want nil", err)
+	}
+	if got, want := idx.Entries(), idx.Count(); got != want {
+		t.Errorf("Entries() after Flush = %d, want Count() = %d", got, want)
+	}
+	after, afterScores, err := idx.Search("quick brown", 0)
+	if err != nil {
+		t.Fatalf("Search after Flush = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(beforeScores, afterScores) {
+		t.Errorf("Search before Flush = (%v, %v), after = (%v, %v); compaction must not change a ranking", before, beforeScores, after, afterScores)
+	}
+	if want := []int{1, 2, 3}; !reflect.DeepEqual(after, want) {
+		t.Errorf("Search(quick brown) = %v, want %v (the deleted document gone, the rest ranked)", after, want)
+	}
+}
+
+// TestBTreeIndexCompactsWhenDeadOutnumberLive pins the automatic bound: the
+// index compacts itself once it holds more dead documents than live ones,
+// so a long run of deletes and updates cannot grow the postings without
+// limit even if nothing ever calls Flush. Three documents in, two out: the
+// second delete tips dead (2) over live (1) and the garbage is gone.
+func TestBTreeIndexCompactsWhenDeadOutnumberLive(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	for key, doc := range map[int]string{1: "one shared", 2: "two shared", 3: "three shared"} {
+		if err := idx.Insert(key, doc); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	if err := idx.Delete(1); err != nil {
+		t.Fatalf("Delete(1) = %v, want nil", err)
+	}
+	if got, want := idx.Entries(), 3; got != want {
+		t.Fatalf("Entries() after the first delete = %d, want %d (one dead against two live is under the bound)", got, want)
+	}
+	if err := idx.Delete(2); err != nil {
+		t.Fatalf("Delete(2) = %v, want nil", err)
+	}
+	if got, want := idx.Entries(), 1; got != want {
+		t.Errorf("Entries() after the second delete = %d, want %d (two dead against one live compacts)", got, want)
+	}
+	got, _, err := idx.Search("shared", 0)
+	if err != nil || !reflect.DeepEqual(got, []int{3}) {
+		t.Errorf("Search(shared) after compaction = (%v, %v), want ([3], nil)", got, err)
+	}
+}
+
+// benchmarkCorpus returns n synthetic documents of eight to twelve words drawn
+// from a Zipf-distributed vocabulary, so a few terms carry long posting lists
+// and most carry short ones, as in prose. The generator is seeded, so every
+// run indexes the same corpus.
+func benchmarkCorpus(n int) []string {
+	rng := rand.New(rand.NewSource(1))
+	zipf := rand.NewZipf(rng, 1.1, 1, 4999)
+	docs := make([]string, n)
+	for i := range docs {
+		words := make([]string, 8+rng.Intn(5))
+		for w := range words {
+			words[w] = "w" + strconv.FormatUint(zipf.Uint64(), 10)
+		}
+		docs[i] = strings.Join(words, " ")
+	}
+	return docs
+}
+
+// BenchmarkBTreeIndexSearch measures a BM25 search over ten thousand
+// documents for a three-term query whose terms are the corpus's most
+// frequent, so every posting list the loop walks is long.
+func BenchmarkBTreeIndexSearch(b *testing.B) {
+	idx := index.NewBTreeIndex[uint64, float64](comparator.OrderedComparator[uint64])
+	idx.SetRelevance(relevance.NewBM25[uint64, float64]())
+	for i, doc := range benchmarkCorpus(10000) {
+		if err := idx.Insert(uint64(i)*2654435761, doc); err != nil {
+			b.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, _, err := idx.Search("w0 w1 w2", 20); err != nil {
+			b.Fatalf("Search = %v, want nil", err)
 		}
 	}
 }
