@@ -222,6 +222,12 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 // ordered by key: which of them the trees happen to surface first is an
 // artefact of insertion order, and the ranking SearchIndex promises is a total
 // order that survives truncation to k.
+//
+// The re-rank keeps only the k best as it goes: TopK is offered every pooled
+// candidate with its distance negated — the container retains the largest
+// scores, and the nearest vector is the one with the largest negated
+// distance — so the whole union is never sorted and nothing is boxed per
+// candidate; the distance is measured on the live vector directly.
 func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K, []P, error) {
 	if len(idx.vectors) == 0 {
 		return nil, nil, ErrEmptyIndex
@@ -233,12 +239,8 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K,
 	var zeroKey K
 	q := trees.NewVectorPoint(zeroKey, query)
 
-	type scored struct {
-		key K
-		d   P
-	}
 	seen := make(map[K]bool)
-	var candidates []scored
+	nearest := containers.NewTopK[K, P](k, idx.compare)
 	for _, t := range idx.forest {
 		for _, node := range t.Nearest(q, k) {
 			key := node.Key()
@@ -253,25 +255,13 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K,
 			if !ok {
 				continue
 			}
-			candidates = append(candidates, scored{key: key, d: q.Distance(trees.NewVectorPoint(key, current))})
+			nearest.Offer(key, -query.Distance(current))
 		}
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].d != candidates[j].d {
-			return candidates[i].d < candidates[j].d
-		}
-		return idx.compare(candidates[i].key, candidates[j].key) < 0
-	})
-	if len(candidates) > k {
-		candidates = candidates[:k]
-	}
-
-	out := make([]K, len(candidates))
-	scores := make([]P, len(candidates))
-	for i, c := range candidates {
-		out[i] = c.key
-		scores[i] = c.d
+	out, scores := nearest.Drain()
+	for i, score := range scores {
+		scores[i] = -score
 	}
 	logger.Debug("Vector search returned neighbours", "k", k, "found", len(out))
 	return out, scores, nil
