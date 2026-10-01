@@ -19,10 +19,12 @@ A recall pulls a bounded number of candidates from each source it can use — at
 | Source | Mass it carries |
 |---|---|
 | text index | BM25 $\times$ match breadth — the matched-term count priced against the query's total idf mass, so a document covering the whole query scores its term count and a partial match is discounted by the informativeness it missed |
-| vector index | $1 / (1 + \text{distance})$ similarity, as the margin over the last neighbour the search returned — the $k$-th neighbour carries nothing and the nearest its full margin, so the channel has a cliff rather than a pedestal: unit-norm embeddings sit at most 2 apart, and the raw similarity alone would hand every admitted neighbour at least a third of a perfect match |
+| vector index | $1 / (1 + \text{distance})$ similarity, as the margin over the last neighbour the search returned, which itself carries nothing |
 | named anchors, on a recall with no term or vector | a unit mass for each named anchor the fact is filed under |
 
 A fact found by more than one source carries the sum of their masses.
+
+The vector margin gives the channel a cliff rather than a pedestal: unit-norm embeddings sit at most 2 apart, so the raw similarity alone would hand every neighbour the search admits at least a third of a perfect match, however far it lies.
 
 ### What the text index matches
 
