@@ -475,13 +475,19 @@ func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vecto
 // rows: every fact filed under a named topic or entity, carrying one
 // SrcAnchor contribution of unit mass per named anchor it is filed under, so
 // a fact under two of them holds twice the seed mass of a fact under one —
-// it answers more of the question. Each anchor resolves to the key store
-// filed it under, the Topic or NamedEntity hash of its value: a topic and an
-// entity of one name are two anchors, and an anchor nothing is filed under
-// resolves to an empty row, so an unknown anchor seeds nothing. Anchors are
-// visited in query order and a repeated one once, so a candidate's list is
-// appended in a fixed order for the scorer's fold. Only facts seed: an
-// anchor's row holds facts by construction, and only facts are memories.
+// it answers more of the question. Each anchor resolves to the key the store
+// filed it under, the Topic or NamedEntity hash of its name folded to lower
+// case: an anchor is an identity, not prose, and the parser folds a named one
+// on the way in, so a name is resolved here the way it was stored — folding
+// is what makes Billing and billing one anchor for a caller that built the
+// query without the parser, as the filter already treats them (matchesFilter
+// compares case-insensitively), rather than a door that opens on nothing
+// beside a filter that admits. A topic and an entity of one name are two
+// anchors, and an anchor nothing is filed under resolves to an empty row, so
+// an unknown anchor seeds nothing. Anchors are visited in query order and a
+// repeated one once — in any spelling — so a candidate's list is appended in
+// a fixed order for the scorer's fold. Only facts seed: an anchor's row holds
+// facts by construction, and only facts are memories.
 func (g *InMemoryGraph[K, P]) gatherMembers(topics []string, entities []string, candidates scoring.Candidates[K, P]) {
 	anchors := make([]K, 0, len(topics)+len(entities))
 	named := make(map[K]struct{}, len(topics)+len(entities))
@@ -493,10 +499,10 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topics []string, entities []string, 
 		anchors = append(anchors, anchor)
 	}
 	for _, value := range topics {
-		name(Topic[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+		name(Topic[K]{NodeAttributes: NodeAttributes{Value: strings.ToLower(value)}, Hasher: g.hasher}.Key())
 	}
 	for _, value := range entities {
-		name(NamedEntity[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+		name(NamedEntity[K]{NodeAttributes: NodeAttributes{Value: strings.ToLower(value)}, Hasher: g.hasher}.Key())
 	}
 
 	var members int

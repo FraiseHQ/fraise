@@ -1333,6 +1333,55 @@ func TestInMemoryGraphSearchNamesAnAnchorOnce(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphSearchNamesAnAnchorInAnyCase pins that an anchor's name is
+// an identity, not prose: Harbour, harbour and HARBOUR resolve to the one
+// node the store filed under "harbour", on both paths a name takes through
+// Search. The parser folds a name on the way in, so FQL could never reach a
+// disagreement; a Search built without the parser could, and used to filter
+// a keyword query to the topic's facts through topic:Harbour while the
+// anchor-only door, hashing the text as given, opened on nothing. One
+// definition of "the same anchor" is required of both: the door seeds the
+// members, each sighting naming the stored key, two spellings of one name
+// are one anchor sighted once, and the filter admits exactly the members.
+func TestInMemoryGraphSearchNamesAnAnchorInAnyCase(t *testing.T) {
+	g, harbour, pilot := anchorGraph(t)
+
+	cases := []struct {
+		name     string
+		keywords []string
+		topics   []string
+		entities []string
+		want     []string
+		via      uint64
+	}{
+		{"a capitalised topic opens the door", nil, []string{"Harbour"}, nil, []string{harbourDawn, harbourFerry, harbourCranes}, harbour.Key()},
+		{"an upper-case topic opens the door", nil, []string{"HARBOUR"}, nil, []string{harbourDawn, harbourFerry, harbourCranes}, harbour.Key()},
+		{"a capitalised entity opens the door", nil, nil, []string{"Pilot"}, []string{harbourFerry, pilotWatch}, pilot.Key()},
+		{"two spellings are one anchor", nil, []string{"Harbour", "harbour"}, nil, []string{harbourDawn, harbourFerry, harbourCranes}, harbour.Key()},
+		{"a capitalised topic filters a keyword search", []string{"pilot"}, []string{"Harbour"}, nil, []string{harbourFerry}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nodes, _, contributions, _, err := g.Search(tc.keywords, containers.Vector[uint64, float64]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search(keywords=%v topics=%v entities=%v) = %v, want nil", tc.keywords, tc.topics, tc.entities, err)
+			}
+			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Search(keywords=%v topics=%v entities=%v) = %v, want %v", tc.keywords, tc.topics, tc.entities, got, tc.want)
+			}
+			if tc.via == 0 {
+				return
+			}
+			want := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcAnchor, Score: 1, Via: tc.via, Degree: scoring.ClampDegree(len(tc.want)), Count: 1}}
+			for i, c := range contributions {
+				if !reflect.DeepEqual(c, want) {
+					t.Errorf("contributions[%d] = %+v, want a single sighting of the stored anchor %+v", i, c, want)
+				}
+			}
+		})
+	}
+}
+
 // TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey: two facts filed under one
 // topic at the same instant carry equal mass and equal decay, so nothing but
 // the key can order them. The search must rank them by key every time, as
