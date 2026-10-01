@@ -521,10 +521,15 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topics []string, entities []string, 
 
 // gatherSeeds seeds the candidate pool from the text index (keywords) and the
 // vector index (query embedding), appending one Contribution per sighting; a
-// key surfaced by both sources holds one from each. Text contributions carry
-// the BM25 × coverage mass; vector contributions carry the similarity
-// 1/(1+distance), converted here so Contribution.Score is bigger-is-better
-// for every source — the index reports distance, where smaller is nearer.
+// key surfaced by both sources holds one from each. The keywords are cleaned
+// of stop words with the same CleanContent and tag store applies to a fact's
+// text, so the two sides of the index share one vocabulary: a stop word in
+// the query is not a search term, and neither is the stem it would otherwise
+// reduce to — "namely" stems to "name", and left in it would surface every
+// fact about names. Text contributions carry the BM25 × coverage mass; vector
+// contributions carry the similarity 1/(1+distance), converted here so
+// Contribution.Score is bigger-is-better for every source — the index reports
+// distance, where smaller is nearer.
 // The candidate budget is max(seed-size, top): the text list must track the
 // requested result size, because a budget capped below top silently flatlines
 // every ranking past seed-size ("fair seeding").
@@ -543,7 +548,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.textIndex.Search(strings.Join(keywords, " "), seedK); err == nil {
+		if keys, scores, err := g.textIndex.Search(stopwords.CleanContent(strings.Join(keywords, " "), language.English), seedK); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
