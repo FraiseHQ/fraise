@@ -57,6 +57,7 @@ precision = "float32"
 default-top = 10
 default-depth = 3
 seed-size = 64
+relevance-feedback = true
 
 [db.hashing-function]
 name = "xxhash"
@@ -99,6 +100,9 @@ name = "xxhash"
 	}
 	if c.DB.SeedSize != 64 {
 		t.Errorf("DB.SeedSize: got %d, want 64", c.DB.SeedSize)
+	}
+	if !c.DB.RelevanceFeedback {
+		t.Errorf("DB.RelevanceFeedback: got false, want true")
 	}
 	if c.Engine.CacheCapacity != 1024 {
 		t.Errorf("Engine.CacheCapacity: got %d, want 1024", c.Engine.CacheCapacity)
@@ -298,6 +302,27 @@ func TestParseKeepsTimestampsOnByDefault(t *testing.T) {
 	}
 	if c.Log.DisableTimestamp {
 		t.Error("Log.DisableTimestamp = true, want the default false: timestamps stay on unless asked off")
+	}
+}
+
+// TestParseKeepsRelevanceFeedbackOffByDefault pins db.relevance-feedback's
+// default: off, so the second text pass runs only where an operator has
+// measured it — and that the file and the flag can both turn it on.
+func TestParseKeepsRelevanceFeedbackOffByDefault(t *testing.T) {
+	c := config.New()
+	if err := c.Parse([]string{"-config", missingConfig(t)}); errors.Is(err, config.ErrInvalidValue) {
+		t.Fatalf("Parse with no config file rejected a default: %v", err)
+	}
+	if c.DB.RelevanceFeedback {
+		t.Error("DB.RelevanceFeedback = true, want the default false: the second text pass is opt-in")
+	}
+
+	c = config.New()
+	if err := c.Parse([]string{"-config", missingConfig(t), "-relevance-feedback"}); errors.Is(err, config.ErrInvalidValue) {
+		t.Fatalf("Parse rejected -relevance-feedback: %v", err)
+	}
+	if !c.DB.RelevanceFeedback {
+		t.Error("DB.RelevanceFeedback = false after -relevance-feedback, want true")
 	}
 }
 
