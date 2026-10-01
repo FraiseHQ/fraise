@@ -32,7 +32,10 @@ const (
 	// SrcText is the full-text index; Score is the BM25 × coverage mass.
 	SrcText Source = iota
 
-	// SrcVector is the vector index; Score is the similarity 1/(1+distance).
+	// SrcVector is the vector index; Score is the similarity 1/(1+distance)
+	// as a margin over the pass's last returned neighbour, hinged at zero, so
+	// the k-th neighbour of a pass carries no mass and the nearest its full
+	// margin (see graph.gatherSeeds for why the channel needs its own null).
 	SrcVector
 
 	// SrcGraph is the anchor traversal; Score is the funding anchor's full
@@ -97,7 +100,8 @@ func (s Source) String() string {
 //
 // Score is oriented so that bigger is always better: the vector site converts
 // the distance its index reports (smaller is nearer) to 1/(1+distance) on the
-// way in; a graph observation carries the funding anchor's full observed
+// way in and records it as the margin over the pass's last neighbour; a graph
+// observation carries the funding anchor's full observed
 // mass; an anchor sighting carries unit mass. Rank is the candidate's
 // position in the producing source's own result list (0 is best) — a graph
 // observation or an anchor sighting has no list and leaves it zero. Via,
