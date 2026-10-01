@@ -24,6 +24,7 @@ package index_test
 
 import (
 	"errors"
+	"math"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -497,5 +498,52 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 	keys, _, err := idx.Search(randVector(rng, 3), 1)
 	if err != nil || len(keys) != 1 || keys[0] != 1000 {
 		t.Errorf("Search after compactions = (%v, err=%v), want key 1000", keys, err)
+	}
+}
+
+// TestRPTreeIndexSearchExactMatchIsDistanceZero pins that a vector identical
+// to the query reports a distance of plain zero: the re-rank carries
+// distances negated through the retained set, and a negative zero coming
+// back out would print as "-0" in an explain while comparing equal to zero
+// everywhere else.
+func TestRPTreeIndexSearchExactMatchIsDistanceZero(t *testing.T) {
+	idx := index.NewRPTreeIndex[int, float64](2, 4, 3, 1, 2, 32, 8, comparator.OrderedComparator[int])
+	if err := idx.Insert(1, containers.NewVector[int]([]float64{2, 3})); err != nil {
+		t.Fatalf("Insert = %v, want nil", err)
+	}
+	keys, scores, err := idx.Search(containers.NewVector[int]([]float64{2, 3}), 1)
+	if err != nil || !reflect.DeepEqual(keys, []int{1}) {
+		t.Fatalf("Search = (%v, %v), want ([1], nil)", keys, err)
+	}
+	if scores[0] != 0 || math.Signbit(scores[0]) {
+		t.Errorf("distance of an exact match = %v, want +0", scores[0])
+	}
+}
+
+// BenchmarkRPTreeIndexSearch measures a nearest-neighbour search for twenty
+// results over ten thousand 64-dimensional vectors on a five-tree forest.
+func BenchmarkRPTreeIndexSearch(b *testing.B) {
+	const dim = 64
+	rng := rand.New(rand.NewSource(1))
+	idx := index.NewRPTreeIndex[uint64, float64](dim, 8, 5, 7, 2, 32, 8, comparator.OrderedComparator[uint64])
+	for i := range 10000 {
+		data := make([]float64, dim)
+		for d := range data {
+			data[d] = rng.NormFloat64()
+		}
+		if err := idx.Insert(uint64(i)*2654435761, containers.NewVector[uint64](data)); err != nil {
+			b.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	query := make([]float64, dim)
+	for d := range query {
+		query[d] = rng.NormFloat64()
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, _, err := idx.Search(containers.NewVector[uint64](query), 20); err != nil {
+			b.Fatalf("Search = %v, want nil", err)
+		}
 	}
 }
