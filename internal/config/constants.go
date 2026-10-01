@@ -160,6 +160,21 @@ const (
 	// max(seed-size, top), so a large recall is never starved of candidates.
 	DefaultSeedSize uint = 10
 
+	// DefaultMinScoreRatio is the score cutoff: a hit scoring below this
+	// fraction of the best hit's score is dropped, so a recall stops where the
+	// evidence does instead of filling to top. The tail of a filled list —
+	// hits scoring a tenth of the first — rarely holds the answer but costs
+	// precision and context tokens all the same; a ratio is scale-free, so it
+	// means the same thing whatever units the scores are in. 0 is off, and off
+	// is the default on purpose: the cutoff trades a little recall for
+	// precision, and that trade is the operator's to make.
+	DefaultMinScoreRatio float64 = 0
+
+	// DefaultMinResults is the floor the score cutoff never cuts below. One
+	// means the best hit always comes back: a cutoff can shorten a result that
+	// matched but never empty it, so "nothing matched" keeps its one meaning.
+	DefaultMinResults int = 1
+
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
 

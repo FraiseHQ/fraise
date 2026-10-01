@@ -244,6 +244,68 @@ max-vector-dimension = 128
 	}
 }
 
+// TestConfigSet_ScoreCutoff pins the score cutoff's resting state and its
+// decoding. Off is the contract: a config that never mentions it must leave
+// every recall filling to top exactly as before the knob existed, and the
+// floor must come back as one hit — not zero, which would let a cutoff empty
+// a result that matched.
+func TestConfigSet_ScoreCutoff(t *testing.T) {
+	c := config.New()
+	if c.DB.MinScoreRatio != 0 {
+		t.Errorf("DB.MinScoreRatio default: got %v, want 0 (off)", c.DB.MinScoreRatio)
+	}
+	if c.DB.MinResults != config.DefaultMinResults {
+		t.Errorf("DB.MinResults default: got %d, want %d", c.DB.MinResults, config.DefaultMinResults)
+	}
+
+	const contents = `
+[db]
+min-score-ratio = 0.3
+min-results = 2
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, config.DefaultConfigFile)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+
+	f := config.New()
+	if _, err := f.FromFile(path); err != nil {
+		t.Fatalf("FromFile returned error: %v", err)
+	}
+	if f.DB.MinScoreRatio != 0.3 {
+		t.Errorf("DB.MinScoreRatio: got %v, want 0.3", f.DB.MinScoreRatio)
+	}
+	if f.DB.MinResults != 2 {
+		t.Errorf("DB.MinResults: got %d, want 2", f.DB.MinResults)
+	}
+
+	// Parse with no file and no flags is the operator who never heard of the
+	// knob: adjust must leave the cutoff off and restore the one-hit floor.
+	p := config.New()
+	if err := p.Parse([]string{"-config", missingConfig(t)}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if p.DB.MinScoreRatio != 0 {
+		t.Errorf("DB.MinScoreRatio after Parse: got %v, want 0 (off)", p.DB.MinScoreRatio)
+	}
+	if p.DB.MinResults != config.DefaultMinResults {
+		t.Errorf("DB.MinResults after Parse: got %d, want %d", p.DB.MinResults, config.DefaultMinResults)
+	}
+
+	// Flags reach the same fields.
+	fl := config.New()
+	if err := fl.Parse([]string{"-config", missingConfig(t), "-min-score-ratio", "0.1", "-min-results", "3"}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if fl.DB.MinScoreRatio != 0.1 {
+		t.Errorf("DB.MinScoreRatio from flag: got %v, want 0.1", fl.DB.MinScoreRatio)
+	}
+	if fl.DB.MinResults != 3 {
+		t.Errorf("DB.MinResults from flag: got %d, want 3", fl.DB.MinResults)
+	}
+}
+
 // missingConfig returns a -config path that does not exist, so Parse takes the
 // no-config-file branch — the one an operator running the binary with nothing
 // but flags is on, and where validation used to be skipped entirely.

@@ -655,6 +655,73 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphSearchScoreCutoff pins db.min-score-ratio and
+// db.min-results through the public surface. The fixture is an anchor-only
+// recall with decay off, so every score is exactly the number of named
+// anchors a fact is filed under — 3, 2, 1, 1 — and the bar each ratio sets
+// is known to the bit. Off (the default) is the first case on purpose: the
+// cutoff must change nothing until an operator asks for it.
+func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+
+	topics := map[string]*graph.Topic[uint64]{}
+	for _, name := range []string{"a", "b", "c"} {
+		topics[name] = mkTopic(g, name, now)
+		mustSet(t, g, topics[name])
+	}
+	file := func(value string, under ...string) {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		for _, name := range under {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topics[name], NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		}
+	}
+	file("three anchors", "a", "b", "c")
+	file("two anchors", "a", "b")
+	file("one anchor", "a")
+	file("another one anchor", "a")
+
+	// The premise of the test: the scores are 3, 2, 1, 1 before any cutoff.
+	if _, scores, _, _, _ := g.Search(nil, containers.Vector[uint64, float64]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{}); !reflect.DeepEqual(scores, []float64{3, 2, 1, 1}) {
+		t.Fatalf("Search(topics a b c) scores = %v, want [3 2 1 1]", scores)
+	}
+
+	cases := []struct {
+		name       string
+		ratio      float64
+		minResults int
+		top        int
+		wantScores []float64
+	}{
+		{"off keeps the whole list", 0, 1, 10, []float64{3, 2, 1, 1}},
+		{"ratio drops the tail under the bar", 0.5, 1, 10, []float64{3, 2}},
+		{"a hit exactly at the bar is kept", 1.0 / 3, 1, 10, []float64{3, 2, 1, 1}},
+		{"the best hit survives any ratio", 1, 1, 10, []float64{3}},
+		{"min-results floors the cut", 0.9, 3, 10, []float64{3, 2, 1}},
+		{"min-results past the list keeps the list", 0.9, 10, 10, []float64{3, 2, 1, 1}},
+		{"top still caps above the floor", 0.1, 3, 2, []float64{3, 2}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg.DB.MinScoreRatio = tc.ratio
+			cfg.DB.MinResults = tc.minResults
+			nodes, scores, contributions, _, err := g.Search(nil, containers.Vector[uint64, float64]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search() error = %v, want nil", err)
+			}
+			if !reflect.DeepEqual(scores, tc.wantScores) {
+				t.Fatalf("Search(ratio=%v, min-results=%d, top=%d) scores = %v, want %v (%v)", tc.ratio, tc.minResults, tc.top, scores, tc.wantScores, values(nodes))
+			}
+			if len(nodes) != len(scores) || len(contributions) != len(scores) {
+				t.Fatalf("Search() returned %d nodes and %d contribution lists for %d scores, want parallel slices", len(nodes), len(contributions), len(scores))
+			}
+		})
+	}
+}
+
 // noDecayGraph builds a graph whose scores are pure relevance — decay off,
 // excess traversal installed — so the floor and determinism pins can assert
 // exact equalities.

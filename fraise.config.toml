@@ -40,6 +40,8 @@
 # max-depth = 2
 # max-vector-dimension = 4096
 # seed-size = 10
+# min-score-ratio = 0        # drop hits under this fraction of the best score; 0 = off
+# min-results = 1            # the score cutoff never cuts below this many hits
 
 [db.hashing-function]
 # name = "xxhash"             # xxhash t1ha

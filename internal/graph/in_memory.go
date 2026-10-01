@@ -425,6 +425,10 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	}
 	rankedKeys, rankedScores := ranker.Drain()
 
+	// E. Score cutoff: with db.min-score-ratio set, the list stops where the
+	// evidence does instead of filling to top.
+	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores)
+
 	nodes := make([]*Node[K], len(rankedKeys))
 	scoresOut := make([]P, len(rankedKeys))
 	contributions := make([][]scoring.Contribution[K, P], len(rankedKeys))
@@ -438,6 +442,31 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	logger.Debug("Graph search completed",
 		"candidates", len(kept), "returned", len(rankedKeys))
 	return nodes, scoresOut, contributions, background, nil
+}
+
+// scoreCutoff shortens a best-first ranking at the configured score ratio: a
+// hit scoring below MinScoreRatio × the best hit's score is dropped, and the
+// list is never cut below MinResults. Only the length changes — the order
+// and the scores are untouched, so a ratio means the same thing whatever
+// units the scorer produces. A ratio of zero, the default, keeps every hit:
+// the tail of a filled list rarely holds the answer but a cutoff trades some
+// recall for that precision, and the trade is the operator's to make. The
+// floor is at least one so a result that matched is shortened, never
+// emptied — an empty result keeps meaning "nothing matched".
+func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P) ([]K, []P) {
+	ratio := g.config.DB.MinScoreRatio
+	n := len(keys)
+	if ratio <= 0 || n == 0 {
+		return keys, scores
+	}
+	bar := P(ratio) * scores[0]
+	keep := min(max(g.config.DB.MinResults, 1), n)
+	// The list is ranked descending, so the first hit under the bar is where
+	// it ends.
+	for keep < n && scores[keep] >= bar {
+		keep++
+	}
+	return keys[:keep], scores[:keep]
 }
 
 // collect runs the retrieval stages and pools their sightings into one
