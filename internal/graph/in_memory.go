@@ -552,8 +552,7 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // Measured against the k-th neighbour, the best neighbour carries its full
 // margin, the k-th contributes nothing, and the channel has a cliff again
 // without a constant or a normalisation — the same hinge shape as the excess
-// fold. The null is the pass's own, not the query's, so it holds unchanged
-// when a recall carries several vectors.
+// fold.
 // The candidate budget is max(seed-size, top): the text list must track the
 // requested result size, because a budget capped below top silently flatlines
 // every ranking past seed-size ("fair seeding").
