@@ -99,8 +99,6 @@ func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, e
 // rather than answering from the text index alone.
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
-	s.IsGraphEmpty = g.IsEmpty()
-
 	// Write stream
 	if s.Query.IsWrite() {
 
@@ -243,6 +241,9 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	}
 
 	s.Result = &r
+	// Only a read that matched nothing needs to tell an empty graph from a
+	// populated one it missed, so neither a write nor a read with hits asks.
+	s.IsGraphEmpty = n == 0 && g.IsEmpty()
 	logger.Debug("Read stream committed", "hits", n, "explain", s.Explain)
 	return nil
 }

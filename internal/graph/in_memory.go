@@ -873,9 +873,9 @@ func (g *InMemoryGraph[K, P]) MergeFrom(in Graph[K, P]) {
 	}
 }
 
-// IsEmpty reports whether the graph holds nothing at all.
-// Only a read that matched nothing asks this, so the per-graph read locks the
-// snapshot takes are paid on that path alone, never on one that returned hits.
+// IsEmpty reports whether the graph holds nothing at all. It is asked under
+// the graph lock, so it must stay O(1): deriving it from Stats walked every
+// node and adjacency row, and made each call linear in the size of the graph.
 func (s *InMemoryGraph[K, P]) IsEmpty() bool {
-	return s.Stats().Nodes == 0
+	return len(s.idToNodes) == 0
 }
