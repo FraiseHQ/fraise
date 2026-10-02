@@ -24,6 +24,7 @@ package graph
 
 import (
 	"errors"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -395,14 +396,18 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	// B. Scoring: the scorer folds each candidate's contributions into one
 	// relevance score given the background, and the installed ranker (if any)
-	// boosts the result.
-	scores := make(map[K]P, len(candidates))
+	// boosts the result. The relevance is kept as scored: it is what the
+	// evidence alone says about a candidate, and the score cutoff below is
+	// measured against it, not against the boosted and decayed score the
+	// list is ordered by.
+	relevance := make(map[K]P, len(candidates))
 	keys := make([]K, 0, len(candidates))
 	scorer := g.scorer.WithBackground(background)
 	for key, contributions := range candidates {
-		scores[key] = scorer.Score(contributions)
+		relevance[key] = scorer.Score(contributions)
 		keys = append(keys, key)
 	}
+	scores := maps.Clone(relevance)
 	g.boost(scores)
 
 	// C. Time filtered (since or until)
@@ -428,7 +433,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	// E. Score cutoff: with db.min-score-ratio set, the list stops where the
 	// evidence does instead of filling to top.
-	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores)
+	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, relevance)
 
 	nodes := make([]*Node[K], len(rankedKeys))
 	scoresOut := make([]P, len(rankedKeys))
@@ -446,26 +451,42 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 }
 
 // scoreCutoff shortens a best-first ranking at the configured score ratio: a
-// hit scoring below MinScoreRatio × the best hit's score is dropped, and the
-// list is never cut below MinResults. Only the length changes — the order
-// and the scores are untouched, so a ratio means the same thing whatever
-// units the scorer produces. A ratio of zero, the default, keeps every hit:
-// the tail of a filled list rarely holds the answer but a cutoff trades some
-// recall for that precision, and the trade is the operator's to make. The
-// floor is at least one so a result that matched is shortened, never
-// emptied — an empty result keeps meaning "nothing matched".
-func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P) ([]K, []P) {
+// hit whose relevance is below MinScoreRatio × the best relevance in the list
+// is dropped, and the list is never cut below MinResults. Only the length
+// changes — the order and the scores are untouched, so a ratio means the same
+// thing whatever units the scorer produces. A ratio of zero, the default,
+// keeps every hit: the tail of a filled list rarely holds the answer but a
+// cutoff trades some recall for that precision, and the trade is the
+// operator's to make. The floor is at least one so a result that matched is
+// shortened, never emptied — an empty result keeps meaning "nothing matched".
+//
+// The bar is set on relevance — the scorer's output, before the ranker's
+// boost and recency decay — and not on the score the list is ordered by. The
+// cutoff asks whether a hit's evidence is a fraction of the best hit's, and
+// decay says nothing about evidence: measured after it, a fact filed under
+// the same anchors as the best hit would fall under the bar for being two
+// half-lives older, turning a ratio into a recency window nobody set. Decay
+// still orders the list, so the same evidence ranks lower when older; the
+// cutoff only decides whether it is in the list at all. Since relevance does
+// not descend along a decay-ordered list, every hit past the floor is judged
+// on its own rather than the list truncated at the first one under the bar.
+func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, relevance map[K]P) ([]K, []P) {
 	ratio := g.config.DB.MinScoreRatio
 	n := len(keys)
 	if ratio <= 0 || n == 0 {
 		return keys, scores
 	}
-	bar := P(ratio) * scores[0]
+	best := relevance[keys[0]]
+	for _, key := range keys[1:] {
+		best = max(best, relevance[key])
+	}
+	bar := P(ratio) * best
 	keep := min(max(g.config.DB.MinResults, 1), n)
-	// The list is ranked descending, so the first hit under the bar is where
-	// it ends.
-	for keep < n && scores[keep] >= bar {
-		keep++
+	for i := keep; i < n; i++ {
+		if relevance[keys[i]] >= bar {
+			keys[keep], scores[keep] = keys[i], scores[i]
+			keep++
+		}
 	}
 	return keys[:keep], scores[:keep]
 }

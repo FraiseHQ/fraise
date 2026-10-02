@@ -725,6 +725,64 @@ func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphSearchScoreCutoffIgnoresDecay pins that the bar is set on
+// relevance, not on the decayed score the list is ordered by. Two facts are
+// filed under the same two anchors (relevance 2 each), one fresh and one two
+// half-lives old (decayed score 0.5), next to a fresh fact under one anchor
+// (relevance 1, score 1). The list is ordered by decayed score — fresh pair,
+// single, old pair — but the cutoff reads the evidence: at 0.3 the old fact
+// clears the bar its 0.5 score would have missed; at 0.6 the single-anchor
+// fact is dropped although it outscores the old fact that stays. Measured
+// after decay, the documented 0.3 would turn into a recency window and 0.6
+// would keep the weaker evidence over the stronger.
+func TestInMemoryGraphSearchScoreCutoffIgnoresDecay(t *testing.T) {
+	cfg := testConfig()
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	old := now.Add(-2 * cfg.Engine.Halflife)
+
+	topics := map[string]*graph.Topic[uint64]{}
+	for _, name := range []string{"a", "b"} {
+		topics[name] = mkTopic(g, name, now)
+		mustSet(t, g, topics[name])
+	}
+	file := func(value string, ts time.Time, under ...string) {
+		fact := mkFact(g, value, ts)
+		mustSet(t, g, fact)
+		for _, name := range under {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topics[name], NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+		}
+	}
+	file("fresh pair", now, "a", "b")
+	file("old pair", old, "a", "b")
+	file("fresh single", now, "a")
+
+	cases := []struct {
+		name  string
+		ratio float64
+		want  []string
+	}{
+		{"off keeps the whole list", 0, []string{"fresh pair", "fresh single", "old pair"}},
+		{"the same evidence clears the bar at any age", 0.3, []string{"fresh pair", "fresh single", "old pair"}},
+		{"weaker evidence is cut even when it outscores what stays", 0.6, []string{"fresh pair", "old pair"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg.DB.MinScoreRatio = tc.ratio
+			nodes, scores, _, _, err := g.Search(nil, containers.Vector[uint64, float64]{}, []string{"a", "b"}, nil, 0, 10, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search() error = %v, want nil", err)
+			}
+			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Search(ratio=%v) = %v (scores %v), want %v", tc.ratio, got, scores, tc.want)
+			}
+			if !sort.SliceIsSorted(scores, func(i, j int) bool { return scores[i] > scores[j] }) {
+				t.Errorf("Search(ratio=%v) scores = %v, want the decay order kept", tc.ratio, scores)
+			}
+		})
+	}
+}
+
 // noDecayGraph builds a graph whose scores are pure relevance — decay off,
 // excess traversal installed — so the floor and determinism pins can assert
 // exact equalities.

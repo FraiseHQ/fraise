@@ -35,7 +35,9 @@ The three ceilings exist so **one query cannot force unbounded work**. They boun
 
 ## Score cutoff
 
-A recall fills its list to `top:` by default, and the tail of a filled list — hits scoring a tenth of the first — rarely holds the answer but costs the model context tokens all the same. `min-score-ratio` makes the list stop where the evidence does: after ranking, any hit scoring below the ratio times the best hit's score is dropped. The ratio is a fraction in `[0, 1]`, and the server refuses to start on a value outside it. The scores and their order are untouched, raw units stay raw, the list is just shorter; a ratio is scale-free, so the same setting means the same thing whatever units the scorer produces.
+A recall fills its list to `top:` by default, and the tail of a filled list — hits scoring a tenth of the first — rarely holds the answer but costs the model context tokens all the same. `min-score-ratio` makes the list stop where the evidence does: after ranking, any hit whose relevance is below the ratio times the best hit's relevance is dropped. The ratio is a fraction in `[0, 1]`, and the server refuses to start on a value outside it. The scores and their order are untouched, raw units stay raw, the list is just shorter; a ratio is scale-free, so the same setting means the same thing whatever units the scorer produces.
+
+Relevance here is what the evidence says about a hit, before [recency decay](/docs/retrieval/memory-model/temporality) and the ranking boost scale it into the score the list is ordered by. Decay still ranks an older fact below a newer one with the same evidence, but it never pushes it under the bar: two facts filed under the same anchors both clear a ratio or both miss it, whatever their age. The score a hit carries in the response is the decayed one, so a kept hit can show a score below the ratio times the first hit's.
 
 `min-results` is the floor the cutoff never cuts below, so a result that matched is shortened, never emptied; `top:` still caps it from above. Together they say "at least this many, at most `top:`, and nothing far below the best".
 
