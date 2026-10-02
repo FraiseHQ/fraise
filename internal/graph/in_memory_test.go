@@ -1413,9 +1413,9 @@ func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 		t.Errorf("Search(Caroline names) = %v, want both facts: the content word sharing the stem does match", got)
 	}
 
-	nodes, _, _, _, err = g.Search([]string{"when", "did", "namely"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, err = g.Search([]string{"when", "the", "namely"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if err != nil || len(nodes) != 0 {
-		t.Errorf("Search(when did namely) = (%v, %v), want no hits and no error", values(nodes), err)
+		t.Errorf("Search(when the namely) = (%v, %v), want no hits and no error", values(nodes), err)
 	}
 }
 
