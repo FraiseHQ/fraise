@@ -663,7 +663,10 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 // recall with decay off, so every score is exactly the number of named
 // anchors a fact is filed under — 3, 2, 1, 1 — and the bar each ratio sets
 // is known to the bit. Off (the default) is the first case on purpose: the
-// cutoff must change nothing until an operator asks for it.
+// cutoff must change nothing until an operator asks for it. The two 1s are
+// there for the floor: a floor of 3 lands between them, and which of two
+// equal hits is the third is decided by key order, so the floor stretches
+// to keep both rather than let that accident decide.
 func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -703,7 +706,8 @@ func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
 		{"ratio drops the tail under the bar", 0.5, 1, 10, []float64{3, 2}},
 		{"a hit exactly at the bar is kept", 1.0 / 3, 1, 10, []float64{3, 2, 1, 1}},
 		{"the best hit survives any ratio", 1, 1, 10, []float64{3}},
-		{"min-results floors the cut", 0.9, 3, 10, []float64{3, 2, 1}},
+		{"min-results floors the cut", 0.9, 2, 10, []float64{3, 2}},
+		{"the floor never splits a tie", 0.9, 3, 10, []float64{3, 2, 1, 1}},
 		{"min-results past the list keeps the list", 0.9, 10, 10, []float64{3, 2, 1, 1}},
 		{"top still caps above the floor", 0.1, 3, 2, []float64{3, 2}},
 	}

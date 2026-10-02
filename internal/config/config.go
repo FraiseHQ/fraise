@@ -143,7 +143,9 @@ type DBConfig struct {
 	MinScoreRatio float64 `toml:"min-score-ratio"`
 
 	// Floor under the score cutoff: it never shortens a result below this
-	// many hits (when that many matched), whatever their ratio to the best.
+	// many hits (when that many matched), whatever their ratio to the best,
+	// and never splits hits of equal score — a floor landing inside a tie
+	// group keeps the whole group.
 	MinResults int `toml:"min-results"`
 
 	// database hashing function

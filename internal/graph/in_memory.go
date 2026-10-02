@@ -459,6 +459,12 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 // cutoff trades some recall for that precision, and the trade is the
 // operator's to make. The floor is at least one so a result that matched is
 // shortened, never emptied — an empty result keeps meaning "nothing matched".
+// It never splits a tie either: hits of equal score are indistinguishable to
+// the ranking, which orders them by key, and a floor that exists so a result
+// is shortened rather than emptied has no reason to keep one of two equals
+// and drop the other on that accident. top is the hard cap the client asked
+// for and splits ties as asked; the floor stretches to the end of the tie
+// group it lands in, still within top.
 //
 // The bar is set on relevance — the scorer's output, before the ranker's
 // boost and recency decay — and not on the score the list is ordered by. The
@@ -482,6 +488,9 @@ func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, relevance map[K]
 	}
 	bar := P(ratio) * best
 	keep := min(max(g.config.DB.MinResults, 1), n)
+	for keep < n && scores[keep] == scores[keep-1] {
+		keep++
+	}
 	for i := keep; i < n; i++ {
 		if relevance[keys[i]] >= bar {
 			keys[keep], scores[keep] = keys[i], scores[i]
