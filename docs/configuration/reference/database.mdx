@@ -14,7 +14,7 @@ navLabel: "Database"
 | `max-depth` | `-max-depth` | `2` | ceiling on `depth:` (lanes are 0, 1 and 2) |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
-| `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits under this fraction of the best hit's score; `0` is off |
+| `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits under this fraction of the best hit's score, in `[0, 1]`; `0` is off |
 | `min-results` | `-min-results` | `1` | floor under the cutoff: hits it never cuts below |
 
 ```toml
@@ -35,7 +35,7 @@ The three ceilings exist so **one query cannot force unbounded work**. They boun
 
 ## Score cutoff
 
-A recall fills its list to `top:` by default, and the tail of a filled list — hits scoring a tenth of the first — rarely holds the answer but costs the model context tokens all the same. `min-score-ratio` makes the list stop where the evidence does: after ranking, any hit scoring below the ratio times the best hit's score is dropped. The scores and their order are untouched, raw units stay raw, the list is just shorter; a ratio is scale-free, so the same setting means the same thing whatever units the scorer produces.
+A recall fills its list to `top:` by default, and the tail of a filled list — hits scoring a tenth of the first — rarely holds the answer but costs the model context tokens all the same. `min-score-ratio` makes the list stop where the evidence does: after ranking, any hit scoring below the ratio times the best hit's score is dropped. The ratio is a fraction in `[0, 1]`, and the server refuses to start on a value outside it. The scores and their order are untouched, raw units stay raw, the list is just shorter; a ratio is scale-free, so the same setting means the same thing whatever units the scorer produces.
 
 `min-results` is the floor the cutoff never cuts below, so a result that matched is shortened, never emptied; `top:` still caps it from above. Together they say "at least this many, at most `top:`, and nothing far below the best".
 

@@ -138,7 +138,8 @@ type DBConfig struct {
 	// is dropped, so a recall stops where the evidence does instead of
 	// filling to top. A ratio is scale-free — raw units stay raw, the order
 	// is untouched, the list is just shorter. 0 (the default) turns the
-	// cutoff off: the trade is the operator's to make.
+	// cutoff off: the trade is the operator's to make. A fraction, so
+	// validate rejects anything outside [0, 1] at startup.
 	MinScoreRatio float64 `toml:"min-score-ratio"`
 
 	// Floor under the score cutoff: it never shortens a result below this
