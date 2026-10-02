@@ -45,19 +45,19 @@ func newGraph() *graph.InMemoryGraph[uint64, float64] {
 }
 
 // mkFact returns a Fact wired to g's hasher; its key is derived from value.
-func mkFact(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) graph.Fact[uint64] {
+func mkFact[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) graph.Fact[uint64] {
 	return graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mkEntity(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) *graph.NamedEntity[uint64] {
+func mkEntity[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) *graph.NamedEntity[uint64] {
 	return &graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mkTopic(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) *graph.Topic[uint64] {
+func mkTopic[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) *graph.Topic[uint64] {
 	return &graph.Topic[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mustSet(t *testing.T, g *graph.InMemoryGraph[uint64, float64], n graph.Node[uint64]) {
+func mustSet[P float32 | float64](t *testing.T, g *graph.InMemoryGraph[uint64, P], n graph.Node[uint64]) {
 	t.Helper()
 	if err := g.Set(n); err != nil {
 		t.Fatalf("Set(%q) = %v, want nil", n.GetValue(), err)
@@ -667,10 +667,20 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 // there for the floor: a floor of 3 lands between them, and which of two
 // equal hits is the third is decided by key order, so the floor stretches
 // to keep both rather than let that accident decide.
+//
+// The table runs at both precisions because the bar is a product computed in
+// P and "exactly at the bar" is a rounding question: float32 is what the
+// server ships with (config.DefaultPrecision), and a pin that only holds in
+// float64 would not be testing the contract an operator gets.
 func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
+	t.Run("float32", scoreCutoffAt[float32])
+	t.Run("float64", scoreCutoffAt[float64])
+}
+
+func scoreCutoffAt[P float32 | float64](t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
-	g := graph.NewGraph[uint64, float64](cfg)
+	g := graph.NewGraph[uint64, P](cfg)
 	now := time.Now()
 
 	topics := map[string]*graph.Topic[uint64]{}
@@ -691,7 +701,7 @@ func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
 	file("another one anchor", "a")
 
 	// The premise of the test: the scores are 3, 2, 1, 1 before any cutoff.
-	if _, scores, _, _, _ := g.Search(nil, containers.Vector[uint64, float64]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{}); !reflect.DeepEqual(scores, []float64{3, 2, 1, 1}) {
+	if _, scores, _, _, _ := g.Search(nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{}); !reflect.DeepEqual(scores, []P{3, 2, 1, 1}) {
 		t.Fatalf("Search(topics a b c) scores = %v, want [3 2 1 1]", scores)
 	}
 
@@ -700,22 +710,23 @@ func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
 		ratio      float64
 		minResults int
 		top        int
-		wantScores []float64
+		wantScores []P
 	}{
-		{"off keeps the whole list", 0, 1, 10, []float64{3, 2, 1, 1}},
-		{"ratio drops the tail under the bar", 0.5, 1, 10, []float64{3, 2}},
-		{"a hit exactly at the bar is kept", 1.0 / 3, 1, 10, []float64{3, 2, 1, 1}},
-		{"the best hit survives any ratio", 1, 1, 10, []float64{3}},
-		{"min-results floors the cut", 0.9, 2, 10, []float64{3, 2}},
-		{"the floor never splits a tie", 0.9, 3, 10, []float64{3, 2, 1, 1}},
-		{"min-results past the list keeps the list", 0.9, 10, 10, []float64{3, 2, 1, 1}},
-		{"top still caps above the floor", 0.1, 3, 2, []float64{3, 2}},
+		{"off keeps the whole list", 0, 1, 10, []P{3, 2, 1, 1}},
+		{"ratio drops the tail under the bar", 0.5, 1, 10, []P{3, 2}},
+		{"a hit exactly at the bar is kept", 1.0 / 3, 1, 10, []P{3, 2, 1, 1}},
+		{"a hit exactly at a decimal bar is kept", 0.1, 1, 10, []P{3, 2, 1, 1}},
+		{"the best hit survives any ratio", 1, 1, 10, []P{3}},
+		{"min-results floors the cut", 0.9, 2, 10, []P{3, 2}},
+		{"the floor never splits a tie", 0.9, 3, 10, []P{3, 2, 1, 1}},
+		{"min-results past the list keeps the list", 0.9, 10, 10, []P{3, 2, 1, 1}},
+		{"top still caps above the floor", 0.1, 3, 2, []P{3, 2}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg.DB.MinScoreRatio = tc.ratio
 			cfg.DB.MinResults = tc.minResults
-			nodes, scores, contributions, _, err := g.Search(nil, containers.Vector[uint64, float64]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
+			nodes, scores, contributions, _, err := g.Search(nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
 			if err != nil {
 				t.Fatalf("Search() error = %v, want nil", err)
 			}
