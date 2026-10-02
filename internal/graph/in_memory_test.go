@@ -1405,7 +1405,10 @@ func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 		t.Errorf("Search(Caroline namely) = %v, want %v: a stop word is not a search term, whatever it stems to", values(nodes), want)
 	}
 
-	nodes, _, _, _, _ = g.Search([]string{"Caroline", "names"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, err = g.Search([]string{"Caroline", "names"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search(Caroline names) error = %v, want nil", err)
+	}
 	if got := values(nodes); len(got) != 2 {
 		t.Errorf("Search(Caroline names) = %v, want both facts: the content word sharing the stem does match", got)
 	}
