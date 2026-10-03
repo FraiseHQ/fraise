@@ -147,8 +147,8 @@ func Canonical(v *string, name string, accepted []string) error {
 // domain: db.min-score-ratio is a fraction of the best hit's relevance, and a
 // value past 1 — an operator thinking in percent — would put the bar above
 // every hit and silently collapse each recall to its floor, with no error
-// anywhere. db.min-results is a count of hits, and a negative one would be
-// clamped to a floor of one the operator never set.
+// anywhere. db.min-results is a count of hits, and the cutoff indexes the
+// list by it, so a value under 1 is refused here rather than reaching it.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string
