@@ -24,6 +24,7 @@ package config
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 )
@@ -103,8 +104,9 @@ func TestValidateAcceptsTheDefaults(t *testing.T) {
 // test passing where it should fail — the whole point being that no setting
 // keeps a silent fallback while its neighbours are checked.
 //
-// The setting's dotted name is asserted too: with eight of them going through one
-// loop, "invalid value" alone would not tell an operator which line to fix.
+// The setting's dotted name is asserted too: with this many settings checked in
+// one function, "invalid value" alone would not tell an operator which line to
+// fix.
 func TestValidateChecksEverySetting(t *testing.T) {
 	cases := []struct {
 		name   string // the dotted path the error must name
@@ -118,6 +120,7 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.ranking-algorithm.name", func(c *ConfigSet, v string) { c.DB.RankingAlgorithm.Name = v }},
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
+		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
 	}
 
 	for _, tc := range cases {
@@ -133,6 +136,38 @@ func TestValidateChecksEverySetting(t *testing.T) {
 				t.Errorf("error %q does not name the setting %q", err, tc.name)
 			}
 		})
+	}
+}
+
+// TestValidateBoundsMinScoreRatio pins the domain of db.min-score-ratio: a
+// fraction of the best hit's relevance, so anything outside [0, 1] is rejected
+// at startup rather than acted on. Each value past the range is a distinct
+// silent failure the check replaces — 30 (an operator thinking in percent)
+// puts the bar above every hit so every recall comes back empty, a negative
+// ratio reads as "off", and NaN fails every comparison in the cutoff and
+// empties every recall too. The endpoints are kept: 0 is off and 1
+// keeps only hits tied with the best, both meaningful settings.
+func TestValidateBoundsMinScoreRatio(t *testing.T) {
+	for _, ratio := range []float64{0, 0.3, 1} {
+		c := New()
+		c.DB.MinScoreRatio = ratio
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with min-score-ratio = %v returned error: %v, want it accepted", ratio, err)
+		}
+	}
+
+	for _, ratio := range []float64{-0.1, 1.0000001, 30, math.NaN(), math.Inf(1)} {
+		c := New()
+		c.DB.MinScoreRatio = ratio
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
+		}
+		for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
 	}
 }
 

@@ -45,19 +45,19 @@ func newGraph() *graph.InMemoryGraph[uint64, float64] {
 }
 
 // mkFact returns a Fact wired to g's hasher; its key is derived from value.
-func mkFact(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) graph.Fact[uint64] {
+func mkFact[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) graph.Fact[uint64] {
 	return graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mkEntity(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) *graph.NamedEntity[uint64] {
+func mkEntity[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) *graph.NamedEntity[uint64] {
 	return &graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mkTopic(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) *graph.Topic[uint64] {
+func mkTopic[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) *graph.Topic[uint64] {
 	return &graph.Topic[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mustSet(t *testing.T, g *graph.InMemoryGraph[uint64, float64], n graph.Node[uint64]) {
+func mustSet[P float32 | float64](t *testing.T, g *graph.InMemoryGraph[uint64, P], n graph.Node[uint64]) {
 	t.Helper()
 	if err := g.Set(n); err != nil {
 		t.Fatalf("Set(%q) = %v, want nil", n.GetValue(), err)
@@ -655,6 +655,138 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 	}
 	if scores[0] < scores[1] {
 		t.Errorf("scores not descending: %v", scores)
+	}
+}
+
+// TestInMemoryGraphSearchScoreCutoff pins db.min-score-ratio through the
+// public surface. The fixture is an anchor-only recall with decay off, so
+// every score is exactly the number of named anchors a fact is filed under —
+// 3, 2, 1, 1 — and the bar each ratio sets is known to the bit. Off (the
+// default) is the first case on purpose: the cutoff must change nothing until
+// an operator asks for it.
+//
+// The table runs at both precisions because the bar is a product computed in
+// P and "exactly at the bar" is a rounding question: float32 is what the
+// server ships with (config.DefaultPrecision), and a pin that only holds in
+// float64 would not be testing the contract an operator gets.
+func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
+	t.Run("float32", scoreCutoffAt[float32])
+	t.Run("float64", scoreCutoffAt[float64])
+}
+
+func scoreCutoffAt[P float32 | float64](t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, P](cfg)
+	now := time.Now()
+
+	topics := map[string]*graph.Topic[uint64]{}
+	for _, name := range []string{"a", "b", "c"} {
+		topics[name] = mkTopic(g, name, now)
+		mustSet(t, g, topics[name])
+	}
+	file := func(value string, under ...string) {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		for _, name := range under {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topics[name], NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		}
+	}
+	file("three anchors", "a", "b", "c")
+	file("two anchors", "a", "b")
+	file("one anchor", "a")
+	file("another one anchor", "a")
+
+	// The premise of the test: the scores are 3, 2, 1, 1 before any cutoff.
+	if _, scores, _, _, _ := g.Search(nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{}); !reflect.DeepEqual(scores, []P{3, 2, 1, 1}) {
+		t.Fatalf("Search(topics a b c) scores = %v, want [3 2 1 1]", scores)
+	}
+
+	cases := []struct {
+		name       string
+		ratio      float64
+		top        int
+		wantScores []P
+	}{
+		{"off keeps the whole list", 0, 10, []P{3, 2, 1, 1}},
+		{"ratio drops the tail under the bar", 0.5, 10, []P{3, 2}},
+		{"a hit exactly at the bar is kept", 1.0 / 3, 10, []P{3, 2, 1, 1}},
+		{"the cut falls just under a hit on the bar", 2.0 / 3, 10, []P{3, 2}},
+		{"the best hit survives any ratio", 1, 10, []P{3}},
+		{"top still caps the list", 0.1, 2, []P{3, 2}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg.DB.MinScoreRatio = tc.ratio
+			nodes, scores, contributions, _, err := g.Search(nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search() error = %v, want nil", err)
+			}
+			if !reflect.DeepEqual(scores, tc.wantScores) {
+				t.Fatalf("Search(ratio=%v, top=%d) scores = %v, want %v (%v)", tc.ratio, tc.top, scores, tc.wantScores, values(nodes))
+			}
+			if len(nodes) != len(scores) || len(contributions) != len(scores) {
+				t.Fatalf("Search() returned %d nodes and %d contribution lists for %d scores, want parallel slices", len(nodes), len(contributions), len(scores))
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchScoreCutoffIgnoresDecay pins that the bar is set on
+// relevance, not on the decayed score the list is ordered by. Two facts are
+// filed under the same two anchors (relevance 2 each), one fresh and one two
+// half-lives old (decayed score 0.5), next to a fresh fact under one anchor
+// (relevance 1, score 1). The list is ordered by decayed score — fresh pair,
+// single, old pair — but the cutoff reads the evidence: at 0.3 the old fact
+// clears the bar its 0.5 score would have missed; at 0.6 the single-anchor
+// fact is dropped although it outscores the old fact that stays. Measured
+// after decay, the documented 0.3 would turn into a recency window and 0.6
+// would keep the weaker evidence over the stronger.
+func TestInMemoryGraphSearchScoreCutoffIgnoresDecay(t *testing.T) {
+	cfg := testConfig()
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	old := now.Add(-2 * cfg.Engine.Halflife)
+
+	topics := map[string]*graph.Topic[uint64]{}
+	for _, name := range []string{"a", "b"} {
+		topics[name] = mkTopic(g, name, now)
+		mustSet(t, g, topics[name])
+	}
+	file := func(value string, ts time.Time, under ...string) {
+		fact := mkFact(g, value, ts)
+		mustSet(t, g, fact)
+		for _, name := range under {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topics[name], NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+		}
+	}
+	file("fresh pair", now, "a", "b")
+	file("old pair", old, "a", "b")
+	file("fresh single", now, "a")
+
+	cases := []struct {
+		name  string
+		ratio float64
+		want  []string
+	}{
+		{"off keeps the whole list", 0, []string{"fresh pair", "fresh single", "old pair"}},
+		{"the same evidence clears the bar at any age", 0.3, []string{"fresh pair", "fresh single", "old pair"}},
+		{"weaker evidence is cut even when it outscores what stays", 0.6, []string{"fresh pair", "old pair"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg.DB.MinScoreRatio = tc.ratio
+			nodes, scores, _, _, err := g.Search(nil, containers.Vector[uint64, float64]{}, []string{"a", "b"}, nil, 0, 10, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search() error = %v, want nil", err)
+			}
+			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Search(ratio=%v) = %v (scores %v), want %v", tc.ratio, got, scores, tc.want)
+			}
+			if !sort.SliceIsSorted(scores, func(i, j int) bool { return scores[i] > scores[j] }) {
+				t.Errorf("Search(ratio=%v) scores = %v, want the decay order kept", tc.ratio, scores)
+			}
+		})
 	}
 }
 
