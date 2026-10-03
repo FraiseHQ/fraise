@@ -187,6 +187,15 @@ func (g *InMemoryGraph[K, P]) Put(key K, node Node[K]) error {
 	return g.store(key, node)
 }
 
+// textLanguage is the language whose stop words are cleaned from text on both
+// sides of the text index: a fact's value in store, the query keywords in
+// gatherSeeds. The two must agree — a stop word cleaned from one side but not
+// the other is a term only that side carries, and its stem can collide with a
+// content word's ("own" with "owns") — so both read this one tag
+// NOTE: fraise doesn't have multi-lingual support just yet
+// this would need to be paramaterized at term.
+var textLanguage = language.English
+
 // store records the node and (re)indexes its value in the text index. Only
 // facts are indexed. Relationship nodes carry no text at all, and indexing
 // them as empty documents inflated the corpus count ~3× and crushed avgdl —
@@ -226,7 +235,7 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	_, isFact := node.(Fact[K])
 	if attrs := node.GetAttributes(); isFact && attrs != nil && attrs.Value != "" {
 
-		if err := g.textIndex.Insert(key, stopwords.CleanContent(attrs.Value, language.English)); err != nil {
+		if err := g.textIndex.Insert(key, stopwords.CleanContent(attrs.Value, textLanguage)); err != nil {
 			logger.Warn("Failed to index node text", "error", err)
 			return err
 		}
@@ -573,10 +582,15 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 
 // gatherSeeds seeds the candidate pool from the text index (keywords) and the
 // vector index (query embedding), appending one Contribution per sighting; a
-// key surfaced by both sources holds one from each. Text contributions carry
-// the BM25 × coverage mass; vector contributions carry the similarity
-// 1/(1+distance), converted here so Contribution.Score is bigger-is-better
-// for every source — the index reports distance, where smaller is nearer.
+// key surfaced by both sources holds one from each. The keywords are cleaned
+// of stop words with the same CleanContent and textLanguage store applies to
+// a fact's text, so the two sides of the index share one vocabulary: a stop
+// word in the query is not a search term, and neither is the stem it would
+// otherwise reduce to — "own" stems to the term "owns" does, and left in it
+// would surface every fact about owning. Text contributions carry the BM25 ×
+// coverage mass; vector contributions carry the similarity 1/(1+distance),
+// converted here so Contribution.Score is bigger-is-better for every source —
+// the index reports distance, where smaller is nearer.
 // The candidate budget is max(seed-size, top): the text list must track the
 // requested result size, because a budget capped below top silently flatlines
 // every ranking past seed-size ("fair seeding").
@@ -595,7 +609,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.textIndex.Search(strings.Join(keywords, " "), seedK); err == nil {
+		if keys, scores, err := g.textIndex.Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
