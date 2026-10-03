@@ -35,7 +35,7 @@ One contribution records one sighting of the hit by one retrieval source:
 | Field | Meaning |
 |----------|--------------------------------------------------------------------|
 | `source` | which stage saw it: `text`, `vector`, `graph` or `anchor` |
-| `score` | the source's raw mass: BM25 match mass for `text`, similarity for `vector`, the funding anchor's full observed mass for `graph`, a unit mass for `anchor` |
+| `score` | the source's raw mass: BM25 match mass for `text`, the similarity margin over the search's last neighbour for `vector`, the funding anchor's full observed mass for `graph`, a unit mass for `anchor` |
 | `rank` | the hit's position in that source's own result list, 0 first |
 | `via` | the anchor a `graph` or `anchor` sighting came through |
 | `degree` | that anchor's degree — how many edges its mass is shared across |

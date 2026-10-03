@@ -540,9 +540,19 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // gatherSeeds seeds the candidate pool from the text index (keywords) and the
 // vector index (query embedding), appending one Contribution per sighting; a
 // key surfaced by both sources holds one from each. Text contributions carry
-// the BM25 × coverage mass; vector contributions carry the similarity
-// 1/(1+distance), converted here so Contribution.Score is bigger-is-better
-// for every source — the index reports distance, where smaller is nearer.
+// the BM25 × coverage mass. Vector contributions carry the similarity
+// 1/(1+distance) — converted here so Contribution.Score is bigger-is-better
+// for every source, the index reporting distance where smaller is nearer —
+// as a margin over the pass's own null: the similarity of the last neighbour
+// the pass returned, hinged at zero. The channel needs that null because
+// unit-norm embeddings sit at most 2 apart, so the raw similarity never
+// drops below a third of a perfect match: every neighbour the budget admits
+// would carry a pedestal of mass into the same pool as BM25, regardless of
+// quality, and that pedestal is what fills the ranks behind the true hits.
+// Measured against the k-th neighbour, the best neighbour carries its full
+// margin, the k-th contributes nothing, and the channel has a cliff again
+// without a constant or a normalisation — the same hinge shape as the excess
+// fold.
 // The candidate budget is max(seed-size, top): the text list must track the
 // requested result size, because a budget capped below top silently flatlines
 // every ranking past seed-size ("fair seeding").
@@ -578,10 +588,16 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 			return nil, err
 		case err != nil:
 			logger.Debug("Vector index yielded no seeds", "error", err)
-		default:
+		case len(keys) > 0:
 			vectorSeeds = len(keys)
+			similarity := func(distance P) P { return P(1) / (P(1) + distance) }
+			null := similarity(distances[len(distances)-1])
 			for rank, key := range keys {
-				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1})
+				margin := similarity(distances[rank]) - null
+				if margin < 0 {
+					margin = 0
+				}
+				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: margin, Rank: scoring.ClampRank(rank), Count: 1})
 			}
 		}
 	}

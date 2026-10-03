@@ -1117,6 +1117,106 @@ func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 func TestGraphVectorSearch_float64(t *testing.T) { vectorHybridSearchAtPrecision[float64](t) }
 func TestGraphVectorSearch_float32(t *testing.T) { vectorHybridSearchAtPrecision[float32](t) }
 
+// vectorSeedGraph indexes four facts whose embeddings sit at four distinct
+// distances from the unit query (1, 0, 0) — 0, √0.8, √2 and 2, the last the
+// farthest two unit vectors can be — with no anchors, so a vector-only Search
+// carries nothing but the vector channel and its contributions are the whole
+// explanation. seedSize sets the candidate budget, so a test can choose which
+// neighbour is the pass's last.
+func vectorSeedGraph(t *testing.T, seedSize int) *graph.InMemoryGraph[uint64, float64] {
+	t.Helper()
+	cfg := testConfig()
+	cfg.DB.SeedSize = seedSize
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	for _, f := range []struct {
+		value string
+		vec   []float64
+	}{
+		{"exact", []float64{1, 0, 0}},
+		{"near", []float64{0.6, 0.8, 0}},
+		{"orthogonal", []float64{0, 1, 0}},
+		{"opposite", []float64{-1, 0, 0}},
+	} {
+		fact := mkFact(g, f.value, now)
+		mustSet(t, g, fact)
+		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](f.vec)); err != nil {
+			t.Fatalf("vector Insert(%q) = %v, want nil", f.value, err)
+		}
+	}
+	return g
+}
+
+// vectorSeedScores runs a vector-only Search for the unit query and returns
+// each hit's single vector contribution by value.
+func vectorSeedScores(t *testing.T, g *graph.InMemoryGraph[uint64, float64], top int) map[string]float64 {
+	t.Helper()
+	nodes, _, contributions, _, err := g.Search(nil, containers.NewVector[uint64]([]float64{1, 0, 0}), nil, nil, 0, top, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search() = %v, want nil", err)
+	}
+	scores := make(map[string]float64, len(nodes))
+	for i, node := range nodes {
+		if len(contributions[i]) != 1 || contributions[i][0].Src != scoring.SrcVector {
+			t.Fatalf("%q carries %v, want exactly one vector sighting", (*node).GetValue(), contributions[i])
+		}
+		scores[(*node).GetValue()] = contributions[i][0].Score
+	}
+	return scores
+}
+
+// TestVectorSeedsScoreTheMarginOverTheLastNeighbour pins the vector channel's
+// null: a neighbour's mass is its similarity 1/(1+d) less the similarity of
+// the last neighbour the pass returned, so the farthest admitted neighbour
+// carries exactly nothing and the exact match its full margin above it. With
+// every fact admitted the last neighbour is the opposite vector at distance 2,
+// similarity 1/3 — the pedestal every unit-norm neighbour used to carry.
+func TestVectorSeedsScoreTheMarginOverTheLastNeighbour(t *testing.T) {
+	g := vectorSeedGraph(t, 4)
+	scores := vectorSeedScores(t, g, 4)
+	if len(scores) != 4 {
+		t.Fatalf("Search returned %d hits, want all 4 neighbours", len(scores))
+	}
+
+	null := 1.0 / (1 + 2.0)
+	want := map[string]float64{
+		"exact":      1 - null,
+		"near":       1/(1+math.Sqrt(0.8)) - null,
+		"orthogonal": 1/(1+math.Sqrt2) - null,
+		"opposite":   0,
+	}
+	for value, mass := range want {
+		if got := scores[value]; math.Abs(got-mass) > 1e-9 {
+			t.Errorf("%q vector mass = %v, want %v", value, got, mass)
+		}
+	}
+	if scores["opposite"] != 0 {
+		t.Errorf("the last neighbour carries %v, want exactly 0", scores["opposite"])
+	}
+}
+
+// TestVectorSeedNullIsThePassOwnLastNeighbour distinguishes the pass's null
+// from a constant: shrinking the candidate budget to two moves the last
+// neighbour from the opposite vector to the near one, so the exact match's
+// margin shrinks to its lead over that neighbour and the near one, which
+// carried mass under the wider budget, now carries none. A constant floor
+// would leave both unchanged.
+func TestVectorSeedNullIsThePassOwnLastNeighbour(t *testing.T) {
+	g := vectorSeedGraph(t, 2)
+	scores := vectorSeedScores(t, g, 2)
+	if len(scores) != 2 {
+		t.Fatalf("Search returned %d hits, want the 2 the budget admits", len(scores))
+	}
+
+	null := 1 / (1 + math.Sqrt(0.8))
+	if got := scores["exact"]; math.Abs(got-(1-null)) > 1e-9 {
+		t.Errorf("exact match mass at budget 2 = %v, want %v", got, 1-null)
+	}
+	if got := scores["near"]; got != 0 {
+		t.Errorf("the budget's last neighbour carries %v, want exactly 0", got)
+	}
+}
+
 // TestMergeFromForestStaysBounded replays the production write cycle — Stage
 // copies the graph, the write commits one vector to the copy, MergeFrom folds
 // the copy back — and checks the live vector forest stays O(live vectors).
