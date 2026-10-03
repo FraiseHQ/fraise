@@ -121,7 +121,6 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
-		{"db.min-results", func(c *ConfigSet, _ string) { c.DB.MinResults = -5 }},
 	}
 
 	for _, tc := range cases {
@@ -144,9 +143,9 @@ func TestValidateChecksEverySetting(t *testing.T) {
 // fraction of the best hit's relevance, so anything outside [0, 1] is rejected
 // at startup rather than acted on. Each value past the range is a distinct
 // silent failure the check replaces — 30 (an operator thinking in percent)
-// puts the bar above every hit so every recall collapses to its floor,
-// a negative ratio reads as "off", and NaN fails every comparison in the
-// cutoff and collapses to the floor too. The endpoints are kept: 0 is off and 1
+// puts the bar above every hit so every recall comes back empty, a negative
+// ratio reads as "off", and NaN fails every comparison in the cutoff and
+// empties every recall too. The endpoints are kept: 0 is off and 1
 // keeps only hits tied with the best, both meaningful settings.
 func TestValidateBoundsMinScoreRatio(t *testing.T) {
 	for _, ratio := range []float64{0, 0.3, 1} {

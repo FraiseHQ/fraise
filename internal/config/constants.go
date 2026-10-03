@@ -164,10 +164,6 @@ const (
 	// off.
 	DefaultMinScoreRatio float64 = 0
 
-	// DefaultMinResults is the score cutoff's floor (DBConfig.MinResults): one,
-	// so the best hit always comes back.
-	DefaultMinResults int = 1
-
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
 

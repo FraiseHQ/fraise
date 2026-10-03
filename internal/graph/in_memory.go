@@ -426,7 +426,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	}
 	rankedKeys, rankedScores := ranker.Drain()
 
-	// E. Score cutoff (db.min-score-ratio, db.min-results)
+	// E. Score cutoff (db.min-score-ratio)
 	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
 
 	nodes := make([]*Node[K], len(rankedKeys))
@@ -444,35 +444,29 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	return nodes, scoresOut, contributions, background, nil
 }
 
-// scoreCutoff applies db.min-score-ratio and db.min-results (see DBConfig) to
-// a best-first ranking. A hit's relevance is its scorer output, before the
-// boost and decay its score carries, refolded here from its contributions
-// for the ranked hits alone: the scorer is pure, so this is the value stage
-// B computed, at O(top) rather than a copy of every candidate's. The bar is
-// MinScoreRatio × the best relevance in the list. The first MinResults hits
-// are always kept, stretched to the end of the tie group the floor lands in,
-// and every hit past them is kept if its relevance clears the bar — each
-// judged on its own, since relevance does not descend along a decay-ordered
-// list and the first miss is not the end of the hits that clear it. Kept
-// hits keep their order and their scores; a ratio of zero returns the
-// ranking unchanged.
+// scoreCutoff applies db.min-score-ratio (see DBConfig) to a best-first
+// ranking. A hit's relevance is its scorer output, before the boost and decay
+// its score carries, refolded here from its contributions for the ranked hits
+// alone: the scorer is pure, so this is the value stage B computed, at O(top)
+// rather than a copy of every candidate's. The bar is MinScoreRatio × the
+// best relevance in the list, and a hit is kept if its relevance clears it —
+// each judged on its own, since relevance does not descend along a
+// decay-ordered list and the first miss is not the end of the hits that
+// clear it. With the ratio at most 1 the best hit clears its own bar, so the
+// list is never emptied. Kept hits keep their order and their scores; a ratio
+// of zero returns the ranking unchanged.
 func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.Scorer[K, P], candidates scoring.Candidates[K, P]) ([]K, []P) {
 	ratio := g.config.DB.MinScoreRatio
-	n := len(keys)
-	if ratio <= 0 || n == 0 {
+	if ratio <= 0 || len(keys) == 0 {
 		return keys, scores
 	}
-	relevance := make([]P, n)
+	relevance := make([]P, len(keys))
 	for i, key := range keys {
 		relevance[i] = scorer.Score(candidates[key])
 	}
-	best := slices.Max(relevance)
-	bar := P(ratio) * best
-	keep := min(g.config.DB.MinResults, n)
-	for keep < n && scores[keep] == scores[keep-1] {
-		keep++
-	}
-	for i := keep; i < n; i++ {
+	bar := P(ratio) * slices.Max(relevance)
+	keep := 0
+	for i := range keys {
 		if relevance[i] >= bar {
 			keys[keep], scores[keep] = keys[i], scores[i]
 			keep++

@@ -46,7 +46,7 @@ A fact's relevance is its own mass plus everything transmitted to it.
 
 ## Where the list stops
 
-A recall returns its `top:` best candidates — and, with the score cutoff on, fewer: `db.min-score-ratio` drops the hits whose relevance, before recency decay and the ranking boost, is below a fraction of the best hit's, never below `db.min-results`. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
+A recall returns its `top:` best candidates — and, with the score cutoff on, fewer: `db.min-score-ratio` drops the hits whose relevance, before recency decay and the ranking boost, is below a fraction of the best hit's. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
 
 ## Why a recall needs a seed
 

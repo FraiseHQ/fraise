@@ -658,15 +658,12 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 	}
 }
 
-// TestInMemoryGraphSearchScoreCutoff pins db.min-score-ratio and
-// db.min-results through the public surface. The fixture is an anchor-only
-// recall with decay off, so every score is exactly the number of named
-// anchors a fact is filed under — 3, 2, 1, 1 — and the bar each ratio sets
-// is known to the bit. Off (the default) is the first case on purpose: the
-// cutoff must change nothing until an operator asks for it. The two 1s are
-// there for the floor: a floor of 3 lands between them, and which of two
-// equal hits is the third is decided by key order, so the floor stretches
-// to keep both rather than let that accident decide.
+// TestInMemoryGraphSearchScoreCutoff pins db.min-score-ratio through the
+// public surface. The fixture is an anchor-only recall with decay off, so
+// every score is exactly the number of named anchors a fact is filed under —
+// 3, 2, 1, 1 — and the bar each ratio sets is known to the bit. Off (the
+// default) is the first case on purpose: the cutoff must change nothing until
+// an operator asks for it.
 //
 // The table runs at both precisions because the bar is a product computed in
 // P and "exactly at the bar" is a rounding question: float32 is what the
@@ -708,30 +705,25 @@ func scoreCutoffAt[P float32 | float64](t *testing.T) {
 	cases := []struct {
 		name       string
 		ratio      float64
-		minResults int
 		top        int
 		wantScores []P
 	}{
-		{"off keeps the whole list", 0, 1, 10, []P{3, 2, 1, 1}},
-		{"ratio drops the tail under the bar", 0.5, 1, 10, []P{3, 2}},
-		{"a hit exactly at the bar is kept", 1.0 / 3, 1, 10, []P{3, 2, 1, 1}},
-		{"the cut falls just under a hit on the bar", 2.0 / 3, 1, 10, []P{3, 2}},
-		{"the best hit survives any ratio", 1, 1, 10, []P{3}},
-		{"min-results floors the cut", 0.9, 2, 10, []P{3, 2}},
-		{"the floor never splits a tie", 0.9, 3, 10, []P{3, 2, 1, 1}},
-		{"min-results past the list keeps the list", 0.9, 10, 10, []P{3, 2, 1, 1}},
-		{"top still caps above the floor", 0.1, 3, 2, []P{3, 2}},
+		{"off keeps the whole list", 0, 10, []P{3, 2, 1, 1}},
+		{"ratio drops the tail under the bar", 0.5, 10, []P{3, 2}},
+		{"a hit exactly at the bar is kept", 1.0 / 3, 10, []P{3, 2, 1, 1}},
+		{"the cut falls just under a hit on the bar", 2.0 / 3, 10, []P{3, 2}},
+		{"the best hit survives any ratio", 1, 10, []P{3}},
+		{"top still caps the list", 0.1, 2, []P{3, 2}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg.DB.MinScoreRatio = tc.ratio
-			cfg.DB.MinResults = tc.minResults
 			nodes, scores, contributions, _, err := g.Search(nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
 			if err != nil {
 				t.Fatalf("Search() error = %v, want nil", err)
 			}
 			if !reflect.DeepEqual(scores, tc.wantScores) {
-				t.Fatalf("Search(ratio=%v, min-results=%d, top=%d) scores = %v, want %v (%v)", tc.ratio, tc.minResults, tc.top, scores, tc.wantScores, values(nodes))
+				t.Fatalf("Search(ratio=%v, top=%d) scores = %v, want %v (%v)", tc.ratio, tc.top, scores, tc.wantScores, values(nodes))
 			}
 			if len(nodes) != len(scores) || len(contributions) != len(scores) {
 				t.Fatalf("Search() returned %d nodes and %d contribution lists for %d scores, want parallel slices", len(nodes), len(contributions), len(scores))

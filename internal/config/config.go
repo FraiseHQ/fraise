@@ -142,19 +142,13 @@ type DBConfig struct {
 	// a fact filed under the same anchors as the best hit would miss the bar
 	// for being older. Only the length changes; the order and the scores are
 	// untouched, and a ratio is scale-free, so it means the same thing
-	// whatever units the scorer produces. 0 (the default) is off: the cutoff
-	// trades a little recall for precision, and that trade is the operator's
-	// to make. A fraction, so validate rejects anything outside [0, 1].
+	// whatever units the scorer produces. The hit with the best relevance
+	// always clears its own bar, so a result that matched is shortened, never
+	// emptied — an empty result keeps meaning "nothing matched". 0 (the
+	// default) is off: the cutoff trades a little recall for precision, and
+	// that trade is the operator's to make. A fraction, so validate rejects
+	// anything outside [0, 1]: past 1 even the best hit misses the bar.
 	MinScoreRatio float64 `toml:"min-score-ratio"`
-
-	// Floor under the score cutoff: it never shortens a result below this
-	// many hits (when that many matched), whatever their relevance, so a
-	// result that matched is shortened, never emptied — an empty result keeps
-	// meaning "nothing matched". It never splits hits of equal score either:
-	// they are ordered by key, and a floor landing inside a tie group keeps
-	// the whole group rather than let key order pick one of two equals. top
-	// still caps the list from above.
-	MinResults int `toml:"min-results"`
 
 	// database hashing function
 	HashingFunction HashingFunction `toml:"hashing-function"`
@@ -285,7 +279,6 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
 	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits whose relevance is below this fraction of the best hit's (0 = off)")
-	flagSet.IntVar(&config.DB.MinResults, "min-results", DefaultMinResults, "Hits the score cutoff never cuts below")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
@@ -425,7 +418,6 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
 	// DB.MinScoreRatio needs no Adjust: its default, 0, is the zero value and
 	// means off, so an absent key and an explicit 0 already agree.
-	Adjust(&c.DB.MinResults, DefaultMinResults)
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)
