@@ -166,6 +166,10 @@ const (
 	// it stays opt-in until measured.
 	DefaultRelevanceFeedback bool = false
 
+	// DefaultMinScoreRatio leaves the score cutoff (DBConfig.MinScoreRatio)
+	// off.
+	DefaultMinScoreRatio float64 = 0
+
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
 

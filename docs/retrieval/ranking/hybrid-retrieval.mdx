@@ -48,6 +48,10 @@ A fact's relevance is its own mass plus everything transmitted to it.
 
 > *An anchor may only speak when its members matched better than its size alone predicted — hubs are heard exactly when they are surprising, silent when they are merely large, and never louder than their surplus divided among everyone listening.*
 
+## Where the list stops
+
+A recall returns its `top:` best candidates — and, with the score cutoff on, fewer: `db.min-score-ratio` drops the hits whose relevance, before recency decay and the ranking boost, is below a fraction of the best hit's. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
+
 ## Why a recall needs a seed
 
 Without a seed there is no mass to transmit. That is why a recall must carry at least one term, anchor or vector, and why `recall top:3` is an error rather than an unfiltered dump.

@@ -66,6 +66,7 @@ func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 		{"-hashing-function", "murmur", "db.hashing-function.name"},
 		{"-search-algorithm", "dfs", "db.search-algorithm.name"},
 		{"-ranking-algorithm", "hits", "db.ranking-algorithm.name"},
+		{"-min-score-ratio", "30", "db.min-score-ratio"},
 	}
 
 	for _, tc := range cases {
