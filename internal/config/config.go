@@ -136,16 +136,24 @@ type DBConfig struct {
 
 	// Score cutoff: a hit whose relevance is below this fraction of the best
 	// hit's is dropped, so a recall stops where the evidence does instead of
-	// filling to top. A ratio is scale-free — raw units stay raw, the order
-	// is untouched, the list is just shorter. 0 (the default) turns the
-	// cutoff off: the trade is the operator's to make. A fraction, so
-	// validate rejects anything outside [0, 1] at startup.
+	// filling to top. Relevance is the scorer's output, before the ranker's
+	// boost and recency decay: decay says nothing about evidence, and
+	// measured after it the ratio would become a recency window nobody set —
+	// a fact filed under the same anchors as the best hit would miss the bar
+	// for being older. Only the length changes; the order and the scores are
+	// untouched, and a ratio is scale-free, so it means the same thing
+	// whatever units the scorer produces. 0 (the default) is off: the cutoff
+	// trades a little recall for precision, and that trade is the operator's
+	// to make. A fraction, so validate rejects anything outside [0, 1].
 	MinScoreRatio float64 `toml:"min-score-ratio"`
 
 	// Floor under the score cutoff: it never shortens a result below this
-	// many hits (when that many matched), whatever their ratio to the best,
-	// and never splits hits of equal score — a floor landing inside a tie
-	// group keeps the whole group.
+	// many hits (when that many matched), whatever their relevance, so a
+	// result that matched is shortened, never emptied — an empty result keeps
+	// meaning "nothing matched". It never splits hits of equal score either:
+	// they are ordered by key, and a floor landing inside a tie group keeps
+	// the whole group rather than let key order pick one of two equals. top
+	// still caps the list from above.
 	MinResults int `toml:"min-results"`
 
 	// database hashing function

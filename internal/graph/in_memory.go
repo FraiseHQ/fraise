@@ -396,12 +396,10 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	// B. Scoring: the scorer folds each candidate's contributions into one
 	// relevance score given the background, and the installed ranker (if any)
-	// boosts the result. The relevance is kept as scored: it is what the
-	// evidence alone says about a candidate, and the score cutoff below is
-	// measured against it, not against the boosted and decayed score the
-	// list is ordered by. Only the cutoff reads it, so with the cutoff off —
-	// the default — the scores are boosted and decayed in place rather than
-	// every recall paying for a copy of the candidate set nothing consults.
+	// boosts the result. The score cutoff reads relevance as scored, so it is
+	// copied before the boost — only with the cutoff on: nothing else reads
+	// it, and the default would otherwise pay for a copy of the candidate set
+	// on every recall.
 	relevance := make(map[K]P, len(candidates))
 	keys := make([]K, 0, len(candidates))
 	scorer := g.scorer.WithBackground(background)
@@ -436,8 +434,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	}
 	rankedKeys, rankedScores := ranker.Drain()
 
-	// E. Score cutoff: with db.min-score-ratio set, the list stops where the
-	// evidence does instead of filling to top.
+	// E. Score cutoff (db.min-score-ratio, db.min-results)
 	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, relevance)
 
 	nodes := make([]*Node[K], len(rankedKeys))
@@ -455,32 +452,15 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	return nodes, scoresOut, contributions, background, nil
 }
 
-// scoreCutoff shortens a best-first ranking at the configured score ratio: a
-// hit whose relevance is below MinScoreRatio × the best relevance in the list
-// is dropped, and the list is never cut below MinResults. Only the length
-// changes — the order and the scores are untouched, so a ratio means the same
-// thing whatever units the scorer produces. A ratio of zero, the default,
-// keeps every hit: the tail of a filled list rarely holds the answer but a
-// cutoff trades some recall for that precision, and the trade is the
-// operator's to make. The floor is at least one so a result that matched is
-// shortened, never emptied — an empty result keeps meaning "nothing matched".
-// It never splits a tie either: hits of equal score are indistinguishable to
-// the ranking, which orders them by key, and a floor that exists so a result
-// is shortened rather than emptied has no reason to keep one of two equals
-// and drop the other on that accident. top is the hard cap the client asked
-// for and splits ties as asked; the floor stretches to the end of the tie
-// group it lands in, still within top.
-//
-// The bar is set on relevance — the scorer's output, before the ranker's
-// boost and recency decay — and not on the score the list is ordered by. The
-// cutoff asks whether a hit's evidence is a fraction of the best hit's, and
-// decay says nothing about evidence: measured after it, a fact filed under
-// the same anchors as the best hit would fall under the bar for being two
-// half-lives older, turning a ratio into a recency window nobody set. Decay
-// still orders the list, so the same evidence ranks lower when older; the
-// cutoff only decides whether it is in the list at all. Since relevance does
-// not descend along a decay-ordered list, every hit past the floor is judged
-// on its own rather than the list truncated at the first one under the bar.
+// scoreCutoff applies db.min-score-ratio and db.min-results (see DBConfig) to
+// a best-first ranking. relevance holds each hit's scorer output, before the
+// boost and decay its score carries; the bar is MinScoreRatio × the best
+// relevance in the list. The first max(MinResults, 1) hits are always kept,
+// stretched to the end of the tie group the floor lands in, and every hit
+// past them is kept if its relevance clears the bar — each judged on its
+// own, since relevance does not descend along a decay-ordered list and the
+// first miss is not the end of the hits that clear it. Kept hits keep their
+// order and their scores; a ratio of zero returns the ranking unchanged.
 func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, relevance map[K]P) ([]K, []P) {
 	ratio := g.config.DB.MinScoreRatio
 	n := len(keys)
