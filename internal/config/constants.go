@@ -160,6 +160,10 @@ const (
 	// max(seed-size, top), so a large recall is never starved of candidates.
 	DefaultSeedSize uint = 10
 
+	// DefaultMinScoreRatio leaves the score cutoff (DBConfig.MinScoreRatio)
+	// off.
+	DefaultMinScoreRatio float64 = 0
+
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
 
