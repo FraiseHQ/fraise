@@ -104,8 +104,9 @@ func TestValidateAcceptsTheDefaults(t *testing.T) {
 // test passing where it should fail — the whole point being that no setting
 // keeps a silent fallback while its neighbours are checked.
 //
-// The setting's dotted name is asserted too: with nine of them going through one
-// loop, "invalid value" alone would not tell an operator which line to fix.
+// The setting's dotted name is asserted too: with this many settings checked in
+// one function, "invalid value" alone would not tell an operator which line to
+// fix.
 func TestValidateChecksEverySetting(t *testing.T) {
 	cases := []struct {
 		name   string // the dotted path the error must name
