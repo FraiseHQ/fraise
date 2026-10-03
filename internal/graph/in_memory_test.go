@@ -25,8 +25,11 @@ package graph_test
 import (
 	"errors"
 	"math"
+	"math/rand"
 	"reflect"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,19 +45,19 @@ func newGraph() *graph.InMemoryGraph[uint64, float64] {
 }
 
 // mkFact returns a Fact wired to g's hasher; its key is derived from value.
-func mkFact(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) graph.Fact[uint64] {
+func mkFact[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) graph.Fact[uint64] {
 	return graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mkEntity(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) *graph.NamedEntity[uint64] {
+func mkEntity[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) *graph.NamedEntity[uint64] {
 	return &graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mkTopic(g *graph.InMemoryGraph[uint64, float64], value string, ts time.Time) *graph.Topic[uint64] {
+func mkTopic[P float32 | float64](g *graph.InMemoryGraph[uint64, P], value string, ts time.Time) *graph.Topic[uint64] {
 	return &graph.Topic[uint64]{NodeAttributes: graph.NodeAttributes{Value: value, Timestamp: ts}, Hasher: g.GetHasher()}
 }
 
-func mustSet(t *testing.T, g *graph.InMemoryGraph[uint64, float64], n graph.Node[uint64]) {
+func mustSet[P float32 | float64](t *testing.T, g *graph.InMemoryGraph[uint64, P], n graph.Node[uint64]) {
 	t.Helper()
 	if err := g.Set(n); err != nil {
 		t.Fatalf("Set(%q) = %v, want nil", n.GetValue(), err)
@@ -652,6 +655,138 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 	}
 	if scores[0] < scores[1] {
 		t.Errorf("scores not descending: %v", scores)
+	}
+}
+
+// TestInMemoryGraphSearchScoreCutoff pins db.min-score-ratio through the
+// public surface. The fixture is an anchor-only recall with decay off, so
+// every score is exactly the number of named anchors a fact is filed under —
+// 3, 2, 1, 1 — and the bar each ratio sets is known to the bit. Off (the
+// default) is the first case on purpose: the cutoff must change nothing until
+// an operator asks for it.
+//
+// The table runs at both precisions because the bar is a product computed in
+// P and "exactly at the bar" is a rounding question: float32 is what the
+// server ships with (config.DefaultPrecision), and a pin that only holds in
+// float64 would not be testing the contract an operator gets.
+func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
+	t.Run("float32", scoreCutoffAt[float32])
+	t.Run("float64", scoreCutoffAt[float64])
+}
+
+func scoreCutoffAt[P float32 | float64](t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, P](cfg)
+	now := time.Now()
+
+	topics := map[string]*graph.Topic[uint64]{}
+	for _, name := range []string{"a", "b", "c"} {
+		topics[name] = mkTopic(g, name, now)
+		mustSet(t, g, topics[name])
+	}
+	file := func(value string, under ...string) {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		for _, name := range under {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topics[name], NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		}
+	}
+	file("three anchors", "a", "b", "c")
+	file("two anchors", "a", "b")
+	file("one anchor", "a")
+	file("another one anchor", "a")
+
+	// The premise of the test: the scores are 3, 2, 1, 1 before any cutoff.
+	if _, scores, _, _, _ := g.Search(nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{}); !reflect.DeepEqual(scores, []P{3, 2, 1, 1}) {
+		t.Fatalf("Search(topics a b c) scores = %v, want [3 2 1 1]", scores)
+	}
+
+	cases := []struct {
+		name       string
+		ratio      float64
+		top        int
+		wantScores []P
+	}{
+		{"off keeps the whole list", 0, 10, []P{3, 2, 1, 1}},
+		{"ratio drops the tail under the bar", 0.5, 10, []P{3, 2}},
+		{"a hit exactly at the bar is kept", 1.0 / 3, 10, []P{3, 2, 1, 1}},
+		{"the cut falls just under a hit on the bar", 2.0 / 3, 10, []P{3, 2}},
+		{"the best hit survives any ratio", 1, 10, []P{3}},
+		{"top still caps the list", 0.1, 2, []P{3, 2}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg.DB.MinScoreRatio = tc.ratio
+			nodes, scores, contributions, _, err := g.Search(nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search() error = %v, want nil", err)
+			}
+			if !reflect.DeepEqual(scores, tc.wantScores) {
+				t.Fatalf("Search(ratio=%v, top=%d) scores = %v, want %v (%v)", tc.ratio, tc.top, scores, tc.wantScores, values(nodes))
+			}
+			if len(nodes) != len(scores) || len(contributions) != len(scores) {
+				t.Fatalf("Search() returned %d nodes and %d contribution lists for %d scores, want parallel slices", len(nodes), len(contributions), len(scores))
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchScoreCutoffIgnoresDecay pins that the bar is set on
+// relevance, not on the decayed score the list is ordered by. Two facts are
+// filed under the same two anchors (relevance 2 each), one fresh and one two
+// half-lives old (decayed score 0.5), next to a fresh fact under one anchor
+// (relevance 1, score 1). The list is ordered by decayed score — fresh pair,
+// single, old pair — but the cutoff reads the evidence: at 0.3 the old fact
+// clears the bar its 0.5 score would have missed; at 0.6 the single-anchor
+// fact is dropped although it outscores the old fact that stays. Measured
+// after decay, the documented 0.3 would turn into a recency window and 0.6
+// would keep the weaker evidence over the stronger.
+func TestInMemoryGraphSearchScoreCutoffIgnoresDecay(t *testing.T) {
+	cfg := testConfig()
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	old := now.Add(-2 * cfg.Engine.Halflife)
+
+	topics := map[string]*graph.Topic[uint64]{}
+	for _, name := range []string{"a", "b"} {
+		topics[name] = mkTopic(g, name, now)
+		mustSet(t, g, topics[name])
+	}
+	file := func(value string, ts time.Time, under ...string) {
+		fact := mkFact(g, value, ts)
+		mustSet(t, g, fact)
+		for _, name := range under {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topics[name], NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+		}
+	}
+	file("fresh pair", now, "a", "b")
+	file("old pair", old, "a", "b")
+	file("fresh single", now, "a")
+
+	cases := []struct {
+		name  string
+		ratio float64
+		want  []string
+	}{
+		{"off keeps the whole list", 0, []string{"fresh pair", "fresh single", "old pair"}},
+		{"the same evidence clears the bar at any age", 0.3, []string{"fresh pair", "fresh single", "old pair"}},
+		{"weaker evidence is cut even when it outscores what stays", 0.6, []string{"fresh pair", "old pair"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg.DB.MinScoreRatio = tc.ratio
+			nodes, scores, _, _, err := g.Search(nil, containers.Vector[uint64, float64]{}, []string{"a", "b"}, nil, 0, 10, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search() error = %v, want nil", err)
+			}
+			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Search(ratio=%v) = %v (scores %v), want %v", tc.ratio, got, scores, tc.want)
+			}
+			if !sort.SliceIsSorted(scores, func(i, j int) bool { return scores[i] > scores[j] }) {
+				t.Errorf("Search(ratio=%v) scores = %v, want the decay order kept", tc.ratio, scores)
+			}
+		})
 	}
 }
 
@@ -1379,6 +1514,47 @@ func TestInMemoryGraphSearchWithATermSeedsFromText(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphSearchCleansQueryStopWords pins that the query is cleaned
+// of stop words the way a stored fact is, so the two sides of the text index
+// see one vocabulary. A stop word left in the query is not merely a term with
+// no postings: the tokenizer stems it, and the stem can be a content word's —
+// "own" stems to the term "owns" does — so without the cleaning the stop word
+// surfaces facts about owning, as the content word rightly does. With it, the
+// stop word seeds nothing, and a query that is nothing but stop words matches
+// nothing rather than erroring. Results are compared as sets: the cases pin
+// what is found, not how equal scores tie.
+func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+	const owns, joined = "Ana owns the bakery", "Caroline joined the team"
+	mustSet(t, g, mkFact(g, owns, now))
+	mustSet(t, g, mkFact(g, joined, now))
+
+	cases := []struct {
+		name     string
+		keywords []string
+		want     []string
+	}{
+		{"a stop word is not a search term, whatever it stems to", []string{"Caroline", "own"}, []string{joined}},
+		{"the content word sharing the stem does match", []string{"Caroline", "owns"}, []string{owns, joined}},
+		{"only stop words match nothing without erroring", []string{"when", "the", "own"}, []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nodes, _, _, _, err := g.Search(tc.keywords, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search(%v) error = %v, want nil", tc.keywords, err)
+			}
+			got := values(nodes)
+			sort.Strings(got)
+			sort.Strings(tc.want)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("Search(%v) = %v, want %v", tc.keywords, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestSearchWithoutAnchorsOpensFromTheSeeds pins the graph's door: the round
 // opens from the anchors the seeds are filed under, so a recall naming no
 // topic or entity still enters the graph. The storm query touches the
@@ -1443,4 +1619,122 @@ func TestSearchNamedAnchorsFilterTheRound(t *testing.T) {
 	if got, want := values(nodes), []string{"a storm of paperwork"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Search(topic=archive) = %v, want %v: the filter keeps the hub's match and drops %q, and the memos %v stay silent", got, want, calm, memos)
 	}
+}
+
+// TestInMemoryGraphSearchFilterIsTheAnchorTheDoorOpens pins that a filter
+// names the same node the door does: topic:work admits facts filed under the
+// Topic "work", not facts mentioning a NamedEntity spelled "work". A topic
+// and an entity of one name are two anchors everywhere else in the graph —
+// two keys, two rows — and a filter that matched on the value alone would be
+// the one place the two were confused, admitting through a topic filter a
+// fact the topic's own row does not hold.
+func TestInMemoryGraphSearchFilterIsTheAnchorTheDoorOpens(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+
+	fact := mkFact(g, "alice works at acme", now)
+	entity := mkEntity(g, "work", now)
+	mustSet(t, g, fact)
+	mustSet(t, g, entity)
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+
+	nodes, _, _, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
+	if len(nodes) != 0 {
+		t.Errorf("Search(alice, topic=work) = %v, want nothing: the fact mentions an entity named work, it is not filed under a topic", values(nodes))
+	}
+	nodes, _, _, _, _ = g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, []string{"work"}, 0, 10, time.Time{}, time.Time{})
+	if len(nodes) != 1 {
+		t.Errorf("Search(alice, entity=work) = %v, want [alice works at acme]", values(nodes))
+	}
+}
+
+// benchmarkGraph builds a graph of n facts for the Search benchmarks: each
+// fact is eight to twelve words from a Zipf-distributed vocabulary, filed
+// under one of fifty topics and mentioning one of five hundred entities, with
+// a 32-dimensional embedding in the forest. The generator is seeded, so every
+// run searches the same graph. It returns the graph and the vocabulary's most
+// frequent words, the terms with the longest posting lists.
+func benchmarkGraph(b *testing.B, n int) (g *graph.InMemoryGraph[uint64, float64], query []string) {
+	b.Helper()
+	g = newGraph()
+	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
+	rng := rand.New(rand.NewSource(1))
+	zipf := rand.NewZipf(rng, 1.1, 1, 4999)
+	now := time.Now()
+
+	topics := make([]*graph.Topic[uint64], 50)
+	for i := range topics {
+		topics[i] = mkTopic(g, "topic"+strconv.Itoa(i), now)
+		if err := g.Set(topics[i]); err != nil {
+			b.Fatalf("Set(topic %d) = %v, want nil", i, err)
+		}
+	}
+	entities := make([]*graph.NamedEntity[uint64], 500)
+	for i := range entities {
+		entities[i] = mkEntity(g, "entity"+strconv.Itoa(i), now)
+		if err := g.Set(entities[i]); err != nil {
+			b.Fatalf("Set(entity %d) = %v, want nil", i, err)
+		}
+	}
+	for i := range n {
+		words := make([]string, 8+rng.Intn(5))
+		for w := range words {
+			words[w] = "w" + strconv.FormatUint(zipf.Uint64(), 10)
+		}
+		ts := now.Add(-time.Duration(i) * time.Minute)
+		fact := mkFact(g, strings.Join(words, " "), ts)
+		if err := g.Set(fact); err != nil {
+			b.Fatalf("Set(fact %d) = %v, want nil", i, err)
+		}
+		topic := topics[rng.Intn(len(topics))]
+		if err := g.Set(graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()}); err != nil {
+			b.Fatalf("Set(isabout %d) = %v, want nil", i, err)
+		}
+		entity := entities[rng.Intn(len(entities))]
+		if err := g.Set(graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()}); err != nil {
+			b.Fatalf("Set(mentions %d) = %v, want nil", i, err)
+		}
+		vec := make([]float64, 32)
+		for d := range vec {
+			vec[d] = rng.NormFloat64()
+		}
+		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](vec)); err != nil {
+			b.Fatalf("vector Insert(fact %d) = %v, want nil", i, err)
+		}
+	}
+	return g, []string{"w0", "w1", "w2"}
+}
+
+// BenchmarkSearch measures the graph's Search over ten thousand facts on
+// each lane — depth 0 seeds only, depth 1 the precision lane, depth 2 the
+// full anchor-mediated round — for a three-term query filtered by one topic,
+// and a vector variant seeding from the forest instead of the text index.
+func BenchmarkSearch(b *testing.B) {
+	g, query := benchmarkGraph(b, 10000)
+	rng := rand.New(rand.NewSource(2))
+	vec := make([]float64, 32)
+	for d := range vec {
+		vec[d] = rng.NormFloat64()
+	}
+	vector := containers.NewVector[uint64](vec)
+	none := containers.Vector[uint64, float64]{}
+
+	for depth := range 3 {
+		b.Run("depth"+strconv.Itoa(depth), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, _, _, err := g.Search(query, none, []string{"topic7"}, nil, depth, 10, time.Time{}, time.Time{}); err != nil {
+					b.Fatalf("Search = %v, want nil", err)
+				}
+			}
+		})
+	}
+	b.Run("vector", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, _, _, _, err := g.Search(nil, vector, []string{"topic7"}, nil, 1, 10, time.Time{}, time.Time{}); err != nil {
+				b.Fatalf("Search = %v, want nil", err)
+			}
+		}
+	})
 }

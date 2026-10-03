@@ -46,7 +46,8 @@ func TestCleanContentRemovesEnglishStopWords(t *testing.T) {
 		{"punctuation does not shield a stop word", "the, graph; is: temporal!", "graph temporal"},
 		{"hyphens delimit words", "state-of-the-art recall", "state art recall"},
 		{"symbols are words and survive", "the 🍊 is ripe ✓", "🍊 ripe ✓"},
-		{"only stop words leave nothing", "to be or not to be", ""},
+		{"only stop words leave nothing", "it is what it was", ""},
+		{"a negation survives its stop words", "to be or not to be", "not"},
 		{"empty content stays empty", "", ""},
 	}
 	for _, tt := range tests {
@@ -55,6 +56,25 @@ func TestCleanContentRemovesEnglishStopWords(t *testing.T) {
 				t.Errorf("CleanContent(%q) = %q, want %q", tt.content, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCleanContentKeepsContentWordsAndNegations pins what the English list
+// must never hold. A stop word is a word no stored fact can be found by, so a
+// content word on the list makes every fact about it unretrievable — the
+// scikit-learn list this one replaced held "bill", "fire", "system" and
+// "name" — and a negation on it makes "Ana is not vegetarian" index the same
+// as "Ana is vegetarian". The apostrophe pieces stay terms too: the negative
+// heads are negations, and the clitic tails are also letters facts name.
+func TestCleanContentKeepsContentWordsAndNegations(t *testing.T) {
+	for _, word := range []string{
+		"bill", "fire", "system", "name", "names", "show", "call", "back", "full", "interest",
+		"no", "nor", "not", "never", "nothing", "nobody", "none", "cannot", "without",
+		"isn", "don", "won", "t", "s", "d", "ll", "m", "re", "ve",
+	} {
+		if got := stopwords.CleanContent(word, language.English); got != word {
+			t.Errorf("CleanContent(%q) = %q, want it kept: it is not a stop word", word, got)
+		}
 	}
 }
 

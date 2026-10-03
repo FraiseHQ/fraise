@@ -113,7 +113,8 @@ func newCollectFixture(t *testing.T) *collectFixture {
 	fx.seeds = []uint64{fx.f1, fx.f2, fx.h[0]}
 	// The fixture's topics are all named so the filter narrows nothing: the
 	// traversal opens from the seeds' own anchors either way.
-	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, []string{"cluster", "hub", "giant"}, nil, 2)
+	topicKeys, entityKeys := fx.g.anchorKeys([]string{"cluster", "hub", "giant"}, nil)
+	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, topicKeys, entityKeys, 2)
 	return fx
 }
 
@@ -175,7 +176,8 @@ func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
 		facts[0].Key(): {{Src: scoring.SrcText, Score: 0.1, Rank: 0, Count: 1}},
 		facts[1].Key(): {{Src: scoring.SrcText, Score: 0.8, Rank: 1, Count: 1}},
 	}
-	g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, candidates, []string{"lone"}, nil, 2)
+	topicKeys, entityKeys := g.anchorKeys([]string{"lone"}, nil)
+	g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, candidates, topicKeys, entityKeys, 2)
 
 	for i, f := range facts {
 		if got := graphContributions(candidates, f.Key()); len(got) != 0 {
@@ -279,7 +281,8 @@ func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 		s2: {{Src: scoring.SrcText, Score: 16, Rank: 1, Count: 1}},
 		s3: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
-	g.findNeighbours([]uint64{s1, s2, s3}, candidates, []string{"left", "right", "hub"}, nil, 2)
+	topicKeys, entityKeys := g.anchorKeys([]string{"left", "right", "hub"}, nil)
+	g.findNeighbours([]uint64{s1, s2, s3}, candidates, topicKeys, entityKeys, 2)
 
 	got := graphContributions(candidates, shared)
 	if len(got) != 2 {

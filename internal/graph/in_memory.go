@@ -25,6 +25,7 @@ package graph
 import (
 	"errors"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -186,6 +187,15 @@ func (g *InMemoryGraph[K, P]) Put(key K, node Node[K]) error {
 	return g.store(key, node)
 }
 
+// textLanguage is the language whose stop words are cleaned from text on both
+// sides of the text index: a fact's value in store, the query keywords in
+// gatherSeeds. The two must agree — a stop word cleaned from one side but not
+// the other is a term only that side carries, and its stem can collide with a
+// content word's ("own" with "owns") — so both read this one tag
+// NOTE: fraise doesn't have multi-lingual support just yet
+// this would need to be paramaterized at term.
+var textLanguage = language.English
+
 // store records the node and (re)indexes its value in the text index. Only
 // facts are indexed. Relationship nodes carry no text at all, and indexing
 // them as empty documents inflated the corpus count ~3× and crushed avgdl —
@@ -225,7 +235,7 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	_, isFact := node.(Fact[K])
 	if attrs := node.GetAttributes(); isFact && attrs != nil && attrs.Value != "" {
 
-		if err := g.textIndex.Insert(key, stopwords.CleanContent(attrs.Value, language.English)); err != nil {
+		if err := g.textIndex.Insert(key, stopwords.CleanContent(attrs.Value, textLanguage)); err != nil {
 			logger.Warn("Failed to index node text", "error", err)
 			return err
 		}
@@ -425,6 +435,9 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	}
 	rankedKeys, rankedScores := ranker.Drain()
 
+	// E. Score cutoff (db.min-score-ratio)
+	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
+
 	nodes := make([]*Node[K], len(rankedKeys))
 	scoresOut := make([]P, len(rankedKeys))
 	contributions := make([][]scoring.Contribution[K, P], len(rankedKeys))
@@ -438,6 +451,37 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	logger.Debug("Graph search completed",
 		"candidates", len(kept), "returned", len(rankedKeys))
 	return nodes, scoresOut, contributions, background, nil
+}
+
+// scoreCutoff applies db.min-score-ratio (see DBConfig) to a best-first
+// ranking. A hit's relevance is its scorer output, before the boost and decay
+// its score carries, refolded here from its contributions for the ranked hits
+// alone: the scorer is pure, so this is the value stage B computed, at O(top)
+// rather than a copy of every candidate's. The bar is MinScoreRatio × the
+// best relevance in the list, and a hit is kept if its relevance clears it —
+// each judged on its own, since relevance does not descend along a
+// decay-ordered list and the first miss is not the end of the hits that
+// clear it. With the ratio at most 1 the best hit clears its own bar, so the
+// list is never emptied. Kept hits keep their order and their scores; a ratio
+// of zero returns the ranking unchanged.
+func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.Scorer[K, P], candidates scoring.Candidates[K, P]) ([]K, []P) {
+	ratio := g.config.DB.MinScoreRatio
+	if ratio <= 0 || len(keys) == 0 {
+		return keys, scores
+	}
+	relevance := make([]P, len(keys))
+	for i, key := range keys {
+		relevance[i] = scorer.Score(candidates[key])
+	}
+	bar := P(ratio) * slices.Max(relevance)
+	keep := 0
+	for i := range keys {
+		if relevance[i] >= bar {
+			keys[keep], scores[keep] = keys[i], scores[i]
+			keep++
+		}
+	}
+	return keys[:keep], scores[:keep]
 }
 
 // collect runs the retrieval stages and pools their sightings into one
@@ -457,46 +501,63 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 // and no anchor is observed, so the background is zero: the scorer folds
 // each member's own seed mass, and the recency decay ranks the results from
 // there.
+//
+// The named topics and entities are resolved to their anchor keys here, once
+// per query, and every stage works on the keys: the door (gatherMembers) and
+// the filter (findNeighbours) then agree by construction on which node a
+// name denotes, and the filter tests adjacency by lookup instead of comparing
+// values around every candidate.
 func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P, error) {
+	topicKeys, entityKeys := g.anchorKeys(topics, entities)
 	candidates := make(scoring.Candidates[K, P])
 	if len(keywords) == 0 && vector.Empty() {
-		g.gatherMembers(topics, entities, candidates)
+		g.gatherMembers(topicKeys, entityKeys, candidates)
 		return candidates, 0, nil
 	}
 	seeds, err := g.gatherSeeds(keywords, vector, candidates, top)
 	if err != nil {
 		return nil, 0, err
 	}
-	background := g.findNeighbours(seeds, candidates, topics, entities, depth)
+	background := g.findNeighbours(seeds, candidates, topicKeys, entityKeys, depth)
 	return candidates, background, nil
+}
+
+// anchorKeys resolves each named value to the key the store files it under —
+// the Topic or NamedEntity hash of the value — in query order. A topic and an
+// entity of one name are two anchors, and a name nothing is filed under
+// resolves to a key no node holds, so it seeds nothing and filters
+// everything out, the same as a value no node carries.
+func (g *InMemoryGraph[K, P]) anchorKeys(topics []string, entities []string) (topicKeys []K, entityKeys []K) {
+	topicKeys = make([]K, 0, len(topics))
+	for _, value := range topics {
+		topicKeys = append(topicKeys, Topic[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+	}
+	entityKeys = make([]K, 0, len(entities))
+	for _, value := range entities {
+		entityKeys = append(entityKeys, NamedEntity[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+	}
+	return topicKeys, entityKeys
 }
 
 // gatherMembers seeds the candidate pool from the named anchors' adjacency
 // rows: every fact filed under a named topic or entity, carrying one
 // SrcAnchor contribution of unit mass per named anchor it is filed under, so
 // a fact under two of them holds twice the seed mass of a fact under one —
-// it answers more of the question. Each anchor resolves to the key store
-// filed it under, the Topic or NamedEntity hash of its value: a topic and an
-// entity of one name are two anchors, and an anchor nothing is filed under
-// resolves to an empty row, so an unknown anchor seeds nothing. Anchors are
-// visited in query order and a repeated one once, so a candidate's list is
-// appended in a fixed order for the scorer's fold. Only facts seed: an
-// anchor's row holds facts by construction, and only facts are memories.
-func (g *InMemoryGraph[K, P]) gatherMembers(topics []string, entities []string, candidates scoring.Candidates[K, P]) {
-	anchors := make([]K, 0, len(topics)+len(entities))
-	named := make(map[K]struct{}, len(topics)+len(entities))
-	name := func(anchor K) {
+// it answers more of the question. An anchor nothing is filed under has an
+// empty row, so an unknown anchor seeds nothing. Anchors are visited in
+// query order — topics, then entities — and a repeated one once, so a
+// candidate's list is appended in a fixed order for the scorer's fold. Only
+// facts seed: an anchor's row holds facts by construction, and only facts
+// are memories.
+func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candidates scoring.Candidates[K, P]) {
+	anchors := make([]K, 0, len(topicKeys)+len(entityKeys))
+	named := make(map[K]struct{}, len(topicKeys)+len(entityKeys))
+	for _, anchor := range slices.Concat(topicKeys, entityKeys) {
 		if _, dup := named[anchor]; dup {
-			return
+			continue
 		}
 		named[anchor] = struct{}{}
 		anchors = append(anchors, anchor)
-	}
-	for _, value := range topics {
-		name(Topic[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
-	}
-	for _, value := range entities {
-		name(NamedEntity[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
 	}
 
 	var members int
@@ -521,10 +582,15 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topics []string, entities []string, 
 
 // gatherSeeds seeds the candidate pool from the text index (keywords) and the
 // vector index (query embedding), appending one Contribution per sighting; a
-// key surfaced by both sources holds one from each. Text contributions carry
-// the BM25 × coverage mass; vector contributions carry the similarity
-// 1/(1+distance), converted here so Contribution.Score is bigger-is-better
-// for every source — the index reports distance, where smaller is nearer.
+// key surfaced by both sources holds one from each. The keywords are cleaned
+// of stop words with the same CleanContent and textLanguage store applies to
+// a fact's text, so the two sides of the index share one vocabulary: a stop
+// word in the query is not a search term, and neither is the stem it would
+// otherwise reduce to — "own" stems to the term "owns" does, and left in it
+// would surface every fact about owning. Text contributions carry the BM25 ×
+// coverage mass; vector contributions carry the similarity 1/(1+distance),
+// converted here so Contribution.Score is bigger-is-better for every source —
+// the index reports distance, where smaller is nearer.
 // The candidate budget is max(seed-size, top): the text list must track the
 // requested result size, because a budget capped below top silently flatlines
 // every ranking past seed-size ("fair seeding").
@@ -543,7 +609,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.textIndex.Search(strings.Join(keywords, " "), seedK); err == nil {
+		if keys, scores, err := g.textIndex.Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
@@ -612,9 +678,9 @@ const depthOneAdmission = 2
 // single anchor-mediated round, depth 1 admitting anchors only above
 // depthOneAdmission * fair share (the precision lane) and depth 2 at plain
 // fair share (max recall). The pooled candidates are then filtered by
-// topics and entities regardless of the lane, so a named anchor narrows what
-// the round may return without deciding whether it runs.
-func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candidates[K, P], topics []string, entities []string, depth int) P {
+// the named topic and entity anchors regardless of the lane, so a named
+// anchor narrows what the round may return without deciding whether it runs.
+func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candidates[K, P], topicKeys []K, entityKeys []K, depth int) P {
 	// depth 0 completes no transmission: the candidates are the text/vector
 	// seeds alone, scored by their own mass (the floor), the anchor expansion
 	// skipped entirely — the fast, text-only lane. depth 1 and 2 both run the
@@ -736,7 +802,7 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 	}
 
 	for key := range candidates {
-		if !g.matchesFilter(key, topics) || !g.matchesFilter(key, entities) {
+		if !g.matchesFilter(key, topicKeys) || !g.matchesFilter(key, entityKeys) {
 			delete(candidates, key)
 		}
 	}
@@ -764,42 +830,25 @@ func (g *InMemoryGraph[K, P]) boost(scores map[K]P) {
 	}
 }
 
-// matchesFilter reports whether the node passes a value filter: trivially if
-// values is empty, otherwise if its own value or any direct neighbour's value
-// is one of values (facts are tagged with topics/entities by being linked to
-// the Topic/NamedEntity node carrying that value).
-func (g *InMemoryGraph[K, P]) matchesFilter(key K, values []string) bool {
-	if len(values) == 0 {
+// matchesFilter reports whether the node passes an anchor filter: trivially
+// if anchors is empty, otherwise if it is one of the anchors or is adjacent to
+// one (facts are tagged with topics/entities by being linked to the Topic/
+// NamedEntity node carrying that value). The anchors are the keys the query's
+// names resolve to under anchorKeys — the same keys the door opens — so a
+// candidate is tested by adjacency lookup, O(1) per anchor, and never by
+// comparing values around it.
+func (g *InMemoryGraph[K, P]) matchesFilter(key K, anchors []K) bool {
+	if len(anchors) == 0 {
 		return true
 	}
-
-	match := func(k K) bool {
-		node, ok := g.idToNodes[k]
-		if !ok {
-			return false
-		}
-		attrs := node.GetAttributes()
-		if attrs == nil {
-			return false
-		}
-		for _, v := range values {
-			if strings.EqualFold(attrs.Value, v) {
-				return true
-			}
-		}
-		return false
-	}
-
-	if match(key) {
-		return true
-	}
-	for neighbor := range g.nodeToTargets[key] {
-		if match(neighbor) {
+	for _, anchor := range anchors {
+		if key == anchor {
 			return true
 		}
-	}
-	for neighbor := range g.nodeToSources[key] {
-		if match(neighbor) {
+		if _, ok := g.nodeToTargets[key][anchor]; ok {
+			return true
+		}
+		if _, ok := g.nodeToSources[key][anchor]; ok {
 			return true
 		}
 	}

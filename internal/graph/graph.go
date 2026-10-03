@@ -115,8 +115,10 @@ type Graph[K comparable, P float32 | float64] interface {
 
 	// Search runs a hybrid query over the graph and returns matching
 	// nodes alongside their ranking scores and the contribution records
-	// the scores were folded from (parallel slices, ordered best-first,
-	// at most top entries), plus the query's background rate — the one
+	// the scores were folded from (parallel slices, ordered best-first, at
+	// most top entries — an implementation may return fewer than top when
+	// its own retrieval policy, such as a configured score cutoff, finds the
+	// tail not worth returning), plus the query's background rate — the one
 	// query-global observation the scoring fold used, which explain
 	// serializes so a client can recompute every score from its payload.
 	// A caller that only wants ranked hits discards both.

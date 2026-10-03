@@ -26,7 +26,7 @@ A fact found by more than one source carries the sum of their masses.
 
 ### What the text index matches
 
-A fact is indexed under its terms and a recall's keywords are read the same way, so the two line up: text is case-folded, English stop words are dropped, and each remaining term is reduced to its stem, which is how `running` finds a fact written with `runs`. A term is a maximal run of letters, digits and symbols in Unicode category So (Symbol, other) — the class that holds emoji, check marks and marks such as `©` — so a fact written as `🍊 🍋 🍌` is found by `recall '🍊'` (quoted, since an emoji is not a letter to the query grammar). Every other character delimits: whitespace, punctuation, and the math, currency and modifier symbols, so `c++` indexes as `c` and `$5` as `5`. Joiners and variation selectors delimit too, so a multi-character emoji sequence indexes as each of its symbols.
+A fact is indexed under its terms and a recall's keywords are read the same way, so the two line up: text is case-folded, English stop words are dropped, and each remaining term is reduced to its stem, which is how `running` finds a fact written with `runs`. The stop words are [Snowball's English list](https://snowballstem.org/algorithms/english/stop.txt), the one written for the stemmer: function words only — pronouns, articles, prepositions, auxiliaries, conjunctions — so every content word stays searchable. Negations are not stop words: `not`, `no` and `nor` are indexed, so a fact that something is not so is told apart from one that it is. A term is a maximal run of letters, digits and symbols in Unicode category So (Symbol, other) — the class that holds emoji, check marks and marks such as `©` — so a fact written as `🍊 🍋 🍌` is found by `recall '🍊'` (quoted, since an emoji is not a letter to the query grammar). Every other character delimits: whitespace, punctuation, and the math, currency and modifier symbols, so `c++` indexes as `c` and `$5` as `5`. Joiners and variation selectors delimit too, so a multi-character emoji sequence indexes as each of its symbols.
 
 ## The transmission
 
@@ -43,6 +43,10 @@ A fact's relevance is its own mass plus everything transmitted to it.
 ## One sentence of intuition
 
 > *An anchor may only speak when its members matched better than its size alone predicted — hubs are heard exactly when they are surprising, silent when they are merely large, and never louder than their surplus divided among everyone listening.*
+
+## Where the list stops
+
+A recall returns its `top:` best candidates — and, with the score cutoff on, fewer: `db.min-score-ratio` drops the hits whose relevance, before recency decay and the ranking boost, is below a fraction of the best hit's. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
 
 ## Why a recall needs a seed
 
