@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.0](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-rc.2...python/v0.1.0) (2026-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* tighten the query grammar to letters-and-digits words ([#396](https://github.com/FraiseHQ/fraise/issues/396))
+
+### Features
+
+* **python:** add an anchor extractor to the client ([#415](https://github.com/FraiseHQ/fraise/issues/415)) ([a351544](https://github.com/FraiseHQ/fraise/commit/a351544af109ddce29b854f8991ee7183908d332))
+* **python:** add explain() to the client ([#414](https://github.com/FraiseHQ/fraise/issues/414)) ([4c567dd](https://github.com/FraiseHQ/fraise/commit/4c567dd21efb3ae37e401438a198c116a7c77047))
+* tighten the query grammar to letters-and-digits words ([#396](https://github.com/FraiseHQ/fraise/issues/396)) ([db7861d](https://github.com/FraiseHQ/fraise/commit/db7861d3309ca5838ccc7df91b813d294b1103db))
+
+
+### Maintenance
+
+* improve documentation (fix typos and incorrect statements) ([#362](https://github.com/FraiseHQ/fraise/issues/362)) ([14d8491](https://github.com/FraiseHQ/fraise/commit/14d84913dc058110355dee8fb76361863ce72323))
+
 ## [0.1.0-rc.2](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-rc.1...python/v0.1.0-rc.2) (2026-09-24)
 
 
