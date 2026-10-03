@@ -715,7 +715,7 @@ func scoreCutoffAt[P float32 | float64](t *testing.T) {
 		{"off keeps the whole list", 0, 1, 10, []P{3, 2, 1, 1}},
 		{"ratio drops the tail under the bar", 0.5, 1, 10, []P{3, 2}},
 		{"a hit exactly at the bar is kept", 1.0 / 3, 1, 10, []P{3, 2, 1, 1}},
-		{"a hit exactly at a decimal bar is kept", 0.1, 1, 10, []P{3, 2, 1, 1}},
+		{"the cut falls just under a hit on the bar", 2.0 / 3, 1, 10, []P{3, 2}},
 		{"the best hit survives any ratio", 1, 1, 10, []P{3}},
 		{"min-results floors the cut", 0.9, 2, 10, []P{3, 2}},
 		{"the floor never splits a tie", 0.9, 3, 10, []P{3, 2, 1, 1}},
