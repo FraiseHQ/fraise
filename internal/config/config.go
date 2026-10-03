@@ -134,8 +134,8 @@ type DBConfig struct {
 	// than this can never be silently starved of candidates.
 	SeedSize int `toml:"seed-size"`
 
-	// Score cutoff: a hit scoring below this fraction of the best hit's score
-	// is dropped, so a recall stops where the evidence does instead of
+	// Score cutoff: a hit whose relevance is below this fraction of the best
+	// hit's is dropped, so a recall stops where the evidence does instead of
 	// filling to top. A ratio is scale-free — raw units stay raw, the order
 	// is untouched, the list is just shorter. 0 (the default) turns the
 	// cutoff off: the trade is the operator's to make. A fraction, so
@@ -276,7 +276,7 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
-	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits scoring below this fraction of the best hit's score (0 = off)")
+	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits whose relevance is below this fraction of the best hit's (0 = off)")
 	flagSet.IntVar(&config.DB.MinResults, "min-results", DefaultMinResults, "Hits the score cutoff never cuts below")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")

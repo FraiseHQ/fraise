@@ -139,8 +139,8 @@ func TestValidateChecksEverySetting(t *testing.T) {
 }
 
 // TestValidateBoundsMinScoreRatio pins the domain of the one bounded numeric
-// setting: a fraction of the best hit's score, so anything outside [0, 1] is
-// rejected at startup rather than acted on. Each value past the range is a
+// setting: a fraction of the best hit's relevance, so anything outside [0, 1]
+// is rejected at startup rather than acted on. Each value past the range is a
 // distinct silent failure the check replaces — 30 (an operator thinking in
 // percent) puts the bar above every hit so every recall collapses to its floor,
 // a negative ratio reads as "off", and NaN fails every comparison in the

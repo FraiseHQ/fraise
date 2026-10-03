@@ -144,9 +144,10 @@ func Canonical(v *string, name string, accepted []string) error {
 // Every setting with a fixed vocabulary belongs here. One left out is one that
 // keeps its silent fallback, and nothing about its consumer's switch makes that
 // visible from the outside. The same holds for a numeric setting with a bounded
-// domain: db.min-score-ratio is a fraction of the best hit's score, and a value
-// past 1 — an operator thinking in percent — would put the bar above every hit
-// and silently collapse each recall to its floor, with no error anywhere.
+// domain: db.min-score-ratio is a fraction of the best hit's relevance, and a
+// value past 1 — an operator thinking in percent — would put the bar above
+// every hit and silently collapse each recall to its floor, with no error
+// anywhere.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string

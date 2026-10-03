@@ -14,7 +14,7 @@ navLabel: "Database"
 | `max-depth` | `-max-depth` | `2` | ceiling on `depth:` (lanes are 0, 1 and 2) |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
-| `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits under this fraction of the best hit's score, in `[0, 1]`; `0` is off |
+| `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
 | `min-results` | `-min-results` | `1` | floor under the cutoff: hits it never cuts below |
 
 ```toml
@@ -47,7 +47,7 @@ min-score-ratio = 0.3
 min-results = 1
 ```
 
-The cutoff is **off by default** because the trade is yours to make: it buys precision with a little recall. On the LoCoMo benchmark a ratio of `0.1` raised F1 by 0.04 for 0.003 of recall, and `0.3` raised it by 0.22 for 0.03 of recall. Use [`/explain`](/docs/http-api/endpoints/explain) with the cutoff off to see the scores a ratio would be cutting at before you set one.
+The cutoff is **off by default** because the trade is yours to make: it buys precision with a little recall. On the LoCoMo benchmark a ratio of `0.1` raised F1 by 0.04 for 0.003 of recall, and `0.3` raised it by 0.22 for 0.03 of recall. [`/explain`](/docs/http-api/endpoints/explain) breaks a hit down into the contributions its relevance is folded from.
 
 ## `num-graphs`
 

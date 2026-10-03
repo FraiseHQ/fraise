@@ -160,8 +160,8 @@ const (
 	// max(seed-size, top), so a large recall is never starved of candidates.
 	DefaultSeedSize uint = 10
 
-	// DefaultMinScoreRatio is the score cutoff: a hit scoring below this
-	// fraction of the best hit's score is dropped, so a recall stops where the
+	// DefaultMinScoreRatio is the score cutoff: a hit whose relevance is below
+	// this fraction of the best hit's is dropped, so a recall stops where the
 	// evidence does instead of filling to top. The tail of a filled list —
 	// hits scoring a tenth of the first — rarely holds the answer but costs
 	// precision and context tokens all the same; a ratio is scale-free, so it
