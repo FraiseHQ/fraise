@@ -22,6 +22,18 @@ jobs:
     # skipped: bots are exempt, and a skipped job leaves cla/signed unset.
     if: github.event_name == 'pull_request_target' || github.event.issue.pull_request != null
     steps:
+      # GITHUB_TOKEN cannot write across repositories, so signatures are
+      # committed to FraiseHQ/cla by fraise-bot, with a token scoped to that
+      # repository and contents:write alone. fraise-bot[bot] is itself exempt
+      # from the gate through the action's default `*[bot]` allowlist.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: fraise-bot
+        with:
+          client-id: ${{ secrets.FRAISE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.FRAISE_BOT_PRIVATE_KEY }}
+          owner: FraiseHQ
+          repositories: cla
+          permission-contents: write
       - name: CLA gate
         uses: FraiseHQ/cla-gate-action@6c278daa979c0d9ef6bdb4464151e95fbecf1a9a # v2.0.0
         with:
@@ -29,4 +41,4 @@ jobs:
           signature-repo: FraiseHQ/cla
           signature-branch: main
           signature-path: signatures/v1/cla.json
-          signature-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          signature-token: ${{ steps.fraise-bot.outputs.token }}
