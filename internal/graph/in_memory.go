@@ -399,7 +399,9 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	// boosts the result. The relevance is kept as scored: it is what the
 	// evidence alone says about a candidate, and the score cutoff below is
 	// measured against it, not against the boosted and decayed score the
-	// list is ordered by.
+	// list is ordered by. Only the cutoff reads it, so with the cutoff off —
+	// the default — the scores are boosted and decayed in place rather than
+	// every recall paying for a copy of the candidate set nothing consults.
 	relevance := make(map[K]P, len(candidates))
 	keys := make([]K, 0, len(candidates))
 	scorer := g.scorer.WithBackground(background)
@@ -407,7 +409,10 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		relevance[key] = scorer.Score(contributions)
 		keys = append(keys, key)
 	}
-	scores := maps.Clone(relevance)
+	scores := relevance
+	if g.config.DB.MinScoreRatio > 0 {
+		scores = maps.Clone(relevance)
+	}
 	g.boost(scores)
 
 	// C. Time filtered (since or until)
