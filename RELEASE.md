@@ -48,7 +48,7 @@ Because merging is the trigger, a bad release is fixed forward with another comm
 >
 > - **Settings → Environments → New environment** named `release`, enable **Required reviewers**, add the maintainers. Move the `DISCORD_WEBHOOK_ID` / `DISCORD_WEBHOOK_TOKEN` secrets into this environment for extra hygiene (only approved runs can read them).
 > - **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**, or release-please cannot open its PR.
-> - A `RELEASE_PLEASE_TOKEN` secret holding a PAT. Fine-grained, on this repo: **Contents: Read and write** (branch, commit, tag, release), **Pull requests: Read and write** (open and update the release PR), and **Issues: Read and write** (release-please labels the PR `autorelease:*`, and PR labels go through the Issues API). Metadata: Read-only comes along automatically. A classic PAT needs the single `repo` scope; a GitHub App token works too.
+> - The **fraise-bot** GitHub App installed on this repository, with its client ID and private key in the `FRAISE_BOT_CLIENT_ID` and `FRAISE_BOT_PRIVATE_KEY` secrets. `release.yaml` mints a token from them scoped to this repository with **Contents: Read and write** (branch, commit, tag, release), **Pull requests: Read and write** (open and update the release PR), and **Issues: Read and write** (release-please labels the PR `autorelease:*`, and PR labels go through the Issues API); the app must grant at least those.
 >
 >   This is **not optional**: a tag pushed with the default `GITHUB_TOKEN` does not trigger other workflows, so the release would be created with no binaries attached.
 
