@@ -25,13 +25,23 @@ jobs:
       # that PR tags the release and creates the GitHub Release — the tag can
       # therefore never disagree with the version compiled into the binary.
       #
-      # token MUST be a PAT (or GitHub App token), not the default
-      # GITHUB_TOKEN: a tag pushed with GITHUB_TOKEN does not trigger other
-      # workflows, so the publish job in go.yaml would never fire and the
-      # release would ship with no binaries attached.
+      # token MUST be fraise-bot's, not the default GITHUB_TOKEN: a tag pushed
+      # with GITHUB_TOKEN does not trigger other workflows, so the publish job
+      # in go.yaml would never fire and the release would ship with no
+      # binaries attached. The token is scoped to this repository and to what
+      # release-please touches: the branch, commit, tag and release
+      # (contents), its PR, and the autorelease:* labels (issues).
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: fraise-bot
+        with:
+          client-id: ${{ secrets.FRAISE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.FRAISE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7
         id: release
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.fraise-bot.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json

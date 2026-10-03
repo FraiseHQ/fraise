@@ -31,14 +31,33 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      # GITHUB_TOKEN cannot write across repositories, hence the PAT: the same
-      # one cla.yaml uses to write to FraiseHQ/cla. checkout keeps it in the
-      # clone's git config, which is what the push below authenticates with.
+      # GITHUB_TOKEN cannot write across repositories, hence fraise-bot: a
+      # token minted for FraiseHQ/www alone, with nothing but contents:write.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: fraise-bot
+        with:
+          client-id: ${{ secrets.FRAISE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.FRAISE_BOT_PRIVATE_KEY }}
+          owner: FraiseHQ
+          repositories: www
+          permission-contents: write
+
+      # The sync commit is authored by the bot that pushes it, so www's history
+      # names fraise-bot rather than a workflow it cannot see.
+      - name: Resolve fraise-bot's commit identity
+        id: fraise-bot-user
+        env:
+          GH_TOKEN: ${{ steps.fraise-bot.outputs.token }}
+          SLUG: ${{ steps.fraise-bot.outputs.app-slug }}
+        run: echo "id=$(gh api "/users/${SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      # checkout keeps the token in the clone's git config, which is what the
+      # push below authenticates with.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: FraiseHQ/www
           ref: main
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          token: ${{ steps.fraise-bot.outputs.token }}
           path: www
 
       # A mirror, not a merge: a page deleted here disappears there, so
@@ -54,4 +73,6 @@ jobs:
           branch: main
           file_pattern: contents/docs
           commit_message: "docs: sync from FraiseHQ/fraise@${{ github.sha }}"
-          commit_author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          commit_user_name: ${{ steps.fraise-bot.outputs.app-slug }}[bot]
+          commit_user_email: ${{ steps.fraise-bot-user.outputs.id }}+${{ steps.fraise-bot.outputs.app-slug }}[bot]@users.noreply.github.com
+          commit_author: ${{ steps.fraise-bot.outputs.app-slug }}[bot] <${{ steps.fraise-bot-user.outputs.id }}+${{ steps.fraise-bot.outputs.app-slug }}[bot]@users.noreply.github.com>
