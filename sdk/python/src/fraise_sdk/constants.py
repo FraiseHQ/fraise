@@ -80,8 +80,8 @@ REMEMBER_TOOL = "remember_fact"
 
 # Tool-call budget: a sane ceiling so the model need not reason about scale.
 # Depth has no default here: an omitted clause takes the lane the server is
-# configured with, and this tool names no topic or entity, so any explicit
-# lane above the floor would only draw a warning.
+# configured with, which is the operator's choice of how much graph a plain
+# question gets.
 DEFAULT_TOP = 5
 
 # The retrieval lanes are 0, 1 and 2 by design — the scorer runs at most one

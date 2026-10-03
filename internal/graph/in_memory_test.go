@@ -1555,43 +1555,69 @@ func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 	}
 }
 
-// TestSearchWithoutAnchorsSkipsTheGraph pins the graph's door: the anchor
-// traversal runs only when the query names a topic or entity. The same storm
-// query that funds the cluster's silent member once the fixture's topics are
-// named observes no anchor without them — background zero, no graph
-// contribution, the silent member absent — whatever the depth: a recall
-// naming no anchor is a text and vector search.
-func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
+// TestSearchWithoutAnchorsOpensFromTheSeeds pins the graph's door: the round
+// opens from the anchors the seeds are filed under, so a recall naming no
+// topic or entity still enters the graph. The storm query touches the
+// weather cluster and the archive hub through its matches alone — the
+// background is positive, the cluster's silent member arrives on a graph
+// contribution, and the hub's memos stay out because admission, not a named
+// filter, is what keeps a fair-share hub silent. The same call at depth 0
+// stays a text search, so what opened the graph is the lane, not a name.
+func TestSearchWithoutAnchorsOpensFromTheSeeds(t *testing.T) {
 	g := noDecayGraph()
-	calm, _ := stormGraph(t, g)
+	calm, memos := stormGraph(t, g)
 
 	nodes, _, contributions, background, _ := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 20, time.Time{}, time.Time{})
-	if background != 0 {
-		t.Errorf("background = %v without an anchor named, want 0: the traversal must not run", background)
+	if background <= 0 {
+		t.Fatalf("background = %v without an anchor named, want positive: the seeds' own anchors open the graph", background)
 	}
-	for i, list := range contributions {
-		for _, c := range list {
-			if c.Src == scoring.SrcGraph {
-				t.Errorf("hit %d recorded a graph contribution %+v without an anchor named", i, c)
+	got := values(nodes)
+	found := -1
+	for i, value := range got {
+		if value == calm {
+			found = i
+		}
+		for _, memo := range memos {
+			if value == memo {
+				t.Errorf("hub memo %q surfaced without an anchor named — a fair-share hub transmitted", value)
 			}
 		}
 	}
-	for _, value := range values(nodes) {
-		if value == calm {
-			t.Errorf("silent member %q surfaced without an anchor named: nothing may transmit", calm)
-		}
+	if found == -1 {
+		t.Fatalf("Search(no anchor) = %v, want the silent member %q funded through the anchor its seeds are filed under", got, calm)
+	}
+	if list := contributions[found]; len(list) != 1 || list[0].Src != scoring.SrcGraph {
+		t.Errorf("silent member's contributions = %+v, want a single graph observation", list)
 	}
 
-	nodes, _, _, background, _ = g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
-	if background <= 0 {
-		t.Fatalf("background = %v with the topics named, want positive: the traversal runs through a named anchor", background)
+	nodes, _, _, background, _ = g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 20, time.Time{}, time.Time{})
+	if background != 0 {
+		t.Errorf("depth 0 background = %v without an anchor named, want 0: the floor runs no traversal", background)
 	}
-	funded := false
 	for _, value := range values(nodes) {
-		funded = funded || value == calm
+		if value == calm {
+			t.Errorf("depth 0 surfaced silent member %q: the floor transmits nothing", calm)
+		}
 	}
-	if !funded {
-		t.Errorf("Search(topics named) = %v, want the silent member %q funded once the graph is entered", values(nodes), calm)
+}
+
+// TestSearchNamedAnchorsFilterTheRound pins the other half of the door: a
+// named anchor narrows what the round returns, it does not decide whether it
+// runs. Naming the archive hub alone keeps the weather cluster's facts out —
+// the silent member included, although the cluster still transmitted to it —
+// and leaves the hub's one matching fact, with its memos still silent: the
+// filter removed the cluster from the answer, not the hub's fair share from
+// the null.
+func TestSearchNamedAnchorsFilterTheRound(t *testing.T) {
+	g := noDecayGraph()
+	calm, memos := stormGraph(t, g)
+
+	nodes, _, _, background, _ := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	if background <= 0 {
+		t.Fatalf("background = %v with the hub named, want positive: the round ran through the seeds' anchors", background)
+	}
+	if got, want := values(nodes), []string{"a storm of paperwork"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Search(topic=archive) = %v, want %v: the filter keeps the hub's match and drops %q, and the memos %v stay silent", got, want, calm, memos)
 	}
 }
 

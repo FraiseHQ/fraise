@@ -289,9 +289,10 @@ class FraiseClient:
         2: 0 searches the text and vector indices only, 1 lets topics and
         entities that clearly concentrate the matches transmit to the facts
         filed under them, 2 admits them at their fair share for maximum
-        recall; omitted, the server's configured lane applies. The graph is
-        entered only through a ``topics``/``entities`` filter, so a lane above
-        0 on a recall without one has no effect and comes back with a warning.
+        recall; omitted, the server's configured lane applies. The graph lanes
+        open from the topics and entities the matches are filed under, so they
+        act with or without a ``topics``/``entities`` filter; a filter narrows
+        what they return.
 
         For semantic search, a vector is attached the same way as in
         :meth:`remember`: an explicit ``vector`` wins; otherwise, if the client

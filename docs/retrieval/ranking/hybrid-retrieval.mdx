@@ -30,7 +30,7 @@ A fact is indexed under its terms and a recall's keywords are read the same way,
 
 ## The transmission
 
-When the recall names a `topic:` or `entity:` anchor and takes `depth:1` or `depth:2` — see [Retrieval lanes](/docs/retrieval/ranking/depth) — that mass then flows into the fact–anchor graph. Every anchor — a topic or entity node — the query touches observes the total seed mass on its members and compares it to a **background rate** $\rho_0$: the mass a size-proportional smear of the query's seed mass across the anchors it reached would predict for an anchor of its degree.
+When the recall takes `depth:1` or `depth:2` — see [Retrieval lanes](/docs/retrieval/ranking/depth) — that mass then flows into the fact–anchor graph through the anchors the seeds are filed under; the recall need not name one, and a `topic:` or `entity:` it does name filters what comes back. Every anchor — a topic or entity node — the seeds touch observes the total seed mass on its members and compares it to a **background rate** $\rho_0$: the mass a size-proportional smear of the query's seed mass across the anchors it reached would predict for an anchor of its degree.
 
 Only the excess above background is transmitted, and it is transmitted **once, not once per member**:
 

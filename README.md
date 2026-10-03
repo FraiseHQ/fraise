@@ -110,8 +110,8 @@ node:
 - **topics** — what a fact is about
 Edges connect facts to the entities they mention and the topics they're about,
 so a query can start from either side. A `recall` finds seed facts by text (and
-optionally by vector similarity), expands through shared entities and topics up
-to `depth` hops when it names a topic or entity, ranks by relevance and recency,
+optionally by vector similarity), expands through the entities and topics those
+seeds are filed under when `depth` asks for it, ranks by relevance and recency,
 and returns the best `top` results.
 
 Ranking is not a black box: a fact's score is its own match strength plus what

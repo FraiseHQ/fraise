@@ -79,8 +79,8 @@ def test_the_fact_asked_about_outranks_its_neighbourhood(query):
     mass next to a bigger fair-share hub is the smallest shape where an
     anchor speaks. The cluster's silent member is funded — attenuated α² —
     and lands behind both facts that actually matched; the hub's memos stay
-    out entirely. Both topics are named because the graph is entered only
-    through an anchor the recall names.
+    out entirely. Both topics are named so the filter holds the hub's memos in
+    the candidate set, which makes their absence the hub's silence.
     """
     graph = 0
     direct = (

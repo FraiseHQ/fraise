@@ -736,8 +736,8 @@ def test_a_lone_seed_hub_stays_silent(instrument_graph, instrument_topic, client
 
     This is the excess-transmission contract through the SDK: an anchor is
     heard only when its members matched better than its size predicts. The
-    topic is named because the graph is entered only through an anchor the
-    recall names; the two depths are then the two lanes that run it, depth=1
+    topic is named so the filter holds the candidates to the hub's members;
+    the two depths are then the two lanes that run the round, depth=1
     admitting an anchor only well above its fair share and depth=2 at the
     fair share itself, and the hub declines to transmit at either bar.
     """
