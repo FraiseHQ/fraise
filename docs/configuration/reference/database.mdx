@@ -50,7 +50,7 @@ The cutoff is **off by default** because the trade is yours to make: it buys pre
 
 ## `relevance-feedback`
 
-Off, a recall's text channel is one pass over the index. On, the top three hits of that pass lend the query the entities they mention and their rarest terms, and a second pass over the widened query adds its matches as further text contributions on the same candidates: a fact that shares no word with the question becomes reachable through the words the first hop introduces. The first pass's ranking is never lowered, only built on. See [Pseudo-relevance feedback](/docs/retrieval/ranking/hybrid-retrieval#pseudo-relevance-feedback).
+Off, a recall's text channel is one pass over the index. On, the top three hits of that pass lend the query the entities they mention and their rarest terms, and a second pass over the widened query adds its matches as further text contributions on the same candidates: a fact that shares no word with the question becomes reachable through the words the first hop introduces. No candidate's text mass is lowered, only added to: a first-pass hit can still move down the ranking as the facts the second pass reaches gain mass. See [Pseudo-relevance feedback](/docs/retrieval/ranking/hybrid-retrieval#pseudo-relevance-feedback).
 
 ## `num-graphs`
 
