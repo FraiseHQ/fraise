@@ -147,7 +147,8 @@ func Canonical(v *string, name string, accepted []string) error {
 // domain: db.min-score-ratio is a fraction of the best hit's relevance, and a
 // value past 1 — an operator thinking in percent — would put the bar above
 // every hit and silently collapse each recall to its floor, with no error
-// anywhere.
+// anywhere. db.min-results is a count of hits, and a negative one would be
+// clamped to a floor of one the operator never set.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string
@@ -174,6 +175,11 @@ func (c *ConfigSet) validate() error {
 	// fails every comparison, is rejected too instead of slipping through.
 	if r := c.DB.MinScoreRatio; !(r >= 0 && r <= 1) {
 		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
+	}
+	// adjust has already turned an unset 0 into the default, so a value under
+	// 1 here can only be one the operator wrote.
+	if n := c.DB.MinResults; n < 1 {
+		return fmt.Errorf("%w: db.min-results = %d (accepted: 1 or more)", ErrInvalidValue, n)
 	}
 	return nil
 }

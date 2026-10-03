@@ -67,6 +67,7 @@ func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 		{"-search-algorithm", "dfs", "db.search-algorithm.name"},
 		{"-ranking-algorithm", "hits", "db.ranking-algorithm.name"},
 		{"-min-score-ratio", "30", "db.min-score-ratio"},
+		{"-min-results", "-5", "db.min-results"},
 	}
 
 	for _, tc := range cases {
