@@ -24,7 +24,6 @@ package graph
 
 import (
 	"errors"
-	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -396,20 +395,13 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	// B. Scoring: the scorer folds each candidate's contributions into one
 	// relevance score given the background, and the installed ranker (if any)
-	// boosts the result. The score cutoff reads relevance as scored, so it is
-	// copied before the boost — only with the cutoff on: nothing else reads
-	// it, and the default would otherwise pay for a copy of the candidate set
-	// on every recall.
-	relevance := make(map[K]P, len(candidates))
+	// boosts the result.
+	scores := make(map[K]P, len(candidates))
 	keys := make([]K, 0, len(candidates))
 	scorer := g.scorer.WithBackground(background)
 	for key, contributions := range candidates {
-		relevance[key] = scorer.Score(contributions)
+		scores[key] = scorer.Score(contributions)
 		keys = append(keys, key)
-	}
-	scores := relevance
-	if g.config.DB.MinScoreRatio > 0 {
-		scores = maps.Clone(relevance)
 	}
 	g.boost(scores)
 
@@ -435,7 +427,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	rankedKeys, rankedScores := ranker.Drain()
 
 	// E. Score cutoff (db.min-score-ratio, db.min-results)
-	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, relevance)
+	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
 
 	nodes := make([]*Node[K], len(rankedKeys))
 	scoresOut := make([]P, len(rankedKeys))
@@ -453,31 +445,35 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 }
 
 // scoreCutoff applies db.min-score-ratio and db.min-results (see DBConfig) to
-// a best-first ranking. relevance holds each hit's scorer output, before the
-// boost and decay its score carries; the bar is MinScoreRatio × the best
-// relevance in the list. The first max(MinResults, 1) hits are always kept,
-// stretched to the end of the tie group the floor lands in, and every hit
-// past them is kept if its relevance clears the bar — each judged on its
-// own, since relevance does not descend along a decay-ordered list and the
-// first miss is not the end of the hits that clear it. Kept hits keep their
-// order and their scores; a ratio of zero returns the ranking unchanged.
-func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, relevance map[K]P) ([]K, []P) {
+// a best-first ranking. A hit's relevance is its scorer output, before the
+// boost and decay its score carries, refolded here from its contributions
+// for the ranked hits alone: the scorer is pure, so this is the value stage
+// B computed, at O(top) rather than a copy of every candidate's. The bar is
+// MinScoreRatio × the best relevance in the list. The first MinResults hits
+// are always kept, stretched to the end of the tie group the floor lands in,
+// and every hit past them is kept if its relevance clears the bar — each
+// judged on its own, since relevance does not descend along a decay-ordered
+// list and the first miss is not the end of the hits that clear it. Kept
+// hits keep their order and their scores; a ratio of zero returns the
+// ranking unchanged.
+func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.Scorer[K, P], candidates scoring.Candidates[K, P]) ([]K, []P) {
 	ratio := g.config.DB.MinScoreRatio
 	n := len(keys)
 	if ratio <= 0 || n == 0 {
 		return keys, scores
 	}
-	best := relevance[keys[0]]
-	for _, key := range keys[1:] {
-		best = max(best, relevance[key])
+	relevance := make([]P, n)
+	for i, key := range keys {
+		relevance[i] = scorer.Score(candidates[key])
 	}
+	best := slices.Max(relevance)
 	bar := P(ratio) * best
-	keep := min(max(g.config.DB.MinResults, 1), n)
+	keep := min(g.config.DB.MinResults, n)
 	for keep < n && scores[keep] == scores[keep-1] {
 		keep++
 	}
 	for i := keep; i < n; i++ {
-		if relevance[keys[i]] >= bar {
+		if relevance[i] >= bar {
 			keys[keep], scores[keep] = keys[i], scores[i]
 			keep++
 		}
