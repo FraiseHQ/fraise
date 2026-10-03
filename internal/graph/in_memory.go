@@ -191,7 +191,7 @@ func (g *InMemoryGraph[K, P]) Put(key K, node Node[K]) error {
 // sides of the text index: a fact's value in store, the query keywords in
 // gatherSeeds. The two must agree — a stop word cleaned from one side but not
 // the other is a term only that side carries, and its stem can collide with a
-// content word's ("namely" with "name") — so both read this one tag
+// content word's ("own" with "owns") — so both read this one tag
 // NOTE: fraise doesn't have multi-lingual support just yet
 // this would need to be paramaterized at term.
 var textLanguage = language.English
@@ -552,8 +552,8 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // of stop words with the same CleanContent and textLanguage store applies to
 // a fact's text, so the two sides of the index share one vocabulary: a stop
 // word in the query is not a search term, and neither is the stem it would
-// otherwise reduce to — "namely" stems to "name", and left in it would
-// surface every fact about names. Text contributions carry the BM25 ×
+// otherwise reduce to — "own" stems to the term "owns" does, and left in it
+// would surface every fact about owning. Text contributions carry the BM25 ×
 // coverage mass; vector contributions carry the similarity 1/(1+distance),
 // converted here so Contribution.Score is bigger-is-better for every source —
 // the index reports distance, where smaller is nearer.

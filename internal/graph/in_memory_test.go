@@ -1386,36 +1386,35 @@ func TestInMemoryGraphSearchWithATermSeedsFromText(t *testing.T) {
 // of stop words the way a stored fact is, so the two sides of the text index
 // see one vocabulary. A stop word left in the query is not merely a term with
 // no postings: the tokenizer stems it, and the stem can be a content word's —
-// "namely" stems to "name" — so without the cleaning the stop word surfaces
-// facts about names, as the second search shows the content word does. With
-// it, the stop word seeds nothing, and a query that is nothing but stop words
-// matches nothing rather than erroring.
+// "own" stems to the term "owns" does — so without the cleaning the stop word
+// surfaces facts about owning, as the second search shows the content word
+// does. With it, the stop word seeds nothing, and a query that is nothing but
+// stop words matches nothing rather than erroring.
 func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
-	names := "the team picked new names"
-	mustSet(t, g, mkFact(g, names, now))
+	mustSet(t, g, mkFact(g, "Ana owns the bakery", now))
 	mustSet(t, g, mkFact(g, "Caroline joined the team", now))
 
-	nodes, _, _, _, err := g.Search([]string{"Caroline", "namely"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, err := g.Search([]string{"Caroline", "own"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if err != nil {
-		t.Fatalf("Search(Caroline namely) error = %v, want nil", err)
+		t.Fatalf("Search(Caroline own) error = %v, want nil", err)
 	}
 	if want := []string{"Caroline joined the team"}; !reflect.DeepEqual(values(nodes), want) {
-		t.Errorf("Search(Caroline namely) = %v, want %v: a stop word is not a search term, whatever it stems to", values(nodes), want)
+		t.Errorf("Search(Caroline own) = %v, want %v: a stop word is not a search term, whatever it stems to", values(nodes), want)
 	}
 
-	nodes, _, _, _, err = g.Search([]string{"Caroline", "names"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, err = g.Search([]string{"Caroline", "owns"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if err != nil {
-		t.Fatalf("Search(Caroline names) error = %v, want nil", err)
+		t.Fatalf("Search(Caroline owns) error = %v, want nil", err)
 	}
 	if got := values(nodes); len(got) != 2 {
-		t.Errorf("Search(Caroline names) = %v, want both facts: the content word sharing the stem does match", got)
+		t.Errorf("Search(Caroline owns) = %v, want both facts: the content word sharing the stem does match", got)
 	}
 
-	nodes, _, _, _, err = g.Search([]string{"when", "the", "namely"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, err = g.Search([]string{"when", "the", "own"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
 	if err != nil || len(nodes) != 0 {
-		t.Errorf("Search(when the namely) = (%v, %v), want no hits and no error", values(nodes), err)
+		t.Errorf("Search(when the own) = (%v, %v), want no hits and no error", values(nodes), err)
 	}
 }
 
