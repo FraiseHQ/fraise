@@ -579,7 +579,9 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // for every source — the index reports distance, where smaller is nearer.
 // The candidate budget is max(seed-size, top): the text list must track the
 // requested result size, because a budget capped below top silently flatlines
-// every ranking past seed-size ("fair seeding").
+// every ranking past seed-size ("fair seeding"). With relevance feedback
+// configured the text pass is followed by a second one seeded by its top
+// hits (see feedback), on the same budget.
 // The seed keys return in ascending key order: scorers fold contribution
 // lists as floats, so the traversal must observe in a deterministic order or
 // the low bits of a shared anchor's mass drift between identical queries.
@@ -594,11 +596,15 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
+		query := strings.Join(keywords, " ")
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.textIndex.Search(strings.Join(keywords, " "), seedK); err == nil {
+		if keys, scores, err := g.textIndex.Search(query, seedK); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
+			}
+			if g.config.DB.RelevanceFeedback {
+				g.feedback(query, keys, candidates, seedK)
 			}
 		} else {
 			logger.Debug("Text index yielded no seeds", "error", err)
@@ -628,6 +634,66 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	logger.Debug("Gathered search seeds",
 		"text", textSeeds, "vector", vectorSeeds, "unique", len(seeds))
 	return seeds, nil
+}
+
+// feedbackSeeds and feedbackTerms shape the pseudo-relevance round: how
+// many of the first text pass's top hits seed the second pass, and how many
+// of their rarest terms it adds to the query. Methodology constants, not
+// configuration — tune them here. Three seeds is the issue's proposal; ten
+// terms is the RM3 convention.
+const (
+	feedbackSeeds = 3
+	feedbackTerms = 10
+)
+
+// feedback runs the pseudo-relevance round over the text channel: the top
+// feedbackSeeds hits of the first pass — the keys the index ranked, best
+// first — lend the query the entities they mention and their highest-idf
+// terms (see BTreeIndex.Expand), and one more text pass over the widened
+// query appends its sightings as further SrcText contributions on the same
+// pool. It is how a fact that shares no word with the question becomes a
+// candidate: multi-hop evidence that is only reachable through the terms the
+// first hop introduces. A seed matched again by the second pass simply holds
+// two text sightings, which the fold sums — the first pass's floor is never
+// lowered, only built on.
+//
+// Entities arrive in ascending key order and the expansion terms in the
+// index's total order, so the widened query, and with it every low bit of
+// the second pass's scores, is the same for two identical calls. A round
+// with nothing to add — the seeds mention no entity and the index finds no
+// term worth adding — runs no second pass: re-running the first query would
+// only double every seed's mass.
+func (g *InMemoryGraph[K, P]) feedback(query string, seeds []K, candidates scoring.Candidates[K, P], seedK int) {
+	if len(seeds) > feedbackSeeds {
+		seeds = seeds[:feedbackSeeds]
+	}
+
+	added := make([]string, 0)
+	for _, seed := range seeds {
+		neighbours := g.Neighbours(seed)
+		sort.Slice(neighbours, func(i, j int) bool { return neighbours[i] < neighbours[j] })
+		for _, neighbour := range neighbours {
+			if entity, ok := g.idToNodes[neighbour].(*NamedEntity[K]); ok {
+				added = append(added, entity.Value)
+			}
+		}
+	}
+	added = append(added, g.textIndex.Expand(query, seeds, feedbackTerms)...)
+	if len(added) == 0 {
+		logger.Debug("Relevance feedback found nothing to add", "seeds", len(seeds))
+		return
+	}
+
+	widened := query + " " + strings.Join(added, " ")
+	keys, scores, err := g.textIndex.Search(widened, seedK)
+	if err != nil {
+		logger.Debug("Relevance feedback pass yielded no seeds", "error", err)
+		return
+	}
+	for rank, key := range keys {
+		candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
+	}
+	logger.Debug("Relevance feedback widened the query", "seeds", len(seeds), "added", len(added), "hits", len(keys))
 }
 
 // depthOneAdmission is the depth-1 precision lane's multiplier on an anchor's

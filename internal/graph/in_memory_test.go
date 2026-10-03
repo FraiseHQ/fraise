@@ -1115,6 +1115,101 @@ func TestSearchAnchorsDoNotConsumeSeedBudget(t *testing.T) {
 	}
 }
 
+// feedbackGraph is the two-session multi-hop fixture: the question's word
+// sits in one fact, and the evidence that completes the answer in two others
+// that share none of it — one reachable through a term the first fact
+// introduces, one through an entity it mentions.
+//
+//	"the barometer fell sharply before the regatta"  <- matches "barometer"; mentions Nadia
+//	"the regatta was postponed to sunday"            <- shares "regatta" only
+//	"Nadia kept the sails dry"                       <- shares the entity only
+//	"the harbour was quiet all week"                 <- shares nothing
+func feedbackGraph(t *testing.T, feedback bool) (g *graph.InMemoryGraph[uint64, float64], first, byTerm, byEntity, bystander string) {
+	t.Helper()
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.RelevanceFeedback = feedback
+	g = graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+
+	first = "the barometer fell sharply before the regatta"
+	byTerm = "the regatta was postponed to sunday"
+	byEntity = "Nadia kept the sails dry"
+	bystander = "the harbour was quiet all week"
+
+	nadia := mkEntity(g, "Nadia", now)
+	mustSet(t, g, nadia)
+	seed := mkFact(g, first, now)
+	mustSet(t, g, seed)
+	mustSet(t, g, graph.Mentions[uint64]{Fact: &seed, NamedEntity: nadia, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	for _, value := range []string{byTerm, byEntity, bystander} {
+		mustSet(t, g, mkFact(g, value, now))
+	}
+	return g, first, byTerm, byEntity, bystander
+}
+
+// TestSearchRelevanceFeedbackReachesTheSecondHop pins the pseudo-relevance
+// round. Off — the default — "barometer" finds the one fact that says it.
+// On, the first pass's top hit lends the query its entity and its rarest
+// reaching term, and the second pass surfaces the two facts that share no
+// word with the question, each as a text sighting; the bystander, sharing
+// nothing with the seed either, stays out. The seed keeps its lead: the
+// second pass matches it again, so it holds two text sightings and no less
+// mass than it had with the round off — feedback builds on the floor, never
+// lowers it.
+func TestSearchRelevanceFeedbackReachesTheSecondHop(t *testing.T) {
+	off, first, _, _, _ := feedbackGraph(t, false)
+	nodes, floor, _, _, _ := off.Search([]string{"barometer"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if want := []string{first}; !reflect.DeepEqual(values(nodes), want) {
+		t.Fatalf("Search(barometer) with feedback off = %v, want the one literal match %v", values(nodes), want)
+	}
+
+	on, first, byTerm, byEntity, bystander := feedbackGraph(t, true)
+	nodes, scores, contributions, _, _ := on.Search([]string{"barometer"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	got := values(nodes)
+	if len(got) == 0 || got[0] != first {
+		t.Fatalf("Search(barometer) with feedback on = %v, want the literal match %q first", got, first)
+	}
+	if scores[0] < floor[0] {
+		t.Errorf("seed scored %v with feedback on, below its %v floor: the round may only add", scores[0], floor[0])
+	}
+	if n := len(contributions[0]); n != 2 {
+		t.Errorf("seed holds %d contributions, want 2: one text sighting per pass", n)
+	}
+	sort.Strings(got)
+	want := []string{byEntity, byTerm, first}
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Search(barometer) with feedback on = %v, want the seed and both second hops %v", got, want)
+	}
+	for i, list := range contributions {
+		for _, c := range list {
+			if c.Src != scoring.SrcText {
+				t.Errorf("hit %d carries a %v contribution %+v; the feedback round is a text pass", i, c.Src, c)
+			}
+		}
+	}
+	for _, value := range got {
+		if value == bystander {
+			t.Errorf("the bystander %q surfaced: it shares no term and no entity with the seed", bystander)
+		}
+	}
+}
+
+// TestSearchRelevanceFeedbackIsDeterministic pins that the widened query is
+// built in a fixed order — entities by key, terms by the index's total order
+// — so two identical calls fold byte-identical scores.
+func TestSearchRelevanceFeedbackIsDeterministic(t *testing.T) {
+	g, _, _, _, _ := feedbackGraph(t, true)
+	firstNodes, firstScores, _, _, _ := g.Search([]string{"barometer"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	for i := 0; i < 20; i++ {
+		nodes, scores, _, _, _ := g.Search([]string{"barometer"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+		if !reflect.DeepEqual(keys(nodes), keys(firstNodes)) || !reflect.DeepEqual(scores, firstScores) {
+			t.Fatalf("call %d returned a different ranking or scores: %v %v vs %v %v", i+1, keys(nodes), scores, keys(firstNodes), firstScores)
+		}
+	}
+}
+
 // TestSearchDeterminism is Property 5.6: no randomness, no iteration to
 // convergence — two identical queries on an identical graph return
 // byte-identical rankings and, with decay off, byte-identical scores and

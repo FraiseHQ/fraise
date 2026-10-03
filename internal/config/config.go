@@ -150,6 +150,12 @@ type DBConfig struct {
 	// anything outside [0, 1]: past 1 even the best hit misses the bar.
 	MinScoreRatio float64 `toml:"min-score-ratio"`
 
+	// Pseudo-relevance feedback on the text channel: after the first text
+	// pass, a second one seeded by the top hits' entities and rarest terms,
+	// fused as further text contributions on the same candidates. Off by
+	// default until measured.
+	RelevanceFeedback bool `toml:"relevance-feedback"`
+
 	// database hashing function
 	HashingFunction HashingFunction `toml:"hashing-function"`
 
@@ -279,6 +285,7 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
 	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits whose relevance is below this fraction of the best hit's (0 = off)")
+	flagSet.BoolVar(&config.DB.RelevanceFeedback, "relevance-feedback", DefaultRelevanceFeedback, "Run a second text pass seeded by the first pass's top hits")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
@@ -408,6 +415,7 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.Engine.CacheCapacity, DefaultCacheCapacity)
 
 	// db
+  // NOTE: DB.RelevanceFeedback and DB.MinScoreRatio needs no Adjust
 	Adjust(&c.DB.NumGraphs, DefaultNumGraph)
 	Adjust(&c.DB.DefaultTop, DefaultTop)
 	Adjust(&c.DB.DefaultDepth, DefaultDepth)
@@ -416,8 +424,6 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
-	// DB.MinScoreRatio needs no Adjust: its default, 0, is the zero value and
-	// means off, so an absent key and an explicit 0 already agree.
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)

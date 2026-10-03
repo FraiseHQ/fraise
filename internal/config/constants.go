@@ -160,6 +160,12 @@ const (
 	// max(seed-size, top), so a large recall is never starved of candidates.
 	DefaultSeedSize uint = 10
 
+	// DefaultRelevanceFeedback keeps the second text pass off: pseudo-relevance
+	// feedback is standard and cheap — one more index pass, no model — but it
+	// can add distractors as readily as the second hop it exists to reach, so
+	// it stays opt-in until measured.
+	DefaultRelevanceFeedback bool = false
+
 	// DefaultMinScoreRatio leaves the score cutoff (DBConfig.MinScoreRatio)
 	// off.
 	DefaultMinScoreRatio float64 = 0
