@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.3.0](https://github.com/FraiseHQ/fraise/compare/v0.2.2...v0.3.0) (2026-10-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* tighten comments and docs, stop re-exporting SDK providers ([#437](https://github.com/FraiseHQ/fraise/issues/437))
+* wire fraise mcp -addr and drop the dead -graph flag ([#376](https://github.com/FraiseHQ/fraise/issues/376))
+* stop startup on a malformed or unknown-key config ([#369](https://github.com/FraiseHQ/fraise/issues/369))
+* tighten the query grammar to letters-and-digits words ([#396](https://github.com/FraiseHQ/fraise/issues/396))
+
+### Features
+
+* tighten the query grammar to letters-and-digits words ([#396](https://github.com/FraiseHQ/fraise/issues/396)) ([db7861d](https://github.com/FraiseHQ/fraise/commit/db7861d3309ca5838ccc7df91b813d294b1103db))
+
+
+### Bug fixes
+
+* clean query keywords of stop words before the text search ([#423](https://github.com/FraiseHQ/fraise/issues/423)) ([58fa18e](https://github.com/FraiseHQ/fraise/commit/58fa18e2e1508df8da7fc686f5ecaeee26322fe0))
+* rebuild the vector forest in key order ([#378](https://github.com/FraiseHQ/fraise/issues/378)) ([9e9059c](https://github.com/FraiseHQ/fraise/commit/9e9059ca79dcc5a9ec5d2a5364a59e4072fed9b8))
+* stop startup on a malformed or unknown-key config ([#369](https://github.com/FraiseHQ/fraise/issues/369)) ([d43a980](https://github.com/FraiseHQ/fraise/commit/d43a980ddf273ccf1880d0e98a61ac8b56ec5e72))
+* stop walking the whole graph on every query ([#416](https://github.com/FraiseHQ/fraise/issues/416)) ([240388e](https://github.com/FraiseHQ/fraise/commit/240388e44893f43395dc369321ba7b2831053362))
+* text coverage bug ([#412](https://github.com/FraiseHQ/fraise/issues/412)) ([54939d7](https://github.com/FraiseHQ/fraise/commit/54939d7b70a662cadaa85224278d8ed97ca231d7))
+* wire fraise mcp -addr and drop the dead -graph flag ([#376](https://github.com/FraiseHQ/fraise/issues/376)) ([0304f48](https://github.com/FraiseHQ/fraise/commit/0304f48981c00f3fcde3a25dc5421d0eb80d06d0))
+
+
+### Performance
+
+* resolve filters once, sorted postings, topk forest search ([#417](https://github.com/FraiseHQ/fraise/issues/417)) ([52fdcbf](https://github.com/FraiseHQ/fraise/commit/52fdcbf1cad306ffd1b04d40140d72f944affb23))
+
+
+### Maintenance
+
+* admit Dependabot's uv release in required-version ([#472](https://github.com/FraiseHQ/fraise/issues/472)) ([32c7b5e](https://github.com/FraiseHQ/fraise/commit/32c7b5e329df3bab845c5fb6a9ab1f1186a2a809))
+* define score cutoff as server config ([#419](https://github.com/FraiseHQ/fraise/issues/419)) ([80ebc0e](https://github.com/FraiseHQ/fraise/commit/80ebc0e56eb7b93c463025f8b099711485ca7db5))
+* replace the PATs with fraise-bot app tokens ([#436](https://github.com/FraiseHQ/fraise/issues/436)) ([2f9303a](https://github.com/FraiseHQ/fraise/commit/2f9303a92b348b840848ae98c719c7c047a02695))
+* reserve keywords `describe`, `explain` , `forget` and `update` ([#438](https://github.com/FraiseHQ/fraise/issues/438)) ([cfb4f3f](https://github.com/FraiseHQ/fraise/commit/cfb4f3f1ba829881c566ba0b9b73c29f8a2ff4de))
+* tighten comments and docs, stop re-exporting SDK providers ([#437](https://github.com/FraiseHQ/fraise/issues/437)) ([0f4bb17](https://github.com/FraiseHQ/fraise/commit/0f4bb170eaa00dd1f037d7836854b11dad9742ab))
+
 ## [0.2.2](https://github.com/FraiseHQ/fraise/compare/v0.2.1...v0.2.2) (2026-09-28)
 
 
