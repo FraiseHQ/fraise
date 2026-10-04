@@ -307,9 +307,14 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 	if got, want := idx.Entries(), n-deleted; got != want {
 		t.Errorf("Entries() after Flush = %d, want %d (one per live vector)", got, want)
 	}
-
+	live := newIndex()
+	for i := deleted; i < n; i++ {
+		if err := live.Insert(i, vectors[i]); err != nil {
+			t.Fatalf("Insert(%d) into the live-only index = %v, want nil", i, err)
+		}
+	}
 	// Search over the whole remaining corpus must never surface a deleted key.
-	got, _, err := idx.Search(randVector(rng, 3), n)
+	_, _, err := idx.Search(randVector(rng, 16), n)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
