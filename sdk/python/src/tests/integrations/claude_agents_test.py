@@ -27,6 +27,8 @@ strings and flag a failure with ``is_error``, so the assertions check that
 envelope as well as the text.
 """
 
+from unittest.mock import patch
+
 import pytest
 from fraise_sdk.constants import DEFAULT_SERVER_NAME
 from fraise_sdk.errors import FraiseError
@@ -72,7 +74,7 @@ def test_allowed_tools_follows_a_custom_server_name():
     ]
 
 
-def test_memory_server_builds_with_both_tools():
+def test_memory_server_builds_with_both_tools(mock_client):
     """The server is built under the default name with both memory tools.
 
     The name is what ``allowed_tools`` namespaces the tools under, so a server
@@ -80,7 +82,7 @@ def test_memory_server_builds_with_both_tools():
     missing either tool loses that half of the memory.
     """
     with patch("fraise_sdk.integrations.claude_agents.create_sdk_mcp_server") as create:
-        server = memory_server(_client())
+        server = memory_server(mock_client())
     create.assert_called_once()
     assert server is create.return_value
     kwargs = create.call_args.kwargs
