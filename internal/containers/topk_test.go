@@ -21,11 +21,11 @@
 // SOFTWARE.
 
 // Black-box tests (package containers_test) for the bounded top-k ranker.
-// TopK is a drop-in replacement for sort-everything-then-truncate at the two
-// call sites that ranked search results (BTreeIndex.Search and the graph's
-// Search tail), so the central contract is equivalence with that baseline:
-// for any k, Drain must match sorting every offer by (score descending,
-// compare(key) ascending) and truncating to k, regardless of offer order.
+// TopK stands in for sort-everything-then-truncate wherever search results are
+// ranked (BTreeIndex.Search, RPTreeIndex.Search and the graph's Search tail),
+// so the central contract is equivalence with that baseline: for any k, Drain
+// must match sorting every offer by (score descending, compare(key) ascending)
+// and truncating to k, regardless of offer order.
 package containers_test
 
 import (
@@ -69,8 +69,6 @@ func sortThenTruncate(keys []string, scores []float64, k int) ([]string, []float
 func newTopK(k int) *containers.TopK[string, float64] {
 	return containers.NewTopK[string, float64](k, comparator.OrderedComparator[string])
 }
-
-// ---- behaviour tests --------------------------------------------------------
 
 // TestOffer_DrainOrder_BestFirst pins the total order Drain promises: score
 // descending, ties broken by key ascending.
@@ -144,8 +142,6 @@ func TestOffer_TieBrokenByKeyEvenWhenBounded(t *testing.T) {
 		t.Fatalf("Drain() = %v, want %v", keys, want)
 	}
 }
-
-// ---- equivalence against the sort-then-truncate baseline --------------------
 
 // TestEquivalence_RandomizedAgainstBaseline drives randomized offer sets
 // through TopK and the plain sort-then-truncate reference, across several k

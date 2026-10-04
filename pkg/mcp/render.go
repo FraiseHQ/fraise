@@ -28,11 +28,11 @@ import (
 )
 
 // The renderers produce the model-facing text that rides beside the
-// structured payload, in the voice the Python integrations established: one
-// line per hit, best first, relevance to three decimals. An empty result
-// says so in words — an empty string reads as a failure to a model — and
-// warnings follow one per line, because the query ran and what the parser
-// flagged is exactly what the model needs to see to fix its next one.
+// structured payload, in the voice of the Python integrations: one line per
+// hit, best first, relevance to three decimals. An empty result says so in
+// words, since an empty string reads as a failure to a model, and warnings
+// follow one per line: the query ran, and the model needs them to fix its
+// next one.
 
 // renderRecall renders a recall response for the model. graphEmpty separates
 // the two ways a recall comes back with nothing, which the daemon distinguishes

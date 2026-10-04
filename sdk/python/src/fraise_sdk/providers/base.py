@@ -51,7 +51,7 @@ class Anchor:
 
     ``type`` says which clause it becomes on ``remember`` — ``topic:`` or
     ``entity:`` — and ``value`` is what follows the ``:``. Anchors drive the
-    server's filtering and graph walk; the message text itself is never
+    server's filtering and transmission; the message text itself is never
     rewritten to carry them.
     """
 
@@ -106,7 +106,7 @@ def resolve_embedder(embedder: Embedder | EmbedderLike | None) -> EmbedderLike |
     directly, so an embedder exposing both stays on its named method.
 
     Raises:
-        TypeError: if method is not of type Embedder or EmbbederLike
+        TypeError: if embedder is neither an Embedder nor a callable
     """
     if embedder is None:
         return None

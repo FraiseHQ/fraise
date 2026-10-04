@@ -79,9 +79,10 @@ func (v Vector[K, P]) Distance(other Vector[K, P]) P {
 }
 
 // Hash keys the vector through h and renders the key for folding into an
-// enclosing query's hash material. The coordinates hash in a stable, lossless
-// form: exact hex floats so distinct vectors never render alike, delimited so
-// [1, 23] and [12, 3] do not collide.
+// enclosing query's hash material. The material is each coordinate as an
+// exact hex float, NUL-delimited, so distinct vectors never share it. If two
+// did, a recall bound to one would reuse the plan cached for the other and
+// search with the wrong vector.
 func (v Vector[K, P]) Hash(h hash.Hasher[K, string]) string {
 	var b strings.Builder
 	for i, x := range v.Data {

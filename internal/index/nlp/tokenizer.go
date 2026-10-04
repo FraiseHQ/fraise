@@ -46,17 +46,14 @@ type Tokenizer interface {
 // characters, in order, with their case and everything else intact. It is the
 // one definition of where a term ends, shared by the tokenizers and by
 // stop-word cleaning, so the words cleaning removes are exactly the terms the
-// index would otherwise have carried — a second copy of the boundary would let
-// the two drift and lose terms between them. A term character is a letter, a
-// digit, or a symbol in Unicode category So (Symbol, other), the class that
-// holds emoji, check marks and marks such as ©. Keeping So is what makes a
-// fact whose salient content is an emoji findable by it: dropped at the
-// boundary, such a fact indexes under no term at all and is unreachable by
-// text search while looking stored. Every other rune delimits — whitespace,
-// punctuation, and the math, currency and modifier symbol classes ("+", "$",
-// "^"), which stay delimiters so operators and prices split the way they
-// always have. Joiners and variation selectors delimit too, so a multi-rune
-// emoji sequence indexes as its So components.
+// index would otherwise carry. A term character is a letter, a digit, or a
+// symbol in Unicode category So (Symbol, other), the class that holds emoji,
+// check marks and signs such as ©: without So, a fact whose salient content is
+// an emoji would index under no term and be unreachable by text search. Every
+// other rune delimits: whitespace, punctuation, and the math, currency and
+// modifier symbol classes ("+", "$", "^"), so operators and prices split
+// apart. Joiners and variation selectors delimit too, so a multi-rune emoji
+// sequence indexes as its So components.
 func Words(text string) []string {
 	return strings.FieldsFunc(text, func(r rune) bool {
 		return !isTermRune(r)
@@ -71,9 +68,6 @@ func isTermRune(r rune) bool {
 // stemming or stop-word removal.
 type SimpleTokenizer struct{}
 
-// compile-time check that SimpleTokenizer is a Tokenizer.
-var _ Tokenizer = SimpleTokenizer{}
-
 // Tokenize returns the lowercased terms found in text.
 func (SimpleTokenizer) Tokenize(text string) []string {
 	return Words(strings.ToLower(text))
@@ -81,16 +75,12 @@ func (SimpleTokenizer) Tokenize(text string) []string {
 
 // StemmingTokenizer is SimpleTokenizer's split with Snowball (Porter2)
 // English stemming over each term: "running", "runs" and "run" all index and
-// query as "run", so morphological variants of a word find each other —
-// natural-language recall keywords rarely arrive in the exact inflection the
-// fact was written with. Terms the stemmer does not recognise (numbers,
-// symbols, non-English words, CJK text) pass through unchanged: stemming
-// only ever rewrites, never drops, so every term SimpleTokenizer would index
-// still exists under some spelling.
+// query as "run", so morphological variants of a word find each other: recall
+// keywords rarely arrive in the inflection the fact was written with. A term
+// with no English suffix to strip, such as a number, a symbol or CJK text,
+// passes through unchanged. Stemming only rewrites, never drops, so every term
+// SimpleTokenizer would index still exists under some spelling.
 type StemmingTokenizer struct{}
-
-// compile-time check that StemmingTokenizer is a Tokenizer.
-var _ Tokenizer = StemmingTokenizer{}
 
 // Tokenize returns the lowercased terms found in text, each reduced to its
 // Snowball English stem.

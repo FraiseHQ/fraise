@@ -20,10 +20,12 @@ jobs:
       issues: write # release-please labels its PR (autorelease:*) via the Issues API
       pull-requests: write
     steps:
-      # Maintains an open "chore(main): release X.Y.Z" PR that bumps the
-      # Version constant in pkg/version/version.go and docs/changelog.md. Merging
-      # that PR tags the release and creates the GitHub Release — the tag can
-      # therefore never disagree with the version compiled into the binary.
+      # Maintains one open release PR per component: "chore(main): release
+      # X.Y.Z" for the server, which bumps the Version constant in
+      # pkg/version/version.go and adds to docs/changelog.md, and
+      # "chore(main): release python X.Y.Z" for the SDK. Merging one tags that
+      # component and creates its GitHub Release, so the tag can never
+      # disagree with the version in the tree.
       #
       # token MUST be fraise-bot's, not the default GITHUB_TOKEN: a tag pushed
       # with GITHUB_TOKEN does not trigger other workflows, so the publish job

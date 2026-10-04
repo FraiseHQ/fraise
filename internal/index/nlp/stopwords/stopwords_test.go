@@ -61,11 +61,11 @@ func TestCleanContentRemovesEnglishStopWords(t *testing.T) {
 
 // TestCleanContentKeepsContentWordsAndNegations pins what the English list
 // must never hold. A stop word is a word no stored fact can be found by, so a
-// content word on the list makes every fact about it unretrievable — the
-// scikit-learn list this one replaced held "bill", "fire", "system" and
-// "name" — and a negation on it makes "Ana is not vegetarian" index the same
-// as "Ana is vegetarian". The apostrophe pieces stay terms too: the negative
-// heads are negations, and the clitic tails are also letters facts name.
+// content word on the list (scikit-learn's English list holds "bill", "fire",
+// "system" and "name") makes every fact about it unretrievable, and a
+// negation on it makes "Ana is not vegetarian" index the same as "Ana is
+// vegetarian". The apostrophe pieces stay terms too: the negative heads are
+// negations, and the clitic tails are also letters facts name.
 func TestCleanContentKeepsContentWordsAndNegations(t *testing.T) {
 	for _, word := range []string{
 		"bill", "fire", "system", "name", "names", "show", "call", "back", "full", "interest",

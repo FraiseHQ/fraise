@@ -22,80 +22,83 @@
 
 """HuggingFaceEmbedder tests against a mocked inference client — no network."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk.providers.base import Embedder
-from fraise_sdk.providers.huggingface import HuggingFaceEmbedder
 
-DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+# The provider imports its client at module scope, so skip the whole file when
+# the optional 'huggingface' extra is not installed.
+pytest.importorskip("huggingface_hub", reason="requires the 'huggingface' extra")
 
-
-def _client(values=(0.1, 0.2, 0.3)) -> MagicMock:
-    """A mock ``huggingface_hub.InferenceClient`` answering with one array.
-
-    ``feature_extraction`` really returns a numpy array, of which the embedder
-    uses only ``tolist()``.
-    """
-    client = MagicMock()
-    client.feature_extraction.return_value = MagicMock(
-        **{"tolist.return_value": list(values)}
-    )
-    return client
+from fraise_sdk.providers.huggingface import HuggingFaceEmbedder  # noqa: E402
 
 
-def test_huggingface_embedder_calls_client_and_returns_vector():
-    client = _client()
+def test_huggingface_embedder_calls_client_and_returns_vector(
+    inference_client, huggingface_default_model
+):
+    """embed sends the text, model and options and returns the vector."""
+    client = inference_client()
     embedder = HuggingFaceEmbedder(
-        model=DEFAULT_MODEL, client=client, dimensions=3, normalize=True
+        model=huggingface_default_model, client=client, dimensions=3, normalize=True
     )
     assert embedder.embed("hello") == [0.1, 0.2, 0.3]
     client.feature_extraction.assert_called_once_with(
-        "hello", model=DEFAULT_MODEL, dimensions=3, normalize=True
+        "hello", model=huggingface_default_model, dimensions=3, normalize=True
     )
 
 
-def test_huggingface_embedder_is_callable_and_omits_unset_options():
-    client = _client()
+def test_huggingface_embedder_is_callable_and_omits_unset_options(
+    inference_client, huggingface_default_model
+):
+    """Calling the embedder embeds, under the default model and with no options.
+
+    Options left unset are not sent, so the endpoint's own defaults apply.
+    """
+    client = inference_client()
     HuggingFaceEmbedder(client=client)("world")  # __call__ from the Embedder ABC
-    client.feature_extraction.assert_called_once_with("world", model=DEFAULT_MODEL)
+    client.feature_extraction.assert_called_once_with(
+        "world", model=huggingface_default_model
+    )
 
 
-def test_huggingface_embedder_is_an_embedder():
-    assert isinstance(HuggingFaceEmbedder(client=_client()), Embedder)
+def test_huggingface_embedder_is_an_embedder(inference_client):
+    """HuggingFaceEmbedder satisfies the Embedder contract the client resolves."""
+    assert isinstance(HuggingFaceEmbedder(client=inference_client()), Embedder)
 
 
-def test_huggingface_embedder_returns_plain_floats():
-    """tolist() output must survive as floats, not numpy scalars."""
-    vector = HuggingFaceEmbedder(client=_client(values=[0, 1])).embed("hello")
+def test_huggingface_embedder_returns_plain_floats(inference_client):
+    """Whatever numbers tolist() yields, ints included, come back as plain floats."""
+    vector = HuggingFaceEmbedder(client=inference_client(values=[0, 1])).embed("hello")
     assert vector == [0.0, 1.0]
     assert all(type(value) is float for value in vector)
 
 
-def test_huggingface_embedder_rejects_token_level_embeddings():
-    embedder = HuggingFaceEmbedder(client=_client(values=[[0.1, 0.2], [0.3, 0.4]]))
+def test_huggingface_embedder_rejects_token_level_embeddings(inference_client):
+    """A model answering with one vector per token is refused: a fact stores one vector."""
+    embedder = HuggingFaceEmbedder(
+        client=inference_client(values=[[0.1, 0.2], [0.3, 0.4]])
+    )
     with pytest.raises(ValueError, match="token-level embeddings"):
         embedder.embed("hello")
 
 
-def test_huggingface_embedder_accepts_a_plain_list():
+def test_huggingface_embedder_accepts_a_plain_list(inference_client):
     """A client returning a bare list (no .tolist) still works."""
-    client = _client()
+    client = inference_client()
     client.feature_extraction.return_value = [0.5, 0.6]
     assert HuggingFaceEmbedder(client=client).embed("hi") == [0.5, 0.6]
 
 
-def test_huggingface_embedder_builds_its_own_client_from_the_api_key():
-    """Without an injected client the embedder imports the hub and builds one.
+def test_huggingface_embedder_builds_its_own_client_from_the_api_key(inference_client):
+    """Without an injected client the embedder builds its own InferenceClient.
 
-    The import is lazy and lives inside ``__init__``, so it is patched in
-    ``sys.modules`` — that keeps the test running whether or not the optional
-    'huggingface' extra is installed.
+    The vendor module is patched where the provider imported it, so the test
+    pins what the provider builds without a real client or an API key.
     """
     hub = MagicMock()
-    hub.InferenceClient.return_value = _client()
-    with patch.dict(sys.modules, {"huggingface_hub": hub}):
+    hub.InferenceClient.return_value = inference_client()
+    with patch("fraise_sdk.providers.huggingface.huggingface_hub", hub):
         embedder = HuggingFaceEmbedder(api_key="hf-test")
     hub.InferenceClient.assert_called_once_with(api_key="hf-test")
     assert embedder.embed("hello") == [0.1, 0.2, 0.3]

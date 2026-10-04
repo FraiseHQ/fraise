@@ -132,8 +132,8 @@ jobs:
           permission-contents: write
 
       # No changelog is built here: release-please already created the GitHub
-      # Release and wrote its notes from docs/CHANGELOG.md. GoReleaser only appends
-      # binaries and checksums to it (release.mode: append).
+      # Release and wrote its notes, the entry it added to docs/changelog.md.
+      # GoReleaser only appends binaries and checksums to it (release.mode: append).
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94
         with:
           distribution: goreleaser
@@ -153,10 +153,9 @@ jobs:
 
       # The step above records the attestation in GitHub's attestations API,
       # which is what `gh attestation verify` reads. Scorecard's Signed-Releases
-      # check does not read that API — it reads release assets — so the same
-      # bundle is attached under the .intoto.jsonl name the check matches on.
-      # Dropping this step leaves the provenance genuinely published but the
-      # warning permanently unresolved.
+      # check reads release assets instead, so the same bundle is attached under
+      # the .intoto.jsonl name the check matches on. Without this step the
+      # provenance is still published, but Scorecard keeps flagging the release.
       - name: Attach provenance to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

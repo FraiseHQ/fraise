@@ -37,14 +37,13 @@ type Logger struct {
 
 var defaultLogger *Logger
 
-// NewLogger builds a logger from the level, format and timestamp setting in cfg.
+// NewLogger builds a logger from the level, format and timestamp settings in
+// cfg.
 //
-// It switches on config's canonical spellings, never on literals: a ConfigSet
-// that came through Parse has already been case-folded onto them and had
-// anything else rejected, so the only value that can miss here is the zero
-// value of a hand-built config. That is what the default arms are for — they
-// stand in for "unset", not for "unrecognised", which is a startup failure and
-// never reaches this far.
+// It switches on config's canonical spellings, never on literals. Parse has
+// already rewritten the settings to those spellings and rejected anything
+// else, so the default arms only serve the zero values of a hand-built config:
+// they stand in for "unset", never for "unrecognised".
 func NewLogger(cfg *config.ConfigSet) *Logger {
 
 	var handler slog.Handler

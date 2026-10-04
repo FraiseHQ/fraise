@@ -35,13 +35,13 @@ import (
 )
 
 // FuzzRememberPhraseRoundTrip is the server-side guarantee that quoting is a
-// total encoding for free-flowing text: for any UTF-8 value, escaping
-// apostrophes by doubling and wrapping in quotes parses back to exactly that
-// value, and the String() reconstruction re-parses to it as well. Ingestion
-// may feed a phrase any JSON-transportable character — nothing between the
-// quotes may be lost, altered, or end the phrase early. (Invalid UTF-8 is
-// skipped: JSON decoding has already replaced it before a query reaches the
-// parser, so it cannot arrive here.)
+// total encoding for free-flowing text: for any valid UTF-8 value that is not
+// blank, escaping apostrophes by doubling and wrapping in quotes parses back to
+// exactly that value, and the String() reconstruction re-parses to it as well.
+// Ingestion may feed a phrase any JSON-transportable character, so nothing
+// between the quotes may be lost, altered, or end the phrase early. Invalid
+// UTF-8 is skipped because JSON decoding replaces it before a query reaches
+// the parser, and a blank value because an empty fact is rejected.
 func FuzzRememberPhraseRoundTrip(f *testing.F) {
 	for _, seed := range []string{
 		"plain words",
@@ -119,8 +119,8 @@ func FuzzParseNeverPanics(f *testing.F) {
 
 // TestDurationsAreBoundedWithTheRangeInTheMessage pins the duration bound at
 // the level an agent sees: a count past what its unit can hold is a parse
-// error naming the largest one allowed, at the value's column — never a
-// silent wrap into a future bound — and the largest count still parses.
+// error naming the largest one allowed, never a silent wrap into a future
+// bound, and the largest count still parses.
 func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
 	cases := []struct {
 		query string
@@ -149,10 +149,9 @@ func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
 }
 
 // TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned
-// error reaches the caller as-is. The call sites used to re-wrap with a bad
-// %e verb, turning a clean "invalid since value ..." into
-// `&{%!e(string=...)}` in the 400 body — the message an agent needs to
-// self-correct was garbled at the last step.
+// error reaches the caller as-is: not re-wrapped, and not garbled by a bad
+// format verb into `&{%!e(string=...)}`, which would destroy the message an
+// agent needs to correct itself.
 func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 	cases := []struct {
 		query string
@@ -163,11 +162,10 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 		{"recall x depth:abc", "invalid depth value"},
 		{"recall x top:abc", "invalid top value"},
 		{"recall x topic:", "expected a word or quoted phrase"},
-		// vec: is the clause this test was written for and never covered: both
-		// call sites discarded parseVecField's positioned error for a generic
-		// wrap, which is the exact mangling the rest of these forbid.
+		// vec: on both commands: parseVecField's positioned error must reach
+		// the caller unwrapped, like every other clause's.
 		{"recall x vec:v", "expected param field operator $"},
-		{"remember 'a fact' vec$:v", "Expected colon"}, // among a recall's terms a bare vec is a keyword term
+		{"remember 'a fact' vec$:v", "Expected colon"}, // a remember: among a recall's terms a bare vec is a keyword term
 		{"recall x vec:$", "expected literal"},
 		{"remember 'a fact' vec:v", "expected param field operator $"},
 		{"remember 'a fact' vec:$", "expected literal"},
@@ -208,7 +206,7 @@ func TestRememberParser(t *testing.T) {
 // round-trip through String(). Fields are written in the order String() emits
 // them (terms, entities, topics, top, depth, since, until) so the
 // reconstruction matches. A value that was quoted comes back quoted: printed
-// bare, 'e-mail' or '2026-01-15' is a query that no longer parses.
+// bare, 'e-mail' or '2026-01-15' would not parse.
 func TestRecallParser(t *testing.T) {
 	queries := []string{
 		"recall anna",
@@ -263,9 +261,9 @@ func TestRecallParserErrors(t *testing.T) {
 
 // TestAnchorSeededRecallParses pins that a recall needs a seed, not a *term*:
 // an anchor and a vector are seeds too, so "everything about billing" is a
-// question the grammar can express. Requiring a text term made it unreachable —
-// callers reached for a nonsense keyword to get past the parser, which seeded
-// the search with a word they did not mean.
+// question the grammar can express. Requiring a term would make callers invent
+// a keyword to get past the parser, seeding the search with a word they did
+// not mean.
 func TestAnchorSeededRecallParses(t *testing.T) {
 	queries := []string{
 		"recall topic:job",
@@ -326,9 +324,8 @@ func TestGraphSelectorRejectsOutOfRange(t *testing.T) {
 }
 
 // TestRememberPhrase covers the opaque single-quoted phrase: reserved words and
-// symbols (: ' $ @ ( )) inside it are stored verbatim, and a doubled quote (”)
-// is an escaped apostrophe. These are the cases from the phrase-storage bug
-// report — each one used to fail to parse.
+// symbols (: $ @ ( )) inside it are stored verbatim, and a doubled single quote
+// is an escaped apostrophe.
 func TestRememberPhrase(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -362,7 +359,7 @@ func TestRememberPhrase(t *testing.T) {
 }
 
 // TestRememberPhraseRoundTrip checks that a fact containing an apostrophe
-// survives String() reconstruction (the inner quote is re-escaped to ”), and
+// survives String() reconstruction (the inner quote is doubled again), and
 // that a quoted anchor value comes back quoted.
 func TestRememberPhraseRoundTrip(t *testing.T) {
 	// String() always renders the graph selector (@0 by default), so include it.
@@ -410,12 +407,10 @@ func TestRememberPhraseErrors(t *testing.T) {
 
 // TestFieldRequiresColonSeparator pins that every keyed field rejects a missing
 // ':' instead of advancing past whatever token sits in the separator's place.
-// The two unchecked advances this replaces did not merely accept a typo: they
-// shifted the remaining tokens one role to the left, so "since 7d 30d" parsed
-// clean and bounded the recall at 30d, and "topic food extra" returned results
-// filtered by nothing. A wrong answer with no error is the failure an agent
-// cannot detect, let alone correct from; the whole family (topic, entity,
-// since, until, top, depth) is listed here so no field can regress alone.
+// Advancing would shift the remaining tokens into other roles and answer a
+// different query with no error, the failure an agent cannot detect, let alone
+// correct from. The whole family (topic, entity, since, until, top, depth) is
+// listed so no field can regress alone.
 func TestFieldRequiresColonSeparator(t *testing.T) {
 	cases := []struct {
 		query string
@@ -433,8 +428,8 @@ func TestFieldRequiresColonSeparator(t *testing.T) {
 		{"recall zebras topic:food entity alice", "write entity:alice"},
 		{"remember 'zebras eat grass' topic food", "write topic:food"},
 		{"remember 'zebras eat grass' entity zebras", "write entity:zebras"},
-		// The token-shifting shapes: each one used to parse without error, with
-		// the second value silently winning the field and the first swallowed.
+		// The token-shifting shapes: without the check, the second value would
+		// silently win the field and the first would be swallowed.
 		{"recall zebras since 7d 30d", "write since:7d"},
 		{"recall zebras until 7d 30d", "write until:7d"},
 		{"recall zebras since:7d until 30d 60d", "write until:30d"},
@@ -456,17 +451,14 @@ func TestFieldRequiresColonSeparator(t *testing.T) {
 // TestParseErrorBlamesTheOffendingToken pins where a parse error points: the
 // column is the last character of the token the message quotes.
 //
-// Errors used to be positioned at the lexer's CurrentPos, which is not where
-// the parser is — cur/peek read one token ahead, so CurrentPos sits at the end
-// of the token *after* the bad one. "recall zebras topic food extra" reported
-// column 30, the end of "extra", while the message quoted "food" (ending at
-// 24). Every case below therefore keeps a token after the offending one; with
-// the bad token last, a CurrentPos regression passes unnoticed, which is how
-// this survived.
+// The lexer's CurrentPos is not where the parser is: cur and peek read one
+// token ahead, so CurrentPos sits at the end of the token after the bad one.
+// Every case below therefore keeps a token after the offending one; with the
+// bad token last, an error positioned at CurrentPos would pass unnoticed.
 //
-// The column and the quoted literal are asserted together on purpose: either
-// alone can look right while the pair contradicts each other, and it is the
-// pair an agent (or a human squinting at a caret) uses to find the mistake.
+// The column and the quoted literal are asserted together: either alone can
+// look right while the pair disagrees, and it is the pair an agent or a human
+// uses to find the mistake.
 func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
 	cases := []struct {
 		query string
@@ -578,13 +570,12 @@ func TestBareWordIsLettersAndDigits(t *testing.T) {
 	}
 }
 
-// TestKeywordAsValue pins that a reserved word in value position parses as an
-// ordinary word. The lexer types "top" by spelling alone, so entity:top used
-// to be a 400 — and a single-word entity an LLM extracts (e.g. "top" from
-// "she reached the top") is only a matter of corpus size, killing ingestion
-// with an error the client cannot anticipate. A keyword is syntax only where
-// a clause can start; on the right of a field's ':' or as the leading recall
-// term, it is data.
+// TestKeywordAsValue pins that a reserved word after a field's ':' parses as an
+// ordinary word, though the lexer types "top" by spelling alone. An entity an
+// LLM extracts can be a single reserved word ("top" from "she reached the
+// top"), and rejecting it would fail ingestion with an error the client cannot
+// anticipate. As a recall term a reserved word is written quoted, as in the
+// last two cases.
 func TestKeywordAsValue(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -664,8 +655,7 @@ func TestKeywordAsValue(t *testing.T) {
 // safe: a keyword immediately followed by ':' is always a field, never a
 // value, so a clause mistyped into value position is an error rather than
 // silently consumed as data (the failure mode TestFieldRequiresColonSeparator
-// exists to prevent). Where a clause can start — after the first recall term —
-// a bare keyword still reads as a clause and still errors without its ':'.
+// exists to prevent). A bare keyword among a recall's terms is an error too.
 func TestKeywordAsValueDisambiguation(t *testing.T) {
 	queries := []string{
 		"recall top:3",                         // a modifier is not a seed
@@ -686,18 +676,18 @@ func TestKeywordAsValueDisambiguation(t *testing.T) {
 // TestMiscasedKeywordIsRejected pins that a keyword written with any upper
 // case is a parse error wherever it could still be something else. Case folding
 // applies to data only; letting it reach a keyword would fold "recall x Since
-// 7d" into a three-term search — the silent token-shift the separator tests
-// guard against, re-entered through the casing door.
+// 7d" into a three-term search, the silent token shift the separator tests
+// guard against.
 //
 // The exception is a keyword glued to a ':', which has its own test below: the
-// colon leaves nothing for it to be mistaken for, so there casing is forgiven
-// rather than reported.
+// colon leaves nothing for it to be mistaken for, so there the clause runs and
+// its casing earns a warning rather than an error.
 func TestMiscasedKeywordIsRejected(t *testing.T) {
 	cases := []struct {
 		query string
 		want  string // substring the error must carry
 	}{
-		// Clause position in the term stream: used to fold into terms silently.
+		// Clause position in the term stream.
 		{"recall zebras Since 7d", "lower case"},
 		{"recall zebras Since 7d 30d", "lower case"},
 		{"recall zebras Until 2026-01-15", "lower case"},
@@ -724,9 +714,9 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 // TestMiscasedKeywordBeforeColonIsTheClause pins the one place casing is
 // forgiven: a word glued to a ':' can only be a field, because no production
 // puts a bare word in front of a colon. Reading "DEPTH:5" as the depth clause
-// is what lets a repeated clause be caught as a duplicate — blaming the casing
+// is what lets a repeated clause be caught as a duplicate; blaming the casing
 // instead would report the shallower of the two mistakes, and an agent that
-// fixes the casing would then get a silently rescoped query.
+// fixed the casing would meet the duplicate only on its next try.
 //
 // It stays narrow on purpose: away from a ':' the spelling must still match, so
 // "Recall x" is not a command and "recall x Since 7d" is not a time bound (see
@@ -838,9 +828,10 @@ func TestDuplicateModifierIsRejected(t *testing.T) {
 }
 
 // TestMiscasedKeywordStaysDataInValuePosition pins the other side of the
-// casing rule: where a token is unambiguously data — an anchor value, a quoted
-// phrase — upper case is legal and folds, keyword spellings included. Rejecting these would take the LLM-extraction fix back:
-// an extracted entity arrives in whatever case the model emitted.
+// casing rule: where a token is unambiguously data (an anchor value, a quoted
+// phrase), upper case is legal and folds, keyword spellings included. An
+// extracted entity arrives in whatever case the model emitted, so rejecting
+// these would fail ingestion.
 func TestMiscasedKeywordStaysDataInValuePosition(t *testing.T) {
 	t.Run("quoted term after the first", func(t *testing.T) {
 		cmd, _, err := parser.Parse[uint64, float32]("recall zebras 'Since'")
@@ -923,12 +914,12 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 // TestExplicitTopIsVisibleIncludingZero pins that the *presence* of a top
 // clause, not a nonzero value, decides whether the configured default applies.
 //
-// Unlike depth:0, top:0 is not a valid request — the documented range is
-// 1..max-top — but it must survive parsing as an explicit clause: reading
-// presence off the value collapsed it into the default and skipped the range
-// check with it, so a caller asking for zero results silently got up to a
-// thousand. The rejection lives in query.Parse; what is pinned here is that
-// the parser keeps the clause visible for it.
+// Unlike depth:0, top:0 is not a valid request (the documented range is 1 to
+// db.max-top), but it must survive parsing as an explicit clause: read off the
+// value, it would collapse into the default and skip the range check, and a
+// caller asking for zero results would silently get the default count. The
+// rejection lives in query.Parse; what is pinned here is that the parser keeps
+// the clause visible for it.
 func TestExplicitTopIsVisibleIncludingZero(t *testing.T) {
 	cases := []struct {
 		query    string
@@ -961,12 +952,11 @@ func TestExplicitTopIsVisibleIncludingZero(t *testing.T) {
 // TestExplicitDepthIsHonouredIncludingZero pins that the *presence* of a depth
 // clause, not a nonzero value, decides whether the configured default applies.
 //
-// depth:0 is the floor lane — text and vector seeds only, no anchor traversal.
-// Reading presence off the value collapsed it into the default, so a client
-// that explicitly turned the graph channel off silently got it back, and
-// wherever the default is 2 that is the full excess round: the query answered
-// was not the query asked. Both the flag and the resolved value are asserted,
-// because Depth's fallback is what a caller actually receives.
+// depth:0 is the floor lane: seeds only, no anchor traversal. Read off the
+// value, it would collapse into the configured default, and a client that
+// turned the graph channel off would silently get it back. Both the flag and
+// the resolved value are asserted, because Depth's fallback is what a caller
+// actually receives.
 func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
 	cases := []struct {
 		query    string
@@ -997,12 +987,8 @@ func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
 	}
 }
 
-// TestEmptyDataIsRejected pins that a quoted empty value is refused wherever it
-// can be written. Quoting is the only way to produce one, and it is never what
-// a caller meant: an empty fact can never be retrieved and an empty anchor is an
-// identity nobody can name a second time, so both would corrupt a graph quietly
-// rather than fail where the mistake was made. Whitespace-only is the same case
-// — it survives folding and produces an anchor nobody can type twice. The
+// TestEmptyDataIsRejected pins that a quoted empty or whitespace-only value is
+// refused wherever it can be written (see errEmpty for why), and that the
 // message names which value was empty, so the caller knows which one to fill.
 func TestEmptyDataIsRejected(t *testing.T) {
 	cases := []struct {
@@ -1036,8 +1022,7 @@ func TestEmptyDataIsRejected(t *testing.T) {
 // is diagnosed, not merely reported. The caller is an agent: it can only repair
 // a query the message tells it how to repair, so each shape a caller actually
 // produces has to arrive with its own repair instruction rather than a shared
-// "unexpected token". The last case is the fallback, kept for the shapes that
-// have no better diagnosis.
+// "unexpected token".
 func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 	cases := []struct {
 		query string
@@ -1070,18 +1055,18 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		{"recall zebras Depth 2", "lower case"},
 		// A modifier is a recall clause: the message names the command it was
 		// given to and the clauses a remember takes, rather than telling the
-		// caller to write since:<value> — exactly what they wrote.
+		// caller to write since:<value>, which is what they wrote.
 		{"remember 'a fact' top:3", "top: is a recall clause: a remember takes only topic:, entity: and vec:"},
 		{"remember 'a fact' since:7d", "since: is a recall clause"},
 		{"remember 'a fact' depth:1", "depth: is a recall clause"},
 		// An unclosed quote is reported as one, not as whatever it swallowed.
 		{"recall 'unclosed phrase", "unterminated quoted phrase"},
-		// A NUL outside a phrase used to end the query where it stood, and
-		// everything after it was dropped without a word.
+		// A NUL outside a phrase is rejected, not read as the end of the query
+		// with everything after it dropped.
 		{"recall zebras\x00food", "NUL character is only allowed inside a quoted phrase"},
 		// Outside a phrase a word is letters and digits only. Any other
-		// character is rejected for itself: absorbed into a word, "ferry;" was
-		// a term and the recall after it ran as a search for the word "recall".
+		// character is rejected for itself: absorbed into a word, "ferry;" would
+		// be a term and the recall after it a search for the word "recall".
 		{"recall ferry; recall bridge", `";" is only allowed inside a quoted phrase`},
 		{"recall e-mail", `"-" is only allowed inside a quoted phrase`},
 		{"recall zebras topic:machine-learning", `"-" is only allowed inside a quoted phrase`},
@@ -1089,7 +1074,7 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		{"recall zebras since:2026-01-15", "a quoted date like '2026-01-15'"},
 		// A newline in a value slot is a second instruction starting early.
 		{"recall zebras topic:\nfood", "one command per instruction"},
-		// No better diagnosis exists for a stray '@'.
+		// A second '@' is named as a second selector.
 		{"recall@3@5 zebras", "one selector"},
 	}
 
@@ -1111,9 +1096,9 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 
 // TestCommandWordsAreNeverOfferedAsClauses pins the repair for a command word
 // in a recall: quote it. The keyword advice ("write recall:<value> if a clause
-// was meant") sent the caller from one rejection to the next, since no clause
-// is spelled with a command. Both the leading-term warning and the error
-// after the terms say only what works.
+// was meant") would send the caller from one rejection to the next, since no
+// clause is spelled with a command. Whether the word is the first term or a
+// later one, the message says only what works.
 func TestCommandWordsAreNeverOfferedAsClauses(t *testing.T) {
 	cases := []struct {
 		query, word string
@@ -1305,10 +1290,10 @@ func TestNulWhereTheFactShouldStartIsRejected(t *testing.T) {
 }
 
 // TestNewlineEndsTheInstruction pins that a newline separates instructions
-// rather than blending into the whitespace around it. Folded into blank, "recall
-// ferry\nbridge" read as one two-term recall — a second line silently joining
-// the first. Trailing blank lines are not a second instruction and must still
-// parse, or every client that ends its payload with a newline would break.
+// rather than blending into the whitespace around it, so a second line cannot
+// silently join the first ("recall ferry\nbridge" is not a two-term recall).
+// Trailing blank lines are not a second instruction and must still parse, or
+// every client that ends its payload with a newline would break.
 func TestNewlineEndsTheInstruction(t *testing.T) {
 	accepted := []string{
 		"recall zebras\n",
@@ -1380,19 +1365,17 @@ func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
 	}
 }
 
-// TestMiscasedClauseWarns pins the second thing a response can say without
-// rejecting: the query ran, and a keyword in it was not lower case.
+// TestMiscasedClauseWarns pins the mis-cased keyword warning: the query ran,
+// and a keyword in it was not lower case.
 //
-// The colon leaves a mis-cased clause exactly one reading, which is why it is
-// not an error (see TestMiscasedKeywordBeforeColonIsTheClause — erroring there
-// would report the casing instead of the duplicate it may be hiding). But this
-// language is lower case, and accepting `Depth:2` in silence teaches the caller
-// the opposite. The warning is the middle answer: the clause runs, and the
-// response says which spelling it ran as.
+// The colon leaves a mis-cased clause one reading, so it is not an error (see
+// TestMiscasedKeywordBeforeColonIsTheClause: erroring there would report the
+// casing instead of the duplicate it may be hiding). But the language is lower
+// case, and accepting `Depth:2` in silence teaches the caller the opposite, so
+// the clause runs and the response says which clause it ran as.
 //
-// Anchor values are excluded deliberately, not by oversight: `entity:Top` is
-// data, folded to the same anchor as `entity:top`, and warning about it would
-// contradict the rule that an agent never has to remember how it capitalised
+// Anchor values are excluded: `entity:Top` is data, folded to the same anchor
+// as `entity:top`, and an agent never has to remember how it capitalised
 // something.
 func TestMiscasedClauseWarns(t *testing.T) {
 	cases := []struct {
@@ -1439,14 +1422,12 @@ func TestMiscasedClauseWarns(t *testing.T) {
 	}
 }
 
-// TestDepthWithoutAnchorWarns pins the third warning: depth selects a graph
-// lane, and the graph is entered only through an anchor the recall names, so
-// a depth above the floor on a recall naming no topic or entity asked for
-// transmission it will not get. The query is unambiguous and runs; the
-// response says the clause had no effect. Any anchor named opens the graph
-// and keeps the clause silent, depth:0 is the floor and asks for nothing the
-// recall cannot do, and an omitted clause is the operator's default, never
-// the caller's slip.
+// TestDepthWithoutAnchorWarns pins the depth warning: the graph is entered
+// only through an anchor the recall names, so a depth above 0 on a recall
+// naming no topic or entity has no effect. The query runs and the response
+// says so. Nothing warns when the recall names an anchor, when the depth is 0
+// (it asks for nothing the recall cannot do), or when the clause is omitted
+// (the operator's default, not the caller's choice).
 func TestDepthWithoutAnchorWarns(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -1831,8 +1812,9 @@ func TestUnambiguousQueriesRunSilently(t *testing.T) {
 
 // TestStringRoundTripsToTheSameCommand pins that String() prints a query that
 // parses back to the same command: same reconstruction, same terms, anchors
-// and fact. Every accepted shape above is here, plus a quoted form of each
-// reserved word, since a bare one would no longer parse.
+// and fact. Every shape the tests from TestWhitespaceSeparatesWords on accept
+// is here, plus a quoted form of each reserved word, since a bare one would
+// not parse.
 func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 	for _, q := range []string{
 		"recall zebras",

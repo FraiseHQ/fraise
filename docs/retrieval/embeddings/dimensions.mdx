@@ -19,7 +19,7 @@ A mismatch is a client error on both commands, answered with a **400** naming th
 - **`remember`** rejects the write. The fact is not stored, with or without its vector — a half-written fact indexed only by text would be worse than none.
 - **`recall`** rejects the query rather than dropping the vector. A recall that quietly fell back to keyword search would return plausible results with no semantic input at all, and nothing in the response would say so.
 
-That symmetry is the point: a dimension mismatch means the caller is using a different embedding model than the graph was built with, and there is no useful answer to give it.
+Both reject for the same reason: a dimension mismatch means the caller is using a different embedding model than the graph was built with, and there is no useful answer to give it.
 
 ## The ceiling
 

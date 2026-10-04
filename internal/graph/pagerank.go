@@ -44,7 +44,7 @@ func NewPageRank[K comparable, P float32 | float64](damping P, maxIter int, tol 
 // Name returns the algorithm identifier.
 func (pr *PageRank[K, P]) Name() string { return "pagerank" }
 
-// Rank computes the PageRank score of every vertex in g. Vertices are taken
+// rank computes the PageRank score of every vertex in g. Vertices are taken
 // from the union of both edge views, so isolated nodes (no edges at all) are
 // not ranked. Dangling vertices (no outgoing edges) redistribute their mass
 // uniformly, keeping the scores a probability distribution.

@@ -22,9 +22,8 @@
 
 package relevance
 
-// MatchCount is the default relevance model: one point per query-term
-// occurrence, repeats included — exactly the ranking the index shipped with
-// before relevance became pluggable. A match count needs no corpus
+// MatchCount is the relevance model a BTreeIndex starts with: one point per
+// query-term occurrence, repeats included. A match count needs no corpus
 // statistics, so every lifecycle hook is a no-op.
 type MatchCount[K comparable, P float32 | float64] struct{}
 

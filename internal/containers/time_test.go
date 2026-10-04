@@ -192,8 +192,6 @@ func TestTimeValueHash(t *testing.T) {
 	}
 }
 
-// --- ParseTimeValue ---------------------------------------------------------
-
 func TestParseTimeValueRelative(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -281,9 +279,9 @@ func TestParseTimeValueErrors(t *testing.T) {
 
 // TestParseTimeValueBoundsRelativeDurations pins the range of a relative
 // duration: up to the largest count a time.Duration holds for its unit, and
-// no further. Past it the product used to wrap negative, and since:106752d
-// resolved to a bound in the future that emptied every window. The error
-// names the unit's limit and still reads as ErrInvalidTime.
+// no further. Past it the product would wrap negative, and since:106752d would
+// resolve to a bound in the future that empties every window. The error names
+// the unit's limit and still reads as ErrInvalidTime.
 func TestParseTimeValueBoundsRelativeDurations(t *testing.T) {
 	tests := []struct {
 		in  string
@@ -323,8 +321,6 @@ func TestParseTimeValueBoundsRelativeDurations(t *testing.T) {
 		})
 	}
 }
-
-// --- unitDuration -----------------------------------------------------------
 
 func TestUnitDuration(t *testing.T) {
 	tests := []struct {

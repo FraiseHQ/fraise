@@ -10,9 +10,9 @@ Human DSL design optimises for expressiveness and aesthetic flexibility. This qu
 
 ## The principles
 
-- **Commands and field names are written in lower case.** They are syntax, matched exactly, so `RECALL x` is a parse error rather than a query — nothing is silently rewritten on the way in.
+- **Commands and field names are written in lower case.** They are syntax, so `RECALL x` is a parse error rather than a query, and a mis-cased field glued to its `:`, such as `TOP:3`, runs only with a warning: nothing is silently rewritten on the way in.
 - **Everything else is data.** A remembered fact — the quoted phrase — is *stored* exactly as written and *matched* without regard to case: `remember 'MiXeD Case'` comes back spelled that way, and `recall mixed` finds it. Terms and anchor values are identity rather than prose, so the parser folds them to lower case on the way in — `topic:Billing` and `topic:billing` are the same anchor. An agent should not have to remember how it capitalised something a hundred turns ago.
-- **One command at a time.** A second command in the same instruction is a parse error: `recall x remember 'y'` is rejected at the column where `remember` starts.
+- **One command at a time.** A second command in the same instruction is a parse error: `recall x remember 'y'` is rejected at `remember`.
 - **One line per instruction.** A new line ends the instruction: anything after it is a second one and is rejected, so `recall ferry\nbridge` is an error rather than a two-term search silently spanning both lines. Trailing blank lines are not an instruction and are ignored.
 - **A clause that takes one value may be given once.** Repeating it is an error, not a last-one-wins overwrite: a query that silently answers a differently-scoped question is the failure an agent cannot detect. Anchors are the exception — repeating `topic:`/`entity:` is a list by design.
 
@@ -20,7 +20,7 @@ The principle of removing ambiguity remains central to new versions of the DSL. 
 
 ## No boolean operators
 
-There are none. Several terms in one recall are a **union** — any match seeds the search — and there is no way to write a conjunction or a negation. Every anchor filters; there is no way to say MUST_NOT.
+There are none. Several terms in one recall are a **union** (any match seeds the search), and there is no way to write a conjunction or a negation. Beside a term or a vector every anchor filters, and there is no way to say MUST_NOT.
 
 ## Representation
 
@@ -28,4 +28,4 @@ Queries are not designed to be read from a file, but directly from a UTF-8 encod
 
 ## Errors over guesses
 
-An unparseable query is rejected with the column it failed at and the values a field accepts. A model can correct itself from a precise message; it cannot detect a plausible answer to a question it did not ask. Where a query is valid but sits one typo away from a different valid query, the query runs and the response carries a [warning](/docs/query-language/reference/warnings) naming both readings.
+An unparseable query is rejected with the column it failed at and the values a field accepts. A model can correct itself from a precise message; it cannot detect a plausible answer to a question it did not ask. So a query one `:` away from a different one, such as `recall x since 7d`, is rejected with both repairs rather than run on a guess. A query with one reading still runs when something in it has no effect or is mis-cased, and the response carries a [warning](/docs/query-language/reference/warnings) saying what to change.

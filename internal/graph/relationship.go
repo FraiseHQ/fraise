@@ -28,7 +28,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
-// Fact mentions NamedEntity relationship
+// Mentions is the relationship from a fact to a named entity it mentions.
 type Mentions[K comparable] struct {
 	Fact        *Fact[K]
 	NamedEntity *NamedEntity[K]
@@ -70,7 +70,7 @@ func (m Mentions[K]) Hash(h hash.Hasher[K, string]) K {
 	return h.Hash("mentions:" + m.Fact.Value + "\x00" + m.NamedEntity.Value)
 }
 
-// Fact is about Topic relationship
+// IsAbout is the relationship from a fact to a topic it is filed under.
 type IsAbout[K comparable] struct {
 	Fact  *Fact[K]
 	Topic *Topic[K]

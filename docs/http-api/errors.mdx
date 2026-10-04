@@ -12,7 +12,7 @@ Every failure returns the same shape, with the status code carrying the category
 
 | Status | When |
 |--------|---------------------------------------------------------------------------------------------------------------------------------------|
-| 400 | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a vector whose dimension does not match its graph, a graph selector outside the allocated range |
+| 400 | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a `top`, `depth` or vector length outside its bounds, a vector whose dimension does not match its graph, a graph selector outside the allocated range, a write sent to `/api/v1/explain` |
 | 404 | no endpoint answers that method and path — the message names both |
 | 429 | the scheduler queue stayed full past `enqueue-timeout` — back off and retry |
 | 503 | the server is shutting down |
@@ -20,7 +20,7 @@ Every failure returns the same shape, with the status code carrying the category
 
 ## Two deliberate properties
 
-**A client error says exactly what is wrong**, including the column a parse failed at and the values a field accepts. The caller is usually a model, and a model can correct itself from a precise message — that is the whole reason the parser refuses to guess.
+**A client error says exactly what is wrong**, including the column a parse failed at and the values a field accepts. The caller is usually a model, and a model can correct itself from a precise message, which is why the parser refuses to guess.
 
 **A 500 never carries detail.** The body is a generic message and the specifics go to the log, so an internal error cannot leak the shape of the store to a client.
 

@@ -59,9 +59,8 @@ func main() {
 	args := os.Args[1:]
 
 	// The first argument selects the command when it is not a flag; otherwise
-	// the command defaults to the server, so every invocation that predates
-	// subcommands — the docker CMD, the systemd unit, brew services, a bare
-	// `fraise -config x` — keeps meaning what it always meant. The command is
+	// the command is serve, so a bare `fraise -config x` (the docker command,
+	// the systemd unit, brew services) starts the server. The command is
 	// stripped before flag parsing: Parse rejects any non-flag argument.
 	cmd := "serve"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -74,8 +73,7 @@ func main() {
 
 	if err := run(cmd, context.Background(), c, cfgErr); err != nil {
 		// Stderr, not the logger: on the mcp path stdout belongs to the
-		// protocol and no stdout logger is ever installed. A non-zero exit
-		// lets a supervisor see the failure instead of a clean shutdown.
+		// protocol and no stdout logger is ever installed.
 		fmt.Fprintln(os.Stderr, "fraise:", err)
 		os.Exit(1)
 	}
@@ -88,9 +86,9 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	// A context cancelled on SIGINT/SIGTERM drives graceful shutdown: an
-	// operator's `docker stop`/Ctrl-C lets in-flight writes finish instead of
-	// being dropped — and it lives here, not in main, so os.Exit can never
-	// skip the deferred restore. stop restores default signal handling.
+	// operator's `docker stop` or Ctrl-C lets in-flight writes finish instead
+	// of being dropped. It lives here rather than in main so os.Exit cannot
+	// skip the deferred stop, which restores default signal handling.
 	defer stop()
 
 	// -h/--help is a request answered, not a failure: the flag package has
@@ -101,18 +99,12 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 		return nil
 	}
 
-	// A setting naming something the process cannot honour stops startup on
-	// every path, before anything is announced: it was asked for explicitly,
-	// and running with a different value instead is a substitution an
-	// operator can only detect by noticing the behaviour they asked for is
-	// missing. The error lists what the setting accepts.
-	//
-	// An unrecognised flag is fatal for the same reason, and so is a config
-	// file that exists but cannot be used — malformed, or naming a key no
-	// setting has. They have to be named explicitly because everything below
-	// merely warns: a mistyped flag or key that warned would start the server
-	// with a default the operator never asked for, silently. The one survivable
-	// failure is a missing file.
+	// A value the process cannot honour stops startup on every path, before
+	// anything is announced, and so do an unrecognised flag and a config file
+	// that exists but cannot be used (malformed, or naming a key no setting
+	// has). They are named here because everything below merely warns, and a
+	// warning would start the server on a default the operator never asked
+	// for. The one survivable failure is a missing file.
 	if errors.Is(cfgErr, config.ErrInvalidValue) || errors.Is(cfgErr, config.ErrInvalidFlag) || errors.Is(cfgErr, config.ErrParsingFailed) {
 		return cfgErr
 	}
@@ -130,8 +122,7 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 		logger.Info("Starting server...")
 		if cfgErr != nil {
 			// All that survives to here is a missing file: Parse fell back to
-			// the built-in defaults, and saying so keeps a silently-defaulted
-			// config visible rather than a surprise.
+			// the built-in defaults, and the warning makes that visible.
 			logger.Warn("Config file not found, using defaults", "error", cfgErr)
 		}
 		logger.Debug("Config loaded", "config", c)
@@ -148,9 +139,7 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 			return runServer[float64](ctx, c)
 		default:
 			// Startup rejects any other value, so this is an unset config, and the
-			// documented default is what it means. It used to fall back to float64
-			// — not even the default — so a typo silently changed the precision of
-			// every score in the store.
+			// documented default is what it means.
 			logger.Warn("Precision unset, using the default", "precision", config.DefaultPrecision)
 			return runServer[float32](ctx, c)
 		}
@@ -164,10 +153,10 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 	}
 }
 
-// run builds a server at the requested floating-point precision and starts it.
-// K is fixed to uint64 (the hasher's key type); only P varies with config. The
-// context drives graceful shutdown: Start returns once it is cancelled and the
-// stack has drained.
+// runServer builds a server at the requested floating-point precision and
+// starts it. K is fixed to uint64 (the hasher's key type); only P varies with
+// config. The context drives graceful shutdown: Start returns once it is
+// cancelled and the stack has drained.
 func runServer[P float32 | float64](ctx context.Context, c *config.ConfigSet) error {
 	srv, err := server.New[uint64, P](c, hash.NewHasher[uint64](c))
 	if err != nil {

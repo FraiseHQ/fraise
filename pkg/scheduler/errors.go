@@ -25,10 +25,11 @@ package scheduler
 import "errors"
 
 var (
-	// ErrShutdown is returned when work is submitted to a scheduler that has
-	// already been shut down.
+	// ErrShutdown is returned when work is submitted to a scheduler that is
+	// stopping, stopped or was never started.
 	ErrShutdown = errors.New("scheduler: shut down")
-	// ErrEnqueueStream is returned when a stream cannot be added to the queue.
+	// ErrEnqueueStream is returned, wrapping the context's error, when the
+	// caller's context ends before its stream is queued.
 	ErrEnqueueStream = errors.New("scheduler: could not add stream to queue")
 	// ErrQueueFull is returned when the queue stays saturated past the
 	// configured enqueue timeout, so callers can shed load (e.g. answer 429)
@@ -36,10 +37,9 @@ var (
 	ErrQueueFull = errors.New("scheduler: queue full")
 	// ErrStreamExecution is returned when a stream fails while being executed.
 	ErrStreamExecution = errors.New("scheduler: error while executing stream")
-	// ErrStreamCommit is returned when a stream fails while being committed.
-	// It always wraps the underlying commit error rather than replacing it, so
-	// the HTTP boundary can errors.Is the cause out (e.g. a vector-dimension
-	// mismatch, a client error) instead of reporting every failed commit as an
-	// internal fault.
+	// ErrStreamCommit is recorded on a stream whose commit failed. It wraps the
+	// commit error rather than replacing it, so the HTTP boundary can match the
+	// cause with errors.Is and tell a client fault (a vector-dimension
+	// mismatch) from an internal one.
 	ErrStreamCommit = errors.New("scheduler: error while committing stream")
 )

@@ -95,10 +95,10 @@ def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim
     and supplied dimensions — a client error, not a 500, so callers can tell
     their bad input from a server fault.
 
-    Both writes go to graph 4, whose only other writes (the forest-bound test
-    in test_stats.py) use the same suite-wide dimension, so the first insert
-    here establishes the dimension deterministically even across reruns against
-    a long-lived server.
+    Both writes go to graph 4, whose other writes (the forest-bound test in
+    stats_test.py and the dimension probes below) use the same suite-wide
+    dimension, so the first insert here establishes the dimension
+    deterministically even across reruns against a long-lived server.
     """
     # Establish the graph's dimension.
     status, body = query(
@@ -133,9 +133,9 @@ def test_recall_vector_incompatible_size_is_rejected(query, vector, vector_dim, 
     """A recall whose vector differs in width from the graph's is a 400 naming
     both dimensions, exactly as a write is.
 
-    It used to answer 200 from the text index alone: "dimension" matches the
-    fact written below, so the first shape came back with a plausible hit and
-    the semantic half of the question dropped without a word. A vector on its
+    Answering 200 from the text index alone would drop the semantic half of
+    the question without a word: "dimension" matches the fact written below,
+    so the first shape would come back with a plausible hit. A vector on its
     own, and a vector beside an anchor, fail the same way.
 
     The write fixes graph 4 at the suite-wide dimension, idempotently, as in
@@ -197,19 +197,8 @@ def test_recall_vector_on_a_graph_without_vectors_is_answered(
     assert fact in values, f"want the text match {fact!r}; got {values}"
 
 
-# Documents on three clearly distinct subjects. A real sentence embedding places
-# each far from the others, so a query close in meaning to one of them retrieves
-# that one by vector alone. Graph 3 carries no other vectors, so its embedding
-# dimension is fixed by this test.
-EMBEDDING_DOCS = {
-    "cat": "the tabby cat curled up and slept on the warm windowsill",
-    "space": "the mars rover drilled into red rock to collect samples",
-    "bread": "he kneaded the dough and baked a fresh loaf of sourdough",
-}
-
-
 @pytest.mark.embeddings
-def test_vector_search_with_real_embeddings(query):
+def test_vector_search_with_real_embeddings(query, embedding_docs):
     """End-to-end semantic search with a real HuggingFace embedding model.
 
     Embeds a few documents with a small model loaded through the vanilla
@@ -251,7 +240,7 @@ def test_vector_search_with_real_embeddings(query):
         return pooled[0].tolist()
 
     graph = 3
-    for topic, text in EMBEDDING_DOCS.items():
+    for topic, text in embedding_docs.items():
         status, body = query(
             f"remember@{graph} '{text}' vec:$v topic:{topic}",
             parameters={"v": embed(text)},
@@ -259,8 +248,8 @@ def test_vector_search_with_real_embeddings(query):
         assert status == 200, body.get("error")
 
     # A phrase close in meaning to the cat document, sharing none of its words.
-    # The recall keyword matches no stored text, and depth:0 keeps the recall
-    # on the seeds, so only the vector index decides the result.
+    # The recall keyword matches no stored text and the recall names no anchor,
+    # so only the vector index decides the result.
     query_vec = embed("a sleepy kitten dozing in the afternoon sun")
     status, body = query(
         f"recall@{graph} zzznomatch vec:$v depth:0",
@@ -271,7 +260,7 @@ def test_vector_search_with_real_embeddings(query):
 
     hits = body["results"]["hits"]
     assert hits, "vector search returned no hits"
-    assert hits[0]["value"] == EMBEDDING_DOCS["cat"], (
+    assert hits[0]["value"] == embedding_docs["cat"], (
         f"nearest document should be the cat one; got {hits[0]['value']!r}"
     )
 
@@ -288,24 +277,20 @@ def test_vector_search_with_real_embeddings(query):
     )
 
 
-KRAKATOA_TEXT = "krakatoa ash fell for days"  # both terms; no embedding
-KRAKATOA_BOTH = "the ash cloud crossed the ocean"  # one term; near embedding
-KRAKATOA_VEC = "sensors recorded the pressure wave"  # no terms; exact embedding
-
-
-def test_recall_fuses_text_and_vector_additively(query, vector, explain):
-    """Channels fuse by adding mass, not by counting rank votes: a fact seen
-    by both channels scores exactly the sum of what each observed, and a fact
-    seen by one scores that channel's mass alone. (The RRF-era opinion — a
-    fact leading neither list tops both leaders by consensus votes — is
-    deliberately retired: rank votes were how mega-hubs manufactured
-    consensus from size.)
+def test_recall_fuses_text_and_vector_additively(
+    query, vector, explain, krakatoa_facts
+):
+    """The excess scorer fuses channels by adding mass, not by counting rank
+    votes: a fact seen by both channels scores the sum of what each observed,
+    and a fact seen by one scores that channel's mass alone. Under rank votes
+    a fact leading neither list can top both leaders by consensus, and large
+    hubs manufacture consensus from their size.
     """
     graph = 6
     writes = (
-        (KRAKATOA_TEXT, None),
-        (KRAKATOA_BOTH, vector(value=-0.45)),
-        (KRAKATOA_VEC, vector(value=-0.5)),
+        (krakatoa_facts["text"], None),
+        (krakatoa_facts["both"], vector(value=-0.45)),
+        (krakatoa_facts["vector"], vector(value=-0.5)),
     )
     for phrase, embedding in writes:
         if embedding is None:
@@ -323,7 +308,7 @@ def test_recall_fuses_text_and_vector_additively(query, vector, explain):
     assert status == 200, body.get("error")
     hits = {h["value"]: h for h in body["results"]["hits"]}
 
-    both = hits[KRAKATOA_BOTH]
+    both = hits[krakatoa_facts["both"]]
     sources = sorted(c["source"] for c in both["contributions"])
     assert sources == [
         "text",
@@ -333,7 +318,7 @@ def test_recall_fuses_text_and_vector_additively(query, vector, explain):
         f"fusion is additive: {both}"
     )
 
-    text_only = hits[KRAKATOA_TEXT]
+    text_only = hits[krakatoa_facts["text"]]
     assert [c["source"] for c in text_only["contributions"]] == ["text"], text_only
-    vec_only = hits[KRAKATOA_VEC]
+    vec_only = hits[krakatoa_facts["vector"]]
     assert [c["source"] for c in vec_only["contributions"]] == ["vector"], vec_only

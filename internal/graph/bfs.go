@@ -25,9 +25,8 @@ package graph
 import "fmt"
 
 // BFS is a breadth-first traversal: it explores the graph frontier by frontier
-// (nearest vertices first) using a FIFO queue. It implements Traversal;
-// Run starts from the source configured at construction, while Traverse takes
-// the source as a parameter so one BFS value can serve many seeds.
+// (nearest vertices first) using a FIFO queue. It implements Traversal, and
+// Run starts from the source set by NewBFS or SetSource.
 type BFS[K comparable, P float32 | float64] struct {
 	dir    Direction // which edges to follow
 	source K         // vertex Run starts the traversal from
@@ -39,9 +38,9 @@ func NewBFS[K comparable, P float32 | float64](source K, dir Direction) *BFS[K, 
 	return &BFS[K, P]{dir: dir, source: source}
 }
 
-// NewBFSTraversal returns a breadth-first Traversal following edges in
-// the given direction, for use as a graph's configured search traversal
-// (where the source is supplied per Traverse call).
+// NewBFSTraversal returns a breadth-first Traversal following edges in the
+// given direction, with no source set, for use as a graph's search traversal:
+// the graph clones it and sets each seed as the clone's source.
 func NewBFSTraversal[K comparable, P float32 | float64](dir Direction) *BFS[K, P] {
 	return &BFS[K, P]{dir: dir}
 }
@@ -56,20 +55,19 @@ func (b *BFS[K, P]) Run(g Graph[K, P]) (AlgorithmResult, error) {
 	return result, nil
 }
 
-// sets source. Useful to change source and run multiple traversals with the same object
+// SetSource configures the vertex the next Run starts from.
 func (b *BFS[K, P]) SetSource(source K) {
 	b.source = source
 }
 
-// Clone returns a new BFS with the same direction and no source set, so it can
-// be given its own source and run independently of the original. This lets a
-// single configured traversal serve many concurrent walks without sharing the
+// Clone returns a new BFS with the same direction and no source set, so one
+// configured traversal can serve many concurrent walks without sharing the
 // mutable source.
 func (b *BFS[K, P]) Clone() Traversal[K, P] {
 	return &BFS[K, P]{dir: b.dir}
 }
 
-// Traverse walks g breadth-first from source, following edges in the
+// traverse walks g breadth-first from source, following edges in the
 // configured direction, and records the visit order, the traversal tree and
 // each vertex's hop distance from source.
 func (b *BFS[K, P]) traverse(g Graph[K, P], source K) (TraversalResult[K], error) {

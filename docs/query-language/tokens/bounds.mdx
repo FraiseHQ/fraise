@@ -7,7 +7,7 @@ Every integer a query can write is bounded, and a value past its bound is reject
 
 | Value | Range | Set by |
 |----------------|--------------------------|---------------------------------|
-| graph selector | `0`–`255` | the wire form (a `uint8`) |
+| graph selector | `0`–`255` | its type (a `uint8`) |
 | `depth` | `0`–`max-depth` (2) | operator config |
 | `top` | `1`–`max-top` (1000) | operator config |
 | `vec` length | up to `max-vector-dimension` (4096) | operator config |

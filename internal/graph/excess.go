@@ -27,19 +27,18 @@ import (
 	"sort"
 )
 
-// ExcessTraversal is the excess methodology's traversal: from a source fact
-// it visits the source's anchors — Topic and NamedEntity neighbours, both
-// edge directions — at depth 1, then every member of those anchors at depth
-// 2. Order lists the anchors then the members, ascending key within each
-// band, so the collection layer's float folds run in a fixed order. Parents
-// carries the full member→anchors incidence (a member reached through two of
-// the source's anchors is two observations, not one), and the source itself
-// appears among its anchors' members: observed anchor mass then aggregates
-// identically for every observer, and self-exclusion happens once, in the
+// ExcessTraversal is the excess methodology's traversal. From a source fact it
+// visits the source's anchors (its Topic and NamedEntity neighbours, in either
+// edge direction) at depth 1, then every member of those anchors at depth 2.
+// Order lists the anchors, then the members, each band in ascending key order
+// so the collection layer folds floats in a fixed order; that sort is why K is
+// cmp.Ordered rather than comparable.
+//
+// Parents carries the full member-to-anchors incidence: a member reached
+// through two of the source's anchors is two observations, not one. The source
+// itself appears among its anchors' members, so an anchor's members are the
+// same whichever seed reaches it, and self-exclusion happens once, in the
 // scorer, where the member's own mass is at hand.
-// K is ordered, not merely comparable: the band ordering is what lets the
-// collection layer fold floats without run-to-run drift, and an unordered key
-// type would have no order to band by.
 type ExcessTraversal[K cmp.Ordered, P float32 | float64] struct {
 	source K
 }
@@ -72,11 +71,9 @@ func (t *ExcessTraversal[K, P]) traverse(g Graph[K, P], source K) (TraversalResu
 		return TraversalResult[K]{}, ErrSourceNotFound
 	}
 
-	// Single-node neighbour access via the non-copying Neighbours accessor.
-	// The prior code built adjacency/predecessor views with AdjacencyMap()/
-	// PredecessorMap(), each of which deep-copies the ENTIRE edge set on every
-	// call — and traverse runs once per seed, so a query cloned the whole graph
-	// ~2x per seed (exportEdges: 61% of CPU, 213MB/query on a 60k fat hub).
+	// traverse runs once per seed, so it reads one node's neighbours at a time
+	// through Neighbours: AdjacencyMap and PredecessorMap copy every edge in
+	// the graph on each call.
 	neighbours := func(key K) []K {
 		out := g.Neighbours(key)
 		sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })

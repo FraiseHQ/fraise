@@ -40,7 +40,7 @@
 # max-depth = 2
 # max-vector-dimension = 4096
 # seed-size = 10
-# min-score-ratio = 0        # drop hits whose relevance is under this fraction of the best hit's, in [0, 1]; 0 = off
+# min-score-ratio = 0         # drop hits whose relevance is under this fraction of the best hit's, in [0, 1]; 0 = off
 
 [db.hashing-function]
 # name = "xxhash"             # xxhash t1ha

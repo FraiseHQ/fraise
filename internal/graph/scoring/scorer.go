@@ -49,20 +49,20 @@ const (
 )
 
 // Scorer folds one candidate's contributions into its relevance score;
-// higher wins. Search applies it twice — to each seed's own contributions
-// before any traversal (fixing the seed masses the traversal aggregates) and
-// to every candidate's full list at the end — and one instance is shared by
-// every concurrent search on the graph, so implementations must be pure: no
-// mutation of the slice, no mutable state, same input same output.
+// higher wins. Search folds each seed's own contributions before any
+// traversal (fixing the seed masses the traversal aggregates), then every
+// candidate's full list, and with the score cutoff on it refolds the ranked
+// hits. One instance is shared by every concurrent search on the graph, so
+// implementations must be pure: no mutation of the slice, no mutable state,
+// same input same output.
 //
 // Query-scoped inputs arrive by binding, never by mutation. WithBackground
-// returns a scorer bound to one query's background rate — the average mass
-// density per unit of anchor degree the traversal observed, the one
-// query-global number a null model needs. An unbound scorer folds at
-// background zero, which is exactly what seed fusion wants: before the
-// traversal has observed anything there is no null to compare against.
-// Mutating the shared instance instead would race one query's background
-// into another's folds, since reads run concurrently under RLock.
+// returns a scorer bound to one query's background rate, the observed mass
+// per unit of anchor degree: the one query-global number a null model needs.
+// An unbound scorer folds at background zero, which is what seed fusion
+// needs: nothing has been observed before the traversal runs. Mutating the
+// shared instance instead would race one query's background into another's
+// folds, since reads run concurrently under RLock.
 type Scorer[K comparable, P float32 | float64] interface {
 	// Score folds contributions at the scorer's bound background rate.
 	Score(contributions []Contribution[K, P]) P
@@ -90,20 +90,20 @@ func (s Source) String() string {
 }
 
 // Contribution records one observation of a candidate by one retrieval
-// source. Collection sites record what they saw — who, through which anchor,
-// how much mass sat on it — and apply no policy of their own: the hinge, the
-// null model and the attenuation all belong to the Scorer, so changing how
-// ranking works never touches the collection sites again.
+// source. Collection sites record what they saw (who, through which anchor,
+// how much mass sat on it) and apply no policy of their own: the hinge, the
+// null model and the attenuation belong to the Scorer, so changing how
+// ranking works does not touch the collection sites.
 //
 // Score is oriented so that bigger is always better: the vector site converts
-// the distance its index reports (smaller is nearer) to 1/(1+distance) on the
-// way in; a graph observation carries the funding anchor's full observed
-// mass; an anchor sighting carries unit mass. Rank is the candidate's
-// position in the producing source's own result list (0 is best) — a graph
-// observation or an anchor sighting has no list and leaves it zero. Via,
-// Degree and Count exist for graph and anchor observations: the funding or
-// filing anchor, its degree at collection time, and how many seed members
-// funded it; a seed contribution's Count is 1.
+// the distance its index reports (smaller is nearer) to 1/(1+distance); a
+// graph observation carries the funding anchor's full observed mass; an
+// anchor sighting carries unit mass. Rank is the candidate's position in the
+// producing source's own result list (0 is best); a graph observation or an
+// anchor sighting has no list and leaves it zero. Via, Degree and Count are
+// for graph and anchor observations: the funding or filing anchor, its degree
+// at collection time, and how many seeds funded it; a seed contribution's
+// Count is 1.
 type Contribution[K comparable, P float32 | float64] struct {
 	Src    Source
 	Score  P

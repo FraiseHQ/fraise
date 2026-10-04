@@ -39,10 +39,9 @@ type Hashable[K comparable, T any] interface {
 
 func NewHasher[K ~uint64](cfg *config.ConfigSet) Hasher[K, string] {
 	// Startup rejects any name outside config.HashingFunctions, so the default
-	// arm covers an unset (hand-built) config, not an unrecognised one. It
-	// matters which: the hash decides every node key, so quietly substituting
-	// one for a name the operator typed would key the store differently than
-	// they asked for, with nothing to see.
+	// arm serves only "xxhash" and an unset (hand-built) config: a mistyped
+	// name never silently keys the store with a hash the operator did not
+	// choose.
 	switch cfg.DB.HashingFunction.Name {
 	case config.HashingT1ha:
 		return T1haHash[K]{seed: cfg.DB.HashingFunction.Seed}

@@ -35,8 +35,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
-// ---- helpers ---------------------------------------------------------------
-
 // newHeap returns an empty max-heap of uint32 keys and int values.
 func newHeap() *containers.Heap[uint32, int] {
 	return containers.NewHeap[uint32, int]()
@@ -65,8 +63,6 @@ func assertNonIncreasing(t *testing.T, got []uint64) {
 		}
 	}
 }
-
-// ---- behaviour tests -------------------------------------------------------
 
 func TestLen(t *testing.T) {
 	data := []containers.Item[uint32, int]{
@@ -204,8 +200,6 @@ func TestRemove(t *testing.T) {
 	}
 }
 
-// ---- constructor tests -----------------------------------------------------
-
 func TestNewHeap_EmptyAndSingle(t *testing.T) {
 	empty := containers.NewHeap[string, string]()
 	if empty.Len() != 0 || empty.Peek() != nil || empty.Pop() != nil {
@@ -218,9 +212,8 @@ func TestNewHeap_EmptyAndSingle(t *testing.T) {
 	}
 }
 
-// TestNewHeap_Heapifies is the regression test for the original constructor
-// bug: NewHeap stored items verbatim with an empty lookup, so an unsorted input
-// left a non-heap that Peek/Pop/Has read incorrectly.
+// TestNewHeap_Heapifies checks that NewHeap builds both the heap order and the
+// key lookup from unsorted input, so Peek, Pop and Has read it correctly.
 func TestNewHeap_Heapifies(t *testing.T) {
 	h := containers.NewHeap(
 		sItem("a", 9), sItem("b", 3), sItem("c", 7),
@@ -247,9 +240,9 @@ func TestNewHeap_Heapifies(t *testing.T) {
 	}
 }
 
-// TestNewHeap_DoesNotAliasInput guards the slice-aliasing fix: mutating the
-// caller's slice after construction must not disturb the heap, and heap
-// operations must not write back into the caller's slice.
+// TestNewHeap_DoesNotAliasInput checks that the heap does not share the
+// caller's slice: mutating it after construction must not disturb the heap,
+// and heap operations must not write back into it.
 func TestNewHeap_DoesNotAliasInput(t *testing.T) {
 	src := []containers.Item[string, string]{sItem("a", 5), sItem("b", 2), sItem("c", 8)}
 	h := containers.NewHeap(src...)
@@ -309,13 +302,11 @@ func TestClear_ThenReuse(t *testing.T) {
 	}
 }
 
-// ---- randomized property tests ---------------------------------------------
-
 // TestFuzz_AgainstReferenceModel drives a long random sequence of operations
 // and cross-checks the heap against a plain map used as an oracle, verifying
 // after every step that Len/Peek stay consistent and that Pop always surfaces a
-// true maximum-priority key. Because Peek/Pop/Has/Remove all consult the
-// internal lookup map, agreement with the model exercises its consistency.
+// true maximum-priority key. Because Push, Pop and Remove all read or update
+// the internal lookup map, agreement with the model exercises its consistency.
 func TestFuzz_AgainstReferenceModel(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	h := containers.NewHeap[int, int]()

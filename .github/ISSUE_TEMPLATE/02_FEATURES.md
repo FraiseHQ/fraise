@@ -9,7 +9,7 @@ assignees: ""
 
 # Feature template
 
-Features are a block of functionality user can interact with.
+Features are a block of functionality a user can interact with.
 
 ----
 
@@ -19,6 +19,6 @@ Features are a block of functionality user can interact with.
 **I want** <br />
 **So that**
 
-## Defintion of Done
+## Definition of Done
 
 Feature acceptance criteria.

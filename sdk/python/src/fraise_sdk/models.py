@@ -32,11 +32,11 @@ from dataclasses import dataclass, field
 class Contribution:
     """One retrieval source's sighting of a hit, as ``explain`` reports it.
 
-    ``source`` names the stage that saw the fact — ``text``, ``vector``,
-    ``graph`` or ``anchor`` — and ``score`` is that stage's raw mass, not a share
-    of the hit's final score: contributions are the ingredients the score was
-    folded from, after transmission and recency decay, and do not sum to it.
-    ``rank`` is the hit's place in that source's own list, 0 first, and
+    ``source`` names the stage that saw the fact (``text``, ``vector``,
+    ``graph`` or ``anchor``) and ``score`` is that stage's raw mass, not a share
+    of the hit's score: the hit's score is the final value, after transmission
+    and recency decay, so its contributions are its ingredients and do not sum
+    to it. ``rank`` is the hit's place in that source's own list, 0 first, and
     ``count`` how many seeds funded the sighting. A ``graph`` or ``anchor``
     sighting also names the anchor it came through (``via``) and that anchor's
     ``degree``; a ``text`` or ``vector`` one has neither.
@@ -89,22 +89,18 @@ class Hit:
 
 @dataclass(frozen=True)
 class RecallResult:
-    """The result set of a ``recall``: how many facts matched and, in ranked order, what they were.
+    """The result of a ``recall``: the hits, in ranked order, and how many came back.
 
-    ``warnings`` carries any parse warnings the server attached: the query ran
-    and the hits are valid, but it was one typo away from meaning something
-    else (e.g. a leading term that spells a grammar keyword). Empty on the
-    common, unambiguous path.
+    ``warnings`` carries any warnings the server attached: the query ran and
+    the hits are valid, but something in it cannot help or may not be what was
+    meant (e.g. a stop-word term that can never match). Empty for a clean query.
 
-    ``empty`` is about the graph, not the result set — ``bool(result)`` is what
+    ``empty`` is about the graph, not the result set; ``bool(result)`` is what
     reports whether anything came back. It separates the two ways a recall comes
     back with nothing: False is the ordinary miss, where the graph holds facts
     and none of them matched, so the query is what to change; True means the
-    graph searched holds nothing at all — no fact has ever been written to it —
-    and no rephrasing would have helped. The server carries the difference in
-    the status line (204 for the empty graph), because the two were otherwise
-    the same empty result set, and a caller could not tell a graph it had never
-    written to from a question it had asked badly.
+    graph searched holds nothing at all, so no rephrasing would have helped. The
+    server carries the difference in the status line (204 for the empty graph).
 
     ``background`` is the query's background rate, the seed mass per unit of
     anchor degree the search observed. With each hit's contributions it is

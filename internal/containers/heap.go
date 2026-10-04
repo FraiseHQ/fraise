@@ -124,7 +124,7 @@ func (h *Heap[K, T]) Has(key K) bool {
 	return ok
 }
 
-// Remove a value by key
+// Remove deletes the item stored under key and reports whether there was one.
 func (h *Heap[K, T]) Remove(key K) bool {
 	index, ok := h.lookup[key]
 	if !ok {
@@ -158,7 +158,9 @@ func (h *Heap[K, T]) Remove(key K) bool {
 	return true
 }
 
-// remove item at index and replace by last item in the tree
+// remove moves the last item into index, which must not be the last slot, and
+// shrinks the heap by one. The caller drops the removed key from lookup and
+// restores the heap property.
 func (h *Heap[K, T]) remove(index int, size int) {
 	h.items[index] = h.items[size-1]
 	h.items = h.items[:size-1]
@@ -184,8 +186,8 @@ func (h *Heap[K, T]) Pop() *Item[K, T] {
 	return &first
 }
 
-// used when a child node doesn't follow the heap propoerty with its parent
-// restore the heap property
+// percolateUp moves the item at index up while its Priority exceeds its
+// parent's, restoring the heap property above it.
 func (h *Heap[K, T]) percolateUp(index int) {
 	for index > 0 {
 		parent := (index - 1) / 2
@@ -198,8 +200,8 @@ func (h *Heap[K, T]) percolateUp(index int) {
 	}
 }
 
-// used when a parent node doesn't follow the heap propoerty with its parent
-// restore the heap property
+// percolateDown moves the item at index down, swapping it with its larger
+// child, until no child has a greater Priority.
 func (h *Heap[K, T]) percolateDown(index int) {
 	size := len(h.items)
 	for index < size {

@@ -3,7 +3,7 @@ title: "Parameters"
 description: "Binding a vector to a query with a $name reference, and why embeddings never appear inline in the query string"
 ---
 
-A field reference binds a value the query does not carry inline. It is written `$name` and resolved against the `parameters` object of the request, matching a key exactly — case included, as JSON keys are, so `$V` binds `V` and not `v`:
+A parameter reference binds a value the query does not carry inline. It is written `$name` and resolved against the `parameters` object of the request, matching a key exactly — case included, as JSON keys are, so `$V` binds `V` and not `v`:
 
 ```json
 {"query": "recall bird vec:$v top:5", "parameters": {"v": [0.1, 0.2, 0.3]}}
@@ -27,14 +27,14 @@ A name is a bare word, so it is letters and digits only: `$v2` binds the key `v2
 
 It is valid on both commands:
 
-- on `recall`, the vector is a **semantic seed** — the vector index returns its nearest neighbours, which then seed the graph walk;
+- on `recall`, the vector is a **semantic seed**: the vector index returns its nearest neighbours, which seed the search;
 - on `remember`, it is the **embedding stored** with the fact.
 
 ## Why vectors stay out of the query string
 
-Keeping vectors out of the query string is the point. A query is a log line and passes through the lexer on every call; an inline embedding would make the log unreadable and put a few thousand floats through the lexer each time.
+A query is a log line and passes through the lexer on every call; an inline embedding would make the log unreadable and put a few thousand floats through the lexer each time.
 
-A bound vector still takes part in planning: the plan cache key is built from the parsed query, and it carries a lossless hash of the vector's exact values — see [Engine](/docs/architecture/components/engine). A query that repeats with the same vector, the common case for an agent in a loop, skips planning entirely; a new vector is a new plan.
+A bound vector still takes part in planning: the plan cache key is built from the parsed query, and it carries a lossless hash of the vector's exact values — see [Engine](/docs/architecture/components/engine). A query that repeats with the same vector, the common case for an agent in a loop, reuses its cached plan; a new vector is a new plan.
 
 ## Missing parameters are client errors
 

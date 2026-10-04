@@ -24,7 +24,7 @@ Four characters carry meaning. Each one is a single token, and each one also end
 
 ## Consequences worth remembering
 
-- A date or a time is quoted. `since:'2026-01-15'` and `since:'2026-01-15T10:00:00Z'` parse; bare, the `-` is rejected before the value is read. See [Literals](/docs/query-language/tokens/literals).
+- A date or a time is quoted. `since:'2026-01-15'` and `since:'2026-01-15T10:00:00Z'` parse; bare, the value ends at the first `-` and is rejected. See [Literals](/docs/query-language/tokens/literals).
 - A phrase is opaque. Inside quotes nothing is reserved, so `remember 'meeting at 3:30pm about the topic' topic:meetings` stores the colon and the word "topic" literally.
 - `''` inside a phrase is one apostrophe: `remember 'alice''s laptop' topic:devices` stores *alice's laptop*.
 - The graph selector is glued to the verb. `recall @3` is not a selector — the `@` must follow the command with no whitespace.

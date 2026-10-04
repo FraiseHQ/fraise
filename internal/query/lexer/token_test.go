@@ -143,11 +143,11 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 }
 
 // TestIsKeyword pins the reserved-word set IsKeyword reports. Every type in
-// KeywordsMap must answer true — the parser relies on this to read a reserved
-// word as data in value position, so a keyword missing here regresses to the
-// entity:top 400. Every other type must answer false; LITERAL especially,
-// since calling the bare-word type itself a keyword would re-reserve every
-// word.
+// KeywordsMap must answer true: the parser relies on this to read a reserved
+// word as data after a field's ':', so a keyword missing here would make
+// entity:top a parse error. Every other type must answer false; LITERAL
+// especially, since calling the bare-word type itself a keyword would
+// re-reserve every word.
 func TestIsKeyword(t *testing.T) {
 	for literal, tokenType := range lexer.KeywordsMap {
 		t.Run(literal, func(t *testing.T) {
@@ -280,10 +280,10 @@ func TestRoundTripTokenTypeToStringToKeyLITERAL(t *testing.T) {
 	}
 }
 
-// TestIsCommand pins which tokens open a query. The parser asks this to tell a
-// second command apart from a stray word — "recall x recall y" is one
-// instruction too many, not an unexpected token — so a field wrongly reporting
-// as a command would turn a repairable typo into a misleading message.
+// TestIsCommand pins which tokens are command verbs. The parser asks this to
+// report a command word after the first position as a second command or a word
+// to quote, so a field wrongly reporting as a command would turn a repairable
+// typo into a misleading message.
 func TestIsCommand(t *testing.T) {
 	commands := []lexer.TokenType{lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE}
 	for _, tt := range commands {

@@ -14,11 +14,11 @@ Each temporal memory graph indexes every fact's text in a full-text search index
 
 ## The seeds
 
-A recall pulls a bounded number of candidates from each source it can use — at least `seed-size`, widened to `top:` when more results are asked for — each carrying its raw retrieval mass:
+A recall pulls candidates from each source it can use, each carrying its raw retrieval mass; the text and vector indexes are each asked for `seed-size` of them, or `top:` when that is larger:
 
 | Source | Mass it carries |
 |---|---|
-| text index | BM25 $\times$ match breadth — the matched-term count priced against the query's total idf mass, so a document covering the whole query scores its term count and a partial match is discounted by the informativeness it missed |
+| text index | BM25 $\times$ coverage: the share of the query's idf mass the fact matched, so a fact matching every query term keeps its full BM25 score and a partial match is discounted by the informativeness of the terms it missed |
 | vector index | $1 / (1 + \text{distance})$ similarity |
 | named anchors, on a recall with no term or vector | a unit mass for each named anchor the fact is filed under |
 
@@ -26,11 +26,11 @@ A fact found by more than one source carries the sum of their masses.
 
 ### What the text index matches
 
-A fact is indexed under its terms and a recall's keywords are read the same way, so the two line up: text is case-folded, English stop words are dropped, and each remaining term is reduced to its stem, which is how `running` finds a fact written with `runs`. The stop words are [Snowball's English list](https://snowballstem.org/algorithms/english/stop.txt), the one written for the stemmer: function words only — pronouns, articles, prepositions, auxiliaries, conjunctions — so every content word stays searchable. Negations are not stop words: `not`, `no` and `nor` are indexed, so a fact that something is not so is told apart from one that it is. A term is a maximal run of letters, digits and symbols in Unicode category So (Symbol, other) — the class that holds emoji, check marks and marks such as `©` — so a fact written as `🍊 🍋 🍌` is found by `recall '🍊'` (quoted, since an emoji is not a letter to the query grammar). Every other character delimits: whitespace, punctuation, and the math, currency and modifier symbols, so `c++` indexes as `c` and `$5` as `5`. Joiners and variation selectors delimit too, so a multi-character emoji sequence indexes as each of its symbols.
+A fact is indexed under its terms and a recall's keywords are read the same way, so the two line up: text is case-folded, English stop words are dropped, and each remaining term is reduced to its stem, which is how `running` finds a fact written with `runs`. The stop words are [Snowball's English list](https://snowballstem.org/algorithms/english/stop.txt), the one written for the stemmer: function words only (pronouns, articles, prepositions, auxiliaries, conjunctions), so every content word stays searchable. Negations are not stop words: `not`, `no` and `nor` are indexed, so a fact that something is not so is told apart from one that it is. A term is a maximal run of letters, digits and symbols in Unicode category So (Symbol, other), the class that holds emoji, check marks and marks such as `©`. A fact written as `🍊 🍋 🍌` is therefore found by `recall '🍊'` (quoted, since an emoji is not a letter to the query grammar). Every other character delimits: whitespace, punctuation, and the math, currency and modifier symbols, so `c++` indexes as `c` and `$5` as `5`. Joiners and variation selectors delimit too, so a multi-character emoji sequence indexes as each of its symbols.
 
 ## The transmission
 
-When the recall names a `topic:` or `entity:` anchor and takes `depth:1` or `depth:2` — see [Retrieval lanes](/docs/retrieval/ranking/depth) — that mass then flows into the fact–anchor graph. Every anchor — a topic or entity node — the query touches observes the total seed mass on its members and compares it to a **background rate** $\rho_0$: the mass a size-proportional smear of the query's seed mass across the anchors it reached would predict for an anchor of its degree.
+When a recall with a term or vector also names a `topic:` or `entity:` anchor and takes `depth:1` or `depth:2` (see [Retrieval lanes](/docs/retrieval/ranking/depth)), that mass then flows into the fact–anchor graph. Every anchor the query touches, meaning every topic or entity a seed is filed under, observes the total seed mass on its members and compares it with its fair share: its degree times the **background rate** $\rho_0$, the query's seed mass per unit of degree across the anchors it reached.
 
 Only the excess above background is transmitted, and it is transmitted **once, not once per member**:
 

@@ -32,17 +32,16 @@ var (
 	ErrMissingFile = errors.New("config: config file not found")
 	// ErrParsingFailed is returned when the config file exists but cannot be
 	// used: it is not valid TOML, a value has the wrong type, or a key maps to
-	// no known setting. It stops startup like an invalid value does — a file
-	// the server half-read would run with defaults the operator believes they
-	// overrode, and a mistyped key is exactly the edit they meant to make.
+	// no known setting. It stops startup like an invalid value does, since a
+	// half-read file would run with defaults the operator believes they
+	// overrode.
 	ErrParsingFailed = errors.New("config: error while parsing config file")
-	// ErrInvalidFlag is returned when the command line carries an unexpected
-	// positional argument (i.e. an unknown/invalid flag).
+	// ErrInvalidFlag is returned when the command line holds an unknown flag,
+	// a flag value that does not parse, or a positional argument.
 	ErrInvalidFlag = errors.New("config: invalid flag")
-	// ErrInvalidValue is returned when a setting names something outside the
-	// values it accepts. It is deliberately distinct from ErrMissingFile: a
-	// missing config file is survivable (the defaults are a valid
-	// configuration), but a value the server cannot honour is not, so the
-	// startup path stops on this one instead of warning and carrying on.
+	// ErrInvalidValue is returned when a setting holds a value outside the
+	// ones it accepts. Unlike ErrMissingFile it is not survivable: startup
+	// stops on it rather than warning and running with a value the operator
+	// did not ask for.
 	ErrInvalidValue = errors.New("config: invalid value")
 )

@@ -24,8 +24,8 @@ package trees
 
 import "github.com/FraiseHQ/fraise/internal/hash"
 
-// Point represents a value in a P-dimensional space (with P being float32 or
-// float64) that spatial trees can index and query.
+// Point is a position in a multi-dimensional space, with coordinates of
+// precision P, that spatial trees can index and query.
 type Point[K comparable, P float32 | float64] interface {
 	hash.Hashable[K, string]
 
@@ -45,9 +45,8 @@ type Point[K comparable, P float32 | float64] interface {
 	Key() K
 }
 
-// TreeNode is a single element stored in a Tree. Every node is Hashable, so it
-// can be located by hash-based structures, and additionally exposes its key,
-// payload and — for spatial trees — its Point coordinates.
+// TreeNode is a single element stored in a tree: a Hashable node exposing its
+// key, its payload and, for spatial trees, its Point coordinates.
 //
 //	K is the comparable lookup key.
 //	T is the stored payload.
@@ -61,15 +60,13 @@ type TreeNode[K comparable, T any, P float32 | float64] interface {
 	// Value returns the payload carried by the node.
 	Value() T
 
-	// Point returns the spatial coordinates of the node. Non-spatial trees
-	// (BTree, HTree) may return nil.
+	// Point returns the spatial coordinates of the node, or nil if it has
+	// none, which a spatial tree rejects with ErrMissingPoint.
 	Point() Point[K, P]
 }
 
-// Tree is the contract shared by every tree container in this package (BTree,
-// HTree, KDTree and BKDTree). It only covers operations that are meaningful for
-// all of them; keyed and spatial lookups live on the OrderedTree and
-// SpatialTree extensions below.
+// Tree is the contract common to keyed and spatial trees; their lookups live
+// on the OrderedTree and SpatialTree extensions below.
 type Tree[K comparable, T any, P float32 | float64] interface {
 	// Len reports the number of nodes currently stored in the tree.
 	Len() int
@@ -81,8 +78,8 @@ type Tree[K comparable, T any, P float32 | float64] interface {
 	Iterator() TreeIterator[K, T, P]
 }
 
-// OrderedTree is a key-addressable Tree, implemented by BTree and HTree. Nodes
-// are located directly by their key.
+// OrderedTree is a key-addressable Tree: nodes are located directly by their
+// key.
 type OrderedTree[K comparable, T any, P float32 | float64] interface {
 	Tree[K, T, P]
 
@@ -99,9 +96,8 @@ type OrderedTree[K comparable, T any, P float32 | float64] interface {
 	Delete(key K) bool
 }
 
-// SpatialTree is a Point-addressable Tree, implemented by KDTree and BKDTree.
-// Nodes are located by proximity in the P-dimensional coordinate space rather
-// than by an exact key.
+// SpatialTree is a Point-addressable Tree: nodes are located by proximity in
+// coordinate space rather than by an exact key.
 type SpatialTree[K comparable, T any, P float32 | float64] interface {
 	Tree[K, T, P]
 

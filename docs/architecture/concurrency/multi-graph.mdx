@@ -17,8 +17,8 @@ Together, these enable high-performance concurrent reads with serialized writes 
 The database maintains multiple independent temporal memory graphs (8 by default). Each graph is a completely separate in-memory data structure containing:
 
 - nodes: facts, entities and topics
-- text search indices
-- vector (semantic) indices
+- a full-text index
+- a vector (semantic) index
 - adjacency maps for graph traversal
 
 ## Graph partitioning
@@ -27,7 +27,7 @@ Streams specify a target graph via `Query.GetGraphID()`, which returns an index 
 
 - multiple writes to **different graphs** to proceed in parallel;
 - reads from any graph at any time, unless a write is in progress on that graph;
-- independent scaling: no global lock contention.
+- independent scaling: each graph has a lock of its own.
 
 All graphs within a database share the same underlying configuration and lifecycle (Start/Stop).
 

@@ -87,8 +87,7 @@ func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 	if cached, ok := e.Cache.Get(q.Hash(e.Hasher)); ok {
 		q = cached
 	} else {
-		// NOTE: run optimisaitons on query and cache optimised query
-		// only optimised queries are cached
+		// Only optimised queries are cached, so a hit skips optimisation.
 		optimised := e.Optimisations.Optimise(q)
 		e.Cache.Put(q.Hash(e.Hasher), optimised)
 		q = optimised

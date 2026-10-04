@@ -1,8 +1,5 @@
 repos:
 
-  # ================
-  # General
-  # ================
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -20,19 +17,12 @@ repos:
       - id: check-json
         name: Check JSON syntax
 
-  # ================
-  # Go
-  # ================
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.12.2
     hooks:
     # -full lints the whole module; the plain hook only diffs against HEAD,
     # which lints nothing in CI.
     - id: golangci-lint-full
-
-  # ================
-  # Python
-  # ================
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.0
@@ -50,9 +40,6 @@ repos:
     - id: ty
       args: [--no-default-groups]
 
-  # ================
-  # Docker
-  # ================
   # types: [file] + files override because the hook's default types: [dockerfile]
   # doesn't match the non-standard Dockerfile.<name> filenames used here.
   - repo: https://github.com/hadolint/hadolint

@@ -20,7 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Parsing of the server's JSON envelope into the typed models — no I/O."""
+"""Parsing of the server's JSON envelope into the typed models.
+
+The unit tests parse recorded and hand-written bodies with no I/O; the tests
+marked ``integration`` parse what a live server sends.
+"""
 
 from datetime import datetime
 
@@ -104,7 +108,7 @@ def test_an_explained_hit_carries_its_contributions(explain_response):
 
 
 def test_a_hit_reached_through_the_graph_alone_says_so(explain_response):
-    """A graph-only hit matched nothing itself: its one sighting is the anchor.
+    """A graph-only hit matched nothing itself: its one sighting is the graph's.
 
     This is the case explain exists to separate — a fact the graph reached and
     ranked low, rather than one the search never reached at all.
@@ -129,9 +133,9 @@ def test_an_omitted_background_is_zero_on_an_explained_result(
 ):
     """The server omits a background rate of zero, and explain reads it as 0.0.
 
-    An anchor-only recall observes no seed mass per unit of degree, so the rate
-    is zero and the key is absent. On an explained result that absence is a
-    value, not a missing one — ``None`` would read as "not asked for".
+    An anchor-only recall runs no traversal, so its background rate is zero
+    and the key is absent. On an explained result that absence is a value, not
+    a missing one — ``None`` would read as "not asked for".
     """
     result = RecallResult.from_json(anchor_explain_response["results"], explain=True)
 
@@ -160,8 +164,9 @@ def test_the_response_parses_into_the_declared_types(tide_result):
     assert tide_result.hits
     for hit in tide_result.hits:
         assert isinstance(hit, Hit)
-        # `score` is float() in from_json, so this would pass on a numeric
-        # string too — the point is that the server keeps sending a number.
+        # from_json applies float() to `score`, so the score check below would
+        # pass on a numeric string too: it pins the parsed type, not the wire
+        # type.
         assert isinstance(hit.value, str)
         assert isinstance(hit.score, float)
 
@@ -194,8 +199,8 @@ def test_timestamps_are_populated_and_rfc3339(tide_result):
     ``timestamp`` is Optional on the dataclass, so every unit test would still
     pass if the server stopped sending it. This is what notices. The server's
     nanosecond precision is truncated to microseconds by fromisoformat rather
-    than rejected, and the trailing Z is accepted, so parsing is an honest
-    check that the field is a real instant.
+    than rejected, and the trailing Z is accepted, so parsing checks that the
+    field is a real instant.
     """
     for hit in tide_result.hits:
         assert hit.timestamp is not None
@@ -262,13 +267,9 @@ def test_hit_values_come_back_exactly_as_written(client, models_graph):
 def test_scores_are_raw_fused_quantities(tide_result):
     """Scores are positive and arrive raw, on the scorer's own scale.
 
-    Under the shipped excess fold a hit's score is its seed mass plus any
-    transmitted surplus, in raw seed units — BM25 scaled by match breadth,
-    where covering the whole query scores about its matched-term count — so
-    a score at or above 1.0 is ordinary, not an anomaly. The obvious reading
-    of a score as a similarity in [0, 1] is wrong in both directions: nothing
-    normalises the fold to that range on purpose, and nothing caps what a
-    differently-scaled scorer may return — clients must treat scores as
-    ordering, not probability.
+    The default excess scorer adds a hit's seed mass and any surplus its
+    anchors transmitted, in raw seed units, and nothing normalises the sum, so
+    a score at or above 1.0 is ordinary. A score is not a similarity in
+    [0, 1]: clients must treat scores as an ordering, not a probability.
     """
     assert all(hit.score > 0 for hit in tide_result)

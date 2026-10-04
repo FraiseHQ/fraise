@@ -23,26 +23,29 @@
 package scoring
 
 // alpha is the per-edge attenuation of transmitted excess. It is an internal
-// constant, not configuration: the methodology's guarantees (the BM25 floor,
-// hub silence) hold for any 0 < α < 1, and the two-edge seed→anchor→fact path
-// applies it squared. α per *edge* rather than per path is deliberate — a
-// single un-squared α ran the graph channel twice as hot as the text channel
-// and collapsed the scorer (RRF_FINDINGS Round 8).
+// constant, not configuration: the BM25 floor and hub silence hold for any
+// 0 < α < 1. The seed → anchor → fact path has two edges, so the fold applies
+// α²; applying α once per path would double the graph channel's weight
+// against the text channel.
 const alpha = 0.5
 
 // ExcessScorer folds a candidate's observations under the excess-transmission
-// methodology: relevance is the candidate's own seed mass plus the
-// above-background surplus its anchors transmitted, attenuated α² for the
-// two-edge path. Each graph observation carries its anchor's full observed
-// mass; the fold subtracts the candidate's own mass (self-exclusion — a fact
-// never funds its own boost) and the anchor's size-proportional share of the
-// background, and keeps only what remains above zero. An anchor at or below
-// its fair share therefore contributes nothing — hubs are heard exactly when
-// they are surprising, and silent when they are merely large.
+// methodology. Relevance is the candidate's own seed mass m plus, for each
+// graph observation, its anchor's per-edge surplus over the fair share,
+// attenuated α² for the two-edge path:
 //
-// Scores stay in raw seed units end to end: relevance is homogeneous of
-// degree 1 in the mass scale, so normalizing anywhere is a provable ordering
-// no-op that only breaks the commensurability of the channels.
+//	m + α² · Σ max(0, (M_A − m − d_A·ρ₀) / d_A)
+//
+// where M_A is the anchor's full observed mass, d_A its degree and ρ₀ the
+// background rate. Subtracting m is self-exclusion: a fact never funds its own
+// boost. An anchor at or below its fair share contributes nothing (hub
+// silence), so a hub is heard when it is surprising and silent when it is
+// merely large.
+//
+// Scores stay in raw seed units: relevance is homogeneous of degree 1 in the
+// mass scale, so rescaling every mass leaves the ordering unchanged, and
+// normalizing a single channel would only break the channels'
+// commensurability (scale invariance).
 type ExcessScorer[K comparable, P float32 | float64] struct {
 	// background is the query's bound null rate. It is set only by
 	// WithBackground returning a fresh value — never mutated in place — so

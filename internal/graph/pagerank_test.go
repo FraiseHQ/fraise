@@ -95,7 +95,7 @@ func TestPageRankEmptyGraph(t *testing.T) {
 }
 
 // factLink is a test-only fact->fact relationship. Production edges only run
-// fact->tag (Mentions, IsAbout), which gives facts no in-links and therefore
+// fact->anchor (Mentions, IsAbout), which gives facts no in-links and therefore
 // near-uniform PageRank; linking facts directly lets the test build a star
 // whose hub is itself a fact — the only node kind Search returns as a hit.
 type factLink struct {
@@ -115,7 +115,7 @@ func (l factLink) Source() *graph.Entity[uint64] { var e graph.Entity[uint64] = 
 func (l factLink) Target() *graph.Entity[uint64] { var e graph.Entity[uint64] = l.dst; return &e }
 
 // TestSearchWithPageRankRanking pins the boost stage: the installed ranking
-// multiplies relevance by graph centrality. Two facts match the query with
+// boosts relevance by graph centrality. Two facts match the query with
 // bit-identical text mass (same term frequency, same length, decay off), so
 // without a ranking only the key tiebreak orders them; with PageRank
 // installed, the fact the star concentrates its mass on comes out first

@@ -19,7 +19,7 @@ recall billing entity:acme depth:1
 
 ## Why 2 is the ceiling
 
-A larger depth is rejected rather than silently answered as 2. The methodology does not iterate: a second round re-observes the first round's own concentrated mass through sibling anchors and collapses recall, so iterated transmission stays reserved for a future generalization.
+A larger depth is rejected rather than silently answered as 2. The methodology does not iterate: a second round would re-observe the first round's own concentrated mass through sibling anchors and collapse recall.
 
 `max-depth` is the operator-set ceiling (2), and `default-depth` is the lane a recall takes when it omits the clause (0). See [Database settings](/docs/configuration/reference/database).
 
@@ -33,7 +33,7 @@ A larger depth is rejected rather than silently answered as 2. The methodology d
 
 <Note title="Never below the BM25 floor" type="note">
 
-Because transmission only ever adds, raising the lane cannot push a result below where plain text search would have put it — see [BM25 floor](/docs/retrieval/ranking/guarantees).
+Because transmission only ever adds, raising the lane never lowers a result's score below what text and vector search alone give it. See [BM25 floor](/docs/retrieval/ranking/guarantees).
 
 </Note>
 

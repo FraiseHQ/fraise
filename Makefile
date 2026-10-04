@@ -53,8 +53,8 @@ GREEN          := \033[0;32m
 YELLOW         := \033[0;33m
 RESET          := \033[0m
 
-# Build flags. Injects the same pkg/version symbols GoReleaser sets on a
-# release (see .goreleaser.yaml), so every build path reports its real version.
+# Build flags for build-go: the same pkg/version symbols GoReleaser sets on a
+# release (see .goreleaser.yaml), so a local build reports its real version.
 VERSION_PKG    := github.com/FraiseHQ/fraise/pkg/version
 LDFLAGS        := -X '$(VERSION_PKG).Version=$(BUILD_VERSION)' \
                   -X '$(VERSION_PKG).Commit=$(BUILD)' \
@@ -95,7 +95,7 @@ coverage: coverage-go coverage-py
 
 test-all: test-go test-py ## Run tests for Go and all SDKs
 
-test-go: ## Run Go tests with verbose output
+test-go: ## Run Go tests
 	@echo "$(CYAN)Running Go tests...$(RESET)"
 	$(GO_TEST) ./...
 
@@ -114,16 +114,15 @@ test-go-bench: ## Run Go benchmarks
 	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
 	$(GO_TEST) -bench=. -benchmem ./...
 
-# Host port fraise binds to for the test suites (override if 9876 is taken).
+# Host port the test suites publish fraise on (override if 9877 is taken).
 # Both suites run pytest locally and reach the container through this port.
 FRAISE_E2E_PORT ?= 9877
 
 COMPOSE        := docker compose -f docker-compose.yaml
 
-# Dump the server's logs when a suite fails. pytest says which assertion broke;
-# only the container says why — a panic, a rejected write, a config it did not
-# like on boot. Printed before the trap tears the container down, since after
-# that the logs are gone.
+# Dump the server's logs when a suite fails: pytest says which assertion broke,
+# the container says why (a panic, a rejected write, a bad config). They print
+# before the trap tears the container down, which discards them.
 FRAISE_LOGS    = echo "$(YELLOW)--- fraise server logs ---$(RESET)"; \
                  $(COMPOSE) logs --no-color --tail=200 fraise
 
@@ -208,7 +207,7 @@ lint-docker: ## Lint Dockerfiles via hadolint (pre-commit)
 	@echo "$(CYAN)Linting Dockerfiles...$(RESET)"
 	@$(PRECOMMIT) hadolint-docker
 
-check: fmt lint test ## Format, lint, and test Go code
+check: fmt lint test ## Format and lint all code, then run the Go tests
 	@echo "$(GREEN)✓ All checks passed$(RESET)"
 
 check-all: fmt lint test-all ## Format, lint, and test everything

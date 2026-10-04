@@ -21,7 +21,7 @@ The SDK exposes the server's reported version (from the health endpoint, `GET /`
 from fraise_sdk.client import FraiseClient
 
 client = FraiseClient()
-client.server_version()            # -> "0.1.0" or None if unavailable
+client.server_version()            # -> "0.2.2" or None if unavailable
 client.check_compatibility()       # warns on mismatch, returns bool
 client.check_compatibility(strict=True)  # raises FraiseError on mismatch
 ```

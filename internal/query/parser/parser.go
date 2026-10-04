@@ -35,12 +35,11 @@ import (
 	"golang.org/x/text/language"
 )
 
-// Warning is a parse-time observation about a query that ran anyway: the
-// query is valid, but it is close enough to a different, also-valid query
-// that a typo would change its meaning with no error to correct from. It
-// rides the return path, never the query object — the plan cache substitutes
-// query objects on a hash hit, so anything attached there would leak between
-// requests.
+// Warning is a parse-time observation about a query that runs anyway: the
+// query has one reading, but something in it is spelled against the language
+// or has nothing to act on. Warnings are returned beside the query, never
+// stored on it: the plan cache substitutes query objects on a hash hit, so
+// state on the query would leak between requests.
 type Warning struct {
 	Msg string
 	Pos lexer.Position
@@ -82,11 +81,9 @@ func Parse[K comparable, P float32 | float64](q string) (cmd CommandNode, warns 
 		return nil, p.warns, err
 	}
 
-	// A query is one instruction, and a newline ends it. Blank lines after the
-	// command are not a second instruction, so they are skipped, blanks on them
-	// included; text on the next line is, and saying so is the whole point of
-	// lexing the newline — folded into whitespace it made "recall ferry\nbridge"
-	// a two-term recall.
+	// A query is one instruction, and a newline ends it. Trailing blank lines,
+	// and the blanks on them, are skipped; any other text after the command is
+	// a second instruction and is rejected.
 	for p.cur.Type == lexer.NEWLINE || p.cur.Type == lexer.WHITESPACE {
 		p.next()
 	}
@@ -101,17 +98,17 @@ func Parse[K comparable, P float32 | float64](q string) (cmd CommandNode, warns 
 // cursor: everything that reads or moves the two-token window, and
 // nothing that decides what a query means.
 
-// Goes to next token for parser to analyse
+// next advances the two-token window by one token.
 func (p *parser[K, P]) next() {
 	p.cur = p.peek
 	p.peek = p.l.Next()
 }
 
-// take consumes the current token whatever its type. Accepting any type is the
-// point at a clause's value slot: a keyword, a '-' or end of input reaching the
-// clause's own converter is what lets the error name the clause and the text it
-// could not read. "expected literal, found \"top\"" is wrong twice — to the
-// caller "top" *is* a literal, and the clause that rejected it goes unnamed.
+// take consumes the current token whatever its type. Clause value slots use it
+// so that any token there (a keyword, a '-', end of input) reaches the clause's
+// own converter, whose error names the clause and the text it could not read.
+// expect(LITERAL) would instead reject "top" as not a literal, which to the
+// caller it is, without naming the clause.
 func (p *parser[K, P]) take() lexer.Token {
 	tok := p.cur
 	p.next()
@@ -148,15 +145,15 @@ func (p *parser[K, P]) isAtEnd() bool {
 	return p.cur.Type == lexer.EOL || p.cur.Type == lexer.NEWLINE
 }
 
-// isValue reports whether the current token can stand in value position:
-// the leading term of a recall, or an anchor's value after its ':'. A reserved
-// word can, but only when no ':' follows it: keyword-colon is always a clause,
-// and that one tie-breaker is what tells "recall topic:billing" — a recall
-// seeded by an anchor — apart from "recall topic", a search for the word.
+// isValue reports whether the current token can stand in value position: a
+// recall term, or an anchor's value after its ':'. A reserved word can, but
+// only when no ':' follows it: keyword-colon is always a clause. That
+// tie-breaker tells "recall topic:billing", a recall seeded by an anchor, apart
+// from "recall topic", a reserved word written as a term, which parseTerms
+// rejects.
 //
-// The two positions share this one definition on purpose. They are documented
-// together in the query spec, and a second copy of the rule is how they would
-// come to disagree about what a value is.
+// The two positions share this one definition on purpose: a second copy of the
+// rule is how they would come to disagree about what a value is.
 func (p *parser[K, P]) isValue() bool {
 	switch {
 	case p.cur.Type == lexer.LITERAL, p.cur.Type == lexer.PHRASE:
@@ -175,15 +172,12 @@ func (p *parser[K, P]) isDanglingKeyword() bool {
 	return p.cur.Type.IsKeyword() && (p.peek.Type == lexer.EOL || p.peek.Type == lexer.NEWLINE)
 }
 
-// errors: every message a caller sees is built here, so the repair
-// instructions stay consistent with each other instead of being invented
-// again at each rejection site.
+// errors and warnings: diagnosis builders, kept together so the repair
+// instructions they give stay consistent with each other.
 
 // errf builds a positioned parse error. pos must be the Pos of the token the
-// message blames — never p.l.CurrentPos, which sits a token further right
-// because cur/peek read ahead: an error quoting "food" would then point at the
-// end of whatever followed "food", sending a reader to the wrong word. Blaming
-// the token itself lands the column on its last character.
+// message blames, which is that token's last character. p.l.CurrentPos would
+// point a token further right, because cur and peek read ahead.
 func (p *parser[K, P]) errf(pos lexer.Position, format string, args ...any) error {
 	return &Error{
 		Pos: pos,
@@ -191,10 +185,10 @@ func (p *parser[K, P]) errf(pos lexer.Position, format string, args ...any) erro
 	}
 }
 
-// errUnexpected builds the error for a token no production accepts here. The
-// caller is an agent: it can only repair a query the message tells it how to
-// repair, so every shape a caller actually produces gets its own diagnosis,
-// and the bare "unexpected" fallback is left for the shapes that have none.
+// errUnexpected builds the error for a token no production accepts here.
+// Callers are agents that can only repair a query the message tells them how
+// to repair, so each shape callers produce gets its own diagnosis; the bare
+// "unexpected" message is the fallback for the rest.
 func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 	switch {
 	case tok.Type == lexer.ILLEGAL:
@@ -222,11 +216,11 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 }
 
 // errKeywordAsClause rejects a reserved word standing where a clause must start
-// without the ':' that would make it one. It is the same mistake as a mis-cased
-// keyword and gets the same repair instruction, rather than a complaint that a
-// colon is missing: "recall ferry top" is a caller who meant the word "top"
-// far more often than one who abandoned a top:<n> clause mid-write, and either
-// way the fix is a colon or a quote.
+// without the ':' that would make it one, as in "recall x topic:y top". It gets
+// the same repair instruction as a mis-cased keyword (add the colon or quote
+// the word) rather than a complaint that the colon is missing: such a word is
+// more often one the caller meant to search for than a clause abandoned
+// mid-write.
 //
 // A command word or a prefix gets no clause to suggest: recall:<value> and
 // explain:<value> are themselves errors, so pointing at them sent the caller
@@ -265,19 +259,16 @@ func (p *parser[K, P]) errKeywordAsTerm(tok lexer.Token, value string) error {
 }
 
 // errMissingColon rejects a clause keyword written with a value but without
-// the ':' between them. Once a clause has started a keyword has that one
-// reading — terms come first, so it cannot be a word to search — and the
-// message names only the clause the caller meant, spelled with the value they
-// wrote. Offering a quote here would send the caller to a query that is itself
-// an error.
+// the ':' between them. Past the terms a keyword can only start a clause, so
+// the message names that clause, spelled with the value written after it, and
+// offers no quote: a quoted word there is itself an error.
 func (p *parser[K, P]) errMissingColon(key lexer.Token, value string) error {
 	return p.errf(key.Pos, "%s is missing its ':': write %s:%s", key.Describe(), strings.ToLower(key.Literal), value)
 }
 
-// clauseValue spells tok the way a repair should write it after a keyword's
-// ':'. The caller wrote "since 7d" and meant since:7d, so the fix offers
-// exactly that: a word as written, a phrase with its quotes back. Any other
-// token, or none, is no value at all, and the placeholder stands in for it.
+// clauseValue spells tok as a repair should write it after a keyword's ':': a
+// word as written, a phrase with its quotes back, and any other token as the
+// <value> placeholder. A caller who wrote "since 7d" is offered since:7d.
 func (p *parser[K, P]) clauseValue(tok lexer.Token) string {
 	switch tok.Type {
 	case lexer.LITERAL:
@@ -290,31 +281,27 @@ func (p *parser[K, P]) clauseValue(tok lexer.Token) string {
 }
 
 // errRecallClauseOnWrite rejects a well-formed recall clause on a remember.
-// The clause is written correctly, so the keyword-as-clause repair ("write
-// since:<value>") would tell the caller to write exactly what they wrote; the
-// mistake is the command it was given to, and the message says which clauses
-// that command takes.
+// The keyword-as-clause repair ("write since:<value>") would repeat what the
+// caller wrote; the mistake is the command, so the message lists the clauses a
+// remember takes.
 func (p *parser[K, P]) errRecallClauseOnWrite(tok lexer.Token) error {
 	return p.errf(tok.Pos, "%s: is a recall clause: a remember takes only topic:, entity: and vec:", strings.ToLower(tok.Literal))
 }
 
-// errDuplicate rejects a single-valued clause given twice. Last-wins is the
-// worse answer: it runs a differently-scoped query than the one asked with
-// nothing in the response to say so, and a repeated clause is an agent
-// generation bug the agent can only correct if the message names which clause
-// to drop. Anchors are exempt — a repeated topic:/entity: is a list by design.
+// errDuplicate rejects a single-valued clause given twice. Letting the last one
+// win would run a differently scoped query than the one asked without saying
+// so; the message names the clause so the caller knows which to drop. Anchors
+// are exempt: a repeated topic: or entity: is a list.
 func (p *parser[K, P]) errDuplicate(tok lexer.Token) error {
 	clause := strings.ToLower(tok.Literal)
 	return p.errf(tok.Pos, "duplicate %s clause: %s may be given only once — drop one", clause, clause)
 }
 
 // warnMisCasedKeyword flags a clause whose keyword was not written in lower
-// case. The colon leaves the clause exactly one reading, which is why it runs
-// rather than erroring — but the language is lower case, and accepting the
-// spelling in silence makes that rule unlearnable from the responses. The
-// warning says which spelling ran, so a caller can correct the habit without
-// having to re-read the spec. Only the clause key is checked: an anchor's value
-// is data, and `entity:Top` is deliberately the same anchor as `entity:top`.
+// case. The ':' leaves the clause one reading, so it runs, but accepting the
+// spelling in silence would never teach the caller that keywords are lower
+// case; the warning says which clause ran. Only the clause key is checked: an
+// anchor's value is data, and entity:Top is the same anchor as entity:top.
 func (p *parser[K, P]) warnMisCasedKeyword(tok lexer.Token) {
 	lower := strings.ToLower(tok.Literal)
 	if !tok.Type.IsKeyword() || tok.Literal == lower {
@@ -327,15 +314,13 @@ func (p *parser[K, P]) warnMisCasedKeyword(tok lexer.Token) {
 	})
 }
 
-// warnDepthWithoutGraph flags a depth clause on a recall naming no anchor.
-// depth selects a graph lane, and the graph is entered only through a
-// topic:/entity: anchor, so a recall naming none runs on the text and vector
-// indices alone and a depth above the floor asked for a lane that cannot
-// run. The query is unambiguous, so it runs — but honouring the clause in
-// silence would tell the caller transmission happened when it did not, so
-// the response says the clause had no effect and what would give it one.
-// depth:0 is the floor and asks for nothing such a recall cannot do, and an
-// omitted clause is the operator's default, never the caller's slip.
+// warnDepthWithoutGraph flags a depth above 0 on a recall naming no anchor.
+// The graph is entered only through a topic: or entity: anchor, so such a
+// recall runs on the text and vector indices alone and the depth has no
+// effect. The query still runs; the warning says the clause did nothing and
+// what would give it an effect. depth:0 asks for nothing the recall cannot do,
+// and an omitted depth is the operator's default, not the caller's choice, so
+// neither warns.
 func (p *parser[K, P]) warnDepthWithoutGraph(r *RecallCommandNode[K, P]) {
 	if !r.HasDepth() || r.depth.value == 0 || len(r.topics) > 0 || len(r.entities) > 0 {
 		return
@@ -346,15 +331,14 @@ func (p *parser[K, P]) warnDepthWithoutGraph(r *RecallCommandNode[K, P]) {
 	})
 }
 
-// warnStopWords flags each bare term that is an English stop word, and
-// rejects a recall left with nothing to search. Stored facts are cleaned of
-// stop words on their way into the index, through CleanContent with the same
-// tag, so the parser and the index cannot disagree about what one is: a bare
-// stop word can never match, and it warns at the term. When every bare term is
-// one and the recall has no phrase and no vector, nothing can match at all,
-// and that is an error rather than an empty result that reads like a miss.
-// Named anchors do not change it — the query that was meant is the anchor
-// alone. A phrase is a seed whatever its words, and is never judged by them.
+// warnStopWords flags each bare term that is an English stop word, and rejects
+// a recall left with nothing to search. Stored facts are cleaned of stop words
+// on their way into the index by CleanContent with the same English tag, so a
+// bare stop word can never match, and it warns at the term. When every bare
+// term is one and the recall has no phrase and no vector, nothing can match at
+// all, and that is an error rather than an empty result that reads like a
+// miss. Named anchors do not change it: the query that was meant is the anchor
+// alone. A phrase is a seed whatever its words.
 func (p *parser[K, P]) warnStopWords(r *RecallCommandNode[K, P]) error {
 	var stops []lexer.Token
 	seeded := r.vec != nil
@@ -504,9 +488,8 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	}
 	r.terms = terms
 
-	// Clauses follow the terms. Each modifier is single-valued and each anchor
-	// is a list, so a repeat means opposite things for the two and only the
-	// modifiers reject it.
+	// Clauses follow the terms. A modifier is single-valued, so a repeat is
+	// rejected; an anchor is a list, so a repeat adds to it.
 	for !p.isAtEnd() {
 		if p.isDanglingKeyword() {
 			return nil, p.errKeywordAsClause(p.cur)
@@ -577,11 +560,11 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 		}
 	}
 
-	// A recall has to be seeded by something the search can start from. Terms,
-	// anchors and a vector all qualify — an anchor is a seed, not a filter, so
-	// "everything about billing" is a well-formed question — but a query made
-	// only of modifiers scopes a search that was never started, and would
-	// otherwise return an empty result set as though it had asked something.
+	// A recall needs a seed to start the search from: a term, an anchor or a
+	// vector. Anchors seed the search, so "everything about billing" is a
+	// well-formed question; a query of modifiers alone scopes a search that
+	// never starts, and would return an empty result as though it had asked
+	// something.
 	if len(r.terms) == 0 && len(r.topics) == 0 && len(r.entities) == 0 && r.vec == nil {
 		return nil, p.errf(r.key.Pos, "a recall needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>")
 	}
@@ -596,12 +579,11 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 }
 
 // parseSelector reads what follows a command verb: an optional graph selector
-// glued to it, then the space that ends the command. Each part is glued to the
-// last, so a space inside one is reported where it stands rather than as a
-// token the next production cannot use: before the '@' ("recall @3"), and a
-// second selector ("recall@3@5") is named as one, since an agent otherwise
-// reads the second number as silently ignored. A command with no selector
-// returns the zero node, which String and the handler read as the default.
+// glued to it, then the space that ends the command. A space before the '@'
+// ("recall @3") is reported as a space, and a second selector ("recall@3@5")
+// as a second selector, rather than either surfacing as a token the next
+// production cannot use. A command with no selector returns the zero node,
+// which String and the handler read as the default graph, 0.
 func (p *parser[K, P]) parseSelector(cmd lexer.Token) (GraphSelectorNode, error) {
 	var selector GraphSelectorNode
 	if p.cur.Type == lexer.AT {
@@ -629,17 +611,13 @@ func (p *parser[K, P]) parseSelector(cmd lexer.Token) (GraphSelectorNode, error)
 // everywhere, and folding at the edge keeps every downstream spelling of the
 // query (index lookup, plan-cache key) agreeing on one form.
 //
-// A reserved word is never a bare term. What a keyword means is decided by the
-// token after it, not by the keyword alone: followed by ':' it starts a clause
-// and ends the terms — the rule isValue owns — and otherwise it is rejected by
-// errKeywordAsTerm, since "recall x since 7d" is one ':' from "recall x
-// since:7d" and neither reading can be guessed safely; the repair is spelled
-// with the word after the keyword. A ':' past a blank is the clause written
-// with a space in it, and says so. Quoting is how a caller searches for the
-// word. A mis-cased keyword is rejected the same way: folding
-// "Since" into a term would let "recall x Since 7d" read as three terms — the
-// silent token-shift parseTimeValue guards against, back through the casing
-// door.
+// A reserved word is never a bare term. Followed by ':' it starts a clause and
+// ends the terms (the rule isValue owns); otherwise errKeywordAsTerm rejects
+// it, because "recall x since 7d" is one ':' from "recall x since:7d" and
+// neither reading can be guessed safely. A ':' after a blank is reported as a
+// space inside the clause. Quoting is how a caller searches for the word. A
+// mis-cased keyword is rejected too: read as a term, "Since" would turn
+// "recall x Since 7d" into a three-term search.
 func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
 	var terms []LiteralFieldNode
 	for !p.isAtEnd() {
@@ -672,14 +650,12 @@ func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
 
 // parseSeparator consumes the ':' that joins a clause keyword to its value, key
 // having just been taken. The ':' is required and checked, never skipped:
-// advancing blindly past it shifts every later token into the wrong role, so
-// "since 7d 30d" parsed clean and bounded the recall at 30d. Where a clause
-// starts a keyword has one reading, so a blank after it is diagnosed rather
-// than blamed as a wrong token: before a ':' it is a space inside the clause,
-// before a value it is the ':' the caller left out (errMissingColon names the
-// clause they meant), and before the end it is the dangling keyword
-// errKeywordAsClause covers. A blank after the ':' is a space inside the
-// clause too.
+// skipping it would shift every later token into another role and run a
+// different query instead of failing. A blank after the keyword is diagnosed
+// by what follows it: before a ':' it is a space inside the clause, before a
+// value it is a missing ':' (errMissingColon), and before the end it is a
+// dangling keyword (errKeywordAsClause). A blank after the ':' is a space
+// inside the clause too.
 func (p *parser[K, P]) parseSeparator(key lexer.Token) error {
 	if p.cur.Type == lexer.WHITESPACE {
 		switch p.peek.Type {
@@ -700,9 +676,9 @@ func (p *parser[K, P]) parseSeparator(key lexer.Token) error {
 	return nil
 }
 
-// parseIntField consumes a depth:/top: clause. One function serves both, as
-// parseTimeValue does for since:/until:, so the two ceilings cannot drift apart
-// in how they read a value or name it back in an error; the key token says
+// parseIntField consumes a depth: or top: clause. One function serves both, as
+// parseTimeValue does for since: and until:, so the two cannot drift apart in
+// how they read a value or name it back in an error; the returned key says
 // which clause was written.
 func (p *parser[K, P]) parseIntField() (lexer.Token, int, error) {
 	key := p.cur
@@ -717,9 +693,9 @@ func (p *parser[K, P]) parseIntField() (lexer.Token, int, error) {
 
 	// A value too large to hold is reported apart from one that is not a number
 	// at all: an agent told only "invalid" retries with another huge number,
-	// while one told the value is out of range knows to shrink it. The ceiling
-	// on what a *configured* server will accept is the query layer's, not the
-	// parser's — this is only about the value fitting at all.
+	// while one told the value is out of range knows to shrink it. The
+	// configured ceilings (db.max-top, db.max-depth) are checked by the query
+	// layer; here the value only has to fit in an int.
 	clause := strings.ToLower(key.Literal)
 	i, err := strconv.Atoi(tok.Literal)
 	switch {
@@ -732,11 +708,8 @@ func (p *parser[K, P]) parseIntField() (lexer.Token, int, error) {
 	return key, i, nil
 }
 
-// parseTimeValue consumes a since:/until: clause. The ':' must be present and
-// is checked, never skipped: advancing blindly past the separator shifts every
-// following token into the wrong role, so "since 7d 30d" parsed clean and
-// bounded the recall at 30d — a query silently answering a different question
-// than the one asked, which is worse than an error an agent can correct from.
+// parseTimeValue consumes a since: or until: clause. A duration too long to
+// hold is reported with the largest count its unit allows.
 func (p *parser[K, P]) parseTimeValue() (lexer.Token, lexer.Token, containers.TimeValue[K], error) {
 	key := p.cur
 
@@ -778,12 +751,10 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 
 	tok := p.take()
 
-	// Validate the full integer before narrowing to uint8. A blind uint8(i)
-	// wraps an out-of-range selector into a valid-looking graph (@256 -> 0,
-	// @300 -> 44), so it would silently execute against the wrong graph — a
-	// tenant-isolation break, since a graph is a user/session. Reject a
-	// non-integer or anything outside the uint8 range here; the handler still
-	// enforces the tighter [0, num-graphs) bound on what survives.
+	// Validate the full integer before narrowing to uint8: uint8(i) would wrap
+	// an out-of-range selector into a valid-looking graph (@256 -> 0, @300 ->
+	// 44) and silently run the query against another tenant's graph. The
+	// handler enforces the tighter [0, num-graphs) bound on what passes here.
 	i, err := strconv.Atoi(tok.Literal)
 
 	if err != nil {
@@ -797,10 +768,9 @@ func (p *parser[K, P]) parseGraphSelector() (lexer.Token, uint8, error) {
 }
 
 // parsePhrase consumes a single opaque PHRASE token (a quoted fact). The lexer
-// has already stripped the quotes and decoded the ” escape.
+// has already stripped the quotes and decoded each doubled single quote.
 func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
-	// An ILLEGAL token here means the lexer hit end-of-input before the closing
-	// quote — report it at the opening quote it recorded.
+	// An ILLEGAL token here means the input ended before the closing quote.
 	if p.cur.Type == lexer.ILLEGAL {
 		return nil, p.errf(p.cur.Pos, "unterminated quoted phrase")
 	}
@@ -819,20 +789,18 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 	return &PhraseNode{value: tok.Literal, pos: tok.Pos}, nil
 }
 
-// parseValue consumes a value, or says why the current token is not one. It is
-// the consumer paired with isValue, which holds the rule: in value position
-// a keyword is just data (entity:top files under the word "top"), but
-// keyword-colon is always a field, so a clause mistyped into value position
-// stays an error instead of being swallowed as data. Quoting remains the escape
-// hatch for anything the rule cannot express.
+// parseValue consumes an anchor's value, or says why the current token is not
+// one. isValue holds the rule: a keyword is data here (entity:top files under
+// the word "top"), but keyword-colon is always a field, so a clause mistyped
+// into value position stays an error instead of being swallowed as data.
+// Quoting covers anything the rule cannot express.
 func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 	if p.isValue() {
 		return p.take(), nil
 	}
-	// A token with a diagnosis of its own keeps it: an unclosed quote, a
-	// parenthesis and a special character are not "the wrong kind of value",
-	// they are mistakes that name themselves, and saying so is worth more here
-	// than saying what a value slot wanted.
+	// A token with a diagnosis of its own (an unclosed quote, a parenthesis, a
+	// special character) keeps it, rather than being reported as the wrong
+	// kind of value.
 	switch p.cur.Type {
 	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NEWLINE, lexer.NUL,
 		lexer.SPECIAL, lexer.PLUS, lexer.TILDE, lexer.MINUS:
@@ -841,9 +809,7 @@ func (p *parser[K, P]) parseValue() (lexer.Token, error) {
 	return p.cur, p.errf(p.cur.Pos, "expected a word or quoted phrase, but found %s", p.cur.Describe())
 }
 
-// parseAnchorField consumes a topic:/entity: clause. As in parseTimeValue, the
-// ':' is required: "topic food extra" used to shift tokens into the wrong roles
-// and return an unfiltered result set rather than a parse error.
+// parseAnchorField consumes a topic: or entity: clause.
 func (p *parser[K, P]) parseAnchorField() (lexer.Token, lexer.Token, string, error) {
 	key := p.cur
 
@@ -854,10 +820,10 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, lexer.Token, string, err
 	}
 
 	// The anchor value is a bare word or a quoted phrase (e.g. topic:'my
-	// project'), folded to lower case: an anchor is an identity, not prose —
-	// topic:Billing and topic:billing must select the same anchor, and folding
-	// at the edge is what stops the graph growing two spellings of one anchor.
-	// Only the quoted fact of a remember keeps the case it was written with.
+	// project'), folded to lower case: an anchor is an identity, not prose, so
+	// topic:Billing and topic:billing must name the same anchor rather than
+	// grow two. Only the quoted fact of a remember keeps the case it was
+	// written with.
 	tok, err := p.parseValue()
 
 	if err != nil {
@@ -871,10 +837,9 @@ func (p *parser[K, P]) parseAnchorField() (lexer.Token, lexer.Token, string, err
 	return key, tok, strings.ToLower(tok.Literal), nil
 }
 
-// parseVecField consumes a vec:$name clause. Its errors are returned to the
-// caller unchanged: every other clause surfaces its own positioned message, and
-// re-wrapping this one lost both the position and the only detail a caller
-// could act on ("the $ is missing", "the name is missing").
+// parseVecField consumes a vec:$name clause. Its errors are returned
+// unwrapped, like every clause's, so the response keeps their position and the
+// detail a client can act on: the '$' or the name is missing.
 func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {
 	r := VecFieldNode[P]{}
 

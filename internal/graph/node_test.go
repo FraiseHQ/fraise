@@ -68,8 +68,8 @@ func TestNodeKeyMaterialIsTypeTagged(t *testing.T) {
 
 // TestNodeKeysDistinguishTypesOfTheSameText is the contract the tags exist for,
 // checked through the production hasher: five nodes that all read "billing" are
-// five distinct keys. Sharing one is the ticket's failure — the second node of a
-// colliding pair is never stored, and the edge between them closes on itself.
+// five distinct keys. If two shared a key, the second node of the pair would
+// never be stored, and the edge between them would close on itself.
 func TestNodeKeysDistinguishTypesOfTheSameText(t *testing.T) {
 	g := newGraph()
 	now := time.Now()

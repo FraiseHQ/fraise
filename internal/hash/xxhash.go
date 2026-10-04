@@ -63,9 +63,8 @@ func (x XxHash[K]) xxMergeRound(acc, val uint64) uint64 {
 	return acc*xxp1 + xxp4
 }
 
-/*
-Reference implementation: https://github.com/Cyan4973/xxHash (XXH64)
-*/
+// xxh64 computes XXH64. Reference implementation:
+// https://github.com/Cyan4973/xxHash
 func (x XxHash[K]) xxh64(data []byte, seed uint64) uint64 {
 	n := len(data)
 	var h uint64

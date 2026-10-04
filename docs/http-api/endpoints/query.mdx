@@ -4,7 +4,7 @@ description: "The one endpoint that reads and writes: request body, parameters, 
 navLabel: "Query"
 ---
 
-Fraise exposes four endpoints — this one, [explained recall](/docs/http-api/endpoints/explain), [stats](/docs/http-api/endpoints/stats) and the [health check](/docs/http-api/endpoints/health) — and everything an agent does goes through this one; the [query language](/docs/query-language/foundations/design-principles) carries the rest.
+Fraise exposes four endpoints: this one, [explained recall](/docs/http-api/endpoints/explain), [stats](/docs/http-api/endpoints/stats) and the [health check](/docs/http-api/endpoints/health). Everything an agent does goes through this one, and the [query language](/docs/query-language/foundations/design-principles) carries the rest.
 
 This is the one endpoint that reads and writes. The body carries the query and any parameters it references:
 
@@ -73,7 +73,7 @@ A 204 carries no `warnings` either, since it carries no body — what a phrasing
 
 ## Warnings
 
-A query that ran but sits one typo from a different valid query carries a `warnings` array beside its results — or beside a write's `status`, which warns on the same terms. The key is absent when there is nothing to say, so a clean response shape is unchanged — see [Warnings](/docs/query-language/reference/warnings).
+A query that ran but carries something it should not, such as a mis-cased keyword or a stop word among its terms, has a `warnings` array beside its results, or beside a write's `status`. The key is absent when there is nothing to say, so a clean response shape is unchanged. See [Warnings](/docs/query-language/reference/warnings).
 
 ## Errors
 

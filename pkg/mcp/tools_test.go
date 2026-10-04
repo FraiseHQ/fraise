@@ -166,11 +166,9 @@ func TestRememberConfirmsTheWrite(t *testing.T) {
 }
 
 // TestRecallOnEmptyGraphTellsTheModelToWrite pins the bridge's handling of the
-// daemon's 204: it is a success with no body, so nothing decodes and the
-// distinction survives only if the bridge reads the status. The model must be
-// told the graph is empty rather than that its query missed — the first is
-// answered by remembering something, the second by asking differently, and
-// conflating them sends an agent rephrasing against a graph it never wrote to.
+// daemon's 204: a success with no body, so the distinction survives only if
+// the bridge reads the status, and the model is told the graph is empty rather
+// than that its query missed (see renderRecall).
 //
 // The structured half still has to satisfy the recall tool's output schema,
 // which requires hits to be an array, so the empty result is materialised

@@ -7,7 +7,7 @@ Four consequences of the [excess-transmission model](/docs/retrieval/ranking/exc
 
 ## BM25 floor
 
-Transmission only ever **adds**, so anchored search can never fall below the plain text index's ranking by scoring alone; with no surplus anywhere the two are identical.
+Transmission only ever **adds**: a hit's relevance is never below its own seed mass, so the graph channel can lift a fact but never lower it. With no surplus anywhere, relevance is the seed mass and the ranking is exactly that of text and vector search alone.
 
 <Note title="Safe to raise depth" type="note">
 
@@ -17,23 +17,23 @@ This is what makes `depth:` safe to raise: the graph channel can add evidence, n
 
 ## Hub silence
 
-An anchor at or below its fair share of $\rho_0$ transmits nothing — **a mega-hub cannot flood the tail on size alone, structurally.**
+An anchor at or below its fair share, $d_A \, \rho_0$, transmits nothing: **a mega-hub cannot flood the tail on size alone.**
 
-Degree enters the fold twice: it raises the fair share an anchor must clear, and it divides what clears it into per-edge shares — so size both hardens the admission bar and thins whatever passes it. Silence is earned against the query's own rate, measured over the anchors it reached: an anchor is silent because it holds no more of the query's evidence than its size accounts for next to them, and memory the query never touched cannot lower that bar.
+Degree enters the fold twice: it raises the fair share an anchor must clear, and it divides what clears it into per-edge shares. Size both hardens the admission bar and thins whatever passes it. Silence is earned against the query's own rate, measured over the anchors it reached: an anchor is silent because it holds no more of the query's evidence than its size accounts for next to them, and memory the query never touched cannot lower that bar.
 
 ## Earned preemption
 
-A fact with no match of its own outranks a match only through anchors carrying genuine above-background evidence — **and enough of it per edge**: a thin surplus spread over a large membership preempts nothing. Never through mere reachability.
+A fact with no match of its own outranks a match only through anchors carrying above-background evidence, **and enough of it per edge**: a thin surplus spread over a large membership gives each member little. Never through mere reachability.
 
 ## No normalization, no knobs
 
-Scores stay in raw seed units end to end — relevance is homogeneous in the mass scale, so normalising is a provable ordering no-op that only breaks the channels' commensurability — and the methodology carries **zero dataset-tuned constants**.
+Scores stay in raw seed units end to end. Relevance is homogeneous in the mass scale, so normalising would leave the order unchanged and only break the commensurability of the channels. The methodology carries **zero dataset-tuned constants**.
 
 ## What this buys a caller
 
 | Property | What it rules out |
 |---|---|
-| BM25 floor | the graph channel making results worse than plain text search |
+| BM25 floor | the graph channel lowering a fact's score below its own match |
 | Hub silence | a popular topic drowning the ranking on popularity alone |
 | Earned preemption | reachability being mistaken for relevance |
 | No knobs | a relevance constant that has to be re-fitted per dataset |

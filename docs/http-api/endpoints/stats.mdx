@@ -18,9 +18,9 @@ One entry per graph, in selector order, computed on demand from the live graphs:
 |------------------|-----------------------------------------------------------------------------|
 | `order` | vertices: facts, entities and topics |
 | `size` | edges: a fact's links to the entities it mentions and the topics it is about |
-| `nodes` | every stored node |
+| `nodes` | every stored node, relationships included |
 | `vectors` | vectors indexed |
-| `forest_entries` | entries in the vector forest: live vectors plus garbage awaiting compaction |
+| `forest_entries` | entries in each tree of the vector forest: live vectors plus garbage awaiting compaction |
 
 ## Why `forest_entries` is exposed
 

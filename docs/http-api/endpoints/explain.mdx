@@ -4,7 +4,7 @@ description: "The same pipeline as /q, with the per-source contributions each hi
 navLabel: "Explain"
 ---
 
-The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from, and the result carries the query's `background` rate.
+The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from, and the result carries the query's `background` rate, omitted when it is zero.
 
 Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
 
@@ -63,4 +63,4 @@ $$
 
 In the example, `polly` holds $2.9682 - 0.9762 - 3 \times 0.6596 \approx 0.013$ above background, which spread over its 3 edges and attenuated adds about $0.0011$ to the text mass — hence $0.9773$. A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score.
 
-A hit with only `graph` contributions matched nothing itself and was preempted in on transmitted surplus alone — which the model only permits when the surplus was genuinely above background. The formula and the lanes are introduced in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).
+A hit with only `graph` contributions matched nothing itself and was preempted in on transmitted surplus alone, which the model permits only when the surplus is above background. The formula and the lanes are introduced in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).

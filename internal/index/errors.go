@@ -25,12 +25,12 @@ package index
 import "errors"
 
 var (
-	// ErrEmptyIndex is returned by a search when nothing has been indexed yet.
-	// It is kept distinct from ErrIndexNotFound ("indexed, but no match") so
-	// callers can tell the two situations apart.
+	// ErrEmptyIndex is returned by Search when the index holds no entries. A
+	// search of a non-empty index that matches nothing returns no keys and no
+	// error, so callers can tell the two situations apart.
 	ErrEmptyIndex = errors.New("index: is empty")
-	// ErrIndexNotFound is returned by a lookup (e.g. Retrieve) when the key or
-	// point is not present in a non-empty index.
+	// ErrIndexNotFound is returned by Retrieve, Update and Delete when the key
+	// is not indexed.
 	ErrIndexNotFound = errors.New("index: not found")
 	// ErrInvalidDimension is returned when a vector's dimensionality does not
 	// match the index it is being used with.

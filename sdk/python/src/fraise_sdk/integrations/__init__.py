@@ -24,8 +24,7 @@
 
 Each submodule targets one library and depends on its optional extra:
 ``fraise-sdk[openai]`` for :mod:`fraise_sdk.integrations.openai_agents` and
-``fraise-sdk[anthropic]`` for :mod:`fraise_sdk.integrations.claude_agents`, with
-LangChain, Pydantic AI, CrewAI and others to follow. They are intentionally
-*not* imported by the top-level package, so ``import fraise_sdk`` stays free of
-those heavy, optional dependencies.
+``fraise-sdk[anthropic]`` for :mod:`fraise_sdk.integrations.claude_agents`.
+They are intentionally *not* imported by the top-level package, so
+``import fraise_sdk`` stays free of those heavy, optional dependencies.
 """

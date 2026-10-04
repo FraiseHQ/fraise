@@ -26,7 +26,7 @@ Where the OpenAI integration hands the framework loose ``FunctionTool``s, the Cl
 Agent SDK groups tools into an *in-process MCP server*. So the entry point here
 is `memory_server`, which returns a server ready to drop into
 ``ClaudeAgentOptions.mcp_servers``; `recall_tool`/`remember_tool` expose the
-individual `SdkMcpTool`s for callers who assemble their own server.
+individual `SdkMcpTool`s for callers who assemble their own server::
 
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
     from fraise_sdk import FraiseClient

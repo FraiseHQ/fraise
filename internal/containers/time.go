@@ -38,9 +38,12 @@ import (
 type TimeValue[K comparable] interface {
 	Resolve(now time.Time) time.Time
 	// Hash keys the bound through h and renders the key for folding into an
-	// enclosing query's hash material. String() cannot serve as material:
-	// AbsoluteTime's RFC822 form drops seconds. Each implementation prefixes
-	// its material distinctly so no two kinds of bound can collide.
+	// enclosing query's hash material. The material is lossless (a duration as
+	// Duration.String renders it, an instant in RFC3339Nano) and each
+	// implementation prefixes it distinctly, so different bounds never share
+	// it; if two did, a recall would reuse the plan cached for another time
+	// window. String() cannot serve as material: AbsoluteTime's RFC822 form
+	// drops seconds.
 	Hash(h hash.Hasher[K, string]) string
 }
 
@@ -97,9 +100,9 @@ func ParseTimeValue[K comparable](s string) (TimeValue[K], error) {
 	if mult, ok := unitDuration(s[len(s)-1]); ok {
 		n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
 		// A count past what a time.Duration holds would wrap negative and
-		// resolve to a bound in the future — since:106752d silently emptied
-		// the window — so it is refused, with the unit's limit, rather than
-		// wrapped or read as a date.
+		// resolve to a bound in the future, emptying the window (since:106752d),
+		// so it is refused with the unit's limit rather than wrapped or read as
+		// a date.
 		limit := int64(math.MaxInt64 / mult)
 		if (err == nil && n > limit) || errors.Is(err, strconv.ErrRange) {
 			return nil, &DurationRangeError{Value: s, Max: limit, Unit: s[len(s)-1]}

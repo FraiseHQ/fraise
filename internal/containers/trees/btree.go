@@ -46,9 +46,8 @@ func (n *BTreeNode[K, T, P]) isLeaf() bool {
 	return len(n.children) == 0
 }
 
-// Hash returns the hash key identifying n, computed by h over a canonical
-// string representation of the values n holds. It implements
-// hash.Hashable[K, string], letting BTreeNode satisfy TreeNode.
+// Hash keys n through h over the values it holds, as fmt.Sprint renders them.
+// It implements hash.Hashable[K, string].
 func (n *BTreeNode[K, T, P]) Hash(h hash.Hasher[K, string]) K {
 	return h.Hash(fmt.Sprint(n.values))
 }
@@ -73,11 +72,9 @@ func (n *BTreeNode[K, T, P]) find(compare comparator.Comparator[T], value T) (in
 	return lo, false
 }
 
-// BTree is a self-balancing, ordered search tree in which every node holds
-// between degree-1 and 2*degree-1 keys. Values of type T are kept sorted by
-// the tree's comparator; K only parameterizes the tree so it can share the
-// Tree/OrderedTree contracts with other containers in this package (BTree
-// itself does not index by K).
+// BTree is a self-balancing ordered search tree in which every node but the
+// root holds between degree-1 and 2*degree-1 values, kept sorted by the tree's
+// comparator. It does not index by K, and P is unused.
 type BTree[K comparable, T any, P float32 | float64] struct {
 	root    *BTreeNode[K, T, P]
 	degree  int                      // minimum degree (t >= 2)
@@ -277,7 +274,8 @@ func (t *BTree[K, T, P]) mergeChildren(n *BTreeNode[K, T, P], i int) {
 
 // fill ensures n.children[i] holds more than minValues() values before a
 // value is removed from it, borrowing from a sibling or merging as needed. It
-// returns the (possibly merged) node now at n.children[i].
+// returns the node the descent continues into: n.children[i], or
+// n.children[i-1] when the last child is merged into its left sibling.
 func (t *BTree[K, T, P]) fill(n *BTreeNode[K, T, P], i int) *BTreeNode[K, T, P] {
 	switch {
 	case i > 0 && len(n.children[i-1].values) > t.minValues():

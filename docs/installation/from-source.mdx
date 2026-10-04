@@ -52,4 +52,4 @@ The binary installs as `server`, after its package path — rename it to `fraise
 
 ## Which build runs
 
-`cmd/server` picks a float precision at startup and the whole stack below follows it. Each layer is generic in `[K, P]` — `K` the node key type (`uint64` in production) and `P` the float width of embeddings and scores — and both instantiations are compiled into the binary, so `db.precision` selects one rather than recompiling. See [Architecture](/docs/architecture/overview).
+`cmd/server` picks a float precision at startup and the whole stack below follows it. Each layer is generic in `[K, P]`, where `K` is the node key type (`uint64` in production) and `P` the float width of embeddings and scores. Both instantiations are compiled into the binary, so `db.precision` selects one rather than recompiling. See [Architecture](/docs/architecture/overview).

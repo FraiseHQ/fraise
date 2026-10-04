@@ -13,8 +13,8 @@ Each graph has its own nodes, edges, text index and vector index, and **nothing 
 Each graph contains:
 
 - nodes: facts, entities and topics
-- text search indices
-- vector (semantic) indices
+- a text search index
+- a vector (semantic) index
 - adjacency maps for graph traversal
 
 All graphs within a database share the same underlying configuration and lifecycle.
@@ -40,7 +40,7 @@ Partition your data across graphs when:
 - data is naturally independent (per-user memory, per-conversation state);
 - you want to reduce lock contention by distributing writes.
 
-Concurrency is the reason to have several graphs; isolation is the reason to be careful which one a query names. Writes to the *same* graph serialise on its lock, while writes to different graphs proceed in parallel — see [Multi-graph architecture](/docs/architecture/concurrency/multi-graph).
+Writes to the *same* graph serialise on its lock, while writes to different graphs proceed in parallel — see [Multi-graph architecture](/docs/architecture/concurrency/multi-graph).
 
 ## Cost
 

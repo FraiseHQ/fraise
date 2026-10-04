@@ -89,9 +89,9 @@ func TestLRUCache_Update(t *testing.T) {
 	}
 }
 
-// TestLRUCache_ResizeShrink is the regression guard for the no-op-shrink bug:
-// Resize(smaller) must evict immediately, dropping least-recently-used entries
-// first, not defer eviction to later Puts.
+// TestLRUCache_ResizeShrink checks that Resize to a smaller capacity evicts
+// immediately, least recently used first, rather than leaving eviction to
+// later Puts.
 func TestLRUCache_ResizeShrink(t *testing.T) {
 	c, _ := cache.NewLRUCache[int, int](10)
 	for i := 0; i < 10; i++ {

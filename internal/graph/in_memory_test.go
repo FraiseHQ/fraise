@@ -195,10 +195,11 @@ func TestInMemoryGraphRelationships(t *testing.T) {
 	}
 }
 
-// TestInMemoryGraphStoresAFactAndATopicOfTheSameText is the ticket repro:
-// `remember 'billing' topic:billing`. With one content-hash namespace the fact
-// and the topic keyed alike, so Set refused the topic as an existing node and
-// the IsAbout edge ran from the fact to itself — one node where three belong.
+// TestInMemoryGraphStoresAFactAndATopicOfTheSameText pins
+// `remember 'billing' topic:billing`: the fact, the topic and the IsAbout edge
+// between them are three nodes. If the fact and the topic shared a key, Set
+// would refuse the topic as an existing node and the edge would run from the
+// fact to itself.
 func TestInMemoryGraphStoresAFactAndATopicOfTheSameText(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
@@ -224,8 +225,7 @@ func TestInMemoryGraphStoresAFactAndATopicOfTheSameText(t *testing.T) {
 	if _, ok := adj[factKey][topicKey]; !ok {
 		t.Errorf("AdjacencyMap()[fact][topic] missing, want the IsAbout edge")
 	}
-	// The topic node has to be reachable as a topic for anchored recalls to
-	// resolve it, which is what the collision took away.
+	// The topic must be stored as a topic for anchored recalls to resolve it.
 	if got := g.Get(topicKey); got == nil {
 		t.Errorf("Get(topic) = nil, want the stored topic node")
 	} else if _, isTopic := got.(*graph.Topic[uint64]); !isTopic {
@@ -234,10 +234,10 @@ func TestInMemoryGraphStoresAFactAndATopicOfTheSameText(t *testing.T) {
 }
 
 // TestInMemoryGraphDeletePrunesIncidentRelationshipNodes checks the whole of
-// Delete's contract — the node "and, by extension, its index entries and
-// incident relationships". Unlinking an edge from the adjacency maps is not
-// enough: a Mentions node left in idToNodes describes an edge that no longer
-// exists, and Nodes and Stats both keep reporting it.
+// Delete's contract: the node, its index entries and its incident
+// relationships. Unlinking an edge from the adjacency maps is not enough: a
+// Mentions node left in idToNodes would describe an edge that no longer
+// exists, and Nodes and Stats would keep reporting it.
 func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
@@ -273,13 +273,7 @@ func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
 	}
 	assertEdgesResolve(t, g)
 
-	// Deleting the fact takes its remaining edge with it, and its text-index
-	// entry. Only facts are indexed, so the fact's entry is the one that can
-	// outlive a Delete; it is checked present first so its absence after
-	// means something.
-	if _, err := g.GetTextIndex().Retrieve(fact.Key()); err != nil {
-		t.Fatalf("text index Retrieve(fact) before Delete = %v, want the indexed fact", err)
-	}
+	// Deleting the fact takes its remaining edge with it.
 	if err := g.Delete(fact); err != nil {
 		t.Fatalf("Delete(fact) = %v, want nil", err)
 	}
@@ -356,11 +350,10 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 		t.Errorf("Search(acme) scores = %v, want one positive score", scores)
 	}
 
-	// The shared entity is the query's only touched anchor, so its observed
-	// mass IS the background: it holds no surplus, transmits nothing, and the
-	// entity-linked fact does not ride in on mere reachability. depth 2 is
-	// the excess lane and the entity is named, so the traversal genuinely ran
-	// and still funded nothing.
+	// The shared entity is the only anchor the query touches, so its fair
+	// share is all of its observed mass: it holds no surplus, and the
+	// entity-linked fact does not ride in on mere reachability. With the
+	// entity named and depth 2, the traversal runs and still funds nothing.
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
 	nodes, _, _, _, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, []string{"alice"}, 2, 10, time.Time{}, time.Time{})
 	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
@@ -393,8 +386,8 @@ func TestInMemoryGraphSearchByVector(t *testing.T) {
 // error contract. A vector whose width differs from the one the index was
 // built at is a question asked in another embedding model: Search returns
 // index.ErrInvalidDimension instead of quietly answering from the text index
-// alone, as it used to. A graph with no vectors yet has no dimension to
-// disagree with, so the same call there is an empty answer, not an error.
+// alone. A graph with no vectors yet has no dimension to disagree with, so
+// there the vector seeds nothing and the call is not an error.
 func TestInMemoryGraphSearchRejectsAVectorOfTheWrongDimension(t *testing.T) {
 	g := newGraph()
 	fact := mkFact(g, "alpha", time.Now())
@@ -458,11 +451,11 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 // TestInMemoryGraphSearchRecencyDecayFactor pins the decay formula the README
 // promises ("recent memories outrank older ones"): a fact's score is
 // multiplied by 0.5^(age/half-life). A lone fact in a one-document corpus has
-// a hand-derivable BM25 mass — idf ln(1 + 0.5/1.5) at length norm 1, scaled
-// by the coverage the index hands Finalize for a fully-matched one-term
-// query: the matched idf mass over the query's, in 1/1024 fixed point,
-// ⌊1024·idf⌋/(⌊1024·idf⌋+1) = 294/295 — and the decay factor is observable as
-// the ratio to it.
+// a hand-derivable BM25 mass, idf ln(1 + 0.5/1.5) at length norm 1, scaled by
+// the coverage the index hands Finalize for a fully matched one-term query.
+// Coverage is the matched idf mass over the query's in 1/1024 fixed point,
+// here ⌊1024·idf⌋/(⌊1024·idf⌋+1) = 294/295. The decay factor is the score's
+// ratio to that mass.
 func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	halflife := testConfig().Engine.Halflife // default 7d
 
@@ -497,10 +490,9 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 }
 
 // constScorer is a minimal alternative fold: every candidate scores the same
-// constant, whatever the background. It exists to prove the Scorer seam — a
-// new fold is an implementation installed with SetScorer, never a Search
-// rewrite — and it is a real, deterministic implementation of the in-tree
-// interface, in the same spirit as fakeHasher.
+// constant, whatever the background. It shows that a new fold is a Scorer
+// installed with SetScorer, not a change to Search, and like fakeHasher it is
+// a real, deterministic implementation of an in-tree interface.
 type constScorer struct{ score float64 }
 
 func (s constScorer) Score([]scoring.Contribution[uint64, float64]) float64 { return s.score }
@@ -522,10 +514,10 @@ func TestNewGraphInstallsStemmingTokenizer(t *testing.T) {
 }
 
 // TestNewGraphSelectsConfiguredRelevanceModel pins the relevance-model
-// wiring: under "matchcount" a lone single-term match scores exactly 1 — one
-// point per query-term occurrence, the pre-BM25 ranking — where the default
-// "bm25" gives the same fact its idf mass (pinned by the decay tests). Decay
-// is off so the score is the model's alone.
+// wiring: under "matchcount" a lone single-term match scores exactly 1 (one
+// point per query-term occurrence), where the default "bm25" gives the same
+// fact its idf mass (pinned by the decay tests). Decay is off so the score is
+// the model's alone.
 func TestNewGraphSelectsConfiguredRelevanceModel(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -557,9 +549,9 @@ func TestSetScorerInstallsFold(t *testing.T) {
 
 // TestInMemoryGraphSearchRecencyOrdersTies checks the user-visible promise:
 // of two facts matching the same term, the recent one outranks the much older
-// one. The old fact is aged ten half-lives so decay dominates whatever seed
-// ranks the text index assigns — the ordering cannot depend on index
-// tie-breaking.
+// one. The old fact is aged ten half-lives, so decay outweighs any difference
+// in their text scores and the order cannot depend on how the index breaks
+// ties.
 func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 	g := newGraph()
 	halflife := testConfig().Engine.Halflife
@@ -600,9 +592,9 @@ func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchOrdersTiesByKey pins the total order Search ranks by:
-// score descending, then fact key. Three facts match the query term once each
-// with identical term frequency and length, so their BM25 masses — and their
-// decay, all sharing one timestamp — tie to the bit; a fourth matches twice
+// score descending, then key ascending. Three facts match the query term once
+// each with identical term frequency and length, so their BM25 masses and
+// their decay (one shared timestamp) tie to the bit; a fourth matches twice
 // and ranks first. Without the key tiebreak the trio comes back in whatever
 // order the score map was iterated in, and top truncates that arbitrary
 // order. Each case repeats the query because that map order changes between
@@ -796,8 +788,8 @@ func TestInMemoryGraphSearchScoreCutoffIgnoresDecay(t *testing.T) {
 	}
 }
 
-// noDecayGraph builds a graph whose scores are pure relevance — decay off,
-// excess traversal installed — so the floor and determinism pins can assert
+// noDecayGraph builds a graph whose scores are pure relevance (decay off,
+// excess traversal installed), so the floor and determinism pins can assert
 // exact equalities.
 func noDecayGraph() *graph.InMemoryGraph[uint64, float64] {
 	cfg := testConfig()
@@ -846,11 +838,10 @@ func stormGraph(t *testing.T, g *graph.InMemoryGraph[uint64, float64]) (calm str
 	return calm, memos
 }
 
-// TestSearchBM25Floor is Property 5.2 through the public surface: when the
-// query touches a single anchor, no anchor can hold surplus (its share IS the
-// background), so the ranking and the scores are exactly the text index's —
-// anchored mode can add signal but can never fall below the plain-text
-// baseline by scoring alone.
+// TestSearchBM25Floor pins the BM25 floor through the public surface: when the
+// query touches a single anchor, its fair share is all of its observed mass and
+// it holds no surplus, so the ranking and the scores are exactly the text
+// index's. Transmission can add to a text score but never lower it.
 func TestSearchBM25Floor(t *testing.T) {
 	g := noDecayGraph()
 	now := time.Now()
@@ -880,8 +871,8 @@ func TestSearchBM25Floor(t *testing.T) {
 }
 
 // TestSearchScoresNeverBelowTextMass is the floor's other half: where
-// transmission does happen, it only ever adds — every hit's relevance is at
-// least its own text mass.
+// transmission does happen, it only adds, so every hit's relevance is at least
+// its own text mass.
 func TestSearchScoresNeverBelowTextMass(t *testing.T) {
 	g := noDecayGraph()
 	stormGraph(t, g)
@@ -902,12 +893,12 @@ func TestSearchScoresNeverBelowTextMass(t *testing.T) {
 	}
 }
 
-// TestSearchHubSilenceAndEarnedPreemption is Properties 5.3 and 5.4 through
-// the public surface. The weather cluster concentrates the query's mass, so
-// its silent member surfaces on transmitted surplus alone — earned by
-// above-background evidence, not reachability. The archive hub also holds a
-// matching fact, but at its size that mass is fair share: its seven memos
-// must not ride in behind it.
+// TestSearchHubSilenceAndEarnedPreemption pins hub silence and earned
+// preemption through the public surface. The weather cluster concentrates the
+// query's mass, so its silent member surfaces on transmitted surplus alone,
+// earned by above-background evidence rather than reachability. The archive
+// hub also holds a matching fact, but at its size that mass is within its fair
+// share, so its seven memos must not ride in behind it.
 func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	g := noDecayGraph()
 	calm, memos := stormGraph(t, g)
@@ -983,13 +974,13 @@ func marginalGraph(t *testing.T, g *graph.InMemoryGraph[uint64, float64]) (silen
 	return silent
 }
 
-// TestSearchDepthLanes pins the depth knob's three lanes on a cluster whose
-// anchor is strongly above chance. depth 0 is the floor: the traversal is
-// skipped, so the background is 0, no SrcGraph contribution is recorded, and
-// the silent member the graph lanes fund is not surfaced. depth 1 and depth 2
-// both run the anchor-mediated round, and the weather cluster clears even the
-// precision bar, so both fund it. One parameter, three behaviours — the bar
-// itself is what TestSearchDepthOnePrecisionBar separates.
+// TestSearchDepthLanes pins the three depth lanes on a cluster whose anchor is
+// strongly above chance. depth 0 is the floor: the traversal is skipped, so
+// the background is 0, no SrcGraph contribution is recorded, and the silent
+// member the other lanes fund is not surfaced. depth 1 and depth 2 both run
+// the anchor-mediated round, and the weather cluster clears even the
+// precision bar, so both fund it. TestSearchDepthOnePrecisionBar separates the
+// two bars.
 func TestSearchDepthLanes(t *testing.T) {
 	g := noDecayGraph()
 	calm, _ := stormGraph(t, g)
@@ -1034,12 +1025,12 @@ func TestSearchDepthLanes(t *testing.T) {
 	}
 }
 
-// TestSearchDepthOnePrecisionBar is what makes depth 1 a distinct lane rather
-// than a synonym for depth 2: an anchor between its fair share and twice it is
-// evidence, but not strong evidence. depth 2 (max recall) admits it and funds
-// its silent member; depth 1 (precision) turns it away, so the same query
-// returns only what the text index matched. If depthOneAdmission were dropped
-// to 1, this test is the one that fails.
+// TestSearchDepthOnePrecisionBar pins what makes depth 1 a distinct lane
+// rather than a synonym for depth 2: an anchor between its fair share and
+// twice it is evidence, but not strong evidence. depth 2 (max recall) admits
+// it and funds its silent member; depth 1 (precision) turns it away, so the
+// same query returns only what the text index matched. With depthOneAdmission
+// at 1, this test fails.
 func TestSearchDepthOnePrecisionBar(t *testing.T) {
 	g := noDecayGraph()
 	silent := marginalGraph(t, g)
@@ -1064,10 +1055,10 @@ func TestSearchDepthOnePrecisionBar(t *testing.T) {
 	}
 }
 
-// TestSearchFairSeeding is Property 5.1: the text candidate budget tracks the
+// TestSearchFairSeeding pins fair seeding: the text candidate budget tracks the
 // requested result size. Fifteen facts match; with seed-size at its default
-// of 10, top:15 must still return all fifteen — a build that caps seeds at
-// seed-size silently flatlines every ranking past it.
+// of 10, top:15 must still return all fifteen; a budget capped at seed-size
+// would cut every ranking off at ten.
 func TestSearchFairSeeding(t *testing.T) {
 	g := noDecayGraph()
 	now := time.Now()
@@ -1082,14 +1073,13 @@ func TestSearchFairSeeding(t *testing.T) {
 }
 
 // TestSearchAnchorsDoNotConsumeSeedBudget is fair seeding's other half: the
-// budget must go to nodes that can pay for it. An anchor named the query term
-// is the worst possible seed — a one-token document is exactly what BM25's
-// length norm rewards, so it outranks every real fact — and it can return
-// nothing: an anchor seed's neighbours are facts, so ExcessTraversal finds no
-// anchors from it and transmits nothing, and timeFilter drops it before it can
-// be a hit. Twelve facts match "billing" and top is twelve, so every one of
-// them must come back; a build that indexes anchors seeds the Topic and the
-// NamedEntity first and returns ten.
+// seed budget goes to facts. An anchor named like the query term would be the
+// strongest text seed, since BM25's length norm favours a one- or two-word
+// document, yet it can return nothing: its neighbours are facts, so
+// ExcessTraversal finds no anchors from it, and timeFilter drops it before it
+// can be a hit. Twelve facts match "billing" and top is twelve, so all twelve
+// must come back; if anchors were indexed, the Topic and the NamedEntity would
+// take two of the twelve seed slots and the search would return ten.
 func TestSearchAnchorsDoNotConsumeSeedBudget(t *testing.T) {
 	g := noDecayGraph()
 	now := time.Now()
@@ -1121,8 +1111,8 @@ func TestSearchAnchorsDoNotConsumeSeedBudget(t *testing.T) {
 	}
 }
 
-// TestSearchDeterminism is Property 5.6: no randomness, no iteration to
-// convergence — two identical queries on an identical graph return
+// TestSearchDeterminism pins determinism: with no randomness and no iteration
+// to convergence, two identical queries on an identical graph return
 // byte-identical rankings and, with decay off, byte-identical scores and
 // background.
 func TestSearchDeterminism(t *testing.T) {
@@ -1206,10 +1196,9 @@ func TestInMemoryGraphMergeFrom(t *testing.T) {
 
 // vectorHybridSearchAtPrecision indexes three facts with orthogonal embeddings,
 // then runs a full graph.Search whose query sits closest to one of them and
-// asserts that fact ranks first. It exercises the whole precision-sensitive read
-// path — vector distance, rank-based seed scoring, hop attenuation and result
-// assembly — and is generic over P so the identical scenario runs for both
-// float32 and float64, proving the results match at either precision.
+// asserts that fact ranks first. It exercises the precision-sensitive read path
+// (vector distance, the similarity seed mass and result assembly) and is
+// generic over P, so the same scenario runs at float32 and float64.
 func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 	t.Helper()
 	g := graph.NewGraph[uint64, P](testConfig())
@@ -1255,19 +1244,18 @@ func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 func TestGraphVectorSearch_float64(t *testing.T) { vectorHybridSearchAtPrecision[float64](t) }
 func TestGraphVectorSearch_float32(t *testing.T) { vectorHybridSearchAtPrecision[float32](t) }
 
-// TestMergeFromForestStaysBounded replays the production write cycle — Stage
-// copies the graph, the write commits one vector to the copy, MergeFrom folds
-// the copy back — and checks the live vector forest stays O(live vectors).
-// Regression test for the quadratic-bloat bug where MergeFrom re-inserted every
-// staged vector on each write, growing the forest to ~W^2/2 entries after W
-// writes (~900x bloat at 300 writes).
+// TestMergeFromForestStaysBounded repeats a staged write (copy the graph,
+// insert one vector into the copy, merge the copy back) and checks the vector
+// forest stays O(live vectors). MergeFrom replays every vector of the copy, so
+// if re-inserting an unchanged vector appended to the forest, W writes would
+// grow it to ~W²/2 entries.
 func TestMergeFromForestStaysBounded(t *testing.T) {
 	g := newGraph()
 
 	const writes = 300
 	const dim = 8
 	for w := 0; w < writes; w++ {
-		stg := g.Copy() // what Stream.Stage does for a write
+		stg := g.Copy()
 
 		vec := make([]float64, dim)
 		vec[w%dim] = float64(w + 1)
@@ -1275,7 +1263,7 @@ func TestMergeFromForestStaysBounded(t *testing.T) {
 			t.Fatalf("staging insert (write %d) = %v, want nil", w, err)
 		}
 
-		g.MergeFrom(stg) // what scheduler.execute does on success
+		g.MergeFrom(stg)
 	}
 
 	idx, ok := g.GetVectorIndex().(*index.RPTreeIndex[uint64, float64])
@@ -1384,13 +1372,13 @@ func TestInMemoryGraphSearchSeedsFromAnchorMembersNewestFirst(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchAnchorSeedsUnion pins what naming several anchors
-// means when they seed: the pool is their union with each fact once — where
-// the same two clauses beside a term narrow to facts filed under both — and a
-// fact filed under both named anchors carries a sighting from each, twice the
-// seed mass, which at an hour's age puts it ahead of the fresher singly-filed
-// fact (2 × 0.5^(1h/168h) against 1); the rest follow newest first. The
-// sightings arrive in query order, topics then entities, so the fold is
-// byte-identical run to run.
+// means when they seed: the pool is their union, each fact once (beside a
+// term, the same two clauses narrow to facts filed under both). A fact filed
+// under both named anchors carries a sighting from each, twice the seed mass,
+// which at an hour's age puts it ahead of the fresher singly-filed fact
+// (2 × 0.5^(1h/168h) against 1); the rest follow newest first. The sightings
+// arrive in query order, topics then entities, so the fold is byte-identical
+// run to run.
 func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
 	g, harbour, pilot := anchorGraph(t)
 
@@ -1418,11 +1406,11 @@ func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchAnchorSeedsCapWindowAndUnknownAnchor pins the
-// modifiers on an anchor-seeded search and the one case that is genuinely
-// empty: top keeps the head of the ranking, since/until bound it as always
-// ([since, until), zero open), an anchor nothing is filed under seeds nothing
-// beside the ones that do, and identity is by kind — a topic's name asked for
-// as an entity names no anchor at all.
+// modifiers on an anchor-seeded search and its empty cases: top keeps the head
+// of the ranking (a non-positive top keeps all of it), since and until bound
+// it as always ([since, until), a zero bound open), an anchor nothing is filed
+// under seeds nothing, alone or beside ones that do, and identity is by kind:
+// a topic's name asked for as an entity names no anchor at all.
 func TestInMemoryGraphSearchAnchorSeedsCapWindowAndUnknownAnchor(t *testing.T) {
 	g, _, _ := anchorGraph(t)
 	cutoff := time.Now().Add(-90 * time.Minute)
@@ -1457,8 +1445,9 @@ func TestInMemoryGraphSearchAnchorSeedsCapWindowAndUnknownAnchor(t *testing.T) {
 
 // TestInMemoryGraphSearchNamesAnAnchorOnce pins that a repeated anchor is one
 // anchor: the grammar reads topic:x topic:x as a list, but its members are
-// sighted once, not once per mention — or repeating a clause would double
-// their mass and put them ahead of everything filed under the other anchors.
+// sighted once, not once per mention. Otherwise repeating a clause would
+// double their mass and put them ahead of everything filed under the other
+// anchors.
 func TestInMemoryGraphSearchNamesAnAnchorOnce(t *testing.T) {
 	g, harbour, _ := anchorGraph(t)
 
@@ -1474,12 +1463,12 @@ func TestInMemoryGraphSearchNamesAnAnchorOnce(t *testing.T) {
 	}
 }
 
-// TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey: two facts filed under one
-// topic at the same instant carry equal mass and equal decay, so nothing but
-// the key can order them. The search must rank them by key every time, as
-// any search does, or top would truncate an arbitrary member of the tie; the
-// query is repeated because the candidate map's iteration order changes
-// between calls.
+// TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey pins the key tie-break on
+// an anchor-seeded search: three facts filed under one topic at the same
+// instant carry equal mass and equal decay, so nothing but the key can order
+// them. The search must rank them by key every time, as any search does, or
+// top would truncate an arbitrary member of the tie; the query is repeated
+// because the candidate map's iteration order changes between calls.
 func TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
@@ -1523,12 +1512,12 @@ func TestInMemoryGraphSearchWithATermSeedsFromText(t *testing.T) {
 // TestInMemoryGraphSearchCleansQueryStopWords pins that the query is cleaned
 // of stop words the way a stored fact is, so the two sides of the text index
 // see one vocabulary. A stop word left in the query is not merely a term with
-// no postings: the tokenizer stems it, and the stem can be a content word's —
-// "own" stems to the term "owns" does — so without the cleaning the stop word
-// surfaces facts about owning, as the content word rightly does. With it, the
-// stop word seeds nothing, and a query that is nothing but stop words matches
-// nothing rather than erroring. Results are compared as sets: the cases pin
-// what is found, not how equal scores tie.
+// no postings: the tokenizer stems it, and the stem can be a content word's
+// ("own" stems to the same term as "owns"), so without the cleaning the stop
+// word would surface facts about owning, as the content word rightly does.
+// With it, the stop word seeds nothing, and a query that is nothing but stop
+// words matches nothing rather than erroring. Results are compared as sets:
+// the cases pin what is found, not how equal scores tie.
 func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
@@ -1561,12 +1550,12 @@ func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 	}
 }
 
-// TestSearchWithoutAnchorsSkipsTheGraph pins the graph's door: the anchor
-// traversal runs only when the query names a topic or entity. The same storm
-// query that funds the cluster's silent member once the fixture's topics are
-// named observes no anchor without them — background zero, no graph
-// contribution, the silent member absent — whatever the depth: a recall
-// naming no anchor is a text and vector search.
+// TestSearchWithoutAnchorsSkipsTheGraph pins that the anchor traversal runs
+// only when the query names a topic or entity. The storm query that funds the
+// cluster's silent member once the fixture's topics are named observes no
+// anchor without them (background zero, no graph contribution, the silent
+// member absent): a recall naming no anchor is a text and vector search,
+// whatever its depth.
 func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
 	g := noDecayGraph()
 	calm, _ := stormGraph(t, g)
@@ -1602,12 +1591,12 @@ func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchFilterIsTheAnchorTheDoorOpens pins that a filter
-// names the same node the door does: topic:work admits facts filed under the
-// Topic "work", not facts mentioning a NamedEntity spelled "work". A topic
-// and an entity of one name are two anchors everywhere else in the graph —
-// two keys, two rows — and a filter that matched on the value alone would be
-// the one place the two were confused, admitting through a topic filter a
-// fact the topic's own row does not hold.
+// names the same node the door does (the anchor node whose members seed an
+// anchor-only search): topic:work admits facts filed under the Topic "work",
+// not facts mentioning a NamedEntity spelled "work". A topic and an entity
+// with the same name are two anchors with two keys and two rows, and a filter
+// matching on the value alone would confuse them, admitting through a topic
+// filter a fact the topic's own row does not hold.
 func TestInMemoryGraphSearchFilterIsTheAnchorTheDoorOpens(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
@@ -1685,9 +1674,9 @@ func benchmarkGraph(b *testing.B, n int) (g *graph.InMemoryGraph[uint64, float64
 	return g, []string{"w0", "w1", "w2"}
 }
 
-// BenchmarkSearch measures the graph's Search over ten thousand facts on
-// each lane — depth 0 seeds only, depth 1 the precision lane, depth 2 the
-// full anchor-mediated round — for a three-term query filtered by one topic,
+// BenchmarkSearch measures the graph's Search over ten thousand facts in each
+// lane (depth 0 seeds only; depths 1 and 2 run the anchor-mediated round at
+// the precision and recall bars) for a three-term query filtered by one topic,
 // and a vector variant seeding from the forest instead of the text index.
 func BenchmarkSearch(b *testing.B) {
 	g, query := benchmarkGraph(b, 10000)

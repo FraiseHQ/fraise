@@ -56,10 +56,10 @@ package stopwords
 
 // English is the English stop-word list: Snowball's, the list written for the
 // Porter2 stemmer the text index runs (nlp.StemmingTokenizer), so the two
-// agree on what is a function word. It holds only function words — pronouns,
-// articles, prepositions, auxiliaries, conjunctions — because every entry is
+// agree on what is a function word. It holds only function words (pronouns,
+// articles, prepositions, auxiliaries, conjunctions), because every entry is
 // a word no stored fact can be found by, and a content word here ("bill",
-// "system", "name") silently makes facts about it unretrievable.
+// "system", "name") would make facts about it unretrievable.
 //
 // It departs from upstream in two ways:
 //   - The negations ("no", "nor", "not", "cannot") are kept as terms. A memory
@@ -68,10 +68,10 @@ package stopwords
 //   - The apostrophe forms ("isn't", "you're", "let's") are left out.
 //     nlp.Words splits a word at the apostrophe, so an entry spelled with one
 //     could never match. Their pieces are judged as words in their own right:
-//     the heads ("you", "it") are listed already, the negative heads ("isn",
-//     "don") stay terms like the other negations, and the clitic tails ("s",
-//     "d", "ll", "m", "re", "ve") stay terms because they are also letters
-//     ("vitamin d", "size m") that facts name.
+//     the heads other than "let" ("you", "it") are listed already, the
+//     negative heads ("isn", "don") stay terms like the other negations, and
+//     the clitic tails ("s", "t", "d", "ll", "m", "re", "ve") stay terms
+//     because they are also letters ("vitamin d", "size m") that facts name.
 //
 // All entries are lowercase to support case-insensitive matching.
 var English = []string{
