@@ -106,6 +106,8 @@ const (
 )
 
 var TokenMap = map[TokenType]string{
+	DESCRIBE: "describe",
+	EXPLAIN:  "explain",
 	RECALL:   "recall",
 	REMEMBER: "remember",
 	FORGET:   "forget",
@@ -138,6 +140,8 @@ var KeywordsMap = map[string]TokenType{
 	"remember": REMEMBER,
 	"forget":   FORGET,
 	"update":   UPDATE,
+	"explain":  EXPLAIN,
+	"describe": DESCRIBE,
 	"topic":    TOPIC,
 	"entity":   ENTITY,
 	"since":    SINCE,
