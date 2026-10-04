@@ -55,7 +55,7 @@ See [Identifiers](/docs/query-language/tokens/identifiers) for what counts as a 
 
 ```python
 from fraise_sdk import FraiseClient
-from fraise_sdk.providers import OpenAIEmbedder
+from fraise_sdk.providers.openai import OpenAIEmbedder
 
 client = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder())
 client.remember("the parrot is turquoise", topics=["birds"])   # encoded for you
@@ -68,7 +68,7 @@ A client without an embedder still works: it writes and recalls without vectors,
 
 ```python
 from fraise_sdk import FraiseClient
-from fraise_sdk.providers import OpenAIExtractor
+from fraise_sdk.providers.openai import OpenAIExtractor
 
 client = FraiseClient("http://localhost:9876", extractor=OpenAIExtractor())
 client.remember("Anne's flight lands at Lisbon airport")   # filed under what it is about

@@ -7,7 +7,7 @@ The Python SDK ships embedders, or takes any callable:
 
 ```python
 from fraise_sdk import FraiseClient
-from fraise_sdk.providers import OpenAIEmbedder
+from fraise_sdk.providers.openai import OpenAIEmbedder
 
 client = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder())
 client.remember("the parrot is turquoise", topics=["birds"])   # encoded for you
@@ -22,7 +22,7 @@ client.recall(query="colourful birds")                         # encoded for you
 | `HuggingFaceEmbedder` | `sentence-transformers/all-MiniLM-L6-v2` | sentence-level models only: a model returning one vector per token is rejected |
 | anything else | — | an `Embedder` subclass, or a bare `callable(text) -> Sequence[float]` |
 
-Both vendor SDKs are optional extras, imported inside the function that needs them, so `import fraise_sdk` stays cheap for callers who use neither.
+Both vendor SDKs are optional extras, imported only by the embedder's own module (`fraise_sdk.providers.openai`, `fraise_sdk.providers.huggingface`), so `import fraise_sdk` stays cheap for callers who use neither.
 
 ## Without an embedder
 

@@ -22,9 +22,9 @@
 
 """A Hugging Face feature-extraction provider.
 
-Optional: the ``huggingface_hub`` client is imported lazily and ships with the
-``huggingface`` extra (``pip install 'fraise-sdk[huggingface]'``), so the core
-SDK does not depend on it.
+Optional: the ``huggingface_hub`` client ships with the ``huggingface`` extra
+(``pip install 'fraise-sdk[huggingface]'``). The package does not import this
+module, so the core SDK does not depend on it; import the provider from here.
 """
 
 from __future__ import annotations
@@ -32,6 +32,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from fraise_sdk.providers.base import Embedder
+
+try:
+    import huggingface_hub
+except ImportError as exc:  # pragma: no cover - exercised only without the extra
+    raise ImportError(
+        "The Hugging Face provider requires the 'huggingface' extra. "
+        "Install it with:  pip install 'fraise-sdk[huggingface]'"
+    ) from exc
 
 
 class HuggingFaceEmbedder(Embedder):
@@ -64,13 +72,6 @@ class HuggingFaceEmbedder(Embedder):
         api_key: str | None = None,
     ) -> None:
         if client is None:
-            try:
-                import huggingface_hub
-            except ImportError as exc:  # pragma: no cover - only without the extra
-                raise ImportError(
-                    "HuggingFaceEmbedder requires the 'huggingface' extra. "
-                    "Install it with:  pip install 'fraise-sdk[huggingface]'"
-                ) from exc
             client = huggingface_hub.InferenceClient(api_key=api_key)
         self._client = client
         self._model = model

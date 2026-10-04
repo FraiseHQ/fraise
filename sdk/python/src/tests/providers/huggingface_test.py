@@ -22,12 +22,16 @@
 
 """HuggingFaceEmbedder tests against a mocked inference client — no network."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk.providers.base import Embedder
-from fraise_sdk.providers.huggingface import HuggingFaceEmbedder
+
+# The provider imports its client at module scope, so skip the whole file when
+# the optional 'huggingface' extra is not installed.
+pytest.importorskip("huggingface_hub", reason="requires the 'huggingface' extra")
+
+from fraise_sdk.providers.huggingface import HuggingFaceEmbedder  # noqa: E402
 
 
 def test_huggingface_embedder_calls_client_and_returns_vector(
@@ -87,15 +91,14 @@ def test_huggingface_embedder_accepts_a_plain_list(inference_client):
 
 
 def test_huggingface_embedder_builds_its_own_client_from_the_api_key(inference_client):
-    """Without an injected client the embedder imports the hub and builds one.
+    """Without an injected client the embedder builds its own InferenceClient.
 
-    The import is lazy and lives inside ``__init__``, so it is patched in
-    ``sys.modules`` — that keeps the test running whether or not the optional
-    'huggingface' extra is installed.
+    The vendor module is patched where the provider imported it, so the test
+    pins what the provider builds without a real client or an API key.
     """
     hub = MagicMock()
     hub.InferenceClient.return_value = inference_client()
-    with patch.dict(sys.modules, {"huggingface_hub": hub}):
+    with patch("fraise_sdk.providers.huggingface.huggingface_hub", hub):
         embedder = HuggingFaceEmbedder(api_key="hf-test")
     hub.InferenceClient.assert_called_once_with(api_key="hf-test")
     assert embedder.embed("hello") == [0.1, 0.2, 0.3]

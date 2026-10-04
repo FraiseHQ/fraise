@@ -30,19 +30,20 @@ envelope as well as the text.
 import pytest
 from fraise_sdk.constants import DEFAULT_SERVER_NAME
 from fraise_sdk.errors import FraiseError
-from fraise_sdk.integrations.claude_agents import (
+from fraise_sdk.models import Hit
+
+# The integration imports its framework at module scope, so skip the whole file
+# when the optional 'anthropic' extra is not installed.
+pytest.importorskip(
+    "claude_agent_sdk", reason="requires the 'anthropic' dependency group"
+)
+
+from fraise_sdk.integrations.claude_agents import (  # noqa: E402
     allowed_tools,
     memory_server,
     memory_tools,
     recall_tool,
     remember_tool,
-)
-from fraise_sdk.models import Hit
-
-# The tools are built and run by the framework, so skip the whole file when the
-# optional 'anthropic' extra is not installed.
-pytest.importorskip(
-    "claude_agent_sdk", reason="requires the 'anthropic' dependency group"
 )
 
 

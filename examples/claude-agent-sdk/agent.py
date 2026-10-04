@@ -65,8 +65,8 @@ async def main() -> None:
 
     # This example is keyword-only. To vectorise, pass an embedder to
     # memory_server(fraise, embedder=...). Anthropic has no embeddings API, so
-    # you'd use OpenAIEmbedder (from fraise_sdk.providers, which needs the
-    # openai extra) with an OPENAI_API_KEY set alongside ANTHROPIC_API_KEY.
+    # you'd use OpenAIEmbedder (from fraise_sdk.providers.openai, which needs
+    # the openai extra) with an OPENAI_API_KEY set alongside ANTHROPIC_API_KEY.
     options = ClaudeAgentOptions(
         system_prompt=(
             "You have a long-term memory. When the user shares a durable fact "

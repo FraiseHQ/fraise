@@ -38,7 +38,7 @@ import os
 from agents import Agent, Runner
 from fraise_sdk import FraiseClient
 from fraise_sdk.integrations.openai_agents import memory_tools
-from fraise_sdk.providers import OpenAIEmbedder
+from fraise_sdk.providers.openai import OpenAIEmbedder
 
 
 def main() -> None:

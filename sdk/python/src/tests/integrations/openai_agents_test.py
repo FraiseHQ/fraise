@@ -29,16 +29,17 @@ cover the real wrapping rather than the undecorated closures.
 
 import pytest
 from fraise_sdk.errors import FraiseError
-from fraise_sdk.integrations.openai_agents import (
+from fraise_sdk.models import Hit
+
+# The integration imports its framework at module scope, so skip the whole file
+# when the optional 'openai' extra is not installed.
+pytest.importorskip("agents", reason="requires the 'openai' dependency group")
+
+from fraise_sdk.integrations.openai_agents import (  # noqa: E402
     memory_tools,
     recall_tool,
     remember_tool,
 )
-from fraise_sdk.models import Hit
-
-# The tools are built and run by the framework, so skip the whole file when the
-# optional 'openai' extra is not installed.
-pytest.importorskip("agents", reason="requires the 'openai' dependency group")
 
 
 def test_memory_tools_returns_both_tools(mock_client):
