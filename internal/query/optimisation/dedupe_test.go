@@ -32,10 +32,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/query/optimisation"
 )
 
-var _ optimisation.Optimisation[string, float32] = (*optimisation.Dedupe[string, float32])(nil)
-
-// --- Dedupe.Optimise --------------------------------------------------------
-
 func TestDedupeOptimiseRecall(t *testing.T) {
 	in := &query.Recall[string, float32]{
 		Keywords: []string{"a", "b", "a", "c", "b"},
@@ -101,8 +97,6 @@ func TestDedupeOptimisePassthrough(t *testing.T) {
 		t.Errorf("Optimise replaced a non-Recall query; want the same value returned")
 	}
 }
-
-// --- Pipeline (integration) -------------------------------------------------
 
 // NewPipeline wires in a Dedupe stage, so the default pipeline deduplicates
 // Recall queries end to end.

@@ -40,8 +40,6 @@ func tok(t lexer.TokenType, lit string) lexer.Token {
 
 func pos(col int) lexer.Position { return lexer.Position{Column: col} }
 
-// --- GraphSelectorNode ------------------------------------------------------
-
 func TestGraphSelectorNode(t *testing.T) {
 	n := GraphSelectorNode{
 		key:   tok(lexer.AT, "@"),
@@ -60,8 +58,6 @@ func TestGraphSelectorNode(t *testing.T) {
 		t.Errorf("End() = %v, want %v", got, pos(2))
 	}
 }
-
-// --- RememberCommandNode ----------------------------------------------------
 
 func TestRememberCommandNode(t *testing.T) {
 	sel := GraphSelectorNode{value: 5}
@@ -86,8 +82,6 @@ func TestRememberCommandNode(t *testing.T) {
 	}
 }
 
-// --- RecallCommandNode ------------------------------------------------------
-
 func TestRecallCommandNode(t *testing.T) {
 	sel := GraphSelectorNode{value: 7}
 	n := RecallCommandNode[uint64, float32]{
@@ -107,8 +101,6 @@ func TestRecallCommandNode(t *testing.T) {
 		t.Errorf("End() = %v, want %v", got, pos(9))
 	}
 }
-
-// --- TermNode ---------------------------------------------------------------
 
 func TestTermNode(t *testing.T) {
 	n := TermNode{
@@ -131,8 +123,6 @@ func TestTermNode(t *testing.T) {
 		t.Errorf("End() = %v, want %v", got, pos(9))
 	}
 }
-
-// --- Terms ------------------------------------------------------------------
 
 func TestTerms(t *testing.T) {
 	terms := Terms{
@@ -170,8 +160,6 @@ func TestTermsEmpty(t *testing.T) {
 	}
 }
 
-// --- PhraseNode -------------------------------------------------------------
-
 func TestPhraseNode(t *testing.T) {
 	n := PhraseNode{
 		value: "the lazy dog",
@@ -199,8 +187,6 @@ func TestPhraseNodeEmpty(t *testing.T) {
 		t.Errorf("Literal() = %q, want empty", got)
 	}
 }
-
-// --- EntityFieldNode / TopicFieldNode ---------------------------------------
 
 func TestEntityFieldNode(t *testing.T) {
 	n := EntityFieldNode{
@@ -246,7 +232,6 @@ func TestTopicFieldNode(t *testing.T) {
 	}
 }
 
-// --- AnchorFieldNode --------------------------------------------------------
 //
 // AnchorFieldNode delegates Key/Value/Pos/End to its wrapped FieldNode.
 
@@ -283,8 +268,6 @@ func TestAnchorFieldNode(t *testing.T) {
 		t.Errorf("End() = %v, want %v (delegated)", got, pos(12))
 	}
 }
-
-// --- SinceFieldNode / UntilFieldNode ----------------------------------------
 
 func TestSinceFieldNode(t *testing.T) {
 	tv := containers.AbsoluteTime[uint64]{T: time.Date(2026, time.June, 14, 0, 0, 0, 0, time.UTC)}
@@ -332,8 +315,6 @@ func TestUntilFieldNode(t *testing.T) {
 	}
 }
 
-// --- TopFieldNode / DepthFieldNode ------------------------------------------
-
 func TestTopFieldNode(t *testing.T) {
 	n := TopFieldNode{
 		key:   tok(lexer.TOP, "top"),
@@ -377,8 +358,6 @@ func TestDepthFieldNode(t *testing.T) {
 		t.Errorf("End() = %v, want %v", got, pos(6))
 	}
 }
-
-// --- VecFieldNode -----------------------------------------------------------
 
 func TestVecFieldNode(t *testing.T) {
 	vec := []float32{0.1, 0.2, 0.3}

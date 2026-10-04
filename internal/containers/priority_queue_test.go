@@ -42,8 +42,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
-// ---- helpers ---------------------------------------------------------------
-
 // newPQ builds a queue of the given capacity and fails the test if construction
 // errors, so callers can use the queue directly.
 func newPQ(t *testing.T, capacity uint) *containers.PriorityQueue[uint32, int] {
@@ -76,8 +74,6 @@ func drainPQ(pq *containers.PriorityQueue[uint32, int]) []uint64 {
 	return out
 }
 
-// ---- constructor tests -----------------------------------------------------
-
 func TestNewPriorityQueue_ZeroCapacity(t *testing.T) {
 	pq, err := containers.NewPriorityQueue[uint32, int](0)
 	if err == nil {
@@ -104,8 +100,6 @@ func TestNewPriorityQueue_StartsEmpty(t *testing.T) {
 		t.Errorf("Dequeue() on empty queue = %v, want nil", it)
 	}
 }
-
-// ---- behaviour tests -------------------------------------------------------
 
 func TestEnqueue_LenAndPeek(t *testing.T) {
 	pq := newPQ(t, 8)
@@ -169,8 +163,6 @@ func TestDequeue_PreservesValue(t *testing.T) {
 		t.Errorf("Dequeue() = %+v, want {Key:7 Value:42 Priority:100}", *it)
 	}
 }
-
-// ---- growth (unbounded) tests ----------------------------------------------
 
 // TestEnqueue_GrowsPastCapacity checks the growable contract: `capacity` is only
 // an initial hint, so enqueuing past it retains every item rather than evicting
@@ -244,8 +236,6 @@ func TestEnqueue_CapacityIsHintNotBound(t *testing.T) {
 		t.Fatalf("Peek() = %v, want priority %d", top, n-1)
 	}
 }
-
-// ---- randomized property test ----------------------------------------------
 
 // less is the ordering the oracle expects: b dequeues before a when less(a, b).
 // Invert it if the queue ever becomes a min-priority queue.

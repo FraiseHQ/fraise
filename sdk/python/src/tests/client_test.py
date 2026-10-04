@@ -37,7 +37,24 @@ from fraise_sdk.errors import FraiseQueryError
 from fraise_sdk.providers import Anchor
 
 
+def test_closing_closes_the_session_the_client_owns(session):
+    """Leaving the context manager closes the session the client created."""
+    with FraiseClient():
+        pass
+    session.close.assert_called_once_with()
+
+
+def test_an_injected_session_is_left_open(respond, no_hits):
+    """A session passed in is left open: the caller owns it, so the caller closes it."""
+    injected = MagicMock()
+    respond(injected, no_hits)
+    with FraiseClient(session=injected):
+        pass
+    injected.close.assert_not_called()
+
+
 def test_remember_posts_expected_query(session, query_url):
+    """remember posts one query: the graph, the quoted fact and its topic."""
     FraiseClient().remember("the parrot is turquoise", graph=3, topics=["color"])
     session.post.assert_called_once_with(
         query_url,
@@ -47,6 +64,7 @@ def test_remember_posts_expected_query(session, query_url):
 
 
 def test_remember_with_vector_sends_parameters(session, sent):
+    """A vector travels out of band: the query names ``vec:$v``, the parameters carry it."""
     FraiseClient().remember("kingfisher is blue", graph=6, vector=[0.5, 0.5])
     assert sent(session) == {
         "query": "remember@6 'kingfisher is blue' vec:$v",
@@ -69,6 +87,7 @@ def test_a_bare_string_topic_is_rejected_before_any_request(session):
 
 
 def test_recall_parses_hits(session, respond, sent):
+    """recall sends its keywords and clauses and parses the hits in the server's order."""
     respond(
         session,
         {
@@ -266,6 +285,7 @@ def test_raw_query_emits_server_warnings(session, respond, server_warning):
 
 
 def test_api_error_surfaces_server_message(session, respond):
+    """A non-2xx answer raises FraiseAPIError with the status and the server's message."""
     respond(session, {"error": "could not parse query"}, status_code=400)
     with pytest.raises(FraiseAPIError) as excinfo:
         FraiseClient().recall("bogus")
@@ -288,6 +308,7 @@ def test_an_error_with_a_non_json_body_still_raises(session, respond):
 
 
 def test_unreachable_server_raises_fraise_error(session):
+    """A connection failure raises FraiseError saying the server could not be reached."""
     session.post.side_effect = requests.ConnectionError("refused")
     with pytest.raises(FraiseError, match="could not reach fraise"):
         FraiseClient().recall("anything")
@@ -409,28 +430,8 @@ def test_check_compatibility_accepts_a_supported_version(session, respond_get, v
         assert FraiseClient().check_compatibility() is True
 
 
-# -- lifecycle ----------------------------------------------------------------
-
-
-def test_closing_closes_the_session_the_client_owns(session):
-    with FraiseClient():
-        pass
-    session.close.assert_called_once_with()
-
-
-def test_an_injected_session_is_left_open(respond, no_hits):
-    # The caller owns a session it passed in, so only the caller closes it.
-    injected = MagicMock()
-    respond(injected, no_hits)
-    with FraiseClient(session=injected):
-        pass
-    injected.close.assert_not_called()
-
-
-# -- embedding --------------------------------------------------------------
-
-
 def test_configured_embedder_encodes_remember_value(session, sent, callable_embedder):
+    """With an embedder, remember encodes the fact itself and sends its vector."""
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("the parrot is turquoise", graph=6)
     assert sent(session) == {
@@ -441,23 +442,26 @@ def test_configured_embedder_encodes_remember_value(session, sent, callable_embe
 
 
 def test_configured_embedder_encodes_recall_keywords(session, sent, callable_embedder):
+    """Without a query phrase, recall encodes its keywords joined by spaces."""
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).recall("kingfisher", "blue", graph=6)
     assert sent(session)["query"] == "recall@6 kingfisher blue vec:$v"
-    # Defaults to the space-joined keywords when no explicit query phrase is given.
     embedder.assert_called_once_with("kingfisher blue")
 
 
 def test_recall_query_phrase_overrides_keywords_for_embedding(
     session, sent, callable_embedder
 ):
+    """With a query phrase, the phrase is what gets encoded.
+
+    The question itself travels as one quoted phrase term ahead of the
+    keywords, never as bare words the grammar could read as clauses.
+    """
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).recall(
         "zzznomatch", graph=6, query="a sleepy kitten in the sun"
     )
     embedder.assert_called_once_with("a sleepy kitten in the sun")
-    # The question itself travels as one quoted phrase term, ahead of the
-    # bare keywords — never as unquoted words the grammar could claim.
     assert (
         sent(session)["query"]
         == "recall@6 'a sleepy kitten in the sun' zzznomatch vec:$v"
@@ -465,6 +469,7 @@ def test_recall_query_phrase_overrides_keywords_for_embedding(
 
 
 def test_explicit_vector_wins_over_embedder(session, sent, callable_embedder):
+    """An explicit vector is sent as given, and the embedder is not called."""
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("x is y", graph=6, vector=[0.1, 0.2])
     assert sent(session)["parameters"] == {"v": [0.1, 0.2]}
@@ -472,6 +477,7 @@ def test_explicit_vector_wins_over_embedder(session, sent, callable_embedder):
 
 
 def test_embed_false_skips_a_configured_embedder(session, sent, callable_embedder):
+    """``embed=False`` stores the fact without a vector, embedder or not."""
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("x is y", graph=6, embed=False)
     assert "parameters" not in sent(session)
@@ -479,27 +485,25 @@ def test_embed_false_skips_a_configured_embedder(session, sent, callable_embedde
 
 
 def test_embed_true_without_embedder_raises(session):
+    """``embed=True`` on a client with no embedder raises rather than sending no vector."""
     with pytest.raises(FraiseError, match="no embedder"):
         FraiseClient().remember("x is y", embed=True)
 
 
 def test_no_embedder_sends_no_vector(session, sent):
+    """A client without an embedder sends no vector parameters."""
     FraiseClient().remember("x is y", graph=6)
     assert "parameters" not in sent(session)
 
 
 def test_embedder_object_is_called_through_its_embed_method(session, sent):
-    # An Embedder exposes both .embed and __call__, which only delegates to
-    # .embed; the client takes the named method.
+    """An Embedder is called through ``embed``, not ``__call__``, which only delegates."""
     embedder = MagicMock()
     embedder.embed.return_value = [1.0, 2.0, 3.0]
     FraiseClient(embedder=embedder).remember("hello world", graph=6)
     assert sent(session)["parameters"] == {"v": [1.0, 2.0, 3.0]}
     embedder.embed.assert_called_once_with("hello world")
     embedder.assert_not_called()
-
-
-# -- extraction -------------------------------------------------------------
 
 
 def test_configured_extractor_files_the_fact_under_its_anchors(
@@ -591,9 +595,6 @@ def test_recall_never_extracts(session, callable_extractor):
     FraiseClient(extractor=extractor).recall("heron")
 
     extractor.assert_not_called()
-
-
-# -- integration --------------------------------------------------------------
 
 
 @pytest.mark.integration

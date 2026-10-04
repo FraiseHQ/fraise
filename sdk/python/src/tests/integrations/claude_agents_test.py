@@ -27,12 +27,10 @@ strings and flag a failure with ``is_error``, so the assertions check that
 envelope as well as the text.
 """
 
-import asyncio
-from unittest.mock import MagicMock
-
 import pytest
+from fraise_sdk.constants import DEFAULT_SERVER_NAME
 from fraise_sdk.errors import FraiseError
-from fraise_sdk.models import Hit, RecallResult
+from fraise_sdk.models import Hit
 
 # The integration imports its framework at module scope, so skip the whole file
 # when the optional 'anthropic' extra is not installed.
@@ -40,7 +38,6 @@ pytest.importorskip(
     "claude_agent_sdk", reason="requires the 'anthropic' dependency group"
 )
 
-from fraise_sdk.constants import DEFAULT_SERVER_NAME
 from fraise_sdk.integrations.claude_agents import (  # noqa: E402
     allowed_tools,
     memory_server,
@@ -50,46 +47,17 @@ from fraise_sdk.integrations.claude_agents import (  # noqa: E402
 )
 
 
-def _client(hits=(), raises=None) -> MagicMock:
-    """A mock FraiseClient replaying one recall result."""
-    client = MagicMock()
-    client.recall.return_value = RecallResult(count=len(hits), hits=list(hits))
-    if raises is not None:
-        client.recall.side_effect = raises
-        client.remember.side_effect = raises
-    return client
-
-
-def _encode(text: str) -> list[float]:
-    """A bare ``callable(text) -> vector`` embedder: the text's length."""
-    return [float(len(text))]
-
-
-def _embedder() -> MagicMock:
-    """A mock of the bare ``callable(text) -> vector`` embedder shape."""
-    embedder = MagicMock(side_effect=_encode)
-    # No .embed, so resolve_embedder takes the plain-callable branch.
-    del embedder.embed
-    return embedder
-
-
-def _invoke(tool, **arguments):
-    """Call an SdkMcpTool's handler the way the in-process MCP server would."""
-    return asyncio.run(tool.handler(arguments))
-
-
-def _text(payload):
-    return payload["content"][0]["text"]
-
-
-def test_memory_tools_returns_both_tools():
-    tools = memory_tools(_client())
+def test_memory_tools_returns_both_tools(mock_client):
+    """memory_tools returns both tools, recall first."""
+    tools = memory_tools(mock_client())
     assert [tool.name for tool in tools] == ["recall_memory", "remember_fact"]
 
 
 def test_allowed_tools_matches_the_registered_tool_names():
-    # These strings are what Claude checks against; if they drift from the tool
-    # names the tools are silently never callable.
+    """allowed_tools names the tools as Claude checks them, ``mcp__<server>__<tool>``.
+
+    A name that drifts from the tool's own leaves the tool silently uncallable.
+    """
     assert allowed_tools() == [
         f"mcp__{DEFAULT_SERVER_NAME}__recall_memory",
         f"mcp__{DEFAULT_SERVER_NAME}__remember_fact",
@@ -97,132 +65,157 @@ def test_allowed_tools_matches_the_registered_tool_names():
 
 
 def test_allowed_tools_follows_a_custom_server_name():
+    """A custom server name moves both tool names under its namespace."""
     assert allowed_tools("other") == [
         "mcp__other__recall_memory",
         "mcp__other__remember_fact",
     ]
 
 
-def test_memory_server_builds_with_both_tools():
-    server = memory_server(_client())
+def test_memory_server_builds_with_both_tools(mock_client):
+    """memory_server builds the in-process server config without error."""
+    server = memory_server(mock_client())
     assert server is not None
 
 
-def test_recall_schema_requires_only_keywords():
-    # top/depth must stay optional: the shorthand schema form would mark every
-    # property required and force the model to invent budgets.
-    schema = recall_tool(_client()).input_schema
+def test_recall_schema_requires_only_keywords(mock_client):
+    """Only keywords are required, so the model never has to invent a budget.
+
+    The shorthand schema form would mark top and depth required as well.
+    """
+    schema = recall_tool(mock_client()).input_schema
     assert schema["required"] == ["keywords"]
     assert set(schema["properties"]) == {"keywords", "top", "depth"}
 
 
-def test_remember_schema_requires_only_fact():
-    schema = remember_tool(_client()).input_schema
+def test_remember_schema_requires_only_fact(mock_client):
+    """Only the fact is required; topics and entities are optional."""
+    schema = remember_tool(mock_client()).input_schema
     assert schema["required"] == ["fact"]
 
 
-def test_recall_formats_hits():
-    client = _client(
+def test_recall_formats_hits(mock_client, invoke_mcp_tool, mcp_text):
+    """Hits come back one per line with their relevance, in a payload not flagged as an error."""
+    client = mock_client(
         hits=[
             Hit(value="the sky is blue", score=0.9),
             Hit(value="grass is green", score=0.5),
         ]
     )
-    payload = _invoke(recall_tool(client), keywords=["sky"])
-    assert _text(payload) == (
+    payload = invoke_mcp_tool(recall_tool(client), keywords=["sky"])
+    assert mcp_text(payload) == (
         "- the sky is blue (relevance 0.900)\n- grass is green (relevance 0.500)"
     )
     assert "is_error" not in payload
 
 
-def test_recall_without_hits_says_so():
-    payload = _invoke(recall_tool(_client()), keywords=["nothing"])
-    assert _text(payload) == "No stored facts matched those keywords."
+def test_recall_without_hits_says_so(mock_client, invoke_mcp_tool, mcp_text):
+    """A recall that matched nothing says so in words, and is not an error."""
+    payload = invoke_mcp_tool(recall_tool(mock_client()), keywords=["nothing"])
+    assert mcp_text(payload) == "No stored facts matched those keywords."
     assert "is_error" not in payload
 
 
-def test_recall_flags_server_errors_with_is_error():
-    client = _client(raises=FraiseError("connection refused"))
-    payload = _invoke(recall_tool(client), keywords=["anything"])
-    assert _text(payload) == "memory lookup failed: connection refused"
+def test_recall_flags_server_errors_with_is_error(
+    mock_client, invoke_mcp_tool, mcp_text
+):
+    """A FraiseError comes back as text with ``is_error`` set instead of being raised."""
+    client = mock_client(raises=FraiseError("connection refused"))
+    payload = invoke_mcp_tool(recall_tool(client), keywords=["anything"])
+    assert mcp_text(payload) == "memory lookup failed: connection refused"
     assert payload["is_error"] is True
 
 
-def test_recall_defaults_top_and_leaves_depth_to_the_server():
+def test_recall_defaults_top_and_leaves_depth_to_the_server(
+    mock_client, invoke_mcp_tool
+):
     """An omitted top takes the tool's default; an omitted depth is passed as
     None so no clause is emitted and the server's configured lane applies. A
     tool-side depth would be a lane the tool cannot use, since it names no
     topic or entity, and any value above the floor draws a warning per call.
     """
-    client = _client()
-    _invoke(recall_tool(client), keywords=["a"])
+    client = mock_client()
+    invoke_mcp_tool(recall_tool(client), keywords=["a"])
     call = client.recall.call_args.kwargs
     assert call["top"] == 5
     assert call["depth"] is None
 
 
-def test_recall_schema_bounds_depth_to_the_lanes():
+def test_recall_schema_bounds_depth_to_the_lanes(mock_client):
     """The schema states the lanes' range so the model never has to guess it.
 
     A depth past 2 is not a deeper search but a request the server rejects,
     so the bound belongs in the contract the model reads, not only in the
     check behind it.
     """
-    depth = recall_tool(_client()).input_schema["properties"]["depth"]
+    depth = recall_tool(mock_client()).input_schema["properties"]["depth"]
     assert (depth["minimum"], depth["maximum"]) == (0, 2)
 
 
 @pytest.mark.parametrize("depth", [-1, 3, 99])
-def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(depth):
+def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(
+    depth, mock_client, invoke_mcp_tool, mcp_text
+):
     """An out-of-range depth is answered with a correction and never sent.
 
     Sent on, it would fail anyway, in the query builder or at the server; the
     tool error names the range up front so the retry can be right.
     """
-    client = _client()
-    payload = _invoke(recall_tool(client), keywords=["a"], depth=depth)
+    client = mock_client()
+    payload = invoke_mcp_tool(recall_tool(client), keywords=["a"], depth=depth)
     assert payload["is_error"] is True
-    assert _text(payload) == f"depth must be between 0 and 2, got {depth}"
+    assert mcp_text(payload) == f"depth must be between 0 and 2, got {depth}"
     client.recall.assert_not_called()
 
 
-def test_recall_passes_graph_and_budgets_through():
-    client = _client()
-    _invoke(recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=2)
+def test_recall_passes_graph_and_budgets_through(mock_client, invoke_mcp_tool):
+    """The tool's graph and the model's keywords, top and depth reach recall as given."""
+    client = mock_client()
+    invoke_mcp_tool(recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=2)
     client.recall.assert_called_once_with(
         "a", "b", graph=3, top=7, depth=2, vector=None, embed=False
     )
 
 
-def test_recall_vectorises_through_the_embedder():
-    client = _client()
-    embedder = _embedder()
-    _invoke(recall_tool(client, embedder=embedder), keywords=["ab", "cd"])
+def test_recall_vectorises_through_the_embedder(
+    mock_client, invoke_mcp_tool, callable_embedder
+):
+    """The keywords, joined into one text, are encoded once and sent with ``embed=False``."""
+    client = mock_client()
+    embedder = callable_embedder()
+    invoke_mcp_tool(recall_tool(client, embedder=embedder), keywords=["ab", "cd"])
     embedder.assert_called_once_with("ab cd")
     call = client.recall.call_args.kwargs
-    assert call["vector"] == [5.0]
+    assert call["vector"] == [5.0] * 4
     assert call["embed"] is False
 
 
-def test_recall_without_keywords_sends_no_vector_even_with_an_embedder():
-    # Encoding an empty string would seed the search with a meaningless vector.
-    client = _client()
-    embedder = _embedder()
-    _invoke(recall_tool(client, embedder=embedder), keywords=[])
+def test_recall_without_keywords_sends_no_vector_even_with_an_embedder(
+    mock_client, invoke_mcp_tool, callable_embedder
+):
+    """With no keywords the embedder is never called.
+
+    Encoding an empty string would seed the search with a meaningless vector.
+    """
+    client = mock_client()
+    embedder = callable_embedder()
+    invoke_mcp_tool(recall_tool(client, embedder=embedder), keywords=[])
     embedder.assert_not_called()
     assert client.recall.call_args.kwargs["vector"] is None
 
 
-def test_remember_confirms_what_it_stored():
-    client = _client()
-    payload = _invoke(remember_tool(client), fact="the sky is blue")
-    assert _text(payload) == "Stored: the sky is blue"
+def test_remember_confirms_what_it_stored(mock_client, invoke_mcp_tool, mcp_text):
+    """The answer repeats the fact stored, so the model sees what was kept."""
+    client = mock_client()
+    payload = invoke_mcp_tool(remember_tool(client), fact="the sky is blue")
+    assert mcp_text(payload) == "Stored: the sky is blue"
     assert client.remember.call_args.args == ("the sky is blue",)
 
 
-def test_remember_passes_topics_entities_and_graph():
-    client = _client()
-    _invoke(
+def test_remember_passes_topics_entities_and_graph(mock_client, invoke_mcp_tool):
+    """The fact, its topics and entities, and the tool's graph reach remember as given."""
+    client = mock_client()
+    invoke_mcp_tool(
         remember_tool(client, graph=2),
         fact="anne likes orange",
         topics=["colour"],
@@ -238,18 +231,24 @@ def test_remember_passes_topics_entities_and_graph():
     )
 
 
-def test_remember_flags_server_errors_with_is_error():
-    client = _client(raises=FraiseError("bad value"))
-    payload = _invoke(remember_tool(client), fact="x")
-    assert _text(payload) == "could not store the fact: bad value"
+def test_remember_flags_server_errors_with_is_error(
+    mock_client, invoke_mcp_tool, mcp_text
+):
+    """A FraiseError on remember comes back as text with ``is_error`` set."""
+    client = mock_client(raises=FraiseError("bad value"))
+    payload = invoke_mcp_tool(remember_tool(client), fact="x")
+    assert mcp_text(payload) == "could not store the fact: bad value"
     assert payload["is_error"] is True
 
 
-def test_remember_vectorises_through_the_embedder():
-    client = _client()
-    embedder = _embedder()
-    _invoke(remember_tool(client, embedder=embedder), fact="hello")
+def test_remember_vectorises_through_the_embedder(
+    mock_client, invoke_mcp_tool, callable_embedder
+):
+    """The fact is encoded once and sent as the vector, with ``embed=False``."""
+    client = mock_client()
+    embedder = callable_embedder()
+    invoke_mcp_tool(remember_tool(client, embedder=embedder), fact="hello")
     embedder.assert_called_once_with("hello")
     call = client.remember.call_args.kwargs
-    assert call["vector"] == [5.0]
+    assert call["vector"] == [5.0] * 4
     assert call["embed"] is False

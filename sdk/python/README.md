@@ -64,7 +64,7 @@ Give the client an **embedder** and it encodes text to a vector automatically â€
 
 ```python
 from fraise_sdk import FraiseClient
-from fraise_sdk.providers import OpenAIEmbedder   # needs fraise-sdk[openai]
+from fraise_sdk.providers.openai import OpenAIEmbedder   # needs fraise-sdk[openai]
 
 fraise = FraiseClient("http://localhost:9876", embedder=OpenAIEmbedder(dimensions=128))
 
@@ -80,7 +80,7 @@ Give the client an **extractor** and `remember` files each fact under the topics
 
 ```python
 from fraise_sdk import FraiseClient
-from fraise_sdk.providers import OpenAIExtractor   # needs fraise-sdk[openai]
+from fraise_sdk.providers.openai import OpenAIExtractor   # needs fraise-sdk[openai]
 
 fraise = FraiseClient("http://localhost:9876", extractor=OpenAIExtractor())
 

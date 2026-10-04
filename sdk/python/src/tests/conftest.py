@@ -30,12 +30,13 @@ the values behind them are private, marked by a leading underscore.
 
 The file has two halves. The mocked half patches the client's own
 `requests.Session` at its import site, so unit tests run with no server and
-no daemon. The live half (from the "live server" banner down) backs the
+no daemon. The live half, which follows it, backs the
 tests marked ``integration``: a real client against the daemon named by
 FRAISE_URL, health-checked before first use. `-m "not integration"` is the
 unit run and touches nothing live; `-m integration` needs the daemon up.
 """
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -46,6 +47,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk.client import DEFAULT_BASE_URL, FraiseClient
+from fraise_sdk.models import RecallResult
 from fraise_sdk.providers import Anchor
 
 
@@ -199,9 +201,6 @@ _SERVER_WARNING = (
 )
 
 
-# -- addresses and payloads --------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def query_url():
     """The URL a query is posted to, unless it is an explained recall."""
@@ -236,9 +235,6 @@ def no_hits():
 def server_warning():
     """A parse warning exactly as the server words it."""
     return _SERVER_WARNING
-
-
-# -- the patched session -----------------------------------------------------
 
 
 def _arm(session, body: dict, status_code: int = 200) -> MagicMock:
@@ -360,9 +356,6 @@ def sent():
     return _sent
 
 
-# -- embedders ---------------------------------------------------------------
-
-
 # The unit suite's embedder: len(text), 4 times, so a test can predict the
 # vector the client will send. Tests reach it through callable_embedder; the
 # `encode` fixture is the live half's embedder below.
@@ -389,7 +382,63 @@ def callable_embedder():
     return _callable_embedder
 
 
-# -- extractors --------------------------------------------------------------
+# The models the embedders default to, pinned as literals so a changed default
+# fails the provider tests instead of being followed by them.
+_OPENAI_DEFAULT_MODEL = "text-embedding-3-small"
+_HUGGINGFACE_DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+@pytest.fixture(scope="session")
+def openai_default_model():
+    """The embedding model OpenAIEmbedder uses when none is given."""
+    return _OPENAI_DEFAULT_MODEL
+
+
+@pytest.fixture
+def embeddings_client():
+    """Callable building a mock ``openai.OpenAI`` answering one embedding.
+
+    Returns:
+        ``callable(embedding=(0.1, 0.2, 0.3)) -> MagicMock`` whose
+        ``embeddings.create`` answers with ``embedding``.
+    """
+
+    def _embeddings_client(embedding=(0.1, 0.2, 0.3)) -> MagicMock:
+        client = MagicMock()
+        client.embeddings.create.return_value = MagicMock(
+            data=[MagicMock(embedding=list(embedding))]
+        )
+        return client
+
+    return _embeddings_client
+
+
+@pytest.fixture(scope="session")
+def huggingface_default_model():
+    """The embedding model HuggingFaceEmbedder uses when none is given."""
+    return _HUGGINGFACE_DEFAULT_MODEL
+
+
+@pytest.fixture
+def inference_client():
+    """Callable building a mock ``huggingface_hub.InferenceClient``.
+
+    ``feature_extraction`` really returns a numpy array, of which the embedder
+    uses only ``tolist()``, so the mock answers with an object whose
+    ``tolist()`` returns the values.
+
+    Returns:
+        ``callable(values=(0.1, 0.2, 0.3)) -> MagicMock``.
+    """
+
+    def _inference_client(values=(0.1, 0.2, 0.3)) -> MagicMock:
+        client = MagicMock()
+        client.feature_extraction.return_value = MagicMock(
+            **{"tolist.return_value": list(values)}
+        )
+        return client
+
+    return _inference_client
 
 
 # What the suite's extractor finds in any text. "travel" repeats a topic a test
@@ -451,7 +500,81 @@ def chat_client():
     return _chat_client
 
 
-# -- live server (integration fixtures) --------------------------------------
+@pytest.fixture
+def mock_client():
+    """Callable building a mock FraiseClient for the agent-framework tools.
+
+    Returns:
+        ``callable(hits=(), raises=None) -> MagicMock`` whose ``recall`` answers
+        with ``hits``; with ``raises`` set, ``recall`` and ``remember`` raise it.
+    """
+
+    def _mock_client(hits=(), raises=None) -> MagicMock:
+        client = MagicMock()
+        client.recall.return_value = RecallResult(count=len(hits), hits=list(hits))
+        if raises is not None:
+            client.recall.side_effect = raises
+            client.remember.side_effect = raises
+        return client
+
+    return _mock_client
+
+
+@pytest.fixture
+def invoke_function_tool():
+    """Callable running an OpenAI Agents ``FunctionTool`` as the runtime would.
+
+    The arguments reach ``on_invoke_tool`` as a JSON string, so a test covers
+    the framework's own argument parsing and validation, not just the function
+    the tool wraps. The framework is imported here, when a test asks for this,
+    so the suite still collects without the 'openai' extra.
+
+    Returns:
+        ``callable(tool, **arguments) -> str``, the tool's answer.
+    """
+    from agents.tool_context import ToolContext
+
+    def _invoke(tool, **arguments):
+        payload = json.dumps(arguments)
+        context = ToolContext(
+            context=None,
+            tool_name=tool.name,
+            tool_call_id="test-call",
+            tool_arguments=payload,
+        )
+        return asyncio.run(tool.on_invoke_tool(context, payload))
+
+    return _invoke
+
+
+@pytest.fixture
+def invoke_mcp_tool():
+    """Callable running a Claude Agent SDK tool's handler as its MCP server would.
+
+    Returns:
+        ``callable(tool, **arguments) -> dict``, the MCP content payload.
+    """
+
+    def _invoke(tool, **arguments):
+        return asyncio.run(tool.handler(arguments))
+
+    return _invoke
+
+
+@pytest.fixture
+def mcp_text():
+    """Callable reading the text of an MCP content payload.
+
+    Returns:
+        ``callable(payload) -> str``, the text of the payload's first block.
+    """
+
+    def _text(payload):
+        return payload["content"][0]["text"]
+
+    return _text
+
+
 # Everything below backs the tests marked `integration`: a real client
 # against the daemon named by FRAISE_URL. Nothing here runs — no waiting,
 # no writes — unless an integration test actually requests a fixture.
@@ -546,9 +669,6 @@ def _await_server(fraise: FraiseClient) -> None:
     pytest.fail(f"fraise server not reachable at {_FRAISE_URL}")
 
 
-# -- addresses and constants -------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def fraise_url():
     """The base url of the server under test.
@@ -619,9 +739,6 @@ def instrument_facts():
     return dict(_INSTRUMENT_FACTS)
 
 
-# -- clients -----------------------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def client():
     """A FraiseClient pointed at a server confirmed to be up.
@@ -669,9 +786,6 @@ def recalled_values(client):
         return [hit.value for hit in client.recall(keyword, graph=graph, depth=1)]
 
     return _recalled_values
-
-
-# -- graphs ------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -748,9 +862,6 @@ def vector_graph(embedding_client):
     """
     embedding_client.remember("the tuning fork sounds a natural A", graph=_VECTOR_GRAPH)
     return _VECTOR_GRAPH
-
-
-# -- recall results ----------------------------------------------------------
 
 
 @pytest.fixture(scope="module")

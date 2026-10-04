@@ -35,8 +35,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
-// ---- helpers ---------------------------------------------------------------
-
 // newHeap returns an empty max-heap of uint32 keys and int values.
 func newHeap() *containers.Heap[uint32, int] {
 	return containers.NewHeap[uint32, int]()
@@ -65,8 +63,6 @@ func assertNonIncreasing(t *testing.T, got []uint64) {
 		}
 	}
 }
-
-// ---- behaviour tests -------------------------------------------------------
 
 func TestLen(t *testing.T) {
 	data := []containers.Item[uint32, int]{
@@ -204,8 +200,6 @@ func TestRemove(t *testing.T) {
 	}
 }
 
-// ---- constructor tests -----------------------------------------------------
-
 func TestNewHeap_EmptyAndSingle(t *testing.T) {
 	empty := containers.NewHeap[string, string]()
 	if empty.Len() != 0 || empty.Peek() != nil || empty.Pop() != nil {
@@ -307,8 +301,6 @@ func TestClear_ThenReuse(t *testing.T) {
 		t.Fatalf("Peek()=%v after reuse, want key 3", p)
 	}
 }
-
-// ---- randomized property tests ---------------------------------------------
 
 // TestFuzz_AgainstReferenceModel drives a long random sequence of operations
 // and cross-checks the heap against a plain map used as an oracle, verifying

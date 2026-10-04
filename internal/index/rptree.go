@@ -33,9 +33,6 @@ import (
 	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
-// compile-time check that RPTreeIndex is a VectorIndex.
-var _ VectorIndex[int, float64] = (*RPTreeIndex[int, float64])(nil)
-
 // RPTreeIndex is an approximate nearest-neighbour vector index backed by a
 // forest of random-projection trees from the containers/trees package. Each
 // tree indexes the same vectors through an independent random projection; a

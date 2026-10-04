@@ -34,10 +34,12 @@ from fraise_sdk.providers.base import (
 
 
 def test_resolve_none():
+    """No embedder resolves to None, so the client never encodes."""
     assert resolve_embedder(None) is None
 
 
 def test_resolve_callable():
+    """A bare callable is used as it is."""
     embedder = MagicMock(return_value=[1.0])
     # A plain callable has no .embed; deleting it is what makes this mock the
     # bare-callable shape rather than the Embedder one.
@@ -46,9 +48,12 @@ def test_resolve_callable():
 
 
 def test_resolve_embedder_prefers_embed_method():
+    """An Embedder resolves to its bound ``embed``, never its ``__call__``.
+
+    ``__call__`` only delegates to ``embed``, so resolving to it would add a hop.
+    """
     embedder = MagicMock()
     resolved = resolve_embedder(embedder)
-    # The bound .embed, not __call__, which only delegates to it.
     assert resolved is embedder.embed
     resolved("abc")
     embedder.embed.assert_called_once_with("abc")
@@ -56,11 +61,13 @@ def test_resolve_embedder_prefers_embed_method():
 
 
 def test_resolve_rejects_non_embedder():
+    """Anything neither an Embedder nor callable is refused at construction."""
     with pytest.raises(TypeError):
         resolve_embedder(object())
 
 
 def test_embedder_abc_cannot_be_instantiated():
+    """Embedder is a contract: it has no ``embed`` of its own."""
     with pytest.raises(TypeError):
         Embedder()  # abstract
 

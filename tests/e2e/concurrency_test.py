@@ -47,22 +47,7 @@ def test_concurrent_queries(query):
     assert not failures, f"non-200 responses: {failures}"
 
 
-# A batch of distinct facts, each carrying a unique keyword so a recall can
-# target exactly one of them. They share a topic so the write path also
-# exercises relationship creation.
-BIRD_FACTS = {
-    "parrot": "the parrot is turquoise",
-    "raven": "the raven is midnight black",
-    "canary": "the canary is bright yellow",
-    "flamingo": "the flamingo is pink",
-    "peacock": "the peacock is iridescent",
-    "robin": "the robin has a red breast",
-    "magpie": "the magpie loves shiny things",
-    "owl": "the owl hunts at night",
-}
-
-
-def test_many_writes_then_concurrent_reads(query):
+def test_many_writes_then_concurrent_reads(query, bird_facts):
     """Store a batch of distinct facts, then read them back under heavy
     parallelism and verify every reader still gets its own fact intact.
 
@@ -74,13 +59,13 @@ def test_many_writes_then_concurrent_reads(query):
 
     # 1. Write every fact. Writes are serialized server-side, so do them
     #    sequentially and confirm each is accepted before reading.
-    for keyword, phrase in BIRD_FACTS.items():
+    for keyword, phrase in bird_facts.items():
         status, body = query(f"remember@{graph} '{phrase}' topic:birds")
         assert status == 200, body.get("error")
 
     # 2. Build a shuffled workload where each keyword is recalled several times,
     #    then fire them all concurrently.
-    workload = [kw for kw in BIRD_FACTS for _ in range(8)]
+    workload = [kw for kw in bird_facts for _ in range(8)]
     random.shuffle(workload)
 
     def recall(keyword: str):
@@ -95,13 +80,13 @@ def test_many_writes_then_concurrent_reads(query):
         assert status == 200, f"recall {keyword!r} failed: {body}"
         hits = body["results"]["hits"]
         values = [hit["value"] for hit in hits]
-        assert BIRD_FACTS[keyword] in values, (
+        assert bird_facts[keyword] in values, (
             f"recall {keyword!r} lost its fact under load; got {values}"
         )
 
     # 4. After the storm the graph must be intact: each fact still retrievable
     #    on its own.
-    for keyword, phrase in BIRD_FACTS.items():
+    for keyword, phrase in bird_facts.items():
         status, body = query(f"recall@{graph} {keyword}")
         assert status == 200, body.get("error")
         values = [hit["value"] for hit in body["results"]["hits"]]

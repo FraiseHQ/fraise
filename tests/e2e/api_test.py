@@ -30,6 +30,10 @@ import requests
 
 
 def test_health_check(get):
+    """The health check answers 200 with ``status: ok`` and the server's version.
+
+    The version is the SDK's compatibility handshake, so it must be present.
+    """
     response = get("/")
 
     assert response.status_code == 200
@@ -38,6 +42,7 @@ def test_health_check(get):
 
 
 def test_query_rejects_malformed_json(base_url, request_timeout):
+    """A body that is not JSON is a 400, before any query is parsed."""
     response = requests.post(
         f"{base_url}/api/v1/q",
         data="{not json",
@@ -49,6 +54,7 @@ def test_query_rejects_malformed_json(base_url, request_timeout):
 
 
 def test_query_rejects_unparsable_query(query):
+    """A query the parser rejects is a 400 carrying an error message."""
     status, body = query("bogus nonsense")
 
     assert status == 400

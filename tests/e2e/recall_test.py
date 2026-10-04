@@ -31,6 +31,11 @@ import pytest
 
 
 def test_recall_on_empty_graph(query):
+    """A recall that matches nothing answers 200 with an empty hit list.
+
+    Graph 0 is primed, so this is a miss on a populated graph, not the 204 a
+    graph holding nothing answers with (pinned in api_test.py).
+    """
     status, body = query("recall nothingindexedyet")
     assert status == 200
     results = body["results"]
@@ -40,12 +45,14 @@ def test_recall_on_empty_graph(query):
 
 
 def test_recall_with_clauses(query):
+    """A recall carrying every clause kind at once parses and answers 200."""
     status, body = query("recall@2 anna bob entity:alice topic:job top:10 depth:2")
     assert status == 200
     assert body["results"] is not None
 
 
 def test_remember_is_accepted(query):
+    """A remember with a topic and an entity is accepted with a 200."""
     status, _ = query(
         "remember@1 'anne loves the color orange' topic:color entity:anne"
     )
@@ -121,13 +128,7 @@ def test_recall_question_travels_as_a_quoted_phrase(query):
     assert body["results"] is not None
 
 
-def _recall_count(query, text):
-    status, body = query(text)
-    assert status == 200, body.get("error")
-    return body["results"]["count"]
-
-
-def test_recall_depth_selects_a_lane(planets_graph, query):
+def test_recall_depth_selects_a_lane(planets_graph, recall_count):
     """depth picks the retrieval lane, and both lanes answer this query the
     same way, for different reasons.
 
@@ -143,9 +144,7 @@ def test_recall_depth_selects_a_lane(planets_graph, query):
     g = planets_graph
     for clause in ("depth:0", "depth:1", "depth:2", ""):
         text = f"recall@{g} mercury topic:planets {clause}".strip()
-        assert _recall_count(query, text) == 1, (
-            f"{text}: a fair-share hub must not transmit"
-        )
+        assert recall_count(text) == 1, f"{text}: a fair-share hub must not transmit"
 
 
 def test_floor_lane_returns_only_what_the_text_index_matched(
@@ -208,18 +207,18 @@ def test_graph_lanes_transmit_to_a_fact_the_floor_cannot_reach(
     )
 
 
-def test_recall_top_truncates_results(planets_graph, planet_facts, query):
+def test_recall_top_truncates_results(planets_graph, planet_facts, recall_count):
     """Top caps the number of ranked results returned, never pads. All four
     facts contain "planet", so the text index matches every one directly.
     """
     g = planets_graph
     n = len(planet_facts)
 
-    assert _recall_count(query, f"recall@{g} planet top:1") == 1
-    assert _recall_count(query, f"recall@{g} planet top:2") == 2
-    assert _recall_count(query, f"recall@{g} planet top:3") == 3
+    assert recall_count(f"recall@{g} planet top:1") == 1
+    assert recall_count(f"recall@{g} planet top:2") == 2
+    assert recall_count(f"recall@{g} planet top:3") == 3
     # top larger than the number available returns everything, not padding.
-    assert _recall_count(query, f"recall@{g} planet top:10") == n
+    assert recall_count(f"recall@{g} planet top:10") == n
 
 
 def test_recall_unique_keyword_returns_only_its_fact(
@@ -236,21 +235,10 @@ def test_recall_unique_keyword_returns_only_its_fact(
     assert values == [planet_facts["mercury"]]
 
 
-# Three facts that all contain the keyword "comet" but are otherwise unrelated:
-# each carries a *different* topic, so nothing connects them in the graph except
-# the shared word. A recall for that word must therefore surface all three
-# purely through the text index. No other fact on graph 0 contains "comet", so
-# the expected set is fully determined here.
-COMET_FACTS = {
-    "the comet streaked past mars": "astronomy",
-    "children watched the comet at dawn": "memory",
-    "the comet will not return for centuries": "time",
-}
-
-
-def test_recall_returns_every_document_sharing_a_keyword(query):
+def test_recall_returns_every_document_sharing_a_keyword(query, comet_facts):
+    """A recall by a shared keyword returns every fact containing it, not just one."""
     graph = 0
-    for phrase, topic in COMET_FACTS.items():
+    for phrase, topic in comet_facts.items():
         status, body = query(f"remember@{graph} '{phrase}' topic:{topic}")
         assert status == 200, body.get("error")
 
@@ -258,9 +246,9 @@ def test_recall_returns_every_document_sharing_a_keyword(query):
     assert status == 200, body.get("error")
 
     values = {hit["value"] for hit in body["results"]["hits"]}
-    assert set(COMET_FACTS) <= values, (
+    assert set(comet_facts) <= values, (
         "recall by a shared keyword must return every matching fact, not just "
-        f"one; want all of {set(COMET_FACTS)}, got {values}"
+        f"one; want all of {set(comet_facts)}, got {values}"
     )
 
 
@@ -337,17 +325,7 @@ def test_recall_with_anchor_filters_returns_tagged_fact(query):
         assert hits[0]["value"] == "ulysse moved to quimper"
 
 
-# A fact whose anchors are grammar keywords. "top" is also an ordinary English
-# word, and an LLM extracting entities from prose will eventually emit it bare
-# ("she reached the top" -> entities=["top"]). A parser that typed an anchor
-# value by spelling alone would fail that write with a 400 the client could
-# not anticipate. The invented marker "cairnprobe" is this fact's only link to
-# the recalls below, so each assertion is scoped to this fact whatever else
-# graph 5 holds.
-CAIRN_FACT = "the cairnprobe marks the top of the pass"
-
-
-def test_keyword_anchor_values_round_trip(query):
+def test_keyword_anchor_values_round_trip(query, cairn_fact):
     """A fact filed under entity:top and topic:top is reachable through both
     anchors.
 
@@ -356,7 +334,7 @@ def test_keyword_anchor_values_round_trip(query):
     misread as a result-limit clause. Each filter must narrow the marker
     recall to exactly this fact.
     """
-    status, body = query(f"remember@5 '{CAIRN_FACT}' topic:top entity:top")
+    status, body = query(f"remember@5 '{cairn_fact}' topic:top entity:top")
     assert status == 200, body.get("error")
 
     for q in (
@@ -367,10 +345,10 @@ def test_keyword_anchor_values_round_trip(query):
         assert status == 200, body.get("error")
         hits = body["results"]["hits"]
         assert len(hits) == 1, f"{q!r} -> {body['results']}"
-        assert hits[0]["value"] == CAIRN_FACT
+        assert hits[0]["value"] == cairn_fact
 
 
-def test_keyword_recalls_as_a_leading_term(query):
+def test_keyword_recalls_as_a_leading_term(query, cairn_fact):
     """In `recall 'top' top:10`, the first "top" is a search term and the second
     is the result-limit clause.
 
@@ -379,25 +357,18 @@ def test_keyword_recalls_as_a_leading_term(query):
     clause. The term must then reach the cairnprobe fact through the text
     index like any other word, since its text contains "top".
     """
-    status, body = query(f"remember@5 '{CAIRN_FACT}' topic:top entity:top")
+    status, body = query(f"remember@5 '{cairn_fact}' topic:top entity:top")
     assert status == 200, body.get("error")
 
     status, body = query("recall@5 'top' top:10")
     assert status == 200, body.get("error")
     values = [hit["value"] for hit in body["results"]["hits"]]
-    assert CAIRN_FACT in values, (
+    assert cairn_fact in values, (
         f"the leading term 'top' should match the cairnprobe fact; got {values}"
     )
 
 
-# Case folding. Terms and anchor values are identity, not prose: the parser
-# folds them to lower case on the way in, so however a client capitalises an
-# anchor, a single node accrues in the graph. The quoted fact is prose and is
-# the one exception — it comes back spelled exactly as written.
-CASEPROBE_FACT = "The Caseprobe Expedition Reached the Summit in April."
-
-
-def test_anchor_case_folds_while_the_fact_keeps_its_spelling(query):
+def test_anchor_case_folds_while_the_fact_keeps_its_spelling(query, caseprobe_fact):
     """topic:Mountaineering, topic:MOUNTAINEERING and topic:mountaineering are
     one anchor, and the stored fact keeps its capitalisation.
 
@@ -409,7 +380,7 @@ def test_anchor_case_folds_while_the_fact_keeps_its_spelling(query):
     absent memories.
     """
     status, body = query(
-        f"remember@5 '{CASEPROBE_FACT}' topic:Mountaineering entity:Karakoram"
+        f"remember@5 '{caseprobe_fact}' topic:Mountaineering entity:Karakoram"
     )
     assert status == 200, body.get("error")
 
@@ -423,39 +394,15 @@ def test_anchor_case_folds_while_the_fact_keeps_its_spelling(query):
         assert status == 200, body.get("error")
         hits = body["results"]["hits"]
         assert len(hits) == 1, f"{q!r} -> {body['results']}"
-        assert hits[0]["value"] == CASEPROBE_FACT, (
+        assert hits[0]["value"] == caseprobe_fact, (
             f"{q!r}: the fact must come back spelled exactly as written; "
             f"got {hits[0]['value']!r}"
         )
 
 
-# Five facts that all contain "quasar" once and carry no topic:/entity: anchor,
-# so each is an isolated node that no walk from another graph-0 fact can
-# reach: a recall for "quasar" is answered by the text index alone. They share
-# graph 0 with the comet facts above, which contain no "quasar".
-QUASAR_FACTS = (
-    "the quasar catalogue was revised",
-    "a quasar outshines its host galaxy",
-    "radio astronomers logged the quasar",
-    "the quasar sits behind a lensing cluster",
-    "the quasar faded from the survey",
-)
-
-
-def _recall_ranking(query, text):
-    """The hit values of a recall, best-ranked first.
-
-    Values, not scores: a score decays with the fact's age at the instant the
-    search runs, so two identical recalls a millisecond apart legitimately score
-    the same fact differently. It is the ranking those scores produce that has to
-    be reproducible.
-    """
-    status, body = query(text)
-    assert status == 200, body.get("error")
-    return [hit["value"] for hit in body["results"]["hits"]]
-
-
-def test_identical_recalls_return_identically_ranked_hits(query):
+def test_identical_recalls_return_identically_ranked_hits(
+    query, quasar_facts, recall_ranking
+):
     """The same recall, issued repeatedly, must rank the same facts the same way.
 
     Candidates are pooled out of maps, whose iteration order changes per call,
@@ -465,27 +412,29 @@ def test_identical_recalls_return_identically_ranked_hits(query):
     promised is that it does not move.
     """
     graph = 0
-    for phrase in QUASAR_FACTS:
+    for phrase in quasar_facts:
         status, body = query(f"remember@{graph} '{phrase}'")
         assert status == 200, body.get("error")
 
     # The facts carry no anchor and the query names none, so this is exactly
     # the five the text index matches.
     text = f"recall@{graph} quasar"
-    ranking = _recall_ranking(query, text)
-    assert set(ranking) == set(QUASAR_FACTS), (
+    ranking = recall_ranking(text)
+    assert set(ranking) == set(quasar_facts), (
         f"{text!r} must match every quasar fact and nothing else; got {ranking}"
     )
 
     for call in range(2, 11):
-        assert _recall_ranking(query, text) == ranking, (
+        assert recall_ranking(text) == ranking, (
             f"call {call} of {text!r} ranked the same facts differently; "
             "recall is not reproducible"
         )
 
 
 @pytest.mark.parametrize("top", [1, 2, 3])
-def test_recall_top_keeps_the_head_of_the_ranking(top, query):
+def test_recall_top_keeps_the_head_of_the_ranking(
+    top, query, quasar_facts, recall_ranking
+):
     """`top` truncates the ranking; it must keep its head, not an arbitrary slice.
 
     Truncating before the order is total would drop whichever tied facts the
@@ -494,28 +443,20 @@ def test_recall_top_keeps_the_head_of_the_ranking(top, query):
     reference the truncated one has to prefix.
     """
     graph = 0
-    for phrase in QUASAR_FACTS:
+    for phrase in quasar_facts:
         status, body = query(f"remember@{graph} '{phrase}'")
         assert status == 200, body.get("error")
 
-    full = _recall_ranking(query, f"recall@{graph} quasar")
-    truncated = _recall_ranking(query, f"recall@{graph} quasar top:{top}")
+    full = recall_ranking(f"recall@{graph} quasar")
+    truncated = recall_ranking(f"recall@{graph} quasar top:{top}")
     assert truncated == full[:top], (
         f"top:{top} must be the first {top} of the full ranking {full}; got {truncated}"
     )
 
 
-# A fact whose whole text is also the name of its topic, plus a bystander fact
-# carrying the same topic. Keys derived from the value alone would give the
-# fact and the topic one key, so the topic node would never be stored and the
-# bystander's IsAbout edge would land on the fact instead of on a topic hub.
-# The bystander is what makes that visible: the two facts have no word in
-# common and belong together only through the topic.
-LEDGER_TOPIC = "ledgerprobe"
-LEDGER_FACTS = ("ledgerprobe", "acme settles invoices quarterly")
-
-
-def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(query):
+def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(
+    query, ledger_topic, ledger_facts, recall_ranking
+):
     """A fact whose text equals its topic's name must not stand in for the topic.
 
     Recall returns facts, never the hubs it walks through. With the topic
@@ -526,31 +467,27 @@ def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(query):
     else is one hop from the seed.
     """
     graph = 5
-    for phrase in LEDGER_FACTS:
-        status, body = query(f"remember@{graph} '{phrase}' topic:{LEDGER_TOPIC}")
+    for phrase in ledger_facts:
+        status, body = query(f"remember@{graph} '{phrase}' topic:{ledger_topic}")
         assert status == 200, body.get("error")
 
-    hits = _recall_ranking(
-        query, f"recall@{graph} quarterly topic:{LEDGER_TOPIC} depth:1"
-    )
+    hits = recall_ranking(f"recall@{graph} quarterly topic:{ledger_topic} depth:1")
     assert hits == ["acme settles invoices quarterly"], (
-        f"depth:1 must return the seed alone; {LEDGER_FACTS[0]!r} reached it as a "
-        f"neighbour, so it is serving as the {LEDGER_TOPIC!r} topic node: {hits}"
+        f"depth:1 must return the seed alone; {ledger_facts[0]!r} reached it as a "
+        f"neighbour, so it is serving as the {ledger_topic!r} topic node: {hits}"
     )
 
 
-# ---------------------------------------------------------------------------
 # Anchor-seeded recall. A recall naming anchors and no term or vector is
 # seeded by the anchors themselves: every fact filed under them enters the
 # candidates instead of being filtered by them, and the ordinary ranking — a
 # unit of mass per named anchor a fact is filed under, decayed by age — puts
 # the newest first. The planet star is the single-anchor case; the tidepool
 # probe (conftest) is the union.
-# ---------------------------------------------------------------------------
 
 
 def test_anchor_only_recall_returns_every_member_newest_first(
-    planets_graph, planet_facts, query
+    planets_graph, planet_facts, recall_ranking
 ):
     """`recall topic:planets` is seeded by the topic: the whole star, newest first.
 
@@ -558,7 +495,7 @@ def test_anchor_only_recall_returns_every_member_newest_first(
     reversed. Without anchor seeding the query would have no seed and return
     nothing, which a caller could not tell from an empty topic.
     """
-    ranking = _recall_ranking(query, f"recall@{planets_graph} topic:planets top:10")
+    ranking = recall_ranking(f"recall@{planets_graph} topic:planets top:10")
     assert ranking == list(reversed(planet_facts.values())), (
         f"want the star newest first, got {ranking}"
     )
@@ -585,7 +522,7 @@ def test_anchor_seeded_hits_are_scored_by_the_ordinary_ranking(planets_graph, qu
 
 
 def test_anchor_seeds_union_ranking_the_fact_under_both_first(
-    tidepool_graph, tidepool_anchors, tidepool_facts, query
+    tidepool_graph, tidepool_anchors, tidepool_facts, recall_ranking
 ):
     """`recall topic:tidepool entity:limpet` is everything under either anchor,
     each fact once.
@@ -597,8 +534,8 @@ def test_anchor_seeds_union_ranking_the_fact_under_both_first(
     first, the entity's fact having been written after the topic's.
     """
     topic, entity = tidepool_anchors
-    ranking = _recall_ranking(
-        query, f"recall@{tidepool_graph} topic:{topic} entity:{entity} top:10"
+    ranking = recall_ranking(
+        f"recall@{tidepool_graph} topic:{topic} entity:{entity} top:10"
     )
     assert ranking == [
         tidepool_facts["both"],
@@ -608,21 +545,21 @@ def test_anchor_seeds_union_ranking_the_fact_under_both_first(
 
 
 @pytest.mark.parametrize("top", [1, 2, 3])
-def test_anchor_seeded_top_keeps_the_head_of_the_ranking(top, planets_graph, query):
+def test_anchor_seeded_top_keeps_the_head_of_the_ranking(
+    top, planets_graph, recall_ranking
+):
     """`top` truncates an anchor-seeded recall as it truncates any other: the
     head, never an arbitrary slice.
     """
-    full = _recall_ranking(query, f"recall@{planets_graph} topic:planets top:10")
-    truncated = _recall_ranking(
-        query, f"recall@{planets_graph} topic:planets top:{top}"
-    )
+    full = recall_ranking(f"recall@{planets_graph} topic:planets top:10")
+    truncated = recall_ranking(f"recall@{planets_graph} topic:planets top:{top}")
     assert truncated == full[:top], (
         f"top:{top} must be the first {top} of {full}; got {truncated}"
     )
 
 
 def test_anchor_seeded_recall_without_top_takes_the_configured_default(
-    saltmarsh_graph, saltmarsh_facts, default_top, query
+    saltmarsh_graph, saltmarsh_facts, default_top, recall_ranking
 ):
     """An anchor-seeded recall with no top: clause is capped at default-top.
 
@@ -631,11 +568,11 @@ def test_anchor_seeded_recall_without_top_takes_the_configured_default(
     ranking — while a top: past the count returns every member.
     """
     assert len(saltmarsh_facts) > default_top
-    full = _recall_ranking(
-        query, f"recall@{saltmarsh_graph} topic:saltmarsh top:{len(saltmarsh_facts)}"
+    full = recall_ranking(
+        f"recall@{saltmarsh_graph} topic:saltmarsh top:{len(saltmarsh_facts)}"
     )
     assert sorted(full) == sorted(saltmarsh_facts)
-    capped = _recall_ranking(query, f"recall@{saltmarsh_graph} topic:saltmarsh")
+    capped = recall_ranking(f"recall@{saltmarsh_graph} topic:saltmarsh")
     assert capped == full[:default_top], (
         f"want the first {default_top} of {full}; got {capped}"
     )
@@ -652,7 +589,9 @@ def test_anchor_seeded_recall_without_top_takes_the_configured_default(
         ("until:106751d", 0),
     ],
 )
-def test_anchor_seeded_recall_honours_time_bounds(clause, count, planets_graph, query):
+def test_anchor_seeded_recall_honours_time_bounds(
+    clause, count, planets_graph, recall_count
+):
     """since:/until: bound an anchor-seeded recall as they bound any other.
 
     The star was written moments ago: a window opening a day ago holds all of
@@ -661,22 +600,19 @@ def test_anchor_seeded_recall_honours_time_bounds(clause, count, planets_graph, 
     past, about 292 years ago, so it holds the whole star; one day more is
     rejected as out of range (see parser_test.py).
     """
-    assert (
-        _recall_count(query, f"recall@{planets_graph} topic:planets {clause}") == count
-    )
+    assert recall_count(f"recall@{planets_graph} topic:planets {clause}") == count
 
 
 @pytest.mark.parametrize("clause", ["depth:0", "depth:1", "depth:2"])
-def test_anchor_seeded_recall_ignores_depth(clause, planets_graph, query):
+def test_anchor_seeded_recall_ignores_depth(clause, planets_graph, recall_ranking):
     """depth: has no effect when the anchors seed: every lane returns the star.
 
     The members are already in hand, so nothing is expanded from them, and no
     lane can pull in the lantern and almanac facts that share graph 7.
     """
-    full = _recall_ranking(query, f"recall@{planets_graph} topic:planets top:10")
+    full = recall_ranking(f"recall@{planets_graph} topic:planets top:10")
     assert (
-        _recall_ranking(query, f"recall@{planets_graph} topic:planets {clause} top:10")
-        == full
+        recall_ranking(f"recall@{planets_graph} topic:planets {clause} top:10") == full
     )
 
 
@@ -690,10 +626,12 @@ def test_recall_of_an_unknown_anchor_is_empty(query):
     assert body["results"] == {"count": 0, "hits": []}
 
 
-def test_a_recall_with_a_term_filters_by_the_anchor(planets_graph, planet_facts, query):
+def test_a_recall_with_a_term_filters_by_the_anchor(
+    planets_graph, planet_facts, recall_ranking
+):
     """A term beside the anchor seeds from the text index with the anchor as a
     filter: `recall mercury topic:planets` is the mercury fact alone, not the
     star it is filed in.
     """
-    hits = _recall_ranking(query, f"recall@{planets_graph} mercury topic:planets")
+    hits = recall_ranking(f"recall@{planets_graph} mercury topic:planets")
     assert hits == [planet_facts["mercury"]]
