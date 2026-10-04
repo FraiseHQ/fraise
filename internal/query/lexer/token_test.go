@@ -297,10 +297,37 @@ func TestIsCommand(t *testing.T) {
 		lexer.TOPIC, lexer.ENTITY, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
 		lexer.VEC, lexer.LITERAL, lexer.PHRASE, lexer.COLON, lexer.AT, lexer.EOL,
 		lexer.NEWLINE, lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
+		lexer.EXPLAIN, lexer.DESCRIBE,
 	}
 	for _, tt := range others {
 		if tt.IsCommand() {
 			t.Errorf("%v.IsCommand() = true, want false", tt)
+		}
+	}
+}
+
+// TestIsPrefix pins which tokens stand in front of a command. The parser asks
+// this to keep a clause repair out of a prefix's message, so a field wrongly
+// reporting as a prefix would lose its filter repair, and a prefix wrongly
+// reporting as a field would be offered explain:<value>, itself an error.
+func TestIsPrefix(t *testing.T) {
+	prefixes := []lexer.TokenType{lexer.EXPLAIN, lexer.DESCRIBE}
+	for _, tt := range prefixes {
+		if !tt.IsPrefix() {
+			t.Errorf("%v.IsPrefix() = false, want true", tt)
+		}
+	}
+
+	// Every other type, including the commands and fields that are keywords.
+	others := []lexer.TokenType{
+		lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE,
+		lexer.TOPIC, lexer.ENTITY, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
+		lexer.VEC, lexer.LITERAL, lexer.PHRASE, lexer.COLON, lexer.AT, lexer.EOL,
+		lexer.NEWLINE, lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
+	}
+	for _, tt := range others {
+		if tt.IsPrefix() {
+			t.Errorf("%v.IsPrefix() = true, want false", tt)
 		}
 	}
 }
