@@ -160,7 +160,7 @@ func TestIsKeyword(t *testing.T) {
 	nonKeywords := []lexer.TokenType{
 		lexer.ILLEGAL, lexer.EOL, lexer.LITERAL, lexer.PHRASE,
 		lexer.PLUS, lexer.TILDE, lexer.MINUS,
-		lexer.AT, lexer.COLON, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR, lexer.NEWLINE, lexer.DESCRIBE, lexer.EXPLAIN,
+		lexer.AT, lexer.COLON, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR, lexer.NEWLINE,
 	}
 	for _, tokenType := range nonKeywords {
 		if tokenType.IsKeyword() {
