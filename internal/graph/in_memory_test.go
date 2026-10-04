@@ -237,7 +237,7 @@ func TestInMemoryGraphStoresAFactAndATopicOfTheSameText(t *testing.T) {
 // Delete's contract — the node "and, by extension, its index entries and
 // incident relationships". Unlinking an edge from the adjacency maps is not
 // enough: a Mentions node left in idToNodes describes an edge that no longer
-// exists, and Nodes, Stats and the text index all keep reporting it.
+// exists, and Nodes and Stats both keep reporting it.
 func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
 	g := newGraph()
 	now := time.Now()

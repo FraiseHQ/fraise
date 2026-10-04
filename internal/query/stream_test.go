@@ -407,13 +407,13 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 		t.Fatalf("Commit = %v, want nil", err)
 	}
 
-	topic := graph.Topic[uint64]{NodeAttributes: graph.NodeAttributes{Value: "travel"}, Hasher: g.GetHasher()}
-	if got, ok := g.Get(topic.Key()).(*graph.Topic[uint64]); !ok || got.GetValue() != "travel" {
-		t.Errorf("Get(topic travel) = %v, want the stored *graph.Topic", g.Get(topic.Key()))
+	topic := g.Get(graph.Topic[uint64]{NodeAttributes: graph.NodeAttributes{Value: "travel"}, Hasher: g.GetHasher()}.Key())
+	if got, ok := topic.(*graph.Topic[uint64]); !ok || got.GetValue() != "travel" {
+		t.Errorf("Get(topic travel) = %T %v, want the stored *graph.Topic", topic, topic)
 	}
-	entity := graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: "alice"}, Hasher: g.GetHasher()}
-	if got, ok := g.Get(entity.Key()).(*graph.NamedEntity[uint64]); !ok || got.GetValue() != "alice" {
-		t.Errorf("Get(entity alice) = %v, want the stored *graph.NamedEntity", g.Get(entity.Key()))
+	entity := g.Get(graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: "alice"}, Hasher: g.GetHasher()}.Key())
+	if got, ok := entity.(*graph.NamedEntity[uint64]); !ok || got.GetValue() != "alice" {
+		t.Errorf("Get(entity alice) = %T %v, want the stored *graph.NamedEntity", entity, entity)
 	}
 
 	cases := []struct {

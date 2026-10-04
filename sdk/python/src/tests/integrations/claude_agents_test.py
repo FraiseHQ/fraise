@@ -28,7 +28,7 @@ assertions check that envelope as well as the text.
 """
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fraise_sdk.errors import FraiseError
@@ -103,23 +103,19 @@ def test_allowed_tools_follows_a_custom_server_name():
     ]
 
 
-def test_memory_server_builds_with_both_tools():
-    """The server is built under the default name with both memory tools.
+def test_memory_server_builds_with_both_tools(served_tool_names):
+    """The server is built under the default name and serves both memory tools.
 
     The name is what ``allowed_tools`` namespaces the tools under, so a server
     registered under any other name leaves both tools uncallable; and a server
-    missing either tool loses that half of the memory.
+    missing either tool loses that half of the memory. The vendor's
+    ``create_sdk_mcp_server`` runs for real, so a change to what it accepts
+    fails here rather than in production.
     """
-    with patch("fraise_sdk.integrations.claude_agents.create_sdk_mcp_server") as create:
-        server = memory_server(_client())
-    create.assert_called_once()
-    assert server is create.return_value
-    kwargs = create.call_args.kwargs
-    assert kwargs["name"] == DEFAULT_SERVER_NAME
-    assert [tool.name for tool in kwargs["tools"]] == [
-        "recall_memory",
-        "remember_fact",
-    ]
+    server = memory_server(_client())
+    assert server["type"] == "sdk"
+    assert server["name"] == DEFAULT_SERVER_NAME
+    assert served_tool_names(server) == ["recall_memory", "remember_fact"]
 
 
 def test_recall_schema_requires_only_keywords():
