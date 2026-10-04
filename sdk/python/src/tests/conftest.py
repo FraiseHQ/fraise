@@ -468,10 +468,11 @@ _QUERY_GRAPH = 2
 _MODELS_GRAPH = 3
 
 # Claimed by staying empty: a recall of a graph holding nothing is answered
-# 204, which only a graph no test ever writes to can exercise. It sits above
-# the default 8 so the e2e suite's own map, which claims 0-8 against the same
-# daemon, cannot reach it. Do not write to this graph.
-_EMPTY_GRAPH = 6
+# 204, which only a graph no test ever writes to can exercise. It is the last
+# of the ten graphs tests/fraise.config.toml allocates, above the 0-8 the e2e
+# suite claims against the same daemon, so no e2e write can reach it. Do not
+# write to this graph.
+_EMPTY_GRAPH = 9
 
 # The dimension every vector in this suite is written with. The first vector
 # inserted into a graph fixes that graph's dimension, and more than one file
@@ -668,7 +669,7 @@ def recalled_values(client):
     """
 
     def _recalled_values(keyword: str, graph: int) -> list[str]:
-        return [hit.value for hit in client.recall(keyword, graph=graph, depth=1)]
+        return [hit.value for hit in client.recall(keyword, graph=graph, depth=0)]
 
     return _recalled_values
 

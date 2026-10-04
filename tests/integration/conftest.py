@@ -69,8 +69,12 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(items):
     # Every test under this directory drives real processes, so the mark is
     # applied here, once, instead of as a line to forget in each new module.
+    # The hook sees every collected item, not only this directory's, so the
+    # path check keeps the mark off e2e tests collected in the same run.
+    here = Path(__file__).resolve().parent
     for item in items:
-        item.add_marker(pytest.mark.integration)
+        if item.path.resolve().is_relative_to(here):
+            item.add_marker(pytest.mark.integration)
 
 
 def _free_port() -> int:

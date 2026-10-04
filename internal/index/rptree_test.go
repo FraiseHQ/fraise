@@ -263,6 +263,13 @@ func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexFlushRebuildsForest pins that Flush rebuilds the forest from
+// the live vectors alone. Search cannot show it on its own — it filters every
+// candidate against the live map, so deleted keys stay out of its answers
+// whether or not their forest copies are gone — so the forest is measured
+// directly: with a flush factor of 2, deleting half the vectors leaves the
+// garbage in place (the automatic Flush has not fired), and only the explicit
+// Flush brings the entries per tree down to the live count.
 func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 	rng := rand.New(rand.NewSource(21))
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2, 32, 8, comparator.OrderedComparator[int])
@@ -279,15 +286,21 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 		}
 	}
 
+	if got, want := idx.Entries(), n; got != want {
+		t.Fatalf("Entries() before Flush = %d, want %d (the deleted copies still in the forest)", got, want)
+	}
+
 	if err := idx.Flush(); err != nil {
 		t.Fatalf("Flush = %v, want nil", err)
 	}
 	if got, want := idx.Count(), n-n/2; got != want {
 		t.Errorf("Count() after Flush = %d, want %d", got, want)
 	}
+	if got, want := idx.Entries(), n-n/2; got != want {
+		t.Errorf("Entries() after Flush = %d, want %d (one per live vector)", got, want)
+	}
 
-	// After Flush, deleted keys must be absent even from raw Nearest scans:
-	// Search over the whole remaining corpus should never surface them.
+	// Search over the whole remaining corpus never surfaces a deleted key.
 	got, _, err := idx.Search(randVector(rng, 3), n)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)

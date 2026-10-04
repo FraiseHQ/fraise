@@ -386,12 +386,13 @@ func TestStreamFinishIsIdempotent(t *testing.T) {
 }
 
 // TestCommitStoresAnchorNodesForFilteredRecall drives the exact production
-// write path (an in-place Commit against the live graph) and checks the
-// written fact is recallable through its topic:/entity: anchors. Regression
-// test for anchored recalls returning nothing: Commit created the
-// Mentions/IsAbout edges but never stored the NamedEntity/Topic nodes
-// themselves, so the filter could not resolve the anchor values and dropped
-// every fact.
+// write path (an in-place Commit against the live graph) and checks that the
+// NamedEntity/Topic nodes themselves are stored under the keys a recall
+// resolves anchor values to, and that the written fact is recallable through
+// its topic:/entity: anchors. Regression test for anchored recalls returning
+// nothing: Commit created the Mentions/IsAbout edges but never stored the
+// anchor nodes. The filter works from adjacency alone, so the recall cases
+// cannot see a missing node; the Get checks are what pin it.
 func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	g := graph.NewGraph[uint64, float32](config.New())
 
@@ -404,6 +405,15 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 
 	if err := s.Commit(g); err != nil {
 		t.Fatalf("Commit = %v, want nil", err)
+	}
+
+	topic := graph.Topic[uint64]{NodeAttributes: graph.NodeAttributes{Value: "travel"}, Hasher: g.GetHasher()}
+	if got, ok := g.Get(topic.Key()).(*graph.Topic[uint64]); !ok || got.GetValue() != "travel" {
+		t.Errorf("Get(topic travel) = %v, want the stored *graph.Topic", g.Get(topic.Key()))
+	}
+	entity := graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: "alice"}, Hasher: g.GetHasher()}
+	if got, ok := g.Get(entity.Key()).(*graph.NamedEntity[uint64]); !ok || got.GetValue() != "alice" {
+		t.Errorf("Get(entity alice) = %v, want the stored *graph.NamedEntity", g.Get(entity.Key()))
 	}
 
 	cases := []struct {
