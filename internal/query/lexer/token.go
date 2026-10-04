@@ -52,6 +52,10 @@ const (
 	// quote ('') is an escaped literal quote.
 	PHRASE
 
+	// prefixes
+	DESCRIBE
+	EXPLAIN
+
 	// commands
 	RECALL
 	REMEMBER
@@ -102,6 +106,8 @@ const (
 )
 
 var TokenMap = map[TokenType]string{
+	DESCRIBE: "describe",
+	EXPLAIN:  "explain",
 	RECALL:   "recall",
 	REMEMBER: "remember",
 	FORGET:   "forget",
@@ -134,6 +140,8 @@ var KeywordsMap = map[string]TokenType{
 	"remember": REMEMBER,
 	"forget":   FORGET,
 	"update":   UPDATE,
+	"explain":  EXPLAIN,
+	"describe": DESCRIBE,
 	"topic":    TOPIC,
 	"entity":   ENTITY,
 	"since":    SINCE,
@@ -150,7 +158,7 @@ var KeywordsMap = map[string]TokenType{
 // word that happens to be "top" or "entity" needs no quoting there.
 func (t TokenType) IsKeyword() bool {
 	switch t {
-	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC:
+	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC, EXPLAIN, DESCRIBE:
 		return true
 	default:
 		return false
@@ -167,6 +175,19 @@ func (t TokenType) IsKeyword() bool {
 func (t TokenType) IsCommand() bool {
 	switch t {
 	case RECALL, REMEMBER, FORGET, UPDATE:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsPrefix reports whether t is one of the words that stand in front of a
+// command. A prefix is reserved like a command and has no ':' form either, so
+// the parser asks this to keep a clause repair out of its message: offering
+// explain:<value> sent the caller to a query that is itself an error.
+func (t TokenType) IsPrefix() bool {
+	switch t {
+	case EXPLAIN, DESCRIBE:
 		return true
 	default:
 		return false
