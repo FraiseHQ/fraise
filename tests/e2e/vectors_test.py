@@ -252,7 +252,7 @@ def test_vector_search_with_real_embeddings(query, embedding_docs):
     # so only the vector index decides the result.
     query_vec = embed("a sleepy kitten dozing in the afternoon sun")
     status, body = query(
-        f"recall@{graph} zzznomatch vec:$v depth:1",
+        f"recall@{graph} zzznomatch vec:$v depth:0",
         parameters={"v": query_vec},
     )
 
@@ -302,7 +302,7 @@ def test_recall_fuses_text_and_vector_additively(
         assert status == 200, body.get("error")
 
     status, body = explain(
-        f"recall@{graph} krakatoa ash vec:$v depth:1 top:10",
+        f"recall@{graph} krakatoa ash vec:$v depth:0 top:10",
         parameters={"v": vector(value=-0.5)},
     )
     assert status == 200, body.get("error")

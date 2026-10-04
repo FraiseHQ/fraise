@@ -236,7 +236,6 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 // adjacency entries; a relationship is not a vertex and has no vector.
 func (g *InMemoryGraph[K, P]) dropRelationship(key K) {
 	delete(g.idToNodes, key)
-	_ = g.textIndex.Delete(key)
 }
 
 // Delete removes the node, its index entries and its incident relationships.

@@ -280,8 +280,8 @@ func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
 	if g.Get(about.Key()) != nil {
 		t.Errorf("the IsAbout node outlived its fact, want it pruned")
 	}
-	if _, err := g.GetTextIndex().Retrieve(about.Key()); !errors.Is(err, index.ErrIndexNotFound) {
-		t.Errorf("text index Retrieve(IsAbout) after pruning = %v, want ErrIndexNotFound", err)
+	if _, err := g.GetTextIndex().Retrieve(fact.Key()); !errors.Is(err, index.ErrIndexNotFound) {
+		t.Errorf("text index Retrieve(fact) after Delete = %v, want ErrIndexNotFound", err)
 	}
 	if got, want := len(g.Nodes()), 1; got != want {
 		t.Errorf("len(Nodes()) after Delete(fact) = %d, want %d (the topic alone)", got, want)

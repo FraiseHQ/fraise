@@ -26,6 +26,7 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 	"testing"
 
@@ -383,29 +384,38 @@ func TestRPTreeRangeIsExact(t *testing.T) {
 	}
 }
 
+// TestRPTreeDeterministicAcrossRuns pins that the seed alone fixes the tree:
+// two builds over the same points with the same seed answer every query with
+// the same neighbours in the same order. Membership cannot show this — every
+// build holds every point — so the probe is Nearest with a budget of one leaf,
+// whose approximate answer is whatever the split structure puts beside the
+// query. A different seed must change at least one answer, or the comparison
+// would pass for a tree that ignored its seed as well.
 func TestRPTreeDeterministicAcrossRuns(t *testing.T) {
-	build := func() []int {
+	const k = 3
+	answers := func(seed uint64) [][]int {
 		rng := rand.New(rand.NewSource(123))
-		rt := trees.NewRPTree[int, string, float64](3, 4, 99, 32, 8)
+		rt := trees.NewRPTree[int, string, float64](3, 4, seed, 8, 1)
 		for i := 0; i < 200; i++ {
 			_ = rt.Insert(randPoint(rng, i, 3))
 		}
-		keys := make([]int, 0, 200)
-		for _, node := range rt.Nodes() {
-			keys = append(keys, node.Key())
+		out := make([][]int, 0, 50)
+		for q := 0; q < 50; q++ {
+			keys := make([]int, 0, k)
+			for _, node := range rt.Nearest(randPoint(rng, -1, 3).Point(), k) {
+				keys = append(keys, node.Key())
+			}
+			out = append(out, keys)
 		}
-		sort.Ints(keys)
-		return keys
+		return out
 	}
 
-	a, b := build(), build()
-	if len(a) != len(b) {
-		t.Fatalf("got %d and %d keys across two runs with the same seed", len(a), len(b))
+	a, b := answers(99), answers(99)
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("two builds with seed 99 answered differently:\n%v\n%v", a, b)
 	}
-	for i := range a {
-		if a[i] != b[i] {
-			t.Fatalf("runs diverged at index %d: %d vs %d", i, a[i], b[i])
-		}
+	if reflect.DeepEqual(a, answers(100)) {
+		t.Fatalf("seeds 99 and 100 answered every query alike, want the seed to shape the tree")
 	}
 }
 

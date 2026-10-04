@@ -72,10 +72,23 @@ def test_allowed_tools_follows_a_custom_server_name():
     ]
 
 
-def test_memory_server_builds_with_both_tools(mock_client):
-    """memory_server builds the in-process server config without error."""
-    server = memory_server(mock_client())
-    assert server is not None
+def test_memory_server_builds_with_both_tools():
+    """The server is built under the default name with both memory tools.
+
+    The name is what ``allowed_tools`` namespaces the tools under, so a server
+    registered under any other name leaves both tools uncallable; and a server
+    missing either tool loses that half of the memory.
+    """
+    with patch("fraise_sdk.integrations.claude_agents.create_sdk_mcp_server") as create:
+        server = memory_server(_client())
+    create.assert_called_once()
+    assert server is create.return_value
+    kwargs = create.call_args.kwargs
+    assert kwargs["name"] == DEFAULT_SERVER_NAME
+    assert [tool.name for tool in kwargs["tools"]] == [
+        "recall_memory",
+        "remember_fact",
+    ]
 
 
 def test_recall_schema_requires_only_keywords(mock_client):
