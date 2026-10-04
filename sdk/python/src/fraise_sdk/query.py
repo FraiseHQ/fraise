@@ -212,13 +212,15 @@ def build_recall(
     bare one would not read back as that word (see :func:`_term`).
 
     A recall needs at least one seed: a query phrase, keywords, a vector, or a
-    topic or entity anchor. One with no seed at all is rejected here.
+    topic or entity anchor. A call given nothing but ``graph`` is rejected
+    here; one given only ``top`` or ``depth`` is built as written, and the
+    server rejects it for the missing seed.
 
     Raises:
-        FraiseQueryError: if the recall has no seed, ``top`` is not positive or
-            ``depth`` is negative, or a value cannot be written as FQL (an
-            empty value, a bare string where a sequence is wanted, a graph
-            outside 0–255).
+        FraiseQueryError: if nothing but ``graph`` is given, ``top`` is not
+            positive or ``depth`` is negative, or a value cannot be written as
+            FQL (an empty value, a bare string where a sequence is wanted, a
+            graph outside 0–255).
     """
     parts = [f"recall{_selector(graph)}"]
     if query is not None:
