@@ -13,8 +13,12 @@ One tie-breaker resolves the boundary: **a keyword immediately followed by `:` i
 
 | Keyword | Usage | Type |
 |----------|----------------|---------|
+| explain | recall_query | Prefix |
+| describe | recall_query | Prefix |
 | remember | remember_query | Command |
 | recall | recall_query | Command |
+| forget | recall_query | Command |
+| upgrade | recall_query | Command |
 | topic | topic_field | Field |
 | entity | entity_field | Field |
 | since | since_field | Field |
@@ -25,7 +29,7 @@ One tie-breaker resolves the boundary: **a keyword immediately followed by `:` i
 
 <Note title="Reserved but unimplemented" type="warning">
 
-  `forget` and `update` are reserved by the lexer as well, but no command implements them: a query starting with either is rejected.
+  `forget`, `update`, `describe` and `explain` are reserved by the lexer as well, but no command implements them: a query starting with either is rejected.
 
 </Note>
 

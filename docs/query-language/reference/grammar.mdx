@@ -17,7 +17,8 @@ query           = recall_query | remember_query ;
 (* RECALL                                                       *)
 (* ------------------------------------------------------------ *)
 
-recall_query    = recall_cmd recall_body ;
+prefix          = 'explain' | 'describe' ;
+recall_query    = prefix? recall_cmd recall_body ;
 recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
 
 (* SEMANTIC RULE: a recall needs at least one *seed*, and the      *)
@@ -65,6 +66,32 @@ remember_query  = remember_cmd phrase (anchor_field | vec_field)* ;
 remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace before '@' *)
 
 (* ------------------------------------------------------------ *)
+(* FORGET                                                       *)
+(* ------------------------------------------------------------ *)
+
+forget_query    = forget_cmd forget_body ;
+forget_cmd      = 'forget' graph_selector? ; 
+forget_body     = phrase | forget_field+ ;
+forget_field    = anchor_field | since_field | until_field ;
+
+(* ------------------------------------------------------------ *)
+(* UPDATE                                                       *)
+(* ------------------------------------------------------------ *)
+
+update_query    = update_cmd phrase phrase? update_field* (* at least one of: second phrase, update_field *)
+update_cmd      = 'update' graph_selector? ;
+update_field    = achor_field | vec_field
+
+(* ------------------------------------------------------------ *)
+(* RESERVED WORDS                                               *)
+(* ------------------------------------------------------------ *)
+
+reserved_word   = command | prefix | field_name ;
+command         = 'recall' | 'remember' | 'forget' | 'update' ;
+prefix          = 'explain' | 'describe' ;
+field_name      = 'topic' | 'entity' | 'since' | 'until' | 'top' | 'depth' | 'vec' ;
+
+(* ------------------------------------------------------------ *)
 (* SHARED                                                       *)
 (* ------------------------------------------------------------ *)
 
@@ -92,6 +119,18 @@ rfc3339           = ?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{
 param_ref         = '$' param_name ;
 param_name        = bare_word ;                (* matched exactly against a key of the request's parameters: never folded *)
 ```
+
+## Status
+ 
+The grammar above is all of v2. Which of it a server accepts depends on its version; the words are reserved from the first v2 release whether or not their production is implemented, so adding a production later is never a breaking change.
+ 
+| Production | Reserved since | Planned for | Issue |
+| --- | --- | --- | --- |
+| `forget_query`, `update_query` | 0.3.0 | 0.5.0 | [#172](https://github.com/FraiseHQ/fraise/issues/172) |
+| `explain_query` | 0.3.0 | 0.4.0 | explain recall | [#433](https://github.com/FraiseHQ/fraise/issues/433) |
+| `describe_query` | 0.3.0 | 0.4.0 | describe recall | [#444](https://github.com/FraiseHQ/fraise/issues/434) |
+ 
+A server that reserves a production but does not accept it answers a query opening with its word with `expected a command (recall, remember), found "<word>"`; a server that accepts it answers as the production says. The conformance suite carries one row per production and per status, so an SDK can tell the two apart.
 
 ## Reading it
 

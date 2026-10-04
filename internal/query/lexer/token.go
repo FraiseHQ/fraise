@@ -52,6 +52,10 @@ const (
 	// quote ('') is an escaped literal quote.
 	PHRASE
 
+	// prefixes
+	DESCRIBE
+	EXPLAIN
+
 	// commands
 	RECALL
 	REMEMBER
@@ -150,7 +154,7 @@ var KeywordsMap = map[string]TokenType{
 // word that happens to be "top" or "entity" needs no quoting there.
 func (t TokenType) IsKeyword() bool {
 	switch t {
-	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC:
+	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC, EXPLAIN, DESCRIBE:
 		return true
 	default:
 		return false

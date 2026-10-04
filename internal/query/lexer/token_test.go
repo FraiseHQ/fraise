@@ -37,6 +37,8 @@ func TestTokenTypeString(t *testing.T) {
 		{"ILLEGAL", lexer.ILLEGAL, ""},
 		{"EOL", lexer.EOL, "eol"},
 		{"LITERAL", lexer.LITERAL, "literal"},
+		{"EXPLAIN", lexer.EXPLAIN, "explain"},
+		{"DESCRIBE", lexer.DESCRIBE, "describe"},
 		{"RECALL", lexer.RECALL, "recall"},
 		{"REMEMBER", lexer.REMEMBER, "remember"},
 		{"FORGET", lexer.FORGET, "forget"},
@@ -75,7 +77,7 @@ func TestTokenMapCompleteness(t *testing.T) {
 		lexer.PLUS, lexer.TILDE, lexer.MINUS,
 		lexer.COLON, lexer.PHRASE, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
 		lexer.TOPIC, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
-		lexer.VEC,
+		lexer.VEC, lexer.EXPLAIN, lexer.DESCRIBE,
 	}
 
 	for _, tokenType := range allTokenTypes {
@@ -158,7 +160,7 @@ func TestIsKeyword(t *testing.T) {
 	nonKeywords := []lexer.TokenType{
 		lexer.ILLEGAL, lexer.EOL, lexer.LITERAL, lexer.PHRASE,
 		lexer.PLUS, lexer.TILDE, lexer.MINUS,
-		lexer.AT, lexer.COLON, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR, lexer.NEWLINE,
+		lexer.AT, lexer.COLON, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR, lexer.NEWLINE, lexer.DESCRIBE, lexer.EXPLAIN,
 	}
 	for _, tokenType := range nonKeywords {
 		if tokenType.IsKeyword() {
