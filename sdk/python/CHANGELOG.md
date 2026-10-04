@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.0](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-rc.2...python/v0.1.0) (2026-10-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* tighten comments and docs, stop re-exporting SDK providers ([#437](https://github.com/FraiseHQ/fraise/issues/437))
+* tighten the query grammar to letters-and-digits words ([#396](https://github.com/FraiseHQ/fraise/issues/396))
+
+### Features
+
+* **python:** add an anchor extractor to the client ([#415](https://github.com/FraiseHQ/fraise/issues/415)) ([a351544](https://github.com/FraiseHQ/fraise/commit/a351544af109ddce29b854f8991ee7183908d332))
+* **python:** add explain() to the client ([#414](https://github.com/FraiseHQ/fraise/issues/414)) ([4c567dd](https://github.com/FraiseHQ/fraise/commit/4c567dd21efb3ae37e401438a198c116a7c77047))
+* tighten the query grammar to letters-and-digits words ([#396](https://github.com/FraiseHQ/fraise/issues/396)) ([db7861d](https://github.com/FraiseHQ/fraise/commit/db7861d3309ca5838ccc7df91b813d294b1103db))
+
+
+### Maintenance
+
+* improve documentation (fix typos and incorrect statements) ([#362](https://github.com/FraiseHQ/fraise/issues/362)) ([14d8491](https://github.com/FraiseHQ/fraise/commit/14d84913dc058110355dee8fb76361863ce72323))
+* **main:** release 0.3.0 ([#413](https://github.com/FraiseHQ/fraise/issues/413)) ([0c6512a](https://github.com/FraiseHQ/fraise/commit/0c6512a3ad66f0d65c7dc1f90ac95f9e9c13fb5e))
+* reserve keywords `describe`, `explain` , `forget` and `update` ([#438](https://github.com/FraiseHQ/fraise/issues/438)) ([cfb4f3f](https://github.com/FraiseHQ/fraise/commit/cfb4f3f1ba829881c566ba0b9b73c29f8a2ff4de))
+* tighten comments and docs, stop re-exporting SDK providers ([#437](https://github.com/FraiseHQ/fraise/issues/437)) ([0f4bb17](https://github.com/FraiseHQ/fraise/commit/0f4bb170eaa00dd1f037d7836854b11dad9742ab))
+
 ## [0.1.0-rc.2](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-rc.1...python/v0.1.0-rc.2) (2026-09-24)
 
 
