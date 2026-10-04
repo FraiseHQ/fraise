@@ -221,9 +221,8 @@ func marshalHit(t *testing.T, contributions []query.HitContribution[float32]) st
 }
 
 // TestHitMarshalOmitsContributionsByDefault pins the ordinary wire shape: a
-// hit without contributions serializes exactly as it did before explain
-// existed — no "contributions" key, so /q responses did not change byte for
-// byte when the explain endpoint landed.
+// hit without contributions serializes as its value, timestamp and score
+// alone, with no "contributions" key.
 func TestHitMarshalOmitsContributionsByDefault(t *testing.T) {
 	got := marshalHit(t, nil)
 	want := `{"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5}`
@@ -233,11 +232,10 @@ func TestHitMarshalOmitsContributionsByDefault(t *testing.T) {
 }
 
 // TestHitMarshalSerializesContributions pins the explain wire shape: each
-// contribution carries its source by name — the payload documents ranking to
-// clients that never see the Go constants — with its raw score and rank, and,
-// for a graph entry, the funding anchor's value under via, its degree, and
-// its funding-seed count. via and degree are omitted for seed sources, where
-// they mean nothing.
+// contribution carries its source by name, its raw score, rank and seed
+// count, and, for a graph entry, the funding anchor's value under via and its
+// degree. via and degree are omitted for text and vector entries, where they
+// mean nothing.
 func TestHitMarshalSerializesContributions(t *testing.T) {
 	got := marshalHit(t, []query.HitContribution[float32]{
 		{Source: "text", Score: 1, Rank: 0, Count: 1},

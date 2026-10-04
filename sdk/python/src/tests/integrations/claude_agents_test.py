@@ -22,9 +22,9 @@
 
 """Claude Agent SDK tool tests against a mocked client — no server, no model calls.
 
-Unlike the OpenAI tools these return MCP content payloads rather than plain
-strings, and failures are flagged with ``is_error`` rather than raised, so the
-assertions check that envelope as well as the text.
+Unlike the OpenAI tools, these return MCP content payloads rather than plain
+strings and flag a failure with ``is_error``, so the assertions check that
+envelope as well as the text.
 """
 
 import asyncio
@@ -35,7 +35,7 @@ from fraise_sdk.errors import FraiseError
 from fraise_sdk.models import Hit, RecallResult
 
 # The integration imports its framework at module scope, so skip the whole file
-# when the optional 'anthropic' dependency group is not installed.
+# when the optional 'anthropic' extra is not installed.
 pytest.importorskip(
     "claude_agent_sdk", reason="requires the 'anthropic' dependency group"
 )
@@ -149,7 +149,7 @@ def test_recall_flags_server_errors_with_is_error():
 
 
 def test_recall_defaults_top_and_leaves_depth_to_the_server():
-    """An omitted top takes the tool's ceiling; an omitted depth is passed as
+    """An omitted top takes the tool's default; an omitted depth is passed as
     None so no clause is emitted and the server's configured lane applies. A
     tool-side depth would be a lane the tool cannot use, since it names no
     topic or entity, and any value above the floor draws a warning per call.
@@ -164,9 +164,9 @@ def test_recall_defaults_top_and_leaves_depth_to_the_server():
 def test_recall_schema_bounds_depth_to_the_lanes():
     """The schema states the lanes' range so the model never has to guess it.
 
-    A depth past 2 is not a deeper search but a parse error on the server, so
-    the bound belongs in the contract the model reads, not only in the check
-    behind it.
+    A depth past 2 is not a deeper search but a request the server rejects,
+    so the bound belongs in the contract the model reads, not only in the
+    check behind it.
     """
     depth = recall_tool(_client()).input_schema["properties"]["depth"]
     assert (depth["minimum"], depth["maximum"]) == (0, 2)
@@ -176,8 +176,8 @@ def test_recall_schema_bounds_depth_to_the_lanes():
 def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(depth):
     """An out-of-range depth is answered with a correction and never sent.
 
-    The server would reject it anyway, but a round trip that fails teaches the
-    model nothing; the tool error names the range so the retry can be right.
+    Sent on, it would fail anyway, in the query builder or at the server; the
+    tool error names the range up front so the retry can be right.
     """
     client = _client()
     payload = _invoke(recall_tool(client), keywords=["a"], depth=depth)

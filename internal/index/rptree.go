@@ -37,19 +37,20 @@ import (
 var _ VectorIndex[int, float64] = (*RPTreeIndex[int, float64])(nil)
 
 // RPTreeIndex is an approximate nearest-neighbour vector index backed by a
-// forest of random-projection trees from the containers/trees submodule. Each
+// forest of random-projection trees from the containers/trees package. Each
 // tree indexes the same vectors through an independent random projection; a
 // query fans out across the forest and pools the candidates. RPTree has no
-// delete/update primitive, so vectors map is the source of truth: Delete
-// tombstones it and an Update leaves the old copy in the forest until the next
-// Flush; Search always re-ranks candidates against vectors, so stale forest
-// entries are filtered out or corrected before results are returned.
+// delete or update primitive, so the vectors map is the source of truth:
+// Delete removes a key from it and Update replaces the key's vector there;
+// either leaves the old copy in the forest until the next Flush. Search
+// re-ranks every candidate against the map, so stale forest entries are
+// filtered out or corrected before results are returned.
 //
 // Insert is idempotent: re-inserting a key with its current vector is a no-op,
-// so callers that replay whole vector sets (e.g. Graph.MergeFrom after a
-// staged write) do not bloat the forest. Stale copies left by updates and
-// deletes are bounded by an automatic Flush once the forest holds more than
-// flushFactor entries per live vector. It implements VectorIndex.
+// so callers that replay whole vector sets (Graph.Copy, Graph.MergeFrom) do
+// not bloat the forest. Stale copies left by updates and deletes are bounded
+// by an automatic Flush once the forest holds more than flushFactor entries
+// per live vector. It implements VectorIndex.
 type RPTreeIndex[K comparable, P float32 | float64] struct {
 	forest  []*trees.RPTree[K, containers.Vector[K, P], P]
 	vectors map[K]containers.Vector[K, P] // live vectors; source of truth
@@ -59,16 +60,16 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 
 	// flushFactor bounds forest garbage: once a tree holds more than
 	// flushFactor entries per live vector, the forest is rebuilt from the
-	// live vectors. Comes from config (db.vector-search.flush-factor); 2x
-	// keeps rebuild cost amortised O(1) per write while capping memory at
-	// twice the live set.
+	// live vectors. Comes from config (db.vector-search.flush-factor); the
+	// default, 2, keeps rebuild cost amortised O(1) per write while capping
+	// memory at twice the live set.
 	flushFactor int
 
-	// leafSize and overfetch are the trees' own parameters, held here because
-	// this is where a tree is built — newForest hands them to every tree it
-	// makes, so a compaction rebuild keeps the index's configured shape. Both
-	// come from config (db.vector-search.leaf-size, .overfetch); the trees
-	// package holds no defaults of its own.
+	// leafSize and overfetch are the trees' own parameters, held here so
+	// newForest hands them to every tree it builds and a compaction rebuild
+	// keeps the configured shape. Both come from config
+	// (db.vector-search.leaf-size and db.vector-search.overfetch); the trees
+	// package has no defaults of its own.
 	leafSize  int
 	overfetch int
 
@@ -77,16 +78,15 @@ type RPTreeIndex[K comparable, P float32 | float64] struct {
 
 // NewRPTreeIndex returns an empty RPTreeIndex holding numTrees random-projection
 // trees, each mapping dim-dimensional vectors onto projDim random directions.
-// seed seeds the first tree; the rest derive from it so every tree gets an
-// independent projection. A dim of 0 defers forest construction until the
-// first Insert, whose vector fixes the index dimensionality. flushFactor is the
-// garbage compaction threshold (entries per live vector), leafSize the points a
-// tree's leaf holds before splitting, and overfetch the candidates each tree
-// gathers per result before it stops probing. This is the boundary the defaults
-// are applied at: a non-positive value for any of the three falls back to the
-// configured default, so the trees below receive a decided value and hold no
-// policy themselves. compare orders vector keys, the tiebreak Search ranks
-// equidistant vectors by.
+// Tree i is seeded with seed+i, so every tree gets an independent projection.
+// A dim of 0 defers forest construction until the first Insert, whose vector
+// fixes the index dimensionality. flushFactor is the garbage compaction
+// threshold (entries per live vector), leafSize the points a tree's leaf holds
+// before splitting, and overfetch the candidates each tree gathers per result
+// before it stops probing. A non-positive value for any of these three falls
+// back to its default in internal/config, so the trees receive a decided value
+// and hold no defaults themselves. compare orders vector keys, the tiebreak
+// Search ranks equidistant vectors by.
 func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees int, seed uint64, flushFactor, leafSize, overfetch int, compare comparator.Comparator[K]) *RPTreeIndex[K, P] {
 	if flushFactor <= 0 {
 		flushFactor = config.DefaultFlushFactor
@@ -223,11 +223,10 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 // artefact of insertion order, and the ranking SearchIndex promises is a total
 // order that survives truncation to k.
 //
-// The re-rank keeps only the k best as it goes: TopK is offered every pooled
-// candidate with its distance negated — the container retains the largest
-// scores, and the nearest vector is the one with the largest negated
-// distance — so the whole union is never sorted and nothing is boxed per
-// candidate; the distance is measured on the live vector directly.
+// The re-rank keeps only the k best as it goes: TopK retains the largest
+// scores, so each pooled candidate is offered with its distance negated, and
+// the pooled union is never sorted. Distances are measured against the live
+// vector, not the tree's copy.
 func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K, []P, error) {
 	if len(idx.vectors) == 0 {
 		return nil, nil, ErrEmptyIndex
@@ -307,10 +306,10 @@ func (idx *RPTreeIndex[K, P]) Entries() int {
 
 // Flush rebuilds the forest from the currently live vectors, discarding
 // deleted vectors and any stale copies left behind by Insert/Update. The live
-// set is replayed in key order: a tree's splits depend on the order points
-// arrive in, and replaying in map order made two identical write sequences
-// build different forests once the first rebuild ran — breaking the promise
-// that a fixed seed reproduces the index.
+// set is replayed in key order because a tree's splits depend on the order
+// points arrive in: replayed in map order, two identical write sequences would
+// build different forests, and a fixed seed would no longer reproduce the
+// index.
 func (idx *RPTreeIndex[K, P]) Flush() error {
 	forest := idx.newForest()
 

@@ -87,9 +87,10 @@ def test_free_flowing_text_round_trips(query, marker, value):
     Inside a quoted phrase every character is literal: reserved words and
     symbols carry no meaning, a doubled quote is the escape for an apostrophe,
     and newlines, control characters (a NUL included — JSON delivers it as
-    \\u0000), emoji and backslashes are all data. The same battery the
-    integration suite parses is asserted harder here: each value is recalled
-    by the marker word stored beside it and must come back exactly as written.
+    \\u0000), emoji and backslashes are all data. The same battery the SDK's
+    integration tests parse (query_test.py) is asserted harder here: each
+    value is recalled by the marker word stored beside it and must come back
+    exactly as written.
 
     Facts are keyed by their value, so the writes stay idempotent across
     reruns against a long-lived server.
@@ -128,17 +129,15 @@ def _recall_count(query, text):
 
 def test_recall_depth_selects_a_lane(planets_graph, query):
     """depth picks the retrieval lane, and both lanes answer this query the
-    same way — for different reasons.
+    same way, for different reasons.
 
     depth:0 is the floor: the anchor traversal never runs, so only the seed
     itself can be returned. depth:1 and depth:2 both run the anchor-mediated
-    round — the star's topic is named, which is what opens the graph — and
-    still return the seed alone, because a lone seed's topic hub sits exactly
-    at the background rate and so transmits nothing at either admission bar.
-    Omitting the clause is the configured default. Asserting all of them is
-    what separates "the hub was silent" from "the graph channel was never
-    consulted" — a regression that broke transmission entirely would still pass
-    a floor-only test. The lantern cluster below is what distinguishes the
+    round (the star's topic is named, which is what opens the graph) and still
+    return the seed alone, because a lone seed's topic hub sits exactly at the
+    background rate and so transmits nothing at either admission bar. Omitting
+    the clause is the configured default. This test cannot tell a silent hub
+    from a graph channel that never ran; the lantern tests below separate the
     floor from the graph lanes by their results.
     """
     g = planets_graph
@@ -155,10 +154,9 @@ def test_floor_lane_returns_only_what_the_text_index_matched(
     """depth:0 is the floor lane: seeds only, no transmission.
 
     The traversal never runs, so every hit contains the query term and the
-    cluster's silent member — which contains none — cannot appear. depth:0 is
-    also the explicit spelling of the shipped default, and must be honoured
-    rather than collapsing back to the configured default, which is what made
-    it a bug.
+    cluster's silent member, which contains none, cannot appear. depth:0 also
+    spells the shipped default explicitly, and must be honoured rather than
+    replaced by the configured default (2 in tests/fraise.config.toml).
     """
     clause = "depth:0"
     status, body = query(
@@ -182,13 +180,14 @@ def test_graph_lanes_transmit_to_a_fact_the_floor_cannot_reach(
     floor is visible in the hits.
 
     The silent member arrives funded by its cluster's surplus alone, while the
-    almanac hub — holding a fair share of the query's mass across eight
-    members — transmits nothing, so its memos stay out. Same query, same graph,
-    one clause apart from the floor test above: this is the pair that proves
-    the lane switch reaches the engine rather than being parsed and dropped.
-    Both topics are named because the graph is entered only through an anchor
-    the recall names; naming the hub too keeps its memos in the candidate set,
-    so their absence is the hub's silence and not the filter's doing.
+    almanac hub, holding no more than its fair share of the query's mass
+    across eight members, transmits nothing, so its entries stay out. Same
+    query, same graph, one clause apart from the floor test above: this is the
+    pair that proves the lane switch reaches the engine rather than being
+    parsed and dropped. Both topics are named because the graph is entered
+    only through an anchor the recall names; naming the hub too keeps its
+    entries in the candidate set, so their absence is the hub's silence and
+    not the filter's doing.
 
     This cluster is strongly above chance, so it clears both admission bars.
     What separates depth:1 (precision) from depth:2 (max recall) is an anchor
@@ -227,7 +226,8 @@ def test_recall_unique_keyword_returns_only_its_fact(
     planets_graph, planet_facts, query
 ):
     """The recall for one fact's unique keyword is exactly that fact, by
-    value — its silent hub adds nothing and its siblings stay out.
+    value: it names no anchor, so only the text index answers and the fact's
+    siblings stay out.
     """
     g = planets_graph
     status, body = query(f"recall@{g} mercury")
@@ -239,13 +239,8 @@ def test_recall_unique_keyword_returns_only_its_fact(
 # Three facts that all contain the keyword "comet" but are otherwise unrelated:
 # each carries a *different* topic, so nothing connects them in the graph except
 # the shared word. A recall for that word must therefore surface all three
-# purely through the text index.
-#
-# Every other recall test uses a keyword unique to a single fact, so the text
-# search there always matches exactly one document — a regression that capped
-# text search at one hit would pass the whole rest of the suite unnoticed. This
-# test is the one that would catch it, on its own graph (0) so the count is
-# fully determined here.
+# purely through the text index. No other fact on graph 0 contains "comet", so
+# the expected set is fully determined here.
 COMET_FACTS = {
     "the comet streaked past mars": "astronomy",
     "children watched the comet at dawn": "memory",
@@ -275,8 +270,8 @@ def test_recall_unions_matches_across_keywords(query):
 
     The two facts share no word and carry different topics, so nothing links
     them in the graph. "saturn" matches only the first, "neptune" only the
-    second; recalling both keywords must return both facts. Graph 2 is only ever
-    recalled elsewhere in the suite, never written, so these are its only facts.
+    second; recalling both keywords must return both facts. Graph 2's other
+    facts (the primer and the explain probes) contain neither word.
     """
     graph = 2
     facts = {
@@ -297,17 +292,15 @@ def test_recall_unions_matches_across_keywords(query):
 
 
 def test_recall_by_emoji_finds_the_fact(query):
-    """A fact whose salient content is an emoji is recallable by that emoji —
-    the bug-report repro, taken through the store.
+    """A fact whose salient content is an emoji is recallable by that emoji.
 
     The text index keeps symbols (Unicode category So: emoji, check marks and
     the like) as terms of their own, so ``recall '🍊'`` reaches the fruit fact
     through the index like any word would. An emoji is not a letter, so the
-    grammar takes it quoted. Before, the tokenizer kept only
-    letters and digits: the fact was accepted and stored verbatim but indexed
-    under no term at all, so it looked stored and could never be found. Graph
-    8 is otherwise written with prose only, so the emoji term is unique to
-    this fact and the hit list is fully determined.
+    grammar takes it quoted. A tokenizer keeping only letters and digits would
+    store the fact verbatim but index it under no term, so it could never be
+    found. Graph 6 is otherwise written with prose only, so the emoji term is
+    unique to this fact and the hit list is fully determined.
     """
     fact = "🍊 🍋 🍌"
     status, body = query(f"remember@6 '{fact}' topic:fruit")
@@ -321,9 +314,10 @@ def test_recall_by_emoji_finds_the_fact(query):
 
 def test_recall_with_anchor_filters_returns_tagged_fact(query):
     """A fact written with topic:/entity: anchors must be recallable through
-    those anchors — the ticket repro. Regression: Commit created the anchor
-    edges but never stored the Topic/NamedEntity nodes, so every anchored
-    recall filtered everything out and returned count 0.
+    those anchors. The write stores the Topic and NamedEntity nodes as well as
+    the edges to them: anchored recalls resolve a fact's anchors through its
+    stored neighbours, so an edge to an unstored anchor would make every
+    anchored recall filter everything out.
     """
     graph = 5
     status, body = query(
@@ -345,17 +339,17 @@ def test_recall_with_anchor_filters_returns_tagged_fact(query):
 
 # A fact whose anchors are grammar keywords. "top" is also an ordinary English
 # word, and an LLM extracting entities from prose will eventually emit it bare
-# ("she reached the top" -> entities=["top"]) — a certainty at corpus size.
-# It used to kill the whole ingestion run with a 400 the client could not
-# anticipate, because the parser typed the anchor value by spelling alone. The
-# invented marker "cairnprobe" is this fact's only link to the recalls below,
-# so each assertion is scoped to exactly this fact whatever else graph 5 holds.
+# ("she reached the top" -> entities=["top"]). A parser that typed an anchor
+# value by spelling alone would fail that write with a 400 the client could
+# not anticipate. The invented marker "cairnprobe" is this fact's only link to
+# the recalls below, so each assertion is scoped to this fact whatever else
+# graph 5 holds.
 CAIRN_FACT = "the cairnprobe marks the top of the pass"
 
 
 def test_keyword_anchor_values_round_trip(query):
     """A fact filed under entity:top and topic:top is reachable through both
-    anchors — the bug-report repro, taken all the way through the store.
+    anchors.
 
     The remember alone proves the parse; the anchored recalls prove the
     anchors actually landed as the word "top" rather than being dropped or
@@ -380,11 +374,10 @@ def test_keyword_recalls_as_a_leading_term(query):
     """In `recall 'top' top:10`, the first "top" is a search term and the second
     is the result-limit clause.
 
-    The leading term is the one position where a bare keyword reads as a
-    word: a recall must start with a term, so no clause can begin there. What
-    tells the two "top"s apart is the ':' — a keyword immediately followed by
-    ':' is always a field. The term must then reach the cairnprobe fact
-    through the text index like any other word, since its text contains "top".
+    A bare keyword among a recall's terms is rejected, so a term that spells
+    one is quoted, and a keyword immediately followed by ':' is always a
+    clause. The term must then reach the cairnprobe fact through the text
+    index like any other word, since its text contains "top".
     """
     status, body = query(f"remember@5 '{CAIRN_FACT}' topic:top entity:top")
     assert status == 200, body.get("error")
@@ -436,12 +429,10 @@ def test_anchor_case_folds_while_the_fact_keeps_its_spelling(query):
         )
 
 
-# Five facts that all contain "quasar" exactly once and carry no topic:/entity:
-# anchor at all, so each is an isolated node: nothing links them to each other,
-# and no walk from another graph-0 fact can reach them. The text index scores all
-# five identically — one keyword match each — which leaves their order decided
-# entirely by the tiebreak on fact key. They share graph 0 with the comet facts
-# above, which contain no "quasar".
+# Five facts that all contain "quasar" once and carry no topic:/entity: anchor,
+# so each is an isolated node that no walk from another graph-0 fact can
+# reach: a recall for "quasar" is answered by the text index alone. They share
+# graph 0 with the comet facts above, which contain no "quasar".
 QUASAR_FACTS = (
     "the quasar catalogue was revised",
     "a quasar outshines its host galaxy",
@@ -467,11 +458,10 @@ def _recall_ranking(query, text):
 def test_identical_recalls_return_identically_ranked_hits(query):
     """The same recall, issued repeatedly, must rank the same facts the same way.
 
-    The facts tie on relevance, so the ranking is settled by the tiebreak on fact
-    key. Candidates are pooled out of maps, whose iteration order changes per
-    call, so before the tiebreak this query returned the same facts in a
-    different order each time. The expected order is deliberately not written
-    down: it follows from the configured hash function, and what callers are
+    Candidates are pooled out of maps, whose iteration order changes per call,
+    so the ranking has to be a total order: score descending, then fact key on
+    a tie. The expected order is deliberately not written down: it follows
+    from the scores and the configured hash function, and what callers are
     promised is that it does not move.
     """
     graph = 0
@@ -498,10 +488,10 @@ def test_identical_recalls_return_identically_ranked_hits(query):
 def test_recall_top_keeps_the_head_of_the_ranking(top, query):
     """`top` truncates the ranking; it must keep its head, not an arbitrary slice.
 
-    Truncation applied before the order is total drops whichever tied facts the
-    candidate map happened to yield last, so a top:1 answer need not name the
-    fact the untruncated recall ranked first — that was the user-visible symptom.
-    The untruncated recall is the reference the truncated one has to prefix.
+    Truncating before the order is total would drop whichever tied facts the
+    candidate map yielded last, so a top:1 answer could name a fact other than
+    the one the untruncated recall ranks first. The untruncated recall is the
+    reference the truncated one has to prefix.
     """
     graph = 0
     for phrase in QUASAR_FACTS:
@@ -516,11 +506,11 @@ def test_recall_top_keeps_the_head_of_the_ranking(top, query):
 
 
 # A fact whose whole text is also the name of its topic, plus a bystander fact
-# carrying the same topic. Keys derived from value alone gave the fact and the
-# topic one key, so the topic node was never stored and the bystander's IsAbout
-# edge landed on the fact instead of on a topic hub. The bystander is what makes
-# that visible: the two facts have no word in common and belong together only
-# through the topic.
+# carrying the same topic. Keys derived from the value alone would give the
+# fact and the topic one key, so the topic node would never be stored and the
+# bystander's IsAbout edge would land on the fact instead of on a topic hub.
+# The bystander is what makes that visible: the two facts have no word in
+# common and belong together only through the topic.
 LEDGER_TOPIC = "ledgerprobe"
 LEDGER_FACTS = ("ledgerprobe", "acme settles invoices quarterly")
 
@@ -528,12 +518,12 @@ LEDGER_FACTS = ("ledgerprobe", "acme settles invoices quarterly")
 def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(query):
     """A fact whose text equals its topic's name must not stand in for the topic.
 
-    Recall returns facts, never the hubs it walks through, so with the topic
-    named to open the graph, depth:1 is exactly the seed here. When the
-    "ledgerprobe" fact *was* the hub, the bystander sat one hop from a fact
-    rather than one hop from a topic, and this recall handed back an unrelated
-    memory as a second hit. Graph 5's other facts carry different topics, so
-    nothing else is one hop from the seed.
+    Recall returns facts, never the hubs it walks through. With the topic
+    named, depth:1 runs the anchor round from the seed, but the topic is the
+    only anchor the seed touches, so it stays silent and the seed comes back
+    alone. A "ledgerprobe" fact standing in for the topic would show up here
+    as a second hit. Graph 5's other facts carry different topics, so nothing
+    else is one hop from the seed.
     """
     graph = 5
     for phrase in LEDGER_FACTS:
@@ -565,8 +555,8 @@ def test_anchor_only_recall_returns_every_member_newest_first(
     """`recall topic:planets` is seeded by the topic: the whole star, newest first.
 
     The fixture writes the facts in dict order, so the ranking is that order
-    reversed. Before anchors seeded, this query parsed and returned nothing
-    (no term, no seed), which a caller could not tell from an empty topic.
+    reversed. Without anchor seeding the query would have no seed and return
+    nothing, which a caller could not tell from an empty topic.
     """
     ranking = _recall_ranking(query, f"recall@{planets_graph} topic:planets top:10")
     assert ranking == list(reversed(planet_facts.values())), (
@@ -668,8 +658,8 @@ def test_anchor_seeded_recall_honours_time_bounds(clause, count, planets_graph, 
     The star was written moments ago: a window opening a day ago holds all of
     it, one opening in 2999 holds nothing, and one closing a day ago holds
     nothing either. The longest duration each unit can hold still opens in the
-    past, about 292 years ago, so it holds the whole star — one day more used
-    to wrap into the future and hold nothing (see parser_test.py).
+    past, about 292 years ago, so it holds the whole star; one day more is
+    rejected as out of range (see parser_test.py).
     """
     assert (
         _recall_count(query, f"recall@{planets_graph} topic:planets {clause}") == count
@@ -680,9 +670,8 @@ def test_anchor_seeded_recall_honours_time_bounds(clause, count, planets_graph, 
 def test_anchor_seeded_recall_ignores_depth(clause, planets_graph, query):
     """depth: has no effect when the anchors seed: every lane returns the star.
 
-    The members are already in hand, so nothing is expanded from them: the
-    lantern and almanac facts share graph 7 and sit two hops from nothing
-    here, and no lane can pull them in.
+    The members are already in hand, so nothing is expanded from them, and no
+    lane can pull in the lantern and almanac facts that share graph 7.
     """
     full = _recall_ranking(query, f"recall@{planets_graph} topic:planets top:10")
     assert (
@@ -692,9 +681,9 @@ def test_anchor_seeded_recall_ignores_depth(clause, planets_graph, query):
 
 
 def test_recall_of_an_unknown_anchor_is_empty(query):
-    """An anchor nothing is filed under seeds nothing — the one genuinely
-    empty anchored recall, and a 200, not an error: the question was
-    well-formed and the answer is that the anchor is empty.
+    """An anchor nothing is filed under seeds nothing. The answer is a 200
+    with no hits, not an error: the question was well-formed and the anchor is
+    empty.
     """
     status, body = query("recall@7 topic:nosuchanchorprobe")
     assert status == 200, body.get("error")

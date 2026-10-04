@@ -232,10 +232,10 @@ func TestRPTreeNearestReturnsSubsetOfStoredNodes(t *testing.T) {
 	}
 }
 
-// TestRPTreeNearestFillsKBeyondOneLeaf pins what makes k meaningful: a single
-// root-to-leaf descent sees one leaf, so without probing Nearest returns at most
-// leafSize nodes however large k is — and silently, with nothing to tell a
-// caller apart from an index that genuinely holds no more. k here is several
+// TestRPTreeNearestFillsKBeyondOneLeaf pins that Nearest fills k past one
+// leaf: a single root-to-leaf descent sees one leaf, so without probing it
+// would return at most leafSize nodes however large k is, which a caller
+// cannot tell apart from an index that holds no more. k here is several
 // leaves' worth of a tree with far more points than that.
 func TestRPTreeNearestFillsKBeyondOneLeaf(t *testing.T) {
 	rng := rand.New(rand.NewSource(23))
@@ -255,12 +255,11 @@ func TestRPTreeNearestFillsKBeyondOneLeaf(t *testing.T) {
 	}
 }
 
-// TestRPTreeNearestIsExactWhenKCoversTheTree is the probing walk's correctness
-// pin. Asking for every stored point exhausts the deferred probes, so the answer
-// must be the exact brute-force ranking: any leaf the walk fails to reach shows
-// up as a missing point, and any leaf it reaches twice as a duplicate. Both are
-// the failure modes of descending a partition out of order, which is what makes
-// this stronger than a recall threshold — it cannot pass by luck.
+// TestRPTreeNearestIsExactWhenKCoversTheTree pins the probing walk's
+// correctness. Asking for every stored point exhausts the deferred probes, so
+// the answer must be the exact brute-force ranking, and any leaf the walk fails
+// to reach shows up as a missing point. Unlike a recall threshold, it cannot
+// pass by luck.
 func TestRPTreeNearestIsExactWhenKCoversTheTree(t *testing.T) {
 	rng := rand.New(rand.NewSource(29))
 	const dim = 5
@@ -293,12 +292,11 @@ func TestRPTreeNearestIsExactWhenKCoversTheTree(t *testing.T) {
 }
 
 // TestRPTreeOverfetchWidensTheCandidatePool pins what the configured factor
-// buys. The projection only decides where to look; true distance decides what
-// comes back, so gathering more candidates can improve the answer or tie, never
-// worsen it — the k-th distance is monotonically non-increasing in over-fetch.
-// A factor large enough to exhaust the tree is exact, which is the upper end the
-// knob converges to: db.vector-search.overfetch trades query cost for recall
-// along this line and cannot overshoot into a worse result.
+// buys. The projection only decides where to look and true distance decides
+// what comes back, so more candidates can improve the answer or tie but never
+// worsen it: the k-th distance is non-increasing in overfetch. A factor large
+// enough to exhaust the tree is exact, so db.vector-search.overfetch trades
+// query cost for recall and cannot overshoot into a worse result.
 func TestRPTreeOverfetchWidensTheCandidatePool(t *testing.T) {
 	rng := rand.New(rand.NewSource(31))
 	const dim = 6
@@ -472,12 +470,12 @@ func TestVectorNode(t *testing.T) {
 	}
 }
 
-// TestRPTreeWithVectorNodes exercises RPTree end-to-end using VectorNode, the
-// same adapter RPTreeIndex will build in internal/index/rptree.go.
+// TestRPTreeWithVectorNodes exercises RPTree end to end with VectorNode, the
+// node type RPTreeIndex inserts (internal/index/rptree.go).
 func TestRPTreeWithVectorNodes(t *testing.T) {
 	rng := rand.New(rand.NewSource(77))
 	const dim = 4
-	const n = 20 // stays under the default leaf size
+	const n = 20 // stays under this tree's leaf size
 
 	rt := trees.NewRPTree[int, containers.Vector[int, float64], float64](dim, 4, 13, 32, 8)
 

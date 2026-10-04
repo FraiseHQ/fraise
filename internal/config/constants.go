@@ -33,7 +33,8 @@ const (
 	DefaultPort = 9876
 
 	// DefaultReadTimeout bounds how long the server will spend reading a whole
-	// request (headers + body). It stops a slow client from pinning a worker.
+	// request (headers + body). It stops a slow client from holding a
+	// connection open indefinitely.
 	DefaultReadTimeout time.Duration = 15 * time.Second
 
 	// DefaultReadHeaderTimeout bounds how long the server waits for request
@@ -52,8 +53,9 @@ const (
 	// requests (and the writes they triggered) to finish before forcing exit.
 	DefaultShutdownGrace time.Duration = 10 * time.Second
 
-	// DefaultMaxBodyBytes caps the size of a request body the query endpoint will
-	// read. A larger body is rejected before it is buffered, bounding memory.
+	// DefaultMaxBodyBytes caps the size of a request body the query endpoints
+	// will read. A larger body is rejected before it is buffered, bounding
+	// memory.
 	DefaultMaxBodyBytes int64 = 1 << 20 // 1 MiB
 
 	// DefaultNumGraph is how many independent graphs the store allocates; valid
@@ -61,10 +63,10 @@ const (
 	// above 256 leave the extra graphs unreachable.
 	DefaultNumGraph int = 8
 
-	// MinWorkersCount is the floor for scheduler worker goroutines; the
-	// default is max(MinWorkersCount, runtime.GOMAXPROCS(0)) — reads take
-	// RLock and run concurrently, so workers below cores is a queueing
-	// penalty, while workers above cores buys nothing.
+	// MinWorkersCount is the floor of the default scheduler worker count,
+	// max(MinWorkersCount, runtime.GOMAXPROCS(0)). Reads take RLock and run
+	// concurrently, so fewer workers than cores queues reads for nothing,
+	// while more workers than cores buys nothing.
 	MinWorkersCount int = 2
 
 	// DefaultBufferSize is the capacity of the scheduler's stream queue.
@@ -75,10 +77,9 @@ const (
 	// sheds load instead of parking handler goroutines without bound.
 	DefaultEnqueueTimeout time.Duration = 2 * time.Second
 
-	// DefaultLogLevel is the minimum log level emitted. Named from the accepted
-	// spellings in validate.go rather than repeated as a literal: a default that
-	// is not itself an accepted value is the drift that left "text" out of the
-	// logger's switch.
+	// DefaultLogLevel is the minimum log level emitted. It names one of the
+	// accepted spellings in validate.go rather than repeating a literal, so the
+	// default cannot drift from the values validate accepts.
 	DefaultLogLevel string = LogLevelInfo
 
 	// DefaultLogFormat is the log output format.
@@ -101,18 +102,18 @@ const (
 	// entirely (text/vector search only).
 	DefaultSearchAlgorithm string = SearchExcess
 
-	// DefaultScoringAlgorithm selects graph.ExcessScorer, the shipped
-	// scoring methodology; "rrf" selects graph.RRFScorer, kept for
+	// DefaultScoringAlgorithm selects scoring.ExcessScorer, the shipped
+	// scoring methodology; "rrf" selects scoring.RRFScorer, kept for
 	// comparison runs.
 	DefaultScoringAlgorithm string = ScoringExcess
 
 	// DefaultRelevanceModel is the text index's relevance model; the excess
-	// methodology needs BM25's raw retrieval mass, and "matchcount" — the
-	// pre-BM25 ranking — remains available for comparison runs.
+	// methodology needs BM25's raw retrieval mass, and "matchcount" remains
+	// available for comparison runs.
 	DefaultRelevanceModel string = RelevanceBM25
 
-	// DefaultRankingAlgorithm is the global ranking boost applied to walk scores;
-	// "none" disables it (the alternative is "pagerank").
+	// DefaultRankingAlgorithm is the global ranking boost applied to relevance
+	// scores; "none" disables it (the alternative is "pagerank").
 	DefaultRankingAlgorithm string = RankingNone
 
 	// DefaultPageRankDamping is the PageRank damping factor (used when ranking is
@@ -130,9 +131,11 @@ const (
 	DefaultTop int = 10
 
 	// DefaultDepth is the depth a recall uses when no depth clause is given: 0,
-	// the floor lane — fast and text-only, the anchor traversal skipped.
-	// Callers opt into the graph with depth:1 (the precision lane, only
-	// strongly above-chance anchors transmit) or depth:2 (max recall).
+	// the floor lane, which ranks by seed mass alone and skips the anchor
+	// traversal. A recall naming a topic or entity opts into the traversal
+	// with depth:1 (the precision lane: only strongly above-chance anchors
+	// transmit) or depth:2 (max recall: any anchor above its fair share
+	// transmits).
 	DefaultDepth int = 0
 
 	// DefaultMaxTop is the ceiling on a recall's top clause. A request asking for
@@ -141,10 +144,9 @@ const (
 	DefaultMaxTop int = 1000
 
 	// DefaultMaxDepth is the ceiling on a recall's depth clause. The three
-	// lanes are depth 0 (floor), depth 1 (the precision round) and depth 2 (the
-	// max-recall round); the scorer does not iterate past one anchor-mediated
-	// round, so 2 is the ceiling — a request past it is rejected at parse time
-	// rather than silently behaving like depth 2.
+	// lanes are depth 0 (floor), depth 1 (precision) and depth 2 (max recall).
+	// Search runs a single anchor-mediated round, so a deeper request would
+	// behave exactly like depth 2; it is rejected at parse time instead.
 	DefaultMaxDepth int = 2
 
 	// DefaultMaxVectorDimension is the ceiling on the length of a bound vector
@@ -171,17 +173,17 @@ const (
 	// down to inside each RP-tree. It is the number of split directions a tree
 	// can draw on, so a narrow projection makes every level of a deep tree reuse
 	// the same few directions and the partition stops resembling the space.
-	// Ingest does not pay for it — a split names one row and routing reads one
-	// row (Projection.ApplyRow) — so it is bounded by query cost alone.
+	// Ingest does not pay for it: a split names one row and routing reads one
+	// row (Projection.ApplyRow).
 	DefaultProjectionDimention int = 128
 
-	// DefaultNumberTrees is how many RP-trees form the vector index forest.
-	// Independent projections are what a single tree's recall is averaged over,
-	// and this is the dominant term in vector recall by a wide margin: measured
-	// on 50k 128-d vectors, 4 → 16 trees roughly quadruples recall@10 at every
-	// projection dimension. Query cost is linear in it, which is the trade being
-	// made — a recall this far below what the corpus supports is not worth
-	// defending for latency.
+	// DefaultNumberTrees is how many RP-trees form the vector index forest. A
+	// single tree is a weak approximator, and the forest makes up for it with
+	// independent projections, so the tree count is the setting vector recall
+	// depends on most: measured on 50k 128-d vectors, going from 4 to 16 trees
+	// roughly quadruples recall@10 at every projection dimension. Query cost,
+	// write cost and memory grow linearly with it; the default favours recall
+	// over latency.
 	DefaultNumberTrees int = 16
 
 	// DefaultRPSeed seeds the RP-trees' random projections (deterministic builds).
@@ -191,20 +193,19 @@ const (
 	// splits into two. It sets the granularity of the partition and so the floor
 	// on what a single probe examines: larger leaves mean fewer, coarser regions
 	// and more candidates scanned per probe, smaller leaves the reverse. It is
-	// the least useful of the vector knobs to move — overfetch reaches the same
-	// candidate counts without rebuilding the index — but it belongs here rather
-	// than buried in the tree, because it is a choice and not an invariant.
+	// the least useful of the vector settings to move, since overfetch reaches
+	// the same candidate counts without rebuilding the index.
 	DefaultLeafSize int = 32
 
 	// DefaultOverfetch is how many candidates a vector search gathers per result
 	// asked for before it stops probing. A pool of exactly the requested size
 	// leaves the true-distance re-ranking nothing to choose between, so this is
 	// what converts probing into recall; at the limit it converges on an exact
-	// scan. Unlike its siblings it costs only query time: it shapes no index, so
-	// raising it adds nothing to write cost or resident memory. Recall per unit
-	// of query time stays flat as it rises, so it is a budget choice rather than
-	// an optimum. Measured on 50k uniform 128-d vectors, recall@10 runs 0.12 at
-	// 8, 0.24 at 16, 0.42 at 32 and 0.53 at 64.
+	// scan. It shapes no index, so it costs query time only, nothing in write
+	// cost or resident memory. Recall per unit of query time stays flat as it
+	// rises, so it is a budget choice rather than an optimum. Measured on 50k
+	// uniform 128-d vectors, recall@10 runs 0.12 at 8, 0.24 at 16, 0.42 at 32
+	// and 0.53 at 64.
 	DefaultOverfetch int = 32
 
 	// DefaultFlushFactor bounds RP forest garbage: once a tree holds more than

@@ -20,8 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Internal test (package optimisation) so dedupeStrings can be exercised
-// directly in addition to Dedupe.Optimise.
+// External tests: dedupeStrings is unexported, so it is exercised through
+// Dedupe.Optimise.
 package optimisation_test
 
 import (

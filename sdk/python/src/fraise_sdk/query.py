@@ -22,12 +22,12 @@
 
 """Builders that turn structured arguments into Fraise query strings.
 
-These are pure functions with no I/O, so they are the natural unit-test seam:
-the wire format lives here, and :mod:`fraise_sdk.client` only concerns itself
-with transport. The grammar they target:
+These functions do no I/O: the wire format lives here, and
+:mod:`fraise_sdk.client` only concerns itself with transport. The grammar they
+target:
 
     remember@<graph> '<value>' [topic:<t>]... [entity:<e>]... [vec:$<name>]
-    recall@<graph> <keyword>... [topic:<t>]... [entity:<e>]...
+    recall@<graph> ['<query>'] [<keyword>]... [topic:<t>]... [entity:<e>]...
                    [top:<n>] [depth:<n>] [vec:$<name>]
 
 A topic, entity or keyword is written bare when it is one plain word — letters
@@ -68,14 +68,13 @@ def _token(kind: str, value: str) -> str:
 
 
 def _sequence(kind: str, values: Iterable[str] | None) -> Iterable[str]:
-    """Return ``values`` as the ``kind`` tokens the caller meant, or nothing.
+    """Return ``values``, or an empty list for ``None``, refusing a bare string.
 
     ``str`` satisfies ``Sequence[str]``, so ``topics="billing"`` passes the
-    type hint and then iterates into one token per character: the write
+    type hint and would iterate into one token per character: the write
     succeeds, the fact is filed under ``b``, ``i``, ``l``... and a recall by the
-    anchor the caller named finds nothing. A bare string is refused by name
-    instead — the caller meant one value, and a fact that is accepted, stored
-    and unretrievable is the worst outcome a builder can hand back.
+    anchor the caller named finds nothing. The caller meant one value, so the
+    string is refused by name.
 
     Raises:
         FraiseQueryError: if ``values`` is a string rather than a sequence.
@@ -107,11 +106,11 @@ def _bare_or_quoted(token: str) -> str:
     """Return ``token`` bare when the grammar reads it as one word, else quoted.
 
     Outside quotes a word is letters and digits only: the server rejects any
-    other character — the ``-`` of ``machine-learning``, the space of
-    ``new york`` — rather than guess where the word was meant to end. The
-    caller passed one value, so the builder writes the form that carries it
-    whole. ``str.isalpha`` and ``str.isdecimal`` are the server's letter and
-    digit classes, so letters in any script stay bare.
+    other character, such as the ``-`` of ``machine-learning``, and a space
+    ends the word, so bare ``new york`` would be two. The caller passed one
+    value, so the builder writes the form that carries it whole.
+    ``str.isalpha`` and ``str.isdecimal`` are the server's letter and digit
+    classes, so letters in any script stay bare.
     """
     if all(ch.isalpha() or ch.isdecimal() for ch in token):
         return token
@@ -119,15 +118,15 @@ def _bare_or_quoted(token: str) -> str:
 
 
 def _quote_value(value: str) -> str:
-    """Wrap a value (a fact, or a recall's query phrase) in the grammar's quotes.
+    """Wrap a value in the grammar's quotes.
 
     Inside a quoted phrase every character is literal and an apostrophe is
-    escaped by doubling it (``''``), so any text travels verbatim —
+    escaped by doubling it (``''``), so any text travels verbatim:
     ``it's blue`` goes over the wire as ``'it''s blue'`` and comes back with
     its apostrophe intact.
 
     Raises:
-        FraiseQueryError: if query is not valid
+        FraiseQueryError: if the value is empty or only whitespace.
     """
     if not value.strip():
         raise FraiseQueryError("a quoted value must not be empty")
@@ -205,7 +204,7 @@ def build_recall(
 ) -> str:
     """Build a ``recall`` query string over ``graph``.
 
-    ``query`` is a whole question sent as one quoted phrase term — the grammar
+    ``query`` is a whole question sent as one quoted phrase term. The grammar
     keeps every character inside the quotes literal, so natural language
     ("What topic has John been blogging about recently?") travels verbatim
     instead of as bare words that would collide with the grammar's reserved
@@ -213,11 +212,13 @@ def build_recall(
     bare one would not read back as that word (see :func:`_term`).
 
     A recall needs at least one seed: a query phrase, keywords, a vector, or a
-    topic/entity filter. Building one with no seed at all is a programming
-    error and is rejected here.
+    topic or entity anchor. One with no seed at all is rejected here.
 
     Raises:
-        FraiseQueryError: if query is not valid
+        FraiseQueryError: if the recall has no seed, ``top`` is not positive or
+            ``depth`` is negative, or a value cannot be written as FQL (an
+            empty value, a bare string where a sequence is wanted, a graph
+            outside 0–255).
     """
     parts = [f"recall{_selector(graph)}"]
     if query is not None:

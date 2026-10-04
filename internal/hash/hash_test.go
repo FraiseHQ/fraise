@@ -29,9 +29,9 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
-// TestXXH64KnownVectors pins the implementation to the canonical XXH64 test
-// vectors published by the reference (seed 0). These prove correctness, not
-// just stability.
+// TestXXH64KnownVectors pins the implementation to the values the reference
+// implementation produces at seed 0, so it proves correctness, not just
+// stability.
 func TestXXH64KnownVectors(t *testing.T) {
 	cases := []struct {
 		in   string

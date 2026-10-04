@@ -1,5 +1,5 @@
 # Build context is the repository root (see docker-compose.yaml) so this image
-# can install the local, unpublished fraise-sdk alongside the example.
+# can install fraise-sdk from this checkout alongside the example.
 #
 # The base is a plain minimal Ubuntu, not a python image: uv supplies both the
 # interpreter and the resolver, so nothing here needs a preinstalled Python or

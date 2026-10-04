@@ -67,7 +67,7 @@ def test_huggingface_embedder_is_an_embedder():
 
 
 def test_huggingface_embedder_returns_plain_floats():
-    """tolist() output must survive as floats, not numpy scalars."""
+    """Whatever numbers tolist() yields, ints included, come back as plain floats."""
     vector = HuggingFaceEmbedder(client=_client(values=[0, 1])).embed("hello")
     assert vector == [0.0, 1.0]
     assert all(type(value) is float for value in vector)

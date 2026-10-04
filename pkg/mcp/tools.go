@@ -34,18 +34,15 @@ import (
 )
 
 // call posts in as the /api/v1/q request body and decodes the response into
-// Out, returning the status alongside it. Every failure comes back as an error
-// for the typed handler to return, which the SDK packs into an in-band tool
-// error — the model reads the daemon's own message ("top:0 out of range
-// (1-1000)") and can correct its query, exactly the self-correction contract
-// the HTTP API's error bodies exist for. Nothing here is a protocol error:
-// even an unreachable daemon is something the model should relay, not
-// something that should kill the call.
+// Out, returning the status alongside it. Every failure is returned as an
+// error, which the SDK turns into an in-band tool error: the model reads the
+// daemon's own message ("top:0 out of range (1-1000)") and can correct its
+// query. Nothing here is a protocol error; even an unreachable daemon is
+// something the model should relay, not something that ends the call.
 //
-// The status is returned because one successful answer carries its meaning
-// there rather than in a body: 204 is a read of a graph that holds nothing,
-// and it has no body to decode, so Out stays zero-valued and the caller reads
-// the distinction off the status.
+// The status is returned because a 204 carries its meaning there: it answers
+// a recall of a graph that holds nothing, has no body to decode, and leaves
+// Out zero-valued.
 func call[Out any](ctx context.Context, s *MCPServer, in any) (Out, int, error) {
 	var out Out
 

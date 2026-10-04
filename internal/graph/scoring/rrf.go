@@ -22,28 +22,25 @@
 
 package scoring
 
-// DefaultRRFK is the dampening constant the configuration wires when the RRF
-// scorer is selected. 60 is the empirical standard from Cormack, Clarke &
-// Büttcher (SIGIR 2009), where it beat every individual ranker and Condorcet
-// fusion across TREC collections. It is a constant, not configuration: RRF
-// exists for comparison runs against the shipped excess methodology, and a
-// comparison baseline you can tune is not a baseline. NewRRFScorer still
-// takes k, because k is a genuine parameter of the algorithm family — the
-// contract tests exercise it — but the wiring always passes this value.
+// DefaultRRFK is the dampening constant db.Start passes when the RRF scorer is
+// configured. 60 is the empirical standard from Cormack, Clarke & Büttcher
+// (SIGIR 2009), where it beat every individual ranker and Condorcet fusion
+// across TREC collections. It is a constant, not configuration: RRF exists
+// for comparison runs against the excess methodology, and a comparison
+// baseline must not move. NewRRFScorer still takes k, a parameter of the
+// algorithm that the tests exercise.
 const DefaultRRFK = 60
 
 // RRFScorer fuses a candidate's contributions by reciprocal rank,
-// Σ 1/(k+Rank). Rank is the only input on purpose: the sources score on
-// incomparable scales, and RRF sidesteps calibrating them by trusting only
-// the position each source assigned. Contribution.Score goes deliberately
-// unused — magnitudes carry no rank information — and so does the query's
-// background rate: rank fusion has no null model, which is precisely the
-// property that let mega-hubs manufacture consensus from size alone
-// (RRF_FINDINGS Rounds 1–8). It remains available as an alternative fold for
-// comparison runs; the shipped default is the ExcessScorer.
+// Σ 1/(k+Rank). Rank is the only input: the sources score on incomparable
+// scales, and RRF avoids calibrating them by trusting only the position each
+// source assigned. Contribution.Score is unused, and so is the query's
+// background rate: rank fusion has no null model, so it cannot tell a
+// surprising anchor from a merely large one. It is available as an
+// alternative fold for comparison runs; the default is the ExcessScorer.
 //
-// The consensus property this buys: a candidate two sources place mid-list
-// outranks one a single source places first (2/(k+3) > 1/(k+1) for k = 60),
+// The consensus property this buys: a candidate two sources place at Rank 3
+// outranks one a single source places at Rank 0 (2/(k+3) > 1/k for k = 60),
 // so agreement between text and vector beats either alone.
 type RRFScorer[K comparable, P float32 | float64] struct {
 	// k dampens the reciprocal so rank differences near the top do not

@@ -13,7 +13,7 @@ The HTTP surface is deliberately thin: four endpoints, and no behaviour of its o
 
 ## Why thinness matters
 
-That thinness is what keeps error handling honest:
+Thin handlers leave one place to map a failure to a status:
 
 | Failure | Status |
 |---|---|
@@ -37,4 +37,4 @@ Full request and response shapes are in the [HTTP API](/docs/http-api/endpoints/
 
 ## Request limits
 
-The server enforces its own timeouts and a body cap before anything is buffered — `read-header-timeout` against Slowloris, `max-body-bytes` against oversized bodies, `shutdown-grace` for the drain. See [Server settings](/docs/configuration/reference/server).
+The server enforces its own timeouts and caps the request body before buffering it: `read-header-timeout` against Slowloris, `max-body-bytes` against oversized bodies, and `shutdown-grace` for the drain. See [Server settings](/docs/configuration/reference/server).

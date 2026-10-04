@@ -40,34 +40,34 @@ const (
 )
 
 type AstNode interface {
-	// Text returns the original text of the element.
+	// String returns the node's text.
 	String() string
 
 	Pos() lexer.Position
 	End() lexer.Position
 }
 
-// Node representing a command (remember, recall)
+// CommandNode is a parsed command: a recall or a remember.
 type CommandNode interface {
 	AstNode
 	Selector() uint8
 }
 
-// Node representing a field (topic, since, until, )
+// FieldNode is a key:value clause, such as topic:, since: or top:.
 type FieldNode[T any] interface {
 	AstNode
 	Key() string
 	Value() T
 }
 
-// Ref field
+// RefFieldNode is a field whose value is a parameter reference ($name).
 type RefFieldNode[T any] interface {
 	AstNode
 	FieldNode[T]
 	Param() string
 }
 
-// literal field
+// LiteralFieldNode is a node with a literal value, such as a recall term.
 type LiteralFieldNode interface {
 	AstNode
 	Literal() string
@@ -78,7 +78,7 @@ type TimeValueFieldNode[K comparable] interface {
 	TimeValue() time.Time
 }
 
-// recall command node
+// RecallCommandNode is a parsed recall.
 type RecallCommandNode[K comparable, P float32 | float64] struct {
 	key      lexer.Token
 	selector GraphSelectorNode
@@ -133,10 +133,9 @@ func (r RecallCommandNode[K, P]) Top(v int) int {
 
 // HasTop reports whether the recall carried an explicit top clause, as opposed
 // to falling back to the configured default. Presence is the parsed top key,
-// not a nonzero value, so an explicit top:0 stays visible to the range check
-// and is rejected as out of range instead of silently answering with the
-// default. Ceiling checks apply only to a client-supplied value, never to the
-// trusted default.
+// not a nonzero value, so query.Parse range-checks an explicit top:0 and
+// rejects it instead of answering with the default. Only a client-supplied
+// value is range-checked, never the trusted default.
 func (r RecallCommandNode[K, P]) HasTop() bool {
 	return r.top.key.Type == lexer.TOP
 }
@@ -178,7 +177,7 @@ func (r RecallCommandNode[K, P]) VecParam() (string, bool) {
 	return r.vec.Param(), true
 }
 
-// remember command node
+// RememberCommandNode is a parsed remember.
 type RememberCommandNode[P float32 | float64] struct {
 	key      lexer.Token
 	selector GraphSelectorNode
@@ -228,7 +227,7 @@ func (r RememberCommandNode[P]) VecParam() (string, bool) {
 	return r.vec.Param(), true
 }
 
-// Selector node is the graph selection statement
+// GraphSelectorNode is a command's graph selector (@N).
 type GraphSelectorNode struct {
 	key   lexer.Token
 	value uint8
@@ -241,16 +240,14 @@ type ClauseNode struct {
 	value  lexer.Token
 }
 
-// Search nodes are particular nodes using for graph and
-// full text search (entity, topic)
+// AnchorFieldNode is an anchor clause (topic: or entity:) wrapping its field.
 type AnchorFieldNode struct {
 	clause *ClauseNode
 	token  lexer.Token
 	field  FieldNode[string]
 }
 
-// a term is a search keyword or phrase. A query supports
-// multiple terms or one phrase
+// TermNode is one recall term: a bare word or a quoted phrase.
 type TermNode struct {
 	token lexer.Token
 	value string
@@ -258,15 +255,16 @@ type TermNode struct {
 	end   lexer.Position
 }
 
-// Phrase representation. A phrase is a quoted text search
+// PhraseNode is a quoted phrase: the fact a remember stores.
 type PhraseNode struct {
 	value string
 	pos   lexer.Position
 	end   lexer.Position
 }
 
-// Entity field. token is the value as written, which String needs: a value
-// that was quoted is folded to value but has to be quoted again to parse back.
+// EntityFieldNode is an entity: field. token is the value as written, which
+// String needs: a value that was quoted is folded into value but has to be
+// quoted again to parse back.
 type EntityFieldNode struct {
 	key   lexer.Token
 	token lexer.Token
@@ -275,8 +273,9 @@ type EntityFieldNode struct {
 	end   lexer.Position
 }
 
-// Topic field. token is the value as written, which String needs: a value
-// that was quoted is folded to value but has to be quoted again to parse back.
+// TopicFieldNode is a topic: field. token is the value as written, which
+// String needs: a value that was quoted is folded into value but has to be
+// quoted again to parse back.
 type TopicFieldNode struct {
 	key   lexer.Token
 	token lexer.Token
@@ -285,8 +284,8 @@ type TopicFieldNode struct {
 	end   lexer.Position
 }
 
-// Since field. token is the bound as written: a TimeValue does not render
-// back to FQL, so String reproduces the source instead.
+// SinceFieldNode is a since: field. token is the bound as written: a TimeValue
+// does not render back to FQL, so String reproduces the source instead.
 type SinceFieldNode[K comparable] struct {
 	key   lexer.Token
 	token lexer.Token
@@ -295,8 +294,9 @@ type SinceFieldNode[K comparable] struct {
 	end   lexer.Position
 }
 
-// Until field. token is the bound as written: a TimeValue does not render
-// back to FQL, so String reproduces the source instead.
+// UntilFieldNode is an until: field. token is the bound as written: a
+// TimeValue does not render back to FQL, so String reproduces the source
+// instead.
 type UntilFieldNode[K comparable] struct {
 	key   lexer.Token
 	token lexer.Token
@@ -305,7 +305,7 @@ type UntilFieldNode[K comparable] struct {
 	end   lexer.Position
 }
 
-// Top field
+// TopFieldNode is a top: field.
 type TopFieldNode struct {
 	key   lexer.Token
 	value int
@@ -313,7 +313,7 @@ type TopFieldNode struct {
 	end   lexer.Position
 }
 
-// Depth field
+// DepthFieldNode is a depth: field.
 type DepthFieldNode struct {
 	key   lexer.Token
 	value int
@@ -321,7 +321,7 @@ type DepthFieldNode struct {
 	end   lexer.Position
 }
 
-// Ref field
+// VecFieldNode is a vec:$name field.
 type VecFieldNode[P float32 | float64] struct {
 	key   lexer.Token
 	param lexer.Token
@@ -333,7 +333,8 @@ type VecFieldNode[P float32 | float64] struct {
 // quote renders s as an FQL phrase: wrapped in quotes, with each apostrophe
 // doubled back into the escape the lexer decoded. Every value that was quoted
 // in the source prints through it, so String() is a query that parses back to
-// the same node — a bare 'e-mail' or 'my project' would not parse at all.
+// the same node: printed bare, e-mail would not parse and my project would
+// read as two words.
 func quote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
@@ -518,7 +519,7 @@ func (n TermNode) String() string {
 	return n.Literal()
 }
 
-// makes it easier to manage a list of TermNode
+// Terms is a list of TermNode.
 type Terms []TermNode
 
 func (n Terms) Literal() string {
@@ -552,8 +553,8 @@ func (n Terms) End() lexer.Position {
 // phrase node impl
 
 // Literal returns the phrase text exactly as written between the quotes, with
-// the escape (”) already decoded and no surrounding quotes. Interior spacing
-// is preserved verbatim — the phrase is opaque literal text.
+// each doubled single quote already decoded to one and no surrounding quotes.
+// Interior spacing is preserved verbatim: the phrase is opaque literal text.
 func (n PhraseNode) Literal() string {
 	return n.value
 }

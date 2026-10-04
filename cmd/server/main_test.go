@@ -35,7 +35,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 )
 
-// withArgs runs the binary's own command line for one test, restoring it after.
+// withArgs sets the process's command line for one test, restoring it after.
 // A missing -config keeps the run off whatever fraise.config.toml happens to sit
 // in the working directory, so the flags under test are the whole configuration.
 func withArgs(t *testing.T, flags ...string) {
@@ -49,13 +49,12 @@ func withArgs(t *testing.T, flags ...string) {
 
 // TestRunRefusesToStartOnAnInvalidValue is the startup contract at the level
 // that owns it: run is where a rejected setting becomes a non-zero exit, and
-// main does nothing with the error but log it and pass it to os.Exit(1). The
-// layer below (config.Parse) can only report the problem — deciding it is fatal
-// happens here, and used to not happen at all: every config error was a warning,
-// so the server started anyway with a value the operator never asked for.
+// main does nothing with the error but print it and call os.Exit(1). The layer
+// below (config.Parse) can only report the problem; deciding it is fatal
+// happens here.
 //
-// Nothing is listening when this returns, which is the point: run gives up
-// before building a database or binding a port.
+// Nothing is listening when this returns: run gives up before building a
+// database or binding a port.
 func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 	cases := []struct {
 		flag, value, setting string
@@ -91,11 +90,10 @@ func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 }
 
 // TestRunAcceptsAnyCasingOfAValueThatIsAccepted is the other side of the same
-// decision, and the reported bug: `-log-level error` is what an operator types,
-// and it must not be what stops the server. run cannot be called for a value it
-// accepts — it would block serving until a signal — so this asserts on the
-// configuration run would have been handed, through the same Parse call it
-// makes, which is as far as the question can be taken without booting.
+// decision: `-log-level error` is what an operator types, and it must not be
+// what stops the server. run cannot be called for a value it accepts, since it
+// would serve until a signal, so this asserts on the configuration run would be
+// handed, through the same Parse call main makes.
 func TestRunAcceptsAnyCasingOfAValueThatIsAccepted(t *testing.T) {
 	cases := []struct{ flag, value string }{
 		{"-log-level", "error"},
@@ -121,10 +119,10 @@ func TestRunAcceptsAnyCasingOfAValueThatIsAccepted(t *testing.T) {
 }
 
 // TestRunSurvivesAMissingConfigFile pins the line between the two failures run
-// distinguishes. A missing config file is reported but survivable — the
-// defaults are a valid configuration, and containers ship without one — so it
-// must not take the fatal branch, or making values fatal would have made the
-// server unstartable without a file.
+// distinguishes. A missing config file is reported but survivable (the
+// defaults are a valid configuration, and containers ship without one), so it
+// must not take the fatal branch, or the server could not start without a
+// file.
 func TestRunSurvivesAMissingConfigFile(t *testing.T) {
 	withArgs(t)
 
@@ -140,10 +138,10 @@ func TestRunSurvivesAMissingConfigFile(t *testing.T) {
 }
 
 // TestRunRefusesToStartOnAnUnusableConfigFile pins where the survivable line
-// now sits: only a missing file is. A file that is there but malformed, or
-// names a key no setting has, used to be logged as "not fully loaded" while
-// the server started on defaults — so an operator's typo in a key ran as if
-// the line had never been written. run returns before building anything.
+// sits: only a missing file is. A file that is there but malformed, or names a
+// key no setting has, stops run before it builds anything; starting on
+// defaults would run an operator's mistyped key as if the line had never been
+// written.
 func TestRunRefusesToStartOnAnUnusableConfigFile(t *testing.T) {
 	for _, contents := range []string{
 		"[log\nlevel = \"DEBUG\"\n",
@@ -186,10 +184,8 @@ func TestRunRejectsAnUnknownCommand(t *testing.T) {
 }
 
 // TestRunTreatsHelpAsSuccess pins the -h contract. The flag package answers
-// help by printing usage and returning flag.ErrHelp — a request served, not a
-// failure — but the FlagSet used to be built with flag.PanicOnError, which
-// has no special case for that sentinel the way ExitOnError does, so
-// `fraise mcp -h` ended in a goroutine dump printed on top of the usage text.
+// help by printing usage and returning flag.ErrHelp, a request served rather
+// than a failure, so run returns nil without dispatching the command.
 //
 // The command deliberately names something run rejects: that makes the
 // assertion distinguish "help short-circuited" from "help fell through into
@@ -213,12 +209,11 @@ func TestRunTreatsHelpAsSuccess(t *testing.T) {
 	}
 }
 
-// TestRunRejectsAnUnknownFlag guards the regression the help fix could have
-// introduced. Under flag.PanicOnError a mistyped flag crashed, which at least
-// stopped the process; under ContinueOnError it arrives as an ordinary error,
+// TestRunRejectsAnUnknownFlag pins that a mistyped flag is fatal. The flag set
+// uses flag.ContinueOnError, so an unknown flag arrives as an ordinary error,
 // and run warns about ordinary errors and starts anyway. Parse classifies it
-// as ErrInvalidFlag precisely so it stays fatal here, rather than silently
-// serving with a default the operator never asked for.
+// as ErrInvalidFlag so it stays fatal here, rather than silently serving with
+// a default the operator never asked for.
 func TestRunRejectsAnUnknownFlag(t *testing.T) {
 	withArgs(t, "-bogus")
 

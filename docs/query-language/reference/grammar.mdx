@@ -18,17 +18,18 @@ query           = recall_query | remember_query ;
 (* ------------------------------------------------------------ *)
 
 recall_query    = recall_cmd recall_body ;
-recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
+recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace around '@' *)
 
 (* SEMANTIC RULE: a recall needs at least one *seed*, and the      *)
 (* terms come first. A term, an anchor and a vector are all seeds, *)
-(* so 'recall topic:billing' and 'recall vec:$v' are questions —   *)
-(* expand from here and rank what you reach. A modifier is not a   *)
+(* so 'recall topic:billing' and 'recall vec:$v' are complete      *)
+(* questions: a term or vector is matched, and anchors alone seed  *)
+(* the search with each fact filed under them. A modifier is not a *)
 (* seed: it scopes a search, so 'recall top:3' and 'recall         *)
 (* since:7d' start nothing and are errors. After the first field a *)
 (* bare term is an error. The fields themselves interleave in any  *)
-(* order, but only anchors may repeat: a repeated anchor adds a    *)
-(* filter, a repeated modifier is a duplicate-clause error.        *)
+(* order, but only anchors may repeat: a repeated anchor adds to   *)
+(* the list, a repeated modifier is a duplicate-clause error.      *)
 (* A bare reserved word is never a term, in any casing: it is one  *)
 (* ':' away from a clause, so it is an error naming both repairs;  *)
 (* quote it ('top') to search for the word itself. A recall whose  *)
@@ -41,7 +42,7 @@ seeding_field   = anchor | vec_field ;   (* enough on its own to start a search 
 
 term            = bare_word | phrase ;        (* soft ranking seed (SHOULD) *)
 
-anchor          = anchor_field ;              (* every anchor filters; there is no way to say MUST_NOT *)
+anchor          = anchor_field ;              (* a filter beside a term or vector, a seed alone; there is no way to say MUST_NOT *)
 anchor_field    = topic_field | entity_field ;
 topic_field     = 'topic'  ':' anchor_value ;
 entity_field    = 'entity' ':' anchor_value ;
@@ -62,13 +63,13 @@ vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 (* optionally its embedding. Anchors are not required: a fact with *)
 (* none is stored and reachable by text search alone.              *)
 remember_query  = remember_cmd phrase (anchor_field | vec_field)* ;
-remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace before '@' *)
+remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace around '@' *)
 
 (* ------------------------------------------------------------ *)
 (* SHARED                                                       *)
 (* ------------------------------------------------------------ *)
 
-graph_selector  = '@' integer ;                (* default 0; lexed WITH the command as one token: (recall|remember)(@[0-9]+)? *)
+graph_selector  = '@' integer ;                (* default 0; glued to the command, no space around '@': (recall|remember)(@[0-9]+)? *)
 
 (* ------------------------------------------------------------ *)
 (* LITERALS                                                     *)

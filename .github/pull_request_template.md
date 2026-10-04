@@ -14,7 +14,7 @@
 
 ## Motivation for the changes
 
-<!-- One or two sentences. Reason for the change, e.g. what problem it solves. You can copy paste a Github Issue if it applies -->
+<!-- One or two sentences. Reason for the change, e.g. what problem it solves. You can paste a GitHub issue if it applies -->
 
 ## Breaking change?
 

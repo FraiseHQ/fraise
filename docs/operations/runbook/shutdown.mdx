@@ -38,4 +38,4 @@ The full protocol is in [Scheduler internals](/docs/architecture/concurrency/sch
 
 ## A submit during shutdown
 
-Returns `ErrShutdown`, which the server answers with a **503**. A caller is never parked indefinitely on a closed queue.
+Returns `ErrShutdown`, which the server answers with a **503**. A caller is never left waiting on a scheduler that has stopped.

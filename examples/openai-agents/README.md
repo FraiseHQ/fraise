@@ -24,4 +24,4 @@ The `agent` service waits for Fraise's health check, then runs [`agent.py`](agen
 - [`docker-compose.yaml`](docker-compose.yaml) — `fraise` + `agent` services on one network.
 - [`fraise.config.toml`](fraise.config.toml) — Fraise server config mounted into the `fraise` service.
 
-The Docker build context is the repository root so the image can install the local, unpublished SDK from `sdk/python`.
+The Docker build context is the repository root so the image can install the SDK from `sdk/python` in this checkout rather than from PyPI.

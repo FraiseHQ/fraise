@@ -8,11 +8,12 @@ A Python client for a [Fraise](../../README.md) memory server, plus ready-made m
 pip install fraise-sdk                 # core client only
 pip install 'fraise-sdk[openai]'       # + OpenAI Agents SDK tools
 pip install 'fraise-sdk[anthropic]'    # + Claude Agent SDK tools
+pip install 'fraise-sdk[huggingface]'  # + Hugging Face embedder
 ```
 
 ## Client
 
-Two operations, both over the server's single query endpoint:
+`remember` stores a fact and `recall` searches for facts, both through the server's query endpoint:
 
 ```python
 from fraise_sdk import FraiseClient
@@ -32,7 +33,7 @@ fraise.remember("the kingfisher is electric blue", graph=6, vector=embedding)
 hits = fraise.recall(graph=6, vector=embedding)  # seeded only by the vector
 ```
 
-A recall needs a seed, not a keyword: a vector or a `topics`/`entities` filter is one on its own, so `fraise.recall(topics=["birds"])` — everything about a topic — is a query in its own right.
+A recall needs a seed, not a keyword: a vector or a `topics`/`entities` anchor is one on its own, so `fraise.recall(topics=["birds"])` — everything about a topic — is a query in its own right.
 
 The typed helpers take any value and write the FQL for you: a topic, entity or keyword is quoted whenever it is not letters and digits only, such as `e-mail` or `new york`, and a keyword is also quoted when it spells a reserved word such as `since` — with a `FraiseWarning`, since `recall("since", "7d")` may have meant a `since:7d` bound rather than the word. Anything they do not cover, such as a `since:`/`until:` time bound, goes through the raw `fraise.query("recall@3 ...")` escape hatch, which sends the FQL exactly as written and leaves the checking to the server.
 
@@ -138,4 +139,4 @@ See [`examples/claude-agent-sdk/`](../../examples/claude-agent-sdk) for a comple
 - A fact value is stored inside a single-quoted phrase where every character is literal; the SDK escapes apostrophes for you, so `remember("it's blue")` stores the text exactly as written.
 - Keywords, topics, and entities may contain spaces and punctuation: a value that is not one plain word (letters and digits only) is quoted for you, and so is a keyword that spells a reserved word.
 - The first vector written to a graph fixes that graph's embedding dimension; later writes to the same graph must match it.
-- `FraiseClient` defaults to a 30s request timeout (`timeout=` on the constructor or on individual `query`/`remember`/`recall` calls overrides it); a request that exceeds it raises `FraiseError` naming the timeout, distinct from the error raised when the server can't be reached at all.
+- `FraiseClient` defaults to a 30s request timeout (`timeout=` on the constructor or on individual `query`/`remember`/`recall`/`explain` calls overrides it); a request that exceeds it raises `FraiseError` naming the timeout, distinct from the error raised when the server can't be reached at all.

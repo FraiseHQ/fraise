@@ -50,8 +50,8 @@ def test_explain_breaks_down_each_hit_by_source(query, explain):
     """Every explained hit carries its contribution records: here each hit is
     a pure text seed — source name, raw BM25 mass, rank in the text list, and
     count (1 for a seed sighting). The shared entity is the only touched
-    anchor, so it holds no surplus and no graph contribution appears; hop is
-    gone from the wire with the walk that produced it.
+    anchor, so it holds no surplus and no graph contribution appears; no
+    contribution carries a hop field.
     """
     _seed_pulsar_facts(query)
 
@@ -76,11 +76,12 @@ def test_explain_breaks_down_each_hit_by_source(query, explain):
 
 
 # The surplus fixture: a small "weather" cluster concentrates the query's mass
-# while a larger "archive" hub holds a fair share of it, so exactly one anchor
-# speaks and its silent member is funded by transmission alone. Both topics are
-# named on the recalls below because the graph is entered only through an
-# anchor the recall names; naming the hub keeps its memos in the candidate set,
-# so their absence is its silence and not the filter's doing.
+# while a larger "archive" hub holds no more than its fair share of it, so
+# exactly one anchor speaks and its silent member is funded by transmission
+# alone. Both topics are named on the recalls below because the graph is
+# entered only through an anchor the recall names; naming the hub keeps its
+# memos in the candidate set, so their absence is its silence and not the
+# filter's doing.
 STORM_CLUSTER = (
     "the barometer falls before the storm",
     "storm clouds gather at sea",
@@ -107,7 +108,7 @@ def test_explain_shows_transmitted_surplus(query, explain):
     contribution that names its funding anchor — via "weather", the anchor's
     degree, its observed mass and funding-seed count — proving surplus, not
     reachability, is what an anchor passes on. The archive hub's memos stay
-    out: at fair share it transmits nothing.
+    out: holding no more than its fair share, it transmits nothing.
     """
     _seed_storm_facts(query)
 
@@ -136,8 +137,8 @@ def test_explain_score_recomputes_from_payload(query, explain):
     """The recompute pin: with the query-level background rate, every hit's
     score equals the formula applied to its own payload — S = m + α²·Σ max(0,
     M_A − m − d_A·ρ₀)/d_A, each anchor's surplus arriving as its per-edge
-    share — within float tolerance (the hair of recency decay between write
-    and read). The payload is therefore a complete explanation, not a summary.
+    share — within a tolerance that absorbs the recency decay between write
+    and read. The payload is therefore a complete explanation, not a summary.
     """
     _seed_storm_facts(query)
 
@@ -192,7 +193,7 @@ def test_explain_rejects_remember(explain):
 @pytest.mark.parametrize(
     "bad_query",
     [
-        "recall",  # no term
+        "recall",  # no seed
         "explain me",  # not a command
     ],
 )

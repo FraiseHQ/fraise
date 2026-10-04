@@ -102,11 +102,10 @@ func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 }
 
 // TestBTreeIndexSearchOrdersTiesByKey pins the tiebreak that makes the ranking a
-// total order: documents matching the same number of query terms are ranked by
-// key, not in the order the posting map happened to yield them. The search is
-// repeated because that map order changes between calls — one pass can agree
-// with the expected order by luck — and truncation to k makes the difference
-// user-visible, since it keeps the head of whatever order the sort produced.
+// total order: documents with equal scores are ranked by key, not in the order
+// the score map happens to yield them. The search is repeated because map
+// order changes between calls, so one pass can agree with the expected order
+// by luck, and truncation to k makes the difference user-visible.
 func TestBTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	// Every document contains "sky" once, so the match count never separates
@@ -255,9 +254,9 @@ func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
 // is exactly 1 and the score reduces to the idf sum times that coverage:
 // totalW = ln 2 + ln 1.2 gives denominator 897, doc 1 matches "red" (df 1)
 // and "green" (df 2), all of the query's idf mass, and scales by 896/897;
-// doc 2 matches only the common "green" and scales by 186/897. Counting
-// matched terms instead would give doc 2 a half share for its commonest term
-// and doc 1 a multiplier above 1.
+// doc 2 matches only the common "green" and scales by 186/897. A share of
+// matched terms would give doc 2 half the query for its commonest term alone,
+// and a term count over the idf total would scale doc 1 by 2048/897, above 1.
 func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 	t.Helper()
 	idx := index.NewBTreeIndex[int, P](comparator.OrderedComparator[int])
@@ -307,12 +306,11 @@ func TestBTreeIndexScoresAreBM25TimesCoverage_float32(t *testing.T) {
 }
 
 // TestBTreeIndexSearchTopKBounds checks the k parameter: k <= 0 returns every
-// match, a positive k caps the result to the top-k best matches. This is the
-// same bound the graph now applies to text seeds (SeedSize), so text and vector
-// seeds are gathered symmetrically.
+// match, a positive k caps the result to the top-k best matches. The graph
+// bounds its text and vector seeds alike this way, at max(db.seed-size, top).
 func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
-	// Four documents, all matching "sky", plus a term that ranks one highest.
+	// Four documents, all matching "sky".
 	docs := map[int]string{
 		1: "sky",
 		2: "sky sky blue", // "sky" appears once as a term set, still count 1
@@ -435,14 +433,13 @@ func TestSearchPurity(t *testing.T) {
 	}
 }
 
-// TestMatchCountEquivalentToPrePluginRanking is the heart of the seam: on
-// randomized corpora and queries, the default model produces exactly the
-// ranking the index shipped with before relevance became pluggable —
-// identical keys, identical scores, identical order, including the
-// double-count a repeated query term always earned. The oracle reimplements
-// that ranking independently from the raw documents (per-document term sets,
-// one point per query-term occurrence, count-descending with the key
-// tiebreak), so the pin cannot drift with the index's internals.
+// TestMatchCountEquivalentToPrePluginRanking pins MatchCount, the model the
+// index starts with, against an independent oracle on randomized corpora and
+// queries: identical keys, scores and order, including the double count a
+// repeated query term earns. The oracle recomputes the match-count ranking
+// from the raw documents (per-document term sets, one point per query-term
+// occurrence, count descending with the key tiebreak), so the pin cannot
+// drift with the index's internals.
 func TestMatchCountEquivalentToPrePluginRanking(t *testing.T) {
 	rng := rand.New(rand.NewSource(7)) // deterministic corpora across runs
 	vocabulary := []string{"ash", "brine", "coral", "drift", "eddy", "fjord", "gull", "harbour"}

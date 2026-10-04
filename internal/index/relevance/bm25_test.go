@@ -20,10 +20,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Same-package pins of the relevance seam. The equivalence pin proves the
-// seam is a zero-behavior change — the default model reproduces the
-// pre-plugin ranking byte for byte — and the BM25 lifecycle pins reach the
-// model's private statistics, which no query result exposes.
+// External pins of BM25's query-side methods. The randomized MatchCount
+// equivalence pin and the BM25 lifecycle pins live with the index
+// (internal/index/btree_test.go), which drives both.
 
 package relevance_test
 

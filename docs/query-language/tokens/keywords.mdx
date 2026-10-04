@@ -33,13 +33,13 @@ One tie-breaker resolves the boundary: **a keyword immediately followed by `:` i
 
 Keywords are written in lower case only, and casing does not un-reserve one: among a recall's terms, a mis-cased keyword is an error naming the casing — `recall x Since 7d` and `recall Top shelf` are rejected, never read as searches. Folding `Since` into a term would let a mistyped clause silently become data, scoping the query by nothing with no error to correct from.
 
-The tie-breaker above is the one place casing is forgiven. A word glued to a `:` has exactly one reading — no production puts a bare word before a colon — so `Depth:2` is the depth clause, and `recall x depth:2 DEPTH:5` is reported as the duplicate it is rather than as a casing mistake. Blaming the casing there would name the shallower of the two problems, and an agent that dutifully lower-cased it would get a silently rescoped query back.
+The tie-breaker above is the one place casing is forgiven. A word glued to a `:` has exactly one reading — no production puts a bare word before a colon — so `Depth:2` is the depth clause, and `recall x depth:2 DEPTH:5` is reported as the duplicate it is rather than as a casing mistake. Blaming the casing there would name the shallower of the two problems, and an agent that lower-cased it would meet the duplicate only on its next try.
 
 Forgiven is not unremarked: the clause runs and the response carries a [warning](/docs/query-language/reference/warnings) naming the casing. Away from a colon the spelling must still match exactly, so `RECALL x` is not a command.
 
 ## A keyword among the terms
 
-`recall since 7d` is one `:` away from `recall since:7d`, and either reading, guessed, would answer a differently scoped question with nothing in the response to say so. So it is an error, and the message names both repairs, spelled with the word written after the keyword: `write since:7d if a filter was meant, or quote it ('since') to search the word`. A command word has no clause reading, so for `recall recall` the message names only the quote. Once a clause has started, a keyword without its `:` has one reading left, and the message names only that clause: `recall zebras since:7d topic food` asks for `topic:food`. See [Errors](/docs/http-api/errors).
+`recall x since 7d` is one `:` away from `recall x since:7d`, and either reading, guessed, would answer a differently scoped question with nothing in the response to say so. So it is an error, and the message names both repairs, spelled with the word written after the keyword: `write since:7d if a filter was meant, or quote it ('since') to search the word`. A command word has no clause reading, so for `recall recall` the message names only the quote. Once a clause has started, a keyword without its `:` has one reading left, and the message names only that clause: `recall zebras since:7d topic food` asks for `topic:food`. See [Errors](/docs/http-api/errors).
 
 ## No boolean operators
 

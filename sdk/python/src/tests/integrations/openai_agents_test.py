@@ -36,7 +36,7 @@ from fraise_sdk.errors import FraiseError
 from fraise_sdk.models import Hit, RecallResult
 
 # The integration imports its framework at module scope, so skip the whole file
-# when the optional 'openai' dependency group is not installed.
+# when the optional 'openai' extra is not installed.
 pytest.importorskip("agents", reason="requires the 'openai' dependency group")
 
 from agents.tool_context import ToolContext  # noqa: E402
@@ -115,8 +115,8 @@ def test_recall_without_hits_says_so_rather_than_returning_empty():
 
 
 def test_recall_reports_server_errors_as_text():
-    # Tools must not raise into the agent loop: a raised FraiseError would
-    # abort the whole run rather than let the model recover.
+    # The tool answers a FraiseError with its own message rather than raising,
+    # which the framework would turn into its generic tool error.
     client = _client(raises=FraiseError("connection refused"))
     result = _invoke(recall_tool(client), keywords=["anything"])
     assert result == "memory lookup failed: connection refused"
@@ -131,7 +131,7 @@ def test_recall_passes_graph_and_budgets_through():
 
 
 def test_recall_defaults_top_and_leaves_depth_to_the_server():
-    """An omitted top takes the tool's ceiling; an omitted depth is passed as
+    """An omitted top takes the tool's default; an omitted depth is passed as
     None so no clause is emitted and the server's configured lane applies. A
     tool-side depth would be a lane the tool cannot use, since it names no
     topic or entity, and any value above the floor draws a warning per call.

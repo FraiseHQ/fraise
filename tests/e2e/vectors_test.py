@@ -95,10 +95,10 @@ def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim
     and supplied dimensions — a client error, not a 500, so callers can tell
     their bad input from a server fault.
 
-    Both writes go to graph 4, whose only other writes (the forest-bound test
-    in test_stats.py) use the same suite-wide dimension, so the first insert
-    here establishes the dimension deterministically even across reruns against
-    a long-lived server.
+    Both writes go to graph 4, whose other writes (the forest-bound test in
+    stats_test.py and the dimension probes below) use the same suite-wide
+    dimension, so the first insert here establishes the dimension
+    deterministically even across reruns against a long-lived server.
     """
     # Establish the graph's dimension.
     status, body = query(
@@ -133,9 +133,9 @@ def test_recall_vector_incompatible_size_is_rejected(query, vector, vector_dim, 
     """A recall whose vector differs in width from the graph's is a 400 naming
     both dimensions, exactly as a write is.
 
-    It used to answer 200 from the text index alone: "dimension" matches the
-    fact written below, so the first shape came back with a plausible hit and
-    the semantic half of the question dropped without a word. A vector on its
+    Answering 200 from the text index alone would drop the semantic half of
+    the question without a word: "dimension" matches the fact written below,
+    so the first shape would come back with a plausible hit. A vector on its
     own, and a vector beside an anchor, fail the same way.
 
     The write fixes graph 4 at the suite-wide dimension, idempotently, as in
@@ -259,8 +259,8 @@ def test_vector_search_with_real_embeddings(query):
         assert status == 200, body.get("error")
 
     # A phrase close in meaning to the cat document, sharing none of its words.
-    # The recall keyword matches no stored text, and depth:1 keeps the walk on
-    # the seeds, so only the vector index decides the result.
+    # The recall keyword matches no stored text and the recall names no anchor,
+    # so only the vector index decides the result.
     query_vec = embed("a sleepy kitten dozing in the afternoon sun")
     status, body = query(
         f"recall@{graph} zzznomatch vec:$v depth:1",
@@ -294,12 +294,11 @@ KRAKATOA_VEC = "sensors recorded the pressure wave"  # no terms; exact embedding
 
 
 def test_recall_fuses_text_and_vector_additively(query, vector, explain):
-    """Channels fuse by adding mass, not by counting rank votes: a fact seen
-    by both channels scores exactly the sum of what each observed, and a fact
-    seen by one scores that channel's mass alone. (The RRF-era opinion — a
-    fact leading neither list tops both leaders by consensus votes — is
-    deliberately retired: rank votes were how mega-hubs manufactured
-    consensus from size.)
+    """The excess scorer fuses channels by adding mass, not by counting rank
+    votes: a fact seen by both channels scores the sum of what each observed,
+    and a fact seen by one scores that channel's mass alone. Under rank votes
+    a fact leading neither list can top both leaders by consensus, and large
+    hubs manufacture consensus from their size.
     """
     graph = 6
     writes = (

@@ -38,13 +38,13 @@ import (
 
 // errorToResponse maps an error coming out of the query pipeline to an HTTP
 // status code and a client-safe message. It is the single place that decides
-// how an internal error is surfaced, so handlers never hand-pick status codes:
+// how a parse, plan or execution error is surfaced:
 //
 //   - a *parser.Error is a client mistake (400) and its position is safe to show;
-//   - known client sentinels (bad parse, missing parameter, a vector whose
-//     dimension does not match its graph) are 400;
+//   - known client sentinels (bad parse, missing parameter, a limit exceeded,
+//     a vector whose dimension does not match its graph) are 400;
 //   - anything else is treated as an internal fault (500) with a generic
-//     message, so we never leak internal error detail to clients (we log it).
+//     message, so internal detail never reaches a client (callers log it).
 func errorToResponse(err error) (int, string) {
 	var perr *parser.Error
 	switch {
@@ -63,10 +63,10 @@ func errorToResponse(err error) (int, string) {
 // handleHealthCheck returns a handler that reports the server is alive,
 // responding with HTTP 200 and a simple status payload.
 //
-// The payload carries the running version because it is the SDKs' only
-// handshake: they read this field to check the server falls inside the range
-// they support (see COMPATIBILITY.md), so the key must not be renamed or
-// dropped without a matching SDK release.
+// The payload carries the running version because it is the SDK's only
+// handshake: it reads this field to check the server falls inside the range it
+// supports (see COMPATIBILITY.md), so the key must not be renamed or dropped
+// without a matching SDK release.
 func (s *Server[K, P]) handleHealthCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -86,14 +86,13 @@ func (s *Server[K, P]) handleStats() gin.HandlerFunc {
 	}
 }
 
-// handleQuery returns a handler that parses, plans, and executes a query.
-// It binds the JSON request body, parses the query string, asks the engine
-// for an execution plan, applies it, and streams back the results. Any
-// failure along the way is reported as an HTTP error.
+// handleQuery returns a handler that binds the JSON request body, parses the
+// query, has the engine plan and schedule it, and answers once the stream has
+// run. Any failure along the way is reported as an HTTP error.
 //
 // explain selects the explain output mode served on /api/v1/explain: the same
 // pipeline, but each hit carries its per-source contribution breakdown, and
-// writes are rejected — only a recall has a ranking to explain. It is one
+// writes are rejected, since only a recall has a ranking to explain. It is one
 // handler with a flag rather than two, so the two routes cannot drift apart
 // in how they parse, validate or schedule.
 func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
@@ -110,8 +109,8 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 
 		// Parse the raw query string into an executable query, binding any
 		// vector placeholders (vec:$v) from the request parameters. Warnings
-		// ride alongside a query that runs anyway (e.g. a leading term that
-		// spells a keyword) and are returned with the results below.
+		// ride alongside a query that runs anyway (a stop word among its
+		// terms, say) and are returned with the results below.
 		q, warns, err := query.Parse[K, P](req.Query, req.Parameters, s.Config)
 
 		if err != nil {
@@ -178,7 +177,7 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 				c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: "server overloaded, retry later"})
 				return
 			}
-			// The request context was cancelled (client gone or write timeout)
+			// The request context was cancelled (the client disconnected)
 			// before the stream could be enqueued; there is no live connection
 			// left to answer.
 			logger.Warn("Query not enqueued", "query", req.Query, "error", err)
@@ -197,9 +196,8 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 			}
 			logger.Info("Query executed", "query", req.Query, "graph", q.GetGraphID())
 
-			// Warnings ride beside every successful answer, write or read, so
-			// they are rendered once here and attached by whichever branch
-			// below answers.
+			// Warnings ride beside a successful write or read, so they are
+			// rendered once here for whichever branch below answers.
 			msgs := make([]string, len(warns))
 			for i, w := range warns {
 				msgs[i] = w.String()
@@ -213,13 +211,12 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 				return
 			}
 
-			// A read that matched nothing in a graph holding nothing at all is
-			// not the same answer as one that searched a populated graph and
-			// matched none of it: the first says the caller has yet to write,
-			// the second that the query missed. 204 carries that distinction
-			// in the status line, which costs no body — and must not have one,
-			// so warnings go with it: what a phrasing might have meant instead
-			// is moot when there was nothing to search either way.
+			// A read of a graph holding nothing is not the same answer as one
+			// that searched a populated graph and matched none of it: the first
+			// says the caller has yet to write, the second that the query
+			// missed. 204 carries that distinction in the status line. It has
+			// no body, so warnings are dropped; they are moot when there was
+			// nothing to search.
 
 			if stream.Result.Count == 0 && stream.IsGraphEmpty {
 				c.Status(http.StatusNoContent)

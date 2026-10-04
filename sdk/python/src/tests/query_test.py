@@ -20,7 +20,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Unit tests for the pure query-string builders."""
+"""Tests for the pure query-string builders.
+
+The unit tests pin the strings they build; the tests marked ``integration``
+send those strings to a live server, whose parser is the judge of whether
+they parse.
+"""
 
 import warnings
 
@@ -125,11 +130,11 @@ def test_recall_requires_a_seed():
 def test_a_bare_string_where_a_sequence_is_wanted_is_rejected(build, args, param, kind):
     """``topics="billing"`` is refused by name, never expanded letter by letter.
 
-    ``str`` satisfies ``Sequence[str]``, so the bare string type-checks and
-    used to iterate into ``topic:b topic:i topic:l ...``: the write succeeded,
-    the fact was filed under one anchor per letter, and a recall by ``billing``
-    found nothing. Every path that takes a sequence is covered — the five reach
-    the check independently — and the message names the fix.
+    ``str`` satisfies ``Sequence[str]``, so the bare string type-checks.
+    Iterated, it would file the fact under ``topic:b topic:i topic:l ...``,
+    one anchor per letter, and a recall by ``billing`` would find nothing. The
+    five cases are every path that takes a sequence, each reaching the check
+    independently, and the message names the fix.
     """
     with pytest.raises(FraiseQueryError) as exc_info:
         build(*args, **{param: "billing"})
@@ -148,7 +153,7 @@ def test_recall_rejects_non_positive_top(bad):
 
 @pytest.mark.parametrize("bad", [-1, -2])
 def test_recall_rejects_negative_depth(bad):
-    """depth must be non-negative; a negative walk length is meaningless."""
+    """depth must be non-negative; there is no lane below the floor."""
     with pytest.raises(FraiseQueryError):
         build_recall(["x"], depth=bad)
 
@@ -165,10 +170,11 @@ def test_negative_graph_is_rejected():
 
 @pytest.mark.parametrize("bad", [256, 300, 99999])
 def test_graph_above_the_uint8_range_is_rejected(bad):
-    """A selector travels as a uint8, so 256 is not "too big" — it is graph 0.
+    """A selector travels as a uint8, so no graph above 255 can be named.
 
-    Refusing it here means a mistyped graph id fails in the caller's own stack
-    trace rather than reading or writing somebody else's memory.
+    Narrowed to a uint8, 256 would be graph 0: somebody else's memory. The
+    builder refuses it before any request, so a mistyped graph id fails in the
+    caller's own stack trace.
     """
     with pytest.raises(FraiseQueryError, match="at most 255"):
         build_remember("x", graph=bad)
@@ -368,7 +374,7 @@ def test_the_vector_placeholder_binds_to_the_parameter_the_builder_names(
 
 @pytest.mark.integration
 def test_the_vector_placeholder_is_really_bound_not_ignored(client, query_graph):
-    """The same string without its parameter is rejected for the unbound name.
+    """A placeholder sent without its parameter is rejected for the unbound name.
 
     The mirror of the test above: if the server ignored the placeholder rather
     than binding it, that test would prove nothing.
@@ -393,14 +399,12 @@ def test_the_vector_placeholder_is_really_bound_not_ignored(client, query_graph)
 def test_a_recall_seeded_without_keywords_parses(kwargs, client, query_graph, encode):
     """Every keyword-free seed the builder allows is accepted by the grammar.
 
-    ``build_recall`` documents "a recall needs at least one seed: keywords, a
-    vector, or a topic/entity filter" and builds ``recall@2 topic:weather`` (or
-    ``vec:$v``, or ``entity:...``) accordingly. The grammar used to want a word
-    or quoted phrase before any clause and answered 400, so
-    ``client.recall(topics=[...])`` and ``client.recall(vector=[...])`` — pure
-    anchor and pure semantic search — were unreachable, and callers seeded with
-    a keyword matching nothing ("zzznomatch") to get past the parser. The two
-    agree now, and this is what says so.
+    ``build_recall`` takes a topic, an entity or a vector as a recall's only
+    seed, and builds ``recall@2 topic:weather`` (or ``vec:$v``, or
+    ``entity:...``) accordingly. If the grammar disagreed,
+    ``client.recall(topics=[...])`` and ``client.recall(vector=[...])``, pure
+    anchor and pure semantic search, could not be asked without a keyword the
+    caller does not mean.
     """
     text = build_recall(graph=query_graph, **kwargs)
     parameters = (
@@ -429,8 +433,7 @@ def test_a_keyword_spelled_search_word_survives_the_grammar(
 
     The builder quotes these because a bare reserved word is syntax in every
     position and in any casing — ``recall@2 since 7d`` is a parse error. Only a
-    live parser can prove the quoting is the right escape, which is what this
-    file is for.
+    live parser can prove the quoting is the right escape.
     """
     with pytest.warns(FraiseWarning, match="is a reserved word"):
         text = build_recall(keywords, graph=query_graph)

@@ -20,14 +20,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Adversarial parser surface: 217 hostile query strings over raw HTTP.
+"""Adversarial parser surface: hostile query strings over raw HTTP.
 
-This file is written as a specification, not a regression net — most of it
-fails against the current parser on purpose. Each case pins the *error message
-a caller needs* rather than the one the parser happens to emit, because the
-caller is an agent: it can only repair a query the error tells it how to
-repair. `Expected colon, but found ""` is a dead end; `quote it ('top') to
-search for the word` is a repair instruction.
+Each case pins the *error message a caller needs* rather than whatever the
+parser happens to emit, because the caller is an agent: it can only repair a
+query the error tells it how to repair. `Expected colon, but found ""` is a
+dead end; `quote it ('top') to search for the word` is a repair instruction.
 
 Three properties are pinned throughout:
 
@@ -35,13 +33,12 @@ Three properties are pinned throughout:
    never a hang, never a silent 200 answering a different question.
 2. A query that only *looks* dangerous (specials inside quotes, reserved words
    in value position) is data and must succeed.
-3. A query that is ambiguous between two valid readings runs and warns, rather
-   than guessing silently.
+3. A query that runs despite something it should not carry (a stop word among
+   its terms) says so in a warning rather than silently.
 
-Writes are avoided wherever a recall proves the same point, so this file adds
-no facts to the graph map in conftest.py. The handful of remembers that must
-succeed are pinned to graph 1 (loose remembers) and are idempotent — a fact is
-keyed by its value.
+Writes are avoided wherever a recall proves the same point. The handful of
+remembers that must succeed are pinned to graph 1 (loose remembers) and are
+idempotent, since a fact is keyed by its value.
 """
 
 import pytest
@@ -65,9 +62,10 @@ def _accept(status, body, query_text):
 
 
 # ---------------------------------------------------------------------------
-# Duplicate single-valued clauses. Each is a bare assignment in the clause
-# switch (r.depth = ...), so the last occurrence silently wins. Repeated
-# anchors are a different case and stay legal — they are a list by design.
+# Duplicate single-valued clauses. A bare assignment in the clause switch
+# (r.depth = ...) would let the last occurrence win silently, so a repeat is
+# rejected. Repeated anchors are a different case and stay legal: they are a
+# list by design.
 # ---------------------------------------------------------------------------
 
 
@@ -93,19 +91,18 @@ def _accept(status, body, query_text):
 def test_duplicate_single_valued_clause_is_rejected(query, text):
     """A repeated modifier is an agent generation bug, and last-wins hides it.
 
-    parseTimeValue's own comment argues the case: a query that silently answers
-    a differently-scoped question is worse than an error the agent can correct
-    from. The message must name the duplicated clause so the agent knows which
-    one to drop.
+    A query that silently answers a differently-scoped question is worse than
+    an error the agent can correct from. The message must name the duplicated
+    clause so the agent knows which one to drop.
     """
     status, body = query(text)
     _reject(status, body, "duplicate", text)
 
 
 # ---------------------------------------------------------------------------
-# Bounds. The graph selector is correctly clamped to the uint8 range; depth and
-# top get strconv.Atoi and nothing else, so one string can request a
-# million-hop traversal or a two-billion-entry heap.
+# Bounds. The graph selector must fit the uint8 range, and depth and top each
+# take a ceiling (db.max-depth, db.max-top): without one, a single string could
+# request a million-hop traversal or a two-billion-entry heap.
 # ---------------------------------------------------------------------------
 
 
@@ -161,8 +158,8 @@ def test_ordinary_depth_and_top_still_parse(query, text):
 
 
 # ---------------------------------------------------------------------------
-# Empty data. A quoted empty string currently sails through as a real fact,
-# term or anchor identity.
+# Empty data. A quoted empty string is rejected as a fact, term or anchor
+# identity.
 # ---------------------------------------------------------------------------
 
 
@@ -213,9 +210,8 @@ def test_empty_data_is_rejected(query, text):
 def test_leading_reserved_word_is_rejected(query, text):
     """A leading keyword is a 400 like one anywhere else among the terms.
 
-    It used to run as a term search with a warning, the one position where a
-    bare keyword was data. With terms and phrases free to come in any order a
-    positional exception has no reason to exist: data goes in quotes.
+    With terms and phrases free to come in any order, no position is an
+    exception where a bare keyword is data: data goes in quotes.
     """
     status, body = query(text)
     _reject(status, body, f'term "{text.split(" ")[1]}" is also a keyword:', text)
@@ -234,9 +230,9 @@ def test_leading_command_word_is_rejected_with_the_quote(query, text):
     """A leading command word is a 400 naming the quote.
 
     A command word has no clause reading: recall:<value> is itself an error, so
-    a message offering it sent the caller from one rejection to the next. It
-    says only what works — quote the word — and never suggests a clause spelled
-    with a command.
+    a message offering it would send the caller from one rejection to the
+    next. It says only what works, quoting the word, and never suggests a
+    clause spelled with a command.
     """
     word = text.split()[1]
     status, body = query(text)
@@ -265,12 +261,13 @@ def test_leading_command_word_is_rejected_with_the_quote(query, text):
     ],
 )
 def test_trailing_reserved_word_error_is_actionable(query, text):
-    """The same mistake gets two wildly different messages today.
+    """A trailing reserved word gets a repair instruction, as a mis-cased one
+    does.
 
-    "recall ferry Top" produces "mis-cased keyword ... quote it ('Top') to
-    search for the word" — a repair instruction. "recall ferry top" produces
-    "Expected colon, but found \"\"", which reports end-of-input as an empty
-    literal and offers nothing. Both should route through the first message.
+    "recall ferry Top" is answered with "mis-cased keyword ... quote it ('Top')
+    to search for the word". "recall ferry top" must offer the same quote,
+    not "Expected colon, but found \"\"", which reports end-of-input as an
+    empty literal and offers nothing.
     """
     status, body = query(text)
     assert status == 400, f"{text!r}: expected 400, got {status} — {body!r}"
@@ -386,8 +383,9 @@ def test_reserved_word_where_a_value_is_required_names_the_clause(
     """A keyword in a numeric or temporal slot is a value error, not a grammar
     error, so the message names the clause and the value it could not read.
 
-    "Expected literal, but found \"top\"" is wrong twice: "top" *is* a literal
-    to the caller, and the clause that rejected it goes unnamed.
+    A message like "Expected literal, but found \"top\"" would mislead: "top"
+    *is* a literal to the caller, and the clause that rejected it would go
+    unnamed.
     """
     status, body = query(text)
     _reject(status, body, expected, text)
@@ -408,11 +406,10 @@ def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
     """A well-formed recall clause on a remember says it is a recall clause
     and which clauses a remember takes.
 
-    It used to get the keyword repair — "write since:<value> if a clause was
-    meant" — which tells the caller to write exactly what they wrote, so an
-    agent following it would send the same query back. The mistake is the
-    command the clause was given to, whatever its casing and wherever it sits
-    among the anchors.
+    The keyword repair ("write since:<value> if a clause was meant") would tell
+    the caller to write exactly what they wrote, so an agent following it
+    would send the same query back. The mistake is the command the clause was
+    given to, whatever its casing and wherever it sits among the anchors.
     """
     status, body = query(text)
     _reject(
@@ -427,10 +424,9 @@ def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
 
 
 # ---------------------------------------------------------------------------
-# The vec: clause. parseVecField produces precise positioned errors and both
-# call sites throw them away for a generic wrap — the exact mangling
-# TestClauseErrorsSurfaceUnmangled forbids for every other clause, and the one
-# clause that test does not cover.
+# The vec: clause. parseVecField's positioned errors reach the client as it
+# produced them, never behind a generic wrap, as every other clause's do
+# (TestClauseErrorsSurfaceUnmangled pins the same in Go).
 # ---------------------------------------------------------------------------
 
 
@@ -449,11 +445,10 @@ def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
     ],
 )
 def test_vec_clause_errors_surface_unmangled(query, text, expected):
-    """vec: is the one clause whose inner error is discarded by its caller.
+    """vec:'s inner, positioned error reaches the client unchanged.
 
-    The Go suite already forbids the string "Error while parsing" in any parse
-    error — it just never exercises vec. Both call sites should `return nil,
-    err` like every other clause does.
+    Both call sites return parseVecField's error as it is, like every other
+    clause's, rather than a generic "Error while parsing" wrap.
     """
     status, body = query(text)
     message = body.get("error") or ""
@@ -529,10 +524,10 @@ def test_special_character_outside_quotes_is_rejected(query, text, char):
     """Outside quotes a word is letters and digits only, and any other
     character is a 400 naming it.
 
-    Absorbed into a word, a special character changed the query without an
-    error: "recall ferry; recall bridge" read "ferry;" as a term and the second
-    recall as a search for the word "recall". Quoting is the escape — the test
-    above pins that every one of these characters is data inside quotes.
+    Absorbed into a word, a special character would change the query without
+    an error: "recall ferry; recall bridge" would read "ferry;" as a term and
+    the second recall as a search for the word "recall". Quoting is the
+    escape; the test above pins that such characters are data inside quotes.
     """
     status, body = query(text)
     _reject(status, body, f'"{char}" is only allowed inside a quoted phrase', text)
@@ -641,10 +636,10 @@ def test_durations_longer_than_a_duration_holds_are_rejected(query, text, expect
     """A duration past about 292 years is out of range, and the message says
     how far each unit goes.
 
-    It used to wrap negative and resolve to a bound in the future, so
-    since:106752d ran as a window opening after now — a 200 with nothing in
-    it, answering a question nobody asked. The limit is per unit, so the
-    message names the largest count the caller's own unit allows.
+    Wrapped negative, since:106752d would resolve to a bound in the future and
+    run as a window opening after now: a 200 with nothing in it, answering a
+    question nobody asked. The limit is per unit, so the message names the
+    largest count the caller's own unit allows.
     """
     status, body = query(text)
     _reject(status, body, expected, text)
@@ -674,8 +669,8 @@ def test_valid_temporal_values_parse(query, text):
 
 
 # ---------------------------------------------------------------------------
-# Graph selector. The best-messaged part of the parser; pinned so it stays that
-# way, and extended to the cases that currently fall back to generic errors.
+# Graph selector. Every malformed selector gets a message of its own rather
+# than a generic token error; these pin each one.
 # ---------------------------------------------------------------------------
 
 
@@ -735,8 +730,8 @@ def test_whitespace_separates_words(query, text):
 
 
 def test_nul_outside_quotes_is_rejected_by_name(query):
-    """A NUL outside a phrase is rejected for itself (#367): read as the end of
-    input, it used to drop everything after it without a word.
+    """A NUL outside a phrase is rejected for itself: read as the end of input,
+    it would drop everything after it without a word.
     """
     text = "recall zebras\x00food"
     status, body = query(text)
@@ -773,8 +768,9 @@ def test_no_space_inside_a_command_or_clause(query, text, expected):
 
 
 # ---------------------------------------------------------------------------
-# Structure: grouping, multiple commands, newlines. All currently land in the
-# generic default branch, which tells an agent nothing about which rule it hit.
+# Structure: grouping, multiple commands, newlines. Each is rejected with the
+# rule it broke rather than the generic "unexpected" fallback, which tells an
+# agent nothing about which rule it hit.
 # ---------------------------------------------------------------------------
 
 
@@ -791,10 +787,8 @@ def test_no_space_inside_a_command_or_clause(query, text, expected):
 )
 def test_grouping_is_rejected_as_unsupported(query, text):
     """Parentheses lex to LPAREN/RPAREN and no rule accepts them, so the error
-    should say grouping is unsupported rather than name the character.
-
-    If grouping is never coming, the tokens should stop being emitted; either
-    way "Encountered unexpected token: \"(\"" is the wrong answer.
+    says grouping is unsupported rather than only naming the character:
+    "Encountered unexpected token: \"(\"" would leave the caller guessing.
     """
     status, body = query(text)
     assert status == 400, f"{text!r}: expected 400, got {status} — {body!r}"
@@ -815,11 +809,10 @@ def test_grouping_is_rejected_as_unsupported(query, text):
 )
 def test_second_command_is_rejected_as_one_per_instruction(query, text):
     """FQL is one command per instruction, and the newline cases are the
-    dangerous ones: isBlank() swallows \\n, so "recall ferry\\nbridge" silently
-    becomes a two-term recall instead of an error.
-
-    The NEWLINE token exists in token.go and is never emitted — that is the gap
-    this pins.
+    dangerous ones: a lexer that skipped \\n as a blank would silently turn
+    "recall ferry\\nbridge" into a two-term recall instead of an error. The
+    lexer emits a NEWLINE token, and the parser rejects a second instruction
+    after it.
     """
     status, body = query(text)
     assert status == 400, (
@@ -925,8 +918,8 @@ def test_stop_word_only_recall_is_rejected(query, text):
 # Anchor-seeded recall. Anchors are seeds, not merely filters, so "everything
 # about billing" is a natural query: with no term or vector beside them the
 # anchors seed the recall with everything filed under them rather than
-# filter it. The results themselves are pinned in recall_test.py; here it is
-# the parse that every modifier a recall takes rides on the shape too.
+# filter it. The results themselves are pinned in recall_test.py; these pin
+# that the shape parses with every modifier a recall takes.
 # ---------------------------------------------------------------------------
 
 
@@ -945,12 +938,8 @@ def test_stop_word_only_recall_is_rejected(query, text):
 )
 def test_anchor_only_recall_is_reachable(query, text):
     """An anchor is a seed, so a recall with no text term is a well-formed
-    question — seeded by everything filed under it — and the parser accepts
+    question, seeded by everything filed under it, and the parser accepts
     each shape whatever the graph holds.
-
-    If a text term were genuinely required, this test should be replaced by
-    one pinning a message that *says* so — "expected a word or quoted phrase,
-    but found \"topic\"" reads like the anchor itself was malformed.
     """
     status, body = query(text)
     _accept(status, body, text)
@@ -989,9 +978,9 @@ def test_anchor_only_recall_is_reachable(query, text):
 def test_degenerate_input_is_a_clean_client_error(query, text):
     """Every unparsable string is a 400 carrying a non-empty message.
 
-    The empty query is called out separately below because "expected a command
-    (recall, remember), found \"\"" describes an empty *token*, not an empty
-    query.
+    The empty query is among them, although its message, "expected a command
+    (recall, remember), found \"\"", describes an empty *token* rather than an
+    empty query.
     """
     status, body = query(text)
     assert status == 400, f"{text!r}: expected 400, got {status} — {body!r}"

@@ -31,8 +31,8 @@
 //     enqueuing past it grows the queue rather than evicting anything.
 //
 // The implementation orders by Item.Priority as a MAX-priority queue (largest
-// first), matching the Item docs and the sibling Heap. Flip `less`/`byPriority`
-// below if the intended ordering is ever inverted.
+// first), matching the Item docs and the sibling Heap. Flip `less` below if the
+// intended ordering is ever inverted.
 package containers_test
 
 import (
@@ -64,7 +64,6 @@ func item(key uint32, pri uint64) containers.Item[uint32, int] {
 }
 
 // drainPQ dequeues everything and returns the priorities in pop order.
-// (assertNonIncreasing is shared with heap_test.go in this package.)
 func drainPQ(pq *containers.PriorityQueue[uint32, int]) []uint64 {
 	out := make([]uint64, 0, pq.Len())
 	for !pq.Empty() {
@@ -199,8 +198,8 @@ func TestEnqueue_GrowsPastCapacity(t *testing.T) {
 	}
 }
 
-// TestEnqueue_KeepsSmallItems is the dual of the old eviction test: a new item
-// smaller than everything present is kept, not dropped.
+// TestEnqueue_KeepsSmallItems checks that an item smaller than everything
+// queued is kept past the capacity hint, not evicted.
 func TestEnqueue_KeepsSmallItems(t *testing.T) {
 	pq := newPQ(t, 3)
 	pq.Enqueue(item(1, 10))
@@ -248,17 +247,14 @@ func TestEnqueue_CapacityIsHintNotBound(t *testing.T) {
 
 // ---- randomized property test ----------------------------------------------
 
-// less reports the max-priority ordering used by the queue. Invert to switch to
-// a min-priority queue.
+// less is the ordering the oracle expects: b dequeues before a when less(a, b).
+// Invert it if the queue ever becomes a min-priority queue.
 func less(a, b uint64) bool { return a < b }
 
-// TestFuzz_AgainstReferenceModel drives a long random sequence of Enqueue and
-// Dequeue against a plain slice used as an oracle. The queue is growable, so the
-// model simply tracks every live item; after each step Len and Peek must agree
+// TestFuzz_PQAgainstReferenceModel drives a long random sequence of Enqueue
+// and Dequeue against a plain slice used as an oracle. The queue is growable,
+// so the model tracks every live item; after each step Len and Peek must agree
 // and Dequeue must surface a true maximum priority.
-//
-// Keys are drawn from a wide range and the queue is not assumed to dedup by key;
-// the model therefore tracks a multiset of priorities.
 func TestFuzz_PQAgainstReferenceModel(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	const capacity = 32 // initial hint only; the queue grows past it

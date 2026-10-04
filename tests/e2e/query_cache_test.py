@@ -23,10 +23,10 @@
 """Plan-cache keying end to end.
 
 The engine substitutes a cached query object on a hash hit (engine.Plan), so
-the cache key must fold in everything that changes the result set. These are
-regression tests for the bug where Recall.Hash omitted the bound vector and
-the since/until bounds: the second of two recalls identical in text but
-different in those fields silently executed with the first one's values.
+the cache key must fold in everything that changes the result set, including
+the bound vector and the since/until bounds. If Recall.Hash omitted them, two
+recalls differing only in those fields would share a key, and the second
+would silently execute with the first one's values.
 
 Both tests issue the colliding pair back to back so the first response is the
 cached entry the second would wrongly reuse.
@@ -39,8 +39,9 @@ def test_identical_recall_text_rebinds_vector(query, vector):
 
     Each fact is stored with its own embedding; the recall term matches no
     stored text, so only the vector seeds the search and the top hit names
-    which vector was actually used. Before the fix, the second recall surfaced
-    the alpha fact: the cached query object still carried the alpha vector."""
+    which vector was used. With a stale cached plan, the second recall would
+    surface the alpha fact: the cached query object would still carry the
+    alpha vector."""
     graph = 6
     fact_a = "the cache probe fact alpha"
     fact_b = "the cache probe fact bravo"
@@ -79,9 +80,9 @@ def test_recall_time_bound_not_reused_across_queries(query):
     their own bound.
 
     The fact is written now, so `until:0s` (bound = now) includes it and
-    `until:1w` (bound = a week ago) excludes it. Before the fix both queries
-    shared a cache key, so the second ran with the first's bound and returned
-    the fact anyway."""
+    `until:1w` (bound = a week ago) excludes it. If both queries shared a
+    cache key, the second would run with the first's bound and return the
+    fact anyway."""
     graph = 6
     fact = "the cache probe fact charlie"
 

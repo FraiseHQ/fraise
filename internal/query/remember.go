@@ -52,11 +52,11 @@ func (r *Remember[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
 
-// Hash keys the query for the plan cache. Like Recall it must fold in the graph
-// selector and every field that changes what gets written — including the bound
-// vector: hashing only Value would make `remember@3 'x' topic:a` and
+// Hash keys the query for the plan cache. Like Recall's, it must fold in the
+// graph selector and every field that changes what gets written, the bound
+// vector included: hashing only Value would make `remember@3 'x' topic:a` and
 // `remember@5 'x' topic:b` collide, so the second would reuse the first's plan
-// and write to the wrong graph.
+// and write to the wrong graph under the wrong topic.
 func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")

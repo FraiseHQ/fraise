@@ -22,9 +22,9 @@
 
 """Shared fixtures for the Fraise end-to-end suite.
 
-The suite targets the server named by FRAISE_URL — inside the docker compose
-network that is http://fraise:9876 — and waits for its health check before
-any test runs.
+The suite targets the server named by FRAISE_URL (`make test-e2e` points it
+at the port docker compose publishes; unset, it is http://localhost:9876) and
+waits for its health check before any test runs.
 
 Graph allocation. Tests pin their writes to specific graphs so result counts
 stay deterministic, including across reruns against a long-lived server (a
@@ -33,20 +33,24 @@ order, so tests sharing a graph must not depend on each other's facts. Keep
 this map current when claiming a graph:
 
     0  comet + quasar shared-keyword facts
-       + monsoon/geyser ranking clusters  (test_recall.py, scoring_test.py)
-    1  loose remembers + concurrent load   (test_recall.py, test_concurrency.py)
+       + monsoon/geyser ranking clusters   (recall_test.py, scoring_test.py)
+    1  loose remembers + concurrent load   (recall_test.py, concurrency_test.py,
+                                            parser_test.py, api_test.py)
     2  union-across-keywords facts
-       + pulsar explain probes             (test_recall.py, explain_test.py)
-    3  real-embedding documents            (test_vectors.py)
-    4  vector dimension + forest bound     (test_vectors.py, test_stats.py)
+       + pulsar and storm explain probes   (recall_test.py, explain_test.py)
+    3  parrot round trip
+       + real-embedding documents          (recall_test.py, vectors_test.py)
+    4  vector dimension + forest bound     (vectors_test.py, stats_test.py)
     5  bird facts + anchored recall
        + the topic-named fact
-       + keyword-anchor + case-fold probes (test_concurrency.py, test_recall.py)
+       + keyword-anchor + case-fold probes (concurrency_test.py, recall_test.py)
     6  vector round trip + cache probes
-       + krakatoa fusion cluster          (test_vectors.py, test_query_cache.py)
+       + krakatoa fusion cluster
+       + the emoji fact                    (vectors_test.py, query_cache_test.py,
+                                            recall_test.py)
     7  planet star
        + lantern/almanac depth-lane probe
-       + tidepool + saltmarsh anchor probes (test_recall.py)
+       + tidepool + saltmarsh anchor probes (recall_test.py)
        never given a vector: vectors_test.py recalls it with one
     8  never written: the empty-graph probes (api_test.py)
 
@@ -126,15 +130,14 @@ def num_graphs(get):
 def primed_graphs(query):
     """Write one unsearchable fact into every graph the suite claims but 8.
 
-    A recall of a graph holding nothing is answered 204 with no body, which is
-    the correct answer and the wrong one to receive in a test about parsing,
-    warnings or limits: those issue recalls that deliberately match nothing and
-    never write first, so their status would depend on whether some other file
-    had happened to write to that graph yet, and files run in any order.
+    A recall of a graph holding nothing is answered 204 with no body. Tests
+    about parsing, warnings or limits issue recalls that match nothing without
+    writing first, so their status would otherwise depend on whether another
+    file had already written to that graph, and files run in any order.
 
     Priming makes "the graph is populated" true before any test runs, which is
-    also the state a real caller queries in. Graph 8 is deliberately left out —
-    it is the one graph the 204 itself is tested against.
+    also the state a real caller queries in. Graph 8 is left out: it is the one
+    graph the 204 itself is tested against.
     """
     for graph in range(8):
         status, body = query(f"remember@{graph} '{_PRIMER}'")
@@ -225,9 +228,8 @@ def vector_dim():
 
 @pytest.fixture(scope="session")
 def vector():
-    """Callable building a flat embedding of `dim` floats — the shape the API
-    expects for a parameter. (np.full(dim, ...) is 1-D; .tolist() keeps it
-    flat, not nested.)
+    """Callable building a flat list of `dim` floats, the shape the API expects
+    for a vector parameter.
     """
 
     def _vector(dim: int = VECTOR_DIM, value: float = 1.0) -> list[float]:
@@ -237,10 +239,10 @@ def vector():
 
 
 # Four facts sharing a single topic, each with a unique keyword. This is a
-# star: every fact hangs off the same "planets" hub. Recall returns facts, not
-# the hub, so from a seed fact the hub is one hop away (depth 1, invisible) and
-# the sibling facts are two hops away (depth 2). That makes the exact result
-# counts a clean function of depth and top.
+# star: every fact hangs off the same "planets" hub. A recall seeded from the
+# star touches no anchor but that hub, which then holds exactly its fair share
+# and transmits nothing (hub silence), so the exact result counts depend on
+# the keywords and top, never on depth.
 _PLANET_GRAPH = 7
 _PLANET_TOPIC = "planets"
 _PLANET_FACTS = {
@@ -251,13 +253,13 @@ _PLANET_FACTS = {
 }
 
 # The depth-lane probe. Transmission needs two touched anchors of different
-# concentration: a lone anchor's observed mass IS the background, so it holds
+# concentration: a lone anchor's observed mass is the background, so it holds
 # no surplus and stays silent (which is what the planet star above shows). Here
 # a tight "lanterns" cluster holds two of the query's three seeds while a
-# larger "almanac" hub holds one of eight members, so the cluster clears the
-# background and the hub does not. The cluster's third fact carries no query
-# term at all: it can only be returned if an anchor transmitted to it, which
-# makes it the probe that tells the two retrieval lanes apart.
+# larger "almanac" hub holds the third among its eight members, so the cluster
+# clears the background and the hub does not. The cluster's third fact carries
+# no query term at all: it can only be returned if an anchor transmitted to
+# it, which makes it the probe that tells the floor lane from the graph lanes.
 #
 # Shares graph 7 with the planet star: no fact here contains "mercury" or
 # "planet" and no planet fact contains "lantern", so neither set can appear in
@@ -296,8 +298,8 @@ _TIDEPOOL_ANCHORS = {
 
 # The default-top probe: one anchor holding more facts than the daemon's
 # configured default-top (10 in tests/fraise.config.toml), so an anchor-only
-# recall with no top: clause is visibly capped. Shares graph 7 with the probes above and
-# contains none of their words.
+# recall with no top: clause is visibly capped. Shares graph 7 with the probes
+# above and contains none of their words.
 DEFAULT_TOP = 10
 _SALTMARSH_TOPIC = "saltmarsh"
 _SALTMARSH_FACTS = tuple(f"saltmarsh channel {i} was surveyed" for i in range(12))

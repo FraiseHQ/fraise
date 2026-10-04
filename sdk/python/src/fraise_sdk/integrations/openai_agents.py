@@ -59,20 +59,19 @@ except ImportError as exc:  # pragma: no cover - exercised only without the extr
         "Install it with:  pip install 'fraise-sdk[openai]'"
     ) from exc
 
-# Tool-call budget: a sane ceiling so the model does not have to reason about
-# scale, overridable per call within the tool's own arguments. Depth has no
-# default here: an omitted clause takes the lane the server is configured
-# with, and this tool names no topic or entity, so any explicit lane above the
-# floor would only draw a warning.
+# The recall tool's default top, so the model need not choose one; it can still
+# pass its own. There is no default depth: an omitted clause takes the lane the
+# server is configured with, and the tool names no topic or entity, so a lane
+# above 0 would only draw a warning.
 DEFAULT_TOP = 5
 
-# The retrieval lanes are 0, 1 and 2 by design — the scorer runs at most one
-# anchor-mediated round — so a larger depth is not a deeper search but a
-# request the server rejects at parse time. The bound rides on the parameter's
-# annotation, which the framework turns into both the schema's range and a
-# validation of every call, so the model gets a correction it can act on
-# rather than a round trip that fails. An operator can only lower the ceiling
-# (max-depth), and the server's own rejection still surfaces as a tool error.
+# The retrieval lanes are 0, 1 and 2: a search runs at most one
+# anchor-mediated round, so the server rejects a larger depth at parse time.
+# The bound rides on the parameter's annotation, which the framework turns into
+# both the schema's range and a check on every call, so the model gets a
+# correction it can act on rather than a failed round trip. An operator can
+# only lower the ceiling (max-depth), and the server's own rejection still
+# reaches the model as the tool's answer.
 MAX_DEPTH = 2
 
 

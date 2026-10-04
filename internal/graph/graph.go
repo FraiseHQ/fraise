@@ -33,7 +33,7 @@ import (
 
 // GraphStats is a point-in-time snapshot of a graph's shape.
 type GraphStats struct {
-	Order   int `json:"order"`   // number of entities (vertices)
+	Order   int `json:"order"`   // number of vertices: facts, topics, entities
 	Size    int `json:"size"`    // number of relationships (edges)
 	Nodes   int `json:"nodes"`   // total stored nodes
 	Vectors int `json:"vectors"` // total vectors indexed
@@ -43,31 +43,30 @@ type GraphStats struct {
 	ForestEntries int `json:"forest_entries"`
 }
 
-// Graph is a temporal memory graph: the storage atomic component of the
-// database server. A la Redis, every database server holds multiple
-// in-memory graphs addressed by index (see the '@n' graph selector in FQL).
+// Graph is a temporal memory graph, the unit of storage in the database. As
+// with Redis databases, a server holds several graphs addressed by index (the
+// @N selector in FQL).
 //
-// K is the node key type; P is the floating-point precision used for
-// embedding vectors and ranking scores.
+// K is the node key type; P is the floating-point precision of embedding
+// vectors and ranking scores.
 //
-// Implementations are guarded by the embedded read-write lock methods;
-// callers are responsible for acquiring the appropriate lock around the
-// operations they compose (see the locking section below).
+// Methods do not lock. Callers hold the graph's read or write lock around the
+// calls they compose (see RLock and Lock below).
 type Graph[K comparable, P float32 | float64] interface {
 	GetHasher() hash.Hasher[K, string]
 
 	// Get returns the node stored under key, or nil if absent.
 	Get(key K) Node[K]
 
-	// Set inserts a new node, deriving its key via the graph's hash
-	// function.
+	// Set inserts a new node under its own key and fails if the key is
+	// already taken.
 	Set(node Node[K]) error
 
-	// Put replaces the node stored under key with the given node.
+	// Put stores node under key, replacing whatever was there.
 	Put(key K, node Node[K]) error
 
-	// Delete removes the node (and, by extension, its index entries and
-	// incident relationships).
+	// Delete removes the node, its index entries and its incident
+	// relationships.
 	Delete(node Node[K]) error
 
 	// GetVectorIndex returns the graph's vector (semantic) index, keyed
@@ -97,14 +96,14 @@ type Graph[K comparable, P float32 | float64] interface {
 	// the transpose of AdjacencyMap and serves reverse traversal.
 	PredecessorMap() map[K]map[K]K
 
-	// Neighbours returns the keys adjacent to key in either direction
-	// (successors and predecessors), in unspecified order. Unlike
-	// AdjacencyMap/PredecessorMap it copies no more than one node's edge
-	// rows, so a source-rooted traversal can read a single node's
-	// neighbourhood without cloning the entire edge set on every call.
+	// Neighbours returns the keys adjacent to key in either direction, in
+	// unspecified order. It copies only that node's edges, where
+	// AdjacencyMap and PredecessorMap copy every edge in the graph, so a
+	// traversal can read one node's neighbourhood cheaply.
 	Neighbours(key K) []K
 
-	// Order returns the number of entities (vertices) in the graph.
+	// Order returns the number of vertices (facts, topics and entities) in
+	// the graph.
 	Order() int
 
 	// Size returns the number of relationships (edges) in the graph.
@@ -113,65 +112,49 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Stats returns a point-in-time snapshot of the graph's shape.
 	Stats() GraphStats
 
-	// Search runs a hybrid query over the graph and returns matching
-	// nodes alongside their ranking scores and the contribution records
-	// the scores were folded from (parallel slices, ordered best-first, at
-	// most top entries — an implementation may return fewer than top when
-	// its own retrieval policy, such as a configured score cutoff, finds the
-	// tail not worth returning), plus the query's background rate — the one
-	// query-global observation the scoring fold used, which explain
-	// serializes so a client can recompute every score from its payload.
-	// A caller that only wants ranked hits discards both.
+	// Search runs a hybrid query over the graph. It returns the hits best
+	// first as three parallel slices of at most top entries (nodes, scores,
+	// and the contributions each score was folded from) and the query's
+	// background rate, which explain serializes so a client can recompute
+	// each hit's relevance. An implementation may return fewer than top hits
+	// when its own retrieval policy, such as a score cutoff, drops the tail.
 	//
-	// All criteria are optional and combine to narrow the result:
+	// The criteria combine to narrow the result:
 	//   - keywords: full-text terms matched against the text index
-	//   - vector:   query embedding for nearest-neighbor search; nil
-	//               (or empty) skips the vector index
-	//   - topics:   restrict results to facts tagged with these topics
-	//   - entities: restrict results to facts involving these entities
-	//   - depth:    selects the retrieval lane. 0 skips the anchor
-	//               traversal and ranks by seed mass alone (the floor; the
-	//               fast, text-only lane). 1 and 2 both run the one
-	//               anchor-mediated round and differ only in how much
-	//               above-chance evidence an anchor needs to transmit: 1 is
-	//               the precision lane, 2 admits at the plain fair share for
-	//               maximum recall. It does not iterate, and it runs only
-	//               through an anchor the query names: with no topic or
-	//               entity named the call is a text and vector search
-	//               whatever its depth
-	//   - top:      maximum number of results returned
-	//   - since:    inclusive lower time bound; zero value = unbounded
-	//   - until:    exclusive upper time bound; zero value = unbounded
+	//   - vector:   query embedding for nearest-neighbour search; nil or
+	//               empty skips the vector index
+	//   - topics:   keep only facts filed under at least one of these topics
+	//   - entities: keep only facts that mention at least one of these
+	//               entities
+	//   - depth:    the retrieval lane. 0 ranks by seed mass alone and skips
+	//               the anchor traversal. 1 and 2 run the same single
+	//               anchor-mediated round and differ only in the admission
+	//               bar: 1 admits only strongly above-chance anchors
+	//               (precision), 2 any anchor above its fair share (recall).
+	//               The round runs only when a topic or entity is named.
+	//   - top:      maximum number of results
+	//   - since:    inclusive lower time bound; zero is unbounded
+	//   - until:    exclusive upper time bound; zero is unbounded
 	//
-	// A call carrying no keywords and no vector has nothing to match, so
-	// with at least one topic or entity named the anchors seed the search
-	// themselves — "what do I know about billing?", asked before the caller
-	// knows what to search for. Every fact filed under any of them enters
-	// the candidates, unioned, carrying one unit anchor contribution per
-	// named anchor it is filed under, and the ranking runs on from there
-	// exactly as from a text or vector seed — the scorer, the recency decay,
-	// the time window and the top cap. A hit's score is therefore the number
-	// of named anchors it is filed under, decayed by its age: under one
-	// anchor newest first, and under several a fact filed under more of them
-	// starts with more mass and ages like any other. The anchors are seeds
-	// there, not filters on top; no traversal runs
-	// (depth is inert: every member is already in hand, and expanding from
-	// all of them would return most of the graph); and no anchor is
-	// observed, so the returned background is zero. An anchor nothing is
-	// filed under seeds nothing, so an unknown anchor is exactly an empty
-	// result.
+	// With no keywords and no vector, the named topics and entities seed the
+	// search themselves, for questions like "what do I know about billing?".
+	// Every fact filed under any of them is a candidate, with one unit of mass
+	// per named anchor it is filed under, and is then scored, decayed, time
+	// filtered and capped like any other candidate, so under a single anchor
+	// the newest facts come first. No traversal runs, so depth has no effect,
+	// and the background is zero. An anchor nothing is filed under seeds
+	// nothing.
 	//
-	// The error is a question that cannot be answered as asked, never an
-	// empty answer: a vector whose dimension differs from the one the graph's
-	// vector index was built at is index.ErrInvalidDimension. Dropping the
-	// vector instead would return plausible text-only hits with no sign that
-	// the semantic half of the question was ignored. A graph with nothing
-	// indexed yet is not an error — it simply seeds nothing.
+	// The error reports a question that cannot be answered as asked: a vector
+	// whose dimension differs from the vector index's is
+	// index.ErrInvalidDimension, rather than a text-only answer that silently
+	// ignores it. A graph with nothing indexed is not an error; it returns no
+	// hits.
 	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error)
 
-	// Graphs expose their read-write lock so callers can hold a single
-	// lock across a sequence of calls (e.g. Get-then-Put) instead of
-	// locking per call. The usual sync.RWMutex contract applies.
+	// The graph's read-write lock, exposed so a caller can hold one lock
+	// across a sequence of calls (e.g. Get then Put). The usual
+	// sync.RWMutex contract applies.
 
 	// RLock acquires the lock for reading.
 	RLock()
@@ -185,6 +168,6 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Unlock releases a write lock.
 	Unlock()
 
-	// Checks if graph is empty
+	// IsEmpty reports whether the graph holds no nodes.
 	IsEmpty() bool
 }

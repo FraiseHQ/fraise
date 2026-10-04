@@ -42,7 +42,7 @@ from fraise_sdk.providers import OpenAIEmbedder
 
 
 def main() -> None:
-    """Example runner."""
+    """Run the two-turn demo."""
     fraise = FraiseClient(os.environ.get("FRAISE_URL", "http://localhost:9876"))
 
     # Passing an embedder makes the memory tools vectorise implicitly: remember

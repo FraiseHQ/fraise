@@ -36,7 +36,7 @@ import (
 )
 
 // BTreeIndex is a full-text index backed by an ordered BTree from the
-// containers/trees submodule. The tree holds the set of indexed terms in
+// containers/trees package. The tree holds the set of indexed terms in
 // sorted order; the postings (term -> document key -> term frequency) are
 // kept beside it, since BTree only tracks membership, not payloads. The
 // installed Relevance model owns every scoring number and whatever corpus
@@ -45,11 +45,11 @@ import (
 //
 // A posting list is a slice of (key, tf) pairs sorted by key, not a map: the
 // search loop only reads it, and a contiguous slice streams through the
-// cache where a map hops. Removing a document tombstones its entries in
-// place — the tf drops to zero — rather than shifting every list it appears
-// in; the tombstones are garbage until Flush compacts them, the same
-// arrangement as the vector forest, and bounded the same way: once the index
-// holds more dead documents than live ones it compacts itself.
+// cache where a map hops. Removing a document tombstones its entries in place
+// (the tf drops to zero) rather than shifting every list it appears in. The
+// tombstones are garbage until Flush compacts them, as in the vector forest,
+// and the index compacts itself once it holds more dead documents than live
+// ones.
 type BTreeIndex[K comparable, P float32 | float64] struct {
 	tree      *trees.BTree[K, string, P] // ordered term dictionary (P is unused)
 	postings  map[string]*postingList[K] // term -> sorted (key, tf) entries
@@ -80,8 +80,9 @@ type postingList[K comparable] struct {
 
 // NewBTreeIndex returns an empty BTreeIndex whose term dictionary is an ordered
 // BTree over lexicographically sorted terms. compare orders document keys, the
-// tiebreak Search ranks equally-scoring documents by. The index starts on the
-// MatchCount relevance model — the ranking it always had.
+// tiebreak Search ranks equally-scoring documents by. The index starts with
+// the SimpleTokenizer and the MatchCount relevance model, until SetTokenizer
+// and SetRelevance replace them.
 func NewBTreeIndex[K comparable, P float32 | float64](compare comparator.Comparator[K]) *BTreeIndex[K, P] {
 	return &BTreeIndex[K, P]{
 		tree:      trees.NewBTree[K, string, P](32, comparator.OrderedComparator[string]),
@@ -104,11 +105,11 @@ func (idx *BTreeIndex[K, P]) SetTokenizer(t nlp.Tokenizer) {
 	idx.tokenizer = t
 }
 
-// SetRelevance installs the relevance model, mirroring the graph's Set*
-// precedent. It must be called before the first Insert and never after: the
-// model maintains its own corpus statistics through the lifecycle hooks, so
-// one arriving mid-corpus would score against empty statistics. nil is
-// ignored rather than stored: an index without a relevance model cannot rank.
+// SetRelevance installs the relevance model. It must be called before the
+// first Insert and never after: the model keeps its own corpus statistics
+// through the lifecycle hooks, so one installed mid-corpus would score against
+// statistics missing every document already indexed. nil is ignored rather
+// than stored: an index without a relevance model cannot rank.
 func (idx *BTreeIndex[K, P]) SetRelevance(r relevance.Relevance[K, P]) {
 	if r == nil {
 		return
@@ -116,9 +117,9 @@ func (idx *BTreeIndex[K, P]) SetRelevance(r relevance.Relevance[K, P]) {
 	idx.relevance = r
 }
 
-// Insert tokenizes value and adds key to the term dictionary, then records the
-// raw document for retrieval. If key is already indexed, its previous document
-// is replaced.
+// Insert tokenizes value, adds key to the posting list of each of its terms
+// and stores the raw document for Retrieve. If key is already indexed, its
+// previous document is replaced.
 func (idx *BTreeIndex[K, P]) Insert(key K, value string) error {
 	return idx.index(key, value)
 }
@@ -132,8 +133,8 @@ func (idx *BTreeIndex[K, P]) Retrieve(key K) (string, error) {
 	return value, nil
 }
 
-// Update re-tokenizes the document under key, adjusting the affected posting
-// lists.
+// Update replaces the document stored under key, re-indexing its terms. It
+// returns ErrIndexNotFound if key is not indexed.
 func (idx *BTreeIndex[K, P]) Update(key K, value string) error {
 	if _, ok := idx.documents[key]; !ok {
 		return ErrIndexNotFound
@@ -156,16 +157,13 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 
 // Search tokenizes query and returns the matching document keys ranked by
 // the installed Relevance model, best first, with the scores in a parallel
-// slice. The index runs the loop — term stream, postings, accumulation — and
-// the model supplies every number: how the query tokens become terms, what a
-// term is worth, what a document gains per match, and how match breadth folds
-// into the final relevance.
+// slice. The index runs the loop over terms and postings; the model supplies
+// every number: how the query tokens become terms, what a term is worth, what
+// a document gains per match, and how match breadth folds into the final
+// relevance.
 //
-// Documents of equal score are ordered by key, so the ranking is the total
-// order SearchIndex promises: the candidates are pooled in a map, so it is
-// the whole ranking — not just the tied group — that would otherwise vary
-// between identical queries once k truncates it. k bounds the number of
-// results; k <= 0 returns every match.
+// Documents of equal score are ordered by key, the total order SearchIndex
+// promises. k bounds the number of results; k <= 0 returns every match.
 func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	if len(idx.documents) == 0 {
 		return nil, nil, ErrEmptyIndex
@@ -173,9 +171,8 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 
 	terms := idx.relevance.Terms(idx.tokenizer.Tokenize(query))
 
-	// scores/matched are sized to the query's largest posting list up front:
-	// every key that can possibly appear in either map comes from one of
-	// these postings, so this is the exact worst case, not a guess.
+	// scores and matched are presized to the query's largest live posting
+	// list, a lower bound on how many documents the query matches.
 	var maxPosting int
 	for _, term := range terms {
 		if list, ok := idx.postings[term]; ok && list.live > maxPosting {
@@ -241,7 +238,7 @@ func (idx *BTreeIndex[K, P]) Count() int {
 
 // Entries reports the documents the postings physically hold: the live ones
 // plus those removed or replaced since the last compaction, whose tombstones
-// still sit in the lists. The automatic Flush keeps it under twice Count.
+// still sit in the lists. The automatic Flush keeps it at most twice Count.
 func (idx *BTreeIndex[K, P]) Entries() int {
 	return idx.Count() + idx.dead
 }
@@ -264,8 +261,7 @@ func (idx *BTreeIndex[K, P]) Flush() error {
 
 // maybeFlush compacts the postings once the index holds more dead documents
 // than live ones. Called after every mutation, it keeps the lists O(live
-// documents) with amortised-constant compaction cost, the forest's bound
-// applied to the postings.
+// documents) with amortised-constant compaction cost.
 func (idx *BTreeIndex[K, P]) maybeFlush() error {
 	if idx.dead <= len(idx.documents) {
 		return nil
@@ -314,9 +310,9 @@ func (idx *BTreeIndex[K, P]) index(key K, value string) error {
 
 // removePostings tombstones key in the posting list of every term in value
 // and retires the document from the relevance model's statistics. Both
-// callers — an update re-indexing under the same key and Delete — retire
-// through here, so the model sees exactly one Removed per Indexed, and each
-// leaves one dead document's worth of tombstones for Flush to reclaim.
+// callers, Delete and a re-index under the same key, retire through here, so
+// the model sees exactly one Removed per Indexed, and each leaves one dead
+// document's worth of tombstones for Flush to reclaim.
 func (idx *BTreeIndex[K, P]) removePostings(key K, value string) {
 	tokens := idx.tokenizer.Tokenize(value)
 	for _, term := range tokens {

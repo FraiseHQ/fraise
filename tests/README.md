@@ -1,6 +1,6 @@
 # Server-backed test suites
 
-Two suites live here, and both drive a real fraise server
+Two suites live here, and both drive a real fraise server:
 
 | Suite | Path | What it tests | Command |
 | --- | --- | --- | --- |

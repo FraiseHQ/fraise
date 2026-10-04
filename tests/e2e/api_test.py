@@ -115,7 +115,7 @@ def test_query_rejects_valid_uint8_selector_above_num_graphs(query):
 
 def test_wrapping_selector_write_does_not_leak_to_graph_zero(query):
     """Regression guard for the wrap itself: a rejected remember@256 must leave
-    no trace on graph 0 (the graph @256 used to wrap to). Read-only on graph 0
+    no trace on graph 0 (the graph @256 would wrap to). Read-only on graph 0
     apart from the probe recall, so it does not disturb that graph's facts.
     """
     status, _ = query("remember@256 'wrapprobe should never land' topic:wrapprobe")
@@ -156,21 +156,20 @@ def test_query_rejects_invalid_modifier_value(query, text):
     assert body.get("error"), f"expected a parse error message for {text!r}"
 
 
-# A keyed field is `key:value`. The parser used to advance past the separator
-# without checking it was a ':', so a missing colon did not fail — it shifted
-# every following token one role to the left. "recall x since 7d 30d" answered
-# with a 30d bound and no error at all, and "recall x topic food extra" filtered
-# by nothing. The tests below cover the whole keyed-field family together,
-# because the bug was per-helper: parseTop and parseDepth checked the separator,
-# parseAnchorField and parseTimeValue did not, and nothing pinned the contract
-# across all of them.
+# A keyed field is `key:value`, and the ':' is checked, never skipped. Skipping
+# it would shift every following token one role to the left: "recall x since
+# 7d 30d" would answer with a 30d bound and no error at all, and "recall x
+# topic food extra" would filter by nothing. The tests below cover the whole
+# keyed-field family together, because each clause is parsed by its own helper
+# (parseIntField, parseAnchorField, parseTimeValue) and the contract has to
+# hold across all of them.
 
 
 @pytest.mark.parametrize(
     "text,expected",
     [
         ("recall zebras topic food", "write topic:food"),
-        ("recall zebras topic food extra", "write topic:food"),  # the ticket repro
+        ("recall zebras topic food extra", "write topic:food"),
         ("recall zebras entity alice", "write entity:alice"),
         ("recall zebras since 7d", "write since:7d"),
         ("recall zebras until 30d", "write until:30d"),
@@ -213,13 +212,14 @@ def test_query_rejects_missing_field_separator(query, text, expected):
     ],
 )
 def test_query_rejects_shifted_time_bound(query, text):
-    """The shapes that used to parse clean, and are the reason this is a bug and
-    not a typo.
+    """The shapes that would parse clean if the separator were skipped, and
+    the reason a missing ':' is an error rather than a typo to tolerate.
 
-    With the separator skipped, `since 7d 30d` consumed `7d` as the separator
-    and took `30d` as the bound: a 200 carrying results scoped four times wider
-    than asked for. There is no signal an agent could use to notice that, which
-    is why these must be rejected rather than best-effort interpreted.
+    With the separator skipped, `since 7d 30d` would consume `7d` as the
+    separator and take `30d` as the bound: a 200 carrying results scoped four
+    times wider than asked for. There is no signal an agent could use to
+    notice that, which is why these must be rejected rather than best-effort
+    interpreted.
     """
     status, body = query(text)
 
@@ -232,9 +232,9 @@ def test_query_rejects_shifted_time_bound(query, text):
 def test_missing_separator_write_does_not_land(query):
     """A rejected remember must not have written anything.
 
-    The 400 covers the parse; this covers execution. A missing colon on a write
-    used to mis-assign the anchors rather than fail, so the fact was committed —
-    under the wrong topic, where no later recall would find it.
+    The 400 covers the parse; this covers execution. A missing colon that
+    mis-assigned the anchors rather than failing would commit the fact under
+    the wrong topic, where no later recall would find it.
     """
     status, _ = query("remember@5 'colonprobe should never land' topic colonprobe")
     assert status == 400
@@ -248,41 +248,36 @@ def test_missing_separator_write_does_not_land(query):
     )
 
 
-# A reserved word is only syntax where a clause can start. In value position —
-# the right-hand side of a field's ':', or the leading term a recall must
-# begin with — it reads as an ordinary word, so an entity that happens to be
-# called "top" needs no quoting. Two rules hold that line: a keyword
-# immediately followed by ':' is always a field, and a keyword is lower-case
-# only — written with any upper case where a clause could start, it is an
-# error naming the casing, never a term. One ambiguity survives — a leading
-# term that spells a keyword is legal data but one ':' from a clause — and it
-# is answered with a warning beside the results rather than a guess. The tests
-# below pin every side: the shapes that now parse, the keyword-colon shapes
-# that must stay rejected, the mis-cased shapes that must never be silently
-# swallowed as data, and the warning that covers the ambiguity no rule can
-# close.
+# A reserved word is only syntax where a clause can start. In value position,
+# the right-hand side of a field's ':', it reads as an ordinary word, so an
+# entity that happens to be called "top" needs no quoting; as a search term it
+# is quoted. Two rules hold that line: a keyword immediately followed by ':'
+# is always a field, and a keyword is lower-case only. Written with any upper
+# case where a clause could start, it is an error naming the casing, never a
+# term; glued to a ':', it runs as that clause with a warning naming the
+# casing. The tests below pin every side: the shapes that parse, the
+# keyword-colon shapes that must stay rejected, the mis-cased shapes that must
+# never be silently swallowed as data, and the casing warnings.
 
 
 @pytest.mark.parametrize(
     "text",
     [
         "recall@0 'Top'",  # upper case is legal in data position, and folds to the same word
-        "recall@0 'top' top:3",  # same spelling as term and clause, told apart by the ':'
-        "recall@0 shelf entity:top",  # the bug-report repro, on the read side
+        "recall@0 'top' top:3",  # same spelling as term and clause, told apart by the quotes and the ':'
+        "recall@0 shelf entity:top",  # a keyword as an anchor value, on the read side
         "recall@0 shelf topic:top",
         "recall@0 shelf entity:Top",  # an anchor value may carry any casing, keyword spelling or not
         "recall@0 shelf entity:since topic:recall",  # every keyword, not just "top"
     ],
 )
 def test_query_accepts_keyword_in_value_position(query, text):
-    """A keyword on the right of a field's ':', or as the leading recall term,
-    is data — the query parses and runs.
+    """A keyword on the right of a field's ':', or quoted as a recall term, is
+    data: the query parses and runs.
 
-    `remember 'x' entity:top` used to die with `parse error ... expected a
-    word or quoted phrase, but found "top"`, because the parser typed "top"
-    by spelling alone. An LLM extracting entities from prose will eventually
-    emit exactly that word bare ("she reached the top"), so one unlucky
-    extraction killed a whole ingestion run with a 400 the client could not
+    An LLM extracting entities from prose will eventually emit a keyword bare
+    ("she reached the top" -> entity:top), and a parser that typed "top" by
+    spelling alone would fail that write with a 400 the client could not
     anticipate. These probes are recalls of the same shapes, chosen because
     they are read-only: acceptance is proven without writing anything.
     """
@@ -294,7 +289,7 @@ def test_query_accepts_keyword_in_value_position(query, text):
 @pytest.mark.parametrize(
     "text",
     [
-        "recall@0 top:3",  # keyword+':' is the top clause — and a recall still needs a term first
+        "recall@0 top:3",  # keyword+':' is the top clause, and a recall still needs a seed
         "recall@0 shelf top",  # clause position: a bare keyword is a clause missing its ':'
         "remember@5 'x' entity:top:3",  # keyword+':' after the anchor's ':' is a field, not a value
         "remember@5 'x' entity:since:7d",  # ditto for a time field
@@ -321,7 +316,7 @@ def test_query_keeps_keyword_colon_as_a_field(query, text):
     [
         "Recall zebras",  # command position: commands are lower case
         "REMEMBER 'a shouted fact' topic:x",
-        "recall zebras Since 7d",  # parsed clean as a three-term search before the check
+        "recall zebras Since 7d",  # would read as a three-term search without the check
         "recall zebras Since 7d 30d",  # the shifted time-bound shape, through the casing door
         "recall zebras Depth 2",  # the same shape on a modifier
     ],
@@ -332,14 +327,15 @@ def test_query_rejects_miscased_keyword(query, text):
 
     Keywords are lower-case syntax; upper case is only legal where a token is
     unambiguously data (a term, a phrase, an anchor value). The dangerous
-    shapes are the last two: case folding of terms would happily read
-    `recall zebras Since 7d` as a three-term search — a 200 scoped by nothing,
-    with no signal to correct from — reviving the silent-shift family above
+    shapes are the last three: case folding of terms would read
+    `recall zebras Since 7d` as a three-term search, a 200 scoped by nothing
+    with no signal to correct from, reviving the silent-shift family above
     through the casing door.
 
-    A keyword glued to a ':' is the exception and is not listed here: nothing
-    else a word before a colon could be, so the casing is forgiven rather than
-    reported (see test_miscased_clause_before_a_colon_is_that_clause).
+    A keyword glued to a ':' is the exception and is not listed here: a word
+    before a colon can be nothing else, so it runs as that clause with a
+    warning rather than failing (see
+    test_miscased_clause_before_a_colon_is_that_clause).
     """
     status, body = query(text)
 
@@ -350,8 +346,9 @@ def test_query_rejects_miscased_keyword(query, text):
 def test_miscased_keyword_error_names_the_casing(query):
     """The 400 for a mis-cased clause keyword tells the agent what is wrong
     and how to get the word instead: lower-case the keyword, or quote the
-    word. Without the hint, `Since` blamed a stray ':' or nothing at all,
-    and the one thing the error must enable is self-correction.
+    word. Without the hint, the error for `Since` would blame a stray ':' or
+    nothing at all, and the one thing the error must enable is
+    self-correction.
     """
     status, body = query("recall zebras Since 7d")
 
@@ -374,9 +371,8 @@ def test_miscased_keyword_error_names_the_casing(query):
 def test_miscased_clause_before_a_colon_is_that_clause(query, text):
     """A keyword glued to a ':' is that clause whatever its casing.
 
-    This is the one place casing is forgiven, and it is forgiven because there
-    is nothing else to forgive it as: no production puts a bare word in front
-    of a colon, so `TOP:3` has exactly one reading. Reads only — a mis-cased
+    This is the one place casing is forgiven: no production puts a bare word
+    in front of a colon, so `TOP:3` has one reading. Reads only: a mis-cased
     write would add a fact the graph-5 counts elsewhere depend on.
     """
     status, body = query(text)
@@ -461,7 +457,7 @@ def test_unambiguous_query_carries_no_warnings_key(query, text):
     shape for the common case is unchanged and a client checking
     `"warnings" in body` gets a real signal, not a constant empty list.
     Quoting is how a reserved word or a stop word is searched for, so a
-    quoted term must genuinely be silent.
+    quoted term must be silent.
     """
     status, body = query(text)
 
@@ -471,12 +467,12 @@ def test_unambiguous_query_carries_no_warnings_key(query, text):
     )
 
 
-# depth selects the retrieval lane: 0 and 1 are the BM25 floor (no anchor
-# traversal), 2 is the one anchor-mediated round the scorer performs. Those are
-# the only meaningful values, so the grammar accepts exactly 0-2 and rejects
-# everything else — malformed values as parse errors, over-ceiling values as
-# limit errors. The lane *semantics* live in recall_test.py; these are the
-# rejections.
+# depth selects the retrieval lane: 0 is the floor (no anchor traversal), and 1
+# and 2 run the one anchor-mediated round at different admission bars. Those
+# are the only meaningful values, so the ceiling (db.max-depth, 2 by default)
+# admits exactly 0-2 and everything else is rejected: malformed values as
+# parse errors, over-ceiling values as limit errors. The lane *semantics* live
+# in recall_test.py; these are the rejections.
 
 
 @pytest.mark.parametrize(
@@ -504,7 +500,7 @@ def test_query_rejects_malformed_depth(query, text):
 def test_query_rejects_depth_past_the_ceiling(query, text):
     """A depth above 2 is refused rather than silently treated as depth:2.
 
-    The scorer does not iterate past one anchor-mediated round, so a larger
+    The search does not iterate past one anchor-mediated round, so a larger
     depth has no meaning. Answering it anyway would tell an agent its request
     was honoured when it was quietly downgraded — the same silent-reinterpretation
     failure the missing-separator tests above exist to prevent. The message
@@ -566,10 +562,10 @@ def test_parse_error_column_points_at_the_offending_token(query, text, blame):
     """The 400 must point at the last character of the token it quotes.
 
     The column is the only thing in the response that says *where* the query
-    went wrong, and a client's caret is drawn from it. It used to be taken from
-    the lexer's read cursor, which runs a token ahead of the parser, so an
-    error quoting `food` pointed at the end of the token after it — every case
-    here keeps a token to the right of the bad one, because that is the only
+    went wrong, and a client's caret is drawn from it. Taken from the lexer's
+    read cursor, which runs a token ahead of the parser, it would point an
+    error quoting `food` at the end of the token after it. Every case here
+    keeps a token to the right of the bad one, because that is the only
     arrangement in which the two positions differ.
     """
     status, body = query(text)
@@ -596,10 +592,9 @@ def test_parse_error_column_points_at_the_offending_token(query, text, blame):
 )
 def test_query_parse_error_message_is_unmangled(query, text, detail):
     """The clause helpers' positioned errors must reach the client verbatim.
-    The parser's call sites used to re-wrap them with a bad %e verb, turning a
-    clean 'invalid since value "soon"' into `&{%!e(string=...)}` in the 400
-    body — garbling, at the last step, exactly the message an agent needs to
-    self-correct.
+    A call site re-wrapping them with a bad %e verb would turn a clean
+    'invalid since value "soon"' into `&{%!e(string=...)}` in the 400 body,
+    garbling the message an agent needs to self-correct.
     """
     status, body = query(text)
     error = body.get("error", "")
@@ -615,17 +610,18 @@ def test_query_parse_error_message_is_unmangled(query, text, detail):
     )
 
 
-# A write, a recall of an empty graph, and a recall that matched nothing used
-# to be one shape: 200 with {"count":0,"hits":[]}. A stored fact was therefore
-# byte-identical to a failed search, and a caller who had never written to a
-# graph got the same answer as one whose query simply missed. These pin the
-# three apart, and both SDKs parse against them.
+# A write, a recall of an empty graph and a recall that matched nothing answer
+# in three shapes: the write's acknowledgement, a 204, and a 200 with
+# {"count":0,"hits":[]}. One shared shape would make a stored fact
+# byte-identical to a failed search, and give a caller who had never written
+# to a graph the same answer as one whose query missed. These pin the three
+# apart; the Python SDK and the MCP bridge both parse against them.
 
 
 def test_an_accepted_write_is_acknowledged_not_answered_with_results(query):
     """A write comes back 200 with its own acknowledgement and no result set.
 
-    The "status" key is the contract both SDKs branch on: its presence is what
+    The "status" key is part of the contract: its presence is what
     distinguishes an accepted write from a recall that matched nothing.
     """
     status, body = query("remember@1 'ackprobe is a loose remember'")

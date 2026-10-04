@@ -60,7 +60,7 @@ def _with_extracted(
     """Return ``given`` followed by the extracted values it does not already carry.
 
     The server folds anchors to lower case, so a value is a repeat whatever its
-    casing, and a repeat would only file the fact twice under one anchor. A
+    casing, and a repeat names an anchor the fact is already filed under. A
     bare string is returned untouched, for the builder to refuse by name.
     """
     if not extracted or isinstance(given, str):
@@ -105,18 +105,19 @@ class FraiseClient:
     :meth:`recall` would to ``POST /api/v1/explain``, which answers with the
     breakdown of every hit's score.
 
-    The client owns a :class:`requests.Session` for connection reuse. Use it as a
-    context manager (``with FraiseClient() as f: ...``) to close that session, or
-    call :meth:`close` explicitly.
+    Requests go through one :class:`requests.Session` for connection reuse,
+    created by the client unless ``session`` passes one in. Use the client as a
+    context manager (``with FraiseClient() as f: ...``) or call :meth:`close` to
+    close a session it created; a passed-in session is left open.
 
-    Pass ``embedder`` — an object with an ``embed(text)`` method or a plain
-    ``callable(text) -> Sequence[float]`` — to have :meth:`remember` and
-    :meth:`recall` encode their text into a vector automatically. It stays
-    optional: without one, both operate on text/keywords alone, and any call can
-    still override with an explicit ``vector`` or opt out with ``embed=False``.
+    Pass ``embedder`` (an object with an ``embed(text)`` method, or a plain
+    ``callable(text) -> Sequence[float]``) to have :meth:`remember` and
+    :meth:`recall` encode their text into a vector automatically. Without one,
+    both operate on text alone, and any call can still pass an explicit
+    ``vector`` or opt out with ``embed=False``.
 
-    Pass ``extractor`` — an object with an ``extract(text)`` method or a plain
-    ``callable(text) -> Sequence[Anchor]`` — to have :meth:`remember` file each
+    Pass ``extractor`` (an object with an ``extract(text)`` method, or a plain
+    ``callable(text) -> Sequence[Anchor]``) to have :meth:`remember` file each
     fact under the topics and entities it finds in the text, beside any given
     ones. The text itself is stored verbatim; ``extract=False`` opts a call out.
     """
@@ -141,7 +142,7 @@ class FraiseClient:
     # -- lifecycle ---------------------------------------------------------
 
     def close(self) -> None:
-        """Close context manager."""
+        """Close the session the client created; a passed-in session is left open."""
         if self._owns_session:
             self._session.close()
 
@@ -154,7 +155,7 @@ class FraiseClient:
     # -- operations --------------------------------------------------------
 
     def health(self) -> bool:
-        """Return True if the server answers its health check with 200/ok."""
+        """Return whether the server's health endpoint answers 200; never raises."""
         try:
             response = self._session.get(f"{self.base_url}/", timeout=self.timeout)
         except requests.RequestException:
@@ -181,18 +182,21 @@ class FraiseClient:
         return version if isinstance(version, str) and version else None
 
     def check_compatibility(self, *, strict: bool = False) -> bool:
-        """Verify the live server falls within this SDK's supported range.
+        """Check that the server's version is within :data:`SUPPORTED_SERVER`.
 
-        Returns ``True`` when the server version is within :data:`SUPPORTED_SERVER`.
-        On a mismatch — or when the version can't be determined — the default is to
-        emit a :class:`UserWarning` and return ``False``; pass ``strict=True`` to
-        raise :class:`FraiseError` instead. This makes no automatic network calls
-        of its own beyond the single health request; call it explicitly when you
-        want the guarantee.
+        It makes one health request, and only when called.
+
+        Args:
+            strict: raise instead of warning when the version is out of range
+                or cannot be read.
+
+        Returns:
+            ``True`` if the version is in range. Otherwise a :class:`UserWarning`
+            is emitted and ``False`` returned.
 
         Raises:
-            FraiseError: if server is not compatible in strict mode
-
+            FraiseError: in strict mode, if the version is out of range or
+                cannot be read.
         """
         version = self.server_version()
         if version is None:
@@ -228,29 +232,26 @@ class FraiseClient:
     ) -> None:
         """Store ``value`` as a fact in ``graph``.
 
-        ``topics`` and ``entities`` attach the fact to shared hubs so related
-        facts become reachable from one another on recall.
+        ``topics`` and ``entities`` are the anchors the fact is filed under;
+        facts that share an anchor can reach one another on recall.
 
         If the client has an extractor, the fact is also filed under the
         anchors it finds in ``value``, after the given ``topics`` and
         ``entities``; ``value`` itself is stored verbatim. ``extract`` overrides
-        that default per call — ``True`` forces extraction (and errors if no
+        that default per call: ``True`` forces extraction (and errors if no
         extractor is set), ``False`` skips it. A failed extraction costs the
         extracted anchors, never the fact: it is stored under the given ones,
         and a :class:`FraiseWarning` names the failure.
 
         A vector is attached when one is available: an explicit ``vector`` always
         wins; otherwise, if the client has an embedder, ``value`` is encoded
-        automatically. ``embed`` overrides that default per call — ``True`` forces
+        automatically. ``embed`` overrides that default per call: ``True`` forces
         encoding (and errors if no embedder is set), ``False`` skips it. The first
         vector written to a graph fixes that graph's dimension; later writes must
         match it.
 
         Returns nothing on success and raises :class:`FraiseAPIError` if the
-        server rejects the write. The server acknowledges an accepted write
-        with ``{"status": "ok"}`` rather than a read's empty result envelope,
-        so a stored fact is no longer the same bytes on the wire as a recall
-        that matched nothing.
+        server rejects the write.
         """
         topics, entities = self._resolve_anchors(value, topics, entities, extract)
         resolved = self._resolve_vector(vector, value, embed)
@@ -280,17 +281,17 @@ class FraiseClient:
         """Search ``graph`` for facts and return them ranked by relevance.
 
         ``query`` is a whole question, sent to the server as a single quoted
-        phrase term — natural language travels verbatim, never as bare words
-        that would collide with the grammar's reserved keywords. Pass any
-        number of ``keywords`` positionally as additional bare terms. A recall
-        needs at least one seed — a query, keywords, a vector, or a
-        ``topics``/``entities`` filter — from which the walk explores. ``top``
-        caps the number of results. ``depth`` picks the retrieval lane, 0 to
-        2: 0 searches the text and vector indices only, 1 lets topics and
-        entities that clearly concentrate the matches transmit to the facts
-        filed under them, 2 admits them at their fair share for maximum
-        recall; omitted, the server's configured lane applies. The graph is
-        entered only through a ``topics``/``entities`` filter, so a lane above
+        phrase term, so natural language travels verbatim rather than as bare
+        words that would collide with the grammar's reserved words. Pass any
+        number of ``keywords`` positionally as additional terms, each quoted
+        when it needs to be (see :mod:`fraise_sdk.query`). A recall needs at
+        least one seed: a query, keywords, a vector, or a ``topics``/``entities``
+        anchor. ``top`` caps the number of results. ``depth`` picks the
+        retrieval lane, 0 to 2: 0 searches the text and vector indices only, 1
+        lets topics and entities that clearly concentrate the matches transmit
+        to the facts filed under them, 2 admits them at their fair share for
+        maximum recall; omitted, the server's configured lane applies. The
+        graph is entered only through a named topic or entity, so a lane above
         0 on a recall without one has no effect and comes back with a warning.
 
         For semantic search, a vector is attached the same way as in
@@ -298,9 +299,9 @@ class FraiseClient:
         has an embedder, the ``query`` phrase (or, absent that, the space-joined
         ``keywords``) is encoded. ``embed`` overrides per call.
 
-        Any parse warnings the server attached — the query ran, but reads like
-        a near-miss of a different one — are listed on the result's
-        ``warnings`` and emitted as :class:`FraiseWarning` (see :meth:`query`).
+        Any warnings the server attached (the query ran, but something in it
+        cannot help or may not be what was meant) are listed on the result's
+        ``warnings`` and emitted as :class:`FraiseWarning`.
         """
         return self._recall(
             keywords,
@@ -329,17 +330,16 @@ class FraiseClient:
         embed: bool | None = None,
         timeout: float | None = None,
     ) -> RecallResult:
-        """Recall exactly as :meth:`recall` does, with each hit's score explained.
+        """Recall as :meth:`recall` does, with each hit's score explained.
 
-        Takes the same arguments and sends the same query, to the server's
-        explain route: the search runs through the same pipeline, and each hit
-        comes back with ``contributions``, the per-source sightings its score
-        was folded from — text, vector, graph or anchor — while the result
-        carries the query's ``background`` rate. Use it to see why a fact
-        ranked where it did, e.g. whether a multi-hop miss was reached through
-        the graph and ranked out, or never reached at all; use :meth:`recall`
-        when the ranking is all you need, since the breakdown costs response
-        size.
+        Takes the same arguments and sends the same query to the server's
+        explain route, which runs the same pipeline. Each hit comes back with
+        ``contributions``, the per-source sightings (text, vector, graph or
+        anchor) its score was folded from, and the result carries the query's
+        ``background`` rate. Use it to see why a fact ranked where it did, e.g.
+        whether a multi-hop miss was reached through the graph and ranked out,
+        or never reached at all. The breakdown costs response size, so use
+        :meth:`recall` when the ranking is all you need.
 
         Returns:
             The ranked result, as :meth:`recall` returns it, with
@@ -376,10 +376,9 @@ class FraiseClient:
     ) -> RecallResult:
         """Build, send and parse a recall, on the query or the explain route.
 
-        :meth:`recall` and :meth:`explain` both come through here, so the
-        vector they attach and the query string they send are built once: the
-        two cannot drift into asking different questions, and an explanation is
-        always of the ranking :meth:`recall` would return.
+        :meth:`recall` and :meth:`explain` share this path, so they build the
+        same query string and vector, and an explanation is always of the
+        ranking :meth:`recall` would return.
         """
         embed_text = query if query is not None else " ".join(keywords)
         resolved = self._resolve_vector(vector, embed_text, embed)
@@ -416,14 +415,14 @@ class FraiseClient:
         text: str,
         embed: bool | None,
     ) -> list[float] | None:
-        """Decide the vector to send: explicit wins, else encode when asked/able.
+        """Return the vector to send: an explicit one, else ``text`` encoded, or None.
 
-        ``embed`` is a three-way switch: ``True`` requires an embedder and always
-        encodes, ``False`` never encodes, ``None`` encodes only if an embedder is
-        configured and ``text`` is non-empty.
+        ``embed`` is a three-way switch: ``True`` requires an embedder, ``False``
+        never encodes, ``None`` encodes only if an embedder is configured. Blank
+        ``text`` is never encoded.
 
         Raises:
-            FraiseError: if embedding mode is active with no valid embedder
+            FraiseError: if ``embed`` is ``True`` and the client has no embedder.
         """
         if vector is not None:
             return [float(x) for x in vector]
@@ -447,24 +446,22 @@ class FraiseClient:
     ) -> dict:
         """Send a raw query string and return the decoded JSON body.
 
-        This is the low-level escape hatch behind :meth:`remember` and
-        :meth:`recall`; reach for it when you need a query the typed helpers do
-        not yet cover. Raises :class:`FraiseAPIError` on any non-2xx response.
+        The escape hatch for queries the typed helpers do not cover: the text
+        is sent exactly as written, and the server does the checking.
 
         The body's shape follows the query: a recall answers with ``results``,
         a write with ``{"status": "ok"}``. A recall of a graph that holds
-        nothing is answered 204 and has no body at all, which decodes to ``{}``
-        — :meth:`recall` reads that distinction off the status line, so prefer
-        it over this method when you need to tell an empty graph from a miss.
+        nothing is answered 204 with no body, which decodes to ``{}``.
+        :meth:`recall` reads that status instead, so prefer it when you need to
+        tell an empty graph from a miss.
 
         Any ``warnings`` the server attached to a successful response are
-        emitted as :class:`FraiseWarning` — every operation funnels through
-        here, so the typed helpers inherit that. Silence them by category with
+        emitted as :class:`FraiseWarning`, as they are for the typed helpers.
+        Silence them by category with
         ``warnings.filterwarnings("ignore", category=FraiseWarning)``.
 
-        Transport and API failures reach the caller from :meth:`_post`
-        unchanged — :class:`FraiseError` for a timeout or an unreachable
-        server, :class:`FraiseAPIError` for a non-2xx response.
+        Raises :class:`FraiseError` on a timeout or an unreachable server, and
+        :class:`FraiseAPIError` on any non-2xx response.
         """
         _, body = self._post(text, parameters=parameters, timeout=timeout)
         return body
@@ -479,11 +476,10 @@ class FraiseClient:
     ) -> tuple[int, dict]:
         """Send a query and return the response status beside its decoded body.
 
-        Every request funnels through here, including :meth:`query`'s. It is
-        split from that method because one successful answer carries its
-        meaning in the status line rather than the body — a 204 says the graph
-        searched holds nothing — and :meth:`query`'s contract is to return the
-        body, which for a 204 is empty.
+        Every query the client sends goes through here, :meth:`query`'s
+        included. It is separate from that method because a 204 carries its
+        meaning in the status line (the graph searched holds nothing), while
+        :meth:`query` returns only the body, which for a 204 is empty.
 
         Args:
             text: the raw query string.
@@ -496,8 +492,8 @@ class FraiseClient:
             response carried none.
 
         Raises:
-            FraiseError: if the request times out or the server is unreachable
-            FraiseAPIError: if API call to fraise fails
+            FraiseError: if the request times out or the server is unreachable.
+            FraiseAPIError: if the server answers with a non-2xx status.
         """
         payload: dict[str, object] = {"query": text}
         if parameters:
@@ -521,8 +517,9 @@ class FraiseClient:
                 f"could not reach fraise at {self.base_url}: {exc}"
             ) from exc
 
-        # Every response the server produces is JSON — decode first so an error
-        # body's ``error`` field can be surfaced verbatim.
+        # Decode first, so an error body's ``error`` field can be surfaced
+        # verbatim. A body that is not JSON (a 204's, or a proxy's error page)
+        # decodes to {}.
         try:
             body = response.json()
         except ValueError:
@@ -537,9 +534,9 @@ class FraiseClient:
         body = body if isinstance(body, dict) else {}
 
         # Surface server-attached warnings through Python's own channel: the
-        # query ran and the results are valid, but the server flagged a reading
-        # the caller may not have meant. Emitted per message, category-scoped,
-        # so a caller can react to one or silence them all.
+        # query ran and the results are valid, but the server flagged something
+        # in it the caller may want to change. One FraiseWarning per message, so
+        # a caller can react to one or silence them all.
         for message in body.get("warnings") or []:
             warn(message, FraiseWarning, skip_file_prefixes=SDK_FILES)
 
@@ -554,17 +551,18 @@ class FraiseClient:
         entities: Sequence[str] | None,
         extract: bool | None,
     ) -> tuple[Sequence[str] | None, Sequence[str] | None]:
-        """Decide the anchors to file ``value`` under: given, plus extracted.
+        """Return the anchors to file ``value`` under: the given ones, plus extracted.
 
         ``extract`` is the same three-way switch as ``embed``: ``True`` requires
         an extractor, ``False`` never extracts, ``None`` extracts only if one is
-        configured. Any failure of the extractor — a raised error or an answer
-        that is not a list of anchors — costs the extracted anchors and nothing
+        configured. Any failure of the extractor (a raised error, or an answer
+        that is not a list of anchors) costs the extracted anchors and nothing
         else: the given ones are returned, and a :class:`FraiseWarning` says
         why, so the fact is never lost to its tagging.
 
         Raises:
-            FraiseError: if extraction is required with no extractor configured
+            FraiseError: if ``extract`` is ``True`` and the client has no
+                extractor.
         """
         if extract is False:
             return topics, entities

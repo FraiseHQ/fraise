@@ -49,7 +49,7 @@ select = [
 ]
 ignore = [
     "E501", # over-length lines, formatter should handle it
-    "E741", # ambigous variable name
+    "E741", # ambiguous variable name
     "ANN401",
     "D401",
     "D211",

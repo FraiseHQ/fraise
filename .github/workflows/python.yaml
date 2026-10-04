@@ -77,7 +77,8 @@ jobs:
     # The SDK must work against the server image whichever architecture a user
     # runs it on, so every published architecture is crossed with every Python
     # the SDK supports (same version list as the unit-test job above). The
-    # runners are native, so each cell exercises that arch's real image.
+    # runners are native, so each cell builds and runs the server image for
+    # its own architecture.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -87,8 +88,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      # fraise runs as a docker daemon (Go builds inside the image), so only
-      # uv is needed here to run pytest against it.
+      # fraise runs in a container (Go builds inside the image), so only uv is
+      # needed here to run pytest against it.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
           python-version: ${{ matrix.python }}
@@ -99,7 +100,7 @@ jobs:
   publish-python:
     name: Publish to PyPI
     if: startsWith(github.ref, 'refs/tags/python/v')
-    # integration already requires test, so this gates on both: nothing reaches
+    # integration already requires unit, so this gates on both: nothing reaches
     # PyPI unless the SDK passed against a live server on amd64 and arm64.
     needs: integration
     runs-on: ubuntu-latest

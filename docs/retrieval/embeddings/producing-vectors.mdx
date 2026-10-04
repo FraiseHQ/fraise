@@ -19,14 +19,14 @@ client.recall(query="colourful birds")                         # encoded for you
 | Embedder | Default model | Notes |
 |---|---|---|
 | `OpenAIEmbedder` | `text-embedding-3-small` | its `dimensions` parameter can be set to match a graph's existing dimension |
-| `HuggingFaceEmbedder` | `sentence-transformers/all-MiniLM-L6-v2` | sentence-level models only: a model emitting one vector per token has nothing to store |
+| `HuggingFaceEmbedder` | `sentence-transformers/all-MiniLM-L6-v2` | sentence-level models only: a model returning one vector per token is rejected |
 | anything else | — | an `Embedder` subclass, or a bare `callable(text) -> Sequence[float]` |
 
 Both vendor SDKs are optional extras, imported inside the function that needs them, so `import fraise_sdk` stays cheap for callers who use neither.
 
 ## Without an embedder
 
-A client without an embedder still works; it simply writes and recalls without vectors, on text and graph structure alone.
+A client without an embedder still works: it writes and recalls without vectors, on text and graph structure alone.
 
 Per call:
 

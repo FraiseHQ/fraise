@@ -53,8 +53,8 @@ func newEngine(t *testing.T, cfg *config.ConfigSet) *engine.Engine[uint64, float
 	return e
 }
 
-// TestNewEngine checks that construction wires up the scheduler and its
-// dependencies.
+// TestNewEngine checks that construction wires up the scheduler and the
+// optimisation pipeline.
 func TestNewEngine(t *testing.T) {
 	e := engine.NewEngine[uint64, float32](config.New(), hash.NewHasher[uint64](config.New()))
 	if e.Scheduler == nil {
@@ -146,9 +146,8 @@ func TestPlanReturnsStream(t *testing.T) {
 	}
 }
 
-// TestPlanCachesQuery checks that planning the same query twice serves the
-// second call from the cache: the cached, optimised query is returned rather
-// than re-optimised, and both plans succeed.
+// TestPlanCachesQuery checks that Plan caches the query under its hash, and
+// that planning the same query again succeeds.
 func TestPlanCachesQuery(t *testing.T) {
 	cfg := config.New()
 	e := newEngine(t, cfg)

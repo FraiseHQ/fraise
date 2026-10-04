@@ -83,17 +83,18 @@ const (
 	RelevanceMatchCount string = "matchcount"
 )
 
-// db.ranking-algorithm.name — the global boost applied to walk scores; "none"
-// disables it.
+// db.ranking-algorithm.name — the global boost applied to relevance scores;
+// "none" disables it.
 const (
 	RankingNone     string = "none"
 	RankingPageRank string = "pagerank"
 )
 
 // The values each setting accepts, in the order the error message lists them.
-// They are the single source of truth for the accepted set: every consumer
-// switches on these same constants, so a value added here without a case there
-// fails to compile rather than falling through to a default.
+// They are the single source of truth for the accepted set, and consumers
+// switch on the same constants. A value added here needs a case in each of
+// them: a missing case still compiles, and the value silently gets that
+// consumer's fallback.
 var (
 	LogLevels = []string{LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError}
 
@@ -113,14 +114,13 @@ var (
 )
 
 // Canonical rewrites *v to whichever accepted value it matches
-// case-insensitively, and rejects it if none does.
+// case-insensitively. If none does, it leaves *v as typed and returns
+// ErrInvalidValue listing the accepted values.
 //
-// Both halves matter. Matching case-insensitively is why `-log-level error`
-// works — it is what an operator types first, and it used to match no case in
-// the logger's switch. Rewriting to the canonical spelling is what lets every
-// consumer downstream compare with ==, instead of each one deciding for itself
-// whether "Json" counts. name is the setting's dotted config path, so the
-// message points at the line to edit rather than at a bare value.
+// Matching case-insensitively accepts whatever casing an operator types, such
+// as `-log-level error`; rewriting to the canonical spelling lets every
+// consumer downstream compare with ==. name is the setting's dotted config
+// path, so the message points at the line to edit rather than at a bare value.
 func Canonical(v *string, name string, accepted []string) error {
 	for _, want := range accepted {
 		if strings.EqualFold(*v, want) {
@@ -131,22 +131,15 @@ func Canonical(v *string, name string, accepted []string) error {
 	return fmt.Errorf("%w: %s = %q (accepted: %s)", ErrInvalidValue, name, *v, strings.Join(accepted, ", "))
 }
 
-// validate rejects settings whose value names something the server cannot do.
+// validate rejects settings whose value the server cannot honour, so startup
+// fails instead of the server quietly doing something else.
 //
-// The alternative — the switch-with-a-default that every one of these replaced
-// — answers a request the server cannot honour by quietly doing something else:
-// `-log-level error` yielded INFO logs, and the operator's only clue was the
-// output they were trying to suppress still being there. db.precision was worse
-// still, falling back to float64 when its own default is float32, so a typo
-// changed the numeric precision of every score in the store. Startup is the one
-// moment where saying so costs nothing.
-//
-// Every setting with a fixed vocabulary belongs here. One left out is one that
-// keeps its silent fallback, and nothing about its consumer's switch makes that
-// visible from the outside. The same holds for a numeric setting with a bounded
-// domain: db.min-score-ratio is a fraction of the best hit's relevance, and a
-// value past 1 — an operator thinking in percent — would put the bar above
-// every hit and silently empty every recall, with no error anywhere.
+// Every setting with a fixed vocabulary belongs here: one left out gets its
+// consumer's silent fallback, and nothing makes that visible from the
+// outside. The same holds for a numeric setting with a bounded domain:
+// db.min-score-ratio is a fraction of the best hit's relevance, and a value
+// past 1 (an operator thinking in percent) would put the bar above every hit
+// and silently empty every recall.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string

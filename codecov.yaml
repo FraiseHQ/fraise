@@ -3,8 +3,9 @@ codecov:
 
 # One flag per component so the Go server and the Python SDK are reported
 # separately instead of averaging into a single misleading number.
-# carryforward matters because python.yaml is path-filtered: on a Go-only PR it
-# never runs, and without it the SDK's coverage would read as a drop to zero.
+# carryforward matters because the workflows are path-filtered: on a PR that
+# does not run one of them (go.yaml on an SDK-only PR, say), that component's
+# coverage would otherwise read as a drop to zero.
 flags:
   go:
     paths:

@@ -31,9 +31,7 @@ import (
 
 // TestCanonicalAcceptsAnyCasing pins the half of the contract an operator
 // notices: whatever casing they type is accepted and rewritten to the one
-// spelling everything downstream compares against. "error" is the case from the
-// bug report — it matched no arm of the logger's case-sensitive switch and so
-// silently produced INFO logs.
+// spelling everything downstream compares against.
 func TestCanonicalAcceptsAnyCasing(t *testing.T) {
 	cases := []struct {
 		value    string
@@ -65,9 +63,9 @@ func TestCanonicalAcceptsAnyCasing(t *testing.T) {
 
 // TestCanonicalRejectsUnknownValue pins the other half: an unrecognised value
 // is an error naming the setting and listing what it accepts, not a silent
-// fallback. The message is asserted in full because it is the entire remedy an
-// operator gets — an error that says only "invalid value" leaves them guessing
-// at the spelling, which is barely better than the default it replaced.
+// fallback, and the value is left as typed. Each part of the message is
+// asserted because the message is the operator's only remedy: an error that
+// says only "invalid value" leaves them guessing at the spelling.
 func TestCanonicalRejectsUnknownValue(t *testing.T) {
 	value := "verbose"
 	err := Canonical(&value, "log.level", LogLevels)
@@ -100,9 +98,9 @@ func TestValidateAcceptsTheDefaults(t *testing.T) {
 
 // TestValidateChecksEverySetting guards against a setting being validated in
 // one place and forgotten in another. Each case poisons exactly one setting of
-// an otherwise-default config, so a value left out of validate shows up as this
-// test passing where it should fail — the whole point being that no setting
-// keeps a silent fallback while its neighbours are checked.
+// an otherwise-default config, so a setting left out of validate fails its
+// case: no setting may keep a silent fallback while its neighbours are
+// checked.
 //
 // The setting's dotted name is asserted too: with this many settings checked in
 // one function, "invalid value" alone would not tell an operator which line to
@@ -141,12 +139,12 @@ func TestValidateChecksEverySetting(t *testing.T) {
 
 // TestValidateBoundsMinScoreRatio pins the domain of db.min-score-ratio: a
 // fraction of the best hit's relevance, so anything outside [0, 1] is rejected
-// at startup rather than acted on. Each value past the range is a distinct
-// silent failure the check replaces — 30 (an operator thinking in percent)
-// puts the bar above every hit so every recall comes back empty, a negative
-// ratio reads as "off", and NaN fails every comparison in the cutoff and
-// empties every recall too. The endpoints are kept: 0 is off and 1
-// keeps only hits tied with the best, both meaningful settings.
+// at startup rather than acted on. Each value past the range would otherwise
+// fail silently: 30 (an operator thinking in percent) puts the bar above
+// every hit so every recall comes back empty, a negative ratio reads as
+// "off", and NaN fails every comparison in the cutoff and empties every
+// recall too. The endpoints are kept: 0 is off and 1 keeps only hits tied
+// with the best, both meaningful settings.
 func TestValidateBoundsMinScoreRatio(t *testing.T) {
 	for _, ratio := range []float64{0, 0.3, 1} {
 		c := New()

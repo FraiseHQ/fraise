@@ -228,11 +228,11 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 
 // TestRPTreeIndexFlushIsReproducible pins that a fixed seed reproduces the
 // index across a rebuild: two indexes fed the same writes, both flushed, must
-// answer every query identically. Flush used to replay the live set in Go map
-// order, and a tree's splits depend on arrival order, so the two forests
-// diverged after the first rebuild. The settings keep the search approximate
-// — small leaves, two trees, no over-fetch — so a different forest shows up
-// as a different answer rather than being hidden by an exhaustive scan.
+// answer every query identically. A tree's splits depend on arrival order, so
+// a rebuild replaying the live set in Go map order would give the two indexes
+// different forests. The settings keep the search approximate (small leaves,
+// two trees, no over-fetch), so a different forest shows up as a different
+// answer rather than being hidden by an exhaustive scan.
 func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 	build := func() *index.RPTreeIndex[int, float64] {
 		rng := rand.New(rand.NewSource(7))
@@ -286,8 +286,7 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 		t.Errorf("Count() after Flush = %d, want %d", got, want)
 	}
 
-	// After Flush, deleted keys must be absent even from raw Nearest scans:
-	// Search over the whole remaining corpus should never surface them.
+	// Search over the whole remaining corpus must never surface a deleted key.
 	got, _, err := idx.Search(randVector(rng, 3), n)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
@@ -420,10 +419,9 @@ func TestRPTreeSearchIdenticalAcrossPrecision(t *testing.T) {
 }
 
 // TestRPTreeIndexInsertIdempotent checks that re-inserting a key with its
-// current vector never grows the forest. This is the regression guard for the
-// quadratic bloat bug: Graph.MergeFrom replays the whole vector set into the
-// live index after every staged write, so a non-idempotent Insert turned W
-// writes into O(W^2) forest entries.
+// current vector never grows the forest. Graph.Copy and Graph.MergeFrom replay
+// a whole vector set through Insert, so a non-idempotent Insert would add a
+// forest entry per vector on every replay.
 func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2, 32, 8, comparator.OrderedComparator[int])
@@ -504,8 +502,7 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 // TestRPTreeIndexSearchExactMatchIsDistanceZero pins that a vector identical
 // to the query reports a distance of plain zero: the re-rank carries
 // distances negated through the retained set, and a negative zero coming
-// back out would print as "-0" in an explain while comparing equal to zero
-// everywhere else.
+// back out would print as "-0" while comparing equal to zero.
 func TestRPTreeIndexSearchExactMatchIsDistanceZero(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 3, 1, 2, 32, 8, comparator.OrderedComparator[int])
 	if err := idx.Insert(1, containers.NewVector[int]([]float64{2, 3})); err != nil {

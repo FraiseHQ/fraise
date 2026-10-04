@@ -76,11 +76,12 @@ def test_the_fact_asked_about_outranks_its_neighbourhood(query):
     answer itself.
 
     Expansion requires surplus: a small cluster concentrating the query's
-    mass next to a bigger fair-share hub is the smallest shape where an
-    anchor speaks. The cluster's silent member is funded — attenuated α² —
-    and lands behind both facts that actually matched; the hub's memos stay
-    out entirely. Both topics are named because the graph is entered only
-    through an anchor the recall names.
+    mass next to a bigger hub holding no more than its fair share is the
+    smallest shape where an anchor speaks. The cluster's silent member is
+    funded, attenuated by α², and lands behind both facts that matched; the
+    hub transmits nothing, so its notes, which all contain "geyser", rank on
+    their own text match alone. Both topics are named because the graph is
+    entered only through an anchor the recall names.
     """
     graph = 0
     direct = (

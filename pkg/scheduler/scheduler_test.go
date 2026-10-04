@@ -332,8 +332,8 @@ func TestStopDrainsBufferedWrite(t *testing.T) {
 		t.Errorf("stream.Err = %v, want nil", stream.Err)
 	}
 
-	// The write must have landed in the live graph — commits are in place, so
-	// a fact that only ever reached a discarded staging copy is a regression.
+	// The write must have landed in the live graph: commits run in place, not
+	// on a copy.
 	g, err := s.DB.Select(0)
 	if err != nil {
 		t.Fatalf("Select(0) returned error: %v", err)

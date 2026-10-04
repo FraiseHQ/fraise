@@ -31,10 +31,9 @@ type LRUCache[K comparable, T any] struct {
 	capacity int
 	items    map[K]*list.Element
 	order    *list.List
-	// PERF: using a RWMutex to distinguish from read/ write actions
-	// but a sync.Mutex could have done the job here since the only
-	// read method is Len (Get modifies the state), depending on how often len
-	// is called, a sync.Mutex will be more efficient
+	// PERF: Len is the only method that takes the read lock (Get reorders the
+	// list, so it takes the write lock). Unless Len is called often, a
+	// sync.Mutex would be cheaper than this RWMutex.
 	mu sync.RWMutex
 }
 
@@ -51,7 +50,7 @@ func NewLRUCache[K comparable, T any](capacity int) (*LRUCache[K, T], error) {
 	}, nil
 }
 
-// Get returns the value for key and true if present, or zero value
+// Get returns the value for key and true if present, or the zero value
 // and false otherwise. Get marks the entry as most recently used.
 func (c *LRUCache[K, T]) Get(key K) (T, bool) {
 	c.mu.Lock()
@@ -67,7 +66,9 @@ func (c *LRUCache[K, T]) Get(key K) (T, bool) {
 	return elem.Value.(*Entry[K, T]).Value, true
 }
 
-// Set inserts a new value in the
+// Put inserts or updates the value stored under key and marks it most
+// recently used. A new key beyond the capacity evicts the least recently used
+// entry.
 func (c *LRUCache[K, T]) Put(key K, value T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -131,7 +132,9 @@ func (c *LRUCache[K, T]) Clear() {
 	c.order = list.New()
 }
 
-// Resizes LRU cache Returns the number of entries evicted
+// Resize sets the cache's capacity, evicting least recently used entries until
+// the cache fits, and returns how many it evicted. For a capacity that is not
+// strictly positive it returns ErrCacheCapacity and leaves the cache unchanged.
 func (c *LRUCache[K, T]) Resize(capacity int) (int, error) {
 
 	if capacity <= 0 {
@@ -143,20 +146,16 @@ func (c *LRUCache[K, T]) Resize(capacity int) (int, error) {
 	defer c.mu.Unlock()
 
 	switch {
-	// allocate new map (increase size)
-	// NOTE: this step could have been skipped
-	// as this is a pre-allocation hint for go
-	// but it also avoid resizing the map during
-	// subsequent puts
+	// Growing: rebuild the map with the new capacity as its size hint. Not
+	// required for correctness, but it saves later Puts from growing the map.
 	case c.capacity < capacity:
 		n := make(map[K]*list.Element, capacity)
 		for k, v := range c.items {
 			n[k] = v
 		}
 		c.items = n
-	// evict entries (reduce size)
+	// Shrinking: evict least recently used entries down to the new capacity.
 	case c.capacity > capacity:
-		// Evict down to the new capacity.
 		for c.order.Len() > capacity {
 			oldest := c.order.Back()
 			if oldest == nil {

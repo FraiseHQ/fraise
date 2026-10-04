@@ -33,16 +33,17 @@ class FraiseWarning(UserWarning):
     """A warning about a query that ran, from the server or from the SDK.
 
     The query ran and its results are valid; something in it may not be what
-    the caller meant. The server attaches one to a successful response — e.g. a
-    stop-word term that can never match — and the typed helpers raise one
-    before sending — e.g. ``recall("since", "7d")``, which searches the word
-    "since" though it is one ``:`` away from a ``since:7d`` bound. Emitted
-    through :mod:`warnings` so it is visible by default and silenceable by
-    category::
+    the caller meant. The server attaches one to a successful response, e.g.
+    for a stop-word term that can never match. The typed helpers emit one
+    before sending, e.g. for ``recall("since", "7d")``, which searches the word
+    "since" though it is one ``:`` away from a ``since:7d`` bound, or when an
+    extractor fails and the fact is stored without the extracted anchors.
+    Emitted through :mod:`warnings` so it is visible by default and silenceable
+    by category::
 
         warnings.filterwarnings("ignore", category=FraiseWarning)
 
-    Either way it names the caller's own line, never a line inside the SDK.
+    In every case it names the caller's own line, never a line inside the SDK.
     """
 
 

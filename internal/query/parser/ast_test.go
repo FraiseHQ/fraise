@@ -147,7 +147,7 @@ func TestTerms(t *testing.T) {
 	if got, want := terms.String(), "quickbrownfox"; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
-	// Pos comes from the first term, End from the last.
+	// Pos comes from the first term, End from the last term's Pos.
 	if got := terms.Pos(); got != pos(0) {
 		t.Errorf("Pos() = %v, want %v", got, pos(0))
 	}

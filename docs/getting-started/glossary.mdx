@@ -9,7 +9,7 @@ navIcon: "📖"
 - **fact** — a memory's atomic element: one self-contained statement, stored exactly as written, with the time it was written.
 - **topic** — an anchor for what a fact is about, written `topic:billing`.
 - **entity** — an anchor for who or what a fact mentions, written `entity:acme`.
-- **anchor** — a topic or entity: a vertex facts are filed under, and the thing a graph walk moves through.
+- **anchor** — a topic or entity: a vertex facts are filed under, through which evidence is transmitted between facts.
 - **memory graph** — a collection of facts linked to their topics and entities, indexed for hybrid search (full text, semantic and graph). An instance holds several, fully isolated from one another.
 - **stream** — one query on its way through the system: the unit the engine plans, the scheduler queues and the database applies to one graph.
 
@@ -17,7 +17,7 @@ navIcon: "📖"
 
 - **command** — the verb a query starts with: `recall` or `remember`.
 - **instruction** — a full query sent to the database engine: one command with its phrase or terms and its fields, on one line. Used interchangeably with *query*.
-- **phrase** — a single-quoted literal: the fact in a `remember`, or a multi-word term in a `recall`.
+- **phrase** — a single-quoted literal: the fact in a `remember`, or a `recall` term a bare word cannot express, such as several words or a reserved word.
 - **term** — a word or phrase a `recall` searches for; terms come before any field.
 - **field** — a `name:value` clause: an anchor, a vector binding (`vec:`) or a modifier.
 - **field value** — the part of a field after its `:`.
@@ -31,7 +31,7 @@ These are not part of the grammar, but they appear throughout the ranking docume
 - **seed** — the initial evidence a query puts into the graph: a matched term, a named anchor, or a vector's nearest neighbours.
 - **mass** — a seed's raw retrieval magnitude, in the units the source produced it in.
 - **surplus** — the part of an anchor's observed mass that exceeds what its size alone would predict.
-- **background rate ($\rho_0$)** — the query's seed mass per unit of anchor degree, over the anchors it reached: what an anchor of a given degree would hold if that mass were spread across them in proportion to size.
+- **background rate ($\rho_0$)** — the query's seed mass per unit of anchor degree, over the anchors it reached. An anchor's degree times $\rho_0$ is its fair share: what it would hold if that mass were spread across those anchors in proportion to size.
 - **lane** — which of the three `depth:` behaviours a recall takes: the BM25 floor, high precision, or maximum recall.
 
 The model that uses them is in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval) and [Excess transmission](/docs/retrieval/ranking/excess-transmission).

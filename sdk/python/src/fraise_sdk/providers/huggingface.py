@@ -24,7 +24,7 @@
 
 Optional: the ``huggingface_hub`` client is imported lazily and ships with the
 ``huggingface`` extra (``pip install 'fraise-sdk[huggingface]'``), so the core
-SDK depends on neither.
+SDK does not depend on it.
 """
 
 from __future__ import annotations
@@ -85,8 +85,7 @@ class HuggingFaceEmbedder(Embedder):
 
         Raises:
             ValueError: if the model returns a vector per token rather than one
-                for the whole text, which no pooling choice here could resolve
-                without silently changing what the caller's vectors mean.
+                for the whole text.
         """
         kwargs: dict[str, object] = {"model": self._model}
         if self._dimensions is not None:
@@ -94,7 +93,7 @@ class HuggingFaceEmbedder(Embedder):
         if self._normalize is not None:
             kwargs["normalize"] = self._normalize
         vector = self._client.feature_extraction(text, **kwargs)
-        # feature_extraction returns a numpy array; tolist() also flattens the
+        # feature_extraction returns a numpy array; tolist() also converts its
         # numpy scalars to plain floats, which json.dumps can serialize.
         to_list = getattr(vector, "tolist", None)
         if to_list is not None:

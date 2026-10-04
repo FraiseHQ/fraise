@@ -38,8 +38,8 @@ def test_the_backport_names_the_callers_line(session):
     """On Python 3.11 a FraiseWarning still names the caller's line.
 
     CI runs 3.12 and newer, where ``warn`` is the standard library's, so the
-    backport is swapped into the SDK's deepest warning path —
-    ``recall``, ``build_recall``, ``_term`` — to prove it on any interpreter.
+    backport is swapped into the SDK's deepest warning path (``recall``,
+    ``_recall``, ``build_recall``, ``_term``) to prove it on any interpreter.
     A warning pointing into the SDK leaves the caller hunting for the line.
     """
     with (
@@ -77,7 +77,7 @@ def test_the_backport_counts_a_plain_stacklevel_as_the_standard_library_does(
     """Without prefixes the backport is ``warnings.warn``, frame for frame.
 
     Its own frame must never be counted: an off-by-one here would move every
-    warning the SDK raises one line away from where it was aimed.
+    warning the SDK raises one frame away from where it was aimed.
     """
     seen = []
     for implementation in (_warn, warnings.warn):

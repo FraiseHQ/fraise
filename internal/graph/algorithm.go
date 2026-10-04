@@ -36,9 +36,9 @@ const (
 	Both
 )
 
-// Algorithm is the common root of every graph algorithm. It exposes only
-// identity; the runnable contract lives on the Traversal and Ranking
-// sub-interfaces, which differ in what they consume and produce.
+// Algorithm is the common root of the graph algorithms. Run executes the
+// algorithm on g; the result is a TraversalResult for a Traversal and a
+// RankingResult for a Ranking.
 type Algorithm[K comparable, P float32 | float64] interface {
 	Run(g Graph[K, P]) (AlgorithmResult, error)
 }
@@ -53,7 +53,8 @@ type TraversalResult[K comparable] struct {
 	Order []K
 
 	// Parent maps each visited vertex to the vertex it was discovered from,
-	// forming the traversal tree. The source maps to its own key.
+	// forming the traversal tree. A source visited at depth 0 maps to its own
+	// key.
 	Parent map[K]K
 
 	// Parents maps each visited vertex to every vertex it was reached through
@@ -75,18 +76,18 @@ type RankingResult[K comparable, P float32 | float64] struct {
 	Scores map[K]P
 }
 
-// Traversal explores a graph starting from a source vertex, visiting reachable
-// vertices in an order defined by the concrete algorithm (breadth-first for
-// BFS, depth-first for DFS). K is the vertex key type and P the graph's score
-// precision.
+// Traversal explores a graph from a source vertex, in an order defined by the
+// implementation: BFS visits every reachable vertex breadth-first, and
+// ExcessTraversal only the source's anchors and their members. K is the vertex
+// key type and P the graph's score precision.
 type Traversal[K comparable, P float32 | float64] interface {
 	Algorithm[K, P]
 
-	// traverse walks g from the algorithm's configured source and returns the
-	// visit order, traversal tree and per-vertex depth.
+	// traverse walks g from source and returns the visit order, traversal
+	// tree and per-vertex depth.
 	traverse(g Graph[K, P], source K) (TraversalResult[K], error)
 
-	// Sets the traversal source
+	// SetSource sets the vertex the next Run starts from.
 	SetSource(source K)
 
 	// Clone returns a fresh traversal with the same configuration but no
@@ -95,11 +96,11 @@ type Traversal[K comparable, P float32 | float64] interface {
 	Clone() Traversal[K, P]
 }
 
-// Ranking assigns a score to every vertex from the graph's global structure,
-// rather than from a single source (PageRank and other centralities).
+// Ranking scores vertices from the graph's global structure rather than from a
+// single source (PageRank and other centralities).
 type Ranking[K comparable, P float32 | float64] interface {
 	Algorithm[K, P]
 
-	// Rank computes a score for each vertex of g, keyed by vertex.
+	// rank scores the vertices of g, keyed by vertex.
 	rank(g Graph[K, P]) (map[K]P, error)
 }

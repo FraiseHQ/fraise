@@ -53,9 +53,10 @@ jobs:
   integration:
     name: Server + MCP bridge integration
     needs: lint
-    # The suite drives the freshly built binary in both of its roles at once —
-    # the daemon over HTTP and `fraise mcp` over stdio — so it needs Go, not
-    # docker. Same native two-arch matrix as e2e: the bridge is the binary.
+    # The suite drives the freshly built binary in both of its roles, the
+    # daemon over HTTP and `fraise mcp` over stdio, so it needs Go, not docker.
+    # It runs on the same native two-arch matrix as e2e, since the bridge is
+    # the same per-arch binary.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -91,7 +92,7 @@ jobs:
   deploy:
     name: Build and push
     needs: e2e
-    # Only publish on real pushes (branch/tag) — never on PRs or the weekly scan.
+    # Publish only on pushes (branch or tag), never on pull requests.
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

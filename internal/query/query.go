@@ -58,11 +58,12 @@ type QueryResult[K comparable, P float32 | float64] struct {
 	Count int         `json:"count"`
 	Hits  []Hit[K, P] `json:"hits"`
 
-	// Background is the query's background rate ρ₀ — the average seed mass
-	// per unit of anchor degree the traversal observed — attached only in
-	// explain mode. Together with each hit's contribution breakdown it lets a
-	// client recompute every score: S = m + α²·Σ max(0, M_A − m − d_A·ρ₀).
-	// omitempty doubles as the mode switch: a plain query never carries it.
+	// Background is the query's background rate ρ₀, the observed mass per unit
+	// of degree over the anchors the traversal touched, attached only in
+	// explain mode (omitempty keeps it off a plain response). With each hit's
+	// contributions it lets a client recompute the hit's relevance (its score
+	// before boost and recency decay):
+	// S = m + α²·Σ max(0, (M_A − m − d_A·ρ₀)/d_A).
 	Background P `json:"background,omitempty"`
 }
 
@@ -70,26 +71,23 @@ type Hit[K comparable, P float32 | float64] struct {
 	Node  *graph.Node[K]
 	Score P
 
-	// Contributions is the hit's per-source breakdown, populated only when
-	// the stream ran in explain mode; nil otherwise. nil doubles as the
-	// serialization switch — a recall hit always has at least one
-	// contribution, so nil unambiguously means "not asked for", never
-	// "asked for and empty". The entries are wire-shaped (anchor identities
-	// already resolved to their values) because resolution needs the graph,
-	// which only the commit site holds.
+	// Contributions is the hit's per-source breakdown, set only in explain
+	// mode. nil keeps it off the wire, and is unambiguous because a recall hit
+	// always has at least one contribution. The entries are already in wire
+	// form, anchors resolved to their values, because resolving them needs the
+	// graph, which only Commit holds.
 	Contributions []HitContribution[P]
 }
 
-// HitContribution is the wire form of one contribution: the source is
-// serialized by name, not by its Go constant, because the payload documents
-// ranking to clients that never see the enum. A text or vector entry carries
-// its raw mass and list position; a graph entry — one per funding anchor —
-// carries the anchor's full observed mass, the anchor's value under via, its
-// degree, and how many seeds funded it; an anchor entry — one per named
-// anchor an anchor-seeded fact is filed under — carries its unit mass and
-// the anchor's value under via. With the query-level background rate, these are
-// exactly the inputs of the scoring fold, so a client can recompute the
-// hit's score from its own payload.
+// HitContribution is the wire form of one contribution, with the source
+// serialized by name because clients never see the Go constants. A text or
+// vector entry carries its raw mass and list position. A graph entry, one per
+// funding anchor, carries the anchor's full observed mass, its value under
+// via, its degree and how many seeds funded it. An anchor entry, one per
+// named anchor an anchor-seeded fact is filed under, carries a unit mass and
+// the anchor's value and degree. With the query's background rate these are
+// the scorer's whole input, so a client can recompute the hit's relevance
+// from its own payload.
 type HitContribution[P float32 | float64] struct {
 	Source string `json:"source"`
 	Score  P      `json:"score"`
@@ -100,10 +98,9 @@ type HitContribution[P float32 | float64] struct {
 }
 
 // MarshalJSON flattens the node into the hit so the response carries only the
-// value, timestamp and score, with no nested Node object. The contribution
-// breakdown appears only when the hit carries one (explain mode), keeping the
-// ordinary query response byte-compatible with what it was before explain
-// existed.
+// value, timestamp and score, with no nested Node object. The contributions
+// appear only when the hit carries them (explain mode), so an ordinary query
+// response has no contributions key.
 func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	node := *h.Node
 
@@ -120,11 +117,10 @@ func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// bindVector resolves a vector placeholder to its data, enforcing both that the
-// parameter was supplied and that its dimension is within maxDim. A missing
-// parameter is ErrMissingParameter; an over-long vector is ErrLimitExceeded —
-// both are client errors surfaced as 400, and both are bounded here so a huge
-// vector never reaches the index.
+// bindVector resolves a vector placeholder to its data. A missing parameter is
+// ErrMissingParameter and a vector longer than maxDim is ErrLimitExceeded, both
+// client errors (400); checking the length here keeps an oversized vector from
+// reaching the index.
 func bindVector[P float32 | float64](params map[string][]P, name string, maxDim int) ([]P, error) {
 	data, provided := params[name]
 	if !provided {
@@ -138,14 +134,13 @@ func bindVector[P float32 | float64](params map[string][]P, name string, maxDim 
 
 // Parse turns a raw query string into an executable Query. Vector arguments are
 // passed out-of-band in params, keyed by the placeholder name used in the query
-// (e.g. `vec:$v` binds to params["v"]). This keeps the parser lightweight: it
-// only records the placeholder, and the real vector is injected here.
+// (e.g. `vec:$v` binds to params["v"]): the parser only records the
+// placeholder, and the vector is bound here.
 //
-// Warnings accompany a query that parsed and will run: they flag a reading the
-// client may not have meant (see parser.Warning) and must travel to the client
-// alongside the results, never attached to the query itself — the plan cache
-// substitutes query objects on a hash hit, so state on the query would leak
-// between requests.
+// Warnings flag a reading of a valid query the client may not have meant (see
+// parser.Warning). They are returned beside the query, never stored on it,
+// because the plan cache substitutes query objects on a hash hit and state on
+// the query would leak between requests.
 func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c *config.ConfigSet) (Query[K, P], []parser.Warning, error) {
 	cmd, warns, err := parser.Parse[K, P](q)
 	if err != nil {
@@ -178,12 +173,10 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		return qo, warns, nil
 
 	case *parser.RecallCommandNode[K, P]:
-		// Enforce the top/depth ranges before building the query: a
-		// client-supplied result count or walk depth outside its documented
-		// range is a client error, rejected here rather than clamped. Only an
-		// explicit clause is checked — the configured default is operator-set
-		// and trusted, so an unspecified top/depth is never rejected even if
-		// the default itself exceeds the ceiling.
+		// Enforce the top and depth ranges: an out-of-range value is a client
+		// error, rejected rather than clamped. Only an explicit clause is
+		// checked; the configured default is the operator's and is trusted,
+		// even above the ceiling.
 		top := n.Top(c.DB.DefaultTop)
 		if n.HasTop() && (top < 1 || top > c.DB.MaxTop) {
 			logger.Warn("Rejecting recall over top ceiling", "top", top, "max", c.DB.MaxTop)

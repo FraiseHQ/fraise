@@ -48,7 +48,7 @@ def test_resolve_callable():
 def test_resolve_embedder_prefers_embed_method():
     embedder = MagicMock()
     resolved = resolve_embedder(embedder)
-    # The bound .embed, not __call__ — which would recurse back into embed.
+    # The bound .embed, not __call__, which only delegates to it.
     assert resolved is embedder.embed
     resolved("abc")
     embedder.embed.assert_called_once_with("abc")

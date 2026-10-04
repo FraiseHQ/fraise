@@ -66,7 +66,7 @@ healthcheck:
 
 ## Stopping it
 
-`docker stop` sends SIGTERM, so the default path is the graceful one. It waits 10 seconds before SIGKILL by default — exactly the default `shutdown-grace` — so raise it with `--stop-timeout` or compose's `stop_grace_period`.
+`docker stop` sends SIGTERM, so the default path is the graceful one. It waits 10 seconds before SIGKILL by default, the same as the default `shutdown-grace`, so raise it with `--stop-timeout` or compose's `stop_grace_period`.
 
 <Note title="Container stop timeout" type="warning">
 

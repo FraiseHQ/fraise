@@ -21,11 +21,11 @@
 // SOFTWARE.
 
 // Black-box tests (package containers_test) for the bounded top-k ranker.
-// TopK is a drop-in replacement for sort-everything-then-truncate at the two
-// call sites that ranked search results (BTreeIndex.Search and the graph's
-// Search tail), so the central contract is equivalence with that baseline:
-// for any k, Drain must match sorting every offer by (score descending,
-// compare(key) ascending) and truncating to k, regardless of offer order.
+// TopK stands in for sort-everything-then-truncate wherever search results are
+// ranked (BTreeIndex.Search, RPTreeIndex.Search and the graph's Search tail),
+// so the central contract is equivalence with that baseline: for any k, Drain
+// must match sorting every offer by (score descending, compare(key) ascending)
+// and truncating to k, regardless of offer order.
 package containers_test
 
 import (

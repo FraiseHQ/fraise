@@ -51,10 +51,12 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// physically holds: the live entries plus any garbage awaiting Flush
 	// (stale copies from updates, tombstoned deletes). For structures that
 	// compact eagerly it equals Count. The gap between Entries and Count is
-	// the compaction debt surfaced by the stats endpoint.
+	// the compaction debt; the stats endpoint reports the vector index's
+	// Entries as forest_entries.
 	Entries() int
 
-	// Flush persists/compacts the index, releasing pending buffers.
+	// Flush compacts the index, discarding the garbage Entries counts beyond
+	// Count.
 	Flush() error
 
 	// Search returns the keys most relevant to query, best match first, with a
@@ -69,8 +71,8 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 }
 
 // TextIndex is a full-text index: it tokenizes string documents on insert and
-// answers keyword queries. Its score is the number of query terms a document
-// matches, so higher is a better match.
+// answers keyword queries. Its score comes from a relevance model (see
+// relevance.Relevance), so higher is a better match.
 type TextIndex[K comparable, P float32 | float64] = SearchIndex[K, string, P]
 
 // VectorIndex is an (approximate) nearest-neighbour index over dense vectors of

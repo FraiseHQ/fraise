@@ -35,22 +35,22 @@ import (
 	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
-// The scheduler executes planned query streams on a pool of workers fed by a
-// bounded queue; per-graph locking during execution serialises writes.
+// Scheduler executes planned query streams on a pool of workers fed by a
+// bounded queue. A stream holds its graph's lock while it runs, so writes to
+// one graph are serialised.
 type Scheduler[K ~uint64, P float32 | float64] struct {
 	Config *config.ConfigSet
 	Queue  chan *query.Stream[K, P]
 	DB     *db.DB[K, P]
 
-	// quit is closed by Stop to signal shutdown. Workers drain the queue and
-	// exit when it closes; Submit selects on it to refuse new work. It is never
-	// the Queue channel itself, so Stop never closes a channel a Submit might
-	// still be sending on (which would panic).
+	// quit is closed by Stop to signal shutdown: workers drain the queue and
+	// exit, and Submit refuses new work. Stop closes quit rather than Queue,
+	// because a Submit still sending on a closed channel would panic.
 	quit chan struct{}
 
-	// mu guards the Queue/quit fields against the Stop that nils them, so a
-	// Submit racing Stop reads a consistent pair instead of a half-torn-down
-	// scheduler (a send on a nil channel would otherwise hang forever).
+	// mu guards Queue and quit, which Start sets and Stop clears, so a Submit
+	// racing Stop reads a consistent pair rather than a half-torn-down
+	// scheduler.
 	mu sync.RWMutex
 
 	wg sync.WaitGroup
@@ -63,7 +63,7 @@ func NewScheduler[K ~uint64, P float32 | float64](config *config.ConfigSet) *Sch
 	return s
 }
 
-// Starts scheduler: allocates memory for queue and initializes workers
+// Start allocates the queue and starts the worker pool.
 func (s *Scheduler[K, P]) Start() error {
 	s.mu.Lock()
 	queue := make(chan *query.Stream[K, P], s.Config.Scheduler.BufferSize)
@@ -81,10 +81,8 @@ func (s *Scheduler[K, P]) Start() error {
 	return nil
 }
 
-// Stops scheduler: signals shutdown, drains accepted work, and releases the
-// queue. It is idempotent and safe on a scheduler that never started. The queue
-// is never closed — shutdown is signalled by closing quit — so a Submit racing
-// Stop can never send on a closed channel.
+// Stop signals shutdown, runs the streams already accepted and releases the
+// queue. It is idempotent and safe on a scheduler that never started.
 func (s *Scheduler[K, P]) Stop() {
 	s.mu.Lock()
 	queue, quit := s.Queue, s.quit
@@ -145,12 +143,12 @@ func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struc
 	}
 }
 
-// Submit enqueues a stream for execution. It is bounded and context-aware: it
-// blocks only until the queue has room, the configured enqueue timeout lapses,
-// the context is cancelled, or the scheduler shuts down. It returns ErrShutdown
-// if the scheduler is not running (never started, or stopped) and ErrQueueFull
-// if the queue stays saturated past the timeout, so a caller is never left
-// blocked on a full, nil, or closed queue and can shed load instead.
+// Submit enqueues a stream for execution. It blocks only until the queue has
+// room, the enqueue timeout lapses, ctx ends or the scheduler shuts down. It
+// returns ErrQueueFull on timeout, ErrEnqueueStream wrapping ctx's error if ctx
+// ends first, and ErrShutdown if the scheduler is stopping, stopped or was
+// never started, so a caller is never left blocked on a full or nil queue and
+// can shed load instead.
 func (s *Scheduler[K, P]) Submit(ctx context.Context, stream *query.Stream[K, P]) error {
 	s.mu.RLock()
 	queue, quit := s.Queue, s.quit
@@ -182,7 +180,8 @@ func (s *Scheduler[K, P]) Submit(ctx context.Context, stream *query.Stream[K, P]
 	}
 }
 
-// Executes stream
+// execute runs stream against its graph under the graph's lock and records any
+// error on the stream.
 func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 
 	// Always signal completion, even on an early error, so a caller waiting on
@@ -200,14 +199,11 @@ func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 
 	stream.Acquire(g)
 
-	// Commit executes in place against the live graph: Acquire already holds
-	// the exclusive lock for writes, so no staging copy is needed and the write
-	// costs O(fact) rather than O(graph) (copy + merge-back did the latter).
-	//
-	// The commit error is wrapped, not replaced: the cause must survive so the
-	// HTTP boundary can tell a client fault (a vector-dimension mismatch) from
-	// an internal one — collapsing it here turned every rejected write into an
-	// opaque 500.
+	// Commit runs in place against the live graph: Acquire holds the
+	// exclusive lock for writes, so no staging copy is needed and a write
+	// costs O(fact), not O(graph). The commit error is wrapped rather than
+	// replaced, so the HTTP boundary can still tell a client fault (a
+	// vector-dimension mismatch) from an internal one.
 	if err := stream.Commit(g); err != nil {
 		err = fmt.Errorf("%w: %w", ErrStreamCommit, err)
 		stream.Err = err

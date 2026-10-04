@@ -34,7 +34,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config
+// ConfigSet is the server configuration: one field per section of the TOML
+// file, and the flag set whose flags write to the same fields.
 type ConfigSet struct {
 	*flag.FlagSet `json:"-"`
 
@@ -49,10 +50,10 @@ type ConfigSet struct {
 }
 
 type SchedulerConfig struct {
-	// Number of workers scheduler has to execute read and writes
+	// Number of worker goroutines executing reads and writes.
 	Workers int `toml:"workers"`
 
-	// Buffer size is the scheduler channel buffer size.
+	// Capacity of the scheduler's stream queue.
 	BufferSize uint `toml:"buffer-size"`
 
 	// Maximum time a submit waits for space in a full queue before the
@@ -78,7 +79,7 @@ type ServerConfig struct {
 	// How long a graceful shutdown waits for in-flight requests to drain.
 	ShutdownGrace time.Duration `toml:"shutdown-grace"`
 
-	// Maximum request body size, in bytes, accepted by the query endpoint.
+	// Maximum request body size, in bytes, accepted by the query endpoints.
 	MaxBodyBytes int64 `toml:"max-body-bytes"`
 }
 
@@ -87,7 +88,7 @@ type LogConfig struct {
 	Level string `toml:"level"`
 
 	// LOG FORMAT: text or json (default = text)
-	// Note: all logs are printed in console. File logging not supported (yet)
+	// Logs go to stdout; file logging is not supported.
 	Format string `toml:"format"`
 
 	// Omit the timestamp from every line (default = false). For a supervisor
@@ -112,10 +113,10 @@ type DBConfig struct {
 	// How many independent graphs the store allocates (selectors 0..n-1)
 	NumGraphs int `toml:"num-graphs"`
 
-	// default top
+	// Top a recall uses when it has no top clause.
 	DefaultTop int `toml:"default-top"`
 
-	// default depth
+	// Depth a recall uses when it has no depth clause.
 	DefaultDepth int `toml:"default-depth"`
 
 	// Ceiling on a recall's top clause (rejected past this at parse time).
@@ -128,26 +129,20 @@ type DBConfig struct {
 	// parse time).
 	MaxVectorDimension int `toml:"max-vector-dimension"`
 
-	// The *minimum* candidate budget pulled from each source (keywords and
-	// vector). Search widens it to the requested result size — the effective
-	// budget is max(seed-size, top) — so a recall asking for more results
-	// than this can never be silently starved of candidates.
+	// The *minimum* candidate budget pulled from each source (text and vector
+	// index). Search widens it to max(seed-size, top), so a recall asking for
+	// more results than this is never starved of candidates.
 	SeedSize int `toml:"seed-size"`
 
 	// Score cutoff: a hit whose relevance is below this fraction of the best
-	// hit's is dropped, so a recall stops where the evidence does instead of
-	// filling to top. Relevance is the scorer's output, before the ranker's
-	// boost and recency decay: decay says nothing about evidence, and
-	// measured after it the ratio would become a recency window nobody set —
-	// a fact filed under the same anchors as the best hit would miss the bar
-	// for being older. Only the length changes; the order and the scores are
-	// untouched, and a ratio is scale-free, so it means the same thing
-	// whatever units the scorer produces. The hit with the best relevance
-	// always clears its own bar, so a result that matched is shortened, never
-	// emptied — an empty result keeps meaning "nothing matched". 0 (the
-	// default) is off: the cutoff trades a little recall for precision, and
-	// that trade is the operator's to make. A fraction, so validate rejects
-	// anything outside [0, 1]: past 1 even the best hit misses the bar.
+	// relevance in the ranked list is dropped, so a recall stops where the
+	// evidence does instead of filling to top. Relevance is the scorer's
+	// output before the ranking boost and recency decay; measured after
+	// decay, the bar would cut a fact with the same evidence as the best hit
+	// for being older. Only the length changes: order and scores are kept,
+	// and the best hit always clears its own bar, so a result that matched is
+	// never emptied. 0 (the default) is off, leaving the trade of recall for
+	// precision to the operator; validate rejects anything outside [0, 1].
 	MinScoreRatio float64 `toml:"min-score-ratio"`
 
 	// database hashing function
@@ -194,7 +189,7 @@ type RelevanceModel struct {
 	Name string `toml:"name"`
 }
 type RankingAlgorithm struct {
-	// only pagerank supported (if no ranking none is accepted)
+	// none or pagerank
 	Name string `toml:"name"`
 
 	// PageRank probability of following an edge (used when
@@ -228,13 +223,14 @@ type VectorSearch struct {
 
 type MCPConfig struct {
 	// Address of the daemon the `fraise mcp` bridge forwards to. Unset, it is
-	// the daemon this same config describes — 127.0.0.1 on server.port — so
+	// the daemon this same config describes (127.0.0.1 on server.port), so
 	// `fraise mcp -config x` finds whatever `fraise -config x` serves. The
 	// graph is not configured here: every query names its own with @N.
 	Address string `toml:"address"`
 }
 
-// Instanciates new configset
+// New returns a ConfigSet holding the built-in defaults, with a command-line
+// flag bound to every setting.
 func New() *ConfigSet {
 	config := &ConfigSet{}
 
@@ -303,14 +299,14 @@ func New() *ConfigSet {
 	return config
 }
 
-// Clones config set
+// Clone returns a shallow copy of c.
 func (c *ConfigSet) Clone() *ConfigSet {
 	config := &ConfigSet{}
 	*config = *c
 	return config
 }
 
-// Returns config as string (useful for debugging)
+// String returns the configuration as indented JSON, for debug logging.
 func (c *ConfigSet) String() string {
 	data, err := json.MarshalIndent(c, "", " ")
 	if err != nil {
@@ -319,8 +315,13 @@ func (c *ConfigSet) String() string {
 	return string(data)
 }
 
-// / Parses flag definition from argument list.
-// priority order is: parameters defined via CLI override config file.
+// Parse resolves the configuration from arguments. The config file they name
+// is decoded over the built-in defaults and the flags are applied over the
+// file; settings still at their zero value then take their default, and the
+// result is validated. A missing file is ErrMissingFile, returned with the
+// configuration complete and valid. flag.ErrHelp, ErrInvalidFlag,
+// ErrParsingFailed and ErrInvalidValue mean the configuration must not be
+// used.
 func (c *ConfigSet) Parse(arguments []string) error {
 
 	err := c.FlagSet.Parse(arguments)
@@ -336,13 +337,11 @@ func (c *ConfigSet) Parse(arguments []string) error {
 		c.configFile = DefaultConfigFile
 	}
 
-	// A missing config file is survivable — the flags already parsed, plus the
-	// built-in defaults, are a complete configuration — so that failure is
-	// carried to the end instead of returned here. Returning early used to skip
-	// adjust and validate entirely, which is how `-log-level error` with no
-	// config file reached the logger unchecked: the very case an operator hits
-	// first. A file that exists but cannot be used is the opposite case: it
-	// stops here, since nothing after it would run with what the operator wrote.
+	// A missing config file is survivable, since the flags and the built-in
+	// defaults are a complete configuration, so its error is carried to the
+	// end: the flags must still be adjusted and validated. A file that exists
+	// but cannot be used stops here, since nothing after it would run with
+	// what the operator wrote.
 	meta, fileErr := c.FromFile(c.configFile)
 	if errors.Is(fileErr, ErrParsingFailed) {
 		return fileErr

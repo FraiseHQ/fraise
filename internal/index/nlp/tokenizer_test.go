@@ -32,12 +32,11 @@ import (
 
 // TestWordsKeepsSpellingAndSymbolTerms pins the term boundary the tokenizers
 // and stop-word cleaning share: a term is a run of letters, digits and So
-// symbols, returned exactly as written. Emoji and marks such as ✓ and © are
-// terms in their own right — a fact whose salient content is an emoji used to
-// tokenize to nothing and index under no term, so it looked stored but could
-// never be found by text. Punctuation and the other symbol classes delimit as
-// before, so "c++" still splits to "c" and "$5" to "5", and joiners and
-// modifiers delimit, so a multi-rune emoji sequence yields its So symbols.
+// symbols, returned exactly as written. Emoji and signs such as ✓ and © are
+// terms in their own right, so a fact whose salient content is an emoji is
+// findable by text. Punctuation and the other symbol classes delimit, so
+// "c++" splits to "c" and "$5" to "5", and joiners and modifiers delimit, so
+// a multi-rune emoji sequence yields its So symbols.
 func TestWordsKeepsSpellingAndSymbolTerms(t *testing.T) {
 	tests := []struct {
 		name string
@@ -62,7 +61,7 @@ func TestWordsKeepsSpellingAndSymbolTerms(t *testing.T) {
 
 // TestStemmingTokenizerReducesInflections pins the stemmer's contract: the
 // split and casing are SimpleTokenizer's, and every English inflection lands
-// on its Snowball stem, so "running", "runs" and "RUN" become one term.
+// on its Snowball stem, so "RUNNING" and "runs" become one term.
 func TestStemmingTokenizerReducesInflections(t *testing.T) {
 	got := nlp.StemmingTokenizer{}.Tokenize("The runner was RUNNING; she runs easily!")
 	want := []string{"the", "runner", "was", "run", "she", "run", "easili"}
@@ -72,9 +71,9 @@ func TestStemmingTokenizerReducesInflections(t *testing.T) {
 }
 
 // TestStemmingTokenizerPassesUnstemmableTermsThrough pins the safety half:
-// numbers, non-English words, CJK text and symbols pass through the stemmer
-// intact — stemming rewrites, it never drops, so every term the plain split
-// would index still exists under some spelling.
+// numbers, a word with no English suffix, CJK text and symbols pass through
+// the stemmer intact. Stemming rewrites, it never drops, so every term the
+// plain split would index still exists under some spelling.
 func TestStemmingTokenizerPassesUnstemmableTermsThrough(t *testing.T) {
 	got := nlp.StemmingTokenizer{}.Tokenize("v2 café 東京 1234 🍊")
 	want := []string{"v2", "café", "東京", "1234", "🍊"}

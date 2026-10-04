@@ -40,8 +40,8 @@ import (
 )
 
 // Server ties together the HTTP layer, the database, and the query engine.
-// K is the key type used to identify records, and P is the floating-point
-// precision (float32 or float64) used for the values they hold.
+// K is the node key type, and P the floating-point precision (float32 or
+// float64) of embeddings and scores.
 type Server[K ~uint64, P float32 | float64] struct {
 	// Config holds the full application configuration.
 	Config *config.ConfigSet
@@ -60,8 +60,8 @@ type Server[K ~uint64, P float32 | float64] struct {
 }
 
 // New constructs a Server wired up with a database, an engine, and the HTTP
-// routes. The hasher determines how keys are mapped to their string
-// representation for storage and lookup.
+// routes. The hasher keys the engine's plan cache; each graph derives its node
+// keys with its own.
 func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.Hasher[K, string]) (*Server[K, P], error) {
 
 	// Initialise the data store from the configuration.
@@ -80,9 +80,9 @@ func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.H
 	}
 
 	r := gin.New()
-	// Every failure answers in the one documented shape, {"error": ...}: a
-	// recovered panic is an internal failure like any other — generic body,
-	// detail in the log — where gin's own recovery answered 500 with no body.
+	// Every failure answers in the documented {"error": ...} shape. A
+	// recovered panic is an internal failure like any other: a generic body,
+	// with the detail in the log (gin's own recovery answers 500 with no body).
 	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		logger.Error("Recovered from panic in handler", "path", c.Request.URL.Path, "panic", recovered)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
@@ -191,7 +191,7 @@ func (s *Server[K, P]) Stop() error {
 }
 
 // setupRoutes registers the HTTP endpoints: a root health check plus the
-// versioned query endpoints under /api/v1.
+// versioned API under /api/v1.
 func (s *Server[K, P]) setupRoutes() {
 
 	// Group versioned API endpoints under /api/v1.
@@ -211,9 +211,9 @@ func (s *Server[K, P]) setupRoutes() {
 	// Stats endpoint: per-graph snapshots (nodes, edges, vectors, forest).
 	v1.GET("/stats", s.handleStats())
 
-	// Anything else — an unknown path, or a known one with the wrong method —
-	// is a 404 in the same {"error": ...} shape as every other failure, naming
-	// what was asked for, where gin answered in plain text.
+	// Anything else, an unknown path or a known one with the wrong method, is
+	// a 404 in the same {"error": ...} shape as every other failure, naming
+	// the method and path (gin's default answers in plain text).
 	s.router.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("no endpoint %s %s", c.Request.Method, c.Request.URL.Path)})
 	})
