@@ -27,175 +27,160 @@ The tools are exercised the way the framework invokes them, through
 cover the real wrapping rather than the undecorated closures.
 """
 
-import asyncio
-import json
-from unittest.mock import MagicMock
-
 import pytest
 from fraise_sdk.errors import FraiseError
-from fraise_sdk.models import Hit, RecallResult
-
-# The integration imports its framework at module scope, so skip the whole file
-# when the optional 'openai' extra is not installed.
-pytest.importorskip("agents", reason="requires the 'openai' dependency group")
-
-from agents.tool_context import ToolContext  # noqa: E402
-from fraise_sdk.integrations.openai_agents import (  # noqa: E402
+from fraise_sdk.integrations.openai_agents import (
     memory_tools,
     recall_tool,
     remember_tool,
 )
+from fraise_sdk.models import Hit
+
+# The tools are built and run by the framework, so skip the whole file when the
+# optional 'openai' extra is not installed.
+pytest.importorskip("agents", reason="requires the 'openai' dependency group")
 
 
-def _client(hits=(), raises=None) -> MagicMock:
-    """A mock FraiseClient replaying one recall result."""
-    client = MagicMock()
-    client.recall.return_value = RecallResult(count=len(hits), hits=list(hits))
-    if raises is not None:
-        client.recall.side_effect = raises
-        client.remember.side_effect = raises
-    return client
-
-
-def _encode(text: str) -> list[float]:
-    """A bare ``callable(text) -> vector`` embedder: the text's length."""
-    return [float(len(text))]
-
-
-def _embedder() -> MagicMock:
-    """A mock of the bare ``callable(text) -> vector`` embedder shape."""
-    embedder = MagicMock(side_effect=_encode)
-    # No .embed, so resolve_embedder takes the plain-callable branch.
-    del embedder.embed
-    return embedder
-
-
-def _invoke(tool, **arguments):
-    """Call a FunctionTool exactly as the agent runtime would."""
-    payload = json.dumps(arguments)
-    context = ToolContext(
-        context=None,
-        tool_name=tool.name,
-        tool_call_id="test-call",
-        tool_arguments=payload,
-    )
-    return asyncio.run(tool.on_invoke_tool(context, payload))
-
-
-def test_memory_tools_returns_both_tools():
-    tools = memory_tools(_client())
+def test_memory_tools_returns_both_tools(mock_client):
+    """memory_tools gives the agent both tools, recall first."""
+    tools = memory_tools(mock_client())
     assert [tool.name for tool in tools] == ["recall_memory", "remember_fact"]
 
 
-def test_tool_names_are_overridable():
-    client = _client()
+def test_tool_names_are_overridable(mock_client):
+    """``name=`` sets the name each tool is offered to the model under."""
+    client = mock_client()
     assert recall_tool(client, name="lookup").name == "lookup"
     assert remember_tool(client, name="store").name == "store"
 
 
-def test_recall_formats_hits_by_descending_relevance():
-    client = _client(
+def test_recall_formats_hits_by_descending_relevance(mock_client, invoke_function_tool):
+    """The answer lists one hit per line, in the server's order, with its relevance."""
+    client = mock_client(
         hits=[
             Hit(value="the sky is blue", score=0.9),
             Hit(value="grass is green", score=0.5),
         ]
     )
-    result = _invoke(recall_tool(client), keywords=["sky"])
+    result = invoke_function_tool(recall_tool(client), keywords=["sky"])
     assert (
         result
         == "- the sky is blue (relevance 0.900)\n- grass is green (relevance 0.500)"
     )
 
 
-def test_recall_without_hits_says_so_rather_than_returning_empty():
-    # An empty string would read to the model as a broken tool; the wording is
-    # what tells it to answer from its own context instead.
-    result = _invoke(recall_tool(_client()), keywords=["nothing"])
+def test_recall_without_hits_says_so_rather_than_returning_empty(
+    mock_client, invoke_function_tool
+):
+    """A recall that matched nothing says so in words.
+
+    An empty string would read to the model as a broken tool; the sentence is
+    what tells it to answer from its own context instead.
+    """
+    result = invoke_function_tool(recall_tool(mock_client()), keywords=["nothing"])
     assert result == "No stored facts matched those keywords."
 
 
-def test_recall_reports_server_errors_as_text():
-    # The tool answers a FraiseError with its own message rather than raising,
-    # which the framework would turn into its generic tool error.
-    client = _client(raises=FraiseError("connection refused"))
-    result = _invoke(recall_tool(client), keywords=["anything"])
+def test_recall_reports_server_errors_as_text(mock_client, invoke_function_tool):
+    """A FraiseError comes back as the tool's answer instead of being raised.
+
+    Raised, the framework would replace it with its generic tool error and the
+    model would never see the server's message.
+    """
+    client = mock_client(raises=FraiseError("connection refused"))
+    result = invoke_function_tool(recall_tool(client), keywords=["anything"])
     assert result == "memory lookup failed: connection refused"
 
 
-def test_recall_passes_graph_and_budgets_through():
-    client = _client()
-    _invoke(recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=2)
+def test_recall_passes_graph_and_budgets_through(mock_client, invoke_function_tool):
+    """The tool's graph and the model's keywords, top and depth reach recall as given."""
+    client = mock_client()
+    invoke_function_tool(
+        recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=2
+    )
     client.recall.assert_called_once_with(
         "a", "b", graph=3, top=7, depth=2, vector=None, embed=False
     )
 
 
-def test_recall_defaults_top_and_leaves_depth_to_the_server():
+def test_recall_defaults_top_and_leaves_depth_to_the_server(
+    mock_client, invoke_function_tool
+):
     """An omitted top takes the tool's default; an omitted depth is passed as
     None so no clause is emitted and the server's configured lane applies. A
     tool-side depth would be a lane the tool cannot use, since it names no
     topic or entity, and any value above the floor draws a warning per call.
     """
-    client = _client()
-    _invoke(recall_tool(client), keywords=["a"])
+    client = mock_client()
+    invoke_function_tool(recall_tool(client), keywords=["a"])
     call = client.recall.call_args.kwargs
     assert call["top"] == 5
     assert call["depth"] is None
 
 
-def test_recall_schema_bounds_depth_to_the_lanes():
+def test_recall_schema_bounds_depth_to_the_lanes(mock_client):
     """The generated schema carries the lanes' range on depth's integer branch.
 
     The bound rides on the parameter's annotation; this pins that the framework
     surfaces it to the model rather than dropping it on the way to JSON Schema.
     """
-    depth = recall_tool(_client()).params_json_schema["properties"]["depth"]
+    depth = recall_tool(mock_client()).params_json_schema["properties"]["depth"]
     integer = next(branch for branch in depth["anyOf"] if branch["type"] == "integer")
     assert (integer["minimum"], integer["maximum"]) == (0, 2)
 
 
 @pytest.mark.parametrize("depth", [-1, 3, 99])
-def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(depth):
+def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(
+    depth, mock_client, invoke_function_tool
+):
     """An out-of-range depth fails the framework's argument validation.
 
     The runtime answers the model with its standard tool error instead of
     raising into the agent loop, and the server is never called: the schema
     already told the model the range, so the correction is one retry away.
     """
-    client = _client()
-    result = _invoke(recall_tool(client), keywords=["a"], depth=depth)
+    client = mock_client()
+    result = invoke_function_tool(recall_tool(client), keywords=["a"], depth=depth)
     assert result.startswith("An error occurred while running the tool")
     client.recall.assert_not_called()
 
 
-def test_recall_vectorises_through_the_embedder():
-    client = _client()
-    embedder = _embedder()
-    _invoke(recall_tool(client, embedder=embedder), keywords=["ab", "cd"])
-    # Keywords are joined before encoding, so the vector covers the whole query.
+def test_recall_vectorises_through_the_embedder(
+    mock_client, invoke_function_tool, callable_embedder
+):
+    """The keywords, joined into one text, are encoded once and sent as the vector.
+
+    The tool passes ``embed=False``: it has already encoded, so the client must
+    not encode again.
+    """
+    client = mock_client()
+    embedder = callable_embedder()
+    invoke_function_tool(recall_tool(client, embedder=embedder), keywords=["ab", "cd"])
     embedder.assert_called_once_with("ab cd")
     call = client.recall.call_args.kwargs
-    assert call["vector"] == [5.0]
-    # embed=False: the tool has already encoded, the client must not redo it.
+    assert call["vector"] == [5.0] * 4
     assert call["embed"] is False
 
 
-def test_recall_without_an_embedder_sends_no_vector():
-    client = _client()
-    _invoke(recall_tool(client), keywords=["a"])
+def test_recall_without_an_embedder_sends_no_vector(mock_client, invoke_function_tool):
+    """Without an embedder the recall is keyword-only."""
+    client = mock_client()
+    invoke_function_tool(recall_tool(client), keywords=["a"])
     assert client.recall.call_args.kwargs["vector"] is None
 
 
-def test_remember_confirms_what_it_stored():
-    client = _client()
-    result = _invoke(remember_tool(client), fact="the sky is blue")
+def test_remember_confirms_what_it_stored(mock_client, invoke_function_tool):
+    """The answer repeats the fact stored, so the model sees what was kept."""
+    client = mock_client()
+    result = invoke_function_tool(remember_tool(client), fact="the sky is blue")
     assert result == "Stored: the sky is blue"
     assert client.remember.call_args.args == ("the sky is blue",)
 
 
-def test_remember_passes_topics_entities_and_graph():
-    client = _client()
-    _invoke(
+def test_remember_passes_topics_entities_and_graph(mock_client, invoke_function_tool):
+    """The fact, its topics and entities, and the tool's graph reach remember as given."""
+    client = mock_client()
+    invoke_function_tool(
         remember_tool(client, graph=2),
         fact="anne likes orange",
         topics=["colour"],
@@ -211,17 +196,21 @@ def test_remember_passes_topics_entities_and_graph():
     )
 
 
-def test_remember_reports_server_errors_as_text():
-    client = _client(raises=FraiseError("bad value"))
-    result = _invoke(remember_tool(client), fact="x")
+def test_remember_reports_server_errors_as_text(mock_client, invoke_function_tool):
+    """A FraiseError on remember comes back as the tool's answer instead of being raised."""
+    client = mock_client(raises=FraiseError("bad value"))
+    result = invoke_function_tool(remember_tool(client), fact="x")
     assert result == "could not store the fact: bad value"
 
 
-def test_remember_vectorises_through_the_embedder():
-    client = _client()
-    embedder = _embedder()
-    _invoke(remember_tool(client, embedder=embedder), fact="hello")
+def test_remember_vectorises_through_the_embedder(
+    mock_client, invoke_function_tool, callable_embedder
+):
+    """The fact is encoded once and sent as the vector, with ``embed=False``."""
+    client = mock_client()
+    embedder = callable_embedder()
+    invoke_function_tool(remember_tool(client, embedder=embedder), fact="hello")
     embedder.assert_called_once_with("hello")
     call = client.remember.call_args.kwargs
-    assert call["vector"] == [5.0]
+    assert call["vector"] == [5.0] * 4
     assert call["embed"] is False

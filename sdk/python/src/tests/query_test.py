@@ -36,6 +36,7 @@ from fraise_sdk.query import build_recall, build_remember
 
 
 def test_remember_minimal():
+    """A bare remember is the default graph and the quoted fact."""
     assert (
         build_remember("the parrot is turquoise")
         == "remember@0 'the parrot is turquoise'"
@@ -43,6 +44,7 @@ def test_remember_minimal():
 
 
 def test_remember_with_graph_topics_and_entities():
+    """The selector is glued to the verb, and the topics precede the entities."""
     got = build_remember(
         "anne loves the color orange",
         graph=3,
@@ -53,6 +55,7 @@ def test_remember_with_graph_topics_and_entities():
 
 
 def test_remember_with_vector_appends_placeholder():
+    """``with_vector`` appends the placeholder the client binds in the parameters."""
     got = build_remember("the parrot is turquoise", graph=6, with_vector=True)
     assert got == f"remember@6 'the parrot is turquoise' vec:${VECTOR_PARAM}"
 
@@ -63,6 +66,7 @@ def test_remember_escapes_apostrophes():
 
 
 def test_remember_rejects_empty_value():
+    """A blank fact raises FraiseQueryError instead of being sent."""
     with pytest.raises(FraiseQueryError):
         build_remember("   ")
 
@@ -100,19 +104,23 @@ def test_recall_query_phrase_escapes_apostrophes():
 
 
 def test_recall_with_keywords_and_clauses():
+    """Keywords come first, bare, then the top and depth clauses."""
     got = build_recall(["anna", "bob"], graph=2, top=10, depth=2)
     assert got == "recall@2 anna bob top:10 depth:2"
 
 
 def test_recall_with_vector_only():
+    """A vector alone seeds the recall, which then carries only the placeholder."""
     assert build_recall(graph=6, with_vector=True) == f"recall@6 vec:${VECTOR_PARAM}"
 
 
 def test_recall_topic_seed_is_enough():
+    """A topic alone seeds the recall, so no keyword is needed."""
     assert build_recall(topics=["birds"]) == "recall@0 topic:birds"
 
 
 def test_recall_requires_a_seed():
+    """A recall with no keyword, query, anchor or vector has nothing to search from."""
     with pytest.raises(FraiseQueryError, match="at least one seed"):
         build_recall(graph=1)
 
@@ -164,6 +172,7 @@ def test_recall_emits_depth_zero():
 
 
 def test_negative_graph_is_rejected():
+    """A negative graph raises before anything is sent."""
     with pytest.raises(FraiseQueryError, match="non-negative"):
         build_remember("x", graph=-1)
 
@@ -257,6 +266,9 @@ def test_an_anchor_value_is_quoted_only_when_a_bare_word_cannot_hold_it(
         assert build_remember("x", topics=[value]) == (
             f"remember@0 'x' topic:{rendered}"
         )
+
+
+# -- integration --------------------------------------------------------------
 
 
 @pytest.mark.parametrize(

@@ -407,36 +407,6 @@ class FraiseClient:
             explain=explain,
         )
 
-    # -- embedding ---------------------------------------------------------
-
-    def _resolve_vector(
-        self,
-        vector: Sequence[float] | None,
-        text: str,
-        embed: bool | None,
-    ) -> list[float] | None:
-        """Return the vector to send: an explicit one, else ``text`` encoded, or None.
-
-        ``embed`` is a three-way switch: ``True`` requires an embedder, ``False``
-        never encodes, ``None`` encodes only if an embedder is configured. Blank
-        ``text`` is never encoded.
-
-        Raises:
-            FraiseError: if ``embed`` is ``True`` and the client has no embedder.
-        """
-        if vector is not None:
-            return [float(x) for x in vector]
-        if embed is False:
-            return None
-        if embed is True and self._embed_fn is None:
-            raise FraiseError(
-                "embed=True but this client has no embedder; construct it with "
-                "FraiseClient(..., embedder=...)"
-            )
-        if self._embed_fn is None or not text.strip():
-            return None
-        return [float(x) for x in self._embed_fn(text)]
-
     def query(
         self,
         text: str,
@@ -541,6 +511,36 @@ class FraiseClient:
             warn(message, FraiseWarning, skip_file_prefixes=SDK_FILES)
 
         return response.status_code, body
+
+    # -- embedding ---------------------------------------------------------
+
+    def _resolve_vector(
+        self,
+        vector: Sequence[float] | None,
+        text: str,
+        embed: bool | None,
+    ) -> list[float] | None:
+        """Return the vector to send: an explicit one, else ``text`` encoded, or None.
+
+        ``embed`` is a three-way switch: ``True`` requires an embedder, ``False``
+        never encodes, ``None`` encodes only if an embedder is configured. Blank
+        ``text`` is never encoded.
+
+        Raises:
+            FraiseError: if ``embed`` is ``True`` and the client has no embedder.
+        """
+        if vector is not None:
+            return [float(x) for x in vector]
+        if embed is False:
+            return None
+        if embed is True and self._embed_fn is None:
+            raise FraiseError(
+                "embed=True but this client has no embedder; construct it with "
+                "FraiseClient(..., embedder=...)"
+            )
+        if self._embed_fn is None or not text.strip():
+            return None
+        return [float(x) for x in self._embed_fn(text)]
 
     # -- extraction --------------------------------------------------------
 

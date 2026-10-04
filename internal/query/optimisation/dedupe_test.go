@@ -32,8 +32,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/query/optimisation"
 )
 
-var _ optimisation.Optimisation[string, float32] = (*optimisation.Dedupe[string, float32])(nil)
-
 // --- Dedupe.Optimise --------------------------------------------------------
 
 func TestDedupeOptimiseRecall(t *testing.T) {

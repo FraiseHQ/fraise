@@ -30,38 +30,40 @@ from fraise_sdk import FraiseClient, FraiseError
 from fraise_sdk.providers.base import Anchor, Embedder, Extractor
 from fraise_sdk.providers.openai import OpenAIEmbedder, OpenAIExtractor
 
-DEFAULT_MODEL = "text-embedding-3-small"
 
-
-def _client(embedding=(0.1, 0.2, 0.3)) -> MagicMock:
-    """A mock ``openai.OpenAI`` answering with one embedding."""
-    client = MagicMock()
-    client.embeddings.create.return_value = MagicMock(
-        data=[MagicMock(embedding=list(embedding))]
-    )
-    return client
-
-
-def test_openai_embedder_calls_client_and_returns_vector():
-    client = _client()
-    embedder = OpenAIEmbedder(model=DEFAULT_MODEL, client=client, dimensions=3)
+def test_openai_embedder_calls_client_and_returns_vector(
+    embeddings_client, openai_default_model
+):
+    """embed sends the model, text and dimensions and returns the embedding."""
+    client = embeddings_client()
+    embedder = OpenAIEmbedder(model=openai_default_model, client=client, dimensions=3)
     assert embedder.embed("hello") == [0.1, 0.2, 0.3]
     client.embeddings.create.assert_called_once_with(
-        model=DEFAULT_MODEL, input="hello", dimensions=3
+        model=openai_default_model, input="hello", dimensions=3
     )
 
 
-def test_openai_embedder_is_callable_and_omits_dimensions_when_unset():
-    client = _client()
+def test_openai_embedder_is_callable_and_omits_dimensions_when_unset(
+    embeddings_client, openai_default_model
+):
+    """Calling the embedder embeds, under the default model and with no dimensions.
+
+    An unset ``dimensions`` is left out of the request, so the model answers at
+    its full width.
+    """
+    client = embeddings_client()
     OpenAIEmbedder(client=client)("world")  # __call__ inherited from the Embedder ABC
-    client.embeddings.create.assert_called_once_with(model=DEFAULT_MODEL, input="world")
+    client.embeddings.create.assert_called_once_with(
+        model=openai_default_model, input="world"
+    )
 
 
-def test_openai_embedder_is_an_embedder():
-    assert isinstance(OpenAIEmbedder(client=_client()), Embedder)
+def test_openai_embedder_is_an_embedder(embeddings_client):
+    """OpenAIEmbedder satisfies the Embedder contract the client resolves."""
+    assert isinstance(OpenAIEmbedder(client=embeddings_client()), Embedder)
 
 
-def test_openai_embedder_builds_its_own_client_from_the_api_key():
+def test_openai_embedder_builds_its_own_client_from_the_api_key(embeddings_client):
     """Without an injected client the embedder imports openai and builds one.
 
     The import is lazy and lives inside ``__init__``, so it is patched in
@@ -69,7 +71,7 @@ def test_openai_embedder_builds_its_own_client_from_the_api_key():
     'openai' extra is installed.
     """
     openai = MagicMock()
-    openai.OpenAI.return_value = _client()
+    openai.OpenAI.return_value = embeddings_client()
     with patch.dict(sys.modules, {"openai": openai}):
         embedder = OpenAIEmbedder(api_key="sk-test")
     openai.OpenAI.assert_called_once_with(api_key="sk-test")

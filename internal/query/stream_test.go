@@ -59,8 +59,6 @@ type fakeGraph struct {
 	searchErr        error
 }
 
-var _ graph.Graph[string, float32] = (*fakeGraph)(nil)
-
 func (g *fakeGraph) Lock()    { g.locks++ }
 func (g *fakeGraph) Unlock()  { g.unlocks++ }
 func (g *fakeGraph) RLock()   { g.rlocks++ }

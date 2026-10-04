@@ -31,6 +31,11 @@ import pytest
 
 
 def test_recall_on_empty_graph(query):
+    """A recall that matches nothing answers 200 with an empty hit list.
+
+    Graph 0 is primed, so this is a miss on a populated graph, not the 204 a
+    graph holding nothing answers with (pinned in api_test.py).
+    """
     status, body = query("recall nothingindexedyet")
     assert status == 200
     results = body["results"]
@@ -40,12 +45,14 @@ def test_recall_on_empty_graph(query):
 
 
 def test_recall_with_clauses(query):
+    """A recall carrying every clause kind at once parses and answers 200."""
     status, body = query("recall@2 anna bob entity:alice topic:job top:10 depth:2")
     assert status == 200
     assert body["results"] is not None
 
 
 def test_remember_is_accepted(query):
+    """A remember with a topic and an entity is accepted with a 200."""
     status, _ = query(
         "remember@1 'anne loves the color orange' topic:color entity:anne"
     )
@@ -249,6 +256,7 @@ COMET_FACTS = {
 
 
 def test_recall_returns_every_document_sharing_a_keyword(query):
+    """A recall by a shared keyword returns every fact containing it, not just one."""
     graph = 0
     for phrase, topic in COMET_FACTS.items():
         status, body = query(f"remember@{graph} '{phrase}' topic:{topic}")

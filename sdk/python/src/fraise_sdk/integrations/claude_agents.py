@@ -45,7 +45,7 @@ so the model decides *what* to store and recall, never *where*.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.constants import (
@@ -58,18 +58,8 @@ from fraise_sdk.constants import (
 from fraise_sdk.errors import FraiseError
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
-try:
-    from claude_agent_sdk import (
-        McpSdkServerConfig,
-        SdkMcpTool,
-        create_sdk_mcp_server,
-        tool,
-    )
-except ImportError as exc:  # pragma: no cover - exercised only without the extra
-    raise ImportError(
-        "The Claude Agent SDK integration requires the 'claude-agent-sdk' package. "
-        "Install it with:  pip install 'fraise-sdk[anthropic]'"
-    ) from exc
+if TYPE_CHECKING:
+    from claude_agent_sdk import McpSdkServerConfig, SdkMcpTool
 
 
 def _ok(text: str) -> dict[str, Any]:
@@ -91,7 +81,17 @@ def recall_tool(
     Pass an ``embedder`` and the recall implicitly vectorises: it encodes its
     keywords through the embedder and searches by that vector too. Omit it and
     the recall is keyword-only.
+
+    Raises:
+        ImportError: if the ``anthropic`` extra is not installed.
     """
+    try:
+        from claude_agent_sdk import tool
+    except ImportError as exc:  # pragma: no cover - exercised only without the extra
+        raise ImportError(
+            "The Claude Agent SDK integration requires the 'claude-agent-sdk' package. "
+            "Install it with:  pip install 'fraise-sdk[anthropic]'"
+        ) from exc
     encode = resolve_embedder(embedder)
 
     @tool(
@@ -171,7 +171,17 @@ def remember_tool(
 
     Pass an ``embedder`` and the fact is implicitly vectorised: it is encoded
     through the embedder and stored with its vector. Omit it to store text only.
+
+    Raises:
+        ImportError: if the ``anthropic`` extra is not installed.
     """
+    try:
+        from claude_agent_sdk import tool
+    except ImportError as exc:  # pragma: no cover - exercised only without the extra
+        raise ImportError(
+            "The Claude Agent SDK integration requires the 'claude-agent-sdk' package. "
+            "Install it with:  pip install 'fraise-sdk[anthropic]'"
+        ) from exc
     encode = resolve_embedder(embedder)
 
     @tool(
@@ -252,7 +262,17 @@ def memory_server(
     Drop the result into ``ClaudeAgentOptions.mcp_servers`` under ``name`` and
     pair it with ``allowed_tools=allowed_tools(name)``. Pass an ``embedder`` to
     make the tools vectorise implicitly.
+
+    Raises:
+        ImportError: if the ``anthropic`` extra is not installed.
     """
+    try:
+        from claude_agent_sdk import create_sdk_mcp_server
+    except ImportError as exc:  # pragma: no cover - exercised only without the extra
+        raise ImportError(
+            "The Claude Agent SDK integration requires the 'claude-agent-sdk' package. "
+            "Install it with:  pip install 'fraise-sdk[anthropic]'"
+        ) from exc
     return create_sdk_mcp_server(
         name=name,
         version=version,

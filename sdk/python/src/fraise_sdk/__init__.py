@@ -22,7 +22,18 @@
 
 """Fraise SDK."""
 
-__all__ = ["FraiseAPIError", "FraiseClient", "FraiseError", "FraiseWarning"]
+__all__ = [
+    "FraiseAPIError",
+    "FraiseClient",
+    "FraiseError",
+    "FraiseQueryError",
+    "FraiseWarning",
+]
 
 from fraise_sdk.client import FraiseClient
-from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
+from fraise_sdk.errors import (
+    FraiseAPIError,
+    FraiseError,
+    FraiseQueryError,
+    FraiseWarning,
+)

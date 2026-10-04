@@ -68,9 +68,6 @@ func isTermRune(r rune) bool {
 // stemming or stop-word removal.
 type SimpleTokenizer struct{}
 
-// compile-time check that SimpleTokenizer is a Tokenizer.
-var _ Tokenizer = SimpleTokenizer{}
-
 // Tokenize returns the lowercased terms found in text.
 func (SimpleTokenizer) Tokenize(text string) []string {
 	return Words(strings.ToLower(text))
@@ -84,9 +81,6 @@ func (SimpleTokenizer) Tokenize(text string) []string {
 // passes through unchanged. Stemming only rewrites, never drops, so every term
 // SimpleTokenizer would index still exists under some spelling.
 type StemmingTokenizer struct{}
-
-// compile-time check that StemmingTokenizer is a Tokenizer.
-var _ Tokenizer = StemmingTokenizer{}
 
 // Tokenize returns the lowercased terms found in text, each reduced to its
 // Snowball English stem.
