@@ -79,9 +79,6 @@ def recall_tool(
     def recall_memory(
         keywords: list[str],
         top: int = DEFAULT_TOP,
-        # The bound rides on the annotation: the framework turns it into the
-        # schema's range and a check on every call, so the model is corrected
-        # before the server is asked.
         depth: Annotated[int | None, Field(ge=0, le=MAX_DEPTH)] = None,
     ) -> str:
         """Search long-term memory for facts related to the given keywords.
