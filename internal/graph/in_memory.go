@@ -244,21 +244,20 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 }
 
 // dropRelationship removes an edge's own node, the counterpart of the store
-// call that recorded it. A relationship is never a vertex in the adjacency maps
-// and never carries a vector, so idToNodes and the text index are the only
-// places it occupies.
+// call that recorded it. A relationship is never a vertex in the adjacency maps,
+// never carries a vector and is never text-indexed (store indexes facts only),
+// so idToNodes is the only place it occupies.
 func (g *InMemoryGraph[K, P]) dropRelationship(key K) {
 	delete(g.idToNodes, key)
-	_ = g.textIndex.Delete(key)
 }
 
 // Delete removes the node, its incident relationships and its index entries.
 // Whichever end of an edge is deleted, the edge leaves as a whole — its node and
 // both adjacency entries — because the two halves are one fact about the graph:
 // a Mentions left in idToNodes describes an edge that no longer exists (Nodes
-// and Stats keep reporting it, and it keeps its text-index entry), while an
-// adjacency entry left behind names a relationship node that is no longer
-// stored, so Size counts an edge AdjacencyMap cannot resolve.
+// and Stats keep reporting it), while an adjacency entry left behind names a
+// relationship node that is no longer stored, so Size counts an edge
+// AdjacencyMap cannot resolve.
 func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	if node == nil {
 		return ErrNilNode

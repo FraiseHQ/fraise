@@ -254,7 +254,7 @@ def test_hit_values_come_back_exactly_as_written(client, models_graph):
     """A stored value is returned byte for byte, not re-tokenised or trimmed."""
     stored = "the mudflats are exposed at low water"
     client.remember(stored, graph=models_graph)
-    result = client.recall("mudflats", graph=models_graph, depth=1)
+    result = client.recall("mudflats", graph=models_graph, depth=0)
     assert stored in [hit.value for hit in result]
 
 

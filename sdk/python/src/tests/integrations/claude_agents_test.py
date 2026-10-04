@@ -28,7 +28,7 @@ assertions check that envelope as well as the text.
 """
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk.errors import FraiseError
@@ -104,8 +104,22 @@ def test_allowed_tools_follows_a_custom_server_name():
 
 
 def test_memory_server_builds_with_both_tools():
-    server = memory_server(_client())
-    assert server is not None
+    """The server is built under the default name with both memory tools.
+
+    The name is what ``allowed_tools`` namespaces the tools under, so a server
+    registered under any other name leaves both tools uncallable; and a server
+    missing either tool loses that half of the memory.
+    """
+    with patch("fraise_sdk.integrations.claude_agents.create_sdk_mcp_server") as create:
+        server = memory_server(_client())
+    create.assert_called_once()
+    assert server is create.return_value
+    kwargs = create.call_args.kwargs
+    assert kwargs["name"] == DEFAULT_SERVER_NAME
+    assert [tool.name for tool in kwargs["tools"]] == [
+        "recall_memory",
+        "remember_fact",
+    ]
 
 
 def test_recall_schema_requires_only_keywords():

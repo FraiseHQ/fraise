@@ -263,38 +263,70 @@ func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexFlushRebuildsForest pins that Flush rebuilds every tree of
+// the forest from the live vectors alone: afterwards the index answers every
+// query exactly as one built from the live vectors only does. Search filters
+// deleted keys against the live map, so their absence from its answers proves
+// nothing; but a stale copy left in any tree shapes that tree's splits, and
+// with small leaves and no over-fetch a different tree shows up as a different
+// answer. Entries() is checked on both sides of Flush as well, and the
+// deletions stop two short of the automatic Flush (50 entries against a bound
+// of 2 × 26 live), so the explicit Flush is the one that compacts.
 func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
+	const n, deleted, dim = 50, 24, 16
+	newIndex := func() *index.RPTreeIndex[int, float64] {
+		return index.NewRPTreeIndex[int, float64](dim, 8, 3, 5, 2, 4, 1, comparator.OrderedComparator[int])
+	}
 	rng := rand.New(rand.NewSource(21))
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2, 32, 8, comparator.OrderedComparator[int])
+	vectors := make([]containers.Vector[int, float64], n)
+	for i := range vectors {
+		vectors[i] = randVector(rng, dim)
+	}
 
-	const n = 50
-	for i := 0; i < n; i++ {
-		if err := idx.Insert(i, randVector(rng, 3)); err != nil {
+	idx := newIndex()
+	for i, v := range vectors {
+		if err := idx.Insert(i, v); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", i, err)
 		}
 	}
-	for i := 0; i < n/2; i++ {
+	for i := 0; i < deleted; i++ {
 		if err := idx.Delete(i); err != nil {
 			t.Fatalf("Delete(%d) = %v, want nil", i, err)
 		}
+	}
+	if got, want := idx.Entries(), n; got != want {
+		t.Fatalf("Entries() before Flush = %d, want %d (the deleted copies still in the forest)", got, want)
 	}
 
 	if err := idx.Flush(); err != nil {
 		t.Fatalf("Flush = %v, want nil", err)
 	}
-	if got, want := idx.Count(), n-n/2; got != want {
+	if got, want := idx.Count(), n-deleted; got != want {
 		t.Errorf("Count() after Flush = %d, want %d", got, want)
 	}
-
-	// After Flush, deleted keys must be absent even from raw Nearest scans:
-	// Search over the whole remaining corpus should never surface them.
-	got, _, err := idx.Search(randVector(rng, 3), n)
-	if err != nil {
-		t.Fatalf("Search = %v, want nil", err)
+	if got, want := idx.Entries(), n-deleted; got != want {
+		t.Errorf("Entries() after Flush = %d, want %d (one per live vector)", got, want)
 	}
-	for _, key := range got {
-		if key < n/2 {
-			t.Errorf("Search() after Flush returned deleted key %d", key)
+
+	live := newIndex()
+	for i := deleted; i < n; i++ {
+		if err := live.Insert(i, vectors[i]); err != nil {
+			t.Fatalf("Insert(%d) into the live-only index = %v, want nil", i, err)
+		}
+	}
+	queries := rand.New(rand.NewSource(22))
+	for q := 0; q < 50; q++ {
+		query := randVector(queries, dim)
+		got, _, err := idx.Search(query, 5)
+		if err != nil {
+			t.Fatalf("Search = %v, want nil", err)
+		}
+		want, _, err := live.Search(query, 5)
+		if err != nil {
+			t.Fatalf("Search on the live-only index = %v, want nil", err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("query %d: flushed index answered %v, live-only index %v; want the forest rebuilt from the live vectors alone", q, got, want)
 		}
 	}
 }

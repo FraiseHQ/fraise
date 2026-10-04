@@ -237,7 +237,7 @@ func TestInMemoryGraphStoresAFactAndATopicOfTheSameText(t *testing.T) {
 // Delete's contract — the node "and, by extension, its index entries and
 // incident relationships". Unlinking an edge from the adjacency maps is not
 // enough: a Mentions node left in idToNodes describes an edge that no longer
-// exists, and Nodes, Stats and the text index all keep reporting it.
+// exists, and Nodes and Stats both keep reporting it.
 func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
 	g := newGraph()
 	now := time.Now()
@@ -273,15 +273,21 @@ func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
 	}
 	assertEdgesResolve(t, g)
 
-	// Deleting the fact takes its remaining edge with it, index entry included.
+	// Deleting the fact takes its remaining edge with it, and its text-index
+	// entry. Only facts are indexed, so the fact's entry is the one that can
+	// outlive a Delete; it is checked present first so its absence after
+	// means something.
+	if _, err := g.GetTextIndex().Retrieve(fact.Key()); err != nil {
+		t.Fatalf("text index Retrieve(fact) before Delete = %v, want the indexed fact", err)
+	}
 	if err := g.Delete(fact); err != nil {
 		t.Fatalf("Delete(fact) = %v, want nil", err)
 	}
 	if g.Get(about.Key()) != nil {
 		t.Errorf("the IsAbout node outlived its fact, want it pruned")
 	}
-	if _, err := g.GetTextIndex().Retrieve(about.Key()); !errors.Is(err, index.ErrIndexNotFound) {
-		t.Errorf("text index Retrieve(IsAbout) after pruning = %v, want ErrIndexNotFound", err)
+	if _, err := g.GetTextIndex().Retrieve(fact.Key()); !errors.Is(err, index.ErrIndexNotFound) {
+		t.Errorf("text index Retrieve(fact) after Delete = %v, want ErrIndexNotFound", err)
 	}
 	if got, want := len(g.Nodes()), 1; got != want {
 		t.Errorf("len(Nodes()) after Delete(fact) = %d, want %d (the topic alone)", got, want)

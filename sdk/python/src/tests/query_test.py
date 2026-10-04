@@ -493,13 +493,19 @@ def test_a_bound_past_the_servers_ceiling_names_the_range(
 
 @pytest.mark.integration
 def test_the_builders_agree_with_the_graphs_vector_dimension(
-    client, query_graph, vector_dim
+    client, query_graph, vector_dim, encode
 ):
     """A vector of the wrong width reaches the index and is refused there.
 
+    The first vector a graph stores fixes its width, so the test stores one at
+    the suite's width itself rather than relying on an earlier test to have
+    done it: run alone, the mis-sized vector would otherwise be the first, be
+    accepted, and fix the graph at the wrong width for every test after it.
     Incidentally proof that the vector is bound and used, rather than parsed
     and dropped on the floor.
     """
+    sized = build_remember("a well-sized vector", graph=query_graph, with_vector=True)
+    client.query(sized, parameters={VECTOR_PARAM: encode("a well-sized vector")})
     text = build_remember("a mis-sized vector", graph=query_graph, with_vector=True)
     with pytest.raises(FraiseAPIError):
         client.query(text, parameters={VECTOR_PARAM: [0.5] * (vector_dim // 2)})
