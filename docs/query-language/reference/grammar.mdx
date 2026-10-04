@@ -78,9 +78,9 @@ forget_field    = anchor_field | since_field | until_field ;
 (* UPDATE                                                       *)
 (* ------------------------------------------------------------ *)
 
-update_query    = update_cmd phrase phrase? update_field* (* at least one of: second phrase, update_field *)
+update_query    = update_cmd phrase phrase? update_field* ;   (* at least one of: second phrase, update_field *)
 update_cmd      = 'update' graph_selector? ;
-update_field    = achor_field | vec_field
+update_field    = anchor_field | vec_field ;
 
 (* ------------------------------------------------------------ *)
 (* RESERVED WORDS                                               *)
