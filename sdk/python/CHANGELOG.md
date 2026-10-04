@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0...python/v0.1.1) (2026-10-04)
+
+
+### Maintenance
+
+* **python:** add client.stats() for GET /api/v1/stats ([#481](https://github.com/FraiseHQ/fraise/issues/481)) ([2729971](https://github.com/FraiseHQ/fraise/commit/272997138d8bc82970b777dd7920471835a398c9))
+
 ## [0.1.0](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0-rc.2...python/v0.1.0) (2026-10-04)
 
 
