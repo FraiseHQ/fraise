@@ -633,10 +633,14 @@ _PULSAR_ENTITY = "vela"
 # only through an anchor the recall names; naming the hub keeps its memos in
 # the candidate set, so their absence is its silence and not the filter's
 # doing.
+_STORM_CLUSTER_TOPIC = "weather"
+_STORM_HUB_TOPIC = "archive"
+# No query term: funded or invisible.
+_STORM_SILENT_MEMBER = "the harbour is calm tonight"
 _STORM_CLUSTER = (
     "the barometer falls before the storm",
     "storm clouds gather at sea",
-    "the harbour is calm tonight",  # no query term: funded or invisible
+    _STORM_SILENT_MEMBER,
 )
 _STORM_HUB = ("a storm of paperwork",) + tuple(
     f"unrelated archive memo {i}" for i in range(7)
@@ -647,7 +651,7 @@ _ALPHA = 0.5  # the server's per-edge attenuation; α² on the two-edge path
 
 @pytest.fixture
 def pulsar_graph(query):
-    """Write the pulsar facts under entity:vela and return their graph id.
+    """Write the pulsar facts under the pulsar entity and return their graph id.
 
     Rewritten for every test that asks, which refreshes their timestamps just
     before the test reads them.
@@ -660,21 +664,49 @@ def pulsar_graph(query):
     return _EXPLAIN_GRAPH
 
 
+@pytest.fixture(scope="session")
+def pulsar_entity():
+    """The entity both pulsar facts are filed under: the query's only anchor."""
+    return _PULSAR_ENTITY
+
+
 @pytest.fixture
 def storm_graph(query):
-    """Write the storm cluster under topic:weather and the hub under
-    topic:archive, and return their graph id.
+    """Write the storm cluster and the archive hub under their topics, and
+    return their graph id.
 
     Rewritten for every test that asks, which refreshes their timestamps just
     before the test reads them.
     """
     for phrase in _STORM_CLUSTER:
-        status, body = query(f"remember@{_EXPLAIN_GRAPH} '{phrase}' topic:weather")
+        status, body = query(
+            f"remember@{_EXPLAIN_GRAPH} '{phrase}' topic:{_STORM_CLUSTER_TOPIC}"
+        )
         assert status == 200, body.get("error")
     for phrase in _STORM_HUB:
-        status, body = query(f"remember@{_EXPLAIN_GRAPH} '{phrase}' topic:archive")
+        status, body = query(
+            f"remember@{_EXPLAIN_GRAPH} '{phrase}' topic:{_STORM_HUB_TOPIC}"
+        )
         assert status == 200, body.get("error")
     return _EXPLAIN_GRAPH
+
+
+@pytest.fixture(scope="session")
+def storm_cluster_topic():
+    """The storm cluster's topic: the anchor that transmits its surplus."""
+    return _STORM_CLUSTER_TOPIC
+
+
+@pytest.fixture(scope="session")
+def storm_hub_topic():
+    """The archive hub's topic: an anchor at its fair share, which stays silent."""
+    return _STORM_HUB_TOPIC
+
+
+@pytest.fixture(scope="session")
+def storm_silent_member():
+    """The cluster fact with no query term, which only transmission can surface."""
+    return _STORM_SILENT_MEMBER
 
 
 @pytest.fixture(scope="session")

@@ -28,14 +28,16 @@ responses stay free of it.
 import pytest
 
 
-def test_explain_breaks_down_each_hit_by_source(explain, pulsar_graph):
+def test_explain_breaks_down_each_hit_by_source(explain, pulsar_graph, pulsar_entity):
     """Every explained hit carries its contribution records: here each hit is
     a pure text seed — source name, raw BM25 mass, rank in the text list, and
     count (1 for a seed sighting). The shared entity is the only touched
     anchor, so it holds no surplus and no graph contribution appears; no
     contribution carries a hop field.
     """
-    status, body = explain(f"recall@{pulsar_graph} pulsar entity:vela depth:2")
+    status, body = explain(
+        f"recall@{pulsar_graph} pulsar entity:{pulsar_entity} depth:2"
+    )
     assert status == 200, body.get("error")
     hits = body["results"]["hits"]
     assert len(hits) == 2, f"want both pulsar facts, got {hits}"
@@ -55,35 +57,45 @@ def test_explain_breaks_down_each_hit_by_source(explain, pulsar_graph):
             assert isinstance(c["score"], (int, float)), c
 
 
-def test_explain_shows_transmitted_surplus(explain, storm_graph, storm_hub):
+def test_explain_shows_transmitted_surplus(
+    explain,
+    storm_graph,
+    storm_cluster_topic,
+    storm_hub_topic,
+    storm_silent_member,
+    storm_hub,
+):
     """The funded case: the cluster's silent member surfaces carrying a graph
-    contribution that names its funding anchor — via "weather", the anchor's
-    degree, its observed mass and funding-seed count — proving surplus, not
-    reachability, is what an anchor passes on. The archive hub's memos stay
-    out: holding no more than its fair share, it transmits nothing.
+    contribution that names its funding anchor — via the cluster's topic, the
+    anchor's degree, its observed mass and funding-seed count — proving
+    surplus, not reachability, is what an anchor passes on. The archive hub's
+    memos stay out: holding no more than its fair share, it transmits nothing.
     """
     status, body = explain(
-        f"recall@{storm_graph} barometer storm topic:weather topic:archive top:20"
+        f"recall@{storm_graph} barometer storm "
+        f"topic:{storm_cluster_topic} topic:{storm_hub_topic} top:20"
     )
     assert status == 200, body.get("error")
     hits = {h["value"]: h for h in body["results"]["hits"]}
 
-    calm = hits.get("the harbour is calm tonight")
+    calm = hits.get(storm_silent_member)
     assert calm is not None, (
         f"want the cluster's silent member funded, got {list(hits)}"
     )
     [contribution] = calm["contributions"]
     assert contribution["source"] == "graph"
-    assert contribution["via"] == "weather", contribution
+    assert contribution["via"] == storm_cluster_topic, contribution
     assert contribution["degree"] == 3, contribution
-    assert contribution["count"] == 2, "two seeds fund the weather cluster"
+    assert contribution["count"] == 2, "two seeds fund the storm cluster"
     assert contribution["score"] > 0, "the observation carries the anchor's mass"
 
     for memo in storm_hub[1:]:
         assert memo not in hits, f"fair-share hub memo {memo!r} rode in on size alone"
 
 
-def test_explain_score_recomputes_from_payload(explain, storm_graph, alpha):
+def test_explain_score_recomputes_from_payload(
+    explain, storm_graph, storm_cluster_topic, storm_hub_topic, alpha
+):
     """The recompute pin: with the query-level background rate, every hit's
     score equals the formula applied to its own payload — S = m + α²·Σ max(0,
     M_A − m − d_A·ρ₀)/d_A, each anchor's surplus arriving as its per-edge
@@ -91,7 +103,8 @@ def test_explain_score_recomputes_from_payload(explain, storm_graph, alpha):
     and read. The payload is therefore a complete explanation, not a summary.
     """
     status, body = explain(
-        f"recall@{storm_graph} barometer storm topic:weather topic:archive top:20"
+        f"recall@{storm_graph} barometer storm "
+        f"topic:{storm_cluster_topic} topic:{storm_hub_topic} top:20"
     )
     assert status == 200, body.get("error")
     background = body["results"].get("background", 0)
@@ -112,12 +125,12 @@ def test_explain_score_recomputes_from_payload(explain, storm_graph, alpha):
         )
 
 
-def test_plain_query_carries_no_contributions(query, pulsar_graph):
+def test_plain_query_carries_no_contributions(query, pulsar_graph, pulsar_entity):
     """The /q response is unchanged by explain existing: no hit exposes a
     contributions key. Guards against the breakdown leaking into every recall
     and bloating agent token budgets.
     """
-    status, body = query(f"recall@{pulsar_graph} pulsar entity:vela depth:2")
+    status, body = query(f"recall@{pulsar_graph} pulsar entity:{pulsar_entity} depth:2")
     assert status == 200, body.get("error")
     hits = body["results"]["hits"]
     assert hits, "the pulsar facts must be recallable"
