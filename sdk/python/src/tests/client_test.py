@@ -34,6 +34,7 @@ import requests
 from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
 from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
+from fraise_sdk.models import GraphStats
 from fraise_sdk.providers import Anchor
 
 
@@ -430,6 +431,47 @@ def test_check_compatibility_accepts_a_supported_version(session, respond_get, v
         assert FraiseClient().check_compatibility() is True
 
 
+def test_stats_returns_one_row_per_graph_in_id_order(
+    session, respond_get, stats_url, stats_response
+):
+    """Each graph's snapshot becomes one row, in id order, the empty graph kept.
+
+    Keeping graph 1's row of zeros is what makes the list's length the server's
+    graph count and puts every row at its graph's id; ``order`` and ``size``
+    arrive renamed to what they count.
+    """
+    respond_get(session, stats_response)
+
+    stats = FraiseClient().stats()
+
+    session.get.assert_called_once_with(stats_url, timeout=DEFAULT_TIMEOUT_SECONDS)
+    assert stats == [
+        GraphStats(id=0, vertices=4, edges=3, nodes=7, vectors=0, forest_entries=0),
+        GraphStats(id=1, vertices=0, edges=0, nodes=0, vectors=0, forest_entries=0),
+        GraphStats(id=2, vertices=1, edges=0, nodes=1, vectors=1, forest_entries=1),
+    ]
+
+
+def test_stats_raises_on_an_error_status(session, respond_get):
+    """A non-2xx answer raises FraiseAPIError rather than reading as no graphs.
+
+    An empty list would say the server holds nothing, which is exactly what a
+    caller checking a restore must not be told when the read failed.
+    """
+    respond_get(session, {"error": "internal error"}, status_code=500)
+    with pytest.raises(FraiseAPIError) as excinfo:
+        FraiseClient().stats()
+    assert excinfo.value.status_code == 500
+    assert "internal error" in excinfo.value.message
+
+
+def test_stats_raises_when_unreachable(session):
+    """A transport failure raises FraiseError, where health() would answer False."""
+    session.get.side_effect = requests.ConnectionError("refused")
+    with pytest.raises(FraiseError, match="could not reach fraise"):
+        FraiseClient().stats()
+
+
 def test_configured_embedder_encodes_remember_value(session, sent, callable_embedder):
     """With an embedder, remember encodes the fact itself and sends its vector."""
     embedder = callable_embedder()
@@ -680,6 +722,23 @@ def test_check_compatibility_accepts_the_live_server(client):
 def test_check_compatibility_strict_does_not_raise(client):
     """Strict mode passes against a supported server instead of raising."""
     assert client.check_compatibility(strict=True) is True
+
+
+@pytest.mark.integration
+def test_stats_counts_what_was_remembered(client, stats_graph):
+    """The stats graph's row counts exactly the facts, anchors and vector written.
+
+    The graph is claimed for this test alone, so its counts are exact rather
+    than lower bounds: six vertices (three facts, one topic, two entities),
+    five fact-to-anchor edges, eleven nodes and one vector, which a forest with
+    nothing to compact holds as one entry. Every other row is at its own id.
+    """
+    stats = client.stats()
+
+    assert [row.id for row in stats] == list(range(len(stats)))
+    assert stats[stats_graph] == GraphStats(
+        id=stats_graph, vertices=6, edges=5, nodes=11, vectors=1, forest_entries=1
+    )
 
 
 @pytest.mark.integration

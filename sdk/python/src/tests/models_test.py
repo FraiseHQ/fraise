@@ -29,7 +29,20 @@ marked ``integration`` parse what a live server sends.
 from datetime import datetime
 
 import pytest
-from fraise_sdk.models import Contribution, Hit, RecallResult
+from fraise_sdk.models import Contribution, GraphStats, Hit, RecallResult
+
+
+def test_graph_stats_names_the_counts_for_what_they_count(stats_response):
+    """The wire's graph-theory names land on the fields named for their meaning.
+
+    ``order`` counts vertices and ``size`` edges; reading either into the
+    other, or into ``nodes``, would misreport a graph's shape without failing.
+    """
+    row = GraphStats.from_json(stats_response["graphs"][0])
+
+    assert row == GraphStats(
+        id=0, vertices=4, edges=3, nodes=7, vectors=0, forest_entries=0
+    )
 
 
 def test_from_json_defaults_to_no_warnings():
