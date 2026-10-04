@@ -70,7 +70,7 @@ remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remembe
 (* ------------------------------------------------------------ *)
 
 forget_query    = forget_cmd forget_body ;
-forget_cmd      = 'forget' graph_selector? ; 
+forget_cmd      = 'forget' graph_selector? ;
 forget_body     = phrase | forget_field+ ;
 forget_field    = anchor_field | since_field | until_field ;
 
@@ -121,15 +121,15 @@ param_name        = bare_word ;                (* matched exactly against a key 
 ```
 
 ## Status
- 
+
 The grammar above is all of v2. Which of it a server accepts depends on its version; the words are reserved from the first v2 release whether or not their production is implemented, so adding a production later is never a breaking change.
- 
+
 | Production | Reserved since | Planned for | Issue |
 | --- | --- | --- | --- |
 | `forget_query`, `update_query` | 0.3.0 | 0.5.0 | [#172](https://github.com/FraiseHQ/fraise/issues/172) |
 | `explain_query` | 0.3.0 | 0.4.0 | explain recall | [#433](https://github.com/FraiseHQ/fraise/issues/433) |
 | `describe_query` | 0.3.0 | 0.4.0 | describe recall | [#444](https://github.com/FraiseHQ/fraise/issues/434) |
- 
+
 A server that reserves a production but does not accept it answers a query opening with its word with `expected a command (recall, remember), found "<word>"`; a server that accepts it answers as the production says. The conformance suite carries one row per production and per status, so an SDK can tell the two apart.
 
 ## Reading it
