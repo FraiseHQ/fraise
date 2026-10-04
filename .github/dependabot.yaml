@@ -18,6 +18,11 @@ updates:
     directory: /
     schedule:
       interval: daily
+    # NOTE: the uv binary itself is pinned by `required-version` in the root
+    # pyproject.toml, which must keep admitting the uv release Dependabot runs;
+    # it is bumped by hand, never by an update PR.
+    ignore:
+      - dependency-name: uv
     commit-message:
       prefix: "deps: "
       prefix-development: "deps: "
