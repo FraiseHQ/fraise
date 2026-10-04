@@ -192,8 +192,6 @@ func TestTimeValueHash(t *testing.T) {
 	}
 }
 
-// --- ParseTimeValue ---------------------------------------------------------
-
 func TestParseTimeValueRelative(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -323,8 +321,6 @@ func TestParseTimeValueBoundsRelativeDurations(t *testing.T) {
 		})
 	}
 }
-
-// --- unitDuration -----------------------------------------------------------
 
 func TestUnitDuration(t *testing.T) {
 	tests := []struct {

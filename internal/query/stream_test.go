@@ -77,8 +77,6 @@ func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, f
 	return g.searchNodes, g.searchScores, g.searchContribs, g.searchBackground, nil
 }
 
-// --- stubs (fixed answers) -------------------------------------------------
-
 // GetHasher returns a real (fake) hasher rather than nil: the write path
 // derives the fact's key (fact.Key() -> Hash) before storing it.
 func (g *fakeGraph) GetHasher() hash.Hasher[string, string]             { return &fakeHasher{} }
@@ -94,8 +92,6 @@ func (g *fakeGraph) Order() int                                         { return
 func (g *fakeGraph) Size() int                                          { return 0 }
 func (g *fakeGraph) Stats() graph.GraphStats                            { return graph.GraphStats{} }
 func (g *fakeGraph) IsEmpty() bool                                      { return false }
-
-// --- helpers ---------------------------------------------------------------
 
 func newStream(q Query[string, float32]) *Stream[string, float32] {
 	return &Stream[string, float32]{Query: q, done: make(chan struct{})}
@@ -117,8 +113,6 @@ func isClosed(ch <-chan struct{}) bool {
 		return false
 	}
 }
-
-// --- Commit (read path) ----------------------------------------------------
 
 // TestStreamCommitReadSurfacesASearchError pins that a read fails the way a
 // write does: a search the graph cannot answer as asked (its vector's
@@ -223,8 +217,6 @@ func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 		})
 	}
 }
-
-// --- Commit (write path) ---------------------------------------------------
 
 // TestStreamCommitWriteInPlace pins that a write commit mutates the given
 // graph directly, never copying it into a staging graph or merging one back:
@@ -332,8 +324,6 @@ func TestStreamCommitVectorMismatchLeavesGraphClean(t *testing.T) {
 	}
 }
 
-// --- Acquire / Release -----------------------------------------------------
-
 func TestStreamAcquireReleaseRead(t *testing.T) {
 	g := &fakeGraph{}
 	s := newStream(readQuery())
@@ -361,8 +351,6 @@ func TestStreamAcquireReleaseWrite(t *testing.T) {
 		t.Errorf("write Release: unlocks=%d, want 1", g.unlocks)
 	}
 }
-
-// --- GraphID / Done / Finish -----------------------------------------------
 
 func TestStreamGraphID(t *testing.T) {
 	r := &Remember[string, float32]{}

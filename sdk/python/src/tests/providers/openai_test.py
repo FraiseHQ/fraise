@@ -151,9 +151,6 @@ def test_openai_extractor_builds_its_own_client_from_the_api_key(chat_client):
     ]
 
 
-# -- integration --------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_openai_anchors_file_the_fact_on_the_live_server(
     fraise_url, round_trip_graph, chat_client

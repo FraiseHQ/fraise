@@ -478,14 +478,12 @@ def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(
     )
 
 
-# ---------------------------------------------------------------------------
 # Anchor-seeded recall. A recall naming anchors and no term or vector is
 # seeded by the anchors themselves: every fact filed under them enters the
 # candidates instead of being filtered by them, and the ordinary ranking — a
 # unit of mass per named anchor a fact is filed under, decayed by age — puts
 # the newest first. The planet star is the single-anchor case; the tidepool
 # probe (conftest) is the union.
-# ---------------------------------------------------------------------------
 
 
 def test_anchor_only_recall_returns_every_member_newest_first(

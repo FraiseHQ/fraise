@@ -139,8 +139,6 @@ class FraiseClient:
         self._embed_fn = resolve_embedder(embedder)
         self._extract_fn = resolve_extractor(extractor)
 
-    # -- lifecycle ---------------------------------------------------------
-
     def close(self) -> None:
         """Close the session the client created; a passed-in session is left open."""
         if self._owns_session:
@@ -151,8 +149,6 @@ class FraiseClient:
 
     def __exit__(self, *_exc) -> None:
         self.close()
-
-    # -- operations --------------------------------------------------------
 
     def health(self) -> bool:
         """Return whether the server's health endpoint answers 200; never raises."""
@@ -512,8 +508,6 @@ class FraiseClient:
 
         return response.status_code, body
 
-    # -- embedding ---------------------------------------------------------
-
     def _resolve_vector(
         self,
         vector: Sequence[float] | None,
@@ -541,8 +535,6 @@ class FraiseClient:
         if self._embed_fn is None or not text.strip():
             return None
         return [float(x) for x in self._embed_fn(text)]
-
-    # -- extraction --------------------------------------------------------
 
     def _resolve_anchors(
         self,

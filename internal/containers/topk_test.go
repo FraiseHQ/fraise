@@ -70,8 +70,6 @@ func newTopK(k int) *containers.TopK[string, float64] {
 	return containers.NewTopK[string, float64](k, comparator.OrderedComparator[string])
 }
 
-// ---- behaviour tests --------------------------------------------------------
-
 // TestOffer_DrainOrder_BestFirst pins the total order Drain promises: score
 // descending, ties broken by key ascending.
 func TestOffer_DrainOrder_BestFirst(t *testing.T) {
@@ -144,8 +142,6 @@ func TestOffer_TieBrokenByKeyEvenWhenBounded(t *testing.T) {
 		t.Fatalf("Drain() = %v, want %v", keys, want)
 	}
 }
-
-// ---- equivalence against the sort-then-truncate baseline --------------------
 
 // TestEquivalence_RandomizedAgainstBaseline drives randomized offer sets
 // through TopK and the plain sort-then-truncate reference, across several k

@@ -36,8 +36,6 @@ from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
 from fraise_sdk.providers import Anchor
 
-# -- lifecycle ----------------------------------------------------------------
-
 
 def test_closing_closes_the_session_the_client_owns(session):
     """Leaving the context manager closes the session the client created."""
@@ -53,9 +51,6 @@ def test_an_injected_session_is_left_open(respond, no_hits):
     with FraiseClient(session=injected):
         pass
     injected.close.assert_not_called()
-
-
-# -- operations ---------------------------------------------------------------
 
 
 def test_remember_posts_expected_query(session, query_url):
@@ -435,9 +430,6 @@ def test_check_compatibility_accepts_a_supported_version(session, respond_get, v
         assert FraiseClient().check_compatibility() is True
 
 
-# -- embedding --------------------------------------------------------------
-
-
 def test_configured_embedder_encodes_remember_value(session, sent, callable_embedder):
     """With an embedder, remember encodes the fact itself and sends its vector."""
     embedder = callable_embedder()
@@ -512,9 +504,6 @@ def test_embedder_object_is_called_through_its_embed_method(session, sent):
     assert sent(session)["parameters"] == {"v": [1.0, 2.0, 3.0]}
     embedder.embed.assert_called_once_with("hello world")
     embedder.assert_not_called()
-
-
-# -- extraction -------------------------------------------------------------
 
 
 def test_configured_extractor_files_the_fact_under_its_anchors(
@@ -606,9 +595,6 @@ def test_recall_never_extracts(session, callable_extractor):
     FraiseClient(extractor=extractor).recall("heron")
 
     extractor.assert_not_called()
-
-
-# -- integration --------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -43,12 +43,10 @@ idempotent, since a fact is keyed by its value.
 
 import pytest
 
-# ---------------------------------------------------------------------------
 # Duplicate single-valued clauses. A bare assignment in the clause switch
 # (r.depth = ...) would let the last occurrence win silently, so a repeat is
 # rejected. Repeated anchors are a different case and stay legal: they are a
 # list by design.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -81,11 +79,9 @@ def test_duplicate_single_valued_clause_is_rejected(query, text, assert_rejected
     assert_rejected(status, body, "duplicate", text)
 
 
-# ---------------------------------------------------------------------------
 # Bounds. The graph selector must fit the uint8 range, and depth and top each
 # take a ceiling (db.max-depth, db.max-top): without one, a single string could
 # request a million-hop traversal or a two-billion-entry heap.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -139,10 +135,8 @@ def test_ordinary_depth_and_top_still_parse(query, text, assert_accepted):
     assert_accepted(status, body, text)
 
 
-# ---------------------------------------------------------------------------
 # Empty data. A quoted empty string is rejected as a fact, term or anchor
 # identity.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -169,12 +163,10 @@ def test_empty_data_is_rejected(query, text, assert_rejected):
     assert_rejected(status, body, "empty", text)
 
 
-# ---------------------------------------------------------------------------
 # Reserved words by position. A reserved word is syntax everywhere a value
 # cannot stand: as a bare term it is a 400 naming both fixes (the clause, and
 # the quote that searches the word); after a clause has started it is a clause
 # missing its ':'; after a field's ':' it is data.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -409,11 +401,9 @@ def test_recall_clause_on_a_remember_names_the_command(
     )
 
 
-# ---------------------------------------------------------------------------
 # The vec: clause. parseVecField's positioned errors reach the client as it
 # produced them, never behind a generic wrap, as every other clause's do
 # (TestClauseErrorsSurfaceUnmangled pins the same in Go).
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -445,11 +435,9 @@ def test_vec_clause_errors_surface_unmangled(query, text, expected, assert_rejec
     assert_rejected(status, body, expected, text)
 
 
-# ---------------------------------------------------------------------------
 # Specials inside quotes. Everything between '...' is data; only a doubled
 # quote is an escape. These must all succeed — a memory system that cannot
 # store a fact containing a colon or a plus sign cannot store real sentences.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -566,10 +554,8 @@ def test_unterminated_phrase_is_reported_as_such(query, text, assert_rejected):
     assert_rejected(status, body, "unterminated", text)
 
 
-# ---------------------------------------------------------------------------
 # Temporal values. The message already names both accepted forms; these pin
 # that it keeps doing so across the plausible ways an agent gets it wrong.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -662,10 +648,8 @@ def test_valid_temporal_values_parse(query, text, assert_accepted):
     assert_accepted(status, body, text)
 
 
-# ---------------------------------------------------------------------------
 # Graph selector. Every malformed selector gets a message of its own rather
 # than a generic token error; these pin each one.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -693,13 +677,11 @@ def test_graph_selector_errors_stay_specific(query, text, expected, assert_rejec
     assert_rejected(status, body, expected, text)
 
 
-# ---------------------------------------------------------------------------
 # Whitespace and adjacency. Any run of space, tab or carriage return separates
 # words, and a trailing newline ends the instruction. The parts of a command or
 # a clause are glued: the selector to its verb, a value to its ':' and a
 # parameter name to its '$', so a space inside one is rejected with a message
 # saying where it is not allowed.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -761,11 +743,9 @@ def test_no_space_inside_a_command_or_clause(query, text, expected, assert_rejec
     assert_rejected(status, body, expected, text)
 
 
-# ---------------------------------------------------------------------------
 # Structure: grouping, multiple commands, newlines. Each is rejected with the
 # rule it broke rather than the generic "unexpected" fallback, which tells an
 # agent nothing about which rule it hit.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -838,12 +818,10 @@ def test_command_word_among_the_terms_is_a_word_to_quote(
     )
 
 
-# ---------------------------------------------------------------------------
 # Stop words. Stored facts are cleaned of English stop words at index time, so
 # a bare stop word can never match: it runs with a warning at the term, and a
 # recall whose only search terms are stop words is a 400 rather than an empty
 # result that looks like a miss. A phrase never warns for its content.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -910,13 +888,11 @@ def test_stop_word_only_recall_is_rejected(query, text, assert_rejected):
     assert 'term "the" is a stop word' in body["error"], body["error"]
 
 
-# ---------------------------------------------------------------------------
 # Anchor-seeded recall. Anchors are seeds, not merely filters, so "everything
 # about billing" is a natural query: with no term or vector beside them the
 # anchors seed the recall with everything filed under them rather than
 # filter it. The results themselves are pinned in recall_test.py; these pin
 # that the shape parses with every modifier a recall takes.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -941,10 +917,8 @@ def test_anchor_only_recall_is_reachable(query, text, assert_accepted):
     assert_accepted(status, body, text)
 
 
-# ---------------------------------------------------------------------------
 # Degenerate and pathological input. The floor: never a 500, never an empty
 # message, never a hang.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(

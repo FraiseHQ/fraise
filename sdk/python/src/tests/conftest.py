@@ -30,7 +30,7 @@ the values behind them are private, marked by a leading underscore.
 
 The file has two halves. The mocked half patches the client's own
 `requests.Session` at its import site, so unit tests run with no server and
-no daemon. The live half (from the "live server" banner down) backs the
+no daemon. The live half, which follows it, backs the
 tests marked ``integration``: a real client against the daemon named by
 FRAISE_URL, health-checked before first use. `-m "not integration"` is the
 unit run and touches nothing live; `-m integration` needs the daemon up.
@@ -201,9 +201,6 @@ _SERVER_WARNING = (
 )
 
 
-# -- addresses and payloads --------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def query_url():
     """The URL a query is posted to, unless it is an explained recall."""
@@ -238,9 +235,6 @@ def no_hits():
 def server_warning():
     """A parse warning exactly as the server words it."""
     return _SERVER_WARNING
-
-
-# -- the patched session -----------------------------------------------------
 
 
 def _arm(session, body: dict, status_code: int = 200) -> MagicMock:
@@ -362,9 +356,6 @@ def sent():
     return _sent
 
 
-# -- embedders ---------------------------------------------------------------
-
-
 # The unit suite's embedder: len(text), 4 times, so a test can predict the
 # vector the client will send. Tests reach it through callable_embedder; the
 # `encode` fixture is the live half's embedder below.
@@ -450,9 +441,6 @@ def inference_client():
     return _inference_client
 
 
-# -- extractors --------------------------------------------------------------
-
-
 # What the suite's extractor finds in any text. "travel" repeats a topic a test
 # gives, "Anne" an entity it gives in another casing, and "Lisbon airport" is
 # not one plain word, so one remember shows the repeats dropped and the value
@@ -510,9 +498,6 @@ def chat_client():
         return client
 
     return _chat_client
-
-
-# -- agent tools -------------------------------------------------------------
 
 
 @pytest.fixture
@@ -590,7 +575,6 @@ def mcp_text():
     return _text
 
 
-# -- live server (integration fixtures) --------------------------------------
 # Everything below backs the tests marked `integration`: a real client
 # against the daemon named by FRAISE_URL. Nothing here runs — no waiting,
 # no writes — unless an integration test actually requests a fixture.
@@ -685,9 +669,6 @@ def _await_server(fraise: FraiseClient) -> None:
     pytest.fail(f"fraise server not reachable at {_FRAISE_URL}")
 
 
-# -- addresses and constants -------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def fraise_url():
     """The base url of the server under test.
@@ -758,9 +739,6 @@ def instrument_facts():
     return dict(_INSTRUMENT_FACTS)
 
 
-# -- clients -----------------------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def client():
     """A FraiseClient pointed at a server confirmed to be up.
@@ -808,9 +786,6 @@ def recalled_values(client):
         return [hit.value for hit in client.recall(keyword, graph=graph, depth=1)]
 
     return _recalled_values
-
-
-# -- graphs ------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -887,9 +862,6 @@ def vector_graph(embedding_client):
     """
     embedding_client.remember("the tuning fork sounds a natural A", graph=_VECTOR_GRAPH)
     return _VECTOR_GRAPH
-
-
-# -- recall results ----------------------------------------------------------
 
 
 @pytest.fixture(scope="module")

@@ -157,9 +157,6 @@ def test_a_plain_recall_carries_no_breakdown():
     assert result.background is None
 
 
-# -- integration --------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_the_response_parses_into_the_declared_types(tide_result):
     """Every hit the server sent becomes a Hit with the declared field types."""

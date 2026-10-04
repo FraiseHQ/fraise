@@ -268,9 +268,6 @@ def test_an_anchor_value_is_quoted_only_when_a_bare_word_cannot_hold_it(
         )
 
 
-# -- integration --------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "kwargs",
     [
