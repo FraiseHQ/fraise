@@ -6,7 +6,7 @@ fraise is pre-1.0. Only the most recent release receives security fixes; there a
 
 | Version | Supported |
 |---|---|
-| 0.1.x (latest release) | yes |
+| 0.2.x (latest release) | yes |
 | anything older | no |
 
 ## Reporting a vulnerability

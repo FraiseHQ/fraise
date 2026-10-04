@@ -83,7 +83,7 @@ These come from a standalone multi-system harness — precision, recall and F1 a
 
 ## Status
 
-**v0.2.0.** The core loop works end to end and the install paths are verified on clean machines. The benchmark row above was produced from v0.1.0, the first stable release.
+**v0.2.2.** The core loop works end to end and the install paths are verified on clean machines. The benchmark row above was produced from v0.1.0, the first stable release.
 
 Good for building agent memory today. Not yet for long term production use.
 
@@ -144,7 +144,7 @@ Nothing further is needed to trust this: the Go toolchain checks every module do
 `.deb` and `.rpm` packages ship with every release, with a systemd user unit:
 
 ```sh
-VERSION=0.2.0
+VERSION=0.2.2
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -sSfLO "https://github.com/FraiseHQ/fraise/releases/download/v${VERSION}/fraise_${VERSION}_linux_${ARCH}.deb"
 sudo dpkg -i "fraise_${VERSION}_linux_${ARCH}.deb"
@@ -156,7 +156,7 @@ Logs go to the journal (`journalctl --user -u fraise -f`), and the unit reads `~
 ### From a release binary
 
 ```sh
-VERSION=0.2.0
+VERSION=0.2.2
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')                # linux | darwin
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')  # amd64 | arm64
 ASSET="fraise_${VERSION}_${OS}_${ARCH}.tar.gz"
@@ -359,10 +359,6 @@ This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 ## Community
 
 Questions, ideas, or building something with Fraise? Join the [Discord](https://discord.com/invite/VYnAkb8gH). Bugs and feature requests belong in [issues](https://github.com/FraiseHQ/fraise/issues) so they don't get lost.
-
-## Citing
-
-If you use Fraise in academic work, see [CITATION.cff](./CITATION.cff).
 
 ## License
 
