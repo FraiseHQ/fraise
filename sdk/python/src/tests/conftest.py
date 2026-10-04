@@ -37,7 +37,6 @@ FRAISE_URL, health-checked before the first test. `-m "not integration"` is
 the unit run and touches nothing live; `-m integration` needs the daemon up.
 """
 
-import asyncio
 import copy
 import hashlib
 import json
@@ -452,38 +451,6 @@ def chat_client():
         return client
 
     return _chat_client
-
-
-# -- MCP servers -------------------------------------------------------------
-
-
-@pytest.fixture
-def served_tool_names():
-    """Callable listing the tools an in-process MCP server answers ``tools/list`` with.
-
-    The listing goes through a real MCP client session over mcp's in-memory
-    transport, so it sees what Claude would see, whatever mcp major the SDK
-    runs on. ``mcp`` arrives with the ``anthropic`` extra, so it is imported
-    only when a test asks.
-
-    Returns:
-        ``callable(server_config) -> list[str]`` taking the config
-        ``memory_server`` returns.
-    """
-
-    def _served_tool_names(server_config) -> list[str]:
-        from mcp.shared.memory import create_connected_server_and_client_session
-
-        async def _list() -> list[str]:
-            async with create_connected_server_and_client_session(
-                server_config["instance"]
-            ) as session:
-                listed = await session.list_tools()
-            return [tool.name for tool in listed.tools]
-
-        return asyncio.run(_list())
-
-    return _served_tool_names
 
 
 # -- live server (integration fixtures) --------------------------------------
