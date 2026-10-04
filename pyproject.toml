@@ -8,7 +8,7 @@ authors = [
     { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
 ]
 dependencies = [
-    "pre-commit>=4.6.1",
+    "pre-commit>=4.6.2",
 ]
 
 [tool.uv]
