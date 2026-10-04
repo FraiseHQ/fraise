@@ -32,6 +32,10 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 QUERY_PATH = "/api/v1/q"
 EXPLAIN_PATH = "/api/v1/explain"
 
+# The per-graph snapshot route. The server computes it on demand from the live
+# graphs, one entry per allocated graph, so it reads the store, never a cache.
+STATS_PATH = "/api/v1/stats"
+
 # 204 No Content is how the server answers a recall of a graph that holds
 # nothing. It is a success, not an error, and it has no body: the distinction
 # between "nothing is stored here" and "nothing matched" is the status itself.

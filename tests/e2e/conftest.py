@@ -54,6 +54,8 @@ this map current when claiming a graph:
        never given a vector: vectors_test.py recalls it with one
     8  never written: the empty-graph probes (api_test.py, and the
        SDK suite's empty_graph fixture)
+    9  the SDK suite's exact stats counts (its stats_graph fixture);
+       no e2e test writes here
 
 Graph 8 is claimed by staying empty. A recall of a graph holding nothing is
 answered 204 with no body, as distinct from the 200 and empty result set a

@@ -62,6 +62,7 @@ def pytest_configure(config):
 
 _QUERY_URL = f"{DEFAULT_BASE_URL}/api/v1/q"
 _EXPLAIN_URL = f"{DEFAULT_BASE_URL}/api/v1/explain"
+_STATS_URL = f"{DEFAULT_BASE_URL}/api/v1/stats"
 _NO_HITS = {"results": {"count": 0, "hits": []}}
 
 # Recorded from a live server, not written by hand, so the parser is tested
@@ -192,6 +193,19 @@ _ANCHOR_EXPLAIN_RESPONSE = {
     }
 }
 
+# `GET /api/v1/stats`, recorded from a live server allocating three graphs.
+# Graph 0 holds two facts filed under entity:polly, one also under topic:diet;
+# graph 1 was never written to; graph 2 holds one fact with a vector and no
+# anchors. The empty graph sits between two populated ones, so a parser that
+# dropped or reordered it would misplace graph 2's row.
+_STATS_RESPONSE = {
+    "graphs": [
+        {"id": 0, "order": 4, "size": 3, "nodes": 7, "vectors": 0, "forest_entries": 0},
+        {"id": 1, "order": 0, "size": 0, "nodes": 0, "vectors": 0, "forest_entries": 0},
+        {"id": 2, "order": 1, "size": 0, "nodes": 1, "vectors": 1, "forest_entries": 1},
+    ]
+}
+
 # The shape the server sends for a query that ran with a term that cannot help
 # it: "the" in "recall@0 ferry the" is a stop word, which stored facts never
 # contain, and the warning says so at the term.
@@ -211,6 +225,18 @@ def query_url():
 def explain_url():
     """The URL an explained recall must be posted to."""
     return _EXPLAIN_URL
+
+
+@pytest.fixture(scope="session")
+def stats_url():
+    """The URL the per-graph snapshot is read from."""
+    return _STATS_URL
+
+
+@pytest.fixture
+def stats_response():
+    """A recorded stats response: three graphs, the middle one empty."""
+    return copy.deepcopy(_STATS_RESPONSE)
 
 
 @pytest.fixture
@@ -588,6 +614,11 @@ _VECTOR_GRAPH = 1
 _QUERY_GRAPH = 2
 _MODELS_GRAPH = 3
 
+# Claimed for the stats counts, which are exact, so nothing else may write
+# here: any other fact would move them. The e2e suite's allocation map lists
+# it for the same reason.
+_STATS_GRAPH = 9
+
 # Claimed by staying empty: a recall of a graph holding nothing is answered
 # 204, which only a graph no test ever writes to can exercise. Both suites
 # drive the same daemon and only ever read this graph, so it is the one the
@@ -620,6 +651,17 @@ _INSTRUMENT_FACTS = {
     "timpani": "the timpani is struck with felt mallets",
     "harp": "the harp is plucked with both hands",
 }
+
+# Two anchored facts and one anchorless fact with a vector, so a stats snapshot
+# of their graph is exact: three facts, one topic and two entities make six
+# vertices, and the facts' links to them five edges, which with the vertices are
+# eleven stored nodes. Rewriting a fact rewrites the same nodes, so the counts
+# hold across reruns against a long-lived server.
+_STATS_FACTS = (
+    ("the heron fishes at dusk", ["birds"], ["heron"]),
+    ("the egret wades beside the heron", ["birds"], ["heron", "egret"]),
+)
+_STATS_VECTOR_FACT = "the marsh floods in spring"
 
 # Two facts sharing the word "tide" and a topic hub, so a single recall returns
 # more than one hit and the ordering and count assertions have something to
@@ -828,6 +870,25 @@ def models_graph():
         The graph id.
     """
     return _MODELS_GRAPH
+
+
+@pytest.fixture(scope="module")
+def stats_graph(client):
+    """Write the stats facts to their own graph and return its id.
+
+    Args:
+        client: the plain client to write through.
+
+    Returns:
+        The graph id, now holding six vertices, five edges, eleven nodes and
+        one vector.
+    """
+    for phrase, topics, entities in _STATS_FACTS:
+        client.remember(phrase, graph=_STATS_GRAPH, topics=topics, entities=entities)
+    client.remember(
+        _STATS_VECTOR_FACT, graph=_STATS_GRAPH, vector=_encode(_STATS_VECTOR_FACT)
+    )
+    return _STATS_GRAPH
 
 
 @pytest.fixture(scope="module")

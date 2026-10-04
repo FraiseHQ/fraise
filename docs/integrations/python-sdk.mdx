@@ -110,6 +110,17 @@ A `Contribution` has a `source` — `text`, `vector`, `graph` or `anchor` — wi
 
 On a plain `recall` the breakdown is not asked for: each hit's `contributions` is empty and `background` is `None`. Use `recall` when the ranking is all you need, since the breakdown costs response size.
 
+## Counting what a graph holds
+
+`client.stats()` reads [`/api/v1/stats`](/docs/http-api/endpoints/stats) and returns one `GraphStats` per graph, in id order. Empty graphs are included, so the list's length is the server's graph count and a graph's row sits at its id.
+
+```python
+for g in client.stats():
+    print(g.id, g.vertices, g.edges, g.nodes, g.vectors, g.forest_entries)
+```
+
+The fields are named for what they count: `vertices` is the endpoint's `order` (facts, topics and entities) and `edges` its `size` (a fact's links to its topics and entities), while `nodes`, `vectors` and `forest_entries` keep the endpoint's names. Unlike `health()`, `stats()` raises on failure, `FraiseError` when the server cannot be reached and `FraiseAPIError` on an error status, so an unreachable server is never read as an empty one.
+
 ## Version compatibility
 
 `client.check_compatibility()` reads the `version` field from `GET /` and checks the server falls in the range this SDK supports: on a mismatch it warns and returns `False`, and `strict=True` raises instead. It is one request, made only when you call it, so it fits at startup. The `version` field is part of the server's contract for this reason; see [Health check](/docs/http-api/endpoints/health).
