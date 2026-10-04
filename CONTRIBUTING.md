@@ -51,7 +51,7 @@ If you'd rather not install anything locally, run the server straight from the p
 docker run --rm -p 9876:9876 ghcr.io/fraisehq/fraise:edge
 ```
 
-`:edge` tracks the latest commit on `main`; every commit also publishes an immutable tag named after its full commit SHA if you need to pin one. Releases publish `:latest` and semver tags (`:0.2`, `:0.2.2`).
+`:edge` tracks the latest commit on `main`; every commit also publishes an immutable tag named after its full commit SHA if you need to pin one. Releases publish `:latest` and semver tags (`:0.3`, `:0.3.0`).
 
 **If setup doesn't work, that's a bug — please report it.** Broken setup instructions are our fault, not yours.
 
