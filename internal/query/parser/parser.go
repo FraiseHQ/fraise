@@ -222,26 +222,37 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 // more often one the caller meant to search for than a clause abandoned
 // mid-write.
 //
-// A command word gets no clause to suggest, since recall:<value> is itself an
-// error.
+// A command word or a prefix gets no clause to suggest: recall:<value> and
+// explain:<value> are themselves errors, so pointing at them sent the caller
+// from one rejection to the next.
 func (p *parser[K, P]) errKeywordAsClause(tok lexer.Token) error {
 	if tok.Type.IsCommand() {
 		return p.errf(tok.Pos, "%s starts a second command: one command per instruction — quote it ('%s') to search for the word",
+			tok.Describe(), tok.Literal)
+	}
+	if tok.Type.IsPrefix() {
+		return p.errf(tok.Pos, "%s is a prefix and starts no clause here: quote it ('%s') to search for the word",
 			tok.Describe(), tok.Literal)
 	}
 	return p.errf(tok.Pos, "%s is a keyword and starts no clause here: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
 		tok.Describe(), strings.ToLower(tok.Literal), tok.Literal)
 }
 
-// errKeywordAsTerm rejects a reserved word among a recall's terms. "recall x
-// since 7d" is one ':' from "recall x since:7d", and guessing either reading
-// would answer a differently scoped question without saying so, so the message
-// names both repairs. The filter repair is spelled with value, the word written
-// after the keyword (see clauseValue). A command word has no filter reading, so
-// its message names only the quote.
+// errKeywordAsTerm rejects a reserved word among a recall's terms. It is one
+// ':' from a filter — "recall x since 7d" against "recall x since:7d" — and
+// either reading, guessed, answers a differently-scoped question with nothing
+// in the response to say so; the message names both repairs and leaves the
+// choice to the caller. The filter repair is spelled with value, the word the
+// caller wrote after the keyword (see clauseValue), so it is the query they
+// meant rather than a template to fill. A command word or a prefix has no
+// filter reading, recall:<value> and explain:<value> being themselves errors,
+// so its message names only the quote.
 func (p *parser[K, P]) errKeywordAsTerm(tok lexer.Token, value string) error {
 	if tok.Type.IsCommand() {
 		return p.errf(tok.Pos, "term %q is also a command: quote it ('%s') to search for the word", tok.Literal, tok.Literal)
+	}
+	if tok.Type.IsPrefix() {
+		return p.errf(tok.Pos, "term %q is also a prefix: quote it ('%s') to search for the word", tok.Literal, tok.Literal)
 	}
 	return p.errf(tok.Pos, "term %q is also a keyword: write %s:%s if a filter was meant, or quote it ('%s') to search the word",
 		tok.Literal, strings.ToLower(tok.Literal), value, tok.Literal)

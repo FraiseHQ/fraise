@@ -1040,6 +1040,12 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		// to quote.
 		{"recall zebras recall food", `term "recall" is also a command: quote it ('recall')`},
 		{"recall zebras remember 'x'", `term "remember" is also a command: quote it ('remember')`},
+		// A prefix has no ':' form either, so its message names only the
+		// quote: explain:<value> would itself be rejected.
+		{"recall ferry explain", `term "explain" is also a prefix: quote it ('explain') to search for the word`},
+		{"recall describe ferry", `term "describe" is also a prefix: quote it ('describe') to search for the word`},
+		{"recall ferry explain:ferry", `"explain" is a prefix and starts no clause here: quote it ('explain') to search for the word`},
+		{"remember 'a' describe", `"describe" is a prefix and starts no clause here: quote it ('describe') to search for the word`},
 		// A keyword with nothing after it can never finish a clause, so it is
 		// the word the caller forgot to quote.
 		{"recall zebras top", "write top:<value> if a filter was meant, or quote it ('top')"},

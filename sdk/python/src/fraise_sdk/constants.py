@@ -67,6 +67,8 @@ KEYWORDS = frozenset(
         "top",
         "depth",
         "vec",
+        "explain",
+        "describe",
     }
 )
 
