@@ -238,6 +238,105 @@ def vector():
     return _vector
 
 
+@pytest.fixture(scope="session")
+def recall_count(query):
+    """Callable running a recall that must succeed and returning its hit count.
+
+    Returns:
+        ``callable(text) -> int``.
+    """
+
+    def _recall_count(text: str) -> int:
+        status, body = query(text)
+        assert status == 200, body.get("error")
+        return body["results"]["count"]
+
+    return _recall_count
+
+
+@pytest.fixture(scope="session")
+def recall_ranking(query):
+    """Callable running a recall that must succeed and returning its hit values,
+    best-ranked first.
+
+    Values, not scores: a score decays with the fact's age at the instant the
+    search runs, so two identical recalls a millisecond apart legitimately score
+    the same fact differently. It is the ranking those scores produce that has to
+    be reproducible.
+
+    Returns:
+        ``callable(text) -> list[str]``.
+    """
+
+    def _recall_ranking(text: str) -> list[str]:
+        status, body = query(text)
+        assert status == 200, body.get("error")
+        return [hit["value"] for hit in body["results"]["hits"]]
+
+    return _recall_ranking
+
+
+@pytest.fixture(scope="session")
+def ranked_hits(query):
+    """Callable running a recall and checking the invariants every ranking keeps:
+    scores positive and non-increasing down the list.
+
+    Returns:
+        ``callable(text, parameters=None) -> (values, scores)``, both best first.
+    """
+
+    def _ranked_hits(text: str, parameters: dict[str, object] | None = None):
+        status, body = query(text, parameters=parameters)
+        assert status == 200, body.get("error")
+        hits = body["results"]["hits"]
+        scores = [hit["score"] for hit in hits]
+        assert all(s > 0 for s in scores), f"scores must be positive: {scores}"
+        assert scores == sorted(scores, reverse=True), (
+            f"scores must not increase down the ranking: {scores}"
+        )
+        return [hit["value"] for hit in hits], scores
+
+    return _ranked_hits
+
+
+@pytest.fixture(scope="session")
+def assert_rejected():
+    """Callable asserting a 400 whose message contains ``expected``,
+    case-insensitively.
+
+    Returns:
+        ``callable(status, body, expected, query_text)``.
+    """
+
+    def _assert_rejected(status, body, expected, query_text):
+        assert status == 400, (
+            f"{query_text!r}: expected 400, got {status} — body {body!r}"
+        )
+        message = (body.get("error") or "").lower()
+        assert message, f"{query_text!r}: 400 with an empty error message"
+        assert expected.lower() in message, (
+            f"{query_text!r}: error {body.get('error')!r} should mention {expected!r}"
+        )
+
+    return _assert_rejected
+
+
+@pytest.fixture(scope="session")
+def assert_accepted():
+    """Callable asserting a query the parser must treat as valid.
+
+    Returns:
+        ``callable(status, body, query_text)``.
+    """
+
+    def _assert_accepted(status, body, query_text):
+        assert status == 200, (
+            f"{query_text!r}: expected 200, got {status} — {body.get('error')!r}"
+        )
+
+    return _assert_accepted
+
+
 # Four facts sharing a single topic, each with a unique keyword. This is a
 # star: every fact hangs off the same "planets" hub. A recall seeded from the
 # star touches no anchor but that hub, which then holds exactly its fair share
@@ -406,3 +505,216 @@ def saltmarsh_graph(query):
         )
         assert status == 200, body.get("error")
     return _PLANET_GRAPH
+
+
+# Three facts that all contain the keyword "comet" but are otherwise unrelated:
+# each carries a *different* topic, so nothing connects them in the graph except
+# the shared word. A recall for that word must therefore surface all three
+# purely through the text index. No other fact on graph 0 contains "comet", so
+# the expected set is fully determined here.
+_COMET_FACTS = {
+    "the comet streaked past mars": "astronomy",
+    "children watched the comet at dawn": "memory",
+    "the comet will not return for centuries": "time",
+}
+
+# Five facts that all contain "quasar" once and carry no topic:/entity: anchor,
+# so each is an isolated node that no walk from another graph-0 fact can
+# reach: a recall for "quasar" is answered by the text index alone. They share
+# graph 0 with the comet facts above, which contain no "quasar".
+_QUASAR_FACTS = (
+    "the quasar catalogue was revised",
+    "a quasar outshines its host galaxy",
+    "radio astronomers logged the quasar",
+    "the quasar sits behind a lensing cluster",
+    "the quasar faded from the survey",
+)
+
+# A fact whose anchors are grammar keywords. "top" is also an ordinary English
+# word, and an LLM extracting entities from prose will eventually emit it bare
+# ("she reached the top" -> entities=["top"]). A parser that typed an anchor
+# value by spelling alone would fail that write with a 400 the client could
+# not anticipate. The invented marker "cairnprobe" is this fact's only link to
+# the recalls in recall_test.py, so each assertion is scoped to this fact
+# whatever else graph 5 holds.
+_CAIRN_FACT = "the cairnprobe marks the top of the pass"
+
+# Case folding. Terms and anchor values are identity, not prose: the parser
+# folds them to lower case on the way in, so however a client capitalises an
+# anchor, a single node accrues in the graph. The quoted fact is prose and is
+# the one exception — it comes back spelled exactly as written.
+_CASEPROBE_FACT = "The Caseprobe Expedition Reached the Summit in April."
+
+# A fact whose whole text is also the name of its topic, plus a bystander fact
+# carrying the same topic. Keys derived from the value alone would give the
+# fact and the topic one key, so the topic node would never be stored and the
+# bystander's IsAbout edge would land on the fact instead of on a topic hub.
+# The bystander is what makes that visible: the two facts have no word in
+# common and belong together only through the topic.
+_LEDGER_TOPIC = "ledgerprobe"
+_LEDGER_FACTS = ("ledgerprobe", "acme settles invoices quarterly")
+
+# A batch of distinct facts, each carrying a unique keyword so a recall can
+# target exactly one of them. They share a topic so the write path also
+# exercises relationship creation.
+_BIRD_FACTS = {
+    "parrot": "the parrot is turquoise",
+    "raven": "the raven is midnight black",
+    "canary": "the canary is bright yellow",
+    "flamingo": "the flamingo is pink",
+    "peacock": "the peacock is iridescent",
+    "robin": "the robin has a red breast",
+    "magpie": "the magpie loves shiny things",
+    "owl": "the owl hunts at night",
+}
+
+
+@pytest.fixture(scope="session")
+def comet_facts():
+    """The comet facts, each mapped to the topic it is filed under."""
+    return dict(_COMET_FACTS)
+
+
+@pytest.fixture(scope="session")
+def quasar_facts():
+    """The quasar facts, which carry no anchor."""
+    return tuple(_QUASAR_FACTS)
+
+
+@pytest.fixture(scope="session")
+def cairn_fact():
+    """The fact filed under topic:top and entity:top."""
+    return _CAIRN_FACT
+
+
+@pytest.fixture(scope="session")
+def caseprobe_fact():
+    """The mixed-case fact the case-folding probe writes and expects back."""
+    return _CASEPROBE_FACT
+
+
+@pytest.fixture(scope="session")
+def ledger_topic():
+    """The topic the ledger probe's first fact is named like."""
+    return _LEDGER_TOPIC
+
+
+@pytest.fixture(scope="session")
+def ledger_facts():
+    """The ledger probe's facts: the one named like its topic, then the bystander."""
+    return tuple(_LEDGER_FACTS)
+
+
+@pytest.fixture(scope="session")
+def bird_facts():
+    """The bird facts, keyed by the unique keyword each contains."""
+    return dict(_BIRD_FACTS)
+
+
+# The explain probes, both on graph 2.
+#
+# Two facts sharing a keyword and an entity. Both are text seeds for "pulsar";
+# their shared entity is the query's only touched anchor, so it sits exactly
+# at the background rate and transmits nothing — every hit's breakdown is a
+# single text contribution. (Anchors are heard only when their members matched
+# better than their size predicts; the storm probe below is the funded case.)
+_EXPLAIN_GRAPH = 2
+_PULSAR_FACTS = (
+    "the pulsar spins thirty times a second",
+    "the pulsar emits radio beams",
+)
+_PULSAR_ENTITY = "vela"
+
+# The surplus probe: a small "weather" cluster concentrates the query's mass
+# while a larger "archive" hub holds no more than its fair share of it, so
+# exactly one anchor speaks and its silent member is funded by transmission
+# alone. The explain recalls name both topics because the graph is entered
+# only through an anchor the recall names; naming the hub keeps its memos in
+# the candidate set, so their absence is its silence and not the filter's
+# doing.
+_STORM_CLUSTER = (
+    "the barometer falls before the storm",
+    "storm clouds gather at sea",
+    "the harbour is calm tonight",  # no query term: funded or invisible
+)
+_STORM_HUB = ("a storm of paperwork",) + tuple(
+    f"unrelated archive memo {i}" for i in range(7)
+)
+
+_ALPHA = 0.5  # the server's per-edge attenuation; α² on the two-edge path
+
+
+@pytest.fixture
+def pulsar_graph(query):
+    """Write the pulsar facts under entity:vela and return their graph id.
+
+    Rewritten for every test that asks, which refreshes their timestamps just
+    before the test reads them.
+    """
+    for phrase in _PULSAR_FACTS:
+        status, body = query(
+            f"remember@{_EXPLAIN_GRAPH} '{phrase}' entity:{_PULSAR_ENTITY}"
+        )
+        assert status == 200, body.get("error")
+    return _EXPLAIN_GRAPH
+
+
+@pytest.fixture
+def storm_graph(query):
+    """Write the storm cluster under topic:weather and the hub under
+    topic:archive, and return their graph id.
+
+    Rewritten for every test that asks, which refreshes their timestamps just
+    before the test reads them.
+    """
+    for phrase in _STORM_CLUSTER:
+        status, body = query(f"remember@{_EXPLAIN_GRAPH} '{phrase}' topic:weather")
+        assert status == 200, body.get("error")
+    for phrase in _STORM_HUB:
+        status, body = query(f"remember@{_EXPLAIN_GRAPH} '{phrase}' topic:archive")
+        assert status == 200, body.get("error")
+    return _EXPLAIN_GRAPH
+
+
+@pytest.fixture(scope="session")
+def storm_hub():
+    """The archive hub's facts; only the first contains a query term."""
+    return tuple(_STORM_HUB)
+
+
+@pytest.fixture(scope="session")
+def alpha():
+    """The server's per-edge attenuation α, applied as α² on the two-edge path."""
+    return _ALPHA
+
+
+# Documents on three clearly distinct subjects. A real sentence embedding places
+# each far from the others, so a query close in meaning to one of them retrieves
+# that one by vector alone. Graph 3 carries no other vectors, so its embedding
+# dimension is fixed by the real-embeddings test.
+_EMBEDDING_DOCS = {
+    "cat": "the tabby cat curled up and slept on the warm windowsill",
+    "space": "the mars rover drilled into red rock to collect samples",
+    "bread": "he kneaded the dough and baked a fresh loaf of sourdough",
+}
+
+# The text-and-vector fusion probe on graph 6, keyed by the channels that see
+# each fact.
+_KRAKATOA_FACTS = {
+    "text": "krakatoa ash fell for days",  # both terms; no embedding
+    "both": "the ash cloud crossed the ocean",  # one term; near embedding
+    "vector": "sensors recorded the pressure wave",  # no terms; exact embedding
+}
+
+
+@pytest.fixture(scope="session")
+def embedding_docs():
+    """The real-embedding documents, keyed by the topic each is filed under."""
+    return dict(_EMBEDDING_DOCS)
+
+
+@pytest.fixture(scope="session")
+def krakatoa_facts():
+    """The fusion probe's facts, keyed by the channels that see each:
+    "text", "both" or "vector"."""
+    return dict(_KRAKATOA_FACTS)

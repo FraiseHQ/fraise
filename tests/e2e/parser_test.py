@@ -43,24 +43,6 @@ idempotent, since a fact is keyed by its value.
 
 import pytest
 
-
-def _reject(status, body, expected, query_text):
-    """Assert a 400 whose message contains `expected` (case-insensitively)."""
-    assert status == 400, f"{query_text!r}: expected 400, got {status} — body {body!r}"
-    message = (body.get("error") or "").lower()
-    assert message, f"{query_text!r}: 400 with an empty error message"
-    assert expected.lower() in message, (
-        f"{query_text!r}: error {body.get('error')!r} should mention {expected!r}"
-    )
-
-
-def _accept(status, body, query_text):
-    """Assert a query the parser must treat as valid."""
-    assert status == 200, (
-        f"{query_text!r}: expected 200, got {status} — {body.get('error')!r}"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Duplicate single-valued clauses. A bare assignment in the clause switch
 # (r.depth = ...) would let the last occurrence win silently, so a repeat is
@@ -88,7 +70,7 @@ def _accept(status, body, query_text):
         "recall ferry depth:2 DEPTH:5",
     ],
 )
-def test_duplicate_single_valued_clause_is_rejected(query, text):
+def test_duplicate_single_valued_clause_is_rejected(query, text, assert_rejected):
     """A repeated modifier is an agent generation bug, and last-wins hides it.
 
     A query that silently answers a differently-scoped question is worse than
@@ -96,7 +78,7 @@ def test_duplicate_single_valued_clause_is_rejected(query, text):
     clause so the agent knows which one to drop.
     """
     status, body = query(text)
-    _reject(status, body, "duplicate", text)
+    assert_rejected(status, body, "duplicate", text)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +107,7 @@ def test_duplicate_single_valued_clause_is_rejected(query, text):
         "recall@1 ferry depth:500",
     ],
 )
-def test_depth_and_top_are_bounded(query, text):
+def test_depth_and_top_are_bounded(query, text, assert_rejected):
     """An unbounded traversal or result size is a denial of service from a
     single string, so both take a parse-time ceiling like the selector does.
 
@@ -133,7 +115,7 @@ def test_depth_and_top_are_bounded(query, text):
     an agent that only learns "invalid" will retry with another huge number.
     """
     status, body = query(text)
-    _reject(status, body, "out of range", text)
+    assert_rejected(status, body, "out of range", text)
 
 
 @pytest.mark.parametrize(
@@ -149,12 +131,12 @@ def test_depth_and_top_are_bounded(query, text):
         "recall@1 ferry depth:1 top:5",
     ],
 )
-def test_ordinary_depth_and_top_still_parse(query, text):
+def test_ordinary_depth_and_top_still_parse(query, text, assert_accepted):
     """The ceiling must not eat the ordinary range — depth 0 included, which
     the Go suite already pins as meaningful (an explicit no-traversal recall).
     """
     status, body = query(text)
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +158,7 @@ def test_ordinary_depth_and_top_still_parse(query, text):
         "recall ferry topic:'' entity:''",
     ],
 )
-def test_empty_data_is_rejected(query, text):
+def test_empty_data_is_rejected(query, text, assert_rejected):
     """An empty fact is unretrievable and an empty anchor is an identity no
     caller can name again, so both are storage-corrupting no-ops.
 
@@ -184,7 +166,7 @@ def test_empty_data_is_rejected(query, text):
     anchor nobody can type twice.
     """
     status, body = query(text)
-    _reject(status, body, "empty", text)
+    assert_rejected(status, body, "empty", text)
 
 
 # ---------------------------------------------------------------------------
@@ -207,14 +189,16 @@ def test_empty_data_is_rejected(query, text):
         "recall entity",
     ],
 )
-def test_leading_reserved_word_is_rejected(query, text):
+def test_leading_reserved_word_is_rejected(query, text, assert_rejected):
     """A leading keyword is a 400 like one anywhere else among the terms.
 
     With terms and phrases free to come in any order, no position is an
     exception where a bare keyword is data: data goes in quotes.
     """
     status, body = query(text)
-    _reject(status, body, f'term "{text.split(" ")[1]}" is also a keyword:', text)
+    assert_rejected(
+        status, body, f'term "{text.split(" ")[1]}" is also a keyword:', text
+    )
 
 
 @pytest.mark.parametrize(
@@ -226,7 +210,7 @@ def test_leading_reserved_word_is_rejected(query, text):
         "recall recall",
     ],
 )
-def test_leading_command_word_is_rejected_with_the_quote(query, text):
+def test_leading_command_word_is_rejected_with_the_quote(query, text, assert_rejected):
     """A leading command word is a 400 naming the quote.
 
     A command word has no clause reading: recall:<value> is itself an error, so
@@ -236,7 +220,7 @@ def test_leading_command_word_is_rejected_with_the_quote(query, text):
     """
     word = text.split()[1]
     status, body = query(text)
-    _reject(
+    assert_rejected(
         status, body, f"term \"{word}\" is also a command: quote it ('{word}')", text
     )
     assert f"{word}:<value>" not in body["error"], (
@@ -322,13 +306,13 @@ def test_reserved_word_as_a_term_names_both_fixes(query, text, column, fixes):
         ("remember@1 'zebras eat grass' topic food entity:x", "write topic:food"),
     ],
 )
-def test_keyword_after_a_clause_is_a_missing_colon(query, text, fix):
+def test_keyword_after_a_clause_is_a_missing_colon(query, text, fix, assert_rejected):
     """Once a clause has started a keyword has one reading: a clause missing
     its ':'. Terms come first, so it cannot be a word to quote, and the message
     names only the clause the caller meant.
     """
     status, body = query(text)
-    _reject(status, body, fix, text)
+    assert_rejected(status, body, fix, text)
     assert "quote it" not in body["error"], (
         f"{text!r}: error {body['error']!r} suggests a quote, but no term can "
         "stand after a clause"
@@ -352,7 +336,7 @@ def test_keyword_after_a_clause_is_a_missing_colon(query, text, fix):
         "recall ferry topic:'since'",
     ],
 )
-def test_reserved_word_in_value_position_is_data(query, text):
+def test_reserved_word_in_value_position_is_data(query, text, assert_accepted):
     """Spelling alone must not make a word syntax: a stored anchor that happens
     to be called "top" has to be nameable without quoting.
 
@@ -361,7 +345,7 @@ def test_reserved_word_in_value_position_is_data(query, text):
     break by accident.
     """
     status, body = query(text)
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
 
 
 @pytest.mark.parametrize(
@@ -378,7 +362,7 @@ def test_reserved_word_in_value_position_is_data(query, text):
     ],
 )
 def test_reserved_word_where_a_value_is_required_names_the_clause(
-    query, text, expected
+    query, text, expected, assert_rejected
 ):
     """A keyword in a numeric or temporal slot is a value error, not a grammar
     error, so the message names the clause and the value it could not read.
@@ -388,7 +372,7 @@ def test_reserved_word_where_a_value_is_required_names_the_clause(
     unnamed.
     """
     status, body = query(text)
-    _reject(status, body, expected, text)
+    assert_rejected(status, body, expected, text)
 
 
 @pytest.mark.parametrize(
@@ -402,7 +386,9 @@ def test_reserved_word_where_a_value_is_required_names_the_clause(
         ("remember@1 'the ferry docks at dawn' Since:7d", "since"),
     ],
 )
-def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
+def test_recall_clause_on_a_remember_names_the_command(
+    query, text, clause, assert_rejected
+):
     """A well-formed recall clause on a remember says it is a recall clause
     and which clauses a remember takes.
 
@@ -412,7 +398,7 @@ def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
     given to, whatever its casing and wherever it sits among the anchors.
     """
     status, body = query(text)
-    _reject(
+    assert_rejected(
         status,
         body,
         f"{clause}: is a recall clause: a remember takes only topic:, entity: and vec:",
@@ -444,7 +430,7 @@ def test_recall_clause_on_a_remember_names_the_command(query, text, clause):
         ("remember@1 'the ferry docks at dawn' vec:$", "expected literal"),
     ],
 )
-def test_vec_clause_errors_surface_unmangled(query, text, expected):
+def test_vec_clause_errors_surface_unmangled(query, text, expected, assert_rejected):
     """vec:'s inner, positioned error reaches the client unchanged.
 
     Both call sites return parseVecField's error as it is, like every other
@@ -456,7 +442,7 @@ def test_vec_clause_errors_surface_unmangled(query, text, expected):
         f"{text!r}: error {message!r} is the generic wrap; return the inner "
         "positioned error unchanged"
     )
-    _reject(status, body, expected, text)
+    assert_rejected(status, body, expected, text)
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +482,7 @@ def test_vec_clause_errors_surface_unmangled(query, text, expected):
         "recall ferry entity:'O''Brien'",
     ],
 )
-def test_specials_inside_quotes_are_data(query, text):
+def test_specials_inside_quotes_are_data(query, text, assert_accepted):
     """A quoted phrase is opaque: reserved words and symbols inside it carry no
     meaning, so none of these is a grammar error.
 
@@ -505,7 +491,7 @@ def test_specials_inside_quotes_are_data(query, text):
     stop at the quote.
     """
     status, body = query(text)
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
 
 
 @pytest.mark.parametrize(
@@ -520,7 +506,9 @@ def test_specials_inside_quotes_are_data(query, text):
         ("remember@1 'the ferry docks at dawn' topic:a.b", "."),
     ],
 )
-def test_special_character_outside_quotes_is_rejected(query, text, char):
+def test_special_character_outside_quotes_is_rejected(
+    query, text, char, assert_rejected
+):
     """Outside quotes a word is letters and digits only, and any other
     character is a 400 naming it.
 
@@ -530,7 +518,9 @@ def test_special_character_outside_quotes_is_rejected(query, text, char):
     escape; the test above pins that such characters are data inside quotes.
     """
     status, body = query(text)
-    _reject(status, body, f'"{char}" is only allowed inside a quoted phrase', text)
+    assert_rejected(
+        status, body, f'"{char}" is only allowed inside a quoted phrase', text
+    )
 
 
 @pytest.mark.parametrize(
@@ -544,14 +534,14 @@ def test_special_character_outside_quotes_is_rejected(query, text, char):
         "remember@1 'a fact naming topic:harbour inside' entity:acme",
     ],
 )
-def test_specials_inside_a_remembered_fact_are_stored(query, text):
+def test_specials_inside_a_remembered_fact_are_stored(query, text, assert_accepted):
     """The write path has to be as opaque as the read path.
 
     Pinned to graph 1 (loose remembers) and idempotent — a fact is keyed by its
     value, so reruns against a long-lived server change nothing.
     """
     status, body = query(text)
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
 
 
 @pytest.mark.parametrize(
@@ -567,13 +557,13 @@ def test_specials_inside_a_remembered_fact_are_stored(query, text):
         "recall ferry 'one' 'two",
     ],
 )
-def test_unterminated_phrase_is_reported_as_such(query, text):
+def test_unterminated_phrase_is_reported_as_such(query, text, assert_rejected):
     """An unterminated phrase is the one quote error there is, and it already
     reports well — pinned so a stricter phrase rule cannot regress it into a
     generic token error.
     """
     status, body = query(text)
-    _reject(status, body, "unterminated", text)
+    assert_rejected(status, body, "unterminated", text)
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +594,9 @@ def test_unterminated_phrase_is_reported_as_such(query, text):
         ("recall ferry since:2026-01-15", "a quoted date like '2026-01-15'"),
     ],
 )
-def test_invalid_temporal_values_name_the_accepted_forms(query, text, expected):
+def test_invalid_temporal_values_name_the_accepted_forms(
+    query, text, expected, assert_rejected
+):
     """A temporal error has to teach the grammar, since duration-vs-date is
     exactly what an agent guesses wrong.
 
@@ -612,7 +604,7 @@ def test_invalid_temporal_values_name_the_accepted_forms(query, text, expected):
     '2026-01-15'") is the model for every other value error in this file.
     """
     status, body = query(text)
-    _reject(status, body, expected, text)
+    assert_rejected(status, body, expected, text)
 
 
 @pytest.mark.parametrize(
@@ -632,7 +624,9 @@ def test_invalid_temporal_values_name_the_accepted_forms(query, text, expected):
         ("recall ferry since:99999999999999999999d", "out of range (at most 106751d)"),
     ],
 )
-def test_durations_longer_than_a_duration_holds_are_rejected(query, text, expected):
+def test_durations_longer_than_a_duration_holds_are_rejected(
+    query, text, expected, assert_rejected
+):
     """A duration past about 292 years is out of range, and the message says
     how far each unit goes.
 
@@ -642,7 +636,7 @@ def test_durations_longer_than_a_duration_holds_are_rejected(query, text, expect
     largest count the caller's own unit allows.
     """
     status, body = query(text)
-    _reject(status, body, expected, text)
+    assert_rejected(status, body, expected, text)
 
 
 @pytest.mark.parametrize(
@@ -660,12 +654,12 @@ def test_durations_longer_than_a_duration_holds_are_rejected(query, text, expect
         "recall zebras since:7d until:'2026-01-15' depth:2 top:5",
     ],
 )
-def test_valid_temporal_values_parse(query, text):
+def test_valid_temporal_values_parse(query, text, assert_accepted):
     """Both accepted forms, at both bounds, including the zero duration — the
     guard rail for any stricter temporal validation.
     """
     status, body = query(text)
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
 
 
 # ---------------------------------------------------------------------------
@@ -689,14 +683,14 @@ def test_valid_temporal_values_parse(query, text):
         ("recall@-1 ferry", "whole number"),
     ],
 )
-def test_graph_selector_errors_stay_specific(query, text, expected):
+def test_graph_selector_errors_stay_specific(query, text, expected, assert_rejected):
     """Selector validation is layered — parser rejects what cannot fit uint8,
     handler rejects what fits but names no allocated graph — and both layers
     must keep their own message so a regression in one cannot hide behind the
     other.
     """
     status, body = query(text)
-    _reject(status, body, expected, text)
+    assert_rejected(status, body, expected, text)
 
 
 # ---------------------------------------------------------------------------
@@ -718,7 +712,7 @@ def test_graph_selector_errors_stay_specific(query, text, expected):
         "recall 'zebras\x00food'",  # a NUL inside quotes is data
     ],
 )
-def test_whitespace_separates_words(query, text):
+def test_whitespace_separates_words(query, text, assert_accepted):
     """How a query is spaced is not what it means: every one of these is a
     one-term recall and parses.
 
@@ -726,16 +720,16 @@ def test_whitespace_separates_words(query, text):
     newline must not get a 400 for it.
     """
     status, body = query(text)
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
 
 
-def test_nul_outside_quotes_is_rejected_by_name(query):
+def test_nul_outside_quotes_is_rejected_by_name(query, assert_rejected):
     """A NUL outside a phrase is rejected for itself: read as the end of input,
     it would drop everything after it without a word.
     """
     text = "recall zebras\x00food"
     status, body = query(text)
-    _reject(
+    assert_rejected(
         status, body, "a NUL character is only allowed inside a quoted phrase", text
     )
 
@@ -754,7 +748,7 @@ def test_nul_outside_quotes_is_rejected_by_name(query):
         ("recall zebras : topic:food", "stray"),
     ],
 )
-def test_no_space_inside_a_command_or_clause(query, text, expected):
+def test_no_space_inside_a_command_or_clause(query, text, expected, assert_rejected):
     """A space inside a command or clause is a 400 that says where it is not
     allowed.
 
@@ -764,7 +758,7 @@ def test_no_space_inside_a_command_or_clause(query, text, expected):
     remembers.
     """
     status, body = query(text)
-    _reject(status, body, expected, text)
+    assert_rejected(status, body, expected, text)
 
 
 # ---------------------------------------------------------------------------
@@ -832,12 +826,14 @@ def test_second_command_is_rejected_as_one_per_instruction(query, text):
         ("recall ferry remember 'x'", "remember"),
     ],
 )
-def test_command_word_among_the_terms_is_a_word_to_quote(query, text, word):
+def test_command_word_among_the_terms_is_a_word_to_quote(
+    query, text, word, assert_rejected
+):
     """A command word among a recall's terms is the word the caller forgot to
     quote, not a second command, so the error names the quote.
     """
     status, body = query(text)
-    _reject(
+    assert_rejected(
         status, body, f"term \"{word}\" is also a command: quote it ('{word}')", text
     )
 
@@ -858,12 +854,12 @@ def test_command_word_among_the_terms_is_a_word_to_quote(query, text, word):
         ("recall the 'parrot'", [(10, "the")]),  # a phrase is a real seed
     ],
 )
-def test_stop_word_term_runs_and_warns(query, text, warnings):
+def test_stop_word_term_runs_and_warns(query, text, warnings, assert_accepted):
     """One warning per bare stop word, positioned at the term, naming why it
     cannot match and what to do.
     """
     status, body = query(text)
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
     assert body.get("warnings") == [
         f'parse warning at column {column}: term "{term}" is a stop word: '
         "stored facts never contain it, so it cannot match"
@@ -871,7 +867,7 @@ def test_stop_word_term_runs_and_warns(query, text, warnings):
     ], f"{text!r}: warnings {body.get('warnings')!r}"
 
 
-def test_stop_word_beside_a_vector_warns(query, vector, planets_graph):
+def test_stop_word_beside_a_vector_warns(query, vector, planets_graph, assert_accepted):
     """A vector is a seed, so a stop word beside it only warns.
 
     The planet graph is never given a vector, so a vector of any width is
@@ -879,7 +875,7 @@ def test_stop_word_beside_a_vector_warns(query, vector, planets_graph):
     """
     text = f"recall@{planets_graph} the vec:$v"
     status, body = query(text, parameters={"v": vector(3)})
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
     column = len(f"recall@{planets_graph} the")
     assert body.get("warnings") == [
         f'parse warning at column {column}: term "the" is a stop word: '
@@ -895,7 +891,7 @@ def test_stop_word_beside_a_vector_warns(query, vector, planets_graph):
         "recall the topic:birds",  # anchors do not rescue it
     ],
 )
-def test_stop_word_only_recall_is_rejected(query, text):
+def test_stop_word_only_recall_is_rejected(query, text, assert_rejected):
     """A recall whose every bare term is a stop word, with no phrase and no
     vector, can match nothing, so it is a 400 naming the fix rather than an
     empty result that looks like a miss.
@@ -904,7 +900,7 @@ def test_stop_word_only_recall_is_rejected(query, text):
     meant, and it is accepted on its own.
     """
     status, body = query(text)
-    _reject(
+    assert_rejected(
         status,
         body,
         "so nothing can match; give a term that is not a stop word, a phrase, "
@@ -936,13 +932,13 @@ def test_stop_word_only_recall_is_rejected(query, text):
         "recall entity:acme until:30d",
     ],
 )
-def test_anchor_only_recall_is_reachable(query, text):
+def test_anchor_only_recall_is_reachable(query, text, assert_accepted):
     """An anchor is a seed, so a recall with no text term is a well-formed
     question, seeded by everything filed under it, and the parser accepts
     each shape whatever the graph holds.
     """
     status, body = query(text)
-    _accept(status, body, text)
+    assert_accepted(status, body, text)
 
 
 # ---------------------------------------------------------------------------
