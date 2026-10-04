@@ -42,19 +42,23 @@ store and retrieve, never *where* — the memory partition is an application
 concern, not something the model should pick.
 """
 
-# Annotations here are evaluated eagerly, without `from __future__ import
-# annotations`: function_tool builds each tool's schema from its function's
-# annotations, and recall's depth annotation uses the Field imported inside
-# recall_tool, which a string annotation resolved later could not see.
-from typing import TYPE_CHECKING, Annotated
+from __future__ import annotations
+
+from typing import Annotated
 
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.constants import DEFAULT_TOP, MAX_DEPTH
 from fraise_sdk.errors import FraiseError
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
-if TYPE_CHECKING:
-    from agents import FunctionTool
+try:
+    from agents import FunctionTool, function_tool
+    from pydantic import Field
+except ImportError as exc:  # pragma: no cover - exercised only without the extra
+    raise ImportError(
+        "The OpenAI Agents integration requires the 'openai-agents' package. "
+        "Install it with:  pip install 'fraise-sdk[openai]'"
+    ) from exc
 
 
 def recall_tool(
@@ -63,24 +67,13 @@ def recall_tool(
     graph: int = 0,
     embedder: Embedder | EmbedderLike | None = None,
     name: str = "recall_memory",
-) -> "FunctionTool":
+) -> FunctionTool:
     """Build a tool that searches long-term memory and returns matching facts.
 
     Pass an ``embedder`` and the recall implicitly vectorises: it encodes its
     keywords through the embedder and searches by that vector too. Omit it and
     the recall is keyword-only.
-
-    Raises:
-        ImportError: if the ``openai`` extra is not installed.
     """
-    try:
-        from agents import function_tool
-        from pydantic import Field
-    except ImportError as exc:  # pragma: no cover - exercised only without the extra
-        raise ImportError(
-            "The OpenAI Agents integration requires the 'openai-agents' package. "
-            "Install it with:  pip install 'fraise-sdk[openai]'"
-        ) from exc
     encode = resolve_embedder(embedder)
 
     def recall_memory(
@@ -137,22 +130,12 @@ def remember_tool(
     graph: int = 0,
     embedder: Embedder | EmbedderLike | None = None,
     name: str = "remember_fact",
-) -> "FunctionTool":
+) -> FunctionTool:
     """Build a tool that stores a single fact in long-term memory.
 
     Pass an ``embedder`` and the fact is implicitly vectorised: it is encoded
     through the embedder and stored with its vector. Omit it to store text only.
-
-    Raises:
-        ImportError: if the ``openai`` extra is not installed.
     """
-    try:
-        from agents import function_tool
-    except ImportError as exc:  # pragma: no cover - exercised only without the extra
-        raise ImportError(
-            "The OpenAI Agents integration requires the 'openai-agents' package. "
-            "Install it with:  pip install 'fraise-sdk[openai]'"
-        ) from exc
     encode = resolve_embedder(embedder)
 
     def remember_fact(
@@ -200,7 +183,7 @@ def memory_tools(
     *,
     graph: int = 0,
     embedder: Embedder | EmbedderLike | None = None,
-) -> "list[FunctionTool]":
+) -> list[FunctionTool]:
     """Return both memory tools (recall + remember) bound to one graph.
 
     Convenience for the common case: ``tools=memory_tools(fraise)``. Pass an

@@ -44,7 +44,7 @@ from fraise_sdk.constants import (
 )
 from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
 from fraise_sdk.models import RecallResult
-from fraise_sdk.providers import (
+from fraise_sdk.providers.base import (
     Embedder,
     EmbedderLike,
     Extractor,

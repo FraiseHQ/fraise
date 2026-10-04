@@ -22,9 +22,9 @@
 
 """OpenAI providers: an embedder and an anchor extractor.
 
-Optional: the ``openai`` client is imported lazily and ships with the ``openai``
-extra (``pip install 'fraise-sdk[openai]'``), so the core SDK does not depend on
-it.
+Optional: the ``openai`` client ships with the ``openai`` extra
+(``pip install 'fraise-sdk[openai]'``). The package does not import this module,
+so the core SDK does not depend on it; import the providers from here.
 """
 
 from __future__ import annotations
@@ -34,6 +34,14 @@ from collections.abc import Sequence
 
 from fraise_sdk.errors import FraiseError
 from fraise_sdk.providers.base import Anchor, Embedder, Extractor
+
+try:
+    import openai
+except ImportError as exc:  # pragma: no cover - exercised only without the extra
+    raise ImportError(
+        "The OpenAI providers require the 'openai' extra. "
+        "Install it with:  pip install 'fraise-sdk[openai]'"
+    ) from exc
 
 # The instructions and output shape the published benchmark ingests with, word
 # for word, so an SDK user's write path is the one the numbers measure.
@@ -84,13 +92,6 @@ class OpenAIEmbedder(Embedder):
         api_key: str | None = None,
     ) -> None:
         if client is None:
-            try:
-                import openai
-            except ImportError as exc:  # pragma: no cover - only without the extra
-                raise ImportError(
-                    "OpenAIEmbedder requires the 'openai' extra. "
-                    "Install it with:  pip install 'fraise-sdk[openai]'"
-                ) from exc
             client = openai.OpenAI(api_key=api_key)
         self._client = client
         self._model = model
@@ -129,13 +130,6 @@ class OpenAIExtractor(Extractor):
         api_key: str | None = None,
     ) -> None:
         if client is None:
-            try:
-                import openai
-            except ImportError as exc:  # pragma: no cover - only without the extra
-                raise ImportError(
-                    "OpenAIExtractor requires the 'openai' extra. "
-                    "Install it with:  pip install 'fraise-sdk[openai]'"
-                ) from exc
             client = openai.OpenAI(api_key=api_key)
         self._client = client
         self._model = model

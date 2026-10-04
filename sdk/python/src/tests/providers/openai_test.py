@@ -22,13 +22,17 @@
 
 """OpenAI provider tests against a mocked openai client — no vendor calls."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk import FraiseClient, FraiseError
 from fraise_sdk.providers.base import Anchor, Embedder, Extractor
-from fraise_sdk.providers.openai import OpenAIEmbedder, OpenAIExtractor
+
+# The providers import their client at module scope, so skip the whole file
+# when the optional 'openai' extra is not installed.
+pytest.importorskip("openai", reason="requires the 'openai' extra")
+
+from fraise_sdk.providers.openai import OpenAIEmbedder, OpenAIExtractor  # noqa: E402
 
 
 def test_openai_embedder_calls_client_and_returns_vector(
@@ -64,15 +68,14 @@ def test_openai_embedder_is_an_embedder(embeddings_client):
 
 
 def test_openai_embedder_builds_its_own_client_from_the_api_key(embeddings_client):
-    """Without an injected client the embedder imports openai and builds one.
+    """Without an injected client the embedder builds its own OpenAI client.
 
-    The import is lazy and lives inside ``__init__``, so it is patched in
-    ``sys.modules`` — that keeps the test running whether or not the optional
-    'openai' extra is installed.
+    The vendor module is patched where the provider imported it, so the test
+    pins what the provider builds without a real client or an API key.
     """
     openai = MagicMock()
     openai.OpenAI.return_value = embeddings_client()
-    with patch.dict(sys.modules, {"openai": openai}):
+    with patch("fraise_sdk.providers.openai.openai", openai):
         embedder = OpenAIEmbedder(api_key="sk-test")
     openai.OpenAI.assert_called_once_with(api_key="sk-test")
     assert embedder.embed("hello") == [0.1, 0.2, 0.3]
@@ -132,15 +135,14 @@ def test_openai_extractor_is_an_extractor(chat_client):
 
 
 def test_openai_extractor_builds_its_own_client_from_the_api_key(chat_client):
-    """Without an injected client the extractor imports openai and builds one.
+    """Without an injected client the extractor builds its own OpenAI client.
 
-    The import is lazy and lives inside ``__init__``, so it is patched in
-    ``sys.modules`` — that keeps the test running whether or not the optional
-    'openai' extra is installed.
+    The vendor module is patched where the provider imported it, so the test
+    pins what the provider builds without a real client or an API key.
     """
     openai = MagicMock()
     openai.OpenAI.return_value = chat_client('{"topics": ["birds"], "entities": []}')
-    with patch.dict(sys.modules, {"openai": openai}):
+    with patch("fraise_sdk.providers.openai.openai", openai):
         extractor = OpenAIExtractor(api_key="sk-test")
 
     openai.OpenAI.assert_called_once_with(api_key="sk-test")

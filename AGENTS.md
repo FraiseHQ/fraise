@@ -251,8 +251,6 @@ These apply to every component:
   `Returns:` / `Raises:` sections, as in
   `sdk/python/src/fraise_sdk/integrations/openai_agents.py`. Not NumPy, not
   reST field lists. Enforced by `convention = "google"` in `pyproject.toml`.
-- Optional integrations import their vendor SDK inside the function that needs
-  it, never at module scope, so `import fraise_sdk` stays free of heavy extras.
 - `ruff` formats and lints (`make lint-py`); `ty` type-checks.
 
 ### TypeScript
