@@ -25,7 +25,7 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import requests
 
@@ -40,10 +40,11 @@ from fraise_sdk.constants import (
     SDK_FILES,
     SERVER_MAX_EXCLUSIVE,
     SERVER_MIN,
+    STATS_PATH,
     SUPPORTED_SERVER,
 )
 from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
-from fraise_sdk.models import RecallResult
+from fraise_sdk.models import GraphStats, RecallResult
 from fraise_sdk.providers.base import (
     Embedder,
     EmbedderLike,
@@ -103,7 +104,8 @@ class FraiseClient:
     :meth:`recall` are typed conveniences over it, and :meth:`query` is the
     escape hatch for raw query strings. :meth:`explain` sends the query
     :meth:`recall` would to ``POST /api/v1/explain``, which answers with the
-    breakdown of every hit's score.
+    breakdown of every hit's score. :meth:`stats` reads ``GET /api/v1/stats``
+    for how much each graph holds.
 
     Requests go through one :class:`requests.Session` for connection reuse,
     created by the client unless ``session`` passes one in. Use the client as a
@@ -213,6 +215,29 @@ class FraiseClient:
             warnings.warn(message, stacklevel=2)
             return False
         return True
+
+    def stats(self, *, timeout: float | None = None) -> list[GraphStats]:
+        """Return how much each graph holds, one row per graph, in id order.
+
+        Reads ``GET /api/v1/stats``, which the server computes from the live
+        graphs on every call. Every allocated graph has a row, empty ones
+        included, so the list's length is the server's graph count and a
+        graph's row sits at its id.
+
+        Unlike :meth:`health`, this raises rather than answering a failure
+        with a value: :class:`FraiseError` on a timeout or an unreachable
+        server, :class:`FraiseAPIError` on any non-2xx response. A caller
+        asking for counts, to check a restore or size a run, must not mistake
+        an unreachable server for an empty one.
+
+        Args:
+            timeout: per-call override of the client's timeout.
+
+        Returns:
+            One :class:`~fraise_sdk.models.GraphStats` per graph.
+        """
+        _, body = self._request(self._session.get, STATS_PATH, timeout=timeout)
+        return [GraphStats.from_json(row) for row in body.get("graphs") or []]
 
     def remember(
         self,
@@ -455,22 +480,47 @@ class FraiseClient:
 
         Returns:
             The HTTP status code and the decoded JSON body, ``{}`` when the
+            response carried none. A failure raises as :meth:`_request` says.
+        """
+        payload: dict[str, object] = {"query": text}
+        if parameters:
+            payload["parameters"] = parameters
+        return self._request(self._session.post, path, timeout=timeout, json=payload)
+
+    def _request(
+        self,
+        send: Callable[..., requests.Response],
+        path: str,
+        *,
+        timeout: float | None = None,
+        **kwargs: object,
+    ) -> tuple[int, dict]:
+        """Send one request and return the response status beside its decoded body.
+
+        Every call that must not mistake a failure for an answer goes through
+        here: the queries via :meth:`_post`, and :meth:`stats`. Only
+        :meth:`health` and :meth:`server_version`, which answer a failure with
+        a value, read the health endpoint themselves.
+
+        Args:
+            send: the session method for the request's verb, such as
+                ``self._session.get``.
+            path: the route, relative to the base url.
+            timeout: per-call override of the client's timeout.
+            **kwargs: passed to ``send`` as they are, e.g. the ``json`` body.
+
+        Returns:
+            The HTTP status code and the decoded JSON body, ``{}`` when the
             response carried none.
 
         Raises:
             FraiseError: if the request times out or the server is unreachable.
             FraiseAPIError: if the server answers with a non-2xx status.
         """
-        payload: dict[str, object] = {"query": text}
-        if parameters:
-            payload["parameters"] = parameters
-
         effective_timeout = self.timeout if timeout is None else timeout
         try:
-            response = self._session.post(
-                f"{self.base_url}{path}",
-                json=payload,
-                timeout=effective_timeout,
+            response = send(
+                f"{self.base_url}{path}", timeout=effective_timeout, **kwargs
             )
         except requests.Timeout as exc:
             raise FraiseError(

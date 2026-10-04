@@ -64,9 +64,7 @@
       "tag-separator": "/",
       "changelog-path": "CHANGELOG.md",
       "versioning": "prerelease",
-      "prerelease": true,
-      "prerelease-type": "rc",
-      "bump-minor-pre-major": true,
+      "prerelease": false,
       "extra-files": [
         {
           "type": "toml",

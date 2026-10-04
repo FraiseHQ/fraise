@@ -29,6 +29,42 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class GraphStats:
+    """One graph's shape, as ``GET /api/v1/stats`` reports it.
+
+    The fields are named for what they count, so two differ from the wire,
+    which uses the graph-theory names: ``vertices`` is the server's ``order``
+    (facts, topics and entities alike) and ``edges`` its ``size`` (a fact's
+    links to the topics and entities it is filed under). ``nodes``,
+    ``vectors`` and ``forest_entries`` keep their wire names: ``nodes`` is
+    every stored node, the vertices and the relationships between them;
+    ``vectors`` the vectors indexed; ``forest_entries`` the vector forest's
+    entries, live vectors plus garbage awaiting compaction, which stay within
+    the server's flush factor times ``vectors`` unless the index leaks.
+
+    A graph nothing was written to is a row of zeros, not a missing row.
+    """
+
+    id: int
+    vertices: int
+    edges: int
+    nodes: int
+    vectors: int
+    forest_entries: int
+
+    @classmethod
+    def from_json(cls, data: dict) -> GraphStats:  # noqa: D102
+        return cls(
+            id=int(data["id"]),
+            vertices=int(data["order"]),
+            edges=int(data["size"]),
+            nodes=int(data["nodes"]),
+            vectors=int(data["vectors"]),
+            forest_entries=int(data["forest_entries"]),
+        )
+
+
+@dataclass(frozen=True)
 class Contribution:
     """One retrieval source's sighting of a hit, as ``explain`` reports it.
 
