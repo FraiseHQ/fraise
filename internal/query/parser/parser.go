@@ -785,8 +785,7 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 		return nil, err
 	}
 
-	switch p.cur.Type.IsBlank() || p.cur.Type.IsEndOfLine() {
-	case false:
+	if !(p.cur.Type.IsBlank() || p.cur.Type.IsEndOfLine()) {
 		return nil, p.errf(p.cur.Pos, "expected a whitespace, found %q", p.cur.Literal)
 	}
 
