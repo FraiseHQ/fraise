@@ -1892,3 +1892,20 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 		})
 	}
 }
+
+// This is a bug previously introduced when regorganising the query parser
+// adding the test as it's an unwanted behaviour and failing to raising an error
+// should be flagged.
+func TestTokenGluedToPhrase(t *testing.T) {
+	for _, q := range []string{
+		"remember 'a fact'x",
+		"remember 'a fact'zzz topic:x",
+	} {
+		t.Run(q, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](q)
+			if err == nil {
+				t.Fatalf("Expected error: parse error at column 18: unexpected \"x\" but got: %q", err)
+			}
+		})
+	}
+}

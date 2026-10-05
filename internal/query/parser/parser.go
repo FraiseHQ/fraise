@@ -421,8 +421,6 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	}
 	r.value = *phrase
 
-	p.next()
-
 	var anchors []AnchorFieldNode
 
 	for !p.isAtEnd() {
