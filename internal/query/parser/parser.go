@@ -416,9 +416,6 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[P], error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := p.errEmpty("a remembered fact", phrase.value, phrase.pos); err != nil {
-		return nil, err
-	}
 	r.value = *phrase
 
 	var anchors []AnchorFieldNode
@@ -782,6 +779,15 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 
 	if err != nil {
 		return nil, p.errf(p.cur.Pos, "expected a quoted phrase, but found %s", p.cur.Describe())
+	}
+
+	if err := p.errEmpty("a remembered fact", tok.Literal, tok.Pos); err != nil {
+		return nil, err
+	}
+
+	switch p.cur.Type.IsBlank() || p.cur.Type.IsEndOfLine() {
+	case false:
+		return nil, p.errf(p.cur.Pos, "expected a whitespace, found %q", p.cur.Literal)
 	}
 
 	return &PhraseNode{value: tok.Literal, pos: tok.Pos}, nil
