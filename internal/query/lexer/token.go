@@ -117,7 +117,7 @@ var TokenMap = map[TokenType]string{
 	RPAREN:     ")",
 	DOLLAR:     "$",
 	PHRASE:     "phrase",
-	NEWLINE:    "newline",
+	NEWLINE:    "\n",
 	NUL:        "\x00",
 	PLUS:       "+",
 	TILDE:      "~",
@@ -150,7 +150,6 @@ var KeywordsMap = map[string]TokenType{
 	"top":        TOP,
 	"depth":      DEPTH,
 	"vec":        VEC,
-	"whitespace": WHITESPACE,
 }
 
 // IsKeyword reports whether t is a reserved word: a type the lexer assigns by
