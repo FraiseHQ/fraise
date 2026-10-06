@@ -117,7 +117,7 @@ var TokenMap = map[TokenType]string{
 	RPAREN:     ")",
 	DOLLAR:     "$",
 	PHRASE:     "phrase",
-	NEWLINE:    "newline",
+	NEWLINE:    "\n",
 	NUL:        "\x00",
 	PLUS:       "+",
 	TILDE:      "~",
