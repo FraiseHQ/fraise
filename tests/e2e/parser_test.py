@@ -980,3 +980,24 @@ def test_pathological_length_is_bounded_not_fatal(query, text):
     )
     if status != 200:
         assert body.get("error"), "a rejection must carry a message"
+
+
+@pytest.mark.parametrize(
+    "text, err",
+    [
+        (
+            "remember 'a fact'x",
+            'parse error at column 18: expected a whitespace, found "x"',
+        ),
+        (
+            "remember 'a fact'zzz topic:a",
+            'parse error at column 20: expected a whitespace, found "zzz"',
+        ),
+    ],
+)
+def test_glued_token_in_remember_commands(query, text, err):
+    """A bug identified and raised with issue #444."""
+    status, body = query(text)
+
+    assert status == 400
+    assert body.get("error") == err
