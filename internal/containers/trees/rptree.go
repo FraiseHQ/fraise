@@ -24,13 +24,11 @@ package trees
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"math/rand"
 	"sort"
 
 	"github.com/FraiseHQ/fraise/internal/containers"
-	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // ErrDimensionMismatch is returned when a point's dimensionality does not
@@ -125,12 +123,11 @@ func (n *RPTreeNode[K, T, P]) isLeaf() bool {
 type RPTree[K comparable, T any, P float32 | float64] struct {
 	proj      Projection[K, P] // random basis for all splits in this tree
 	root      *RPTreeNode[K, T, P]
-	dim       int    // dimensionality of input points
-	projDim   int    // number of random directions (rows in proj)
-	seed      uint64 // seed for reproducible random projections
-	length    int    // number of stored nodes
-	leafSize  int    // max points a leaf holds before splitting
-	overfetch int    // candidates Nearest gathers per result asked for
+	dim       int // dimensionality of input points
+	projDim   int // number of random directions (rows in proj)
+	length    int // number of stored nodes
+	leafSize  int // max points a leaf holds before splitting
+	overfetch int // candidates Nearest gathers per result asked for
 	rng       *rand.Rand
 }
 
@@ -158,7 +155,6 @@ func NewRPTree[K comparable, T any, P float32 | float64](dim, projDim int, seed 
 		root:      &RPTreeNode[K, T, P]{},
 		dim:       dim,
 		projDim:   projDim,
-		seed:      seed,
 		leafSize:  leafSize,
 		overfetch: overfetch,
 		rng:       rand.New(rand.NewSource(int64(seed) + 1)),
@@ -399,25 +395,6 @@ func withinBox[K comparable, P float32 | float64](p, min, max Point[K, P]) bool 
 	return true
 }
 
-// Nodes returns every stored node, in no particular order.
-func (t *RPTree[K, T, P]) Nodes() []TreeNode[K, T, P] {
-	out := make([]TreeNode[K, T, P], 0, t.length)
-	var walk func(n *RPTreeNode[K, T, P])
-	walk = func(n *RPTreeNode[K, T, P]) {
-		if n == nil {
-			return
-		}
-		if n.isLeaf() {
-			out = append(out, n.data...)
-			return
-		}
-		walk(n.left)
-		walk(n.right)
-	}
-	walk(t.root)
-	return out
-}
-
 // VectorPoint adapts a containers.Vector into a Point[K, P], pairing its
 // coordinates with a comparable key so RPTree can index and query it.
 type VectorPoint[K comparable, P float32 | float64] struct {
@@ -450,21 +427,6 @@ func (v VectorPoint[K, P]) Distance(p Point[K, P]) P {
 	return P(math.Sqrt(float64(sum)))
 }
 
-// PlaneDistance returns the distance from v to the axis-aligned hyperplane at
-// coordinate val along dim.
-func (v VectorPoint[K, P]) PlaneDistance(val P, dim int) P {
-	diff := v.GetValue(dim) - val
-	if diff < 0 {
-		return -diff
-	}
-	return diff
-}
-
-// Hash implements hash.Hashable[K, string] by hashing v's coordinates.
-func (v VectorPoint[K, P]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(fmt.Sprint(v.vector.Data))
-}
-
 // VectorNode bundles a key and a containers.Vector into a
 // TreeNode[K, containers.Vector[K, P], P], ready to hand to RPTree.Insert. Its
 // Point is a VectorPoint over the same vector.
@@ -481,6 +443,3 @@ func NewVectorNode[K comparable, P float32 | float64](key K, value containers.Ve
 func (n *VectorNode[K, P]) Key() K                         { return n.key }
 func (n *VectorNode[K, P]) Value() containers.Vector[K, P] { return n.value }
 func (n *VectorNode[K, P]) Point() Point[K, P]             { return NewVectorPoint(n.key, n.value) }
-func (n *VectorNode[K, P]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(fmt.Sprint(n.value.Data))
-}

@@ -22,13 +22,9 @@
 
 package trees
 
-import "github.com/FraiseHQ/fraise/internal/hash"
-
 // Point is a position in a multi-dimensional space, with coordinates of
 // precision P, that spatial trees can index and query.
 type Point[K comparable, P float32 | float64] interface {
-	hash.Hashable[K, string]
-
 	// Dim reports the number of dimensions of the point.
 	Dim() int
 
@@ -38,22 +34,16 @@ type Point[K comparable, P float32 | float64] interface {
 	// Distance returns the distance between this point and p.
 	Distance(p Point[K, P]) P
 
-	// PlaneDistance returns the distance from the point to the axis-aligned
-	// hyperplane at coordinate val along the given dimension.
-	PlaneDistance(val P, dim int) P
-
 	Key() K
 }
 
-// TreeNode is a single element stored in a tree: a Hashable node exposing its
-// key, its payload and, for spatial trees, its Point coordinates.
+// TreeNode is a single element stored in a tree: a node exposing its key, its
+// payload and, for spatial trees, its Point coordinates.
 //
 //	K is the comparable lookup key.
 //	T is the stored payload.
 //	P is the floating-point type used for spatial coordinates.
 type TreeNode[K comparable, T any, P float32 | float64] interface {
-	hash.Hashable[K, string]
-
 	// Key returns the comparable key that identifies the node.
 	Key() K
 
@@ -65,35 +55,14 @@ type TreeNode[K comparable, T any, P float32 | float64] interface {
 	Point() Point[K, P]
 }
 
-// Tree is the contract common to keyed and spatial trees; their lookups live
-// on the OrderedTree and SpatialTree extensions below.
+// Tree is the contract common to spatial trees; their lookups live on the
+// SpatialTree extension below.
 type Tree[K comparable, T any, P float32 | float64] interface {
 	// Len reports the number of nodes currently stored in the tree.
 	Len() int
 
 	// Insert adds node to the tree, returning an error if it cannot be stored.
 	Insert(node TreeNode[K, T, P]) error
-
-	// Iterator returns an iterator that walks the tree in its natural order.
-	Iterator() TreeIterator[K, T, P]
-}
-
-// OrderedTree is a key-addressable Tree: nodes are located directly by their
-// key.
-type OrderedTree[K comparable, T any, P float32 | float64] interface {
-	Tree[K, T, P]
-
-	// Get returns the node stored under key, or nil if no such node exists.
-	Get(key K) TreeNode[K, T, P]
-
-	// Find locates key in the tree. When exact is true only an exact match is
-	// reported; otherwise the closest node is returned. It reports the depth at
-	// which the node was found, the node itself and the search path taken.
-	Find(values []T, exact bool, depth int) (int, []TreeNode[K, T, P], []int)
-
-	// Delete removes the node stored under key, reporting whether a node was
-	// removed.
-	Delete(key K) bool
 }
 
 // SpatialTree is a Point-addressable Tree: nodes are located by proximity in
@@ -108,26 +77,4 @@ type SpatialTree[K comparable, T any, P float32 | float64] interface {
 	// Range returns every node whose Point falls within the axis-aligned box
 	// bounded by the min and max corners (inclusive).
 	Range(min, max Point[K, P]) []TreeNode[K, T, P]
-}
-
-// TreeIterator performs an ordered traversal over the nodes of a Tree.
-type TreeIterator[K comparable, T any, P float32 | float64] interface {
-	// Tree returns the tree being iterated.
-	Tree() Tree[K, T, P]
-
-	// Next advances the iterator to the following node, returning an error if
-	// the traversal cannot continue.
-	Next() error
-
-	// Valid reports whether the iterator currently points at a node.
-	Valid() bool
-
-	// Key returns the key of the node under the cursor.
-	Key() K
-
-	// Value returns the raw payload of the node under the cursor.
-	Value() []byte
-
-	// Close releases any resources held by the iterator.
-	Close()
 }
