@@ -35,8 +35,6 @@ var (
 	// configured enqueue timeout, so callers can shed load (e.g. answer 429)
 	// instead of blocking without bound.
 	ErrQueueFull = errors.New("scheduler: queue full")
-	// ErrStreamExecution is returned when a stream fails while being executed.
-	ErrStreamExecution = errors.New("scheduler: error while executing stream")
 	// ErrStreamCommit is recorded on a stream whose commit failed. It wraps the
 	// commit error rather than replacing it, so the HTTP boundary can match the
 	// cause with errors.Is and tell a client fault (a vector-dimension

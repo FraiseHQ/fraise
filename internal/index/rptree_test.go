@@ -335,21 +335,6 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 	}
 }
 
-func TestRPTreeIndexSize(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2, 32, 8, comparator.OrderedComparator[int])
-	if got := idx.Size(); got != 0 {
-		t.Errorf("Size() on empty index = %d, want 0", got)
-	}
-	for i := 0; i < 100; i++ {
-		if err := idx.Insert(i, containers.NewVector[int]([]float64{1, 2, 3})); err != nil {
-			t.Fatalf("Insert(%d) = %v, want nil", i, err)
-		}
-	}
-	if got := idx.Size(); got < 0 {
-		t.Errorf("Size() = %d, want >= 0", got)
-	}
-}
-
 // ranksTenByDistance indexes ten vectors whose distances to the query are all
 // distinct and known ahead of time, then checks that Search returns them
 // nearest-first and that the returned scores are exactly those distances.
@@ -456,9 +441,9 @@ func TestRPTreeSearchIdenticalAcrossPrecision(t *testing.T) {
 }
 
 // TestRPTreeIndexInsertIdempotent checks that re-inserting a key with its
-// current vector never grows the forest. Graph.Copy and Graph.MergeFrom replay
-// a whole vector set through Insert, so a non-idempotent Insert would add a
-// forest entry per vector on every replay.
+// current vector never grows the forest. Re-asserting a fact re-inserts the
+// embedding it already carries, so a non-idempotent Insert would add a forest
+// entry per vector on every re-assertion.
 func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2, 32, 8, comparator.OrderedComparator[int])
@@ -475,7 +460,7 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 		t.Fatalf("Entries() after %d inserts = %d, want %d", n, got, n)
 	}
 
-	// Replay the full set 50 times — the MergeFrom pattern. Forest must not grow.
+	// Replay the full set 50 times. Forest must not grow.
 	for round := 0; round < 50; round++ {
 		for i := 0; i < n; i++ {
 			if err := idx.Insert(i, vecs[i]); err != nil {

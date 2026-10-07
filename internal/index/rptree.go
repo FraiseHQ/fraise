@@ -44,12 +44,12 @@ import (
 // filtered out or corrected before results are returned.
 //
 // Insert is idempotent: re-inserting a key with its current vector is a no-op,
-// so callers that replay whole vector sets (Graph.Copy, Graph.MergeFrom) do
-// not bloat the forest. Stale copies left by updates and deletes are bounded
+// so re-asserting a fact with the embedding it already carries does not bloat
+// the forest. Stale copies left by updates and deletes are bounded
 // by an automatic Flush once the forest holds more than flushFactor entries
 // per live vector. It implements VectorIndex.
 type RPTreeIndex[K comparable, P float32 | float64] struct {
-	forest  []*trees.RPTree[K, containers.Vector[K, P], P]
+	forest  []trees.SpatialTree[K, containers.Vector[K, P], P]
 	vectors map[K]containers.Vector[K, P] // live vectors; source of truth
 
 	dim, projDim, numTrees int
@@ -112,8 +112,8 @@ func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees in
 }
 
 // newForest builds numTrees empty RPTrees for the current dimensionality.
-func (idx *RPTreeIndex[K, P]) newForest() []*trees.RPTree[K, containers.Vector[K, P], P] {
-	forest := make([]*trees.RPTree[K, containers.Vector[K, P], P], idx.numTrees)
+func (idx *RPTreeIndex[K, P]) newForest() []trees.SpatialTree[K, containers.Vector[K, P], P] {
+	forest := make([]trees.SpatialTree[K, containers.Vector[K, P], P], idx.numTrees)
 	for i := range forest {
 		forest[i] = trees.NewRPTree[K, containers.Vector[K, P], P](idx.dim, idx.projDim, idx.seed+uint64(i), idx.leafSize, idx.overfetch)
 	}
@@ -122,7 +122,7 @@ func (idx *RPTreeIndex[K, P]) newForest() []*trees.RPTree[K, containers.Vector[K
 
 // Insert validates the vector dimension and adds it to every tree in the
 // forest. It is idempotent: if key already holds an equal vector, nothing is
-// appended, so replaying a whole vector set (Copy/MergeFrom) costs no forest
+// appended, so re-asserting a fact with its current embedding costs no forest
 // growth. Inserting a different vector under an existing key replaces it in
 // the live map; the old forest copy becomes garbage that the next (automatic
 // or explicit) Flush discards.
@@ -146,7 +146,7 @@ func (idx *RPTreeIndex[K, P]) Insert(key K, value containers.Vector[K, P]) error
 
 	// Idempotence: the key already holds exactly this vector — the forest
 	// already indexes it, appending again would only duplicate it.
-	if existing, ok := idx.vectors[key]; ok && existing.Equal(value) {
+	if existing, err := idx.Retrieve(key); err == nil && existing.Equal(value) {
 		return nil
 	}
 
@@ -196,8 +196,8 @@ func (idx *RPTreeIndex[K, P]) Retrieve(key K) (containers.Vector[K, P], error) {
 
 // Update replaces the vector stored under key.
 func (idx *RPTreeIndex[K, P]) Update(key K, value containers.Vector[K, P]) error {
-	if _, ok := idx.vectors[key]; !ok {
-		return ErrIndexNotFound
+	if _, err := idx.Retrieve(key); err != nil {
+		return err
 	}
 	return idx.Insert(key, value)
 }
@@ -206,8 +206,8 @@ func (idx *RPTreeIndex[K, P]) Update(key K, value containers.Vector[K, P]) error
 // (Search filters it against the live map); the automatic Flush reclaims it
 // once garbage exceeds the flushFactor bound.
 func (idx *RPTreeIndex[K, P]) Delete(key K) error {
-	if _, ok := idx.vectors[key]; !ok {
-		return ErrIndexNotFound
+	if _, err := idx.Retrieve(key); err != nil {
+		return err
 	}
 	delete(idx.vectors, key)
 	return idx.maybeFlush()
@@ -247,8 +247,8 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K,
 
 			// node may be stale (updated or deleted since it was inserted
 			// into this tree); vectors is the source of truth.
-			current, ok := idx.vectors[key]
-			if !ok {
+			current, err := idx.Retrieve(key)
+			if err != nil {
 				continue
 			}
 			nearest.Offer(key, -query.Distance(current))
@@ -261,29 +261,6 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K,
 	}
 	logger.Debug("Vector search returned neighbours", "k", k, "found", len(out))
 	return out, scores, nil
-}
-
-// Size reports the approximate in-memory footprint of the index in MiB.
-func (idx *RPTreeIndex[K, P]) Size() int {
-	coord := coordSize[P]()
-
-	var bytes int
-	for range idx.vectors {
-		bytes += idx.dim * coord
-	}
-	for _, t := range idx.forest {
-		bytes += t.Len() * (idx.dim*coord + 32) // rough per-entry node overhead
-	}
-	return bytes / (1024 * 1024)
-}
-
-// coordSize returns the size in bytes of a single P coordinate.
-func coordSize[P float32 | float64]() int {
-	var zero P
-	if _, ok := any(zero).(float32); ok {
-		return 4
-	}
-	return 8
 }
 
 // Count reports the number of indexed vectors.
@@ -310,14 +287,15 @@ func (idx *RPTreeIndex[K, P]) Entries() int {
 func (idx *RPTreeIndex[K, P]) Flush() error {
 	forest := idx.newForest()
 
-	keys := make([]K, 0, len(idx.vectors))
-	for key := range idx.vectors {
+	vectors := idx.Vectors()
+	keys := make([]K, 0, len(vectors))
+	for key := range vectors {
 		keys = append(keys, key)
 	}
 	sort.Slice(keys, func(i, j int) bool { return idx.compare(keys[i], keys[j]) < 0 })
 
 	for _, key := range keys {
-		node := trees.NewVectorNode(key, idx.vectors[key])
+		node := trees.NewVectorNode(key, vectors[key])
 		for _, t := range forest {
 			if err := t.Insert(node); err != nil {
 				return err
