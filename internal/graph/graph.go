@@ -76,15 +76,10 @@ type Graph[K comparable, P float32 | float64] interface {
 	// GetTextIndex returns the graph's full-text search index.
 	GetTextIndex() index.TextIndex[K, P]
 
-	// MergeFrom merges the contents of g into this graph: nodes,
-	// relationships and index entries. Nodes with colliding keys are
-	// resolved by the implementation.
-	MergeFrom(g Graph[K, P])
-
-	// Copy returns a deep copy of the graph, independent of the
-	// original: mutating one never affects the other.
-	Copy() Graph[K, P]
-
+	// Nodes returns the graph's live node map, keyed by node key: the map
+	// itself, not a copy. Callers read it under the graph lock and never
+	// write it; only the graph's own writes keep it consistent with the edge
+	// maps and the indexes.
 	Nodes() map[K]Node[K]
 
 	// AdjacencyMap returns the outgoing-edge view of the graph:
