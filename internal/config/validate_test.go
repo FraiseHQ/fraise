@@ -119,6 +119,7 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
+		{"scheduler.workers", func(c *ConfigSet, _ string) { c.Scheduler.Workers = -1 }},
 	}
 
 	for _, tc := range cases {
@@ -162,6 +163,36 @@ func TestValidateBoundsMinScoreRatio(t *testing.T) {
 			t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
 		}
 		for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+	}
+}
+
+// TestValidateBoundsWorkers pins the floor of scheduler.workers. Adjust only
+// replaces a zero with the default, so a negative count would otherwise reach
+// Scheduler.Start, whose loop starts no worker: the server would accept
+// queries into its queue and never answer them, then 429 once the queue
+// filled. validate runs after Adjust, so a zero has already become the default
+// by then and the check never sees one.
+func TestValidateBoundsWorkers(t *testing.T) {
+	for _, workers := range []int{1, 4} {
+		c := New()
+		c.Scheduler.Workers = workers
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with workers = %d returned error: %v, want it accepted", workers, err)
+		}
+	}
+
+	for _, workers := range []int{0, -1, math.MinInt} {
+		c := New()
+		c.Scheduler.Workers = workers
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with workers = %d = %v, want an ErrInvalidValue", workers, err)
+		}
+		for _, want := range []string{"scheduler.workers", "accepted: 1 or more"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error %q does not mention %q", err, want)
 			}

@@ -139,7 +139,9 @@ func Canonical(v *string, name string, accepted []string) error {
 // outside. The same holds for a numeric setting with a bounded domain:
 // db.min-score-ratio is a fraction of the best hit's relevance, and a value
 // past 1 (an operator thinking in percent) would put the bar above every hit
-// and silently empty every recall.
+// and silently empty every recall. scheduler.workers is another: Adjust only
+// replaces a zero, so a negative count would reach the scheduler, which would
+// start no worker and leave every accepted query waiting forever.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string
@@ -166,6 +168,10 @@ func (c *ConfigSet) validate() error {
 	// fails every comparison, is rejected too instead of slipping through.
 	if r := c.DB.MinScoreRatio; !(r >= 0 && r <= 1) {
 		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
+	}
+
+	if w := c.Scheduler.Workers; w < 1 {
+		return fmt.Errorf("%w: scheduler.workers = %d (accepted: 1 or more)", ErrInvalidValue, w)
 	}
 	return nil
 }
