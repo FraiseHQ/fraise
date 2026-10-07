@@ -115,9 +115,16 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 		// Index the vector before touching the graph. The fact's key derives
 		// from its value alone, so it is known before the fact is stored, and
-		// a dimension mismatch fails here with the graph as it was.
+		// a dimension mismatch fails here with the graph as it was. A fact
+		// the vector index already holds is re-asserted: its vector is
+		// replaced through Update rather than added again.
 		if !remember.Vector.Empty() {
-			if err := g.GetVectorIndex().Insert(fact.Key(), remember.Vector); err != nil {
+			vectors := g.GetVectorIndex()
+			write := vectors.Insert
+			if _, err := vectors.Retrieve(fact.Key()); err == nil {
+				write = vectors.Update
+			}
+			if err := write(fact.Key(), remember.Vector); err != nil {
 				logger.Error("Failed to index fact vector",
 					"value", remember.Value, "error", err)
 				return fmt.Errorf("indexing vector for fact %q: %w", remember.Value, err)

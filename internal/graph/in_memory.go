@@ -156,7 +156,7 @@ func (g *InMemoryGraph[K, P]) GetHasher() hash.Hasher[K, string] {
 
 // Get returns the node stored under key, or nil if absent.
 func (g *InMemoryGraph[K, P]) Get(key K) Node[K] {
-	node, ok := g.idToNodes[key]
+	node, ok := g.Nodes()[key]
 	if !ok {
 		return nil
 	}
@@ -170,7 +170,7 @@ func (g *InMemoryGraph[K, P]) Set(node Node[K]) error {
 		return ErrNilNode
 	}
 	n := node
-	if _, exists := g.idToNodes[n.Key()]; exists {
+	if _, exists := g.Nodes()[n.Key()]; exists {
 		return ErrNodeAlreadyExists
 	}
 	return g.store(n.Key(), n)
@@ -199,6 +199,9 @@ var textLanguage = language.English
 // anchor named like the query term would take the top seed slots while
 // transmitting nothing (its neighbours are facts, not anchors) and never being
 // returned as a hit.
+//
+// A fact the text index already holds under key, re-asserted through Put, is
+// replaced through Update; a new one is added through Insert.
 func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	g.idToNodes[key] = node
 
@@ -224,7 +227,12 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	_, isFact := node.(Fact[K])
 	if attrs := node.GetAttributes(); isFact && attrs != nil && attrs.Value != "" {
 
-		if err := g.textIndex.Insert(key, stopwords.CleanContent(attrs.Value, textLanguage)); err != nil {
+		text := g.GetTextIndex()
+		write := text.Insert
+		if _, err := text.Retrieve(key); err == nil {
+			write = text.Update
+		}
+		if err := write(key, stopwords.CleanContent(attrs.Value, textLanguage)); err != nil {
 			logger.Warn("Failed to index node text", "error", err)
 			return err
 		}
@@ -247,7 +255,7 @@ func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 		return ErrNilNode
 	}
 	key := node.Key()
-	stored, ok := g.idToNodes[key]
+	stored, ok := g.Nodes()[key]
 	if !ok {
 		return ErrNodeNotFound
 	}
@@ -277,11 +285,13 @@ func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	}
 
 	// The node may legitimately be absent from either index.
-	_ = g.textIndex.Delete(key)
+	_ = g.GetTextIndex().Delete(key)
 	_ = g.vectorIndex.Delete(key)
 	return nil
 }
 
+// Nodes returns the live node map. Every read of the graph's nodes goes
+// through it; only store, Delete and dropRelationship write the map itself.
 func (g *InMemoryGraph[K, P]) Nodes() map[K]Node[K] {
 	return g.idToNodes
 }
@@ -326,7 +336,7 @@ func exportEdges[K comparable](edges map[K]map[K]K) map[K]map[K]K {
 // excluded explicitly; they are edges, which Size counts.
 func (g *InMemoryGraph[K, P]) Order() int {
 	order := 0
-	for _, node := range g.idToNodes {
+	for _, node := range g.Nodes() {
 		if _, isEdge := node.(Relationship[K]); isEdge {
 			continue
 		}
@@ -350,7 +360,7 @@ func (g *InMemoryGraph[K, P]) Stats() GraphStats {
 	return GraphStats{
 		Order:   g.Order(),
 		Size:    g.Size(),
-		Nodes:   len(g.idToNodes),
+		Nodes:   len(g.Nodes()),
 		Vectors: g.GetVectorIndex().Count(),
 		// Entries - Count is the vector index's compaction debt; the index's
 		// automatic Flush keeps it bounded (see rptree flush-factor).
@@ -411,7 +421,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	scoresOut := make([]P, len(rankedKeys))
 	contributions := make([][]scoring.Contribution[K, P], len(rankedKeys))
 	for i, key := range rankedKeys {
-		node := g.idToNodes[key]
+		node := g.Nodes()[key]
 		nodes[i] = &node
 		scoresOut[i] = rankedScores[i]
 		contributions[i] = candidates[key]
@@ -516,7 +526,7 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 	for _, anchor := range anchors {
 		degree := scoring.ClampDegree(len(g.nodeToTargets[anchor]) + len(g.nodeToSources[anchor]))
 		for _, member := range g.Neighbours(anchor) {
-			if _, isFact := g.idToNodes[member].(Fact[K]); !isFact {
+			if _, isFact := g.Nodes()[member].(Fact[K]); !isFact {
 				continue
 			}
 			candidates[member] = append(candidates[member], scoring.Contribution[K, P]{
@@ -554,7 +564,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.textIndex.Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK); err == nil {
+		if keys, scores, err := g.GetTextIndex().Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
@@ -787,7 +797,7 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 
 	kept := make([]K, 0, len(keys))
 	for _, key := range keys {
-		node, ok := g.idToNodes[key]
+		node, ok := g.Nodes()[key]
 		if !ok {
 			delete(scores, key)
 			continue
@@ -818,39 +828,9 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 	return kept, scores
 }
 
-// Copy returns a deep copy of the graph: nodes, relationships and both
-// indices are rebuilt so mutating one graph never affects the other.
-func (g *InMemoryGraph[K, P]) Copy() Graph[K, P] {
-	out := NewGraph[K, P](g.config)
-	for key, node := range g.idToNodes {
-		_ = out.store(key, node)
-	}
-	for key, vector := range g.vectorIndex.Vectors() {
-		_ = out.vectorIndex.Insert(key, vector)
-	}
-	return out
-}
-
-// MergeFrom merges the contents of in into this graph: nodes, relationships
-// and index entries. On key collision the incoming node wins. A graph that is
-// not an InMemoryGraph is ignored.
-func (g *InMemoryGraph[K, P]) MergeFrom(in Graph[K, P]) {
-	other, ok := in.(*InMemoryGraph[K, P])
-	if !ok {
-		return
-	}
-
-	for key, node := range other.idToNodes {
-		_ = g.store(key, node)
-	}
-	for key, vector := range other.vectorIndex.Vectors() {
-		_ = g.vectorIndex.Insert(key, vector)
-	}
-}
-
 // IsEmpty reports whether the graph holds no nodes. Callers ask it under the
 // graph lock, so it is O(1) rather than derived from Stats, which walks every
 // node.
 func (s *InMemoryGraph[K, P]) IsEmpty() bool {
-	return len(s.idToNodes) == 0
+	return len(s.Nodes()) == 0
 }

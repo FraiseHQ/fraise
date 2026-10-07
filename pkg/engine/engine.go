@@ -65,7 +65,10 @@ func (e *Engine[K, P]) Start() error {
 		return fmt.Errorf("%w: %w", ErrCacheInit, err)
 	}
 	e.Cache = c
-	logger.Info("Engine cache initialised", "capacity", e.Config.Engine.CacheCapacity)
+
+	logger.Info("Engine cache initialised", "capacity", c.Capacity())
+	logger.Debug("Plan cache keys hashed",
+		"function", e.Config.DB.HashingFunction.Name, "seed", e.Hasher.Seed())
 
 	// start the scheduler workers that execute planned streams
 	if err := e.Scheduler.Start(); err != nil {
