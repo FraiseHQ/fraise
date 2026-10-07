@@ -73,9 +73,6 @@ type Tree[K comparable, T any, P float32 | float64] interface {
 
 	// Insert adds node to the tree, returning an error if it cannot be stored.
 	Insert(node TreeNode[K, T, P]) error
-
-	// Iterator returns an iterator that walks the tree in its natural order.
-	Iterator() TreeIterator[K, T, P]
 }
 
 // OrderedTree is a key-addressable Tree: nodes are located directly by their
@@ -108,26 +105,4 @@ type SpatialTree[K comparable, T any, P float32 | float64] interface {
 	// Range returns every node whose Point falls within the axis-aligned box
 	// bounded by the min and max corners (inclusive).
 	Range(min, max Point[K, P]) []TreeNode[K, T, P]
-}
-
-// TreeIterator performs an ordered traversal over the nodes of a Tree.
-type TreeIterator[K comparable, T any, P float32 | float64] interface {
-	// Tree returns the tree being iterated.
-	Tree() Tree[K, T, P]
-
-	// Next advances the iterator to the following node, returning an error if
-	// the traversal cannot continue.
-	Next() error
-
-	// Valid reports whether the iterator currently points at a node.
-	Valid() bool
-
-	// Key returns the key of the node under the cursor.
-	Key() K
-
-	// Value returns the raw payload of the node under the cursor.
-	Value() []byte
-
-	// Close releases any resources held by the iterator.
-	Close()
 }
