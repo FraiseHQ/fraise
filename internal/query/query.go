@@ -117,32 +117,32 @@ func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// bindVector resolves a vector placeholder to its data. A missing parameter is
-// ErrMissingParameter and a vector longer than maxDim is ErrLimitExceeded, both
-// client errors (400); checking the length here keeps an oversized vector from
-// reaching the index.
-func bindVector[P float32 | float64](params map[string][]P, name string, maxDim int) ([]P, error) {
-	data, provided := params[name]
-	if !provided {
-		return nil, fmt.Errorf("%w: $%s", ErrMissingParameter, name)
+// checkVector vets the vector the parser bound to placeholder name. The parser
+// leaves it nil when no parameter has that name, which is ErrMissingParameter;
+// a vector longer than maxDim is ErrLimitExceeded. Both are client errors
+// (400); checking the length here keeps an oversized vector from reaching the
+// index.
+func checkVector[P float32 | float64](name string, data []P, maxDim int) error {
+	if data == nil {
+		return fmt.Errorf("%w: $%s", ErrMissingParameter, name)
 	}
 	if len(data) > maxDim {
-		return nil, fmt.Errorf("%w: vector $%s has %d dimensions, max %d", ErrLimitExceeded, name, len(data), maxDim)
+		return fmt.Errorf("%w: vector $%s has %d dimensions, max %d", ErrLimitExceeded, name, len(data), maxDim)
 	}
-	return data, nil
+	return nil
 }
 
 // Parse turns a raw query string into an executable Query. Vector arguments are
 // passed out-of-band in params, keyed by the placeholder name used in the query
-// (e.g. `vec:$v` binds to params["v"]): the parser only records the
-// placeholder, and the vector is bound here.
+// (e.g. `vec:$v` binds to params["v"]): the parser binds the vector, and the
+// bound vector is checked here against the configured limits.
 //
 // Warnings flag a reading of a valid query the client may not have meant (see
 // parser.Warning). They are returned beside the query, never stored on it,
 // because the plan cache substitutes query objects on a hash hit and state on
 // the query would leak between requests.
 func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c *config.ConfigSet) (Query[K, P], []parser.Warning, error) {
-	cmd, warns, err := parser.Parse[K, P](q)
+	cmd, warns, err := parser.Parse[K, P](q, params)
 	if err != nil {
 		logger.Debug("Query parsing failed", "query", q, "error", err)
 		return nil, nil, fmt.Errorf("%w: %w", ErrParsingFailed, err)
@@ -157,15 +157,14 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		}
 		qo.SetGraphID(n.Selector())
 
-		// Bind the vector placeholder (if any) from the request parameters,
+		// Take the vector the parser bound to the placeholder (if any),
 		// rejecting a missing or over-long vector.
 		if name, ok := n.VecParam(); ok {
-			data, err := bindVector(params, name, c.DB.MaxVectorDimension)
-			if err != nil {
+			if err := checkVector(name, n.Vector(), c.DB.MaxVectorDimension); err != nil {
 				logger.Warn("Rejecting vector parameter for remember", "parameter", name, "error", err)
 				return nil, nil, err
 			}
-			qo.Vector = containers.NewVector[K](data)
+			qo.Vector = containers.NewVector[K](n.Vector())
 		}
 
 		logger.Debug("Parsed remember query", "graph", qo.GetGraphID(), "value", qo.Value)
@@ -198,15 +197,14 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		}
 		qo.SetGraphID(n.Selector())
 
-		// Bind the vector placeholder (if any) from the request parameters,
+		// Take the vector the parser bound to the placeholder (if any),
 		// rejecting a missing or over-long vector.
 		if name, ok := n.VecParam(); ok {
-			data, err := bindVector(params, name, c.DB.MaxVectorDimension)
-			if err != nil {
+			if err := checkVector(name, n.Vector(), c.DB.MaxVectorDimension); err != nil {
 				logger.Warn("Rejecting vector parameter for recall", "parameter", name, "error", err)
 				return nil, nil, err
 			}
-			qo.Vector = containers.NewVector[K](data)
+			qo.Vector = containers.NewVector[K](n.Vector())
 		}
 
 		logger.Debug("Parsed recall query", "graph", qo.GetGraphID(), "keywords", len(qo.Keywords))

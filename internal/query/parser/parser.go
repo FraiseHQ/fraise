@@ -63,14 +63,19 @@ func (e *Error) Error() string {
 }
 
 type parser[K comparable, P float32 | float64] struct {
-	l     *lexer.Lexer
-	cur   lexer.Token
-	peek  lexer.Token
-	warns []Warning
+	l      *lexer.Lexer
+	cur    lexer.Token
+	peek   lexer.Token
+	warns  []Warning
+	params map[string][]P
 }
 
-func Parse[K comparable, P float32 | float64](q string) (cmd CommandNode, warns []Warning, err error) {
-	p := &parser[K, P]{l: lexer.New(q)}
+// Parse parses q into its command. Vectors travel out-of-band in params, keyed
+// by the placeholder name (vec:$v reads params["v"]), so the command's Vector
+// is the vector the query names. A placeholder with no entry leaves the vector
+// nil: rejecting it is the query layer's call, beside its other limits.
+func Parse[K comparable, P float32 | float64](q string, params map[string][]P) (cmd CommandNode, warns []Warning, err error) {
+	p := &parser[K, P]{l: lexer.New(q), params: params}
 	// prime cur and peek
 	p.next()
 	p.next()
@@ -866,6 +871,7 @@ func (p *parser[K, P]) parseVecField() (*VecFieldNode[P], error) {
 	}
 
 	r.param = tok
+	r.value = p.params[tok.Literal]
 
 	return &r, nil
 }
