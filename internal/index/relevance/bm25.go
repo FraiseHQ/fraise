@@ -68,7 +68,7 @@ func (b *BM25[K, P]) Indexed(key K, tokens []string) {
 // len(tokens): the tokenizer may have changed since the insert, and the
 // statistics must retire exactly what they admitted.
 func (b *BM25[K, P]) Removed(key K, _ []string) {
-	b.totalLen -= b.lengths[key]
+	b.totalLen -= b.Lengths()[key]
 	delete(b.lengths, key)
 }
 
@@ -101,10 +101,11 @@ func (b *BM25[K, P]) Weight(df, docs int) P {
 // concurrent queries, and it leaves Increment one multiply per posting entry
 // instead of a division.
 func (b *BM25[K, P]) Prepare() P {
-	if len(b.lengths) == 0 || b.totalLen == 0 {
+	lengths, totalLen := b.Lengths(), b.TotalLen()
+	if len(lengths) == 0 || totalLen == 0 {
 		return 0
 	}
-	avgdl := P(b.totalLen) / P(len(b.lengths))
+	avgdl := P(totalLen) / P(len(lengths))
 	return bm25K1 * bm25B / avgdl
 }
 
@@ -112,7 +113,7 @@ func (b *BM25[K, P]) Prepare() P {
 // is this query's Prepare() result.
 func (b *BM25[K, P]) Increment(weight P, key K, tf int, n2 P) P {
 	freq := P(tf)
-	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*P(b.lengths[key]))
+	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*P(b.Lengths()[key]))
 }
 
 // Finalize scales by coverage, matched over total: the share of the query's

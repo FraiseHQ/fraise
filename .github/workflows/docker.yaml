@@ -10,7 +10,7 @@ on:
       - "go.sum"
       - "tests/e2e/**"
       - "tests/integration/**"
-      - ".golangci.yml"
+      - ".golangci.yaml"
       - ".github/workflows/docker.yaml"
       - Dockerfile.fraise
       - docker-compose.yaml
@@ -22,7 +22,7 @@ on:
       - "go.sum"
       - "tests/e2e/**"
       - "tests/integration/**"
-      - ".golangci.yml"
+      - ".golangci.yaml"
       - ".github/workflows/docker.yaml"
       - Dockerfile.fraise
       - docker-compose.yaml

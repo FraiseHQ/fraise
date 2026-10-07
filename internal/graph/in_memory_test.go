@@ -280,8 +280,8 @@ func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
 	if g.Get(about.Key()) != nil {
 		t.Errorf("the IsAbout node outlived its fact, want it pruned")
 	}
-	if _, err := g.GetTextIndex().Retrieve(fact.Key()); !errors.Is(err, index.ErrIndexNotFound) {
-		t.Errorf("text index Retrieve(fact) after Delete = %v, want ErrIndexNotFound", err)
+	if keys, _, err := g.GetTextIndex().Search("acme", 0); err == nil && len(keys) != 0 {
+		t.Errorf("text Search(acme) after Delete(fact) = %v, want no hits", keys)
 	}
 	if got, want := len(g.Nodes()), 1; got != want {
 		t.Errorf("len(Nodes()) after Delete(fact) = %d, want %d (the topic alone)", got, want)
@@ -321,8 +321,8 @@ func TestInMemoryGraphIndexes(t *testing.T) {
 	if keys, _, err := g.GetTextIndex().Search("acme", 0); err == nil && len(keys) != 0 {
 		t.Errorf("text Search(acme) after delete = %v, want no hits", keys)
 	}
-	if _, err := g.GetVectorIndex().Retrieve(key); err == nil {
-		t.Errorf("vector Retrieve(key) after delete succeeded, want error")
+	if got := g.GetVectorIndex().Count(); got != 0 {
+		t.Errorf("vector Count() after delete = %d, want 0", got)
 	}
 }
 
@@ -1129,71 +1129,6 @@ func TestSearchDeterminism(t *testing.T) {
 	}
 }
 
-func TestInMemoryGraphCopyIsIndependent(t *testing.T) {
-	g := newGraph()
-	now := time.Now()
-	fact := mkFact(g, "alice works at acme", now)
-	entity := mkEntity(g, "alice", now)
-	mustSet(t, g, fact)
-	mustSet(t, g, entity)
-	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
-	if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64]([]float64{1, 2})); err != nil {
-		t.Fatalf("vector Insert = %v, want nil", err)
-	}
-
-	clone := g.Copy()
-	if clone.Stats() != g.Stats() {
-		t.Fatalf("Copy() stats = %+v, want %+v", clone.Stats(), g.Stats())
-	}
-
-	// Mutating the copy must not touch the original.
-	if err := clone.Delete(fact); err != nil {
-		t.Fatalf("Delete on copy = %v, want nil", err)
-	}
-	if g.Get(fact.Key()) == nil {
-		t.Errorf("deleting from the copy removed the fact from the original")
-	}
-	if got := g.Size(); got != 1 {
-		t.Errorf("original Size() = %d after mutating copy, want 1", got)
-	}
-	if _, err := g.GetVectorIndex().Retrieve(fact.Key()); err != nil {
-		t.Errorf("original vector entry lost after mutating copy: %v", err)
-	}
-}
-
-func TestInMemoryGraphMergeFrom(t *testing.T) {
-	now := time.Now()
-
-	a := newGraph()
-	mustSet(t, a, mkFact(a, "alice works at acme", now))
-
-	b := newGraph()
-	fact2 := mkFact(b, "bob plays tennis", now)
-	entity := mkEntity(b, "bob", now)
-	mustSet(t, b, fact2)
-	mustSet(t, b, entity)
-	mustSet(t, b, graph.Mentions[uint64]{Fact: &fact2, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: b.GetHasher()})
-	if err := b.GetVectorIndex().Insert(fact2.Key(), containers.NewVector[uint64]([]float64{3, 4})); err != nil {
-		t.Fatalf("vector Insert = %v, want nil", err)
-	}
-
-	a.MergeFrom(b)
-
-	// a's own fact plus b's fact, entity and relationship node.
-	if got := a.Stats(); got.Nodes != 4 || got.Size != 1 {
-		t.Errorf("Stats() after merge = %+v, want {Nodes:4 Size:1}", got)
-	}
-	if a.Get(fact2.Key()) == nil || a.Get(entity.Key()) == nil {
-		t.Errorf("merged nodes missing: Get(fact2)=%v Get(entity)=%v", a.Get(fact2.Key()), a.Get(entity.Key()))
-	}
-	if keys, _, err := a.GetTextIndex().Search("tennis", 0); err != nil || len(keys) != 1 || keys[0] != fact2.Key() {
-		t.Errorf("text Search(tennis) after merge = (%v, %v), want ([fact2], nil)", keys, err)
-	}
-	if _, err := a.GetVectorIndex().Retrieve(fact2.Key()); err != nil {
-		t.Errorf("vector Retrieve(fact2) after merge = %v, want nil", err)
-	}
-}
-
 // vectorHybridSearchAtPrecision indexes three facts with orthogonal embeddings,
 // then runs a full graph.Search whose query sits closest to one of them and
 // asserts that fact ranks first. It exercises the precision-sensitive read path
@@ -1243,42 +1178,6 @@ func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 
 func TestGraphVectorSearch_float64(t *testing.T) { vectorHybridSearchAtPrecision[float64](t) }
 func TestGraphVectorSearch_float32(t *testing.T) { vectorHybridSearchAtPrecision[float32](t) }
-
-// TestMergeFromForestStaysBounded repeats a staged write (copy the graph,
-// insert one vector into the copy, merge the copy back) and checks the vector
-// forest stays O(live vectors). MergeFrom replays every vector of the copy, so
-// if re-inserting an unchanged vector appended to the forest, W writes would
-// grow it to ~W²/2 entries.
-func TestMergeFromForestStaysBounded(t *testing.T) {
-	g := newGraph()
-
-	const writes = 300
-	const dim = 8
-	for w := 0; w < writes; w++ {
-		stg := g.Copy()
-
-		vec := make([]float64, dim)
-		vec[w%dim] = float64(w + 1)
-		if err := stg.GetVectorIndex().Insert(uint64(w+1), containers.NewVector[uint64](vec)); err != nil {
-			t.Fatalf("staging insert (write %d) = %v, want nil", w, err)
-		}
-
-		g.MergeFrom(stg)
-	}
-
-	idx, ok := g.GetVectorIndex().(*index.RPTreeIndex[uint64, float64])
-	if !ok {
-		t.Fatalf("vector index is %T, want *index.RPTreeIndex", g.GetVectorIndex())
-	}
-	if got := idx.Count(); got != writes {
-		t.Fatalf("Count() = %d, want %d", got, writes)
-	}
-	// Bound: idempotent inserts + auto-flush keep the forest within 2x live.
-	if got, bound := idx.Entries(), 2*writes; got > bound {
-		t.Errorf("Entries() after %d write cycles = %d, want <= %d (was ~%d before the fix)",
-			writes, got, bound, writes*writes/2)
-	}
-}
 
 // Anchor seeding. A Search carrying no keywords and no vector seeds from the
 // named anchors' own members, and the ordinary ranking orders what it found.

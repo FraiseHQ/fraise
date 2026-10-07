@@ -41,9 +41,6 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// Delete removes the entry stored under key.
 	Delete(key K) error
 
-	// Size reports the approximate in-memory footprint of the index in MiB.
-	Size() int
-
 	// Count reports the number of live entries currently held.
 	Count() int
 

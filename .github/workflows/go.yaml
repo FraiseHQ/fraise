@@ -10,14 +10,14 @@ on:
       - "**.go"
       - "go.mod"
       - "go.sum"
-      - ".golangci.yml"
+      - ".golangci.yaml"
       - ".github/workflows/go.yaml"
   pull_request:
     paths:
       - "**.go"
       - "go.mod"
       - "go.sum"
-      - ".golangci.yml"
+      - ".golangci.yaml"
       - ".github/workflows/go.yaml"
 
 concurrency:
