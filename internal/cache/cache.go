@@ -30,11 +30,6 @@ type Cache[K comparable, T any] interface {
 	// Capacity returns the maximum number of entries the cache will hold.
 	Capacity() int
 
-	// Resize changes the cache's capacity to capacity, evicting entries as
-	// needed to fit the new bound, and returns the number of entries evicted.
-	// It returns ErrCacheCapacity if capacity is not strictly positive.
-	Resize(capacity int) (int, error)
-
 	// Put inserts or updates the value stored under key. If adding a new key
 	// would exceed the capacity, an existing entry is evicted to make room.
 	Put(key K, value T)

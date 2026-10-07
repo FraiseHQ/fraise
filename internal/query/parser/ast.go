@@ -163,13 +163,19 @@ func (r RecallCommandNode[K, P]) Until() containers.TimeValue[K] {
 	return r.until.Value()
 }
 
+// Vector returns the vector bound to the vec: clause, or nil when the recall has
+// none. A command without the clause is the common case, so it must not
+// dereference the absent field node: a nil vec here would panic every
+// vector-less query.
 func (r RecallCommandNode[K, P]) Vector() []P {
+	if r.vec == nil {
+		return nil
+	}
 	return r.vec.Value()
 }
 
 // VecParam reports the name of the vector placeholder (the identifier after
-// `vec:$`) and whether the recall carried one at all. The parser only records
-// the placeholder; the real vector is bound later from the request parameters.
+// `vec:$`) and whether the recall carried one at all.
 func (r RecallCommandNode[K, P]) VecParam() (string, bool) {
 	if r.vec == nil {
 		return "", false
@@ -216,7 +222,14 @@ func (r RememberCommandNode[P]) Topics() []string {
 	return res
 }
 
+// Vector returns the vector bound to the vec: clause, or nil when the remember has
+// none. A command without the clause is the common case, so it must not
+// dereference the absent field node: a nil vec here would panic every
+// vector-less query.
 func (r RememberCommandNode[P]) Vector() []P {
+	if r.vec == nil {
+		return nil
+	}
 	return r.vec.Value()
 }
 

@@ -23,7 +23,6 @@
 package index
 
 import (
-	"errors"
 	"slices"
 	"sort"
 
@@ -36,12 +35,12 @@ import (
 )
 
 // BTreeIndex is a full-text index backed by an ordered BTree from the
-// containers/trees package. The tree holds the set of indexed terms in
-// sorted order; the postings (term -> document key -> term frequency) are
-// kept beside it, since BTree only tracks membership, not payloads. The
-// installed Relevance model owns every scoring number and whatever corpus
-// statistics it needs; the index owns tokenization, postings and the
-// total-order ranking. It implements TextIndex.
+// containers/trees package. The tree is the term dictionary: it holds one
+// posting list per indexed term (document key -> term frequency), ordered by
+// term, and every term lookup goes through it. The installed Relevance model
+// owns every scoring number and whatever corpus statistics it needs; the
+// index owns tokenization, postings and the total-order ranking. It
+// implements TextIndex.
 //
 // A posting list is a slice of (key, tf) pairs sorted by key, not a map: the
 // search loop only reads it, and a contiguous slice streams through the
@@ -51,10 +50,9 @@ import (
 // and the index compacts itself once it holds more dead documents than live
 // ones.
 type BTreeIndex[K comparable, P float32 | float64] struct {
-	tree      *trees.BTree[K, string, P] // ordered term dictionary (P is unused)
-	postings  map[string]*postingList[K] // term -> sorted (key, tf) entries
-	documents map[K]string               // key -> raw document text
-	dead      int                        // documents removed since the last compaction
+	tree      *trees.BTree[K, *postingList[K], P] // term dictionary, ordered by term (P is unused)
+	documents map[K]string                        // key -> raw document text
+	dead      int                                 // documents removed since the last compaction
 	tokenizer nlp.Tokenizer
 	relevance relevance.Relevance[K, P]
 	compare   comparator.Comparator[K] // document key ordering
@@ -72,21 +70,25 @@ type posting[K comparable] struct {
 // postingList is one term's postings, sorted by key, with the count of live
 // entries kept beside them: the relevance model weighs a term by its document
 // frequency, which is the live count, not the slice length once tombstones
-// accumulate.
+// accumulate. term is the list's place in the dictionary: the tree orders
+// lists by it, and a lookup probes the tree with a list carrying only the term.
 type postingList[K comparable] struct {
+	term    string
 	entries []posting[K]
 	live    int
 }
 
 // NewBTreeIndex returns an empty BTreeIndex whose term dictionary is an ordered
-// BTree over lexicographically sorted terms. compare orders document keys, the
+// BTree of posting lists, sorted lexicographically by term. compare orders
+// document keys, the
 // tiebreak Search ranks equally-scoring documents by. The index starts with
 // the SimpleTokenizer and the MatchCount relevance model, until SetTokenizer
 // and SetRelevance replace them.
 func NewBTreeIndex[K comparable, P float32 | float64](compare comparator.Comparator[K]) *BTreeIndex[K, P] {
 	return &BTreeIndex[K, P]{
-		tree:      trees.NewBTree[K, string, P](32, comparator.OrderedComparator[string]),
-		postings:  make(map[string]*postingList[K]),
+		tree: trees.NewBTree[K, *postingList[K], P](32, func(a, b *postingList[K]) int {
+			return comparator.OrderedComparator(a.term, b.term)
+		}),
 		documents: make(map[K]string),
 		tokenizer: nlp.SimpleTokenizer{},
 		relevance: relevance.MatchCount[K, P]{},
@@ -136,8 +138,8 @@ func (idx *BTreeIndex[K, P]) Retrieve(key K) (string, error) {
 // Update replaces the document stored under key, re-indexing its terms. It
 // returns ErrIndexNotFound if key is not indexed.
 func (idx *BTreeIndex[K, P]) Update(key K, value string) error {
-	if _, ok := idx.documents[key]; !ok {
-		return ErrIndexNotFound
+	if _, err := idx.Retrieve(key); err != nil {
+		return err
 	}
 	return idx.index(key, value)
 }
@@ -146,9 +148,9 @@ func (idx *BTreeIndex[K, P]) Update(key K, value string) error {
 // stored document. The tombstones are garbage until the next Flush; the
 // automatic compaction reclaims them once the dead outnumber the live.
 func (idx *BTreeIndex[K, P]) Delete(key K) error {
-	value, ok := idx.documents[key]
-	if !ok {
-		return ErrIndexNotFound
+	value, err := idx.Retrieve(key)
+	if err != nil {
+		return err
 	}
 	idx.removePostings(key, value)
 	delete(idx.documents, key)
@@ -174,8 +176,10 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	// scores and matched are presized to the query's largest live posting
 	// list, a lower bound on how many documents the query matches.
 	var maxPosting int
+	probe := &postingList[K]{}
 	for _, term := range terms {
-		if list, ok := idx.postings[term]; ok && list.live > maxPosting {
+		probe.term = term
+		if list, ok := idx.tree.Find(probe); ok && list.live > maxPosting {
 			maxPosting = list.live
 		}
 	}
@@ -186,7 +190,8 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 
 	var totalW P
 	for _, term := range terms {
-		list, ok := idx.postings[term]
+		probe.term = term
+		list, ok := idx.tree.Find(probe)
 		if !ok || list.live == 0 {
 			continue
 		}
@@ -219,18 +224,6 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	return keys, out, nil
 }
 
-// Size reports the approximate in-memory footprint of the index in MiB.
-func (idx *BTreeIndex[K, P]) Size() int {
-	var bytes int
-	for _, doc := range idx.documents {
-		bytes += len(doc)
-	}
-	for term, list := range idx.postings {
-		bytes += len(term) + len(list.entries)*16
-	}
-	return bytes / (1024 * 1024)
-}
-
 // Count reports the number of indexed documents.
 func (idx *BTreeIndex[K, P]) Count() int {
 	return len(idx.documents)
@@ -247,10 +240,9 @@ func (idx *BTreeIndex[K, P]) Entries() int {
 // and updates, and retires from the dictionary any term no live document
 // holds any more.
 func (idx *BTreeIndex[K, P]) Flush() error {
-	for term, list := range idx.postings {
+	for _, list := range idx.tree.Values() {
 		if list.live == 0 {
-			delete(idx.postings, term)
-			idx.tree.Delete(term)
+			idx.tree.Delete(list)
 			continue
 		}
 		list.entries = slices.DeleteFunc(list.entries, func(p posting[K]) bool { return p.tf == 0 })
@@ -276,19 +268,20 @@ func (idx *BTreeIndex[K, P]) maybeFlush() error {
 // document's statistics with the model. A term the new text shares with the
 // old one revives its tombstone in place.
 func (idx *BTreeIndex[K, P]) index(key K, value string) error {
-	if old, ok := idx.documents[key]; ok {
+	if old, err := idx.Retrieve(key); err == nil {
 		idx.removePostings(key, old)
 	}
 
 	tokens := idx.tokenizer.Tokenize(value)
+	probe := &postingList[K]{}
 	for _, term := range tokens {
-		list, ok := idx.postings[term]
+		probe.term = term
+		list, ok := idx.tree.Find(probe)
 		if !ok {
-			if err := idx.tree.Insert(term); err != nil && !errors.Is(err, trees.ErrDuplicateValue) {
+			list = &postingList[K]{term: term}
+			if err := idx.tree.Insert(list); err != nil {
 				return err
 			}
-			list = &postingList[K]{}
-			idx.postings[term] = list
 		}
 		i, found := list.find(key, idx.compare)
 		switch {
@@ -315,8 +308,10 @@ func (idx *BTreeIndex[K, P]) index(key K, value string) error {
 // document's worth of tombstones for Flush to reclaim.
 func (idx *BTreeIndex[K, P]) removePostings(key K, value string) {
 	tokens := idx.tokenizer.Tokenize(value)
+	probe := &postingList[K]{}
 	for _, term := range tokens {
-		list, ok := idx.postings[term]
+		probe.term = term
+		list, ok := idx.tree.Find(probe)
 		if !ok {
 			continue
 		}

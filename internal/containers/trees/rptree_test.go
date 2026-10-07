@@ -32,7 +32,6 @@ import (
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/containers/trees"
-	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // point is a test double implementing both trees.TreeNode[int, string, float64]
@@ -44,9 +43,8 @@ type point struct {
 	coord []float64
 }
 
-func (p *point) Key() int                          { return p.key }
-func (p *point) Value() string                     { return p.value }
-func (p *point) Hash(hash.Hasher[int, string]) int { return p.key }
+func (p *point) Key() int      { return p.key }
+func (p *point) Value() string { return p.value }
 
 func (p *point) Point() trees.Point[int, float64] {
 	if p.coord == nil {
@@ -57,9 +55,6 @@ func (p *point) Point() trees.Point[int, float64] {
 
 func (p *point) Dim() int                 { return len(p.coord) }
 func (p *point) GetValue(dim int) float64 { return p.coord[dim] }
-func (p *point) PlaneDistance(val float64, dim int) float64 {
-	return math.Abs(p.coord[dim] - val)
-}
 func (p *point) Distance(o trees.Point[int, float64]) float64 {
 	var sum float64
 	for d := 0; d < p.Dim(); d++ {
@@ -105,9 +100,6 @@ func TestRPTreeEmpty(t *testing.T) {
 	if got := rt.Nearest(&point{coord: []float64{0, 0, 0}}, 3); got != nil {
 		t.Errorf("Nearest on empty tree = %v, want nil", got)
 	}
-	if got := rt.Nodes(); len(got) != 0 {
-		t.Errorf("Nodes() = %v, want empty", got)
-	}
 }
 
 func TestRPTreeInsertRejectsBadPoints(t *testing.T) {
@@ -152,38 +144,6 @@ func TestRPTreeNearestExactWhenSingleLeaf(t *testing.T) {
 		if node.Key() != want[i] {
 			t.Errorf("Nearest()[%d].Key() = %d, want %d", i, node.Key(), want[i])
 		}
-	}
-}
-
-// TestRPTreeNodesCoverEveryInsert forces splits (n well past the leaf
-// capacity) and checks every inserted node still shows up exactly once
-// somewhere in the tree.
-func TestRPTreeNodesCoverEveryInsert(t *testing.T) {
-	rng := rand.New(rand.NewSource(9))
-	const dim = 4
-	const n = 500
-
-	rt := trees.NewRPTree[int, string, float64](dim, 6, 3, 32, 8)
-	points := make([]*point, n)
-	for i := range points {
-		points[i] = randPoint(rng, i, dim)
-		if err := rt.Insert(points[i]); err != nil {
-			t.Fatalf("Insert(%d) = %v, want nil", i, err)
-		}
-	}
-	if got := rt.Len(); got != n {
-		t.Fatalf("Len() = %d, want %d", got, n)
-	}
-
-	seen := make(map[int]bool, n)
-	for _, node := range rt.Nodes() {
-		if seen[node.Key()] {
-			t.Fatalf("key %d appeared more than once in Nodes()", node.Key())
-		}
-		seen[node.Key()] = true
-	}
-	if len(seen) != n {
-		t.Fatalf("Nodes() covered %d distinct keys, want %d", len(seen), n)
 	}
 }
 
@@ -434,26 +394,6 @@ func TestVectorPointGeometry(t *testing.T) {
 	}
 	if got, want := b.Distance(a), 5.0; got != want {
 		t.Errorf("Distance() (symmetric) = %v, want %v", got, want)
-	}
-	if got, want := a.PlaneDistance(3, 0), 3.0; got != want {
-		t.Errorf("PlaneDistance(3, 0) = %v, want %v", got, want)
-	}
-	if got, want := a.PlaneDistance(-3, 0), 3.0; got != want {
-		t.Errorf("PlaneDistance(-3, 0) = %v, want %v", got, want)
-	}
-}
-
-func TestVectorPointHash(t *testing.T) {
-	hasher := hash.XxHash[uint64]{}
-	a := trees.NewVectorPoint(uint64(1), containers.NewVector[uint64]([]float64{1, 2, 3}))
-	b := trees.NewVectorPoint(uint64(2), containers.NewVector[uint64]([]float64{1, 2, 3}))
-	c := trees.NewVectorPoint(uint64(3), containers.NewVector[uint64]([]float64{4, 5, 6}))
-
-	if got, want := a.Hash(hasher), b.Hash(hasher); got != want {
-		t.Errorf("points with equal coordinates hashed differently: %#x vs %#x", got, want)
-	}
-	if got := a.Hash(hasher); got == c.Hash(hasher) {
-		t.Errorf("points with different coordinates hashed the same: %#x", got)
 	}
 }
 

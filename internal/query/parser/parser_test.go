@@ -68,7 +68,7 @@ func FuzzRememberPhraseRoundTrip(f *testing.F) {
 		quoted := "'" + strings.ReplaceAll(value, "'", "''") + "'"
 		q := "remember " + quoted + " topic:x"
 
-		cmd, _, err := parser.Parse[uint64, float32](q)
+		cmd, _, err := parser.Parse[uint64, float32](q, nil)
 		if err != nil {
 			t.Fatalf("Parse(%q) = %v, want the escaped phrase to parse", q, err)
 		}
@@ -81,7 +81,7 @@ func FuzzRememberPhraseRoundTrip(f *testing.F) {
 		}
 
 		// The reconstruction must survive a second trip: String() re-escapes.
-		cmd2, _, err := parser.Parse[uint64, float32](cmd.String())
+		cmd2, _, err := parser.Parse[uint64, float32](cmd.String(), nil)
 		if err != nil {
 			t.Fatalf("re-Parse(String() = %q) = %v", cmd.String(), err)
 		}
@@ -113,7 +113,7 @@ func FuzzParseNeverPanics(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
-		_, _, _ = parser.Parse[uint64, float32](raw) // must return, not panic
+		_, _, _ = parser.Parse[uint64, float32](raw, nil) // must return, not panic
 	})
 }
 
@@ -134,7 +134,7 @@ func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if tc.want == "" {
 				if err != nil {
 					t.Fatalf("Parse(%q) = %v, want it to parse", tc.query, err)
@@ -173,7 +173,7 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
 			}
@@ -191,7 +191,7 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 func TestRememberParser(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne vec:$v"
 
-	qo, _, err := parser.Parse[uint64, float32](q)
+	qo, _, err := parser.Parse[uint64, float32](q, nil)
 
 	if err != nil {
 		t.Error("Expected no error while parsing this query.")
@@ -220,7 +220,7 @@ func TestRecallParser(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			qo, _, err := parser.Parse[uint64, float32](q)
+			qo, _, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 			}
@@ -248,7 +248,7 @@ func TestRecallParserErrors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want an error", tc.query)
 			}
@@ -277,7 +277,7 @@ func TestAnchorSeededRecallParses(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			if _, _, err := parser.Parse[uint64, float32](q); err != nil {
+			if _, _, err := parser.Parse[uint64, float32](q, nil); err != nil {
 				t.Errorf("Parse(%q) = %v, want it to parse", q, err)
 			}
 		})
@@ -306,7 +306,7 @@ func TestGraphSelectorRejectsOutOfRange(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want an out-of-range/parse error", tc.query)
 			}
@@ -318,7 +318,7 @@ func TestGraphSelectorRejectsOutOfRange(t *testing.T) {
 
 	// A selector that fits in a uint8 still parses here; the tighter
 	// [0, num-graphs) bound is the handler's job, not the parser's.
-	if _, _, err := parser.Parse[uint64, float32]("recall@255 secret"); err != nil {
+	if _, _, err := parser.Parse[uint64, float32]("recall@255 secret", nil); err != nil {
 		t.Errorf("Parse(recall@255 …) returned error: %v, want nil", err)
 	}
 }
@@ -343,7 +343,7 @@ func TestRememberPhrase(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -370,7 +370,7 @@ func TestRememberPhraseRoundTrip(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](q)
+			cmd, _, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", q, err)
 			}
@@ -394,7 +394,7 @@ func TestRememberPhraseErrors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want an error", tc.query)
 			}
@@ -437,7 +437,7 @@ func TestFieldRequiresColonSeparator(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", tc.query)
 			}
@@ -484,7 +484,7 @@ func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
 			}
@@ -514,7 +514,7 @@ func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
 // reserved word.
 func TestQuotedValues(t *testing.T) {
 	t.Run("quoted anchor value", func(t *testing.T) {
-		cmd, _, err := parser.Parse[uint64, float32]("remember 'x' topic:'my project'")
+		cmd, _, err := parser.Parse[uint64, float32]("remember 'x' topic:'my project'", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -526,7 +526,7 @@ func TestQuotedValues(t *testing.T) {
 	})
 
 	t.Run("quoted recall term", func(t *testing.T) {
-		cmd, _, err := parser.Parse[uint64, float32]("recall 'meeting at 3:30pm' topic:work")
+		cmd, _, err := parser.Parse[uint64, float32]("recall 'meeting at 3:30pm' topic:work", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -555,7 +555,7 @@ func TestBareWordIsLettersAndDigits(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -623,7 +623,7 @@ func TestKeywordAsValue(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -666,7 +666,7 @@ func TestKeywordAsValueDisambiguation(t *testing.T) {
 
 	for _, q := range queries {
 		t.Run(q, func(t *testing.T) {
-			if _, _, err := parser.Parse[uint64, float32](q); err == nil {
+			if _, _, err := parser.Parse[uint64, float32](q, nil); err == nil {
 				t.Errorf("Parse(%q) = nil error, want an error", q)
 			}
 		})
@@ -700,7 +700,7 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a mis-cased-keyword error", tc.query)
 			}
@@ -745,7 +745,7 @@ func TestMiscasedKeywordBeforeColonIsTheClause(t *testing.T) {
 
 	for _, tc := range recalls {
 		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) = %v, want the clause it spells", tc.query, err)
 			}
@@ -768,7 +768,7 @@ func TestMiscasedKeywordBeforeColonIsTheClause(t *testing.T) {
 
 	for _, tc := range remembers {
 		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) = %v, want the clause it spells", tc.query, err)
 			}
@@ -803,7 +803,7 @@ func TestDuplicateModifierIsRejected(t *testing.T) {
 
 	for _, q := range rejected {
 		t.Run(q, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](q)
+			_, _, err := parser.Parse[uint64, float32](q, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a duplicate-clause error", q)
 			}
@@ -820,7 +820,7 @@ func TestDuplicateModifierIsRejected(t *testing.T) {
 
 	for _, q := range accepted {
 		t.Run(q, func(t *testing.T) {
-			if _, _, err := parser.Parse[uint64, float32](q); err != nil {
+			if _, _, err := parser.Parse[uint64, float32](q, nil); err != nil {
 				t.Errorf("Parse(%q) = %v, want repeated anchors to parse", q, err)
 			}
 		})
@@ -834,7 +834,7 @@ func TestDuplicateModifierIsRejected(t *testing.T) {
 // these would fail ingestion.
 func TestMiscasedKeywordStaysDataInValuePosition(t *testing.T) {
 	t.Run("quoted term after the first", func(t *testing.T) {
-		cmd, _, err := parser.Parse[uint64, float32]("recall zebras 'Since'")
+		cmd, _, err := parser.Parse[uint64, float32]("recall zebras 'Since'", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -855,7 +855,7 @@ func TestMiscasedKeywordStaysDataInValuePosition(t *testing.T) {
 // capitalisations and recalls silently miss facts filed under another one.
 func TestValuesFoldToLowerCase(t *testing.T) {
 	t.Run("anchor values fold, the fact does not", func(t *testing.T) {
-		cmd, _, err := parser.Parse[uint64, float32]("remember 'MiXeD Case' topic:Billing entity:Anna")
+		cmd, _, err := parser.Parse[uint64, float32]("remember 'MiXeD Case' topic:Billing entity:Anna", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -872,7 +872,7 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 	})
 
 	t.Run("quoted anchor values fold too", func(t *testing.T) {
-		cmd, _, err := parser.Parse[uint64, float32]("remember 'x' topic:'My Project'")
+		cmd, _, err := parser.Parse[uint64, float32]("remember 'x' topic:'My Project'", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -883,7 +883,7 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 	})
 
 	t.Run("recall terms fold, bare and quoted alike", func(t *testing.T) {
-		cmd, _, err := parser.Parse[uint64, float32]("recall Anna 'Bob Marley' topic:Music")
+		cmd, _, err := parser.Parse[uint64, float32]("recall Anna 'Bob Marley' topic:Music", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -900,7 +900,7 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 		// entity:Top and entity:top must land on one anchor: "Top" is a plain
 		// LITERAL to the lexer while "top" is a keyword, and the fold is what
 		// stops that lexing difference leaking into the graph as two anchors.
-		cmd, _, err := parser.Parse[uint64, float32]("remember 'x' entity:Top")
+		cmd, _, err := parser.Parse[uint64, float32]("remember 'x' entity:Top", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -933,7 +933,7 @@ func TestExplicitTopIsVisibleIncludingZero(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -971,7 +971,7 @@ func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -982,6 +982,53 @@ func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
 			}
 			if got := rc.Depth(7); got != tc.want {
 				t.Errorf("Depth(7) = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestVectorIsTheBoundParameter pins that a command's Vector is the parameter
+// its vec: clause names, and nil when there is no clause or no such parameter.
+// Most queries have no vector, so a nil dereference on the absent clause would
+// take down any caller that reads the vector; and a clause whose vector stayed
+// empty would hand a vector search nothing to search with.
+func TestVectorIsTheBoundParameter(t *testing.T) {
+	params := map[string][]float32{"q": {0.1, 0.2, 0.3}}
+
+	cases := []struct {
+		query  string
+		vector func(parser.CommandNode) []float32
+		want   []float32
+	}{
+		{"recall x", func(c parser.CommandNode) []float32 {
+			return c.(*parser.RecallCommandNode[uint64, float32]).Vector()
+		}, nil},
+		{"recall x vec:$q", func(c parser.CommandNode) []float32 {
+			return c.(*parser.RecallCommandNode[uint64, float32]).Vector()
+		}, []float32{0.1, 0.2, 0.3}},
+		{"recall x vec:$missing", func(c parser.CommandNode) []float32 {
+			return c.(*parser.RecallCommandNode[uint64, float32]).Vector()
+		}, nil},
+		{"remember 'x'", func(c parser.CommandNode) []float32 {
+			return c.(*parser.RememberCommandNode[float32]).Vector()
+		}, nil},
+		{"remember 'x' vec:$q", func(c parser.CommandNode) []float32 {
+			return c.(*parser.RememberCommandNode[float32]).Vector()
+		}, []float32{0.1, 0.2, 0.3}},
+		{"remember 'x' vec:$missing", func(c parser.CommandNode) []float32 {
+			return c.(*parser.RememberCommandNode[float32]).Vector()
+		}, nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, params)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+			}
+			got := tc.vector(cmd)
+			if (got == nil) != (tc.want == nil) || !slices.Equal(got, tc.want) {
+				t.Errorf("Vector() = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -1007,7 +1054,7 @@ func TestEmptyDataIsRejected(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want an empty-value error", tc.query)
 			}
@@ -1080,7 +1127,7 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
 			}
@@ -1111,7 +1158,7 @@ func TestCommandWordsAreNeverOfferedAsClauses(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
 			msg := fmt.Sprint(err, warns)
 			if err == nil && len(warns) == 0 {
 				t.Fatalf("Parse(%q) was silent, want a warning or an error naming the command word", tc.query)
@@ -1143,7 +1190,7 @@ func TestDanglingKeywordAfterAClauseIsAWordToQuote(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a dangling-keyword error", tc.query)
 			}
@@ -1171,7 +1218,7 @@ func TestDanglingCommandWordStartsASecondCommand(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a second-command error", tc.query)
 			}
@@ -1199,7 +1246,7 @@ func TestBareModifierOnARememberIsRejected(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a keyword error", tc.query)
 			}
@@ -1225,7 +1272,7 @@ func TestVecWithoutColonIsRejected(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", tc.query)
 			}
@@ -1252,7 +1299,7 @@ func TestRememberNeedsASpaceAfterTheCommand(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a missing-space error", tc.query)
 			}
@@ -1278,7 +1325,7 @@ func TestNulWhereTheFactShouldStartIsRejected(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a NUL error", tc.query)
 			}
@@ -1304,7 +1351,7 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 
 	for _, q := range accepted {
 		t.Run("accepted:"+strconv.Quote(q), func(t *testing.T) {
-			if _, _, err := parser.Parse[uint64, float32](q); err != nil {
+			if _, _, err := parser.Parse[uint64, float32](q, nil); err != nil {
 				t.Errorf("Parse(%q) = %v, want a trailing newline to be ignored", q, err)
 			}
 		})
@@ -1318,7 +1365,7 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 
 	for _, q := range rejected {
 		t.Run("rejected:"+strconv.Quote(q), func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](q)
+			_, _, err := parser.Parse[uint64, float32](q, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a second-instruction error", q)
 			}
@@ -1349,7 +1396,7 @@ func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query+"/"+tc.want, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a value error", tc.query)
 			}
@@ -1359,7 +1406,7 @@ func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
 		})
 	}
 
-	if _, _, err := parser.Parse[uint64, float32]("recall zebras depth:abc"); err == nil ||
+	if _, _, err := parser.Parse[uint64, float32]("recall zebras depth:abc", nil); err == nil ||
 		strings.Contains(err.Error(), "out of range") {
 		t.Errorf("depth:abc = %v, want it reported as not-a-number rather than out of range", err)
 	}
@@ -1395,7 +1442,7 @@ func TestMiscasedClauseWarns(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -1407,7 +1454,7 @@ func TestMiscasedClauseWarns(t *testing.T) {
 
 	// Every mis-cased clause is named, so a query with two gets two warnings
 	// and the caller can fix both in one pass.
-	_, warns, err := parser.Parse[uint64, float32]("recall zebras Topic:food Depth:2")
+	_, warns, err := parser.Parse[uint64, float32]("recall zebras Topic:food Depth:2", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1445,7 +1492,7 @@ func TestDepthWithoutAnchorWarns(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -1462,7 +1509,7 @@ func TestDepthWithoutAnchorWarns(t *testing.T) {
 // response alone — add an anchor, or drop the clause.
 func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 	q := "recall ferry depth:2"
-	_, warns, err := parser.Parse[uint64, float32](q)
+	_, warns, err := parser.Parse[uint64, float32](q, nil)
 	if err != nil {
 		t.Fatalf("Parse(%q) unexpected error: %v", q, err)
 	}
@@ -1498,7 +1545,7 @@ func TestSelectorWithSpace(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a selector-spacing error", tc.query)
 			}
@@ -1525,7 +1572,7 @@ func TestWhitespaceSeparatesWords(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query)
+			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -1564,7 +1611,7 @@ func TestNoSpaceInsideACommandOrClause(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if tc.want == "" {
 				if err != nil {
 					t.Fatalf("Parse(%q) = %v, want it to parse", tc.query, err)
@@ -1602,7 +1649,7 @@ func TestReservedWordAsATermNamesBothFixes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			var perr *parser.Error
 			if !errors.As(err, &perr) {
 				t.Fatalf("Parse(%q) = %v, want a positioned parse error", tc.query, err)
@@ -1635,7 +1682,7 @@ func TestQuotedReservedWordIsATerm(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			cmd, warns, err := parser.Parse[uint64, float32](tc.query)
+			cmd, warns, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -1667,7 +1714,7 @@ func TestKeywordAfterAClauseIsAMissingColon(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query)
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a missing-colon error", tc.query)
 			}
@@ -1700,7 +1747,7 @@ func TestAnchorValueIsData(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			cmd, warns, err := parser.Parse[uint64, float32](tc.query)
+			cmd, warns, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -1739,7 +1786,7 @@ func TestStopWordTermWarns(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {
-			_, warns, err := parser.Parse[uint64, float32](tc.query)
+			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
@@ -1770,7 +1817,7 @@ func TestStopWordOnlyRecallIsAnError(t *testing.T) {
 		"recall the topic:birds",
 	} {
 		t.Run(q, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](q)
+			_, _, err := parser.Parse[uint64, float32](q, nil)
 			if err == nil {
 				t.Fatalf("Parse(%q) = nil error, want a stop-word-only error", q)
 			}
@@ -1799,7 +1846,7 @@ func TestUnambiguousQueriesRunSilently(t *testing.T) {
 		"recall topic:birds",
 	} {
 		t.Run(q, func(t *testing.T) {
-			_, warns, err := parser.Parse[uint64, float32](q)
+			_, warns, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", q, err)
 			}
@@ -1864,11 +1911,11 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 		"recall 'vec'",
 	} {
 		t.Run(q, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](q)
+			cmd, _, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", q, err)
 			}
-			again, _, err := parser.Parse[uint64, float32](cmd.String())
+			again, _, err := parser.Parse[uint64, float32](cmd.String(), nil)
 			if err != nil {
 				t.Fatalf("Parse(String() = %q) = %v, want the reconstruction to parse", cmd.String(), err)
 			}
@@ -1902,7 +1949,7 @@ func TestTokenGluedToPhrase(t *testing.T) {
 		"remember 'a fact'zzz topic:x",
 	} {
 		t.Run(q, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](q)
+			_, _, err := parser.Parse[uint64, float32](q, nil)
 			if err == nil {
 				t.Fatalf("Expected error: parse error at column 18: unexpected \"x\" but got: %q", err)
 			}
