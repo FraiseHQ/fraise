@@ -24,6 +24,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -139,7 +140,9 @@ func Canonical(v *string, name string, accepted []string) error {
 // outside. The same holds for a numeric setting with a bounded domain:
 // db.min-score-ratio is a fraction of the best hit's relevance, and a value
 // past 1 (an operator thinking in percent) would put the bar above every hit
-// and silently empty every recall.
+// and silently empty every recall. db.num-graphs is bounded by the selector:
+// a selector is a uint8, so a graph past 256 is allocated but no query can
+// ever address it.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string
@@ -166,6 +169,10 @@ func (c *ConfigSet) validate() error {
 	// fails every comparison, is rejected too instead of slipping through.
 	if r := c.DB.MinScoreRatio; !(r >= 0 && r <= 1) {
 		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
+	}
+
+	if n := c.DB.NumGraphs; n < 1 || n > math.MaxUint8+1 {
+		return fmt.Errorf("%w: db.num-graphs = %d (accepted: 1 to %d)", ErrInvalidValue, n, math.MaxUint8+1)
 	}
 	return nil
 }

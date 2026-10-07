@@ -119,6 +119,7 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
+		{"db.num-graphs", func(c *ConfigSet, _ string) { c.DB.NumGraphs = 300 }},
 	}
 
 	for _, tc := range cases {
@@ -162,6 +163,36 @@ func TestValidateBoundsMinScoreRatio(t *testing.T) {
 			t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
 		}
 		for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+	}
+}
+
+// TestValidateBoundsNumGraphs pins the domain of db.num-graphs to what a
+// selector can address. Selectors are uint8, so 256 graphs (@0 to @255) is the
+// most a query can reach: 300 would start a server holding 44 graphs no
+// selector can name, and a negative count would quietly get the default. Both
+// endpoints are kept: one graph is a single-tenant store, 256 is every
+// selector in use.
+func TestValidateBoundsNumGraphs(t *testing.T) {
+	for _, n := range []int{1, DefaultNumGraph, 256} {
+		c := New()
+		c.DB.NumGraphs = n
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with num-graphs = %d returned error: %v, want it accepted", n, err)
+		}
+	}
+
+	for _, n := range []int{-1, 0, 257, 300} {
+		c := New()
+		c.DB.NumGraphs = n
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with num-graphs = %d = %v, want an ErrInvalidValue", n, err)
+		}
+		for _, want := range []string{"db.num-graphs", "accepted: 1 to 256"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error %q does not mention %q", err, want)
 			}
