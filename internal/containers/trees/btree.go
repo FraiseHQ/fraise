@@ -24,10 +24,8 @@ package trees
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/FraiseHQ/fraise/internal/comparator"
-	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // ErrDuplicateValue is returned by Insert when an equal value (per the tree's
@@ -44,12 +42,6 @@ type BTreeNode[K comparable, T any, P float32 | float64] struct {
 // isLeaf reports whether n has no children.
 func (n *BTreeNode[K, T, P]) isLeaf() bool {
 	return len(n.children) == 0
-}
-
-// Hash keys n through h over the values it holds, as fmt.Sprint renders them.
-// It implements hash.Hashable[K, string].
-func (n *BTreeNode[K, T, P]) Hash(h hash.Hasher[K, string]) K {
-	return h.Hash(fmt.Sprint(n.values))
 }
 
 // find returns the index of value within n.values and true if present;

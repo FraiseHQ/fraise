@@ -40,14 +40,12 @@ import (
 
 // fakeGraph is a controllable graph.Graph used to observe how Stream drives the
 // graph: which lock Acquire/Release take, whether the write path writes and the
-// read path searches, and what Search returns. copied and merged record calls
-// to Copy and MergeFrom, which Commit must never make: a staging copy would
-// cost O(graph) per write. The methods that record calls or return configured
-// results carry the behaviour; the rest return fixed answers.
+// read path searches, and what Search returns. The methods that record calls
+// or return configured results carry the behaviour; the rest return fixed
+// answers.
 type fakeGraph struct {
 	locks, unlocks   int
 	rlocks, runlocks int
-	copied, merged   bool
 	sets             int
 	puts             int
 	searchCalled     bool
@@ -64,8 +62,6 @@ func (g *fakeGraph) Unlock()  { g.unlocks++ }
 func (g *fakeGraph) RLock()   { g.rlocks++ }
 func (g *fakeGraph) RUnlock() { g.runlocks++ }
 
-func (g *fakeGraph) Copy() graph.Graph[string, float32]            { g.copied = true; return g }
-func (g *fakeGraph) MergeFrom(in graph.Graph[string, float32])     { g.merged = true }
 func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
@@ -146,9 +142,6 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 	if !g.searchCalled {
 		t.Error("Commit did not call Search on a read query")
 	}
-	if g.copied || g.merged {
-		t.Error("Commit copied or merged the graph on a read query, want in-place")
-	}
 	if s.Result == nil {
 		t.Fatal("Commit left Result nil")
 	}
@@ -218,10 +211,8 @@ func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 	}
 }
 
-// TestStreamCommitWriteInPlace pins that a write commit mutates the given
-// graph directly, never copying it into a staging graph or merging one back:
-// either would make every single-fact write cost O(graph) under the exclusive
-// lock.
+// TestStreamCommitWriteInPlace pins that a write commit upserts into the given
+// graph directly and never searches it.
 func TestStreamCommitWriteInPlace(t *testing.T) {
 	g := &fakeGraph{}
 	s := newStream(&Remember[string, float32]{Value: "alice"})
@@ -232,12 +223,6 @@ func TestStreamCommitWriteInPlace(t *testing.T) {
 
 	if g.puts == 0 {
 		t.Error("Commit did not upsert the fact on a write query")
-	}
-	if g.copied {
-		t.Error("Commit copied the graph on a write query, want in-place")
-	}
-	if g.merged {
-		t.Error("Commit merged a staging graph, want in-place")
 	}
 	if g.searchCalled {
 		t.Error("Commit called Search on a write query")
@@ -422,8 +407,8 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 
 // BenchmarkRememberCommit measures a single-fact write commit against graphs
 // of different sizes. The in-place write touches only what it stores, so
-// ns/op must not scale with the size subtest the way a staging copy
-// (Copy + MergeFrom), O(graph) per write, would.
+// ns/op must not scale with the size subtest the way a staging copy of the
+// graph, O(graph) per write, would.
 func BenchmarkRememberCommit(b *testing.B) {
 	for _, size := range []int{100, 10_000} {
 		b.Run(fmt.Sprintf("size-%d", size), func(b *testing.B) {
