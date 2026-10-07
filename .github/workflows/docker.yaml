@@ -11,7 +11,7 @@ on:
       - "tests/e2e/**"
       - "tests/integration/**"
       - ".golangci.yml"
-      - ".github/workflows/go.yaml"
+      - ".github/workflows/docker.yaml"
       - Dockerfile.fraise
       - docker-compose.yaml
   pull_request:
@@ -23,7 +23,7 @@ on:
       - "tests/e2e/**"
       - "tests/integration/**"
       - ".golangci.yml"
-      - ".github/workflows/go.yaml"
+      - ".github/workflows/docker.yaml"
       - Dockerfile.fraise
       - docker-compose.yaml
 
