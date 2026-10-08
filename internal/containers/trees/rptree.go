@@ -319,21 +319,41 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int) []TreeNode[K, T, P] {
 		next := deferred[best]
 		deferred = append(deferred[:best], deferred[best+1:]...)
 		// Probes are subtrees the descent turned away from, so they partition
-		// what has not been visited: no leaf is reached twice and the pool needs
-		// no deduplication.
+		// what has not been visited: no leaf is reached twice.
 		candidates = append(candidates, descend(next.node)...)
 	}
 	if len(candidates) == 0 {
 		return nil
 	}
 
-	pq, _ := containers.NewPriorityQueue[K, TreeNode[K, T, P]](uint(k))
+	// Leaves are disjoint but keys need not be: an owner that replaces a key's
+	// point (RPTreeIndex) leaves the old copy in the tree until it rebuilds.
+	// The pool is keyed by node key and, on a collision, keeps the higher
+	// priority — the farther copy — so a stale copy could displace the nearer
+	// one and then be evicted as the farthest, losing the key; and a colliding
+	// enqueue on a full pool would dequeue without adding, leaving k-1. Each
+	// key therefore enters the pool once, at its nearest copy, in candidate
+	// order so that ties still resolve by the walk.
+	items := make([]containers.Item[K, TreeNode[K, T, P]], 0, len(candidates))
+	at := make(map[K]int, len(candidates))
 	for _, node := range candidates {
 		item := containers.Item[K, TreeNode[K, T, P]]{
 			Key:      node.Key(),
 			Value:    node,
 			Priority: distancePriority(p.Distance(node.Point())),
 		}
+		if i, ok := at[item.Key]; ok {
+			if item.Priority < items[i].Priority {
+				items[i] = item
+			}
+			continue
+		}
+		at[item.Key] = len(items)
+		items = append(items, item)
+	}
+
+	pq, _ := containers.NewPriorityQueue[K, TreeNode[K, T, P]](uint(k))
+	for _, item := range items {
 		if pq.Len() < k {
 			pq.Enqueue(item)
 			continue
@@ -408,9 +428,15 @@ func NewVectorPoint[K comparable, P float32 | float64](key K, vector containers.
 	return VectorPoint[K, P]{key: key, vector: vector}
 }
 
-func (v VectorPoint[K, P]) Dim() int         { return v.vector.Dim() }
+// Dim implements [Point]: the vector's dimensionality.
+func (v VectorPoint[K, P]) Dim() int { return v.vector.Dim() }
+
+// GetValue implements [Point]: the vector's coordinate along dimension d.
 func (v VectorPoint[K, P]) GetValue(d int) P { return v.vector.Data[d] }
-func (v VectorPoint[K, P]) Key() K           { return v.key }
+
+// Key implements [Point]: the key the point was built with, which ties a
+// search result back to the vector it came from.
+func (v VectorPoint[K, P]) Key() K { return v.key }
 
 // Distance returns the Euclidean distance between v and p. Against another
 // VectorPoint it uses containers.Vector.Distance; any other Point is read
@@ -440,6 +466,12 @@ func NewVectorNode[K comparable, P float32 | float64](key K, value containers.Ve
 	return &VectorNode[K, P]{key: key, value: value}
 }
 
-func (n *VectorNode[K, P]) Key() K                         { return n.key }
+// Key implements [TreeNode]: the key the node was built with.
+func (n *VectorNode[K, P]) Key() K { return n.key }
+
+// Value implements [TreeNode]: the vector itself.
 func (n *VectorNode[K, P]) Value() containers.Vector[K, P] { return n.value }
-func (n *VectorNode[K, P]) Point() Point[K, P]             { return NewVectorPoint(n.key, n.value) }
+
+// Point implements [TreeNode] with a [VectorPoint] over the node's key and
+// vector.
+func (n *VectorNode[K, P]) Point() Point[K, P] { return NewVectorPoint(n.key, n.value) }

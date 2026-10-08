@@ -13,3 +13,16 @@ linters:
     - dupl
     - gocritic
     - gocyclo
+    - revive
+  settings:
+    revive:
+      # Listing rules replaces revive's defaults, so these two are all it runs:
+      # pkg.go.dev renders exactly what go doc renders, and an undocumented
+      # package or exported name shows up there as a bare signature.
+      rules:
+        - name: package-comments
+        - name: exported
+          # Stutter (config.ConfigSet) is a naming call, not a documentation
+          # gap; renaming exported types is out of this rule's remit.
+          arguments:
+            - disableStutteringCheck

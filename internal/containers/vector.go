@@ -37,14 +37,20 @@ type Vector[K comparable, P float32 | float64] struct {
 	Data []P
 }
 
+// NewVector returns a Vector over data.
 func NewVector[K comparable, P float32 | float64](data []P) Vector[K, P] {
 	return Vector[K, P]{Data: data}
 }
 
+// Dim returns the number of coordinates, the dimensionality the vector index
+// checks every insert and search against.
 func (v Vector[K, P]) Dim() int {
 	return len(v.Data)
 }
 
+// Empty reports whether the vector has no coordinates, nil and zero-length
+// Data alike. A query given no vector carries the zero Vector, so Empty is how
+// recall and remember tell that no vector search was asked for.
 func (v Vector[K, P]) Empty() bool {
 	if v.Data == nil {
 		return true

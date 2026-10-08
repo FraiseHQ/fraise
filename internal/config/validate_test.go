@@ -119,6 +119,8 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
+		{"scheduler.workers", func(c *ConfigSet, _ string) { c.Scheduler.Workers = -1 }},
+		{"db.max-depth", func(c *ConfigSet, _ string) { c.DB.MaxDepth = 3 }},
 		{"db.num-graphs", func(c *ConfigSet, _ string) { c.DB.NumGraphs = 300 }},
 	}
 
@@ -163,6 +165,66 @@ func TestValidateBoundsMinScoreRatio(t *testing.T) {
 			t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
 		}
 		for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+	}
+}
+
+// TestValidateBoundsWorkers pins the floor of scheduler.workers. Adjust only
+// replaces a zero with the default, so a negative count would otherwise reach
+// Scheduler.Start, whose loop starts no worker: the server would accept
+// queries into its queue and never answer them, then 429 once the queue
+// filled. validate runs after Adjust, so a zero has already become the default
+// by then and the check never sees one.
+func TestValidateBoundsWorkers(t *testing.T) {
+	for _, workers := range []int{1, 4} {
+		c := New()
+		c.Scheduler.Workers = workers
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with workers = %d returned error: %v, want it accepted", workers, err)
+		}
+	}
+
+	for _, workers := range []int{0, -1, math.MinInt} {
+		c := New()
+		c.Scheduler.Workers = workers
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with workers = %d = %v, want an ErrInvalidValue", workers, err)
+		}
+		for _, want := range []string{"scheduler.workers", "accepted: 1 or more"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+	}
+}
+
+// TestValidateBoundsMaxDepth pins the domain of db.max-depth: the lanes are
+// depth 0, 1 and 2, and search has nothing past 2. A ceiling of 3 or more
+// would let depth:3 through the parser's range check to be answered exactly
+// as depth 2, the silent substitution the ceiling exists to refuse; a
+// negative ceiling would reject every recall that names a depth. Lowering
+// the ceiling stays allowed: 1 keeps recalls off the max-recall lane.
+func TestValidateBoundsMaxDepth(t *testing.T) {
+	for _, depth := range []int{0, 1, 2} {
+		c := New()
+		c.DB.MaxDepth = depth
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with max-depth = %d returned error: %v, want it accepted", depth, err)
+		}
+	}
+
+	for _, depth := range []int{-1, 3, 10} {
+		c := New()
+		c.DB.MaxDepth = depth
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with max-depth = %d = %v, want an ErrInvalidValue", depth, err)
+		}
+		for _, want := range []string{"db.max-depth", "accepted: 0 to 2"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error %q does not mention %q", err, want)
 			}

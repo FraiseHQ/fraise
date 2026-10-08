@@ -77,10 +77,13 @@ func (h *Heap[K, T]) Cap() int {
 	return cap(h.items)
 }
 
+// Len reports the number of items in the heap.
 func (h *Heap[K, T]) Len() int {
 	return len(h.items)
 }
 
+// Swap exchanges the items in slots i and j and keeps the key lookup pointing
+// at each item's slot.
 func (h *Heap[K, T]) Swap(i, j int) {
 	h.items[i], h.items[j] = h.items[j], h.items[i]
 	h.lookup[h.items[i].Key] = i
@@ -105,6 +108,8 @@ func (h *Heap[K, T]) Push(item Item[K, T]) {
 	h.percolateUp(size - 1)
 }
 
+// Clear removes every item. The backing slice keeps its capacity, so a heap
+// refilled to its previous size does not reallocate it.
 func (h *Heap[K, T]) Clear() {
 	if len(h.items) > 0 {
 		h.items = h.items[:0]
@@ -112,6 +117,8 @@ func (h *Heap[K, T]) Clear() {
 	}
 }
 
+// Peek returns the highest-Priority item without removing it, or nil if the
+// heap is empty.
 func (h *Heap[K, T]) Peek() *Item[K, T] {
 	if h.Len() == 0 {
 		return nil
@@ -119,6 +126,8 @@ func (h *Heap[K, T]) Peek() *Item[K, T] {
 	return &h.items[0]
 }
 
+// Has reports whether an item is stored under key, in O(1) through the key
+// lookup rather than a scan of the heap.
 func (h *Heap[K, T]) Has(key K) bool {
 	_, ok := h.lookup[key]
 	return ok
@@ -167,6 +176,8 @@ func (h *Heap[K, T]) remove(index int, size int) {
 	h.lookup[h.items[index].Key] = index
 }
 
+// Pop removes and returns the highest-Priority item, or nil if the heap is
+// empty.
 func (h *Heap[K, T]) Pop() *Item[K, T] {
 	size := h.Len()
 

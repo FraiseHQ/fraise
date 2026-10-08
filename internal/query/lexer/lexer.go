@@ -27,10 +27,16 @@ import (
 	"unicode"
 )
 
+// Position locates a token in the query. Column counts runes, not bytes, so a
+// position points at the right character of a query with non-ASCII text.
 type Position struct {
 	Column int
 }
 
+// Lexer scans one query into tokens on demand. Input holds the query as runes,
+// so a multi-byte character is one column; Character is the last rune
+// consumed and CurrentPos its 1-based column, which is also the index of the
+// next rune to read.
 type Lexer struct {
 	Input      []rune
 	Offset     int
@@ -55,6 +61,9 @@ func New(input string) *Lexer {
 	return &l
 }
 
+// SkipBlank advances past spaces, tabs and carriage returns without emitting a
+// token. It stops at a newline, which ends an instruction rather than
+// separating words.
 func (l *Lexer) SkipBlank() {
 	for isBlank(l.peek()) {
 		l.readCharacter()
@@ -85,6 +94,10 @@ func isWordCharacter(ch rune) bool {
 	return unicode.IsLetter(ch) || unicode.IsDigit(ch)
 }
 
+// Next scans and returns the next token, and an EOL token on every call once
+// the input is exhausted. A phrase whose closing quote is missing comes back
+// as an ILLEGAL token carrying the text read, so the parser can report it as
+// unterminated.
 func (l *Lexer) Next() Token {
 	var tok Token
 
