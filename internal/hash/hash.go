@@ -37,6 +37,10 @@ type Hashable[K comparable, T any] interface {
 	Hash(h Hasher[K, T]) K
 }
 
+// NewHasher returns the Hasher the db.hashing-function configuration selects,
+// seeded with its seed: [T1haHash] for "t1ha", [XxHash] otherwise. Every key
+// a running server derives must come from this one hasher, since keys from two
+// algorithms or seeds would never match each other.
 func NewHasher[K ~uint64](cfg *config.ConfigSet) Hasher[K, string] {
 	// Startup rejects any name outside config.HashingFunctions, so the default
 	// arm serves only "xxhash" and an unset (hand-built) config: a mistyped

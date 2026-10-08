@@ -95,6 +95,10 @@ func (g *InMemoryGraph[K, P]) SetScorer(s scoring.Scorer[K, P]) {
 	g.scorer = s
 }
 
+// NewGraph returns an empty graph with its indexes, relevance model and
+// hasher configured from cfg and the [scoring.ExcessScorer] installed.
+// [InMemoryGraph.SetTraversal] and [InMemoryGraph.SetRanking] install the
+// traversal and ranking.
 func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGraph[K, P] {
 	// The tokenizer and relevance model must be installed before the first
 	// insert. Stemming lets a keyword find other inflections of the same
@@ -296,10 +300,14 @@ func (g *InMemoryGraph[K, P]) Nodes() map[K]Node[K] {
 	return g.idToNodes
 }
 
+// AdjacencyMap implements [Graph]: it returns a deep copy of the outgoing
+// edges, so a caller holding it cannot corrupt the graph's own rows.
 func (g *InMemoryGraph[K, P]) AdjacencyMap() map[K]map[K]K {
 	return exportEdges(g.nodeToTargets)
 }
 
+// PredecessorMap implements [Graph]: it returns a deep copy of the incoming
+// edges, so a caller holding it cannot corrupt the graph's own rows.
 func (g *InMemoryGraph[K, P]) PredecessorMap() map[K]map[K]K {
 	return exportEdges(g.nodeToSources)
 }
@@ -356,6 +364,9 @@ func (g *InMemoryGraph[K, P]) Size() int {
 	return size
 }
 
+// Stats implements [Graph]: it snapshots the vertex, edge, node and vector
+// counts, plus the forest entries whose excess over Vectors is the vector
+// index's pending compaction.
 func (g *InMemoryGraph[K, P]) Stats() GraphStats {
 	return GraphStats{
 		Order:   g.Order(),
@@ -378,6 +389,11 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 	return g.textIndex
 }
 
+// Search implements [Graph.Search]. It collects candidates, folds each with the
+// installed scorer and boosts by the installed ranking, applies the time window
+// and recency decay, keeps the top hits (score descending, then key ascending,
+// so identical queries return identical hits) and finally drops hits below the
+// db.min-score-ratio cutoff.
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error) {
 	// A. Collection: every observation of every candidate (text and vector
 	// seeds, anchor transmission, or the named anchors' members when they

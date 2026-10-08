@@ -20,41 +20,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package query defines the executable form of a Fraise query: the Recall
+// and Remember commands, and the Stream that runs one of them for a request.
+//
+// [Parse] turns FQL text into a [Query] through the parser, binds the vector
+// parameters supplied out of band, and rejects a top:, depth: or vector length
+// outside its configured range. A Query hashes itself for the engine's plan
+// cache, through the [hash.Hashable] contract, and plans into a Stream that
+// the scheduler commits against the selected graph, under the shared lock for
+// a read and the exclusive lock for a write.
+//
+// The plan cache hands the same query object to every request that hashes
+// alike, so a Query carries nothing per request: the explain flag and the
+// result live on the Stream, and parse warnings are returned beside the
+// query. For the same reason Hash must fold in every field that changes what a
+// query reads or writes, or a cache hit would run another query's plan.
+package query

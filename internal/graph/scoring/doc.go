@@ -20,41 +20,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package scoring folds the observations a search collects for a candidate
+// into its relevance score.
+//
+// Collection records each observation as a [Contribution], tagged with the
+// [Source] that made it (text, vector, graph traversal or anchor seeding) and
+// carrying that source's raw mass, rank and anchor statistics, with no policy
+// applied. A [Scorer] owns the policy: [ExcessScorer], the default, sums the
+// seed mass and adds each anchor's attenuated surplus over its fair share
+// under the query's background rate, while [RRFScorer] fuses ranks alone for
+// comparison runs. Keeping policy out of collection means changing how
+// ranking works never touches the retrieval sites.
+//
+// One Scorer instance is shared by every concurrent search on a graph, so a
+// Scorer is pure, and the background rate is bound per query through
+// [Scorer.WithBackground] rather than written into the shared instance.
+package scoring

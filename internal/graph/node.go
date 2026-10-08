@@ -28,6 +28,8 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
+// NodeAttributes is the payload every node carries: its text and when it was
+// recorded. The timestamp is what Search's time window and recency decay read.
 type NodeAttributes struct {
 	Value     string
 	Timestamp time.Time
@@ -39,11 +41,11 @@ type NodeAttributes struct {
 // A node's key is the hash of its own type tag followed by its material —
 // "fact:", "topic:", "entity:", "mentions:", "isabout:" — so identity is
 // (type, value), never value alone: a fact and a topic that read the same are
-// two different nodes. Without the tag, `remember 'billing' topic:billing`
-// hashes both to one key, and then the topic node is never stored (Set finds
-// the fact already there) while its IsAbout edge points from the fact back to
-// itself. A new participant takes a tag that no other one prefixes; the five
-// above differ in their first byte.
+// two different nodes. Without the tag, the query
+// remember 'billing' topic:billing hashes both to one key, and then the topic
+// node is never stored (Set finds the fact already there) while its IsAbout
+// edge points from the fact back to itself. A new participant takes a tag
+// that no other one prefixes; the five above differ in their first byte.
 type Node[K comparable] interface {
 	hash.Hashable[K, string]
 
@@ -53,12 +55,18 @@ type Node[K comparable] interface {
 	GetAttributes() *NodeAttributes
 }
 
+// Entity is a vertex of the graph: a [Fact], [Topic] or [NamedEntity], the
+// endpoints a [Relationship] connects. Vertices are what [Graph.Order] counts
+// and what traversals visit.
 type Entity[K comparable] interface {
 	Node[K]
 
 	GetValue() string
 }
 
+// Relationship is an edge, stored as a node under its own key. Source is the
+// fact the edge leaves and Target the topic or named entity it points to; the
+// graph records the edge's key between their two keys in its adjacency maps.
 type Relationship[K comparable] interface {
 	Node[K]
 

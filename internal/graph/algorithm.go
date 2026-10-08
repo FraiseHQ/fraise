@@ -43,6 +43,9 @@ type Algorithm[K comparable, P float32 | float64] interface {
 	Run(g Graph[K, P]) (AlgorithmResult, error)
 }
 
+// AlgorithmResult is what [Algorithm.Run] returns: a [TraversalResult] for a
+// [Traversal] and a [RankingResult] for a [Ranking]. It has no methods, so the
+// caller type-asserts to the result its algorithm produces.
 type AlgorithmResult interface {
 }
 

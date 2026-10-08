@@ -20,41 +20,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package trees provides the search trees behind the indexes: an ordered
+// B-tree and a random-projection tree for approximate nearest-neighbour search.
+//
+// [BTree] keeps values sorted by a caller-supplied comparator; the text index
+// uses one as its term dictionary. [RPTree] is a [SpatialTree] that partitions
+// points by their projection onto random directions. A single RPTree is a weak
+// approximator, so the vector index queries a forest of them built from
+// independent seeds. Nodes enter a spatial tree as [TreeNode] values exposing
+// a [Point]; [VectorNode] and [VectorPoint] fit a [containers.Vector] to those
+// contracts.
+package trees

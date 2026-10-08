@@ -20,41 +20,20 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package parser turns one FQL instruction into a typed command node.
+//
+// [Parse] reads the lexer's tokens through a two-token window and returns a
+// [CommandNode]: a [RecallCommandNode] or a [RememberCommandNode], whose
+// clauses are [FieldNode] values. Nodes keep their source tokens so String
+// prints a query that parses back to the same node, and the query layer reads
+// commands through their accessors and enforces the configured limits; this
+// package owns only the grammar. Vectors never appear in the query text:
+// vec:$name looks its vector up in the params map Parse is given.
+//
+// A rejected query comes back as an [*Error] carrying the column it blames and
+// a message naming the repair, because callers are agents that can only fix
+// what the message tells them how to fix. A query that runs but has a part
+// with no effect (a stop word, a depth with no anchor, a mis-cased keyword)
+// yields a [Warning] returned beside the command, never stored on it: the plan
+// cache hands the same query objects to other requests.
+package parser

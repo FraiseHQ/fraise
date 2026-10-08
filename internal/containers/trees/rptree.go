@@ -428,9 +428,15 @@ func NewVectorPoint[K comparable, P float32 | float64](key K, vector containers.
 	return VectorPoint[K, P]{key: key, vector: vector}
 }
 
-func (v VectorPoint[K, P]) Dim() int         { return v.vector.Dim() }
+// Dim implements [Point]: the vector's dimensionality.
+func (v VectorPoint[K, P]) Dim() int { return v.vector.Dim() }
+
+// GetValue implements [Point]: the vector's coordinate along dimension d.
 func (v VectorPoint[K, P]) GetValue(d int) P { return v.vector.Data[d] }
-func (v VectorPoint[K, P]) Key() K           { return v.key }
+
+// Key implements [Point]: the key the point was built with, which ties a
+// search result back to the vector it came from.
+func (v VectorPoint[K, P]) Key() K { return v.key }
 
 // Distance returns the Euclidean distance between v and p. Against another
 // VectorPoint it uses containers.Vector.Distance; any other Point is read
@@ -460,6 +466,12 @@ func NewVectorNode[K comparable, P float32 | float64](key K, value containers.Ve
 	return &VectorNode[K, P]{key: key, value: value}
 }
 
-func (n *VectorNode[K, P]) Key() K                         { return n.key }
+// Key implements [TreeNode]: the key the node was built with.
+func (n *VectorNode[K, P]) Key() K { return n.key }
+
+// Value implements [TreeNode]: the vector itself.
 func (n *VectorNode[K, P]) Value() containers.Vector[K, P] { return n.value }
-func (n *VectorNode[K, P]) Point() Point[K, P]             { return NewVectorPoint(n.key, n.value) }
+
+// Point implements [TreeNode] with a [VectorPoint] over the node's key and
+// vector.
+func (n *VectorNode[K, P]) Point() Point[K, P] { return NewVectorPoint(n.key, n.value) }
