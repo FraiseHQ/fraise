@@ -24,17 +24,19 @@
 
 A gate is a test marked ``bench(package, pattern, ...)``: the marker names the
 Go benchmarks it judges and how to run them, and the ``comparison`` fixture
-hands it one row per benchmark and unit of benchstat's comparison, base
-against head, which the test asserts its limits on. Go's own tools do the
-work: benchdiff runs the benchmarks at ``--bench-base`` and at the working
-tree, and benchstat compares them (each side's median, a Mann-Whitney U test
-for a timed unit, none for one declared exact). Gates sharing a marker share
-one measurement. Without ``--bench-base`` every gate is skipped.
+runs them on the working tree and hands the test one row per benchmark and
+unit of benchstat's comparison with the baseline, which the test asserts its
+limits on. The baseline is the newest nightly run on main, whose outputs CI
+downloads into ``--bench-baseline``; every run leaves its own in
+``--bench-out`` under the same names, which is how a nightly run becomes the
+next baseline. Without a baseline for a gate there is nothing to compare
+against yet: the benchmarks still run and are reported, and the gate passes.
+Gates sharing a marker share one measurement.
 
 A pull request labelled perf-regression-accepted with a ``Perf:`` line in its
 description marks every gate xfail with that line as the reason: its
 regressions still show, as accepted. The session ends by writing report.md,
-the verdict and benchstat's tables, which CI posts on the pull request.
+the verdict and benchstat's tables, which CI posts.
 """
 
 import csv
@@ -42,7 +44,6 @@ import io
 import json
 import os
 import re
-import shutil
 import subprocess
 import warnings
 from dataclasses import dataclass
@@ -52,14 +53,13 @@ import pytest
 
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parents[1]
-_BENCHDIFF = ["go", "run", "github.com/willabides/benchdiff/cmd/benchdiff@v0.9.1"]
 _BENCHSTAT = [
     "go",
     "run",
     "golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68",
 ]
 _ACCEPT_LABEL = "perf-regression-accepted"
-_COMPARISONS = pytest.StashKey[dict]()
+_RUNS = pytest.StashKey[dict]()
 _OUTCOMES = pytest.StashKey[list]()
 
 
@@ -132,16 +132,74 @@ def _rows(text):
     return rows
 
 
+def _quantity(value, unit):
+    """A value in the unit benchstat measured it in, scaled the way benchstat's tables print it."""
+    scales = {
+        "sec": [(1e-9, "ns"), (1e-6, "µs"), (1e-3, "ms"), (1, "s")],
+        "B": [(1, "B"), (2**10, "KiB"), (2**20, "MiB"), (2**30, "GiB")],
+    }
+    base = next(
+        (b for b in scales if unit == f"{b}/op" or unit.endswith(f"-{b}")), None
+    )
+    if base is None or value == 0:
+        return f"{value:.4g}"
+    factor, suffix = next(
+        ((f, s) for f, s in reversed(scales[base]) if abs(value) >= f), scales[base][0]
+    )
+    return f"{value / factor:.4g} {suffix}"
+
+
+def _single(text):
+    rows, unit = [], ""
+    for record in csv.reader(io.StringIO(text)):
+        if len(record) != 3:
+            continue
+        name, value, ci = record
+        if not name:
+            unit = value if ci == "CI" else unit
+        elif name != "geomean" and value:
+            rows.append((re.sub(r"-\d+$", "", name), unit, float(value)))
+    return rows
+
+
+def _table(base, head):
+    """benchstat's comparison of base with head as a markdown table, or head's own numbers when there is no base."""
+    if base is None:
+        lines = ["| benchmark | unit | this run |", "|---|---|---:|"]
+        csv_text = _run([*_BENCHSTAT, "-format", "csv", str(head)])
+        return lines + [
+            f"| {name} | {unit} | {_quantity(value, unit)} |"
+            for name, unit, value in _single(csv_text)
+        ]
+    lines = [
+        "| benchmark | unit | baseline | this run | vs base | |",
+        "|---|---|---:|---:|---:|---|",
+    ]
+    for row in _rows(
+        _run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"])
+    ):
+        test = "exact" if row.p is None else f"p={row.p:.3f}"
+        delta = f"**{row.delta}**" if row.significant else row.delta
+        lines.append(
+            f"| {row.benchmark} | {row.unit} | {_quantity(row.base, row.unit)} | {_quantity(row.head, row.unit)} | {delta} | {test} |"
+        )
+    return lines
+
+
+def _measured(path):
+    return path.is_file() and "\nBenchmark" in path.read_text()
+
+
 def pytest_addoption(parser):
     group = parser.getgroup("benchmark gates")
     group.addoption(
-        "--bench-base",
-        help="the git ref the gates compare the working tree against; without one they are skipped",
+        "--bench-baseline",
+        help="a nightly run's outputs to compare against; a gate without one there only measures",
     )
     group.addoption(
         "--bench-out",
         default=str(_ROOT / "bin" / "perf"),
-        help="where both sides' output and report.md go",
+        help="where this run's outputs and report.md go",
     )
 
 
@@ -149,13 +207,13 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers",
         "bench(package, pattern, count=10, benchtime=None, data=None): a gate on the Go benchmarks "
-        "matching pattern in package, run count times a side; data maps environment variables to "
-        "files under tests/perf the benchmarks read",
+        "matching pattern in package, run count times; data maps environment variables to files "
+        "under tests/perf the benchmarks read",
     )
     config.addinivalue_line(
         "markers", "nightly: a gate too slow to run on every pull request"
     )
-    config.stash[_COMPARISONS] = {}
+    config.stash[_RUNS] = {}
     config.stash[_OUTCOMES] = []
 
 
@@ -199,37 +257,28 @@ def pytest_runtest_makereport(item, call):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    base = session.config.getoption("bench_base")
-    if not base:
+    runs = session.config.stash[_RUNS]
+    if not runs:
         return
     out = Path(session.config.getoption("bench_out")).resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    outcomes = session.config.stash[_OUTCOMES]
-    regressed = exitstatus != 0
-    lines = [
-        f"### {'🔴 Benchmarks regressed' if regressed else '🟢 No regression'} against `{base}`",
-        "",
-    ]
+    baseline = session.config.getoption("bench_baseline")
+    against = "the nightly baseline" if baseline else "no baseline yet"
+    verdict = "🔴 Benchmarks regressed" if exitstatus != 0 else "🟢 No regression"
+    lines = [f"### {verdict} against {against}", ""]
     for kind in ("Failed", "Accepted"):
         listed = [
-            f"- `{nodeid}`: {message}" for k, nodeid, message in outcomes if k == kind
+            f"- `{nodeid}`: {message}"
+            for k, nodeid, message in session.config.stash[_OUTCOMES]
+            if k == kind
         ]
         if listed:
             lines += [f"**{kind}**", "", *listed, ""]
-    for name, (base_out, head_out) in session.config.stash[_COMPARISONS].items():
-        table = subprocess.run(
-            [*_BENCHSTAT, f"base={base_out}", f"head={head_out}"],
-            cwd=_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    for name, (base, head) in runs.items():
+        summary = name if base else f"{name} (no baseline yet)"
         lines += [
-            f"<details><summary>{name}</summary>",
+            f"<details><summary>{summary}</summary>",
             "",
-            "```",
-            table.stdout.rstrip(),
-            "```",
+            *_table(base, head),
             "",
             "</details>",
             "",
@@ -239,63 +288,45 @@ def pytest_sessionfinish(session, exitstatus):
 
 @pytest.fixture
 def comparison(request, pytestconfig):
-    """The marked benchmarks compared, base against head, one row per benchmark and unit.
+    """The marked benchmarks run on the working tree and compared with the baseline, one row per benchmark and unit.
 
-    A base that predates the benchmarks has nothing to compare against, and
-    the gate is skipped rather than passed.
+    With no baseline for them yet the rows are empty: there is nothing to
+    regress from, so every limit holds, and the report shows what was
+    measured.
     """
-    base = pytestconfig.getoption("bench_base")
-    if not base:
-        pytest.skip("no --bench-base to compare against")
     marker = request.node.get_closest_marker("bench")
     package, pattern = marker.args
     name = f"{package} {pattern}"
-    comparisons = pytestconfig.stash[_COMPARISONS]
-    if name not in comparisons:
+    runs = pytestconfig.stash[_RUNS]
+    if name not in runs:
+        slug = re.sub(r"\W+", "-", name).strip("-") + ".txt"
         out = Path(pytestconfig.getoption("bench_out")).resolve()
-        slug = re.sub(r"\W+", "-", name).strip("-")
-        cache = out / "benchdiff" / slug
-        shutil.rmtree(cache, ignore_errors=True)
-        count = marker.kwargs.get("count", 10)
+        out.mkdir(parents=True, exist_ok=True)
         cmd = [
-            *_BENCHDIFF,
-            f"--base-ref={base}",
-            f"--packages={package}",
-            f"--bench={pattern}",
-            f"--count={count}",
+            *["go", "test", package, "-run", "^$", "-bench", pattern],
+            "-count",
+            str(marker.kwargs.get("count", 10)),
         ]
-        cmd += ["--cpu=4", "--benchmem", f"--cache-dir={cache}", "--force-base"]
+        cmd += ["-cpu", "4", "-benchmem", "-timeout", "2h"]
         if marker.kwargs.get("benchtime"):
-            cmd.append(f"--benchtime={marker.kwargs['benchtime']}")
-        if count > 1:
-            cmd.append("--warmup-count=1")
+            cmd += ["-benchtime", marker.kwargs["benchtime"]]
         data = {
             var: str(_HERE / path)
             for var, path in (marker.kwargs.get("data") or {}).items()
         }
-        _run(cmd, env={**os.environ, **data})
-        head_out, base_out = out / f"head-{slug}.txt", out / f"base-{slug}.txt"
-        shutil.copy(cache / "benchdiff-worktree.out", head_out)
-        shutil.copy(
-            next(
-                f
-                for f in cache.glob("benchdiff-*.out")
-                if f != cache / "benchdiff-worktree.out"
-            ),
-            base_out,
-        )
-        comparisons[name] = (base_out, head_out)
-    base_out, head_out = comparisons[name]
-    if "\nBenchmark" not in base_out.read_text():
-        pytest.skip(f"{base} has no results for {name} to compare against")
-    return _rows(
-        _run([*_BENCHSTAT, "-format", "csv", f"base={base_out}", f"head={head_out}"])
-    )
+        (out / slug).write_text(_run(cmd, env={**os.environ, **data}))
+        baseline = pytestconfig.getoption("bench_baseline")
+        base = Path(baseline).resolve() / slug if baseline else None
+        runs[name] = (base if base and _measured(base) else None, out / slug)
+    base, head = runs[name]
+    if base is None:
+        return []
+    return _rows(_run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"]))
 
 
 @pytest.fixture
 def warn_slower():
-    """Reports a significant slowdown below the limit that fails a gate, for a reviewer to judge."""
+    """Reports a significant slowdown for a reviewer to judge, without failing the gate."""
 
     def warn(row):
         warnings.warn(str(row), UserWarning, stacklevel=2)

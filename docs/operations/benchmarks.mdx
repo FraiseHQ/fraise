@@ -1,22 +1,21 @@
 ---
 title: "Benchmarks"
-description: "How every change is measured for retrieval quality and latency, when a regression blocks it, and how to run the same comparison locally"
+description: "How every change is measured for retrieval quality, allocations and latency, when a regression blocks it, and how to run the same gates locally"
 ---
 
-Every change to the server is measured against what it changes, on two axes: **retrieval quality**, how well recalls find the facts a question needs, and **latency**, how long the work takes. A change that makes either worse fails a check before it merges, and a release is measured against the release before it.
+Every change to the server is measured against `main` as it stood the night before, on **retrieval quality**, how well recalls find the facts a question needs, on **allocations**, and on **latency**, how long the work takes. A change that retrieves worse or allocates more fails a check before it merges; a slower one is reported for its reviewer.
 
 ## What runs when
 
-| When | Compared | Gates | Outcome |
+| When | Measured | Compared with | Outcome |
 |---|---|---|---|
-| A pull request that touches Go | the head against its base, on one runner | microbenchmarks, retrieval quality on the LoCoMo sample, text only | a required check; Discord on a regression |
-| The release pull request | the release against the previous release tag | microbenchmarks, retrieval quality seeded with embeddings | a required check; Discord always |
-| Every night | `main` against the last release tag | retrieval quality seeded with embeddings, HTTP latency at ten and a hundred thousand facts | report only; a Discord digest, flagged when a gate fails |
-| A push to `main` | the commit against the one recorded before it | microbenchmarks, retrieval quality on the sample | appended to the `benchmark-history` artifact; a commit comment when a value moves past its threshold |
+| Every night | `main`: every benchmark, retrieval text only and seeded with embeddings, HTTP latency at ten and a hundred thousand facts | the night before | saved as the next baseline and appended to the history; a Discord digest, flagged when a gate fails |
+| A pull request that touches Go | the head: microbenchmarks, retrieval text only | the newest nightly baseline | a required check and a comment on the pull request; Discord on a regression |
+| The release pull request | the head: microbenchmarks, retrieval text only and seeded with embeddings | the newest nightly baseline | a required check and a comment on the pull request; Discord always |
 
-Base and head are always measured in the same job, on the same machine: [benchdiff](https://github.com/WillAbides/benchdiff) checks the base out beside the head and runs the same benchmarks in both, after a warm-up run. A hosted runner's speed varies more from one machine to the next than the regressions worth catching, so a timing is only ever compared with one taken beside it. The history spans many machines and shows trends; it never decides a check.
+The nightly run is the reference. Its outputs are saved as the `benchmark-baseline` artifact, and every pull request until the next night is measured and compared with them; a pull request measures only its own head. When no baseline exists yet for a benchmark, the benchmark still runs and is reported, and its gate passes, since there is nothing to regress from.
 
-The history is one JSON file in the `benchmark-history` artifact. Each push to `main` downloads the newest one, appends its results and uploads it again, so the latest run's artifact always holds every entry, latency and retrieval quality each under its own name. It is the data file [github-action-benchmark](https://github.com/benchmark-action/github-action-benchmark) keeps, so its tooling reads it as is.
+The nightly run also appends one sample per benchmark to the history, one JSON file in the `benchmark-history` artifact that each night downloads, extends and uploads again, latency and retrieval quality each under its own name. It is the data file [github-action-benchmark](https://github.com/benchmark-action/github-action-benchmark) keeps, so its tooling reads it as is, and it comments on the commit when a value moves past its threshold.
 
 ## The benchmarks
 
@@ -32,7 +31,7 @@ They are Go benchmarks, beside the code they measure, and run as any other with 
 | `p@1` | whether the first result's session holds the question's evidence |
 | `recall@10` | the share of the evidence's sessions the ten results reach |
 
-Each is averaged over all questions and reported per category: single-hop, multi-hop, temporal, open-domain and adversarial. These numbers are exact: the same server asked the same questions over the same facts ranks them the same way, so one run of each side is a measurement and any difference is a change in retrieval.
+Each is averaged over all questions and reported per category: single-hop, multi-hop, temporal, open-domain and adversarial. The `text` set stores and asks with text only; the `vectors` set, measured when embeddings are at hand, seeds and stores with them as well, so a run is always compared with a run of the same kind. These numbers are exact: the same server asked the same questions over the same facts ranks them the same way on any machine, so one run is a measurement and any difference is a change in retrieval.
 
 The sample is LoCoMo's conversation `conv-26`, in `tests/perf/data`: 199 questions across all five categories. LoCoMo is licensed CC BY-NC 4.0, not MIT like the rest of the repository; `tests/perf/data/NOTICE.md` gives the attribution.
 
@@ -51,20 +50,20 @@ def test_allocations_do_not_grow(comparison):
     assert not grown
 ```
 
-Each row is one benchmark and unit of [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat)'s comparison: each side's median, and for a timed unit a Mann-Whitney U test, so a difference counts only at p < 0.05. A unit the benchmark declares exact counts any difference. benchstat names units in base units, so time per operation is `sec/op`.
+Each row is one benchmark and unit of [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat)'s comparison of the baseline with this run: each side's median, and for a timed unit a Mann-Whitney U test, so a difference counts only at p < 0.05. A unit the benchmark declares exact counts any difference. benchstat names units in base units, so time per operation is `sec/op`.
 
 | Gate | Fails when |
 |---|---|
 | retrieval quality | any metric, overall or in any category, drops by more than 0.001 |
 | allocations | allocations per operation grow by 5% or more |
-| time | time per operation grows by 25% or more, at p < 0.05 over ten runs a side; 10% warns |
-| HTTP latency (nightly) | p99 grows by 25% or more, at p < 0.05 over five runs a side |
+| time | never: a significant slowdown of 10% or more is reported |
+| HTTP latency (nightly) | never: a significant rise of 10% or more in a percentile is reported |
 
-Retrieval and allocations are counted, not timed, so they need no statistics and their limits sit at the smallest change worth a look. Time is tested against the spread of its runs on each side, and only a large, significant slowdown fails: a smaller one is a warning a reviewer sees.
+Retrieval and allocations are counted, not timed, so they are the same on any machine and their limits sit at the smallest change worth a look. Time is not: the baseline was timed on another runner, and two hosted runners differ by more than the slowdowns worth catching, so a slowdown is a warning in the report for a reviewer to judge, never a failure.
 
 ## Reading the report
 
-Each comparison posts one comment on its pull request, updated on every push. It opens with the verdict, lists the gates that failed and the regressions accepted, then has a table per comparison with the base, the head and the change; `~` means the difference is within noise. The raw `go test` output of both sides is attached to the run as the `benchmarks` artifact.
+Every gate run posts one comment on its pull request, updated on every push, whatever the verdict. It opens with the verdict, lists the gates that failed and the regressions accepted, then has a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone. The raw `go test` output is attached to the run as the `benchmarks` artifact.
 
 ## Accepting a regression
 
@@ -74,18 +73,18 @@ Some changes are worth what they cost: a ranking change that trades a category's
 Perf: single-hop p@1 drops 0.004 for +0.03 f1@10 on multi-hop; see the report.
 ```
 
-Both are required. With them, every gate is expected to fail: its regressions still show in the report, as accepted, with the reason. The label alone changes nothing, so every accepted regression has its reason in the history.
+Both are required. With them, every gate is expected to fail: its regressions still show in the report, as accepted, with the reason. The label alone changes nothing, so every accepted regression has its reason in the history. The night after it merges, the new numbers become the baseline.
 
 ## Running it locally
 
-The gates run the same way locally as in CI:
+The gates run the same way locally as in CI. Download a nightly run's `benchmark-baseline` artifact to compare with it; without one, the gates measure and report:
 
 ```bash
-make bench BASE=origin/main       # every pull request gate, head against BASE
-make bench-nightly BASE=v0.3.0    # the nightly gates, HTTP latency included
+make bench BENCH_BASELINE=path/to/benchmark-baseline   # the pull request gates
+make bench-nightly                                      # every gate, HTTP latency included
 ```
 
-Results go to `bin/perf/`: each side's raw output and `report.md`, the report CI posts. To run a benchmark on its own:
+Results go to `bin/perf/`: this run's output, under the names a baseline uses, and `report.md`, the report CI posts. To run a benchmark on its own:
 
 ```bash
 FRAISE_LOCOMO=$PWD/tests/perf/data/locomo-conv-26.json \
@@ -94,4 +93,4 @@ FRAISE_LOCOMO=$PWD/tests/perf/data/locomo-conv-26.json \
 
 ## Embeddings
 
-The release gate and the nightly run seed retrieval with vectors from a cache, keyed by the sample and the embedding model. The **Embed LoCoMo** workflow fills it with `tools/embed_locomo.py`, and `make perf-vectors` does the same locally, into `bin/perf/locomo-vectors.json`; run the workflow from `main` whenever either changes. Both sides of a comparison read the same file, so they are compared on identical vectors.
+The nightly run and the release gate seed retrieval with vectors from a cache, keyed by the sample and the embedding model. The **Embed LoCoMo** workflow fills it with `tools/embed_locomo.py`, and `make perf-vectors` does the same locally, into `bin/perf/locomo-vectors.json`; run the workflow from `main` whenever either changes.

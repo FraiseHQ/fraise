@@ -26,21 +26,16 @@ import pytest
 
 
 @pytest.mark.bench("./internal/graph", "BenchmarkSearch")
-def test_time_does_not_regress(comparison, warn_slower):
-    """No benchmark slows by 25% or more, at p < 0.05 over ten runs a side; 10% warns.
+def test_slowdowns_are_reported(comparison, warn_slower):
+    """A significant slowdown of 10% or more is reported, without failing.
 
-    A hosted runner's noise is a few percent run to run, so only a large,
-    significant slowdown fails; a smaller significant one is reported for a
-    reviewer to judge.
+    The baseline was timed on another runner, and two hosted runners differ by
+    more than the slowdowns worth catching, so time is shown for a reviewer to
+    judge rather than gated; allocations, which are counted, are.
     """
-    slower = [
-        row
-        for row in comparison
-        if row.unit == "sec/op" and row.significant and row.change >= 0.10
-    ]
-    for row in slower:
-        warn_slower(row)
-    assert not [row for row in slower if row.change >= 0.25]
+    for row in comparison:
+        if row.unit == "sec/op" and row.significant and row.change >= 0.10:
+            warn_slower(row)
 
 
 @pytest.mark.bench("./internal/graph", "BenchmarkSearch")

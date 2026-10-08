@@ -275,7 +275,7 @@ where tests live relative to the source, the module/barrel-file rule — and
   image brought up as a daemon via `docker-compose.yaml`.
 - `make test-integration-py` — the `integration`-marked half of the SDK suite (`sdk/python/src/tests -m integration`), driven by a locally-run pytest against the same daemon.
 - `make test-integration` — the server + MCP bridge suite (`tests/integration/`): builds the binary and drives it as daemon *and* as `fraise mcp` over stdio. Needs Go, not docker.
-- `make bench BASE=<ref>` — the benchmark gates (`tests/perf`): the working tree's Go benchmarks against BASE, through benchdiff and benchstat.
+- `make bench BENCH_BASELINE=<dir>` — the benchmark gates (`tests/perf`): the working tree's Go benchmarks against a nightly run's outputs, through benchstat; without a baseline they measure and pass.
 - `make lint`, `make fmt`, `make build` — quality and build entry points.
 
 When a change alters a contract (an interface method, hash material, a wire

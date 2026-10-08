@@ -6,7 +6,7 @@ Three suites live here:
 | --- | --- | --- | --- |
 | End to end | `tests/e2e/` | the server itself, over raw HTTP | `make test-e2e` |
 | Server + MCP bridge | `tests/integration/` | `pkg/mcp` over stdio, against the daemon behind it | `make test-integration` |
-| Benchmark gates | `tests/perf/` | the Go benchmarks of the working tree against a base: retrieval quality, latency and allocations, one file per Go package | `make bench BASE=<ref>` |
+| Benchmark gates | `tests/perf/` | the Go benchmarks of the working tree against the nightly baseline: retrieval quality, allocations and latency, one file per Go package | `make bench` |
 
 [Benchmarks](../docs/operations/benchmarks.mdx) covers what the benchmarks measure and when they run.
 

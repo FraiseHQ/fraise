@@ -37,8 +37,8 @@ def test_retrieval_does_not_drop(comparison, unit):
     """No retrieval metric drops by more than 0.001, over all questions or in any category.
 
     The metrics are exact, the same server ranking the same facts the same
-    way, so one run a side decides it and 0.001 is not a noise margin: it is
-    the smallest drop worth a look.
+    way whatever machine runs it, so one run decides it and 0.001 is not a
+    noise margin: it is the smallest drop worth a look.
     """
     dropped = [
         row for row in comparison if row.unit == unit and row.base - row.head > 0.001
@@ -48,16 +48,17 @@ def test_retrieval_does_not_drop(comparison, unit):
 
 @pytest.mark.nightly
 @pytest.mark.bench("./pkg/server", "BenchmarkHTTP", count=5, benchtime="1x")
-def test_http_p99_is_not_slower(comparison):
-    """The p99 through the HTTP API does not grow by 25% or more, at p < 0.05 over five runs a side.
+def test_http_slowdowns_are_reported(comparison, warn_slower):
+    """A significant rise of 10% or more in a latency percentile is reported, without failing.
 
-    Five is the fewest runs a side at which the U test can reach p < 0.05;
-    each is a server filled and held under load for twenty seconds, which is
-    why this gate runs nightly rather than on every pull request.
+    The baseline was measured on another runner, so latency is shown for a
+    reviewer to judge rather than gated. Each run fills a server and holds it
+    under load for twenty seconds, which is why this runs nightly only.
     """
-    slower = [
-        row
-        for row in comparison
-        if row.unit == "p99-sec" and row.significant and row.change >= 0.25
-    ]
-    assert not slower
+    for row in comparison:
+        if (
+            row.unit in ("p50-sec", "p95-sec", "p99-sec")
+            and row.significant
+            and row.change >= 0.10
+        ):
+            warn_slower(row)

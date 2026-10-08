@@ -160,34 +160,35 @@ test-watch: ## Run Go tests in watch mode (requires reflex)
 ##@ Benchmarks
 
 # The benchmarks are Go benchmarks beside the code they measure; the gates on
-# them are pytest tests in tests/perf, which compare them at BASE and at the
-# working tree through benchdiff and benchstat and assert their limits.
-BASE           ?= origin/main
+# them are pytest tests in tests/perf, which run them on the working tree and
+# compare them with a nightly run's outputs in BENCH_BASELINE through
+# benchstat. Each run leaves its own outputs in PERF_OUT under the same names,
+# so a nightly run's PERF_OUT is the next baseline.
+BENCH_BASELINE ?=
 PERF_OUT       ?= $(BIN_DIR)/perf
-LOCOMO         := tests/perf/data/locomo-conv-26.json
 GATES          := $(UV_CMD) run --package tests pytest --import-mode=importlib
+GATE_ARGS       = --bench-out=$(PERF_OUT) $(if $(BENCH_BASELINE),--bench-baseline=$(BENCH_BASELINE))
 
-bench: ## Gate the working tree's benchmarks against BASE (tests/perf)
-	$(GATES) tests/perf -m "bench and not nightly" --bench-base=$(BASE) --bench-out=$(PERF_OUT)
+bench: ## Run the pull request gates, against the nightly run in BENCH_BASELINE if one is given
+	$(GATES) tests/perf -m "bench and not nightly" $(GATE_ARGS)
 
-bench-nightly: ## Run the nightly gates, HTTP latency included, against BASE
-	$(GATES) tests/perf/server_test.py -m bench --bench-base=$(BASE) --bench-out=$(PERF_OUT)
+bench-nightly: ## Run every gate, HTTP latency included, against BENCH_BASELINE if one is given
+	$(GATES) tests/perf -m bench $(GATE_ARGS)
 
-# The history charts retrieval quality as bigger-is-better, which needs it as
-# {name, unit, value} JSON: github-action-benchmark's own go parser takes
-# every unit as smaller-is-better. Every value whose unit is a metric of the
-# benchmark (an @ in its name) becomes one point.
-bench-record: ## Run both suites once on the working tree, in the shapes the history reads
-	@mkdir -p $(PERF_OUT)
-	$(GO_TEST) -run '^$$' -bench . -benchmem -cpu 4 ./internal/... > $(PERF_OUT)/record-latency.txt
-	FRAISE_LOCOMO=$(abspath $(LOCOMO)) $(GO_TEST) -run '^$$' -bench BenchmarkRetrievalQuality -benchtime 1x -cpu 4 ./pkg/server \
-	  | awk '/^Benchmark/ { name = $$1; sub(/-[0-9]+$$/, "", name); \
-	      for (i = 3; i < NF; i += 2) if ($$(i + 1) ~ /@/) \
-	        printf "%s{\"name\":\"%s - %s\",\"unit\":\"%s\",\"value\":%s}", (n++ ? "," : "["), name, $$(i + 1), $$(i + 1), $$i } \
-	    END { print (n ? "]" : "[]") }' > $(PERF_OUT)/record-retrieval.json
+# The history takes one sample per benchmark, a trend rather than a
+# comparison, and retrieval quality as {name, unit, value} JSON so it is
+# charted as bigger-is-better: github-action-benchmark's own go parser takes
+# every unit as smaller-is-better. A retrieval value is one whose unit is a
+# metric of the benchmark, with an @ in its name.
+bench-history: ## Shape the run in PERF_OUT for the history github-action-benchmark keeps
+	awk '!/^Benchmark/ || !seen[$$1]++' $(PERF_OUT)/internal-*.txt $(PERF_OUT)/pkg-server-BenchmarkHTTP.txt > $(PERF_OUT)/history-latency.txt
+	awk '/^Benchmark/ { name = $$1; sub(/-[0-9]+$$/, "", name); \
+	    for (i = 3; i < NF; i += 2) if ($$(i + 1) ~ /@/) \
+	      printf "%s{\"name\":\"%s - %s\",\"unit\":\"%s\",\"value\":%s}", (n++ ? "," : "["), name, $$(i + 1), $$(i + 1), $$i } \
+	  END { print (n ? "]" : "[]") }' $(PERF_OUT)/pkg-server-BenchmarkRetrievalQuality.txt > $(PERF_OUT)/history-retrieval.json
 
-perf-vectors: ## Embed the LoCoMo sample once, for the gates that seed with vectors
-	$(UV_CMD) run --package tests --extra embeddings python tools/embed_locomo.py $(LOCOMO) $(PERF_OUT)/locomo-vectors.json
+perf-vectors: ## Embed the LoCoMo sample once, for the runs that seed with vectors
+	$(UV_CMD) run --package tests --extra embeddings python tools/embed_locomo.py tests/perf/data/locomo-conv-26.json $(PERF_OUT)/locomo-vectors.json
 
 ##@ Development
 

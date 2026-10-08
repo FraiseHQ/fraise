@@ -269,10 +269,13 @@ func score(q question, hits []string) scores {
 //
 // The data is not part of this package: tests/perf/data holds the sample the
 // benchmark gates run on, and the harness passes its path. Without one the
-// benchmark is skipped. FRAISE_LOCOMO_VECTORS names an embeddings file to
-// seed and store with; without one, retrieval is text only. Run it with
-// -benchtime 1x: each sub-benchmark asks its questions once per iteration,
-// and one is the measurement.
+// benchmark is skipped. The text set stores and asks with text only; the
+// vectors set, run when FRAISE_LOCOMO_VECTORS names an embeddings file, seeds
+// and stores with those vectors as well. Each gets its own server, and a run
+// with embeddings measures both, so text is always compared with text and
+// vectors with vectors whichever runs measured them. Run it with -benchtime
+// 1x: each sub-benchmark asks its questions once per iteration, and one is
+// the measurement.
 //
 // The metrics are exact: the same server given the same facts and questions
 // ranks them the same way, so a single run is a measurement and any change is
@@ -285,28 +288,39 @@ func BenchmarkRetrievalQuality(b *testing.B) {
 		b.Skip("FRAISE_LOCOMO is unset: point it at a LoCoMo file, such as tests/perf/data/locomo-conv-26.json")
 	}
 	convs := loadLoCoMo(b, path)
-	vectors := loadVectors(b)
 	for _, unit := range []string{"f1@10", "p@1", "recall@10"} {
 		fmt.Printf("Unit %s better=higher assume=exact\n", unit)
 	}
 
-	url := startServer(b)
-	var qs []question
-	for _, conv := range convs {
-		qs = append(qs, questions(b, conv, ingest(b, url, conv, vectors), vectors)...)
+	sets := map[string]map[string][]float64{"text": nil}
+	if vectors := loadVectors(b); vectors != nil {
+		sets["vectors"] = vectors
 	}
-
-	b.Run("all", func(b *testing.B) { measure(b, url, qs) })
-	for c, name := range locomoCategories {
-		var in []question
-		for _, q := range qs {
-			if q.category == c {
-				in = append(in, q)
+	for _, set := range []string{"text", "vectors"} {
+		vectors, ok := sets[set]
+		if !ok {
+			continue
+		}
+		b.Run(set, func(b *testing.B) {
+			url := startServer(b)
+			var qs []question
+			for _, conv := range convs {
+				qs = append(qs, questions(b, conv, ingest(b, url, conv, vectors), vectors)...)
 			}
-		}
-		if len(in) > 0 {
-			b.Run(name, func(b *testing.B) { measure(b, url, in) })
-		}
+
+			b.Run("all", func(b *testing.B) { measure(b, url, qs) })
+			for c, name := range locomoCategories {
+				var in []question
+				for _, q := range qs {
+					if q.category == c {
+						in = append(in, q)
+					}
+				}
+				if len(in) > 0 {
+					b.Run(name, func(b *testing.B) { measure(b, url, in) })
+				}
+			}
+		})
 	}
 }
 

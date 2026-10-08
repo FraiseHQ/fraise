@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -136,7 +137,13 @@ func query(b *testing.B, url, fql string, vec []float64) []string {
 	if err != nil {
 		b.Fatalf("POST %q: %v", fql, err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// Read to the end before closing, or the connection is not reused: a new
+	// one per request runs out of local ports long before a hundred thousand
+	// facts are in.
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 
 	switch resp.StatusCode {
 	case http.StatusNoContent:
