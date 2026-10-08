@@ -63,7 +63,7 @@ Retrieval and allocations are counted, not timed, so they are the same on any ma
 
 ## Reading the report
 
-Every gate run posts its report on its pull request, whatever the verdict, replacing the previous run's, so the latest report is always the last comment. It opens with the verdict, lists the gates that failed and the regressions accepted, then has a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone. The raw `go test` output is attached to the run as the `benchmarks` artifact.
+Every gate run posts one comment on its pull request, updated on every push, whatever the verdict. It opens with the verdict, lists the gates that failed and the regressions accepted, then has a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone. The raw `go test` output is attached to the run as the `benchmarks` artifact.
 
 ## Accepting a regression
 
