@@ -147,6 +147,35 @@ func TestRPTreeNearestExactWhenSingleLeaf(t *testing.T) {
 	}
 }
 
+// TestRPTreeNearestPoolsEachKeyAtItsNearestCopy pins Nearest when a key is
+// stored twice, as RPTreeIndex leaves an old copy behind on update. Key 1 sits
+// at the query and again far away: pooling must keep the near copy, not let the
+// far one displace it and then be evicted as the farthest; and the collision on
+// a full pool must not cost a slot, so all k come back.
+func TestRPTreeNearestPoolsEachKeyAtItsNearestCopy(t *testing.T) {
+	rt := trees.NewRPTree[int, string, float64](2, 2, 0, 100, 1)
+	for _, p := range []*point{
+		{key: 9, value: "v", coord: []float64{9, 0}},
+		{key: 1, value: "stale", coord: []float64{2, 0}},
+		{key: 1, value: "live", coord: []float64{0, 0}},
+		{key: 2, value: "v", coord: []float64{1, 0}},
+		{key: 3, value: "v", coord: []float64{1.5, 0}},
+	} {
+		if err := rt.Insert(p); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", p.key, err)
+		}
+	}
+
+	got := rt.Nearest(&point{coord: []float64{0, 0}}, 2)
+	if len(got) != 2 {
+		t.Fatalf("Nearest returned %d nodes, want 2", len(got))
+	}
+	if got[0].Key() != 1 || got[0].Value() != "live" || got[1].Key() != 2 {
+		t.Errorf("Nearest() = [%d %s, %d %s], want [1 live, 2 v]",
+			got[0].Key(), got[0].Value(), got[1].Key(), got[1].Value())
+	}
+}
+
 // TestRPTreeNearestReturnsSubsetOfStoredNodes checks the structural contract
 // of the (approximate) Nearest search on a tree that does split: it must
 // return no more than k nodes, all of them genuinely inserted, with no
