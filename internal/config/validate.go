@@ -24,6 +24,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -118,7 +119,7 @@ var (
 // ErrInvalidValue listing the accepted values.
 //
 // Matching case-insensitively accepts whatever casing an operator types, such
-// as `-log-level error`; rewriting to the canonical spelling lets every
+// as '-log-level error'; rewriting to the canonical spelling lets every
 // consumer downstream compare with ==. name is the setting's dotted config
 // path, so the message points at the line to edit rather than at a bare value.
 func Canonical(v *string, name string, accepted []string) error {
@@ -142,7 +143,11 @@ func Canonical(v *string, name string, accepted []string) error {
 // and silently empty every recall. db.max-depth caps a recall's depth clause,
 // and search has no lane past 2: a higher ceiling would let depth:3 through
 // to be silently answered as depth 2, and a negative one would reject every
-// recall that names a depth.
+// recall that names a depth. scheduler.workers has a floor: Adjust only
+// replaces a zero, so a negative count would reach the scheduler, which would
+// start no worker and leave every accepted query waiting forever.
+// db.num-graphs is bounded by the selector: a selector is a uint8, so a graph
+// past 256 is allocated but no query can ever address it.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string
@@ -170,9 +175,18 @@ func (c *ConfigSet) validate() error {
 	if r := c.DB.MinScoreRatio; !(r >= 0 && r <= 1) {
 		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
 	}
+
+	if w := c.Scheduler.Workers; w < 1 {
+		return fmt.Errorf("%w: scheduler.workers = %d (accepted: 1 or more)", ErrInvalidValue, w)
+	}
+
 	// An operator may lower the ceiling, never raise it past the last lane.
 	if d := c.DB.MaxDepth; d < 0 || d > 2 {
 		return fmt.Errorf("%w: db.max-depth = %d (accepted: 0 to 2)", ErrInvalidValue, d)
+	}
+
+	if n := c.DB.NumGraphs; n < 1 || n > math.MaxUint8+1 {
+		return fmt.Errorf("%w: db.num-graphs = %d (accepted: 1 to %d)", ErrInvalidValue, n, math.MaxUint8+1)
 	}
 	return nil
 }

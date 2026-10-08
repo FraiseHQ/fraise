@@ -226,6 +226,38 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexSearchFindsKeyBehindStaleCopy pins that a key whose live
+// vector is nearest is returned whatever stale copies the forest still holds.
+// "a" moves onto the query point but its old copy at (2, 0) stays in the single
+// tree until Flush; with no over-fetch the tree's pool is exactly k, so if the
+// stale copy wins the pool, "a" never reaches the re-rank and Search answers
+// [b e].
+func TestRPTreeIndexSearchFindsKeyBehindStaleCopy(t *testing.T) {
+	idx := index.NewRPTreeIndex[string, float64](0, 2, 1, 0, 2, 100, 1, comparator.OrderedComparator[string])
+	for _, w := range []struct {
+		key  string
+		data []float64
+	}{
+		{"x", []float64{9, 0}},
+		{"a", []float64{2, 0}},
+		{"a", []float64{0, 0}},
+		{"b", []float64{1, 0}},
+		{"e", []float64{1.5, 0}},
+	} {
+		if err := idx.Insert(w.key, containers.NewVector[string](w.data)); err != nil {
+			t.Fatalf("Insert(%s) = %v, want nil", w.key, err)
+		}
+	}
+
+	keys, scores, err := idx.Search(containers.NewVector[string]([]float64{0, 0}), 2)
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(keys, []string{"a", "b"}) || !reflect.DeepEqual(scores, []float64{0, 1}) {
+		t.Errorf("Search() = (%v, %v), want ([a b], [0 1])", keys, scores)
+	}
+}
+
 // TestRPTreeIndexFlushIsReproducible pins that a fixed seed reproduces the
 // index across a rebuild: two indexes fed the same writes, both flushed, must
 // answer every query identically. A tree's splits depend on arrival order, so

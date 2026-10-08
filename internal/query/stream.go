@@ -272,18 +272,28 @@ func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P]
 	return out
 }
 
+// GraphID returns the graph the stream's query targets.
 func (s *Stream[K, P]) GraphID() uint8 {
 	return s.Query.GetGraphID()
 }
 
+// Done returns a channel closed once the scheduler has finished with the
+// stream, whether it committed or failed. Result and Err are read only after
+// it closes.
 func (s *Stream[K, P]) Done() <-chan struct{} {
 	return s.done
 }
 
+// Finish closes Done. It is safe to call more than once, so the scheduler can
+// defer it unconditionally and still wake the waiter of a stream that failed
+// before Commit.
 func (s *Stream[K, P]) Finish() {
 	s.once.Do(func() { close(s.done) })
 }
 
+// Acquire takes the lock on g that the query needs: the exclusive lock for a
+// write, the shared lock for a read, so reads run concurrently and a write
+// runs alone. Commit runs between Acquire and [Stream.Release].
 func (s *Stream[K, P]) Acquire(g graph.Graph[K, P]) {
 	if s.Query.IsWrite() {
 		g.Lock()
@@ -292,6 +302,7 @@ func (s *Stream[K, P]) Acquire(g graph.Graph[K, P]) {
 	}
 }
 
+// Release drops the lock Acquire took on g.
 func (s *Stream[K, P]) Release(g graph.Graph[K, P]) {
 	if s.Query.IsWrite() {
 		g.Unlock()

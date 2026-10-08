@@ -31,6 +31,10 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
+// Remember is a write query: it stores Value as a fact in the selected graph,
+// files it under its Entities and Topics, and indexes Vector for it when one is
+// bound. Facts are keyed by value, so remembering a stored fact again refreshes
+// its timestamp rather than duplicating it (see [Stream.Commit]).
 type Remember[K comparable, P float32 | float64] struct {
 	Value    string
 	Entities []string
@@ -40,22 +44,28 @@ type Remember[K comparable, P float32 | float64] struct {
 	context QueryContext
 }
 
+// Plan implements [Query]. A remember needs nothing prepared ahead of the
+// write, which runs in [Stream.Commit] under the graph's exclusive lock, so the
+// plan is a fresh stream.
 func (r *Remember[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
 	return NewStream(r), nil
 }
 
+// GetGraphID implements [Query]: it returns the graph the remember writes to.
 func (r Remember[K, P]) GetGraphID() uint8 {
 	return r.context.GraphID
 }
 
+// SetGraphID implements [Query]: it selects the graph the remember writes to.
+// Hash folds the graph in, so it is set before the query is hashed.
 func (r *Remember[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
 
 // Hash keys the query for the plan cache. Like Recall's, it must fold in the
 // graph selector and every field that changes what gets written, the bound
-// vector included: hashing only Value would make `remember@3 'x' topic:a` and
-// `remember@5 'x' topic:b` collide, so the second would reuse the first's plan
+// vector included: hashing only Value would make "remember@3 'x' topic:a" and
+// "remember@5 'x' topic:b" collide, so the second would reuse the first's plan
 // and write to the wrong graph under the wrong topic.
 func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
@@ -72,6 +82,8 @@ func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	return h.Hash(b.String())
 }
 
+// IsWrite implements [Query]. A remember writes, so it runs under the graph's
+// exclusive lock and no read observes it half applied.
 func (r Remember[K, P]) IsWrite() bool {
 	return true
 }

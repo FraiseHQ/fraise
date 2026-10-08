@@ -49,6 +49,8 @@ type ConfigSet struct {
 	configFile string
 }
 
+// SchedulerConfig is the scheduler section: how many workers run queries and
+// how much queued work the scheduler accepts before it turns clients away.
 type SchedulerConfig struct {
 	// Number of worker goroutines executing reads and writes.
 	Workers int `toml:"workers"`
@@ -61,6 +63,8 @@ type SchedulerConfig struct {
 	EnqueueTimeout time.Duration `toml:"enqueue-timeout"`
 }
 
+// ServerConfig is the server section: the port the HTTP API listens on, and
+// the timeouts and body cap that bound what a single client can hold.
 type ServerConfig struct {
 	Port int `toml:"port"`
 
@@ -83,6 +87,8 @@ type ServerConfig struct {
 	MaxBodyBytes int64 `toml:"max-body-bytes"`
 }
 
+// LogConfig is the log section: the minimum severity, the line format and
+// whether lines carry a timestamp.
 type LogConfig struct {
 	// LOG LEVEL: DEBUG, INFO, WARN, ERROR (default = INFO)
 	Level string `toml:"level"`
@@ -96,6 +102,8 @@ type LogConfig struct {
 	DisableTimestamp bool `toml:"disable-timestamp"`
 }
 
+// EngineConfig is the engine section: the recency decay applied to fact
+// scores and the size of the query plan cache.
 type EngineConfig struct {
 	// Half life for time decay (used to score facts)
 	Halflife time.Duration `toml:"half-life"`
@@ -104,6 +112,9 @@ type EngineConfig struct {
 	CacheCapacity int `toml:"cache-capacity"`
 }
 
+// DBConfig is the db section: the store's precision and graph count, the
+// defaults and ceilings a recall is held to, and the retrieval algorithms,
+// each chosen by name in a table nested under db.
 type DBConfig struct {
 	// Floating-point precision for embeddings and scores: "float32" or
 	// "float64". Selects which generic instantiation of the server is built at
@@ -163,6 +174,8 @@ type DBConfig struct {
 	VectorSearch VectorSearch `toml:"vector-search"`
 }
 
+// HashingFunction is the db.hashing-function table: the hash that derives node
+// keys from values, one of [HashingFunctions], and the seed it runs with.
 type HashingFunction struct {
 	// (xxhash, t1ha)
 	Name string `toml:"name"`
@@ -171,23 +184,34 @@ type HashingFunction struct {
 	Seed uint64 `toml:"seed"`
 }
 
+// SearchAlgorithm is the db.search-algorithm table, naming the graph traversal
+// recall runs, one of [SearchAlgorithms].
 type SearchAlgorithm struct {
 	// name (none, bfs, excess): the traversal moving seed evidence through
 	// the graph; "none" turns the graph channel off (text/vector only)
 	Name string `toml:"name"`
 }
 
+// ScoringAlgorithm is the db.scoring-algorithm table, naming the fold that
+// turns a candidate's pooled contributions into its relevance, one of
+// [ScoringAlgorithms].
 type ScoringAlgorithm struct {
 	// name (excess, rrf): the fold deriving each candidate's relevance from
 	// its pooled contributions
 	Name string `toml:"name"`
 }
 
+// RelevanceModel is the db.relevance-model table, naming the text index's
+// relevance model, one of [RelevanceModels].
 type RelevanceModel struct {
 	// name (bm25, matchcount): the text index's relevance model — how a
 	// document's match against the query becomes a number
 	Name string `toml:"name"`
 }
+
+// RankingAlgorithm is the db.ranking-algorithm table: the global boost
+// applied to relevance, one of [RankingAlgorithms], and the PageRank
+// parameters, which apply only when that boost is pagerank.
 type RankingAlgorithm struct {
 	// none or pagerank
 	Name string `toml:"name"`
@@ -203,6 +227,10 @@ type RankingAlgorithm struct {
 	PageRankTol float64 `toml:"pagerank-tol"`
 }
 
+// VectorSearch is the db.vector-search table, shaping the vector index's forest
+// of random-projection trees: how many trees, how many random directions each
+// splits on, the seed that makes them reproducible, and when leaves split,
+// searches stop probing and garbage is compacted.
 type VectorSearch struct {
 	ProjectionDimension int `toml:"projection-dimension"`
 
@@ -221,10 +249,12 @@ type VectorSearch struct {
 	Overfetch int `toml:"overfetch"`
 }
 
+// MCPConfig is the mcp section, read by the 'fraise mcp' bridge rather than by
+// the daemon it forwards to.
 type MCPConfig struct {
-	// Address of the daemon the `fraise mcp` bridge forwards to. Unset, it is
+	// Address of the daemon the 'fraise mcp' bridge forwards to. Unset, it is
 	// the daemon this same config describes (127.0.0.1 on server.port), so
-	// `fraise mcp -config x` finds whatever `fraise -config x` serves. The
+	// 'fraise mcp -config x' finds whatever 'fraise -config x' serves. The
 	// graph is not configured here: every query names its own with @N.
 	Address string `toml:"address"`
 }

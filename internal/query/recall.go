@@ -32,6 +32,11 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
+// Recall is a read query: it searches the selected graph for the facts that
+// best match its Keywords and Vector, narrowed or seeded by its Entities and
+// Topics, and ranked and bounded by Parameters. [Parse] builds one from a
+// recall command, and the engine's optimisation pipeline may rewrite its lists
+// before it is cached.
 type Recall[K comparable, P float32 | float64] struct {
 	Keywords []string
 	Vector   containers.Vector[K, P]
@@ -43,14 +48,20 @@ type Recall[K comparable, P float32 | float64] struct {
 	context QueryContext
 }
 
+// Plan implements [Query]. A recall needs nothing prepared ahead of the
+// search, which runs in [Stream.Commit] under the graph's shared lock, so the
+// plan is a fresh stream.
 func (r *Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
 	return NewStream(r), nil
 }
 
+// GetGraphID implements [Query]: it returns the graph the recall reads.
 func (r Recall[K, P]) GetGraphID() uint8 {
 	return r.context.GraphID
 }
 
+// SetGraphID implements [Query]: it selects the graph the recall reads. Hash
+// folds the graph in, so it is set before the query is hashed.
 func (r *Recall[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
 }
@@ -87,6 +98,8 @@ func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	return h.Hash(b.String())
 }
 
+// IsWrite implements [Query]. A recall only reads, so it runs under the
+// graph's shared lock, concurrently with other reads.
 func (r Recall[K, P]) IsWrite() bool {
 	return false
 }

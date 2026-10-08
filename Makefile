@@ -110,6 +110,10 @@ coverage-py: ## Run Python SDK unit tests with coverage report (integration-mark
 		--cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term
 	@echo "$(GREEN)✓ Coverage report: coverage-py.xml$(RESET)"
 
+test-go-short: ## Run Go tests in short mode
+	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
+	$(GO_TEST) -short ./...
+
 test-go-bench: ## Run Go benchmarks
 	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
 	$(GO_TEST) -bench=. -benchmem ./...
@@ -253,7 +257,7 @@ clean-go: ## Clean Go build artifacts
 	@echo "$(CYAN)Cleaning Go artifacts...$(RESET)"
 	$(GO_CLEAN)
 	rm -rf $(BIN_DIR)/
-	rm -f coverage.out coverage.html
+	rm -f coverage.txt
 	@echo "$(GREEN)✓ Go artifacts cleaned$(RESET)"
 
 clean-py: ## Clean Python build artifacts

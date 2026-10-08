@@ -56,6 +56,8 @@ type Scheduler[K ~uint64, P float32 | float64] struct {
 	wg sync.WaitGroup
 }
 
+// NewScheduler returns a scheduler for config. [Scheduler.Start] allocates
+// its queue and workers; the caller attaches the database as DB before Start.
 func NewScheduler[K ~uint64, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
 	s := &Scheduler[K, P]{
 		Config: config,
