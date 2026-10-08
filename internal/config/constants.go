@@ -59,8 +59,9 @@ const (
 	DefaultMaxBodyBytes int64 = 1 << 20 // 1 MiB
 
 	// DefaultNumGraph is how many independent graphs the store allocates; valid
-	// selectors are 0..DefaultNumGraph-1. Graph selectors are uint8, so values
-	// above 256 leave the extra graphs unreachable.
+	// selectors are 0..DefaultNumGraph-1. Graph selectors are uint8, so
+	// validation rejects a count above 256: the extra graphs would be
+	// allocated and never reachable.
 	DefaultNumGraph int = 8
 
 	// MinWorkersCount is the floor of the default scheduler worker count,
