@@ -56,8 +56,12 @@ jobs:
         with:
           version-file: "pyproject.toml"
 
+      # No baseline is not an error: the gates then measure and pass. That
+      # includes the nightly workflow not existing on main yet, which the
+      # action reports as a failed lookup rather than a missing artifact.
       - name: Download the nightly baseline
         id: baseline
+        continue-on-error: true
         uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
         with:
           workflow: benchmarks-nightly.yaml

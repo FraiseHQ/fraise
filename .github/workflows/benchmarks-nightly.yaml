@@ -39,8 +39,11 @@ jobs:
         with:
           version-file: "pyproject.toml"
 
+      # No baseline is not an error: the gates then measure and pass, as on
+      # the first night.
       - name: Download the previous baseline
         id: baseline
+        continue-on-error: true
         uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
         with:
           workflow: benchmarks-nightly.yaml
@@ -81,6 +84,7 @@ jobs:
       # failure. Both suites append to the one file, each under its own name.
       - uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
         if: always()
+        continue-on-error: true # the first night starts the history
         with:
           workflow: benchmarks-nightly.yaml
           branch: main
