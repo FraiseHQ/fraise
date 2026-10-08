@@ -7,8 +7,10 @@ name: Benchmarks
 # catching; the history recorded on pushes to main is for trends only.
 #
 # The gates are the pytest tests in tests/perf, on benchdiff and benchstat.
-# Their report goes to benchmarks-report.yaml as an artifact, which posts it
-# with the secrets this workflow does not get on a pull request from a fork.
+# Their report is posted on the pull request by the gate job itself, and goes
+# to benchmarks-report.yaml as an artifact, which posts it to Discord and, for
+# a pull request from a fork, on the pull request, with the secrets and the
+# write token this workflow does not get there.
 
 on:
   push:
@@ -54,6 +56,9 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      pull-requests: write # the report, as a sticky comment
     env:
       RELEASE: ${{ startsWith(github.head_ref, 'release-please--') }}
     steps:
@@ -95,6 +100,16 @@ jobs:
             bin/perf/report.md
             bin/perf/base-*.txt
             bin/perf/head-*.txt
+
+      # The report goes on the pull request whatever the verdict, updated on
+      # every push. A pull request from a fork gets a read-only token here, so
+      # benchmarks-report.yaml posts its report instead.
+      - name: Comment on the pull request
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('bin/perf/report.md') != ''
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88
+        with:
+          header: benchmarks
+          path: bin/perf/report.md
 
   record:
     name: Record history

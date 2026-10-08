@@ -1,11 +1,11 @@
 name: Benchmarks report
 
-# Posts what the benchmark workflows measured: a sticky comment on the pull
-# request, and a Discord message for a pull request that regressed, for every
-# release gate and for every nightly run. It runs on workflow_run, in this
-# repository's context with its secrets, because the run it reports on may
-# come from a fork, where neither the webhook nor a token that can comment is
-# available. The report it posts was written by that run's code, so it is only
+# Posts what the benchmark workflows measured: a Discord message for a pull
+# request that regressed, for every release gate and for every nightly run,
+# and the sticky comment on a pull request from a fork (any other gets it from
+# the gate job itself). It runs on workflow_run, in this repository's context
+# with its secrets, because the run it reports on may come from a fork, where
+# neither the webhook nor a token that can comment is available. The report it posts was written by that run's code, so it is only
 # ever posted as text; which pull request it goes to, and what the Discord
 # message says, come from GitHub's record of the run, never from the artifact.
 
@@ -40,7 +40,7 @@ jobs:
         with:
           sha: ${{ github.event.workflow_run.head_sha }}
       - name: Comment on the pull request
-        if: steps.pr.outputs.number != ''
+        if: steps.pr.outputs.number != '' && github.event.workflow_run.head_repository.full_name != github.repository
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88
         with:
           header: benchmarks
