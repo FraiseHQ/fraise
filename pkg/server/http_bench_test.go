@@ -38,8 +38,10 @@ import (
 const (
 	// httpRate and httpDuration fix the load at a constant arrival rate, so a
 	// slow response delays no later request and the percentiles keep the
-	// queueing a real client would see.
-	httpRate     = 200
+	// queueing a real client would see. The rate loads a four-core runner at
+	// a hundred thousand facts without saturating it: past saturation the
+	// server sheds load with 429s, and what is measured is then the shedding.
+	httpRate     = 50
 	httpDuration = 20 * time.Second
 
 	// httpMix is how many requests the load cycles through, one write in
