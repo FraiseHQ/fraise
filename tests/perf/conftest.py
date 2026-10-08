@@ -298,19 +298,33 @@ def pytest_runtest_makereport(item, call):
         rep.when == "call" or (rep.when == "setup" and not rep.passed)
     ):
         if hasattr(rep, "wasxfail") and rep.skipped:
-            item.config.stash[_OUTCOMES].append(("Accepted", item.nodeid, rep.wasxfail))
+            item.config.stash[_OUTCOMES].append(("Accepted", item, rep.wasxfail))
         elif rep.skipped and isinstance(rep.longrepr, tuple):
             reason = rep.longrepr[2].removeprefix("Skipped: ")
-            item.config.stash[_OUTCOMES].append(("Not run", item.nodeid, reason))
+            item.config.stash[_OUTCOMES].append(("Not run", item, reason))
         elif rep.failed:
             item.config.stash[_OUTCOMES].append(
                 (
                     "Failed",
-                    item.nodeid,
+                    item,
                     call.excinfo.exconly()[:1000] if call.excinfo else "",
                 )
             )
     return rep
+
+
+def _set(name):
+    """A benchmark set as the report names it: its package and what of it runs."""
+    package, pattern = name.split(" ", 1)
+    what = "all benchmarks" if pattern == "Benchmark" else f"<code>{pattern}</code>"
+    return f"<b>{package.removeprefix('./')}</b> · {what}"
+
+
+def _gate(item):
+    """A gate as the report names it: its package, and its test read as a sentence."""
+    words = item.originalname.removeprefix("test_").replace("_", " ")
+    param = f" ({item.callspec.id})" if hasattr(item, "callspec") else ""
+    return f"**{item.get_closest_marker('bench').args[0].removeprefix('./')}** · {words}{param}"
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -323,22 +337,53 @@ def pytest_sessionfinish(session, exitstatus):
         return
     out = Path(session.config.getoption("bench_out")).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    baseline = session.config.getoption("bench_baseline")
-    against = "the nightly baseline" if baseline else "no baseline yet"
-    verdict = "🔴 Benchmarks regressed" if exitstatus != 0 else "🟢 No regression"
-    lines = [f"### {verdict} against {against}", ""]
-    for kind in ("Failed", "Accepted", "Not run"):
+
+    compared = [name for name, (base, _) in runs.items() if base]
+    if not runs:
+        lines = [
+            "### ⚪ Nothing to measure",
+            "",
+            "No package a gate benchmarks changed.",
+            "",
+        ]
+    else:
+        lines = ["### 🔴 Regression" if exitstatus != 0 else "### 🟢 No regression", ""]
+        if len(compared) == len(runs):
+            lines += ["Compared with the newest nightly run of `main`.", ""]
+        elif compared:
+            lines += [
+                "Compared with the newest nightly run of `main`; sets marked *new* have no baseline yet and show this run's numbers.",
+                "",
+            ]
+        else:
+            lines += [
+                "No nightly baseline yet, so these are this run's numbers. Comparisons start once a nightly run has measured `main`.",
+                "",
+            ]
+
+    for kind in ("Failed", "Accepted"):
         listed = [
-            f"- `{nodeid}`: {message}"
-            for k, nodeid, message in session.config.stash[_OUTCOMES]
-            if k == kind
+            f"- {_gate(item)}: {message}" for k, item, message in outcomes if k == kind
         ]
         if listed:
             lines += [f"**{kind}**", "", *listed, ""]
-    for name, (base, head) in runs.items():
-        summary = name if base else f"{name} (no baseline yet)"
+    skipped = sorted(
+        {
+            item.get_closest_marker("bench").args[0].removeprefix("./")
+            for k, item, _ in outcomes
+            if k == "Not run"
+        }
+    )
+    if skipped:
         lines += [
-            f"<details><summary>{summary}</summary>",
+            f"Not run, nothing they build on changed: {', '.join(f'`{p}`' for p in skipped)}.",
+            "",
+        ]
+
+    for name, (base, head) in runs.items():
+        new = " · <i>new</i>" if not base and compared else ""
+        lines += [
+            f"<details><summary>{_set(name)}{new}</summary>",
             "",
             *_table(base, head),
             "",
