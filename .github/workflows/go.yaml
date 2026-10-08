@@ -10,14 +10,14 @@ on:
       - "**.go"
       - "go.mod"
       - "go.sum"
-      - ".golangci.yml"
+      - ".golangci.yaml"
       - ".github/workflows/go.yaml"
   pull_request:
     paths:
       - "**.go"
       - "go.mod"
       - "go.sum"
-      - ".golangci.yml"
+      - ".golangci.yaml"
       - ".github/workflows/go.yaml"
 
 concurrency:
@@ -133,7 +133,7 @@ jobs:
 
       # No changelog is built here: release-please already created the GitHub
       # Release and wrote its notes, the entry it added to docs/changelog.md.
-      # GoReleaser only appends binaries and checksums to it (release.mode: append).
+      # GoReleaser only appends binaries and checksums to it (release.mode: keep-existing).
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94
         with:
           distribution: goreleaser

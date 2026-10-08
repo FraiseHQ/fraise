@@ -162,18 +162,12 @@ release:
     owner: FraiseHQ
     name: fraise
   # release-please creates the GitHub Release and owns its notes; GoReleaser
-  # only attaches binaries to it. Any other mode would overwrite those notes,
-  # and the header/footer/changelog blocks below are unused as a result.
-  mode: append
+  # only attaches binaries to it. keep-existing leaves those notes untouched
+  # however many times the publish job runs, where append and prepend add
+  # GoReleaser's own notes on every run and replace overwrites them.
+  mode: keep-existing
   draft: false
   prerelease: auto # vX.Y.Z-alpha.N / -beta.N / -rc.N auto-marked as pre-release
-  header: |
-    ## Fraise {{ .Tag }}
-
-    See [changelog.md](https://github.com/FraiseHQ/fraise/blob/main/docs/changelog.md)
-    for the curated summary.
-  footer: |
-    **Install**: download a binary below, or `go install github.com/FraiseHQ/fraise/cmd/server@{{ .Tag }}`
 
 # Announces the release on Discord, with the webhook GoReleaser reads from
 # DISCORD_WEBHOOK_ID and DISCORD_WEBHOOK_TOKEN.
