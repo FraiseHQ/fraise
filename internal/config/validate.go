@@ -139,13 +139,12 @@ func Canonical(v *string, name string, accepted []string) error {
 // outside. The same holds for a numeric setting with a bounded domain:
 // db.min-score-ratio is a fraction of the best hit's relevance, and a value
 // past 1 (an operator thinking in percent) would put the bar above every hit
-// and silently empty every recall. scheduler.workers is another: Adjust only
-// replaces a zero, so a negative count would reach the scheduler, which would
-// start no worker and leave every accepted query waiting forever.
-// db.max-depth caps a recall's depth clause,
+// and silently empty every recall. db.max-depth caps a recall's depth clause,
 // and search has no lane past 2: a higher ceiling would let depth:3 through
 // to be silently answered as depth 2, and a negative one would reject every
-// recall that names a depth.
+// recall that names a depth. scheduler.workers has a floor: Adjust only
+// replaces a zero, so a negative count would reach the scheduler, which would
+// start no worker and leave every accepted query waiting forever.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string
@@ -176,7 +175,7 @@ func (c *ConfigSet) validate() error {
 
 	if w := c.Scheduler.Workers; w < 1 {
 		return fmt.Errorf("%w: scheduler.workers = %d (accepted: 1 or more)", ErrInvalidValue, w)
-  }
+	}
 
 	// An operator may lower the ceiling, never raise it past the last lane.
 	if d := c.DB.MaxDepth; d < 0 || d > 2 {

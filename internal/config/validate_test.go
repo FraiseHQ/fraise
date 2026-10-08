@@ -199,6 +199,7 @@ func TestValidateBoundsWorkers(t *testing.T) {
 			}
 		}
 	}
+}
 
 // TestValidateBoundsMaxDepth pins the domain of db.max-depth: the lanes are
 // depth 0, 1 and 2, and search has nothing past 2. A ceiling of 3 or more

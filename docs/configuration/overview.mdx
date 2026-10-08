@@ -16,7 +16,7 @@ fraise -config /etc/fraise/fraise.config.toml -log-level error
 2. The config file is read (`fraise.config.toml` in the working directory unless `-config` says otherwise). A key that maps to no known setting is an error, not a typo the server ignores, and so is a file that is not valid TOML or a value of the wrong type.
 3. The command line is applied over the top.
 4. Anything still at its zero value falls back to the default.
-5. Settings with a fixed vocabulary, the range of `min-score-ratio`, the floor of `workers` and `max-depth` are validated.
+5. Settings with a fixed vocabulary, the ranges of `min-score-ratio` and `max-depth`, and the floor of `workers` are validated.
 
 ## A missing config file is not an error
 
