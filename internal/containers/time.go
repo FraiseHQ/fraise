@@ -47,7 +47,13 @@ type TimeValue[K comparable] interface {
 	Hash(h hash.Hasher[K, string]) string
 }
 
+// RelativeTime is a [TimeValue] a fixed span before now, as in since:7d. It
+// moves with the clock: the same query resolves to a later instant each time
+// it runs.
 type RelativeTime[K comparable] struct{ Dur time.Duration }
+
+// AbsoluteTime is a [TimeValue] at a fixed instant, as in since:2026-01-15. It
+// resolves to the same instant whenever the query runs.
 type AbsoluteTime[K comparable] struct{ T time.Time }
 
 func (r RelativeTime[K]) String() string {
@@ -58,23 +64,37 @@ func (a AbsoluteTime[K]) String() string {
 	return a.T.Format(time.RFC822)
 }
 
+// Resolve implements [TimeValue]: the instant Dur before now.
 func (r RelativeTime[K]) Resolve(now time.Time) time.Time { return now.Add(-r.Dur) }
-func (a AbsoluteTime[K]) Resolve(_ time.Time) time.Time   { return a.T }
 
+// Resolve implements [TimeValue]: T, whatever now is.
+func (a AbsoluteTime[K]) Resolve(_ time.Time) time.Time { return a.T }
+
+// Hash implements [TimeValue]. The material is "r" and the duration, a prefix
+// no other bound's material starts with.
 func (r RelativeTime[K]) Hash(h hash.Hasher[K, string]) string {
 	return fmt.Sprint(h.Hash("r" + r.Dur.String()))
 }
 
+// Hash implements [TimeValue]. The material is "a" and T in RFC3339Nano,
+// exact to the nanosecond, so instants a second apart never share a cached
+// plan the way their RFC822 String forms would.
 func (a AbsoluteTime[K]) Hash(h hash.Hasher[K, string]) string {
 	return fmt.Sprint(h.Hash("a" + a.T.Format(time.RFC3339Nano)))
 }
 
+// TimeFilter is a time bound held as one plain value instead of behind the
+// [TimeValue] interface: IsAbs selects whether the fixed instant Abs or the
+// span Dur before now applies, and the other field is ignored. Its method set
+// is TimeValue's.
 type TimeFilter[K comparable] struct {
 	Dur   time.Duration
 	Abs   time.Time
 	IsAbs bool
 }
 
+// Resolve implements [TimeValue]: Abs when IsAbs is set, otherwise the instant
+// Dur before now.
 func (tf TimeFilter[K]) Resolve(now time.Time) time.Time {
 	if tf.IsAbs {
 		return tf.Abs
@@ -82,6 +102,9 @@ func (tf TimeFilter[K]) Resolve(now time.Time) time.Time {
 	return now.Add(-tf.Dur)
 }
 
+// Hash implements [TimeValue]. The material is prefixed "fa" for an absolute
+// bound (RFC3339Nano) and "fr" for a relative one, so the two forms never
+// share it, and neither collides with a [RelativeTime] or [AbsoluteTime].
 func (tf TimeFilter[K]) Hash(h hash.Hasher[K, string]) string {
 	if tf.IsAbs {
 		return fmt.Sprint(h.Hash("fa" + tf.Abs.Format(time.RFC3339Nano)))

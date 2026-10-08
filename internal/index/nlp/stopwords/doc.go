@@ -20,41 +20,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package stopwords removes a language's function words from text before it
+// reaches the text index.
+//
+// [CleanContent] runs on both sides of the index, over a fact's content as it
+// is written and over a recall's keywords before they are searched, so a stop
+// word neither takes up a posting nor dilutes a query. Lists are keyed by base
+// language, so regional variants share one; [English] is the list shipped. A
+// language tag that does not state its language exactly, or names one without
+// a list, leaves the text untouched, since removing words on a guess would
+// drop meaning. A list holds function words only: every entry is a word no
+// fact can be found by.
+package stopwords

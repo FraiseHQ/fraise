@@ -20,41 +20,21 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package index defines the search-index contract and its two in-memory
+// implementations, a full-text index and an approximate nearest-neighbour
+// vector index.
+//
+// A [SearchIndex] maps keys to values and ranks keys against a query of the
+// same type as its values: a [TextIndex] searches strings, a [VectorIndex]
+// vectors. Search returns a total order, ties broken by the index's key
+// comparator, so truncating to k keeps the same keys for the same query every
+// time. [BTreeIndex] implements TextIndex with posting lists in a B-tree term
+// dictionary, leaving tokenization to an [nlp.Tokenizer] and scoring to a
+// [relevance.Relevance], so higher scores are better. [RPTreeIndex] implements
+// VectorIndex with a forest of random-projection trees and scores by distance,
+// so lower is nearer.
+//
+// Updates and deletes leave garbage in both structures; Flush compacts it, and
+// each index flushes itself once its garbage outgrows a bound tied to the live
+// set. Entries minus Count is the compaction debt outstanding.
+package index

@@ -30,6 +30,8 @@ import (
 	"golang.org/x/exp/slog"
 )
 
+// Logger writes structured log lines to stdout, filtered to the configured
+// level and in the configured format (text or JSON).
 type Logger struct {
 	config *config.ConfigSet
 	logger *slog.Logger
@@ -95,10 +97,14 @@ func NewLogger(cfg *config.ConfigSet) *Logger {
 	return l
 }
 
+// Default returns the logger the package-level functions write through, or nil
+// if none has been installed.
 func Default() *Logger {
 	return defaultLogger
 }
 
+// SetDefault installs l as the process-wide logger. It is not synchronised:
+// call it once at startup, before anything logs.
 func SetDefault(l *Logger) {
 	defaultLogger = l
 }
@@ -107,22 +113,32 @@ func (l *Logger) log(level slog.Level, msg string, attrs ...any) {
 	l.logger.Log(context.Background(), level, msg, attrs...)
 }
 
+// Debug logs msg at debug level; attrs are alternating keys and values, as in
+// slog.
 func (l *Logger) Debug(msg string, attrs ...any) {
 	l.log(slog.LevelDebug, msg, attrs...)
 }
 
+// Info logs msg at info level; attrs are alternating keys and values, as in
+// slog.
 func (l *Logger) Info(msg string, attrs ...any) {
 	l.log(slog.LevelInfo, msg, attrs...)
 }
 
+// Warn logs msg at warn level; attrs are alternating keys and values, as in
+// slog.
 func (l *Logger) Warn(msg string, attrs ...any) {
 	l.log(slog.LevelWarn, msg, attrs...)
 }
 
+// Error logs msg at error level; attrs are alternating keys and values, as in
+// slog.
 func (l *Logger) Error(msg string, attrs ...any) {
 	l.log(slog.LevelError, msg, attrs...)
 }
 
+// Debug logs through the default logger at debug level. It is a no-op until
+// [SetDefault] installs one, which keeps the mcp command's stdout clean.
 func Debug(msg string, attrs ...any) {
 	if defaultLogger == nil {
 		return
@@ -130,6 +146,8 @@ func Debug(msg string, attrs ...any) {
 	defaultLogger.Debug(msg, attrs...)
 }
 
+// Info logs through the default logger at info level. It is a no-op until
+// [SetDefault] installs one, which keeps the mcp command's stdout clean.
 func Info(msg string, attrs ...any) {
 	if defaultLogger == nil {
 		return
@@ -137,6 +155,8 @@ func Info(msg string, attrs ...any) {
 	defaultLogger.Info(msg, attrs...)
 }
 
+// Warn logs through the default logger at warn level. It is a no-op until
+// [SetDefault] installs one, which keeps the mcp command's stdout clean.
 func Warn(msg string, attrs ...any) {
 	if defaultLogger == nil {
 		return
@@ -144,6 +164,8 @@ func Warn(msg string, attrs ...any) {
 	defaultLogger.Warn(msg, attrs...)
 }
 
+// Error logs through the default logger at error level. It is a no-op until
+// [SetDefault] installs one, which keeps the mcp command's stdout clean.
 func Error(msg string, attrs ...any) {
 	if defaultLogger == nil {
 		return

@@ -20,41 +20,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package config resolves the server configuration from built-in defaults, a
+// TOML file and command-line flags, and rejects any value the server cannot
+// honour before it starts.
+//
+// [New] returns a [ConfigSet] holding the defaults with a flag bound to every
+// setting. [ConfigSet.Parse] decodes the file (fraise.config.toml unless
+// -config names another) over the defaults, applies the flags over the file,
+// gives every setting still at its zero value its default, and validates:
+// each fixed-vocabulary setting is matched case-insensitively and rewritten to
+// its canonical spelling, so consumers compare with ==, and bounded numbers
+// are range-checked. A missing file is [ErrMissingFile], the one survivable
+// failure, since the defaults and flags are a complete configuration. An
+// unknown key, a malformed file, a bad flag or an invalid value stops
+// startup: a server running on defaults the operator believes they overrode
+// is worse than one that does not start.
+package config

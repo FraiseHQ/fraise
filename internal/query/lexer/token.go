@@ -39,45 +39,51 @@ type Token struct {
 	Pos Position
 }
 
+// TokenType classifies a token. The predicates on it (IsKeyword, IsCommand,
+// IsBlank and the rest) group the types the parser treats alike.
 type TokenType int
 
+// The token types, grouped by the role they play in the grammar.
 const (
+	// ILLEGAL is a token the lexer could not complete: a phrase whose closing
+	// quote is missing, carrying the text read before the input ended. It is
+	// the zero value, so an unset type is never mistaken for a real token.
 	ILLEGAL TokenType = iota
 
-	// literal
+	// LITERAL is a bare word that is not reserved where it stands.
 	LITERAL
 	// PHRASE is an opaque single-quoted string, scanned verbatim: reserved
 	// words and symbols inside it carry no special meaning, and a doubled
 	// quote ('') is an escaped literal quote.
 	PHRASE
 
-	// prefixes
+	// DESCRIBE and EXPLAIN are the prefixes.
 	DESCRIBE
 	EXPLAIN
 
-	// commands
+	// RECALL, REMEMBER, FORGET and UPDATE are the commands.
 	RECALL
 	REMEMBER
 	FORGET
 	UPDATE
 
-	// operators
+	// PLUS, TILDE and MINUS are the operators.
 	PLUS
 	TILDE
 	MINUS
 
-	// punctuation
+	// LPAREN, RPAREN and COMMA are the punctuation.
 	LPAREN
 	RPAREN
 	COMMA
 
-	// separators: '@' before a graph selector, ':' between a clause keyword
-	// and its value, '$' before a parameter name
+	// AT, COLON and DOLLAR are the separators: '@' before a graph selector,
+	// ':' between a clause keyword and its value, '$' before a parameter name.
 	AT
 	COLON
 	DOLLAR
 
-	// blank characters
+	// WHITESPACE is a run of blank characters.
 	WHITESPACE
 	// NUL is a NUL character outside a phrase. It is its own token, rather
 	// than read as the end of input, so the rest of the query cannot be
@@ -89,11 +95,12 @@ const (
 	// a search term.
 	SPECIAL
 
-	// end of input, and the newline that ends an instruction
+	// EOL is the end of input, and NEWLINE the newline that ends an
+	// instruction.
 	EOL
 	NEWLINE
 
-	// fields
+	// TOPIC, ENTITY, SINCE, UNTIL, TOP and DEPTH are the fields.
 	TOPIC
 	ENTITY
 	SINCE
@@ -101,10 +108,12 @@ const (
 	TOP
 	DEPTH
 
-	// vector field, whose value is a parameter reference ($name)
+	// VEC is the vector field, whose value is a parameter reference ($name)
 	VEC
 )
 
+// TokenMap spells each token type for [TokenType.String]: a keyword as it is
+// written, a symbol as itself, and any other type by a lower-case name.
 var TokenMap = map[TokenType]string{
 	DESCRIBE:   "describe",
 	EXPLAIN:    "explain",
@@ -136,20 +145,23 @@ var TokenMap = map[TokenType]string{
 	WHITESPACE: "whitespace",
 }
 
+// KeywordsMap maps each reserved word, in its exact lower-case spelling, to
+// its token type. The lexer types a bare word by looking it up here, so a word
+// missing from it is a LITERAL wherever it stands.
 var KeywordsMap = map[string]TokenType{
-	"recall":     RECALL,
-	"remember":   REMEMBER,
-	"forget":     FORGET,
-	"update":     UPDATE,
-	"explain":    EXPLAIN,
-	"describe":   DESCRIBE,
-	"topic":      TOPIC,
-	"entity":     ENTITY,
-	"since":      SINCE,
-	"until":      UNTIL,
-	"top":        TOP,
-	"depth":      DEPTH,
-	"vec":        VEC,
+	"recall":   RECALL,
+	"remember": REMEMBER,
+	"forget":   FORGET,
+	"update":   UPDATE,
+	"explain":  EXPLAIN,
+	"describe": DESCRIBE,
+	"topic":    TOPIC,
+	"entity":   ENTITY,
+	"since":    SINCE,
+	"until":    UNTIL,
+	"top":      TOP,
+	"depth":    DEPTH,
+	"vec":      VEC,
 }
 
 // IsKeyword reports whether t is a reserved word: a type the lexer assigns by
@@ -197,9 +209,9 @@ func (t TokenType) String() string {
 
 // Describe names the token as an error message should: end of input and a
 // newline by name, anything else quoted. End of input has no literal, and
-// quoted it would read as `""`, a string the caller never wrote. Naming tokens
-// here keeps error messages agreeing on what to call one, as Pos keeps them
-// agreeing on where it is.
+// quoted it would read as an empty pair of double quotes, a string the caller
+// never wrote. Naming tokens here keeps error messages agreeing on what to
+// call one, as Pos keeps them agreeing on where it is.
 func (t Token) Describe() string {
 	switch t.Type {
 	case EOL:

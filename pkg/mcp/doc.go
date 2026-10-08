@@ -20,41 +20,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package mcp is the stdio Model Context Protocol bridge to a running fraise
+// daemon, served by 'fraise mcp'.
+//
+// [MCPServer] exposes two tools, recall and remember, and forwards each call
+// as an FQL query to the daemon's HTTP query API (POST /api/v1/q). It is a thin
+// adapter, not a second engine: the daemon parses, plans and runs every query,
+// and its error messages come back to the model as in-band tool errors it can
+// read and correct. Stdout belongs to the protocol, so nothing on this path
+// may print to it.
+package mcp

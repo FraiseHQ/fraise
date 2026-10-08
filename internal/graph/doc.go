@@ -20,41 +20,21 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package graph is the temporal memory graph: the store each FQL @N selector
+// addresses, and the search that runs over it.
+//
+// A [Graph] holds [Node] values under their own keys. Facts, topics and named
+// entities are the vertices; [Mentions] and [IsAbout] are the relationships
+// from a fact to the entities it names and the topics it is filed under, and
+// are stored as nodes too. Every node key is its Hash, built from a type tag
+// and its text, so identity is (type, value): two nodes of different types
+// reading the same text never overwrite each other. [InMemoryGraph] is the
+// implementation, backing the graph with a full-text index and a vector index.
+//
+// [Graph.Search] seeds candidates from the text and vector indexes. When the
+// query names a topic or entity, a [Traversal] ([ExcessTraversal] or [BFS])
+// expands each seed through its anchors; each candidate's contributions are
+// then folded by a [scoring.Scorer], and a [Ranking] such as [PageRank] may
+// boost the result. Graph methods take no lock: callers hold the graph's read
+// or write lock around the calls they compose.
+package graph

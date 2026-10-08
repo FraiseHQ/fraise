@@ -20,41 +20,20 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package hash is the one hashing contract in fraise: every plan-cache key and
+// every graph node key is produced through it.
+//
+// A [Hasher] maps a value to a comparable key under a fixed algorithm and seed;
+// [XxHash] (XXH64) and [T1haHash] (t1ha1) implement it, and [NewHasher] picks
+// one from the db.hashing-function configuration. A [Hashable] type keys itself
+// by building its own key material and hashing it once through the Hasher it
+// is handed, so a composite passes that hasher straight down to its parts
+// rather than inventing a second serialization beside it.
+//
+// The engine's plan cache depends on that material never colliding: it looks
+// an optimised query up by its Hash, so two queries that differ in anything
+// that changes the result must yield different material, or a lookup hands
+// back another query's plan. Graph nodes carry the same burden, since they are
+// stored under their Hash: a fact and a topic reading the same text stay
+// distinct only because each tags its material with its type.
+package hash

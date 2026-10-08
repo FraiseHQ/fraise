@@ -36,6 +36,10 @@ import (
 	"github.com/FraiseHQ/fraise/pkg/scheduler"
 )
 
+// Engine plans queries and hands the resulting streams to its scheduler. K is
+// the node key type and P the floating-point precision of embeddings and
+// scores. Cache maps a query's Hash, computed with Hasher, to the optimised
+// query planned for it; it is allocated by [Engine.Start].
 type Engine[K ~uint64, P float32 | float64] struct {
 	Config        *config.ConfigSet
 	Cache         cache.Cache[K, query.Query[K, P]]
@@ -44,6 +48,9 @@ type Engine[K ~uint64, P float32 | float64] struct {
 	Hasher        hash.Hasher[K, string]
 }
 
+// NewEngine builds an engine with its optimisation pipeline and an unstarted
+// scheduler. The engine does not own the database: the caller sets
+// Scheduler.DB before [Engine.Start], so streams have a store to run against.
 func NewEngine[K ~uint64, P float32 | float64](c *config.ConfigSet, hasher hash.Hasher[K, string]) *Engine[K, P] {
 	e := &Engine[K, P]{
 		Config:        c,
@@ -78,6 +85,8 @@ func (e *Engine[K, P]) Start() error {
 	return nil
 }
 
+// Stop stops the scheduler, which runs every stream it has already accepted
+// before returning, and then clears the plan cache.
 func (e *Engine[K, P]) Stop() {
 	// stop scheduler workers, then release cache memory
 	logger.Info("Stopping engine")
@@ -85,6 +94,12 @@ func (e *Engine[K, P]) Stop() {
 	e.Cache.Clear()
 }
 
+// Plan returns an executable stream for q. A cached query with the same Hash
+// stands in for q; on a miss q is optimised and the result cached, so each
+// distinct query goes through the optimisation pipeline once. The stream is
+// built fresh on every call because it carries per-execution state (its
+// results, error and completion signal). It returns [ErrQueryPlan] if the
+// query cannot be planned.
 func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
 	if cached, ok := e.Cache.Get(q.Hash(e.Hasher)); ok {

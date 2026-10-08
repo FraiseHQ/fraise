@@ -20,41 +20,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Package scheduler runs planned query streams against the database on a
+// bounded worker pool.
+//
+// [Scheduler.Submit] enqueues a stream and fails fast rather than blocking
+// without bound: [ErrQueueFull] when the queue stays saturated past the
+// enqueue timeout, [ErrShutdown] once the scheduler is stopping, so the
+// server can shed load. A worker runs each stream under its graph's lock,
+// shared for a read and exclusive for a write, so writes to one graph are
+// serialised while reads proceed together. [Scheduler.Stop] drains every
+// stream already accepted before returning, so a graceful shutdown never
+// drops an acknowledged write.
+package scheduler

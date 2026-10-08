@@ -24,14 +24,21 @@ package optimisation
 
 import "github.com/FraiseHQ/fraise/internal/query"
 
+// Optimisation is one stage of a [Pipeline]: Optimise takes a parsed query and
+// returns the query to run in its place, which may be the same value rewritten
+// in place. Its output is cached and shared by every request that hashes
+// alike, so a stage is deterministic and leaves no per-request state on it.
 type Optimisation[K comparable, P float32 | float64] interface {
 	Optimise(q query.Query[K, P]) query.Query[K, P]
 }
 
+// Pipeline runs its stages in order, each on the previous stage's output.
 type Pipeline[K comparable, P float32 | float64] struct {
 	stages []Optimisation[K, P]
 }
 
+// NewPipeline returns the pipeline the engine runs on a plan-cache miss,
+// currently a single [Dedupe] stage.
 func NewPipeline[K comparable, P float32 | float64]() *Pipeline[K, P] {
 	return &Pipeline[K, P]{
 		stages: []Optimisation[K, P]{
@@ -40,6 +47,8 @@ func NewPipeline[K comparable, P float32 | float64]() *Pipeline[K, P] {
 	}
 }
 
+// Optimise runs q through every stage in order and returns the last stage's
+// output.
 func (d *Pipeline[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
 	for _, o := range d.stages {
 		q = o.Optimise(q)

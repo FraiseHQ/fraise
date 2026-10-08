@@ -20,41 +20,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Dedupe drops repeated keywords, entities and topics from a [query.Recall],
-// keeping the first occurrence of each in its original order, so the search
-// sees each term and anchor once.
-type Dedupe[K comparable, P float32 | float64] struct{}
-
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place
-// and returns the same query; any other query is returned untouched.
-func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
-	}
-
-	return q
-}
-
-func dedupeStrings(in []string) []string {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
+// Command fraise runs the Fraise temporal memory graph database, the MCP
+// bridge to it, or reports its version.
+//
+// Usage:
+//
+//	fraise [serve|mcp|version] [flags]
+//
+// The first argument selects the subcommand; when it is absent or is a flag,
+// the subcommand is serve, so 'fraise -config fraise.config.toml' starts the
+// server. The subcommands are:
+//
+//   - serve starts the HTTP daemon at the configured precision and runs until
+//     SIGINT or SIGTERM, then drains in-flight requests before exiting.
+//   - mcp serves the Model Context Protocol over stdio, forwarding the recall
+//     and remember tools to the daemon at -addr (by default the one the same
+//     config describes, on 127.0.0.1 at -port).
+//   - version prints the release version.
+//
+// Every setting has a flag; -config names the TOML file read first (default
+// fraise.config.toml), and flags override it. A missing config file falls
+// back to the built-in defaults; an invalid value, an unknown flag or an
+// unusable file stops startup. The process exits non-zero on any failure, so a
+// supervisor's restart policy can see it.
+package main

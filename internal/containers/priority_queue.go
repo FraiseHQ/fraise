@@ -37,6 +37,10 @@ type PriorityQueue[K comparable, T any] struct {
 	mu       sync.RWMutex
 }
 
+// NewPriorityQueue returns a queue pre-sized for capacity items and seeded with
+// items, which should carry distinct keys as for [NewHeap]. capacity is a
+// size hint rather than a bound, but zero is refused with
+// [ErrPriorityQueueCapacity].
 func NewPriorityQueue[K comparable, T any](capacity uint, items ...Item[K, T]) (*PriorityQueue[K, T], error) {
 	if capacity == 0 {
 		return nil, ErrPriorityQueueCapacity
@@ -57,6 +61,7 @@ func (p *PriorityQueue[K, T]) Cap() int {
 	return p.h.Cap()
 }
 
+// Len reports the number of queued items.
 func (p *PriorityQueue[K, T]) Len() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -64,6 +69,7 @@ func (p *PriorityQueue[K, T]) Len() int {
 	return p.h.Len()
 }
 
+// Empty reports whether the queue holds no items.
 func (p *PriorityQueue[K, T]) Empty() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -71,6 +77,10 @@ func (p *PriorityQueue[K, T]) Empty() bool {
 	return p.h.Len() == 0
 }
 
+// Peek returns a copy of the highest-Priority item without removing it, or nil
+// if the queue is empty. It copies rather than aliasing [Heap.Peek] because
+// another goroutine may Enqueue or Dequeue as soon as the read lock is
+// released.
 func (p *PriorityQueue[K, T]) Peek() *Item[K, T] {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -85,6 +95,9 @@ func (p *PriorityQueue[K, T]) Peek() *Item[K, T] {
 	return &item
 }
 
+// Less reports whether the item in heap slot i has a lower Priority than the
+// item in slot j. Slots index the heap's internal layout, not dequeue order,
+// and both must be below Len.
 func (p *PriorityQueue[K, T]) Less(i, j int) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

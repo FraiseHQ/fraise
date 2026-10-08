@@ -41,8 +41,8 @@ const defaultTimeout = 30 * time.Second
 
 // MCPServer is the stdio MCP bridge to a running fraise daemon: a thin adapter
 // over the HTTP query API, not a second engine. It forwards to mcp.address,
-// which defaults to the daemon its config describes, so `fraise mcp -config x`
-// finds whatever `fraise -config x` serves; -addr points it anywhere else.
+// which defaults to the daemon its config describes, so 'fraise mcp -config x'
+// finds whatever 'fraise -config x' serves; -addr points it anywhere else.
 type MCPServer struct {
 	Config *config.ConfigSet
 	Server *mcp.Server

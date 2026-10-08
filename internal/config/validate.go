@@ -118,7 +118,7 @@ var (
 // ErrInvalidValue listing the accepted values.
 //
 // Matching case-insensitively accepts whatever casing an operator types, such
-// as `-log-level error`; rewriting to the canonical spelling lets every
+// as '-log-level error'; rewriting to the canonical spelling lets every
 // consumer downstream compare with ==. name is the setting's dotted config
 // path, so the message points at the line to edit rather than at a bare value.
 func Canonical(v *string, name string, accepted []string) error {
