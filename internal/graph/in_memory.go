@@ -95,11 +95,10 @@ func (g *InMemoryGraph[K, P]) SetScorer(s scoring.Scorer[K, P]) {
 	g.scorer = s
 }
 
-// NewGraph returns an empty graph whose indexes, relevance model and hasher
-// come from cfg. Only the scorer is installed, the [scoring.ExcessScorer]:
-// traversal and ranking stay off until [InMemoryGraph.SetTraversal] and
-// [InMemoryGraph.SetRanking] install them, which db.Start does from the same
-// configuration.
+// NewGraph returns an empty graph with its indexes, relevance model and
+// hasher configured from cfg and the [scoring.ExcessScorer] installed.
+// [InMemoryGraph.SetTraversal] and [InMemoryGraph.SetRanking] install the
+// traversal and ranking.
 func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGraph[K, P] {
 	// The tokenizer and relevance model must be installed before the first
 	// insert. Stemming lets a keyword find other inflections of the same

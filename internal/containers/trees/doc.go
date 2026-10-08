@@ -29,6 +29,5 @@
 // approximator, so the vector index queries a forest of them built from
 // independent seeds. Nodes enter a spatial tree as [TreeNode] values exposing
 // a [Point]; [VectorNode] and [VectorPoint] fit a [containers.Vector] to those
-// contracts. Neither tree synchronises itself: the indexes built on them rely
-// on the graph's lock.
+// contracts.
 package trees

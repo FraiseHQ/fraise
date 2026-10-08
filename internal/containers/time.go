@@ -83,10 +83,8 @@ func (a AbsoluteTime[K]) Hash(h hash.Hasher[K, string]) string {
 	return fmt.Sprint(h.Hash("a" + a.T.Format(time.RFC3339Nano)))
 }
 
-// TimeFilter is a time bound held as one plain value instead of behind the
-// [TimeValue] interface: IsAbs selects whether the fixed instant Abs or the
-// span Dur before now applies, and the other field is ignored. Its method set
-// is TimeValue's.
+// TimeFilter is a [TimeValue] held as one plain value: the fixed instant Abs
+// when IsAbs is set, otherwise the span Dur before now.
 type TimeFilter[K comparable] struct {
 	Dur   time.Duration
 	Abs   time.Time

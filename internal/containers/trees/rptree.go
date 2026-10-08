@@ -431,8 +431,7 @@ func NewVectorPoint[K comparable, P float32 | float64](key K, vector containers.
 // Dim implements [Point]: the vector's dimensionality.
 func (v VectorPoint[K, P]) Dim() int { return v.vector.Dim() }
 
-// GetValue implements [Point]: the vector's coordinate along dimension d,
-// which must be below Dim.
+// GetValue implements [Point]: the vector's coordinate along dimension d.
 func (v VectorPoint[K, P]) GetValue(d int) P { return v.vector.Data[d] }
 
 // Key implements [Point]: the key the point was built with, which ties a
@@ -474,6 +473,5 @@ func (n *VectorNode[K, P]) Key() K { return n.key }
 func (n *VectorNode[K, P]) Value() containers.Vector[K, P] { return n.value }
 
 // Point implements [TreeNode] with a [VectorPoint] over the node's key and
-// vector, so a VectorNode always has coordinates and is never refused with
-// [ErrMissingPoint].
+// vector.
 func (n *VectorNode[K, P]) Point() Point[K, P] { return NewVectorPoint(n.key, n.value) }

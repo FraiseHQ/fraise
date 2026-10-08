@@ -48,9 +48,8 @@ type Engine[K ~uint64, P float32 | float64] struct {
 	Hasher        hash.Hasher[K, string]
 }
 
-// NewEngine builds an engine with its optimisation pipeline and an unstarted
-// scheduler. The engine does not own the database: the caller sets
-// Scheduler.DB before [Engine.Start], so streams have a store to run against.
+// NewEngine builds an engine with its optimisation pipeline and scheduler.
+// The caller attaches the database as Scheduler.DB before [Engine.Start].
 func NewEngine[K ~uint64, P float32 | float64](c *config.ConfigSet, hasher hash.Hasher[K, string]) *Engine[K, P] {
 	e := &Engine[K, P]{
 		Config:        c,

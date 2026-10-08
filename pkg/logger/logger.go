@@ -103,8 +103,7 @@ func Default() *Logger {
 	return defaultLogger
 }
 
-// SetDefault installs l as the process-wide logger. It is not synchronised:
-// call it once at startup, before anything logs.
+// SetDefault installs l as the process-wide logger.
 func SetDefault(l *Logger) {
 	defaultLogger = l
 }
@@ -137,8 +136,7 @@ func (l *Logger) Error(msg string, attrs ...any) {
 	l.log(slog.LevelError, msg, attrs...)
 }
 
-// Debug logs through the default logger at debug level. It is a no-op until
-// [SetDefault] installs one, which keeps the mcp command's stdout clean.
+// Debug logs through the default logger at debug level.
 func Debug(msg string, attrs ...any) {
 	if defaultLogger == nil {
 		return
@@ -146,8 +144,7 @@ func Debug(msg string, attrs ...any) {
 	defaultLogger.Debug(msg, attrs...)
 }
 
-// Info logs through the default logger at info level. It is a no-op until
-// [SetDefault] installs one, which keeps the mcp command's stdout clean.
+// Info logs through the default logger at info level.
 func Info(msg string, attrs ...any) {
 	if defaultLogger == nil {
 		return
@@ -155,8 +152,7 @@ func Info(msg string, attrs ...any) {
 	defaultLogger.Info(msg, attrs...)
 }
 
-// Warn logs through the default logger at warn level. It is a no-op until
-// [SetDefault] installs one, which keeps the mcp command's stdout clean.
+// Warn logs through the default logger at warn level.
 func Warn(msg string, attrs ...any) {
 	if defaultLogger == nil {
 		return
@@ -164,8 +160,7 @@ func Warn(msg string, attrs ...any) {
 	defaultLogger.Warn(msg, attrs...)
 }
 
-// Error logs through the default logger at error level. It is a no-op until
-// [SetDefault] installs one, which keeps the mcp command's stdout clean.
+// Error logs through the default logger at error level.
 func Error(msg string, attrs ...any) {
 	if defaultLogger == nil {
 		return

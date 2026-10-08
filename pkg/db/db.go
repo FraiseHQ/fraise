@@ -105,8 +105,7 @@ func (d *DB[K, P]) Start() error {
 }
 
 // Stop drops every graph and their contents, leaving empty slots for the next
-// [DB.Start]. The scheduler must be stopped first: a stream still running
-// would select an emptied slot.
+// [DB.Start].
 func (d *DB[K, P]) Stop() error {
 	// Drop the graphs, leaving empty slots for the next Start.
 	d.Graphs = make([]graph.Graph[K, P], numGraphs(d.Config))

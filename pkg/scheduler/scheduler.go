@@ -56,9 +56,8 @@ type Scheduler[K ~uint64, P float32 | float64] struct {
 	wg sync.WaitGroup
 }
 
-// NewScheduler returns a scheduler with no queue and no workers;
-// [Scheduler.Start] allocates both. The scheduler does not own the database:
-// the caller sets DB before Start, so streams have a store to run against.
+// NewScheduler returns a scheduler for config. [Scheduler.Start] allocates
+// its queue and workers; the caller attaches the database as DB before Start.
 func NewScheduler[K ~uint64, P float32 | float64](config *config.ConfigSet) *Scheduler[K, P] {
 	s := &Scheduler[K, P]{
 		Config: config,

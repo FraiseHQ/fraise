@@ -37,8 +37,8 @@ type Pipeline[K comparable, P float32 | float64] struct {
 	stages []Optimisation[K, P]
 }
 
-// NewPipeline returns the pipeline the engine runs on a plan-cache miss,
-// currently a single [Dedupe] stage.
+// NewPipeline returns the pipeline the engine runs on a plan-cache miss: a
+// [Dedupe] stage.
 func NewPipeline[K comparable, P float32 | float64]() *Pipeline[K, P] {
 	return &Pipeline[K, P]{
 		stages: []Optimisation[K, P]{

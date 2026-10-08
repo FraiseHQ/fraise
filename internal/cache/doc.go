@@ -27,7 +27,4 @@
 // entry to evict when an insertion would exceed the capacity. [LRUCache]
 // implements it by evicting the least recently used entry, so the plans of
 // queries that keep arriving stay resident while one-off queries age out.
-// A capacity that is not strictly positive is rejected with
-// [ErrCacheCapacity], because a cache that can hold nothing would evict every
-// entry it was given.
 package cache

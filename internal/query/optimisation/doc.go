@@ -25,7 +25,7 @@
 //
 // An [Optimisation] takes a [query.Query] and returns the query to run in its
 // place; a [Pipeline] runs its stages in order. [NewPipeline] builds the
-// pipeline the engine uses, currently a single [Dedupe] stage that drops
+// pipeline the engine uses, a [Dedupe] stage that drops
 // repeated keywords, entities and topics from a recall.
 //
 // The engine runs the pipeline only on a plan-cache miss and caches its

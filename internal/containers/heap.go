@@ -82,10 +82,8 @@ func (h *Heap[K, T]) Len() int {
 	return len(h.items)
 }
 
-// Swap exchanges the items in slots i and j and repoints the key lookup at
-// their new slots. It is the move the percolation steps are built from and
-// does not itself restore the heap invariant, so a caller swapping slots
-// directly must restore it.
+// Swap exchanges the items in slots i and j and keeps the key lookup pointing
+// at each item's slot.
 func (h *Heap[K, T]) Swap(i, j int) {
 	h.items[i], h.items[j] = h.items[j], h.items[i]
 	h.lookup[h.items[i].Key] = i
@@ -120,8 +118,7 @@ func (h *Heap[K, T]) Clear() {
 }
 
 // Peek returns the highest-Priority item without removing it, or nil if the
-// heap is empty. The pointer aliases the heap's storage, so it is valid only
-// until the next Push, Pop, Remove or Clear rewrites that slot.
+// heap is empty.
 func (h *Heap[K, T]) Peek() *Item[K, T] {
 	if h.Len() == 0 {
 		return nil
@@ -180,7 +177,7 @@ func (h *Heap[K, T]) remove(index int, size int) {
 }
 
 // Pop removes and returns the highest-Priority item, or nil if the heap is
-// empty. Unlike Peek it returns a copy, which stays valid as the heap changes.
+// empty.
 func (h *Heap[K, T]) Pop() *Item[K, T] {
 	size := h.Len()
 

@@ -37,8 +37,7 @@ type Vector[K comparable, P float32 | float64] struct {
 	Data []P
 }
 
-// NewVector returns a Vector over data. It does not copy: the vector aliases
-// the caller's slice, so data must not be modified afterwards.
+// NewVector returns a Vector over data.
 func NewVector[K comparable, P float32 | float64](data []P) Vector[K, P] {
 	return Vector[K, P]{Data: data}
 }

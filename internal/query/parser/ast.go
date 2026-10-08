@@ -524,9 +524,7 @@ func (n GraphSelectorNode) End() lexer.Position {
 	return n.end
 }
 
-// Value returns the selected graph number. The parser has already rejected a
-// selector outside 0 to 255 rather than let it wrap into another graph; the
-// tighter bound on configured graphs is the handler's.
+// Value returns the selected graph number.
 func (n GraphSelectorNode) Value() uint8 {
 	return n.value
 }
@@ -734,7 +732,7 @@ func (n SinceFieldNode[K]) Key() string {
 }
 
 // Value implements [FieldNode]: the since: bound as written, relative or
-// absolute and unresolved, or nil on the zero node.
+// absolute and unresolved.
 func (n SinceFieldNode[K]) Value() containers.TimeValue[K] {
 	return n.value
 }
@@ -770,7 +768,7 @@ func (n UntilFieldNode[K]) Key() string {
 }
 
 // Value implements [FieldNode]: the until: bound as written, relative or
-// absolute and unresolved, or nil on the zero node.
+// absolute and unresolved.
 func (n UntilFieldNode[K]) Value() containers.TimeValue[K] {
 	return n.value
 }
@@ -802,9 +800,7 @@ func (n TopFieldNode) Key() string {
 	return n.key.Literal
 }
 
-// Value implements [FieldNode]: the requested result count. The parser only
-// checks it is a whole number that fits an int; the configured ceiling is the
-// query layer's.
+// Value implements [FieldNode]: the requested result count.
 func (n TopFieldNode) Value() int {
 	return n.value
 }
@@ -830,9 +826,7 @@ func (n DepthFieldNode) Key() string {
 	return n.key.Literal
 }
 
-// Value implements [FieldNode]: the requested graph expansion depth. The
-// parser only checks it is a whole number that fits an int; the configured
-// ceiling is the query layer's.
+// Value implements [FieldNode]: the requested graph expansion depth.
 func (n DepthFieldNode) Value() int {
 	return n.value
 }
@@ -865,9 +859,7 @@ func (n VecFieldNode[P]) Key() string {
 	return n.key.Literal
 }
 
-// Value implements [FieldNode]: the vector the params map held under Param,
-// or nil when it held none; rejecting a missing vector is the query layer's
-// call.
+// Value implements [FieldNode]: the vector the params map holds under Param.
 func (n VecFieldNode[P]) Value() []P {
 	return n.value
 }
