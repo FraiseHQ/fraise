@@ -14,6 +14,5 @@ examples
 # __pycache__, compose files — stays excluded).
 !examples/openai-agents/agent.py
 !examples/claude-agent-sdk/agent.py
-coverage.out
-coverage.html
+coverage.txt
 *.md
