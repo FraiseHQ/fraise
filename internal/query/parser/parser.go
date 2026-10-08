@@ -213,8 +213,8 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 	case tok.Type.IsKeyword():
 		return p.errKeywordAsClause(tok)
 	case tok.IsMisCasedKeyword():
-		return p.errf(tok.Pos, "mis-cased keyword %q: keywords are lower case — write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
-			tok.Literal, strings.ToLower(tok.Literal), tok.Literal)
+		return p.errf(tok.Pos, "mis-cased keyword %q: keywords are lower case — write %s:%s if a clause was meant, or quote it ('%s') to search for the word",
+			tok.Literal, strings.ToLower(tok.Literal), p.clausePlaceholder(tok), tok.Literal)
 	default:
 		return p.errf(tok.Pos, "unexpected %s", tok.Describe())
 	}
@@ -239,8 +239,8 @@ func (p *parser[K, P]) errKeywordAsClause(tok lexer.Token) error {
 		return p.errf(tok.Pos, "%s is a prefix and starts no clause here: quote it ('%s') to search for the word",
 			tok.Describe(), tok.Literal)
 	}
-	return p.errf(tok.Pos, "%s is a keyword and starts no clause here: write %s:<value> if a clause was meant, or quote it ('%s') to search for the word",
-		tok.Describe(), strings.ToLower(tok.Literal), tok.Literal)
+	return p.errf(tok.Pos, "%s is a keyword and starts no clause here: write %s:%s if a clause was meant, or quote it ('%s') to search for the word",
+		tok.Describe(), strings.ToLower(tok.Literal), p.clausePlaceholder(tok), tok.Literal)
 }
 
 // errKeywordAsTerm rejects a reserved word among a recall's terms. It is one
@@ -271,18 +271,35 @@ func (p *parser[K, P]) errMissingColon(key lexer.Token, value string) error {
 	return p.errf(key.Pos, "%s is missing its ':': write %s:%s", key.Describe(), strings.ToLower(key.Literal), value)
 }
 
-// clauseValue spells tok as a repair should write it after a keyword's ':': a
-// word as written, a phrase with its quotes back, and any other token as the
-// <value> placeholder. A caller who wrote "since 7d" is offered since:7d.
-func (p *parser[K, P]) clauseValue(tok lexer.Token) string {
-	switch tok.Type {
-	case lexer.LITERAL:
+// clauseValue spells tok as a repair should write it after key's ':': a word
+// as written, a phrase with its quotes back, and any other token as key's
+// placeholder (see clausePlaceholder). A caller who wrote "since 7d" is offered
+// since:7d. vec always gets its placeholder: it takes a parameter reference,
+// never a value written inline, so "vec 3" spelled back as vec:3 sent the
+// caller to another rejection.
+func (p *parser[K, P]) clauseValue(key, tok lexer.Token) string {
+	switch {
+	case lexer.KeywordsMap[strings.ToLower(key.Literal)] == lexer.VEC:
+		return p.clausePlaceholder(key)
+	case tok.Type == lexer.LITERAL:
 		return tok.Literal
-	case lexer.PHRASE:
+	case tok.Type == lexer.PHRASE:
 		return quote(tok.Literal)
 	default:
-		return "<value>"
+		return p.clausePlaceholder(key)
 	}
+}
+
+// clausePlaceholder is what a repair writes after key's ':' when it has no
+// value to spell back: $<name> for vec, whose value is a parameter reference,
+// and <value> for every other clause. key may be mis-cased, so it is matched by
+// spelling rather than by type. Offering vec:<value> sent the caller to write
+// an inline value, which vec rejects.
+func (p *parser[K, P]) clausePlaceholder(key lexer.Token) string {
+	if lexer.KeywordsMap[strings.ToLower(key.Literal)] == lexer.VEC {
+		return "$<name>"
+	}
+	return "<value>"
 }
 
 // errRecallClauseOnWrite rejects a well-formed recall clause on a remember.
@@ -636,7 +653,7 @@ func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
 			if p.cur.Type == lexer.WHITESPACE && p.peek.Type == lexer.COLON {
 				return nil, p.errf(p.cur.Pos, "no space allowed before :")
 			}
-			return nil, p.errKeywordAsTerm(key, p.clauseValue(p.afterBlank()))
+			return nil, p.errKeywordAsTerm(key, p.clauseValue(key, p.afterBlank()))
 		default:
 			tok := p.take()
 			if err := p.errEmpty("a search term", tok.Literal, tok.Pos); err != nil {
@@ -664,7 +681,7 @@ func (p *parser[K, P]) parseSeparator(key lexer.Token) error {
 		case lexer.EOL, lexer.NEWLINE:
 			return p.errKeywordAsClause(key)
 		default:
-			return p.errMissingColon(key, p.clauseValue(p.peek))
+			return p.errMissingColon(key, p.clauseValue(key, p.peek))
 		}
 	}
 	if _, err := p.expect(lexer.COLON); err != nil {

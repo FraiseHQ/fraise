@@ -1283,6 +1283,39 @@ func TestVecWithoutColonIsRejected(t *testing.T) {
 	}
 }
 
+// TestBareVecRepairNamesTheParameterForm pins the clause repair offered for a
+// vec written without its ':'. vec takes a parameter reference, so the repair
+// is vec:$<name> wherever the word stands — among the terms, dangling, before a
+// value, or mis-cased. Spelling back the word after it (vec:3) or the generic
+// vec:<value> sent the caller to "expected param field operator $", one
+// rejection to the next.
+func TestBareVecRepairNamesTheParameterForm(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+	}{
+		{"recall x vec 3", `term "vec" is also a keyword: write vec:$<name> if a filter was meant, or quote it ('vec') to search the word`},
+		{"recall x vec$:v", `term "vec" is also a keyword: write vec:$<name> if a filter was meant, or quote it ('vec') to search the word`},
+		{"recall x topic:y vec", `"vec" is a keyword and starts no clause here: write vec:$<name> if a clause was meant, or quote it ('vec') to search for the word`},
+		{"remember 'a' vec", `"vec" is a keyword and starts no clause here: write vec:$<name> if a clause was meant, or quote it ('vec') to search for the word`},
+		{"recall x topic:y vec q", `"vec" is missing its ':': write vec:$<name>`},
+		{"remember 'a' vec $q", `"vec" is missing its ':': write vec:$<name>`},
+		{"recall x topic:y Vec", `mis-cased keyword "Vec": keywords are lower case — write vec:$<name> if a clause was meant, or quote it ('Vec') to search for the word`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a keyword error", tc.query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
 // TestRememberNeedsASpaceAfterTheCommand pins that a remember's command, with
 // or without its graph selector, is followed by a space before the fact, and
 // that a remember with nothing after it says what is missing rather than
