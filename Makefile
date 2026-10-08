@@ -225,7 +225,7 @@ clean-go: ## Clean Go build artifacts
 	@echo "$(CYAN)Cleaning Go artifacts...$(RESET)"
 	$(GO_CLEAN)
 	rm -rf $(BIN_DIR)/
-	rm -f coverage.out coverage.html
+	rm -f coverage.txt
 	@echo "$(GREEN)✓ Go artifacts cleaned$(RESET)"
 
 clean-py: ## Clean Python build artifacts
