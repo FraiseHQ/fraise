@@ -25,6 +25,7 @@ package server_test
 import (
 	"fmt"
 	"math/rand"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -97,7 +98,9 @@ func BenchmarkHTTP(b *testing.B) {
 				query(b, url, httpFact(rng, zipf), nil)
 			}
 			targeter := vegeta.NewStaticTargeter(httpTargets(b, url, rng, zipf)...)
-			attacker := vegeta.NewAttacker(vegeta.KeepAlive(true))
+			// Bound to loopback, the one address the attack dials: vegeta's
+			// default source address, 0.0.0.0, is refused on some hosts.
+			attacker := vegeta.NewAttacker(vegeta.KeepAlive(true), vegeta.LocalAddr(net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}))
 
 			var m vegeta.Metrics
 			for b.Loop() {
