@@ -53,15 +53,22 @@ jobs:
           path: bin/perf/baseline
           search_artifacts: true
           if_no_artifact_found: warn
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The embeddings come from the cache, or are computed and cached on a
+      # miss, for this night and every release gate after it. If they cannot
+      # be computed, the night measures text only.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: vectors
         with:
           path: bin/perf/locomo-vectors.json
           key: locomo-vectors-${{ hashFiles('tests/perf/data/locomo-conv-26.json', 'tools/embed_locomo.py') }}
+      - name: Embed LoCoMo
+        if: steps.vectors.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: make perf-vectors
 
       - name: Gate
         env:
-          FRAISE_LOCOMO_VECTORS: ${{ steps.vectors.outputs.cache-hit == 'true' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
+          FRAISE_LOCOMO_VECTORS: ${{ hashFiles('bin/perf/locomo-vectors.json') != '' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
         run: make bench-nightly BENCH_BASELINE=${{ steps.baseline.outputs.found_artifact == 'true' && 'bin/perf/baseline' || '' }}
 
       - name: Save the baseline

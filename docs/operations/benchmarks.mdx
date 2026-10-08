@@ -93,4 +93,4 @@ FRAISE_LOCOMO=$PWD/tests/perf/data/locomo-conv-26.json \
 
 ## Embeddings
 
-The nightly run and the release gate seed retrieval with vectors from a cache, keyed by the sample and the embedding model. The **Embed LoCoMo** workflow fills it with `tools/embed_locomo.py`, and `make perf-vectors` does the same locally, into `bin/perf/locomo-vectors.json`; run the workflow from `main` whenever either changes.
+The nightly run and the release gate seed retrieval with vectors computed by `tools/embed_locomo.py` and cached, keyed by the sample and the script, which names the model. A run that finds none cached computes them first and caches them for the runs after it; `make perf-vectors` does the same locally, into `bin/perf/locomo-vectors.json`.
