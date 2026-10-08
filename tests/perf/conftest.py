@@ -201,6 +201,10 @@ def pytest_addoption(parser):
         default=str(_ROOT / "bin" / "perf"),
         help="where this run's outputs and report.md go",
     )
+    group.addoption(
+        "--bench-changed-since",
+        help="a git ref: run only the gates whose packages changed since it; without one every gate runs",
+    )
 
 
 def pytest_configure(config):
@@ -217,7 +221,57 @@ def pytest_configure(config):
     config.stash[_OUTCOMES] = []
 
 
+# A change outside any package's .go files that still changes what every
+# benchmark measures: the module's dependencies, or the gates themselves.
+_EVERYTHING = ("go.mod", "go.sum", "tests/perf/")
+
+
+def _unchanged(items, since):
+    """The gates none of whose benchmarks' packages changed since the ref, with why.
+
+    A gate's packages are its package and every package of this module it
+    builds on, tests included (``go list -deps -test``): a benchmark measures
+    all the code it runs, so a change anywhere in that set is a change it can
+    see, and a change outside it is one it cannot.
+    """
+    changed = _run(["git", "diff", "--name-only", since, "HEAD"]).split()
+    if any(path.startswith(_EVERYTHING) for path in changed):
+        return {}
+    dirs = {
+        str((_ROOT / path).parent.resolve()) for path in changed if path.endswith(".go")
+    }
+    packages, unchanged = {}, {}
+    for item in items:
+        marker = item.get_closest_marker("bench")
+        if not marker:
+            continue
+        package = marker.args[0]
+        if package not in packages:
+            listing = _run(
+                [
+                    "go",
+                    "list",
+                    "-deps",
+                    "-test",
+                    "-f",
+                    "{{if .Module}}{{if .Module.Main}}{{.Dir}}{{end}}{{end}}",
+                    package,
+                ]
+            )
+            packages[package] = {str(Path(d).resolve()) for d in listing.split()}
+        if not packages[package] & dirs:
+            unchanged[item] = (
+                f"no change since {since} in {package} or the packages it builds on"
+            )
+    return unchanged
+
+
 def pytest_collection_modifyitems(config, items):
+    since = config.getoption("bench_changed_since")
+    if since:
+        for item, reason in _unchanged(items, since).items():
+            item.add_marker(pytest.mark.skip(reason=reason))
+
     path = os.environ.get("GITHUB_EVENT_PATH")
     pr = json.loads(Path(path).read_text()).get("pull_request") if path else None
     if not pr or _ACCEPT_LABEL not in {label["name"] for label in pr.get("labels", [])}:
@@ -241,10 +295,13 @@ def pytest_runtest_makereport(item, call):
     rep = yield
     # One outcome per gate: its call, or the setup that never got that far.
     if item.get_closest_marker("bench") and (
-        rep.when == "call" or (rep.when == "setup" and rep.failed)
+        rep.when == "call" or (rep.when == "setup" and not rep.passed)
     ):
         if hasattr(rep, "wasxfail") and rep.skipped:
             item.config.stash[_OUTCOMES].append(("Accepted", item.nodeid, rep.wasxfail))
+        elif rep.skipped and isinstance(rep.longrepr, tuple):
+            reason = rep.longrepr[2].removeprefix("Skipped: ")
+            item.config.stash[_OUTCOMES].append(("Not run", item.nodeid, reason))
         elif rep.failed:
             item.config.stash[_OUTCOMES].append(
                 (
@@ -258,14 +315,19 @@ def pytest_runtest_makereport(item, call):
 
 def pytest_sessionfinish(session, exitstatus):
     runs = session.config.stash[_RUNS]
-    if not runs:
+    outcomes = session.config.stash[_OUTCOMES]
+    # A session that selected no gate has nothing to report; one whose gates
+    # were all skipped still reports, so the comment on the pull request says
+    # why nothing was measured rather than keeping an older run's numbers.
+    if not runs and not outcomes:
         return
     out = Path(session.config.getoption("bench_out")).resolve()
+    out.mkdir(parents=True, exist_ok=True)
     baseline = session.config.getoption("bench_baseline")
     against = "the nightly baseline" if baseline else "no baseline yet"
     verdict = "🔴 Benchmarks regressed" if exitstatus != 0 else "🟢 No regression"
     lines = [f"### {verdict} against {against}", ""]
-    for kind in ("Failed", "Accepted"):
+    for kind in ("Failed", "Accepted", "Not run"):
         listed = [
             f"- `{nodeid}`: {message}"
             for k, nodeid, message in session.config.stash[_OUTCOMES]

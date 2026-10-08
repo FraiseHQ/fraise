@@ -164,10 +164,14 @@ test-watch: ## Run Go tests in watch mode (requires reflex)
 # compare them with a nightly run's outputs in BENCH_BASELINE through
 # benchstat. Each run leaves its own outputs in PERF_OUT under the same names,
 # so a nightly run's PERF_OUT is the next baseline.
+# BENCH_CHANGED_SINCE, a git ref, runs only the gates whose packages changed
+# since it; a pull request passes its base.
 BENCH_BASELINE ?=
+BENCH_CHANGED_SINCE ?=
 PERF_OUT       ?= $(BIN_DIR)/perf
 GATES          := $(UV_CMD) run --package tests pytest --import-mode=importlib
-GATE_ARGS       = --bench-out=$(PERF_OUT) $(if $(BENCH_BASELINE),--bench-baseline=$(BENCH_BASELINE))
+GATE_ARGS       = --bench-out=$(PERF_OUT) $(if $(BENCH_BASELINE),--bench-baseline=$(BENCH_BASELINE)) \
+                  $(if $(BENCH_CHANGED_SINCE),--bench-changed-since=$(BENCH_CHANGED_SINCE))
 
 bench: ## Run the pull request gates, against the nightly run in BENCH_BASELINE if one is given
 	$(GATES) tests/perf -m "bench and not nightly" $(GATE_ARGS)

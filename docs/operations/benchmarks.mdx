@@ -10,8 +10,10 @@ Every change to the server is measured against `main` as it stood the night befo
 | When | Measured | Compared with | Outcome |
 |---|---|---|---|
 | Every night | `main`: every benchmark, retrieval text only and seeded with embeddings, HTTP latency at ten and a hundred thousand facts | the night before | saved as the next baseline and appended to the history; a Discord digest, flagged when a gate fails |
-| A pull request that touches Go | the head: microbenchmarks, retrieval text only | the newest nightly baseline | a required check and a comment on the pull request; Discord on a regression |
+| A pull request that touches Go | the head: the gates whose packages it changes, retrieval text only | the newest nightly baseline | a required check and a comment on the pull request; Discord on a regression |
 | The release pull request | the head: microbenchmarks, retrieval text only and seeded with embeddings | the newest nightly baseline | a required check and a comment on the pull request; Discord always |
+
+A pull request runs only the gates it can affect: a gate's packages are its benchmarks' package and every package of the module that one builds on, tests included, so a change in any of them runs the gate and a change outside them skips it, listed as not run in the report. A change to `go.mod`, `go.sum` or `tests/perf` runs every gate, and so does the release gate.
 
 The nightly run is the reference. Its outputs are saved as the `benchmark-baseline` artifact, and every pull request until the next night is measured and compared with them; a pull request measures only its own head. When no baseline exists yet for a benchmark, the benchmark still runs and is reported, and its gate passes, since there is nothing to regress from.
 
