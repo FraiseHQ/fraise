@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.1](https://github.com/FraiseHQ/fraise/compare/v0.3.0...v0.3.1) (2026-10-08)
+
+
+### Bug fixes
+
+* **config:** reject db.max-depth outside 0 to 2 ([#494](https://github.com/FraiseHQ/fraise/issues/494)) ([469be71](https://github.com/FraiseHQ/fraise/commit/469be71b6fccd22c90e1f7366d968c74504a80ad))
+* **query:** command node Vector panics without a vec clause ([#490](https://github.com/FraiseHQ/fraise/issues/490)) ([3f221d9](https://github.com/FraiseHQ/fraise/commit/3f221d9e6b0297cc725e17ca60f15521d6fc6f24))
+* **query:** name vec:$&lt;name&gt; in the bare vec repair ([#502](https://github.com/FraiseHQ/fraise/issues/502)) ([1e912a6](https://github.com/FraiseHQ/fraise/commit/1e912a6f4fed1f623e0ec98b69bb011c41c0ff62))
+* **query:** remember command drops token glued to phrase ([#484](https://github.com/FraiseHQ/fraise/issues/484)) ([161ecd0](https://github.com/FraiseHQ/fraise/commit/161ecd0d2c5d49535ae90ed1ecd300e8bb1dfe29))
+* reject scheduler.workers below 1 at startup ([#495](https://github.com/FraiseHQ/fraise/issues/495)) ([42463eb](https://github.com/FraiseHQ/fraise/commit/42463ebe9a6f6c3355df4d32af1909d7178da095))
+* rptree pool drops a key behind its stale copy ([#497](https://github.com/FraiseHQ/fraise/issues/497)) ([45872e1](https://github.com/FraiseHQ/fraise/commit/45872e10a901001666e5815384c7784ed6a7442a))
+
+
+### Maintenance
+
+* clean-go removes the coverage-go report ([#501](https://github.com/FraiseHQ/fraise/issues/501)) ([e0e1dd4](https://github.com/FraiseHQ/fraise/commit/e0e1dd41c99e9f46e669f082907716165f44d0e7))
+* keep release notes as release-please wrote them ([#496](https://github.com/FraiseHQ/fraise/issues/496)) ([2efd488](https://github.com/FraiseHQ/fraise/commit/2efd488d7edc8afdfdc47d5e247db298bcedaf49))
+* **main:** release python 0.1.0 ([#383](https://github.com/FraiseHQ/fraise/issues/383)) ([84778a3](https://github.com/FraiseHQ/fraise/commit/84778a3b8dce3f114cf077dd81241d710b7e85d0))
+* **main:** release python 0.1.1 ([#482](https://github.com/FraiseHQ/fraise/issues/482)) ([7ec6a2f](https://github.com/FraiseHQ/fraise/commit/7ec6a2f89f43ff30421beccb33004505b876c719))
+* **python:** add client.stats() for GET /api/v1/stats ([#481](https://github.com/FraiseHQ/fraise/issues/481)) ([2729971](https://github.com/FraiseHQ/fraise/commit/272997138d8bc82970b777dd7920471835a398c9))
+* restore the test-go-short target make quick needs ([#500](https://github.com/FraiseHQ/fraise/issues/500)) ([266f2b8](https://github.com/FraiseHQ/fraise/commit/266f2b86202aa90c5105bcb0c749802456b0b6e6))
+* **server:** remove dead code and route through unused accessors ([#493](https://github.com/FraiseHQ/fraise/issues/493)) ([9297554](https://github.com/FraiseHQ/fraise/commit/92975546ff0fe1ab9485dc55614c668f18aac357))
+
 ## [0.3.0](https://github.com/FraiseHQ/fraise/compare/v0.2.2...v0.3.0) (2026-10-04)
 
 
