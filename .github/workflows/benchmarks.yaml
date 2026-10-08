@@ -92,12 +92,15 @@ jobs:
           path: |
             bin/perf/report.md
             bin/perf/*.txt
-      # The report goes on the pull request whatever the verdict, updated on
-      # every push. A pull request from a fork gets a read-only token here, so
+      # The report goes on the pull request whatever the verdict. Each run
+      # replaces the last one's comment with a new one, so the latest report
+      # is at the bottom of the conversation and is the only one there. A pull
+      # request from a fork gets a read-only token here, so
       # benchmarks-report.yaml posts its report instead.
       - name: Comment on the pull request
         if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('bin/perf/report.md') != ''
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88
         with:
           header: benchmarks
+          recreate: true
           path: bin/perf/report.md
