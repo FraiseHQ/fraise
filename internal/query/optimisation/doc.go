@@ -20,38 +20,16 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Package optimisation rewrites a parsed query before the engine caches and
+// plans it.
+//
+// An [Optimisation] takes a [query.Query] and returns the query to run in its
+// place; a [Pipeline] runs its stages in order. [NewPipeline] builds the
+// pipeline the engine uses, a [Dedupe] stage that drops
+// repeated keywords, entities and topics from a recall.
+//
+// The engine runs the pipeline only on a plan-cache miss and caches its
+// output, which every later request that hashes alike then shares. A stage
+// must therefore be deterministic and must leave no per-request state on the
+// query it returns.
 package optimisation
-
-import "github.com/FraiseHQ/fraise/internal/query"
-
-// Optimisation is one stage of a [Pipeline]: Optimise takes a parsed query and
-// returns the query to run in its place, which may be the same value rewritten
-// in place. Its output is cached and shared by every request that hashes
-// alike, so a stage is deterministic and leaves no per-request state on it.
-type Optimisation[K comparable, P float32 | float64] interface {
-	Optimise(q query.Query[K, P]) query.Query[K, P]
-}
-
-// Pipeline runs its stages in order, each on the previous stage's output.
-type Pipeline[K comparable, P float32 | float64] struct {
-	stages []Optimisation[K, P]
-}
-
-// NewPipeline returns the pipeline the engine runs on a plan-cache miss: a
-// [Dedupe] stage.
-func NewPipeline[K comparable, P float32 | float64]() *Pipeline[K, P] {
-	return &Pipeline[K, P]{
-		stages: []Optimisation[K, P]{
-			&Dedupe[K, P]{},
-		},
-	}
-}
-
-// Optimise runs q through every stage in order and returns the last stage's
-// output.
-func (d *Pipeline[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-	for _, o := range d.stages {
-		q = o.Optimise(q)
-	}
-	return q
-}

@@ -59,7 +59,7 @@ func main() {
 	args := os.Args[1:]
 
 	// The first argument selects the command when it is not a flag; otherwise
-	// the command is serve, so a bare `fraise -config x` (the docker command,
+	// the command is serve, so a bare 'fraise -config x' (the docker command,
 	// the systemd unit, brew services) starts the server. The command is
 	// stripped before flag parsing: Parse rejects any non-flag argument.
 	cmd := "serve"
@@ -86,7 +86,7 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	// A context cancelled on SIGINT/SIGTERM drives graceful shutdown: an
-	// operator's `docker stop` or Ctrl-C lets in-flight writes finish instead
+	// operator's 'docker stop' or Ctrl-C lets in-flight writes finish instead
 	// of being dropped. It lives here rather than in main so os.Exit cannot
 	// skip the deferred stop, which restores default signal handling.
 	defer stop()

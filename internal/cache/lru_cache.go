@@ -27,6 +27,10 @@ import (
 	"sync"
 )
 
+// LRUCache is a [Cache] that evicts the least recently used entry, where both
+// Get and Put count as a use. A map gives constant-time lookup and a list
+// keeps the recency order, so every operation is O(1). It is safe for
+// concurrent use. [NewLRUCache] builds one and fixes its capacity.
 type LRUCache[K comparable, T any] struct {
 	capacity int
 	items    map[K]*list.Element

@@ -45,10 +45,14 @@ type T1haHash[K ~uint64] struct {
 	seed uint64
 }
 
+// Hash implements [Hasher]: it returns the t1ha1 hash of data under the
+// hasher's seed.
 func (t T1haHash[K]) Hash(data string) K {
 	return K(t.t1ha1LE([]byte(data), t.seed))
 }
 
+// Seed implements [Hasher]: it returns the seed every Hash call mixes in, so a
+// caller can log which keyspace the hasher produces.
 func (t T1haHash[K]) Seed() uint64 {
 	return t.seed
 }

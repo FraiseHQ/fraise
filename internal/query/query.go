@@ -35,6 +35,12 @@ import (
 	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
+// Query is an executable Fraise query: a parsed command bound to the graph it
+// targets. Hash keys it in the engine's plan cache, which shares one query
+// object across every request that hashes alike, so a Query carries no
+// per-request state; Plan builds the [Stream] that runs it for one request.
+// IsWrite tells the scheduler which lock [Stream.Commit] needs on the graph
+// GetGraphID selects.
 type Query[K comparable, P float32 | float64] interface {
 	Plan(config *config.ConfigSet) (*Stream[K, P], error)
 	GetGraphID() uint8
@@ -43,6 +49,10 @@ type Query[K comparable, P float32 | float64] interface {
 	SetGraphID(id uint8)
 }
 
+// QueryParameters bounds a recall's search: Top caps the number of hits, Depth
+// selects the retrieval lane (see [graph.Graph]), and Since and Until restrict
+// it to a time window, nil meaning unbounded. [Parse] has already checked an
+// explicit Top and Depth against the configured ceilings.
 type QueryParameters[K comparable] struct {
 	Top   int
 	Depth int
@@ -50,10 +60,16 @@ type QueryParameters[K comparable] struct {
 	Until containers.TimeValue[K]
 }
 
+// QueryContext holds where a query runs rather than what it asks: GraphID is
+// the graph its selector names. It is unexported on [Recall] and [Remember] so
+// it changes only through SetGraphID.
 type QueryContext struct {
 	GraphID uint8
 }
 
+// QueryResult is the outcome of a committed stream as the server returns it:
+// the ranked hits of a recall and their count. A remember commits with an
+// empty result.
 type QueryResult[K comparable, P float32 | float64] struct {
 	Count int         `json:"count"`
 	Hits  []Hit[K, P] `json:"hits"`
@@ -67,6 +83,10 @@ type QueryResult[K comparable, P float32 | float64] struct {
 	Background P `json:"background,omitempty"`
 }
 
+// Hit is one fact in a recall's result: the stored node and its final score,
+// after boost and recency decay. It marshals flat (see [Hit.MarshalJSON])
+// because a client needs the fact's value, timestamp and score, not the graph
+// node.
 type Hit[K comparable, P float32 | float64] struct {
 	Node  *graph.Node[K]
 	Score P
@@ -134,7 +154,7 @@ func checkVector[P float32 | float64](name string, data []P, maxDim int) error {
 
 // Parse turns a raw query string into an executable Query. Vector arguments are
 // passed out-of-band in params, keyed by the placeholder name used in the query
-// (e.g. `vec:$v` binds to params["v"]): the parser binds the vector, and the
+// (e.g. 'vec:$v' binds to params["v"]): the parser binds the vector, and the
 // bound vector is checked here against the configured limits.
 //
 // Warnings flag a reading of a valid query the client may not have meant (see

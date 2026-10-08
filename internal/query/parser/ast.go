@@ -31,18 +31,28 @@ import (
 	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
 
+// ClauseType is the occurrence an anchor clause can be marked with: required,
+// excluded or optional.
 type ClauseType int
 
+// MUST, MUST_NOT and LOOSE are the occurrences a [ClauseNode] can carry, each
+// commented with the prefix character it stands for.
 const (
 	MUST     ClauseType = iota // +
 	MUST_NOT                   // -
 	LOOSE                      // ±
 )
 
+// AstNode is the contract every parsed node meets: it prints back as text and
+// reports where it sits in the source. A command's String, and each clause's,
+// is FQL that parses back to the same node, which is why nodes keep their
+// source tokens rather than only the values the query layer reads.
 type AstNode interface {
 	// String returns the node's text.
 	String() string
 
+	// Pos and End return where the node starts and ends in the source, so an
+	// error or warning about the node can point at it.
 	Pos() lexer.Position
 	End() lexer.Position
 }
@@ -73,6 +83,9 @@ type LiteralFieldNode interface {
 	Literal() string
 }
 
+// TimeValueFieldNode is a field whose value is a time bound (since: or
+// until:). Value keeps the bound as written, relative or absolute, which is
+// what the plan cache hashes; TimeValue resolves it to an instant.
 type TimeValueFieldNode[K comparable] interface {
 	FieldNode[containers.TimeValue[K]]
 	TimeValue() time.Time
@@ -94,6 +107,8 @@ type RecallCommandNode[K comparable, P float32 | float64] struct {
 	end      lexer.Position
 }
 
+// Terms returns the recall's search terms in source order, each folded to
+// lower case as the parser read it, or nil when the recall has none.
 func (r RecallCommandNode[K, P]) Terms() []string {
 	var res []string
 
@@ -104,6 +119,8 @@ func (r RecallCommandNode[K, P]) Terms() []string {
 	return res
 }
 
+// Entities returns the values of the recall's entity: anchors in source order,
+// folded to lower case, or nil when it names none.
 func (r RecallCommandNode[K, P]) Entities() []string {
 	var res []string
 
@@ -114,6 +131,8 @@ func (r RecallCommandNode[K, P]) Entities() []string {
 	return res
 }
 
+// Topics returns the values of the recall's topic: anchors in source order,
+// folded to lower case, or nil when it names none.
 func (r RecallCommandNode[K, P]) Topics() []string {
 	var res []string
 
@@ -124,6 +143,9 @@ func (r RecallCommandNode[K, P]) Topics() []string {
 	return res
 }
 
+// Top returns the recall's top: value, or v when the recall has no top
+// clause. The default is the caller's to supply because it is operator
+// configuration, which the parser does not see; see [RecallCommandNode.HasTop].
 func (r RecallCommandNode[K, P]) Top(v int) int {
 	if !r.HasTop() {
 		return v
@@ -140,6 +162,9 @@ func (r RecallCommandNode[K, P]) HasTop() bool {
 	return r.top.key.Type == lexer.TOP
 }
 
+// Depth returns the recall's depth: value, or v when the recall has no depth
+// clause. As with Top, the default is operator configuration the caller
+// supplies; see [RecallCommandNode.HasDepth].
 func (r RecallCommandNode[K, P]) Depth(v int) int {
 	if !r.HasDepth() {
 		return v
@@ -155,10 +180,17 @@ func (r RecallCommandNode[K, P]) HasDepth() bool {
 	return r.depth.key.Type == lexer.DEPTH
 }
 
+// Since returns the recall's since: bound as written (relative or absolute,
+// unresolved), or nil when the recall has no since clause. It stays
+// unresolved so the plan cache keys on the bound, not on the instant it
+// resolved to at parse time.
 func (r RecallCommandNode[K, P]) Since() containers.TimeValue[K] {
 	return r.since.Value()
 }
 
+// Until returns the recall's until: bound as written (relative or absolute,
+// unresolved), or nil when the recall has no until clause; it stays
+// unresolved for the same reason as Since.
 func (r RecallCommandNode[K, P]) Until() containers.TimeValue[K] {
 	return r.until.Value()
 }
@@ -175,7 +207,7 @@ func (r RecallCommandNode[K, P]) Vector() []P {
 }
 
 // VecParam reports the name of the vector placeholder (the identifier after
-// `vec:$`) and whether the recall carried one at all.
+// vec:$) and whether the recall carried one at all.
 func (r RecallCommandNode[K, P]) VecParam() (string, bool) {
 	if r.vec == nil {
 		return "", false
@@ -194,10 +226,15 @@ type RememberCommandNode[P float32 | float64] struct {
 	end      lexer.Position
 }
 
+// Value returns the fact the remember stores: the quoted phrase as written,
+// with its case and spacing kept and doubled quotes decoded.
 func (r RememberCommandNode[P]) Value() string {
 	return r.value.Literal()
 }
 
+// Entities returns the values of the remember's entity: anchors in source
+// order, folded to lower case, or nil when it names none. A remember keeps its
+// anchors in one list, so this picks the entity fields out of it.
 func (r RememberCommandNode[P]) Entities() []string {
 	var res []string
 
@@ -210,6 +247,8 @@ func (r RememberCommandNode[P]) Entities() []string {
 	return res
 }
 
+// Topics returns the values of the remember's topic: anchors in source order,
+// folded to lower case, or nil when it names none.
 func (r RememberCommandNode[P]) Topics() []string {
 	var res []string
 
@@ -233,6 +272,9 @@ func (r RememberCommandNode[P]) Vector() []P {
 	return r.vec.Value()
 }
 
+// VecParam reports the name of the vector placeholder (the identifier after
+// vec:$) and whether the remember carried one at all. The query layer needs
+// the name to say which parameter was missing or malformed.
 func (r RememberCommandNode[P]) VecParam() (string, bool) {
 	if r.vec == nil {
 		return "", false
@@ -248,6 +290,9 @@ type GraphSelectorNode struct {
 	end   lexer.Position
 }
 
+// ClauseNode is the occurrence marker an anchor clause can carry: its
+// [ClauseType] and the prefix token it was written with, which String prints
+// in front of the anchor.
 type ClauseNode struct {
 	clause ClauseType
 	value  lexer.Token
@@ -354,6 +399,8 @@ func quote(s string) string {
 
 // remember impl
 
+// Selector implements [CommandNode]: it returns the graph the remember writes
+// to, 0 when the command has no @N selector.
 func (n RememberCommandNode[P]) Selector() uint8 {
 	return n.selector.value
 }
@@ -380,16 +427,20 @@ func (n RememberCommandNode[P]) String() string {
 	return strings.Join(s, " ")
 }
 
+// Pos implements [AstNode].
 func (n RememberCommandNode[P]) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n RememberCommandNode[P]) End() lexer.Position {
 	return n.end
 }
 
 // recall impl
 
+// Selector implements [CommandNode]: it returns the graph the recall reads,
+// 0 when the command has no @N selector.
 func (n RecallCommandNode[K, P]) Selector() uint8 {
 	return n.selector.value
 }
@@ -447,10 +498,12 @@ func (n RecallCommandNode[K, P]) String() string {
 	return strings.Join(s, " ")
 }
 
+// Pos implements [AstNode].
 func (n RecallCommandNode[K, P]) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n RecallCommandNode[K, P]) End() lexer.Position {
 	return n.end
 }
@@ -461,24 +514,30 @@ func (n GraphSelectorNode) String() string {
 	return fmt.Sprintf("@%d", n.value)
 }
 
+// Pos implements [AstNode].
 func (n GraphSelectorNode) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n GraphSelectorNode) End() lexer.Position {
 	return n.end
 }
 
+// Value returns the selected graph number.
 func (n GraphSelectorNode) Value() uint8 {
 	return n.value
 }
 
 // anchor node impl
 
+// Clause returns the anchor's occurrence marker, or nil when it has none.
 func (n AnchorFieldNode) Clause() *ClauseNode {
 	return n.clause
 }
 
+// Field returns the wrapped field, an [EntityFieldNode] or a [TopicFieldNode];
+// its dynamic type is how a remember tells its entities from its topics.
 func (n AnchorFieldNode) Field() FieldNode[string] {
 	return n.field
 }
@@ -491,18 +550,22 @@ func (n AnchorFieldNode) String() string {
 	return fmt.Sprintf("%s%s%s", c, n.token.Literal, n.field.String())
 }
 
+// Pos implements [AstNode] by delegating to the wrapped field.
 func (n AnchorFieldNode) Pos() lexer.Position {
 	return n.field.Pos()
 }
 
+// End implements [AstNode] by delegating to the wrapped field.
 func (n AnchorFieldNode) End() lexer.Position {
 	return n.field.End()
 }
 
+// Key implements [FieldNode]: the wrapped field's keyword as written.
 func (n AnchorFieldNode) Key() string {
 	return n.field.Key()
 }
 
+// Value implements [FieldNode]: the wrapped field's value, folded to lower case.
 func (n AnchorFieldNode) Value() string {
 	return n.field.Value()
 }
@@ -517,10 +580,12 @@ func (n TermNode) Literal() string {
 	return n.value
 }
 
+// Pos implements [AstNode].
 func (n TermNode) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n TermNode) End() lexer.Position {
 	return n.end
 }
@@ -535,6 +600,8 @@ func (n TermNode) String() string {
 // Terms is a list of TermNode.
 type Terms []TermNode
 
+// Literal implements [LiteralFieldNode]: the folded literals of every term,
+// concatenated with no separator.
 func (n Terms) Literal() string {
 	var s string
 	for _, t := range n {
@@ -547,6 +614,8 @@ func (n Terms) String() string {
 	return n.Literal()
 }
 
+// Pos implements [AstNode]: the first term's Pos, or the zero Position for an
+// empty list.
 func (n Terms) Pos() lexer.Position {
 	if len(n) > 0 {
 		return n[0].pos
@@ -555,6 +624,8 @@ func (n Terms) Pos() lexer.Position {
 	}
 }
 
+// End implements [AstNode]: the last term's end, or the zero Position for an
+// empty list.
 func (n Terms) End() lexer.Position {
 	if len(n) > 0 {
 		return n[len(n)-1].pos
@@ -572,10 +643,12 @@ func (n PhraseNode) Literal() string {
 	return n.value
 }
 
+// Pos implements [AstNode].
 func (n PhraseNode) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n PhraseNode) End() lexer.Position {
 	return n.end
 }
@@ -593,18 +666,23 @@ func (n EntityFieldNode) String() string {
 	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
+// Pos implements [AstNode].
 func (n EntityFieldNode) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n EntityFieldNode) End() lexer.Position {
 	return n.end
 }
 
+// Key implements [FieldNode]: the clause keyword as written, case included.
 func (n EntityFieldNode) Key() string {
 	return n.key.Literal
 }
 
+// Value implements [FieldNode]: the entity name, folded to lower case and
+// unquoted, so entity:Ada and entity:'ada' name the same anchor.
 func (n EntityFieldNode) Value() string {
 	return n.value
 }
@@ -618,18 +696,23 @@ func (n TopicFieldNode) String() string {
 	return fmt.Sprintf("%s:%s", n.key.Literal, n.value)
 }
 
+// Key implements [FieldNode]: the clause keyword as written, case included.
 func (n TopicFieldNode) Key() string {
 	return n.key.Literal
 }
 
+// Value implements [FieldNode]: the topic name, folded to lower case and
+// unquoted, so topic:Billing and topic:'billing' name the same anchor.
 func (n TopicFieldNode) Value() string {
 	return n.value
 }
 
+// Pos implements [AstNode].
 func (n TopicFieldNode) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n TopicFieldNode) End() lexer.Position {
 	return n.end
 }
@@ -643,22 +726,29 @@ func (n SinceFieldNode[K]) String() string {
 	return fmt.Sprintf("%s:%s", n.key.Literal, n.token.Literal)
 }
 
+// Key implements [FieldNode]: the clause keyword as written, case included.
 func (n SinceFieldNode[K]) Key() string {
 	return n.key.Literal
 }
 
+// Value implements [FieldNode]: the since: bound as written, relative or
+// absolute and unresolved.
 func (n SinceFieldNode[K]) Value() containers.TimeValue[K] {
 	return n.value
 }
 
+// TimeValue implements [TimeValueFieldNode]: the bound resolved against the
+// current time, so a relative bound gives a different instant on every call.
 func (n SinceFieldNode[K]) TimeValue() time.Time {
 	return n.value.Resolve(time.Now())
 }
 
+// Pos implements [AstNode].
 func (n SinceFieldNode[K]) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n SinceFieldNode[K]) End() lexer.Position {
 	return n.end
 }
@@ -672,22 +762,29 @@ func (n UntilFieldNode[K]) String() string {
 	return fmt.Sprintf("%s:%s", n.key.Literal, n.token.Literal)
 }
 
+// Key implements [FieldNode]: the clause keyword as written, case included.
 func (n UntilFieldNode[K]) Key() string {
 	return n.key.Literal
 }
 
+// Value implements [FieldNode]: the until: bound as written, relative or
+// absolute and unresolved.
 func (n UntilFieldNode[K]) Value() containers.TimeValue[K] {
 	return n.value
 }
 
+// TimeValue implements [TimeValueFieldNode]: the bound resolved against the
+// current time, so a relative bound gives a different instant on every call.
 func (n UntilFieldNode[K]) TimeValue() time.Time {
 	return n.value.Resolve(time.Now())
 }
 
+// Pos implements [AstNode].
 func (n UntilFieldNode[K]) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n UntilFieldNode[K]) End() lexer.Position {
 	return n.end
 }
@@ -698,18 +795,22 @@ func (n TopFieldNode) String() string {
 	return fmt.Sprintf("%s:%d", n.key.Literal, n.value)
 }
 
+// Key implements [FieldNode]: the clause keyword as written, case included.
 func (n TopFieldNode) Key() string {
 	return n.key.Literal
 }
 
+// Value implements [FieldNode]: the requested result count.
 func (n TopFieldNode) Value() int {
 	return n.value
 }
 
+// Pos implements [AstNode].
 func (n TopFieldNode) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n TopFieldNode) End() lexer.Position {
 	return n.end
 }
@@ -720,24 +821,31 @@ func (n DepthFieldNode) String() string {
 	return fmt.Sprintf("%s:%d", n.key.Literal, n.value)
 }
 
+// Key implements [FieldNode]: the clause keyword as written, case included.
 func (n DepthFieldNode) Key() string {
 	return n.key.Literal
 }
 
+// Value implements [FieldNode]: the requested graph expansion depth.
 func (n DepthFieldNode) Value() int {
 	return n.value
 }
 
+// Pos implements [AstNode].
 func (n DepthFieldNode) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n DepthFieldNode) End() lexer.Position {
 	return n.end
 }
 
 // vec field node impl
 
+// Param implements [RefFieldNode]: the placeholder name after vec:$, which
+// String prints back instead of the vector and the query layer names in its
+// errors.
 func (n VecFieldNode[P]) Param() string {
 	return n.param.Literal
 }
@@ -746,18 +854,22 @@ func (n VecFieldNode[P]) String() string {
 	return fmt.Sprintf("%s:$%s", n.key.Literal, n.param.Literal)
 }
 
+// Key implements [FieldNode]: the clause keyword as written, case included.
 func (n VecFieldNode[P]) Key() string {
 	return n.key.Literal
 }
 
+// Value implements [FieldNode]: the vector the params map holds under Param.
 func (n VecFieldNode[P]) Value() []P {
 	return n.value
 }
 
+// Pos implements [AstNode].
 func (n VecFieldNode[P]) Pos() lexer.Position {
 	return n.pos
 }
 
+// End implements [AstNode].
 func (n VecFieldNode[P]) End() lexer.Position {
 	return n.end
 }
