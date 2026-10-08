@@ -1,0 +1,64 @@
+name: Benchmarks report
+
+# Posts what the benchmark workflows measured: a sticky comment on the pull
+# request, and a Discord message for a pull request that regressed, for every
+# release gate and for every nightly run. It runs on workflow_run, in this
+# repository's context with its secrets, because the run it reports on may
+# come from a fork, where neither the webhook nor a token that can comment is
+# available. The report it posts was written by that run's code, so it is only
+# ever posted as text; which pull request it goes to, and what the Discord
+# message says, come from GitHub's record of the run, never from the artifact.
+
+on:
+  workflow_run:
+    workflows: [Benchmarks, Benchmarks nightly]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  post:
+    name: Post results
+    # A push to main records history and comments on its own commit.
+    if: github.event.workflow_run.event != 'push' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # the artifact of the run being reported
+      pull-requests: write # the sticky comment
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: benchmarks
+          path: benchmarks
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find the pull request
+        id: pr
+        if: github.event.workflow_run.event == 'pull_request'
+        uses: jwalton/gh-find-current-pr@f3d61b485d2801773f7a07b2aaa3306bd8f8e653 # v1.3.5
+        with:
+          sha: ${{ github.event.workflow_run.head_sha }}
+      - name: Comment on the pull request
+        if: steps.pr.outputs.number != ''
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88
+        with:
+          header: benchmarks
+          number: ${{ steps.pr.outputs.number }}
+          path: benchmarks/report.md
+
+      # A pull request is announced only when its gate failed; the release
+      # gate and the nightly run always.
+      - name: Post to Discord
+        if: >-
+          github.event.workflow_run.name == 'Benchmarks nightly' ||
+          startsWith(github.event.workflow_run.head_branch, 'release-please--') ||
+          github.event.workflow_run.conclusion == 'failure'
+        uses: tsickert/discord-webhook@b217a69502f52803de774ded2b1ab7c282e99645 # v7.0.0
+        with:
+          webhook-url: https://discord.com/api/webhooks/${{ secrets.DISCORD_WEBHOOK_ID }}/${{ secrets.DISCORD_WEBHOOK_TOKEN }}
+          content: >-
+            🍓 ${{ github.event.workflow_run.name }}${{ steps.pr.outputs.number && format(' on #{0}', steps.pr.outputs.number) || '' }}:
+            ${{ github.event.workflow_run.conclusion == 'success' && '🟢 no regression' || '🔴 regressed' }}.
+            ${{ github.event.workflow_run.html_url }}
+          filename: benchmarks/report.md

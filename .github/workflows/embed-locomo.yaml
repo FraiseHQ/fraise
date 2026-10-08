@@ -1,0 +1,32 @@
+name: Embed LoCoMo
+
+# Embeds every text the retrieval gate stores or asks, once, into the cache
+# the release gate and the nightly run read their vectors from. The cache is
+# keyed by the LoCoMo sample and tools/embed_locomo.py, which names the model,
+# so this needs running again only when one of them changes. Run it on main:
+# a cache saved there is readable from every branch.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  embed:
+    name: Embed LoCoMo
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version-file: "pyproject.toml"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: vectors
+        with:
+          path: bin/perf/locomo-vectors.json
+          key: locomo-vectors-${{ hashFiles('tests/perf/data/locomo-conv-26.json', 'tools/embed_locomo.py') }}
+      - name: Embed
+        if: steps.vectors.outputs.cache-hit != 'true'
+        run: make perf-vectors

@@ -1,0 +1,58 @@
+name: Benchmarks nightly
+
+# Measures main against the last release on what is too slow for a pull
+# request: retrieval seeded with embeddings, and latency through the HTTP API
+# at ten and a hundred thousand facts. A regression fails the run, which
+# blocks nothing; benchmarks-report.yaml posts the report every night.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  nightly:
+    name: Main against the last release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0 # the release is checked out from history
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version-file: "pyproject.toml"
+
+      # Pre-releases are not releases: against an -rc, main would be compared
+      # with itself.
+      - name: Last release
+        id: release
+        run: echo "tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: vectors
+        with:
+          path: bin/perf/locomo-vectors.json
+          key: locomo-vectors-${{ hashFiles('tests/perf/data/locomo-conv-26.json', 'tools/embed_locomo.py') }}
+
+      - name: Gate
+        env:
+          FRAISE_LOCOMO_VECTORS: ${{ steps.vectors.outputs.cache-hit == 'true' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
+        run: make bench-nightly BASE=${{ steps.release.outputs.tag }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: benchmarks
+          path: |
+            bin/perf/report.md
+            bin/perf/base-*.txt
+            bin/perf/head-*.txt

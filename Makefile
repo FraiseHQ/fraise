@@ -153,6 +153,38 @@ test-watch: ## Run Go tests in watch mode (requires reflex)
 	@which reflex > /dev/null || (echo "$(YELLOW)Installing reflex...$(RESET)" && $(GO_CMD) install github.com/cespare/reflex@latest)
 	reflex -r '\.go$$' -s -- $(GO_TEST) -v ./...
 
+##@ Benchmarks
+
+# The benchmarks are Go benchmarks beside the code they measure; the gates on
+# them are pytest tests in tests/perf, which compare them at BASE and at the
+# working tree through benchdiff and benchstat and assert their limits.
+BASE           ?= origin/main
+PERF_OUT       ?= $(BIN_DIR)/perf
+LOCOMO         := tests/perf/data/locomo-conv-26.json
+GATES          := $(UV_CMD) run --package tests pytest --import-mode=importlib
+
+bench: ## Gate the working tree's benchmarks against BASE (tests/perf)
+	$(GATES) tests/perf -m "bench and not nightly" --bench-base=$(BASE) --bench-out=$(PERF_OUT)
+
+bench-nightly: ## Run the nightly gates, HTTP latency included, against BASE
+	$(GATES) tests/perf/server_test.py -m bench --bench-base=$(BASE) --bench-out=$(PERF_OUT)
+
+# The history charts retrieval quality as bigger-is-better, which needs it as
+# {name, unit, value} JSON: github-action-benchmark's own go parser takes
+# every unit as smaller-is-better. Every value whose unit is a metric of the
+# benchmark (an @ in its name) becomes one point.
+bench-record: ## Run both suites once on the working tree, in the shapes the history reads
+	@mkdir -p $(PERF_OUT)
+	$(GO_TEST) -run '^$$' -bench . -benchmem -cpu 4 ./internal/... > $(PERF_OUT)/record-latency.txt
+	FRAISE_LOCOMO=$(abspath $(LOCOMO)) $(GO_TEST) -run '^$$' -bench BenchmarkRetrievalQuality -benchtime 1x -cpu 4 ./pkg/server \
+	  | awk '/^Benchmark/ { name = $$1; sub(/-[0-9]+$$/, "", name); \
+	      for (i = 3; i < NF; i += 2) if ($$(i + 1) ~ /@/) \
+	        printf "%s{\"name\":\"%s - %s\",\"unit\":\"%s\",\"value\":%s}", (n++ ? "," : "["), name, $$(i + 1), $$(i + 1), $$i } \
+	    END { print (n ? "]" : "[]") }' > $(PERF_OUT)/record-retrieval.json
+
+perf-vectors: ## Embed the LoCoMo sample once, for the gates that seed with vectors
+	$(UV_CMD) run --package tests --extra embeddings python tools/embed_locomo.py $(LOCOMO) $(PERF_OUT)/locomo-vectors.json
+
 ##@ Development
 
 dev: ## Run development server

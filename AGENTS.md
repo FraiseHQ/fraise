@@ -144,6 +144,11 @@ These apply to every component:
   (`pkg/mcp`) together with the daemon behind it, both roles of the one
   binary. Every other rule in this section — fixtures, imports, docstrings,
   `parametrize`, mocking — applies to them in full.
+
+  `tests/perf/` is exempt from the naming rule too, for its gates: a gate
+  file is named after the Go package whose benchmarks it judges
+  (`server_test.py` for `pkg/server`), since the code under test is not
+  Python and what is asserted on is benchmark results, not a module.
 - **Every fixture lives in `conftest.py`. This holds for every pytest suite in the repo — the SDK suite (mocked and live halves alike), `tests/integration/` and `tests/e2e/`** — including a fixture that a single test file asks for, and including
   the seed data it is built from. A test module is assertions; a
   `@pytest.fixture` in one is setup hiding among them, and it splits "how did
@@ -270,6 +275,7 @@ where tests live relative to the source, the module/barrel-file rule — and
   image brought up as a daemon via `docker-compose.yaml`.
 - `make test-integration-py` — the `integration`-marked half of the SDK suite (`sdk/python/src/tests -m integration`), driven by a locally-run pytest against the same daemon.
 - `make test-integration` — the server + MCP bridge suite (`tests/integration/`): builds the binary and drives it as daemon *and* as `fraise mcp` over stdio. Needs Go, not docker.
+- `make bench BASE=<ref>` — the benchmark gates (`tests/perf`): the working tree's Go benchmarks against BASE, through benchdiff and benchstat.
 - `make lint`, `make fmt`, `make build` — quality and build entry points.
 
 When a change alters a contract (an interface method, hash material, a wire
