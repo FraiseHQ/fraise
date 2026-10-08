@@ -24,6 +24,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -145,6 +146,8 @@ func Canonical(v *string, name string, accepted []string) error {
 // recall that names a depth. scheduler.workers has a floor: Adjust only
 // replaces a zero, so a negative count would reach the scheduler, which would
 // start no worker and leave every accepted query waiting forever.
+// db.num-graphs is bounded by the selector: a selector is a uint8, so a graph
+// past 256 is allocated but no query can ever address it.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string
@@ -180,6 +183,10 @@ func (c *ConfigSet) validate() error {
 	// An operator may lower the ceiling, never raise it past the last lane.
 	if d := c.DB.MaxDepth; d < 0 || d > 2 {
 		return fmt.Errorf("%w: db.max-depth = %d (accepted: 0 to 2)", ErrInvalidValue, d)
+	}
+
+	if n := c.DB.NumGraphs; n < 1 || n > math.MaxUint8+1 {
+		return fmt.Errorf("%w: db.num-graphs = %d (accepted: 1 to %d)", ErrInvalidValue, n, math.MaxUint8+1)
 	}
 	return nil
 }
