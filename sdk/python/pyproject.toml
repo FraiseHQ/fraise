@@ -19,7 +19,7 @@ anthropic = [
     "claude-agent-sdk>=0.2.163",
 ]
 huggingface = [
-    "huggingface-hub>=1.27.0",
+    "huggingface-hub>=2.1.1",
 ]
 dev = [
     "pytest>=9.1.1",
