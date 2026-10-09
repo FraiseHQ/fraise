@@ -221,9 +221,22 @@ def pytest_configure(config):
     config.stash[_OUTCOMES] = []
 
 
-# A change outside any package's .go files that still changes what every
-# benchmark measures: the module's dependencies, or the gates themselves.
-_EVERYTHING = ("go.mod", "go.sum", "tests/perf/")
+# A change outside any package's .go files that still changes what every gate
+# measures or how it runs: the module's dependencies, the gates themselves,
+# and what runs them (the Makefile targets, the gate workflow, the Python
+# environment pytest runs in, the embeddings the release gate seeds with). A
+# pull request changing one of these exercises every gate, so a broken change
+# to the gates cannot pass by skipping them all.
+_EVERYTHING = (
+    "go.mod",
+    "go.sum",
+    "tests/perf/",
+    "Makefile",
+    "pyproject.toml",
+    "uv.lock",
+    "tools/embed_locomo.py",
+    ".github/workflows/benchmarks.yaml",
+)
 
 
 def _unchanged(items, since):
