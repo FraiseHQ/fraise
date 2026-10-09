@@ -316,12 +316,12 @@ def pytest_runtest_makereport(item, call):
             reason = rep.longrepr[2].removeprefix("Skipped: ")
             item.config.stash[_OUTCOMES].append(("Not run", item, reason))
         elif rep.failed:
+            # Failing at its call is a limit broken; failing at setup is a
+            # run that never got its numbers (a build, a benchmark that
+            # crashed), which says nothing about a regression.
+            kind = "Failed" if rep.when == "call" else "Could not measure"
             item.config.stash[_OUTCOMES].append(
-                (
-                    "Failed",
-                    item,
-                    call.excinfo.exconly()[:1000] if call.excinfo else "",
-                )
+                (kind, item, call.excinfo.exconly()[:1000] if call.excinfo else "")
             )
     return rep
 
@@ -352,29 +352,36 @@ def pytest_sessionfinish(session, exitstatus):
     out.mkdir(parents=True, exist_ok=True)
 
     compared = [name for name, (base, _) in runs.items() if base]
-    if not runs:
-        lines = [
-            "### ⚪ Nothing to measure",
-            "",
-            "No package a gate benchmarks changed.",
+    kinds = {kind for kind, _, _ in outcomes}
+    # The headline is what the outcomes add up to, worst first: a broken
+    # limit, then a gate that could not measure, then a regression accepted.
+    if "Failed" in kinds:
+        headline = "### 🔴 Regression"
+    elif "Could not measure" in kinds:
+        headline = "### ⚠️ Could not measure"
+    elif not runs:
+        headline = "### ⚪ Nothing to measure"
+    elif "Accepted" in kinds:
+        headline = "### 🟡 Regression accepted"
+    else:
+        headline = "### 🟢 No regression"
+    lines = [headline, ""]
+    if not runs and "Could not measure" not in kinds:
+        lines += ["No package a gate benchmarks changed.", ""]
+    elif len(compared) == len(runs) and runs:
+        lines += ["Compared with the newest nightly run of `main`.", ""]
+    elif compared:
+        lines += [
+            "Compared with the newest nightly run of `main`; sets marked *new* have no baseline yet and show this run's numbers.",
             "",
         ]
-    else:
-        lines = ["### 🔴 Regression" if exitstatus != 0 else "### 🟢 No regression", ""]
-        if len(compared) == len(runs):
-            lines += ["Compared with the newest nightly run of `main`.", ""]
-        elif compared:
-            lines += [
-                "Compared with the newest nightly run of `main`; sets marked *new* have no baseline yet and show this run's numbers.",
-                "",
-            ]
-        else:
-            lines += [
-                "No nightly baseline yet, so these are this run's numbers. Comparisons start once a nightly run has measured `main`.",
-                "",
-            ]
+    elif runs:
+        lines += [
+            "No nightly baseline yet, so these are this run's numbers. Comparisons start once a nightly run has measured `main`.",
+            "",
+        ]
 
-    for kind in ("Failed", "Accepted"):
+    for kind in ("Failed", "Could not measure", "Accepted"):
         listed = [
             f"- {_gate(item)}: {message}" for k, item, message in outcomes if k == kind
         ]
