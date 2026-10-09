@@ -183,13 +183,22 @@ bench-nightly: ## Run every gate, HTTP latency included, against BENCH_BASELINE 
 # comparison, and retrieval quality as {name, unit, value} JSON so it is
 # charted as bigger-is-better: github-action-benchmark's own go parser takes
 # every unit as smaller-is-better. A retrieval value is one whose unit is a
-# metric of the benchmark, with an @ in its name.
+# metric of the benchmark, with an @ in its name. Each series is shaped from
+# the outputs the night has: a gate that failed wrote none, and leaves its
+# series out rather than costing the others theirs.
+HISTORY_LATENCY   = $(wildcard $(PERF_OUT)/internal-*.txt $(PERF_OUT)/pkg-server-BenchmarkHTTP.txt)
+HISTORY_RETRIEVAL = $(wildcard $(PERF_OUT)/pkg-server-BenchmarkRetrievalQuality.txt)
+
 bench-history: ## Shape the run in PERF_OUT for the history github-action-benchmark keeps
-	awk '!/^Benchmark/ || !seen[$$1]++' $(PERF_OUT)/internal-*.txt $(PERF_OUT)/pkg-server-BenchmarkHTTP.txt > $(PERF_OUT)/history-latency.txt
-	awk '/^Benchmark/ { name = $$1; sub(/-[0-9]+$$/, "", name); \
-	    for (i = 3; i < NF; i += 2) if ($$(i + 1) ~ /@/) \
-	      printf "%s{\"name\":\"%s - %s\",\"unit\":\"%s\",\"value\":%s}", (n++ ? "," : "["), name, $$(i + 1), $$(i + 1), $$i } \
-	  END { print (n ? "]" : "[]") }' $(PERF_OUT)/pkg-server-BenchmarkRetrievalQuality.txt > $(PERF_OUT)/history-retrieval.json
+	@if [ -n "$(HISTORY_LATENCY)" ]; then \
+	  awk '!/^Benchmark/ || !seen[$$1]++' $(HISTORY_LATENCY) > $(PERF_OUT)/history-latency.txt; \
+	else echo "No latency output to record"; fi
+	@if [ -n "$(HISTORY_RETRIEVAL)" ]; then \
+	  awk '/^Benchmark/ { name = $$1; sub(/-[0-9]+$$/, "", name); \
+	      for (i = 3; i < NF; i += 2) if ($$(i + 1) ~ /@/) \
+	        printf "%s{\"name\":\"%s - %s\",\"unit\":\"%s\",\"value\":%s}", (n++ ? "," : "["), name, $$(i + 1), $$(i + 1), $$i } \
+	    END { print (n ? "]" : "[]") }' $(HISTORY_RETRIEVAL) > $(PERF_OUT)/history-retrieval.json; \
+	else echo "No retrieval output to record"; fi
 
 perf-vectors: ## Embed the LoCoMo sample once, for the runs that seed with vectors
 	$(UV_CMD) run --package tests --extra embeddings python tools/embed_locomo.py tests/perf/data/locomo-conv-26.json $(PERF_OUT)/locomo-vectors.json
