@@ -367,6 +367,18 @@ def pytest_sessionfinish(session, exitstatus):
         ]
         if listed:
             lines += [f"**{kind}**", "", *listed, ""]
+    slower = [
+        f"- **{item.get_closest_marker('bench').args[0].removeprefix('./')}** · {row}"
+        for k, item, row in outcomes
+        if k == "Slower"
+    ]
+    if slower:
+        lines += [
+            "**Slower**, by 10% or more and significant; not a failure, the baseline was timed on another runner:",
+            "",
+            *slower,
+            "",
+        ]
     skipped = sorted(
         {
             item.get_closest_marker("bench").args[0].removeprefix("./")
@@ -432,10 +444,17 @@ def comparison(request, pytestconfig):
 
 
 @pytest.fixture
-def warn_slower():
-    """Reports a significant slowdown for a reviewer to judge, without failing the gate."""
+def warn_slower(request, pytestconfig):
+    """Reports a significant slowdown for a reviewer to judge, without failing the gate.
+
+    The slowdown goes into the report under Slower, where the pull request and
+    Discord see it, as well as into pytest's warnings summary.
+    """
 
     def warn(row):
         warnings.warn(str(row), UserWarning, stacklevel=2)
+        before, after = _quantity(row.base, row.unit), _quantity(row.head, row.unit)
+        line = f"{row.benchmark} {row.unit}: {before} → {after} ({row.delta}, p={row.p:.3f})"
+        pytestconfig.stash[_OUTCOMES].append(("Slower", request.node, line))
 
     return warn
