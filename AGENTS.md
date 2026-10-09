@@ -145,10 +145,7 @@ These apply to every component:
   binary. Every other rule in this section — fixtures, imports, docstrings,
   `parametrize`, mocking — applies to them in full.
 
-  `tests/perf/` is exempt from the naming rule too, for its gates: a gate
-  file is named after the Go package whose benchmarks it judges
-  (`server_test.py` for `pkg/server`), since the code under test is not
-  Python and what is asserted on is benchmark results, not a module.
+  `tests/perf/` is exempt from the naming rule too, for its gates: a gate file is named after the Go package whose benchmarks it judges (`server_test.py` for `pkg/server`), since the code under test is not Python and what is asserted on is benchmark results, not a module.
 - **Every fixture lives in `conftest.py`. This holds for every pytest suite in the repo — the SDK suite (mocked and live halves alike), `tests/integration/` and `tests/e2e/`** — including a fixture that a single test file asks for, and including
   the seed data it is built from. A test module is assertions; a
   `@pytest.fixture` in one is setup hiding among them, and it splits "how did
