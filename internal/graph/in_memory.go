@@ -250,10 +250,27 @@ func (g *InMemoryGraph[K, P]) dropRelationship(key K) {
 	delete(g.idToNodes, key)
 }
 
+// unlink removes the edge source -> target from both adjacency views and drops
+// any row it leaves empty. A row's presence is what makes a node a vertex to
+// anything that enumerates the views (PageRank collects its vertices from
+// them), so a node whose last edge goes must leave both views with it, or it
+// is ranked as a dangling vertex instead of left out as isolated.
+func (g *InMemoryGraph[K, P]) unlink(source, target K) {
+	delete(g.nodeToTargets[source], target)
+	if len(g.nodeToTargets[source]) == 0 {
+		delete(g.nodeToTargets, source)
+	}
+	delete(g.nodeToSources[target], source)
+	if len(g.nodeToSources[target]) == 0 {
+		delete(g.nodeToSources, target)
+	}
+}
+
 // Delete removes the node, its index entries and its incident relationships.
 // Deleting either endpoint of an edge, or the relationship itself, removes the
 // edge as a whole (its node and both adjacency entries), so Nodes, Size and
-// AdjacencyMap never disagree about which edges exist.
+// AdjacencyMap never disagree about which edges exist. A node left with no
+// edges has no row in either view, so it is isolated rather than dangling.
 func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	if node == nil {
 		return ErrNilNode
@@ -267,15 +284,13 @@ func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	// Deleting an endpoint: its adjacency rows hold each incident edge's key,
 	// so walking them finds the relationship nodes to drop.
 	for target, edge := range g.nodeToTargets[key] {
-		delete(g.nodeToSources[target], key)
+		g.unlink(key, target)
 		g.dropRelationship(edge)
 	}
 	for source, edge := range g.nodeToSources[key] {
-		delete(g.nodeToTargets[source], key)
+		g.unlink(source, key)
 		g.dropRelationship(edge)
 	}
-	delete(g.nodeToTargets, key)
-	delete(g.nodeToSources, key)
 	delete(g.idToNodes, key)
 
 	// Deleting a relationship: it has no rows of its own, only the two entries
@@ -284,8 +299,7 @@ func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	if r, isEdge := stored.(Relationship[K]); isEdge {
 		source := (*r.Source()).Key()
 		target := (*r.Target()).Key()
-		delete(g.nodeToTargets[source], target)
-		delete(g.nodeToSources[target], source)
+		g.unlink(source, target)
 	}
 
 	// The node may legitimately be absent from either index.
