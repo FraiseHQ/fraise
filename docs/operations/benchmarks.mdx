@@ -13,7 +13,7 @@ Every change to the server is measured against `main` as it stood the night befo
 | Every pull request | the head: the gates whose packages it changes, retrieval text only | the newest nightly baseline | the **Benchmark gate** check and a comment on the pull request; Discord on a regression |
 | The server's release pull request | the head: every gate, retrieval text only and seeded with embeddings | the newest nightly baseline | the **Benchmark gate** check and a comment on the pull request; Discord always |
 
-A pull request runs only the gates it can affect: a gate's packages are its benchmarks' package and every package of the module that one builds on, tests included, so a change in any of them runs the gate and a change outside them skips it, listed as not run in the report. A change to `go.mod`, `go.sum` or `tests/perf` runs every gate, and so does the release gate.
+A pull request runs only the gates it can affect: a gate's packages are its benchmarks' package and every package of the module that one builds on, tests included, so a change in any of them runs the gate and a change outside them skips it, listed as not run in the report. A change to `go.mod`, `go.sum`, `tests/perf`, or to what runs the gates (the `Makefile`, the Python environment in `pyproject.toml` and `uv.lock`, `tools/embed_locomo.py`, the gate workflow) runs every gate, and so does the release gate.
 
 The nightly run is the reference. Its outputs are saved as the `benchmark-baseline` artifact, and every pull request until the next night is measured and compared with them; a pull request measures only its own head. When no baseline exists yet for a benchmark, the benchmark still runs and is reported, and its gate passes, since there is nothing to regress from.
 
