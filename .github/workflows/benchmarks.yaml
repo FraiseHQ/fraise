@@ -13,20 +13,13 @@ name: Benchmarks
 # write token this workflow does not get there.
 
 on:
+  # Every pull request, with no paths filter: the gate is a required check,
+  # and a required check has to report on every pull request. One that
+  # changes no package a gate benchmarks runs no benchmark and reports that.
   pull_request:
     # labeled, unlabeled and edited re-run the gate when a regression is
     # accepted with the label and the Perf: line, or the acceptance withdrawn.
     types: [opened, synchronize, reopened, labeled, unlabeled, edited]
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
-      - "Makefile"
-      - "pyproject.toml"
-      - "uv.lock"
-      - "tests/perf/**"
-      - "tools/embed_locomo.py"
-      - ".github/workflows/benchmarks.yaml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -37,12 +30,14 @@ permissions:
 
 jobs:
   gate:
-    # Two required checks share this job: the release pull request, which
-    # also measures retrieval seeded with embeddings, and any other. The name
-    # tells branch protection which one ran.
-    name: ${{ startsWith(github.head_ref, 'release-please--') && 'Release gate' || 'Benchmark gate' }}
+    # One name on every pull request, the one branch protection requires. The
+    # server's release pull request runs every gate, retrieval seeded with
+    # embeddings included; any other runs the gates its changes can affect.
+    name: Benchmark gate
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      RELEASE: ${{ github.head_ref == 'release-please--branches--main--components--fraise' }}
     permissions:
       contents: read
       actions: read # the nightly baseline
@@ -80,12 +75,12 @@ jobs:
       # cannot be computed, the gate measures text only.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: vectors
-        if: startsWith(github.head_ref, 'release-please--')
+        if: env.RELEASE == 'true'
         with:
           path: bin/perf/locomo-vectors.json
           key: locomo-vectors-${{ hashFiles('tests/perf/data/locomo-conv-26.json', 'tools/embed_locomo.py') }}
       - name: Embed LoCoMo
-        if: startsWith(github.head_ref, 'release-please--') && steps.vectors.outputs.cache-hit != 'true'
+        if: env.RELEASE == 'true' && steps.vectors.outputs.cache-hit != 'true'
         continue-on-error: true
         run: make perf-vectors
 
@@ -98,7 +93,7 @@ jobs:
         run: >-
           make bench
           BENCH_BASELINE=${{ steps.baseline.outputs.found_artifact == 'true' && 'bin/perf/baseline' || '' }}
-          BENCH_CHANGED_SINCE=${{ !startsWith(github.head_ref, 'release-please--') && 'HEAD^1' || '' }}
+          BENCH_CHANGED_SINCE=${{ env.RELEASE != 'true' && 'HEAD^1' || '' }}
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()

@@ -51,7 +51,7 @@ jobs:
       - name: Post to Discord
         if: >-
           github.event.workflow_run.name == 'Benchmarks nightly' ||
-          startsWith(github.event.workflow_run.head_branch, 'release-please--') ||
+          github.event.workflow_run.head_branch == 'release-please--branches--main--components--fraise' ||
           github.event.workflow_run.conclusion == 'failure'
         uses: tsickert/discord-webhook@b217a69502f52803de774ded2b1ab7c282e99645 # v7.0.0
         with:
