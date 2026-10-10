@@ -48,6 +48,8 @@ A fact's relevance is its own mass plus everything transmitted to it.
 
 A recall returns its `top:` best candidates — and, with the score cutoff on, fewer: `db.min-score-ratio` drops the hits whose relevance, before recency decay and the ranking boost, is below a fraction of the best hit's. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
 
+The order is total: hits of equal score rank newest first, then by key. The same recall against an unchanged graph returns the same hits in the same order, and when a tie straddles the `top:` cut, the newest facts are the ones kept.
+
 ## Why a recall needs a seed
 
 Without a seed there is no mass to transmit. That is why a recall must carry at least one term, anchor or vector, and why `recall top:3` is an error rather than an unfiltered dump.
