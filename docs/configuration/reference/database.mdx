@@ -7,7 +7,7 @@ navLabel: "Database"
 | Setting | Flag | Default | Meaning |
 |------------------------|-------------------------|-----------|-----------------------------------------------------------|
 | `precision` | `-precision` | `float32` | float width of embeddings and scores: `float32` `float64` |
-| `num-graphs` | `-num-graphs` | `8` | independent graphs allocated; selectors are `0..n-1` |
+| `num-graphs` | `-num-graphs` | `8` | independent graphs allocated, in `[1, 256]`; selectors are `0..n-1` |
 | `default-top` | `-default-top` | `10` | results returned when a recall omits `top:` |
 | `default-depth` | `-default-depth` | `0` | retrieval lane when a recall omits `depth:` (0 = floor) |
 | `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it |
@@ -49,7 +49,7 @@ The cutoff is **off by default** because the trade is yours to make: it buys pre
 
 ## `num-graphs`
 
-Graphs are allocated at startup and the count never grows: a selector is an index, not a lookup. Empty graphs cost almost nothing, so allocate for the isolation you want, not the load you have. See [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+Graphs are allocated at startup and the count never grows: a selector is an index, not a lookup. A selector is a `uint8`, so `256` graphs is every selector a query can name, and startup refuses a count past it rather than allocate graphs nothing can reach. Empty graphs cost almost nothing, so allocate for the isolation you want, not the load you have. See [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
 
 ## `[db.hashing-function]`
 
