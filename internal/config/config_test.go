@@ -296,8 +296,9 @@ min-score-ratio = 0.3
 // and the slots spread, at the recall setting that was benchmarked, so a
 // config that never mentions them runs the engine that was measured; group
 // hits are opt-in; a negative share and the name none are the two ways off,
-// and 0 for the share means the default, as it does for the half-life. The
-// file and the flags reach the same fields.
+// and 0 for the share means the default, as it does for the half-life, while
+// 0 for the ratio is a ratio and is kept. The file and the flags reach the
+// same fields.
 func TestConfigSet_WindowAndAggregate(t *testing.T) {
 	c := config.New()
 	if c.DB.WindowGamma != 0.3 {
@@ -316,11 +317,14 @@ func TestConfigSet_WindowAndAggregate(t *testing.T) {
 		t.Errorf("off: got gamma %v, aggregate %q, want -1 and none to survive Parse", off.DB.WindowGamma, off.DB.Aggregate.Name)
 	}
 	zero := config.New()
-	if err := zero.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0"}); !errors.Is(err, config.ErrMissingFile) {
+	if err := zero.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0", "-aggregate-ratio", "0"}); !errors.Is(err, config.ErrMissingFile) {
 		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
 	}
 	if zero.DB.WindowGamma != 0.3 {
 		t.Errorf("DB.WindowGamma from an explicit 0: got %v, want the default 0.3", zero.DB.WindowGamma)
+	}
+	if zero.DB.Aggregate.Ratio != 0 {
+		t.Errorf("DB.Aggregate.Ratio from an explicit 0: got %v, want 0 kept", zero.DB.Aggregate.Ratio)
 	}
 
 	const contents = `

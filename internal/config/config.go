@@ -516,7 +516,9 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.Aggregate.Name, DefaultAggregate)
 	Adjust(&c.DB.Aggregate.Pool, DefaultAggregatePool)
 	Adjust(&c.DB.Aggregate.Spread, DefaultAggregateSpread)
-	Adjust(&c.DB.Aggregate.Ratio, DefaultAggregateRatio)
+	// DB.Aggregate.Ratio needs no Adjust: 0 is a ratio, every candidate near
+	// the top counting towards the spread, and its default comes from the
+	// flag, so only an explicit value replaces it.
 	Adjust(&c.DB.Aggregate.Cap, DefaultAggregateCap)
 	Adjust(&c.DB.Aggregate.MinSize, DefaultAggregateMinSize)
 	Adjust(&c.DB.Aggregate.MaxGroups, DefaultAggregateMaxGroups)
