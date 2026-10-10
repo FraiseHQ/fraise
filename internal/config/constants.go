@@ -111,7 +111,7 @@ const (
 	// DefaultRelevanceModel is the text index's relevance model; the excess
 	// methodology needs BM25's raw retrieval mass, and "matchcount" remains
 	// available for comparison runs.
-	DefaultRelevanceModel string = RelevanceBM25
+	DefaultRelevanceModel string = RelevanceMatchCount
 
 	// DefaultRankingAlgorithm is the global ranking boost applied to relevance
 	// scores; "none" disables it (the alternative is "pagerank").
