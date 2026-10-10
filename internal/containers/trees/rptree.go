@@ -352,7 +352,10 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int) []TreeNode[K, T, P] {
 		items = append(items, item)
 	}
 
-	pq, _ := containers.NewPriorityQueue[K, TreeNode[K, T, P]](uint(k))
+	// The pool is sized on the candidates, not on k: k is a recall's top:,
+	// which a client chooses, so a large top: against a small tree must not
+	// reserve memory for hits the tree cannot return.
+	pq, _ := containers.NewPriorityQueue[K, TreeNode[K, T, P]](uint(min(k, len(items))))
 	for _, item := range items {
 		if pq.Len() < k {
 			pq.Enqueue(item)

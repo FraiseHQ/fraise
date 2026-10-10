@@ -143,7 +143,10 @@ func Canonical(v *string, name string, accepted []string) error {
 // and silently empty every recall. db.max-depth caps a recall's depth clause,
 // and search has no lane past 2: a higher ceiling would let depth:3 through
 // to be silently answered as depth 2, and a negative one would reject every
-// recall that names a depth. scheduler.workers has a floor: Adjust only
+// recall that names a depth. db.max-top has a floor for the same reason: a
+// ceiling below 1 would reject every recall that names a top. It has no
+// upper bound, since how many hits one recall may ask for is the operator's
+// call. scheduler.workers has a floor: Adjust only
 // replaces a zero, so a negative count would reach the scheduler, which would
 // start no worker and leave every accepted query waiting forever.
 // db.num-graphs is bounded by the selector: a selector is a uint8, so a graph
@@ -183,6 +186,10 @@ func (c *ConfigSet) validate() error {
 	// An operator may lower the ceiling, never raise it past the last lane.
 	if d := c.DB.MaxDepth; d < 0 || d > 2 {
 		return fmt.Errorf("%w: db.max-depth = %d (accepted: 0 to 2)", ErrInvalidValue, d)
+	}
+
+	if m := c.DB.MaxTop; m < 1 {
+		return fmt.Errorf("%w: db.max-top = %d (accepted: 1 or more)", ErrInvalidValue, m)
 	}
 
 	if n := c.DB.NumGraphs; n < 1 || n > math.MaxUint8+1 {
