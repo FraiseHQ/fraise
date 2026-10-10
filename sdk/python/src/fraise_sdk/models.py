@@ -41,6 +41,9 @@ class GraphStats:
     ``vectors`` the vectors indexed; ``forest_entries`` the vector forest's
     entries, live vectors plus garbage awaiting compaction, which stay within
     the server's flush factor times ``vectors`` unless the index leaks.
+    ``relevance`` is the relevance model the graph's text index ranks with
+    (``bm25`` or ``matchcount``), read back from the index rather than echoed
+    from configuration; it is ``None`` from a server too old to report it.
 
     A graph nothing was written to is a row of zeros, not a missing row.
     """
@@ -51,6 +54,7 @@ class GraphStats:
     nodes: int
     vectors: int
     forest_entries: int
+    relevance: str | None = None
 
     @classmethod
     def from_json(cls, data: dict) -> GraphStats:  # noqa: D102
@@ -61,6 +65,7 @@ class GraphStats:
             nodes=int(data["nodes"]),
             vectors=int(data["vectors"]),
             forest_entries=int(data["forest_entries"]),
+            relevance=data.get("relevance"),
         )
 
 

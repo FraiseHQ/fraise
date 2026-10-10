@@ -22,7 +22,11 @@
 
 package relevance
 
-import "math"
+import (
+	"math"
+
+	"github.com/FraiseHQ/fraise/internal/config"
+)
 
 // BM25 constants: the standard Robertson–Walker defaults, deliberately not
 // configurable. The retrieval methodology needs raw, untuned BM25 units: the
@@ -57,6 +61,9 @@ type BM25[K comparable, P float32 | float64] struct {
 func NewBM25[K comparable, P float32 | float64]() *BM25[K, P] {
 	return &BM25[K, P]{lengths: make(map[K]int)}
 }
+
+// Name is [config.RelevanceBM25].
+func (b *BM25[K, P]) Name() string { return config.RelevanceBM25 }
 
 // Indexed records the document's length into the corpus statistics.
 func (b *BM25[K, P]) Indexed(key K, tokens []string) {

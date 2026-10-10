@@ -446,9 +446,33 @@ def test_stats_returns_one_row_per_graph_in_id_order(
 
     session.get.assert_called_once_with(stats_url, timeout=DEFAULT_TIMEOUT_SECONDS)
     assert stats == [
-        GraphStats(id=0, vertices=4, edges=3, nodes=7, vectors=0, forest_entries=0),
-        GraphStats(id=1, vertices=0, edges=0, nodes=0, vectors=0, forest_entries=0),
-        GraphStats(id=2, vertices=1, edges=0, nodes=1, vectors=1, forest_entries=1),
+        GraphStats(
+            id=0,
+            vertices=4,
+            edges=3,
+            nodes=7,
+            vectors=0,
+            forest_entries=0,
+            relevance="bm25",
+        ),
+        GraphStats(
+            id=1,
+            vertices=0,
+            edges=0,
+            nodes=0,
+            vectors=0,
+            forest_entries=0,
+            relevance="bm25",
+        ),
+        GraphStats(
+            id=2,
+            vertices=1,
+            edges=0,
+            nodes=1,
+            vectors=1,
+            forest_entries=1,
+            relevance="bm25",
+        ),
     ]
 
 
@@ -731,13 +755,21 @@ def test_stats_counts_what_was_remembered(client, stats_graph):
     The graph is claimed for this test alone, so its counts are exact rather
     than lower bounds: six vertices (three facts, one topic, two entities),
     five fact-to-anchor edges, eleven nodes and one vector, which a forest with
-    nothing to compact holds as one entry. Every other row is at its own id.
+    nothing to compact holds as one entry. The daemon runs the default
+    configuration, so its text index ranks with BM25. Every other row is at
+    its own id.
     """
     stats = client.stats()
 
     assert [row.id for row in stats] == list(range(len(stats)))
     assert stats[stats_graph] == GraphStats(
-        id=stats_graph, vertices=6, edges=5, nodes=11, vectors=1, forest_entries=1
+        id=stats_graph,
+        vertices=6,
+        edges=5,
+        nodes=11,
+        vectors=1,
+        forest_entries=1,
+        relevance="bm25",
     )
 
 

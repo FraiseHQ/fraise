@@ -9,7 +9,7 @@ One entry per graph, in selector order, computed on demand from the live graphs:
 ```json
 {
   "graphs": [
-    {"id": 0, "order": 12, "size": 18, "nodes": 30, "vectors": 4, "forest_entries": 6}
+    {"id": 0, "order": 12, "size": 18, "nodes": 30, "vectors": 4, "forest_entries": 6, "relevance": "bm25"}
   ]
 }
 ```
@@ -21,6 +21,7 @@ One entry per graph, in selector order, computed on demand from the live graphs:
 | `nodes` | every stored node, relationships included |
 | `vectors` | vectors indexed |
 | `forest_entries` | entries in each tree of the vector forest: live vectors plus garbage awaiting compaction |
+| `relevance` | the relevance model the text index ranks with, `bm25` or `matchcount`: read back from the index, so it is the model in effect rather than the configured name |
 
 ## Why `forest_entries` is exposed
 

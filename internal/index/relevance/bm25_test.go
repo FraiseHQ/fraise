@@ -31,8 +31,17 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/index/relevance"
 )
+
+// TestBM25NameIsTheConfigName pins the name startup compares with
+// db.relevance-model.name: any other spelling fails every BM25 startup.
+func TestBM25NameIsTheConfigName(t *testing.T) {
+	if got := relevance.NewBM25[int, float32]().Name(); got != config.RelevanceBM25 {
+		t.Errorf("Name = %q, want %q", got, config.RelevanceBM25)
+	}
+}
 
 // TestBM25TermsDedupsFirstOccurrence pins the query-side stream: distinct
 // terms only — idf must not double-count a repeated term — in first

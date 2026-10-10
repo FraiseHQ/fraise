@@ -531,6 +531,20 @@ func TestNewGraphSelectsConfiguredRelevanceModel(t *testing.T) {
 	}
 }
 
+// TestStatsReportsTheResolvedRelevanceModel pins Stats().Relevance as the
+// model the text index ranks with, for each configured name. Startup checks
+// that field against configuration, so it must be read back from the index:
+// echoing the configured name would make the check pass by construction.
+func TestStatsReportsTheResolvedRelevanceModel(t *testing.T) {
+	for _, name := range []string{"bm25", "matchcount"} {
+		cfg := testConfig()
+		cfg.DB.RelevanceModel.Name = name
+		if got := graph.NewGraph[uint64, float64](cfg).Stats().Relevance; got != name {
+			t.Errorf("Stats().Relevance under %q = %q, want %q", name, got, name)
+		}
+	}
+}
+
 // TestSetScorerInstallsFold pins the scoring seam: the fold Search derives
 // relevance with is the installed Scorer. With decay disabled the constant
 // fold's output reaches the caller untouched.

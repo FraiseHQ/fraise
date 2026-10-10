@@ -34,6 +34,12 @@ package relevance
 // already indexed. The index does not enforce this; it is part of the
 // contract.
 type Relevance[K comparable, P float32 | float64] interface {
+	// Name is the model's db.relevance-model.name, one of
+	// config.RelevanceModels. Startup compares it with the configured name,
+	// so a model that names itself wrongly hides a wiring failure that every
+	// other test would miss: ranking degrades without anything going red.
+	Name() string
+
 	// Indexed records a document's statistics. On update the index calls
 	// Removed with the old tokens first, so key is always absent here.
 	Indexed(key K, tokens []string)

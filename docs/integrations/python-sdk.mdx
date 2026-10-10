@@ -116,10 +116,10 @@ On a plain `recall` the breakdown is not asked for: each hit's `contributions` i
 
 ```python
 for g in client.stats():
-    print(g.id, g.vertices, g.edges, g.nodes, g.vectors, g.forest_entries)
+    print(g.id, g.vertices, g.edges, g.nodes, g.vectors, g.forest_entries, g.relevance)
 ```
 
-The fields are named for what they count: `vertices` is the endpoint's `order` (facts, topics and entities) and `edges` its `size` (a fact's links to its topics and entities), while `nodes`, `vectors` and `forest_entries` keep the endpoint's names. Unlike `health()`, `stats()` raises on failure, `FraiseError` when the server cannot be reached and `FraiseAPIError` on an error status, so an unreachable server is never read as an empty one.
+The fields are named for what they count: `vertices` is the endpoint's `order` (facts, topics and entities) and `edges` its `size` (a fact's links to its topics and entities), while `nodes`, `vectors`, `forest_entries` and `relevance` keep the endpoint's names. Unlike `health()`, `stats()` raises on failure, `FraiseError` when the server cannot be reached and `FraiseAPIError` on an error status, so an unreachable server is never read as an empty one.
 
 ## Version compatibility
 

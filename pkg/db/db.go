@@ -28,6 +28,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/graph"
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
 // DB holds the store's graphs, addressed by selector. Start builds each graph
@@ -74,9 +75,17 @@ func NewDB[K ~uint64, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P], er
 // Start builds a fresh graph in every slot, with the traversal, scorer and
 // ranking the configuration names. The store is in-memory, so a Start after
 // [DB.Stop] begins from empty graphs.
+//
+// Start fails with [ErrRelevanceModelMismatch] when a graph's text index does
+// not rank with the configured relevance model. Nothing downstream would
+// notice: a wrong model still answers every query, only worse.
 func (d *DB[K, P]) Start() error {
+	want := d.Config.DB.RelevanceModel.Name
 	for i := range d.Graphs {
 		g := graph.NewGraph[K, P](d.Config)
+		if got := g.Stats().Relevance; got != want {
+			return fmt.Errorf("%w: graph %d ranks with %q, configured %q", ErrRelevanceModelMismatch, i, got, want)
+		}
 
 		// The search algorithms come from configuration. Startup rejects any
 		// name outside config's accepted lists, so a stage left at the graph's
@@ -101,6 +110,7 @@ func (d *DB[K, P]) Start() error {
 
 		d.Graphs[i] = g
 	}
+	logger.Info("Text index relevance model resolved", "relevance", want)
 	return nil
 }
 

@@ -119,6 +119,12 @@ func (idx *BTreeIndex[K, P]) SetRelevance(r relevance.Relevance[K, P]) {
 	idx.relevance = r
 }
 
+// Relevance returns the installed relevance model: MatchCount until
+// SetRelevance replaces it.
+func (idx *BTreeIndex[K, P]) Relevance() relevance.Relevance[K, P] {
+	return idx.relevance
+}
+
 // Insert tokenizes value, adds key to the posting list of each of its terms
 // and stores the raw document for Retrieve. If key is already indexed, its
 // previous document is replaced.
