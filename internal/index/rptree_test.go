@@ -168,6 +168,62 @@ func TestRPTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexSearchWithinRanksOnlyTheAdmitted pins the SearchWithin
+// contract on the forest: the admitted vectors sit far from the query, behind
+// two hundred that crowd every tree's first answer, so a single Nearest round
+// sees none of them. SearchWithin must keep asking until it holds the k
+// nearest admitted vectors, and return every admitted vector when there are
+// fewer than k, rather than stop at what the first round surfaced. Small
+// leaves and an overfetch of one keep each round's pool narrow.
+func TestRPTreeIndexSearchWithinRanksOnlyTheAdmitted(t *testing.T) {
+	idx := index.NewRPTreeIndex[int, float64](4, 4, 3, 11, 2, 4, 1, comparator.OrderedComparator[int])
+	rng := rand.New(rand.NewSource(3))
+	for key := 0; key < 200; key++ {
+		if err := idx.Insert(key, randVector(rng, 4)); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	for key := 200; key < 205; key++ {
+		far := float64(1000 * (key - 199))
+		if err := idx.Insert(key, containers.NewVector[int]([]float64{far, far, far, far})); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	far := func(key int) bool { return key >= 200 }
+	query := containers.NewVector[int]([]float64{0, 0, 0, 0})
+
+	top, _, err := idx.Search(query, 3)
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	for _, key := range top {
+		if far(key) {
+			t.Fatalf("Search(k=3) = %v, want only near vectors: the test needs the far ones ranked below k", top)
+		}
+	}
+
+	got, distances, err := idx.SearchWithin(query, 3, far)
+	if err != nil {
+		t.Fatalf("SearchWithin = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(got, []int{200, 201, 202}) {
+		t.Errorf("SearchWithin(k=3, far) = %v, want [200 201 202], the three nearest admitted", got)
+	}
+	for i, key := range got {
+		if want := float64(2000 * (key - 199)); distances[i] != want {
+			t.Errorf("SearchWithin distance of %d = %v, want %v", key, distances[i], want)
+		}
+	}
+
+	got, _, err = idx.SearchWithin(query, 10, far)
+	if err != nil {
+		t.Fatalf("SearchWithin = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(got, []int{200, 201, 202, 203, 204}) {
+		t.Errorf("SearchWithin(k=10, far) = %v, want all 5 admitted vectors", got)
+	}
+}
+
 func TestRPTreeIndexUpdateAndDelete(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 3, 1, 2, 32, 8, comparator.OrderedComparator[int])
 	if err := idx.Insert(1, containers.NewVector[int]([]float64{1, 1})); err != nil {

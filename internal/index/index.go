@@ -65,6 +65,17 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// tiebreak the k kept by truncation would be an arbitrary subset of a tied
 	// group and two identical queries could rank the same matches differently.
 	Search(query V, k int) ([]K, []P, error)
+
+	// SearchWithin ranks like Search, but only among the keys admit accepts.
+	// A rejected key is never ranked, so it cannot hold one of the k places:
+	// the k returned are the best admitted keys, not the admitted remainder
+	// of a ranking over every key. A caller that restricts its results to a
+	// subset of the index (a recall's anchors and time window) must restrict
+	// here, before the cut to k; filtering Search's output afterwards loses
+	// every admitted key that ranks below k across the whole index. Corpus
+	// statistics stay those of the whole index, so an admitted key scores
+	// exactly as it would under Search.
+	SearchWithin(query V, k int, admit func(K) bool) ([]K, []P, error)
 }
 
 // TextIndex is a full-text index: it tokenizes string documents on insert and

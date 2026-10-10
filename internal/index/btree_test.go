@@ -347,6 +347,69 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 	}
 }
 
+// TestBTreeIndexSearchWithinRanksOnlyTheAdmitted pins the SearchWithin
+// contract: the k it returns are the best admitted documents even when every
+// one of them ranks below k across the whole index, and an admitted document
+// scores exactly as it does under Search, because term weights still come
+// from the whole corpus. Thirty short documents outrank five long ones on
+// "zebra" (BM25 length normalisation), so Search's top three hold none of the
+// long ones; a filter applied to that output would return nothing.
+func TestBTreeIndexSearchWithinRanksOnlyTheAdmitted(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetRelevance(relevance.NewBM25[int, float64]())
+	for i := 1; i <= 30; i++ {
+		if err := idx.Insert(i, "zebra sighting"); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	for i := 31; i <= 35; i++ {
+		if err := idx.Insert(i, "a zebra was seen near the river bank by the old mill on a cold morning"); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	long := func(key int) bool { return key > 30 }
+
+	top, _, err := idx.Search("zebra", 3)
+	if err != nil {
+		t.Fatalf("Search(zebra, 3) = %v, want nil", err)
+	}
+	for _, key := range top {
+		if long(key) {
+			t.Fatalf("Search(zebra, 3) = %v, want only short documents: the test needs the long ones ranked below k", top)
+		}
+	}
+
+	all, allScores, err := idx.Search("zebra", 0)
+	if err != nil {
+		t.Fatalf("Search(zebra, 0) = %v, want nil", err)
+	}
+	want := make(map[int]float64, len(all))
+	for i, key := range all {
+		want[key] = allScores[i]
+	}
+
+	got, scores, err := idx.SearchWithin("zebra", 3, long)
+	if err != nil {
+		t.Fatalf("SearchWithin(zebra, 3) = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(got, []int{31, 32, 33}) {
+		t.Errorf("SearchWithin(zebra, 3, long) = %v, want [31 32 33]: the best admitted documents, tied and ordered by key", got)
+	}
+	for i, key := range got {
+		if scores[i] != want[key] {
+			t.Errorf("SearchWithin score of %d = %v, want %v as under Search: corpus statistics are the whole index's", key, scores[i], want[key])
+		}
+	}
+
+	got, _, err = idx.SearchWithin("zebra", 10, long)
+	if err != nil {
+		t.Fatalf("SearchWithin(zebra, 10) = %v, want nil", err)
+	}
+	if len(got) != 5 {
+		t.Errorf("SearchWithin(zebra, 10, long) = %v, want all 5 admitted documents", got)
+	}
+}
+
 // TestBTreeIndexStemmingUnifiesInflections pins the one-tokenizer contract
 // end to end: with the stemming tokenizer installed, a document indexed as
 // "running" is found by the query "runs", because both sides pass through
