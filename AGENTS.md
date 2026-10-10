@@ -89,6 +89,7 @@ These apply to every component:
   `Hash` comments explain what must not collide and what breaks if it does.
 - Formatting and linting are non-negotiable, whatever the language: `make lint`
   is the gate and it must be clean before a PR.
+- **No banner comments.** No section dividers or ruler lines in any file, whatever the language: no `# -- embedding ---`, no `// --- helpers ---`, no `# =====` box around a label. A banner names a grouping the code's own order and names already show, and it rots silently as definitions move across it. A comment explaining the code below it is fine; written as a plain comment, without the rulers.
 - Markdown prose is never hard-wrapped: one paragraph is one source line, however long — the same for a list item and for a blockquote line. Editors and renderers do the wrapping; hard breaks mid-paragraph make the file read as compacted and ragged, and turn every later edit into a rewrap diff. Code blocks, tables and the GitHub issue templates keep their own line structure. This applies to README.md, everything under docs/, and every other prose .md in the tree.
 
 ### Go
@@ -122,10 +123,10 @@ These apply to every component:
   it exercises.** `connect_test.py`, `lifecycle_test.py`, `compatibility_test.py`,
   `vectors_test.py` are all wrong names for tests of `client.py`: each describes
   a concern, and a concern is a *section inside* the mirrored file, not a file of
-  its own. Mirror the source module's own banner comments
-  (`# -- lifecycle ---`, `# -- embedding ---`) to keep those sections findable.
+  its own: its tests sit together, in the order the source module defines what
+  they exercise.
 
-  Integration tests live in the same mirrored file as the module's unit tests, under its `# -- integration` banner, and every one carries `@pytest.mark.integration`: `-m "not integration"` is the unit run and touches nothing live (`make test-py`), `-m integration` drives the daemon `make test-integration-py` brings up. The live fixtures they use sit in the same `conftest.py` as the mocked ones, under its "live server" banner — a fixture only instantiates when a test asks, so the unit run never waits on a health check.
+  Integration tests live in the same mirrored file as the module's unit tests, after them, and every one carries `@pytest.mark.integration`: `-m "not integration"` is the unit run and touches nothing live (`make test-py`), `-m integration` drives the daemon `make test-integration-py` brings up. The live fixtures they use sit in the same `conftest.py` as the mocked ones, after them — a fixture only instantiates when a test asks, so the unit run never waits on a health check.
 
   The point is that the tests for a given module are findable from its path
   alone, without grepping. Three consequences are intended, not accidents:
@@ -143,6 +144,8 @@ These apply to every component:
   (`pkg/mcp`) together with the daemon behind it, both roles of the one
   binary. Every other rule in this section — fixtures, imports, docstrings,
   `parametrize`, mocking — applies to them in full.
+
+  `tests/perf/` is exempt from the naming rule too, for its gates: a gate file is named after the Go package whose benchmarks it judges (`server_test.py` for `pkg/server`), since the code under test is not Python and what is asserted on is benchmark results, not a module.
 - **Every fixture lives in `conftest.py`. This holds for every pytest suite in the repo — the SDK suite (mocked and live halves alike), `tests/integration/` and `tests/e2e/`** — including a fixture that a single test file asks for, and including
   the seed data it is built from. A test module is assertions; a
   `@pytest.fixture` in one is setup hiding among them, and it splits "how did
@@ -251,8 +254,6 @@ These apply to every component:
   `Returns:` / `Raises:` sections, as in
   `sdk/python/src/fraise_sdk/integrations/openai_agents.py`. Not NumPy, not
   reST field lists. Enforced by `convention = "google"` in `pyproject.toml`.
-- Optional integrations import their vendor SDK inside the function that needs
-  it, never at module scope, so `import fraise_sdk` stays free of heavy extras.
 - `ruff` formats and lints (`make lint-py`); `ty` type-checks.
 
 ### TypeScript
@@ -271,6 +272,7 @@ where tests live relative to the source, the module/barrel-file rule — and
   image brought up as a daemon via `docker-compose.yaml`.
 - `make test-integration-py` — the `integration`-marked half of the SDK suite (`sdk/python/src/tests -m integration`), driven by a locally-run pytest against the same daemon.
 - `make test-integration` — the server + MCP bridge suite (`tests/integration/`): builds the binary and drives it as daemon *and* as `fraise mcp` over stdio. Needs Go, not docker.
+- `make bench BENCH_BASELINE=<dir>` — the benchmark gates (`tests/perf`): the working tree's Go benchmarks against a nightly run's outputs, through benchstat; without a baseline they measure and pass.
 - `make lint`, `make fmt`, `make build` — quality and build entry points.
 
 When a change alters a contract (an interface method, hash material, a wire

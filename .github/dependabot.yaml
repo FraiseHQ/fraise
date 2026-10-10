@@ -1,6 +1,4 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
+# Dependabot version updates. Every option is documented at
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
@@ -20,6 +18,11 @@ updates:
     directory: /
     schedule:
       interval: daily
+    # NOTE: the uv binary itself is pinned by `required-version` in the root
+    # pyproject.toml, which must keep admitting the uv release Dependabot runs;
+    # it is bumped by hand, never by an update PR.
+    ignore:
+      - dependency-name: uv
     commit-message:
       prefix: "deps: "
       prefix-development: "deps: "

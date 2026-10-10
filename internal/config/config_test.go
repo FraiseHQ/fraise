@@ -130,10 +130,10 @@ func TestConfigSet_FromFile_Missing(t *testing.T) {
 
 // TestParseRejectsAnUnusableConfigFile pins the other side: a file that
 // exists but cannot be used stops Parse with ErrParsingFailed, and the error
-// names the file and what was wrong, so the operator can find the line. Each
-// of these used to be survivable — logged, then the server started on
-// defaults the operator believed they had overridden. The unknown key is the
-// one the documentation's own example carried after the setting was removed.
+// names the file and what was wrong, so the operator can find the line.
+// Starting anyway would run on defaults the operator believes they overrode.
+// The unknown key is a removed setting, the kind of line an old config file
+// still carries.
 func TestParseRejectsAnUnusableConfigFile(t *testing.T) {
 	cases := []struct {
 		name, contents, detail string
@@ -246,7 +246,7 @@ max-vector-dimension = 128
 
 // TestConfigSet_ScoreCutoff pins the score cutoff's resting state and its
 // decoding. Off is the contract: a config that never mentions it must leave
-// every recall filling to top exactly as before the knob existed.
+// every recall filling to top.
 func TestConfigSet_ScoreCutoff(t *testing.T) {
 	c := config.New()
 	if c.DB.MinScoreRatio != 0 {
@@ -292,17 +292,16 @@ min-score-ratio = 0.3
 }
 
 // missingConfig returns a -config path that does not exist, so Parse takes the
-// no-config-file branch — the one an operator running the binary with nothing
-// but flags is on, and where validation used to be skipped entirely.
+// no-config-file branch, the one an operator running the binary with nothing
+// but flags is on.
 func missingConfig(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "does-not-exist.toml")
 }
 
-// TestParseCanonicalisesLogFlags is the bug report: `-log-level error` is what
-// an operator types, and it used to be dropped on the floor — matching no arm
-// of the logger's case-sensitive switch, it left the level at INFO with no
-// indication that the flag had been ignored.
+// TestParseCanonicalisesLogFlags pins that the log flags accept any casing and
+// land on the canonical spelling: `-log-level error` is what an operator
+// types, and it must set the level to ERROR rather than be ignored.
 func TestParseCanonicalisesLogFlags(t *testing.T) {
 	cases := []struct {
 		args         []string
@@ -335,9 +334,8 @@ func TestParseCanonicalisesLogFlags(t *testing.T) {
 }
 
 // TestParseKeepsTimestampsOnByDefault pins log.disable-timestamp's default:
-// false, so timestamps stay on unless asked off. The flag used to default to
-// true, which — once the logger honoured the setting — would have stripped
-// the clock from every log read from a file or a terminal.
+// false, so timestamps stay on unless asked off. A log read from a file or a
+// terminal has no other clock.
 func TestParseKeepsTimestampsOnByDefault(t *testing.T) {
 	c := config.New()
 	if err := c.Parse([]string{"-config", missingConfig(t)}); errors.Is(err, config.ErrInvalidValue) {
@@ -349,10 +347,8 @@ func TestParseKeepsTimestampsOnByDefault(t *testing.T) {
 }
 
 // TestParseRejectsUnknownLogFlags pins that an unusable value stops startup
-// even with no config file to read. Parse used to return the moment the file
-// was missing, so adjust and validate never ran and the value reached the
-// logger unchecked — validation that only runs when a config file happens to
-// exist is not validation.
+// even with no config file to read: validation that ran only when a config
+// file happened to exist would let a flag's value reach the logger unchecked.
 func TestParseRejectsUnknownLogFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"-log-level", "verbose"},
@@ -376,10 +372,10 @@ func TestParseRejectsUnknownLogFlags(t *testing.T) {
 
 // TestParseRejectsUnknownDBFlags extends the same guarantee to the settings
 // that pick an implementation rather than a log destination, where a silent
-// fallback is worse than a noisy one: -precision fell back to float64 (not even
-// its own default of float32), so a typo changed the numeric precision of every
-// score in the store, and a mistyped hashing function would have keyed the
-// store differently than asked with nothing to show for it.
+// fallback is worse than a noisy one: a mistyped precision could hold every
+// score at a precision the operator did not ask for, and a mistyped hashing
+// function would key the store differently than asked, with nothing to show
+// for it.
 func TestParseRejectsUnknownDBFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"-precision", "floast32"},

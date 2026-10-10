@@ -37,6 +37,8 @@ func TestTokenTypeString(t *testing.T) {
 		{"ILLEGAL", lexer.ILLEGAL, ""},
 		{"EOL", lexer.EOL, "eol"},
 		{"LITERAL", lexer.LITERAL, "literal"},
+		{"EXPLAIN", lexer.EXPLAIN, "explain"},
+		{"DESCRIBE", lexer.DESCRIBE, "describe"},
 		{"RECALL", lexer.RECALL, "recall"},
 		{"REMEMBER", lexer.REMEMBER, "remember"},
 		{"FORGET", lexer.FORGET, "forget"},
@@ -75,7 +77,7 @@ func TestTokenMapCompleteness(t *testing.T) {
 		lexer.PLUS, lexer.TILDE, lexer.MINUS,
 		lexer.COLON, lexer.PHRASE, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
 		lexer.TOPIC, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
-		lexer.VEC,
+		lexer.VEC, lexer.EXPLAIN, lexer.DESCRIBE,
 	}
 
 	for _, tokenType := range allTokenTypes {
@@ -141,11 +143,11 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 }
 
 // TestIsKeyword pins the reserved-word set IsKeyword reports. Every type in
-// KeywordsMap must answer true — the parser relies on this to read a reserved
-// word as data in value position, so a keyword missing here regresses to the
-// entity:top 400. Every other type must answer false; LITERAL especially,
-// since calling the bare-word type itself a keyword would re-reserve every
-// word.
+// KeywordsMap must answer true: the parser relies on this to read a reserved
+// word as data after a field's ':', so a keyword missing here would make
+// entity:top a parse error. Every other type must answer false; LITERAL
+// especially, since calling the bare-word type itself a keyword would
+// re-reserve every word.
 func TestIsKeyword(t *testing.T) {
 	for literal, tokenType := range lexer.KeywordsMap {
 		t.Run(literal, func(t *testing.T) {
@@ -278,10 +280,10 @@ func TestRoundTripTokenTypeToStringToKeyLITERAL(t *testing.T) {
 	}
 }
 
-// TestIsCommand pins which tokens open a query. The parser asks this to tell a
-// second command apart from a stray word — "recall x recall y" is one
-// instruction too many, not an unexpected token — so a field wrongly reporting
-// as a command would turn a repairable typo into a misleading message.
+// TestIsCommand pins which tokens are command verbs. The parser asks this to
+// report a command word after the first position as a second command or a word
+// to quote, so a field wrongly reporting as a command would turn a repairable
+// typo into a misleading message.
 func TestIsCommand(t *testing.T) {
 	commands := []lexer.TokenType{lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE}
 	for _, tt := range commands {
@@ -295,10 +297,37 @@ func TestIsCommand(t *testing.T) {
 		lexer.TOPIC, lexer.ENTITY, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
 		lexer.VEC, lexer.LITERAL, lexer.PHRASE, lexer.COLON, lexer.AT, lexer.EOL,
 		lexer.NEWLINE, lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
+		lexer.EXPLAIN, lexer.DESCRIBE,
 	}
 	for _, tt := range others {
 		if tt.IsCommand() {
 			t.Errorf("%v.IsCommand() = true, want false", tt)
+		}
+	}
+}
+
+// TestIsPrefix pins which tokens stand in front of a command. The parser asks
+// this to keep a clause repair out of a prefix's message, so a field wrongly
+// reporting as a prefix would lose its filter repair, and a prefix wrongly
+// reporting as a field would be offered explain:<value>, itself an error.
+func TestIsPrefix(t *testing.T) {
+	prefixes := []lexer.TokenType{lexer.EXPLAIN, lexer.DESCRIBE}
+	for _, tt := range prefixes {
+		if !tt.IsPrefix() {
+			t.Errorf("%v.IsPrefix() = false, want true", tt)
+		}
+	}
+
+	// Every other type, including the commands and fields that are keywords.
+	others := []lexer.TokenType{
+		lexer.RECALL, lexer.REMEMBER, lexer.FORGET, lexer.UPDATE,
+		lexer.TOPIC, lexer.ENTITY, lexer.SINCE, lexer.UNTIL, lexer.TOP, lexer.DEPTH,
+		lexer.VEC, lexer.LITERAL, lexer.PHRASE, lexer.COLON, lexer.AT, lexer.EOL,
+		lexer.NEWLINE, lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.DOLLAR,
+	}
+	for _, tt := range others {
+		if tt.IsPrefix() {
+			t.Errorf("%v.IsPrefix() = true, want false", tt)
 		}
 	}
 }

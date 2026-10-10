@@ -33,44 +33,43 @@ import (
 	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
-// data structure representing a stream: language of the scheduler
-// A stream is the language for the engine to the worker
-// Streams can be read-only or read and write.
+// Stream is one execution of a planned query: the engine builds one per
+// request, and the scheduler commits it against the selected graph, under the
+// read lock for a recall and the write lock for a remember. The outcome lands
+// in Result or Err.
 type Stream[K comparable, P float32 | float64] struct {
 	Query  Query[K, P]
 	Result *QueryResult[K, P]
 	Err    error
 
-	// Explain asks the read path to attach each hit's contribution records to
-	// the result. It lives on the stream, not the query, on purpose: the
-	// engine caches query objects by hash and substitutes them on a hit, so a
-	// flag on the query would either leak one request's explain choice into
-	// another's or have to widen the cache key for a bit that never changes
-	// the plan. The stream is built per request and never cached.
+	// Explain asks the read path to attach each hit's contributions and the
+	// query's background rate to the result. It lives on the stream rather
+	// than the query because the engine caches query objects by hash and
+	// substitutes them on a hit: a flag on the query would leak one request's
+	// choice into another's, or widen the cache key for a bit that never
+	// changes the plan. The stream is built per request and never cached.
 	Explain bool
 
-	// Checks if graph is empty. This is used downstream by server
-	// to return accurate response code (e.g. there's a difference
-	// between an empty search and a search in a empty ggraph)
+	// IsGraphEmpty is set when a read matched nothing in a graph that holds no
+	// nodes, so the server can answer 204 rather than the empty result of a
+	// populated graph.
 	IsGraphEmpty bool
 
 	done chan struct{}
 	once sync.Once
 }
 
-// NewStream returns a stream ready to be scheduled for q: Done() blocks until
-// the scheduler commits or rolls the stream back.
+// NewStream returns a stream ready to be scheduled for q. Done is closed when
+// the scheduler finishes with it, whether or not it succeeded.
 func NewStream[K comparable, P float32 | float64](q Query[K, P]) *Stream[K, P] {
 	return &Stream[K, P]{Query: q, done: make(chan struct{})}
 }
 
-// storeAnchor stores an anchor node (entity or topic) and the edge binding it
-// to its fact, treating "already stored" as the shared-anchor upsert for both:
-// anchors are keyed by value and edges by their endpoints, so a re-remember
-// finds them present. Any other failure means the anchor never became
-// reachable — anchored recalls resolve a fact's anchors through its stored
-// neighbours, so an edge to a half-stored pair makes every entity:/topic:
-// filter miss — and the write is rejected rather than committed half-linked.
+// storeAnchor stores an anchor node (entity or topic) and the edge linking it
+// to its fact. Either may already be stored, since anchors are keyed by value
+// and edges by their endpoints: a shared anchor or a re-remembered fact finds
+// them present, which is not an error. Any other failure rejects the write
+// rather than committing the fact half-linked to its anchors.
 func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, edge graph.Node[K]) error {
 	if err := g.Set(node); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
 		logger.Error("Failed to store anchor node", "anchor", node.GetValue(), "error", err)
@@ -83,20 +82,17 @@ func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, e
 	return nil
 }
 
-// Commit executes the stream's query against g directly. The caller must hold
-// the appropriate lock (the write lock for writes, a read lock for reads — see
-// Acquire): the lock is already exclusive for writes, so mutating g in place
-// exposes no intermediate state, and the write costs O(fact + incremental
-// index updates) regardless of graph size. Copying the graph here (as staging
-// once did) would make every single-fact write O(total graph) and lock readers
-// out for the duration — that is the failure mode, not the safety mechanism.
+// Commit executes the stream's query against g in place. The caller holds the
+// lock Acquire takes: a read lock for a read, the exclusive write lock for a
+// write, so mutating g directly exposes no intermediate state and a write
+// touches only what it stores. Copying the graph to stage a write would make
+// every write O(graph), all of it under the write lock.
 //
-// Failure ordering: the vector insert runs before any graph mutation, so the
-// one realistic commit failure (a vector-dimension mismatch) rejects the write
-// with g untouched. Later index errors are pathological; they surface in the
-// returned error with the write partially applied. A read fails the same way
-// and for the same reason — its vector's dimension differs from the graph's —
-// rather than answering from the text index alone.
+// A write inserts the vector before touching the graph, so the one failure a
+// client can trigger, a vector whose dimension differs from the index's,
+// rejects the write with g untouched. Later errors are not expected in
+// practice; one is returned with the write partially applied. A read fails on
+// the same mismatch rather than answering from the text index alone.
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 	// Write stream
@@ -117,24 +113,29 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 			Hasher: g.GetHasher(),
 		}
 
-		// Index the vector before touching the graph: the fact's key is
-		// derived from its value alone, and a dimension mismatch is the one
-		// commit failure a client can realistically trigger — failing here
-		// leaves the graph exactly as it was.
+		// Index the vector before touching the graph. The fact's key derives
+		// from its value alone, so it is known before the fact is stored, and
+		// a dimension mismatch fails here with the graph as it was. A fact
+		// the vector index already holds is re-asserted: its vector is
+		// replaced through Update rather than added again.
 		if !remember.Vector.Empty() {
-			if err := g.GetVectorIndex().Insert(fact.Key(), remember.Vector); err != nil {
+			vectors := g.GetVectorIndex()
+			write := vectors.Insert
+			if _, err := vectors.Retrieve(fact.Key()); err == nil {
+				write = vectors.Update
+			}
+			if err := write(fact.Key(), remember.Vector); err != nil {
 				logger.Error("Failed to index fact vector",
 					"value", remember.Value, "error", err)
 				return fmt.Errorf("indexing vector for fact %q: %w", remember.Value, err)
 			}
 		}
 
-		// Facts are content-addressed (keyed by value), so re-remembering one
-		// is the temporal "touch": the fresh-timestamp fact replaces the
-		// stored one and recency decay restarts — an agent re-asserting a
-		// memory strengthens it rather than leaving it decaying from its
-		// first write. The embedding refreshes the same way (a changed vector
-		// overwrites its index entry above), keeping the two consistent.
+		// Facts are keyed by value, so re-remembering one is a temporal touch:
+		// the fact with a fresh timestamp replaces the stored one and recency
+		// decay restarts, so a memory an agent re-asserts is strengthened
+		// rather than left decaying from its first write. A changed vector
+		// replaces the fact's index entry the same way, above.
 		if err := g.Put(fact.Key(), fact); err != nil {
 			logger.Error("Failed to store fact", "value", remember.Value, "error", err)
 			return fmt.Errorf("storing fact %q: %w", remember.Value, err)
@@ -222,19 +223,18 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		Hits:  make([]Hit[K, P], n),
 	}
 	if s.Explain {
-		// Explain explains through the anchors, so the payload carries the
-		// query-level background rate alongside each hit's breakdown.
+		// The background rate is query-level, so it rides on the result
+		// rather than on each hit (see QueryResult.Background).
 		r.Background = background
 	}
 	for i := 0; i < n; i++ {
 		r.Hits[i].Node = nodes[i]
 		r.Hits[i].Score = scores[i]
-		// Contributions ride on the hit only in explain mode: a nil slice is
-		// what keeps them out of the ordinary response (see Hit.MarshalJSON),
-		// so the plain query wire format does not change shape. Resolution to
-		// the wire form happens here — under the graph lock — because the
-		// anchor a graph contribution arrived via is a key, and only the
-		// graph can turn it into the topic/entity value a client can read.
+		// Contributions are attached only in explain mode; a nil slice keeps
+		// them out of the ordinary response (see Hit.MarshalJSON). They are
+		// resolved to wire form here, under the graph lock, because a graph
+		// or anchor contribution names its anchor by key, and only the graph
+		// can turn that key into the topic or entity value a client reads.
 		if s.Explain {
 			r.Hits[i].Contributions = resolveContributions(g, contributions[i])
 		}
@@ -248,11 +248,10 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	return nil
 }
 
-// resolveContributions maps a hit's collected contributions to their wire
-// form: sources serialized by name and, for graph and anchor entries, the
-// funding or filing anchor's key resolved to its stored value — the topic or
-// entity name a client can actually read. A vanished anchor falls back to an
-// empty via rather than inventing one.
+// resolveContributions converts a hit's contributions to their wire form:
+// each source by name and, for graph and anchor entries, the anchor's key
+// resolved to its stored topic or entity value. An anchor that is no longer
+// stored leaves via empty.
 func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P], contributions []scoring.Contribution[K, P]) []HitContribution[P] {
 	out := make([]HitContribution[P], len(contributions))
 	for i, c := range contributions {
@@ -273,18 +272,28 @@ func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P]
 	return out
 }
 
+// GraphID returns the graph the stream's query targets.
 func (s *Stream[K, P]) GraphID() uint8 {
 	return s.Query.GetGraphID()
 }
 
+// Done returns a channel closed once the scheduler has finished with the
+// stream, whether it committed or failed. Result and Err are read only after
+// it closes.
 func (s *Stream[K, P]) Done() <-chan struct{} {
 	return s.done
 }
 
+// Finish closes Done. It is safe to call more than once, so the scheduler can
+// defer it unconditionally and still wake the waiter of a stream that failed
+// before Commit.
 func (s *Stream[K, P]) Finish() {
 	s.once.Do(func() { close(s.done) })
 }
 
+// Acquire takes the lock on g that the query needs: the exclusive lock for a
+// write, the shared lock for a read, so reads run concurrently and a write
+// runs alone. Commit runs between Acquire and [Stream.Release].
 func (s *Stream[K, P]) Acquire(g graph.Graph[K, P]) {
 	if s.Query.IsWrite() {
 		g.Lock()
@@ -293,6 +302,7 @@ func (s *Stream[K, P]) Acquire(g graph.Graph[K, P]) {
 	}
 }
 
+// Release drops the lock Acquire took on g.
 func (s *Stream[K, P]) Release(g graph.Graph[K, P]) {
 	if s.Query.IsWrite() {
 		g.Unlock()

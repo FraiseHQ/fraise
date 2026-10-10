@@ -42,10 +42,14 @@ type XxHash[K ~uint64] struct {
 	seed uint64
 }
 
+// Seed implements [Hasher]: it returns the seed every Hash call mixes in, so a
+// caller can log which keyspace the hasher produces.
 func (x XxHash[K]) Seed() uint64 {
 	return x.seed
 }
 
+// Hash implements [Hasher]: it returns the XXH64 hash of data under the
+// hasher's seed.
 func (x XxHash[K]) Hash(data string) K {
 	return K(x.xxh64([]byte(data), x.seed))
 }
@@ -63,9 +67,8 @@ func (x XxHash[K]) xxMergeRound(acc, val uint64) uint64 {
 	return acc*xxp1 + xxp4
 }
 
-/*
-Reference implementation: https://github.com/Cyan4973/xxHash (XXH64)
-*/
+// xxh64 computes XXH64. Reference implementation:
+// https://github.com/Cyan4973/xxHash
 func (x XxHash[K]) xxh64(data []byte, seed uint64) uint64 {
 	n := len(data)
 	var h uint64

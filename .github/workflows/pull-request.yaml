@@ -1,9 +1,9 @@
 name: PR checks
 
 on:
-  # Title/branch conventions need the token to comment on fork PRs, hence
-  # pull_request_target. The lint job runs untrusted PR code, so it stays on
-  # the plain pull_request event (no write token).
+  # The plain pull_request event, not pull_request_target: the lint job runs
+  # untrusted PR code, and on a PR from a fork every job here gets a
+  # read-only token.
   pull_request:
     types: [opened, synchronize, reopened, edited]
 

@@ -26,17 +26,17 @@ Every fixture the suite uses lives here, including the ones a single test file
 asks for: a test module is assertions, and a fixture defined among them hides
 setup where nobody looks for it. Test modules never import from this file —
 the only channel out is a fixture, injected through a test's arguments — so
-the values behind them are private by convention and by the leading
-underscore.
+the values behind them are private, marked by a leading underscore.
 
 The file has two halves. The mocked half patches the client's own
 `requests.Session` at its import site, so unit tests run with no server and
-no daemon. The live half (from the "live server" banner down) backs the
+no daemon. The live half, which follows it, backs the
 tests marked ``integration``: a real client against the daemon named by
-FRAISE_URL, health-checked before the first test. `-m "not integration"` is
-the unit run and touches nothing live; `-m integration` needs the daemon up.
+FRAISE_URL, health-checked before first use. `-m "not integration"` is the
+unit run and touches nothing live; `-m integration` needs the daemon up.
 """
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -47,6 +47,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk.client import DEFAULT_BASE_URL, FraiseClient
+from fraise_sdk.models import RecallResult
 from fraise_sdk.providers import Anchor
 
 
@@ -61,6 +62,7 @@ def pytest_configure(config):
 
 _QUERY_URL = f"{DEFAULT_BASE_URL}/api/v1/q"
 _EXPLAIN_URL = f"{DEFAULT_BASE_URL}/api/v1/explain"
+_STATS_URL = f"{DEFAULT_BASE_URL}/api/v1/stats"
 _NO_HITS = {"results": {"count": 0, "hits": []}}
 
 # Recorded from a live server, not written by hand, so the parser is tested
@@ -191,6 +193,19 @@ _ANCHOR_EXPLAIN_RESPONSE = {
     }
 }
 
+# `GET /api/v1/stats`, recorded from a live server allocating three graphs.
+# Graph 0 holds two facts filed under entity:polly, one also under topic:diet;
+# graph 1 was never written to; graph 2 holds one fact with a vector and no
+# anchors. The empty graph sits between two populated ones, so a parser that
+# dropped or reordered it would misplace graph 2's row.
+_STATS_RESPONSE = {
+    "graphs": [
+        {"id": 0, "order": 4, "size": 3, "nodes": 7, "vectors": 0, "forest_entries": 0},
+        {"id": 1, "order": 0, "size": 0, "nodes": 0, "vectors": 0, "forest_entries": 0},
+        {"id": 2, "order": 1, "size": 0, "nodes": 1, "vectors": 1, "forest_entries": 1},
+    ]
+}
+
 # The shape the server sends for a query that ran with a term that cannot help
 # it: "the" in "recall@0 ferry the" is a stop word, which stored facts never
 # contain, and the warning says so at the term.
@@ -200,12 +215,9 @@ _SERVER_WARNING = (
 )
 
 
-# -- addresses and payloads --------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def query_url():
-    """The URL every query the client sends must be posted to."""
+    """The URL a query is posted to, unless it is an explained recall."""
     return _QUERY_URL
 
 
@@ -215,9 +227,21 @@ def explain_url():
     return _EXPLAIN_URL
 
 
+@pytest.fixture(scope="session")
+def stats_url():
+    """The URL the per-graph snapshot is read from."""
+    return _STATS_URL
+
+
+@pytest.fixture
+def stats_response():
+    """A recorded stats response: three graphs, the middle one empty."""
+    return copy.deepcopy(_STATS_RESPONSE)
+
+
 @pytest.fixture
 def explain_response():
-    """A recorded explain response with text, graph and graph-only hits."""
+    """A recorded explain response: two text-and-graph hits, one graph-only hit."""
     return copy.deepcopy(_EXPLAIN_RESPONSE)
 
 
@@ -239,15 +263,11 @@ def server_warning():
     return _SERVER_WARNING
 
 
-# -- the patched session -----------------------------------------------------
-
-
 def _arm(session, body: dict, status_code: int = 200) -> MagicMock:
-    """Arm ``session`` to answer the next POST with ``body``.
+    """Arm ``session`` to answer POSTs with ``body``.
 
-    Private: tests reach this through the ``respond`` fixture. The ``session``
-    fixture needs it before any fixture argument could be injected, which is
-    why it exists as a function at all.
+    Private: tests reach this through the ``respond`` fixture, and the
+    ``session`` fixture calls it to arm its default answer.
     """
     response = MagicMock(
         status_code=status_code,
@@ -263,8 +283,8 @@ def _arm(session, body: dict, status_code: int = 200) -> MagicMock:
 def session():
     """The session the client builds for itself, patched at its import site.
 
-    Patching rather than injecting keeps the client's own construction path —
-    the one every caller takes — under test.
+    Patching rather than injecting keeps the client's own construction path
+    under test.
 
     Yields:
         The mock session every FraiseClient built in the test will use, armed
@@ -278,23 +298,23 @@ def session():
 
 @pytest.fixture
 def respond():
-    """Callable arming a session to answer the next POST with a given body.
+    """Callable arming a session to answer POSTs with a given body.
 
     Returns:
         ``callable(session, body, status_code=200) -> MagicMock`` — the mock
-        response, for tests that want to assert on it directly.
+        response, for tests that want to alter it directly.
     """
     return _arm
 
 
 def _arm_no_content(session) -> MagicMock:
-    """Arm ``session`` to answer the next POST with a bodiless 204.
+    """Arm ``session`` to answer POSTs with a bodiless 204.
 
     Private: tests reach this through the ``respond_no_content`` fixture. It
-    is separate from ``_arm`` because a 204 is the one success with no body at
-    all — decoding it raises, exactly as ``requests`` does on an empty
-    payload, so a client that reaches for the body instead of the status is
-    caught here rather than passing against a mock that returns ``{}``.
+    is separate from ``_arm`` because a 204 is the one success with no body:
+    decoding it raises, as ``requests`` does on an empty payload, so a client
+    that decodes it unguarded fails here as it would against the server,
+    rather than passing against a mock that returns ``{}``.
     """
     response = MagicMock(status_code=204, ok=True, text="")
     response.json.side_effect = ValueError("no JSON object could be decoded")
@@ -304,7 +324,7 @@ def _arm_no_content(session) -> MagicMock:
 
 @pytest.fixture
 def respond_no_content():
-    """Callable arming a session to answer the next POST with a bodiless 204.
+    """Callable arming a session to answer POSTs with a bodiless 204.
 
     That is how the server reports a recall of a graph holding nothing, as
     distinct from a populated graph none of whose facts matched.
@@ -316,7 +336,7 @@ def respond_no_content():
 
 
 def _arm_get(session, body, status_code: int = 200) -> MagicMock:
-    """Arm ``session`` to answer the next GET with ``body``.
+    """Arm ``session`` to answer GETs with ``body``.
 
     Private: tests reach this through the ``respond_get`` fixture. Mirrors
     ``_arm``, which arms POST — the health and version probes are the
@@ -334,7 +354,7 @@ def _arm_get(session, body, status_code: int = 200) -> MagicMock:
 
 @pytest.fixture
 def respond_get():
-    """Callable arming a session to answer the next GET with a given body.
+    """Callable arming a session to answer GETs with a given body.
 
     The ``session`` fixture arms POST only; health/version/compatibility
     tests arm the GET side through this.
@@ -362,13 +382,9 @@ def sent():
     return _sent
 
 
-# -- embedders ---------------------------------------------------------------
-
-
-# The unit suite's embedder shape: len(text), 4 times — deterministic, so a
-# test can predict the vector the client will send. Private, not a fixture:
-# the `encode` fixture name belongs to the live half's real embedder below,
-# and no unit test asks for this directly; callable_embedder is its channel.
+# The unit suite's embedder: len(text), 4 times, so a test can predict the
+# vector the client will send. Tests reach it through callable_embedder; the
+# `encode` fixture is the live half's embedder below.
 def _len_encode(text: str) -> list[float]:
     return [float(len(text))] * 4
 
@@ -392,12 +408,69 @@ def callable_embedder():
     return _callable_embedder
 
 
-# -- extractors --------------------------------------------------------------
+# The models the embedders default to, pinned as literals so a changed default
+# fails the provider tests instead of being followed by them.
+_OPENAI_DEFAULT_MODEL = "text-embedding-3-small"
+_HUGGINGFACE_DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
-# What the suite's extractor finds in any text. "travel" and "Anne" repeat
-# anchors a test gives in another casing, and "Lisbon airport" is not one plain
-# word, so one remember shows the repeat dropped and the value quoted.
+@pytest.fixture(scope="session")
+def openai_default_model():
+    """The embedding model OpenAIEmbedder uses when none is given."""
+    return _OPENAI_DEFAULT_MODEL
+
+
+@pytest.fixture
+def embeddings_client():
+    """Callable building a mock ``openai.OpenAI`` answering one embedding.
+
+    Returns:
+        ``callable(embedding=(0.1, 0.2, 0.3)) -> MagicMock`` whose
+        ``embeddings.create`` answers with ``embedding``.
+    """
+
+    def _embeddings_client(embedding=(0.1, 0.2, 0.3)) -> MagicMock:
+        client = MagicMock()
+        client.embeddings.create.return_value = MagicMock(
+            data=[MagicMock(embedding=list(embedding))]
+        )
+        return client
+
+    return _embeddings_client
+
+
+@pytest.fixture(scope="session")
+def huggingface_default_model():
+    """The embedding model HuggingFaceEmbedder uses when none is given."""
+    return _HUGGINGFACE_DEFAULT_MODEL
+
+
+@pytest.fixture
+def inference_client():
+    """Callable building a mock ``huggingface_hub.InferenceClient``.
+
+    ``feature_extraction`` really returns a numpy array, of which the embedder
+    uses only ``tolist()``, so the mock answers with an object whose
+    ``tolist()`` returns the values.
+
+    Returns:
+        ``callable(values=(0.1, 0.2, 0.3)) -> MagicMock``.
+    """
+
+    def _inference_client(values=(0.1, 0.2, 0.3)) -> MagicMock:
+        client = MagicMock()
+        client.feature_extraction.return_value = MagicMock(
+            **{"tolist.return_value": list(values)}
+        )
+        return client
+
+    return _inference_client
+
+
+# What the suite's extractor finds in any text. "travel" repeats a topic a test
+# gives, "Anne" an entity it gives in another casing, and "Lisbon airport" is
+# not one plain word, so one remember shows the repeats dropped and the value
+# quoted.
 _EXTRACTED_ANCHORS = (
     Anchor(value="travel", type="topic"),
     Anchor(value="trips", type="topic"),
@@ -430,9 +503,9 @@ def callable_extractor():
 def chat_client():
     """Callable building a mock ``openai.OpenAI`` answering one chat completion.
 
-    The suite makes no vendor calls, so the model's answer is scripted: the
-    extractor under test sees exactly the response shape the real client
-    returns, down to ``choices[0].message.content`` and ``finish_reason``.
+    The suite makes no vendor calls, so the model's answer is scripted where
+    the real client puts it: ``choices[0].message.content`` and
+    ``finish_reason``.
 
     Returns:
         ``callable(content, finish_reason="stop") -> MagicMock``, where
@@ -453,7 +526,81 @@ def chat_client():
     return _chat_client
 
 
-# -- live server (integration fixtures) --------------------------------------
+@pytest.fixture
+def mock_client():
+    """Callable building a mock FraiseClient for the agent-framework tools.
+
+    Returns:
+        ``callable(hits=(), raises=None) -> MagicMock`` whose ``recall`` answers
+        with ``hits``; with ``raises`` set, ``recall`` and ``remember`` raise it.
+    """
+
+    def _mock_client(hits=(), raises=None) -> MagicMock:
+        client = MagicMock()
+        client.recall.return_value = RecallResult(count=len(hits), hits=list(hits))
+        if raises is not None:
+            client.recall.side_effect = raises
+            client.remember.side_effect = raises
+        return client
+
+    return _mock_client
+
+
+@pytest.fixture
+def invoke_function_tool():
+    """Callable running an OpenAI Agents ``FunctionTool`` as the runtime would.
+
+    The arguments reach ``on_invoke_tool`` as a JSON string, so a test covers
+    the framework's own argument parsing and validation, not just the function
+    the tool wraps. The framework is imported here, when a test asks for this,
+    so the suite still collects without the 'openai' extra.
+
+    Returns:
+        ``callable(tool, **arguments) -> str``, the tool's answer.
+    """
+    from agents.tool_context import ToolContext
+
+    def _invoke(tool, **arguments):
+        payload = json.dumps(arguments)
+        context = ToolContext(
+            context=None,
+            tool_name=tool.name,
+            tool_call_id="test-call",
+            tool_arguments=payload,
+        )
+        return asyncio.run(tool.on_invoke_tool(context, payload))
+
+    return _invoke
+
+
+@pytest.fixture
+def invoke_mcp_tool():
+    """Callable running a Claude Agent SDK tool's handler as its MCP server would.
+
+    Returns:
+        ``callable(tool, **arguments) -> dict``, the MCP content payload.
+    """
+
+    def _invoke(tool, **arguments):
+        return asyncio.run(tool.handler(arguments))
+
+    return _invoke
+
+
+@pytest.fixture
+def mcp_text():
+    """Callable reading the text of an MCP content payload.
+
+    Returns:
+        ``callable(payload) -> str``, the text of the payload's first block.
+    """
+
+    def _text(payload):
+        return payload["content"][0]["text"]
+
+    return _text
+
+
 # Everything below backs the tests marked `integration`: a real client
 # against the daemon named by FRAISE_URL. Nothing here runs — no waiting,
 # no writes — unless an integration test actually requests a fixture.
@@ -467,16 +614,22 @@ _VECTOR_GRAPH = 1
 _QUERY_GRAPH = 2
 _MODELS_GRAPH = 3
 
+# Claimed for the stats counts, which are exact, so nothing else may write
+# here: any other fact would move them. The e2e suite's allocation map lists
+# it for the same reason.
+_STATS_GRAPH = 9
+
 # Claimed by staying empty: a recall of a graph holding nothing is answered
-# 204, which only a graph no test ever writes to can exercise. It sits above
-# the default 8 so the e2e suite's own map, which claims 0-8 against the same
-# daemon, cannot reach it. Do not write to this graph.
-_EMPTY_GRAPH = 6
+# 204, which only a graph no test ever writes to can exercise. Both suites
+# drive the same daemon and only ever read this graph, so it is the one the
+# e2e suite's allocation map already reserves for its own empty-graph probe,
+# rather than a second graph that map knows nothing about. Do not write to
+# this graph.
+_EMPTY_GRAPH = 8
 
 # The dimension every vector in this suite is written with. The first vector
 # inserted into a graph fixes that graph's dimension, and more than one file
-# writes vectors, so they must agree — which is why this lives here and not in
-# a single test file.
+# writes vectors, so they must agree.
 _VECTOR_DIM = 8
 
 # A keyword no fact in any graph contains.
@@ -487,11 +640,10 @@ _NO_MATCH = "zzznomatchzzz"
 # hanging until a timeout.
 _DEAD_URL = "http://127.0.0.1:1"
 
-# Four facts on one topic hub, each with a unique keyword. Recall returns facts
-# rather than hubs, so from any seed fact the hub is one hop away (invisible)
-# and its siblings are two — which makes result counts an exact function of
-# depth. Mirrors the star the e2e suite uses, through the SDK instead of raw
-# HTTP.
+# Four facts on one topic hub, each with a unique keyword, so result counts are
+# exact: each keyword matches one fact, and the hub a single seed reaches holds
+# only its fair share, so it transmits nothing in either graph lane. Mirrors
+# the star the e2e suite uses, through the SDK instead of raw HTTP.
 _INSTRUMENT_TOPIC = "instruments"
 _INSTRUMENT_FACTS = {
     "cello": "the cello is bowed and tuned in fifths",
@@ -500,8 +652,20 @@ _INSTRUMENT_FACTS = {
     "harp": "the harp is plucked with both hands",
 }
 
-# Two facts on a shared hub, so a single recall returns more than one hit and
-# the ordering and count assertions have something to work with.
+# Two anchored facts and one anchorless fact with a vector, so a stats snapshot
+# of their graph is exact: three facts, one topic and two entities make six
+# vertices, and the facts' links to them five edges, which with the vertices are
+# eleven stored nodes. Rewriting a fact rewrites the same nodes, so the counts
+# hold across reruns against a long-lived server.
+_STATS_FACTS = (
+    ("the heron fishes at dusk", ["birds"], ["heron"]),
+    ("the egret wades beside the heron", ["birds"], ["heron", "egret"]),
+)
+_STATS_VECTOR_FACT = "the marsh floods in spring"
+
+# Two facts sharing the word "tide" and a topic hub, so a single recall returns
+# more than one hit and the ordering and count assertions have something to
+# work with.
 _TIDE_TOPIC = "tides"
 _TIDE_FACTS = {
     "spring": "a spring tide follows the new moon",
@@ -512,12 +676,11 @@ _TIDE_FACTS = {
 def _encode(text: str) -> list[float]:
     """Encode ``text`` as a deterministic unit vector of _VECTOR_DIM floats.
 
-    Not a stand-in for anything: an integration test has to drive the client's
-    real embedding path, and the SDK's extension point *is* any
-    ``callable(text) -> Sequence[float]``, so this is a genuine implementation
-    of that public contract rather than a mock of one. Deriving the components
-    from a digest keeps it stable across runs and processes, which is what lets
-    a test store a fact and then recall it by re-encoding the same text.
+    A real implementation of the embedder contract (any
+    ``callable(text) -> Sequence[float]``), not a mock, so integration tests
+    drive the client's real embedding path. Deriving the components from a
+    digest keeps the vector stable across runs and processes, so a test can
+    store a fact and recall it by re-encoding the same text.
 
     Args:
         text: the text to encode.
@@ -532,11 +695,11 @@ def _encode(text: str) -> list[float]:
 
 
 def _await_server(fraise: FraiseClient) -> None:
-    """Block until the server answers its health check, or fail the session.
+    """Block until the server answers its health check, or fail.
 
-    Ends the run through ``pytest.fail`` when the server never comes up: every
-    test here needs it, so one clear message beats a cascade of connection
-    errors.
+    Fails through ``pytest.fail`` when the server never comes up, so every test
+    that needs it errors with one clear message rather than its own connection
+    error.
 
     Args:
         fraise: the client whose health check to poll.
@@ -548,9 +711,6 @@ def _await_server(fraise: FraiseClient) -> None:
         time.sleep(0.5)
     fraise.close()
     pytest.fail(f"fraise server not reachable at {_FRAISE_URL}")
-
-
-# -- addresses and constants -------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -623,15 +783,12 @@ def instrument_facts():
     return dict(_INSTRUMENT_FACTS)
 
 
-# -- clients -----------------------------------------------------------------
-
-
 @pytest.fixture(scope="session")
 def client():
     """A FraiseClient pointed at a server confirmed to be up.
 
     Yields:
-            FraiseClient: fraise client.
+        The client, closed at the end of the session.
     """
     fraise = FraiseClient(_FRAISE_URL)
     _await_server(fraise)
@@ -648,7 +805,7 @@ def embedding_client():
     start out.
 
     Yields:
-            FraiseClient: fraise client with an embedder attached.
+        The client, closed at the end of the session.
     """
     fraise = FraiseClient(_FRAISE_URL, embedder=_encode)
     _await_server(fraise)
@@ -658,7 +815,9 @@ def embedding_client():
 
 @pytest.fixture(scope="session")
 def recalled_values(client):
-    """A helper that returns the values a single-keyword recall finds, seed only.
+    """A helper that returns the values a single-keyword recall finds.
+
+    The recall runs at depth 0, so only the text and vector indices answer.
 
     Args:
         client: the plain client the helper recalls through.
@@ -668,12 +827,9 @@ def recalled_values(client):
     """
 
     def _recalled_values(keyword: str, graph: int) -> list[str]:
-        return [hit.value for hit in client.recall(keyword, graph=graph, depth=1)]
+        return [hit.value for hit in client.recall(keyword, graph=graph, depth=0)]
 
     return _recalled_values
-
-
-# -- graphs ------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -717,6 +873,25 @@ def models_graph():
 
 
 @pytest.fixture(scope="module")
+def stats_graph(client):
+    """Write the stats facts to their own graph and return its id.
+
+    Args:
+        client: the plain client to write through.
+
+    Returns:
+        The graph id, now holding six vertices, five edges, eleven nodes and
+        one vector.
+    """
+    for phrase, topics, entities in _STATS_FACTS:
+        client.remember(phrase, graph=_STATS_GRAPH, topics=topics, entities=entities)
+    client.remember(
+        _STATS_VECTOR_FACT, graph=_STATS_GRAPH, vector=_encode(_STATS_VECTOR_FACT)
+    )
+    return _STATS_GRAPH
+
+
+@pytest.fixture(scope="module")
 def instrument_graph(client):
     """Populate the round-trip graph with the instrument star and return its id.
 
@@ -752,9 +927,6 @@ def vector_graph(embedding_client):
     return _VECTOR_GRAPH
 
 
-# -- recall results ----------------------------------------------------------
-
-
 @pytest.fixture(scope="module")
 def tide_result(client):
     """Store the tide facts and return the RecallResult a two-hit recall parses.
@@ -778,7 +950,7 @@ def tide_result(client):
 
 @pytest.fixture(scope="module")
 def vector_tide_result(embedding_client, vector_graph):
-    """Return a RecallResult that the vector index seeded, not the text index.
+    """Return a RecallResult that the vector index seeded alongside the text index.
 
     Vector-seeded results travel a different path through the engine, so the
     envelope they arrive in is worth parsing separately from the text one.

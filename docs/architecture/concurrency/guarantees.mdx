@@ -16,7 +16,7 @@ Every operation on a graph goes through its read-write lock:
 Operations on different graphs are fully independent:
 
 - 4 workers can write to 4 different graphs in parallel;
-- no global coordination or lock contention.
+- each write holds only its own graph's lock.
 
 ## Stream ordering within a graph
 

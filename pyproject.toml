@@ -8,7 +8,7 @@ authors = [
     { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
 ]
 dependencies = [
-    "pre-commit>=4.6.1",
+    "pre-commit>=4.6.2",
 ]
 
 [tool.uv]
@@ -16,7 +16,7 @@ environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",
 ]
-required-version = ">0.9,<0.12"
+required-version = ">0.9,<0.13"
 
 [tool.uv.workspace]
 members = [
@@ -49,7 +49,7 @@ select = [
 ]
 ignore = [
     "E501", # over-length lines, formatter should handle it
-    "E741", # ambigous variable name
+    "E741", # ambiguous variable name
     "ANN401",
     "D401",
     "D211",

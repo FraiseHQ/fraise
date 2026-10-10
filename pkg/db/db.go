@@ -30,8 +30,9 @@ import (
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 )
 
-// the db hols the logic of translating low level calls to the memory Graphs
-// from and to the transaction object (that the server directly serialises to the client)
+// DB holds the store's graphs, addressed by selector. Start builds each graph
+// with the search algorithms the configuration names; streams then run against
+// the graph Select returns.
 type DB[K ~uint64, P float32 | float64] struct {
 	Config *config.ConfigSet
 	Graphs []graph.Graph[K, P]
@@ -59,6 +60,9 @@ func numGraphs(cfg *config.ConfigSet) int {
 	return cfg.DB.NumGraphs
 }
 
+// NewDB returns a store with one empty slot per configured graph. It does
+// not build the graphs; [DB.Start] does, so the store can be wired into the
+// scheduler before any graph memory is allocated.
 func NewDB[K ~uint64, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P], error) {
 	d := &DB[K, P]{
 		Config: cfg,
@@ -67,14 +71,17 @@ func NewDB[K ~uint64, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P], er
 	return d, nil
 }
 
+// Start builds a fresh graph in every slot, with the traversal, scorer and
+// ranking the configuration names. The store is in-memory, so a Start after
+// [DB.Stop] begins from empty graphs.
 func (d *DB[K, P]) Start() error {
 	for i := range d.Graphs {
 		g := graph.NewGraph[K, P](d.Config)
 
-		// The search algorithms are injected from configuration. Only the names
-		// in config.SearchAlgorithms/RankingAlgorithms get here — startup
-		// rejects the rest — so a graph left on its built-in defaults means
-		// "none" was configured, not that a name went unrecognised.
+		// The search algorithms come from configuration. Startup rejects any
+		// name outside config's accepted lists, so a stage left at the graph's
+		// built-in default (no traversal, no ranking, the excess scorer) is
+		// what was configured, not an unrecognised name.
 		switch d.Config.DB.SearchAlgorithm.Name {
 		case config.SearchExcess:
 			g.SetTraversal(graph.NewExcessTraversal[K, P]())
@@ -97,8 +104,10 @@ func (d *DB[K, P]) Start() error {
 	return nil
 }
 
+// Stop drops every graph and their contents, leaving empty slots for the next
+// [DB.Start].
 func (d *DB[K, P]) Stop() error {
-	// Reinitialise graphs
+	// Drop the graphs, leaving empty slots for the next Start.
 	d.Graphs = make([]graph.Graph[K, P], numGraphs(d.Config))
 	return nil
 }
@@ -106,8 +115,7 @@ func (d *DB[K, P]) Stop() error {
 // Stats snapshots every graph in selector order. Graphs not yet populated
 // (before Start, or after Stop) contribute zero-valued entries, so the method
 // is safe to call at any point in the store's lifecycle. Each live graph is
-// read-locked for its snapshot, consistent with the scheduler holding the
-// write lock during merges.
+// read-locked for its snapshot, so a snapshot never sees a write in progress.
 func (d *DB[K, P]) Stats() Stats {
 	stats := Stats{Graphs: make([]GraphStats, len(d.Graphs))}
 	for i, g := range d.Graphs {
@@ -128,6 +136,9 @@ func (d *DB[K, P]) NumGraphs() int {
 	return len(d.Graphs)
 }
 
+// Select returns the graph at selector index, or an error wrapping
+// [ErrIndexOutOfBounds] when index is outside [0, NumGraphs), so a bad
+// selector surfaces as an error rather than a panic.
 func (d *DB[K, P]) Select(index uint8) (graph.Graph[K, P], error) {
 	if int(index) >= len(d.Graphs) {
 		return nil, fmt.Errorf("%w: index %d for %d graphs", ErrIndexOutOfBounds, index, len(d.Graphs))

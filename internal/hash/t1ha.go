@@ -45,10 +45,14 @@ type T1haHash[K ~uint64] struct {
 	seed uint64
 }
 
+// Hash implements [Hasher]: it returns the t1ha1 hash of data under the
+// hasher's seed.
 func (t T1haHash[K]) Hash(data string) K {
 	return K(t.t1ha1LE([]byte(data), t.seed))
 }
 
+// Seed implements [Hasher]: it returns the seed every Hash call mixes in, so a
+// caller can log which keyspace the hasher produces.
 func (t T1haHash[K]) Seed() uint64 {
 	return t.seed
 }
@@ -74,7 +78,9 @@ func (t T1haHash[K]) finalWeakAvalanche(a, b uint64) uint64 {
 	return t.mux64(t.rot64(a+b, 17), t1p4) + t.mix64(a^b, t1p0)
 }
 
-// tail64LE reads the trailing tail (1..8) bytes of p as a little-endian word.
+// tail64LE reads the input's last, possibly partial, 8-byte word from the
+// start of p, little-endian. tail is the length of the input left after the
+// 32-byte blocks; the word holds tail mod 8 bytes, or 8 when that is 0.
 func (t T1haHash[K]) tail64LE(p []byte, tail int) uint64 {
 	var r uint64
 	switch tail & 7 {
@@ -104,9 +110,8 @@ func (t T1haHash[K]) tail64LE(p []byte, tail int) uint64 {
 	return r
 }
 
-/*
-Reference implementation: https://github.com/erthink/t1ha (t1ha1_le)
-*/
+// t1ha1LE computes t1ha1_le, the little-endian variant of t1ha1. Reference
+// implementation: https://github.com/erthink/t1ha
 func (t T1haHash[K]) t1ha1LE(data []byte, seed uint64) uint64 {
 	length := len(data)
 	a := seed
@@ -136,8 +141,9 @@ func (t T1haHash[K]) t1ha1LE(data []byte, seed uint64) uint64 {
 		b ^= t1p5 * (c + t.rot64(d, 17))
 	}
 
-	// Remaining 0..31 bytes; each block below falls through to the next,
-	// mirroring the switch in the reference implementation.
+	// Remaining 0..32 bytes (32 only for a 32-byte input, which skips the
+	// loop); each block below falls through to the next, mirroring the switch
+	// in the reference implementation.
 	rl := len(data)
 	v := data
 	if rl > 24 {

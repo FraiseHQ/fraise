@@ -44,7 +44,7 @@ curl localhost:9876/
 ```
 
 ```json
-{"status": "ok", "version": "0.2.0"}
+{"status": "ok", "version": "0.3.0"}
 ```
 
 `GET /` is liveness and readiness in one: there is nothing to warm up and nothing to recover, so a server that answers is a server that works. The `version` field is the SDK's compatibility handshake — see [Health check](/docs/http-api/endpoints/health).

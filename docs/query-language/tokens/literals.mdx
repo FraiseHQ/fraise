@@ -39,7 +39,7 @@ A duration is read as **"ago"**, so `since:7d` means "no older than seven days".
 
 <Note title="Dates are quoted" type="warning">
 
-  **A date is written inside quotes.** A bare word is letters and digits only, so the `-` in `since:2026-01-15` is rejected, and the error shows the quoted form: `since:'2026-01-15'`. Inside the quotes a time of day may follow as RFC3339, `since:'2026-01-15T10:00:00Z'`, which a bare value could never carry past its first `:`.
+  **A date is written inside quotes.** A bare word is letters and digits only, so in `since:2026-01-15` the value ends at the first `-` and is rejected, with an error asking for a quoted date: `since:'2026-01-15'`. Inside the quotes a time of day may follow as RFC3339, `since:'2026-01-15T10:00:00Z'`, which a bare value could never carry past its first `:`.
 
 </Note>
 

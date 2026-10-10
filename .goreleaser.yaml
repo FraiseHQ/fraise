@@ -6,13 +6,11 @@ before:
   hooks:
     - go mod tidy
     # Refuse to release if pkg/version disagrees with the tag. release-please
-    # rewrites that constant in the same commit it tags, so this should never
-    # fire — its job is to catch the one silent failure left: if the
+    # rewrites that constant in the commit it tags, but if the
     # x-release-please-version annotation is broken or moved off the literal's
-    # line, release-please stops updating the file without erroring, and the
-    # version would quietly go stale again for builds that skip the ldflags
-    # below (go install ...@vX.Y.Z, the docker image).
-    # Skipped for snapshots, whose version is not a tag.
+    # line it stops updating the file without an error, and builds that skip
+    # the ldflags below (go install ...@vX.Y.Z, the docker image) would report
+    # a stale version. Skipped for snapshots, whose version is not a tag.
     - sh -c "{{ if .IsSnapshot }}true{{ else }}grep -q 'Version = \"{{ .Version }}\"' pkg/version/version.go || { echo 'pkg/version/version.go does not declare {{ .Version }} (tag {{ .Tag }}) — check the x-release-please-version annotation'; exit 1; }{{ end }}"
 
 builds:
@@ -45,16 +43,14 @@ archives:
       - src: fraise.config.toml
         dst: fraise.config.toml
 
-# The Postgres/redis mental model: fraise as a managed local service. brews
-# is deprecated in goreleaser v2.10+ in favour of homebrew_casks, but only a
-# formula carries the brew-services block this depends on, so the deprecation
-# is accepted deliberately; CI runs `release`, which warns, never `check`,
+# fraise as a managed local service, the Postgres/Redis model. brews is
+# deprecated since GoReleaser v2.10 in favour of homebrew_casks, but only a
+# formula carries the service block `brew services start fraise` needs, so the
+# deprecation is accepted: CI runs `release`, which warns, never `check`,
 # which fails on it. The formula lands in the tap the README installs from
-# (fraisehq/tap), with a
-# service block so `brew services start fraise` supervises the daemon —
-# keep_alive restarts it on crashes, logs land under var/log/ where brew
-# services users look first. etc.install is upgrade-safe: an existing,
-# user-edited config is left in place and the new default lands as .default.
+# (fraisehq/tap); keep_alive restarts the daemon on crashes, and its logs go
+# to var/log/. The config install is upgrade-safe: an existing, user-edited
+# config is left in place and the new default lands beside it as .default.
 brews:
   - name: fraise
     repository:
@@ -112,14 +108,14 @@ nfpms:
 checksum:
   name_template: checksums.txt
 
-# Keyless cosign signing of checksums.txt only — that file already covers every
-# archive, so one signature transitively covers the set and there is one extra
-# asset per release instead of twenty-four. Produces checksums.txt.sigstore.json,
-# a Sigstore bundle carrying the signature and the signing certificate together;
-# .sigstore.json is one of the suffixes OpenSSF Scorecard's Signed-Releases check
-# looks for. Requires cosign on PATH and id-token: write on the publishing job
-# (see .github/workflows/go.yaml) — without the OIDC token, signing fails the
-# release rather than silently shipping it unsigned.
+# Keyless cosign signing of checksums.txt only: it covers every archive and
+# package, so one signature covers the whole set. Produces
+# checksums.txt.sigstore.json, a Sigstore bundle carrying the signature and the
+# signing certificate together; .sigstore.json is one of the suffixes OpenSSF
+# Scorecard's Signed-Releases check looks for. Requires cosign on PATH and
+# id-token: write on the publishing job (see .github/workflows/go.yaml);
+# without the OIDC token, signing fails the release rather than shipping it
+# unsigned.
 #
 # --bundle is the only output flag to use here. cosign 3 (what
 # sigstore/cosign-installer v4 installs) defaults to --new-bundle-format, under
@@ -166,20 +162,15 @@ release:
     owner: FraiseHQ
     name: fraise
   # release-please creates the GitHub Release and owns its notes; GoReleaser
-  # only attaches binaries to it. Any other mode would overwrite those notes,
-  # and the header/footer/changelog blocks below are unused as a result.
-  mode: append
+  # only attaches binaries to it. keep-existing leaves those notes untouched
+  # however many times the publish job runs, where append and prepend add
+  # GoReleaser's own notes on every run and replace overwrites them.
+  mode: keep-existing
   draft: false
   prerelease: auto # vX.Y.Z-alpha.N / -beta.N / -rc.N auto-marked as pre-release
-  header: |
-    ## Fraise {{ .Tag }}
 
-    See [changelog.md](https://github.com/FraiseHQ/fraise/blob/main/docs/changelog.md)
-    for the curated summary.
-  footer: |
-    **Install**: download a binary below, or `go install github.com/FraiseHQ/fraise/cmd/server@{{ .Tag }}`
-
-# Announcement — Discord enabled; swap to the slack block if you land on Slack.
+# Announces the release on Discord, with the webhook GoReleaser reads from
+# DISCORD_WEBHOOK_ID and DISCORD_WEBHOOK_TOKEN.
 announce:
   discord:
     enabled: true

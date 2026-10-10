@@ -28,15 +28,14 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// The tool schemas and types mirror the HTTP query API (POST /api/v1/q)
-// exactly: the bridge forwards its input as the request body and returns the
-// response body as its output, so what a model sees here is the same wire
-// contract pkg/server and internal/query define — HandleQueryRequest on the
-// way in, {"results": QueryResult} plus optional warnings on the way out for a
-// recall, {"status": "ok"} for a write.
-// Explain-mode fields (background, per-hit contributions) belong to
-// /api/v1/explain, which the bridge does not call, so they do not appear
-// here. If either wire shape moves, these move in the same change.
+// The tool schemas and types mirror the HTTP query API (POST /api/v1/q): the
+// bridge forwards its input as the request body and returns the response body
+// as its output. The wire contract is the one pkg/server and internal/query
+// define: HandleQueryRequest in, and out {"results": QueryResult} for a recall
+// or {"status": "ok"} for a write, either with optional warnings. Explain-mode
+// fields (background, per-hit contributions) belong to /api/v1/explain, which
+// the bridge does not call. If either wire shape moves, these move in the same
+// change.
 
 // parametersSchema mirrors HandleQueryRequest.Parameters: vector
 // placeholders (vec:$name) are bound out of band by name, so large vector
@@ -51,8 +50,9 @@ var parametersSchema = &jsonschema.Schema{
 }
 
 // hitSchema mirrors Hit.MarshalJSON: the stored fact, when it was written,
-// and its raw relevance. The score is on the scorer's own scale — an
-// ordering, not a probability — and nothing caps it at 1.0.
+// and its score (relevance after any ranking boost and recency decay). The
+// score is on the scorer's own scale, an ordering rather than a probability,
+// and nothing caps it at 1.0.
 var hitSchema = &jsonschema.Schema{
 	Type: "object",
 	Properties: map[string]*jsonschema.Schema{
@@ -181,10 +181,9 @@ type RememberInput struct {
 
 // RememberOutput is the remember tool's result payload, the /api/v1/q write
 // response verbatim: the acknowledgement token, and any parse warnings the
-// server attached — the write committed, but the parse read close to a
-// different query. It is deliberately not a recall's envelope: a write and a
-// recall that matched nothing used to be the same bytes, which made a fact
-// that never landed indistinguishable from one that did.
+// server attached (the write still committed). It is deliberately not a
+// recall's envelope, so a write cannot be mistaken for a recall that matched
+// nothing.
 type RememberOutput struct {
 	Status   string   `json:"status"`
 	Warnings []string `json:"warnings,omitempty"`

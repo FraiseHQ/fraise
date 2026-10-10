@@ -20,11 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Same-package pins of the collection layer: findNeighbours is handed
-// hand-built seed contributions, so the observation arithmetic — which
-// anchors weigh in the background, which are expanded, what each graph
-// contribution records — turns on exact hinge values that BM25 masses from
-// the public surface cannot be chosen to hit.
+// Same-package tests of the collection layer. findNeighbours is handed
+// hand-built seed contributions, with exact values that BM25 masses from the
+// public surface cannot be chosen to hit, so the tests can pin which anchors
+// weigh in the background, which are expanded and what each graph
+// contribution records.
 
 package graph
 
@@ -36,8 +36,8 @@ import (
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 )
 
-// collectFixture builds the smallest graph on which every collection theorem
-// is visible:
+// collectFixture builds the smallest graph on which every collection rule is
+// visible:
 //
 //	cluster (topic, degree 3): members f1, f2, f3
 //	hub     (topic, degree 6): members h1 .. h6
@@ -103,8 +103,8 @@ func newCollectFixture(t *testing.T) *collectFixture {
 	fx.hub = topic("hub", fx.h[:]...)
 	topic("giant", fx.u[:]...)
 
-	// Hand-built seed contributions: the scorer's seed fusion (background 0)
-	// sums them, so these ARE the masses.
+	// Hand-built seed contributions: seed fusion (background 0) sums them, so
+	// these are the masses.
 	fx.candidates = scoring.Candidates[uint64, float64]{
 		fx.f1:   {{Src: scoring.SrcText, Score: 8, Rank: 0, Count: 1}},
 		fx.f2:   {{Src: scoring.SrcText, Score: 6, Rank: 1, Count: 1}},
@@ -129,12 +129,11 @@ func graphContributions(candidates scoring.Candidates[uint64, float64], key uint
 	return out
 }
 
-// TestCollectBackgroundWeighsAllTouchedAnchors pins the null model's
-// denominator, the exact seam where a regression would hide between the
-// admission prune and the background: the silent hub is pruned from
-// expansion, yet its mass and degree still weigh in ρ₀ — while the untouched
-// giant, which the traversal never saw, does not. Excluding the hub would
-// give 14/3; counting the giant would give 16/19; the pin is 16/9 exactly.
+// TestCollectBackgroundWeighsAllTouchedAnchors pins the background's
+// denominator: the silent hub is pruned from expansion, yet its mass and
+// degree still count toward ρ₀, while the untouched giant, which the traversal
+// never reached, does not. Excluding the hub would give 14/3 and counting the
+// giant 16/19; the pin is 16/9 exactly.
 func TestCollectBackgroundWeighsAllTouchedAnchors(t *testing.T) {
 	fx := newCollectFixture(t)
 	if want := 16.0 / 9.0; fx.background != want {
@@ -142,13 +141,13 @@ func TestCollectBackgroundWeighsAllTouchedAnchors(t *testing.T) {
 	}
 }
 
-// TestCollectSilencesALoneAnchorExactly pins the one case where admission
-// is decided by arithmetic alone: a query that reaches a single anchor gives
-// it exactly its fair share (M = d·(M/d)), so it must stay silent. With M =
-// 0.1 + 0.8 on a degree-3 topic, 3·(0.9/3) rounds to 0.8999999999999999, and
-// the division-based test admitted the anchor and handed its unmatched
-// member a surplus of ~4e-17. The masses are chosen to hit that rounding,
-// which BM25 masses from the public surface cannot be made to do on purpose.
+// TestCollectSilencesALoneAnchorExactly pins that an anchor holding exactly
+// its fair share stays silent even when the division rounds. A query that
+// reaches a single anchor gives it exactly its fair share (M = d·(M/d)). With
+// M = 0.1 + 0.8 on a degree-3 topic, 3·(0.9/3) rounds to 0.8999999999999999,
+// so a division-based test would admit the anchor and hand its unmatched
+// member a surplus of ~4e-17. BM25 masses from the public surface cannot be
+// chosen to hit that rounding.
 func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
 	g := NewGraph[uint64, float64](config.New())
 	g.SetTraversal(NewExcessTraversal[uint64, float64]())
@@ -186,9 +185,9 @@ func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
 	}
 }
 
-// TestCollectExpandsOnlyAboveBackgroundAnchors is the admission prune,
-// Property 5.3's collection half: the fair-share hub is never expanded — its
-// members pool nothing, its own seed keeps a graph-free list — while the
+// TestCollectExpandsOnlyAboveBackgroundAnchors pins the admission prune, the
+// collection half of hub silence: the fair-share hub is never expanded (its
+// members pool nothing and its own seed keeps a graph-free list), while the
 // cluster is expanded to every member.
 func TestCollectExpandsOnlyAboveBackgroundAnchors(t *testing.T) {
 	fx := newCollectFixture(t)
@@ -215,7 +214,7 @@ func TestCollectExpandsOnlyAboveBackgroundAnchors(t *testing.T) {
 
 // TestCollectRecordsObservationsNotPolicy pins what a graph contribution
 // carries: the funding anchor's full observed mass, its identity, degree and
-// funding-seed count — and nothing hinged, subtracted or attenuated. The
+// funding-seed count, and nothing hinged, subtracted or attenuated. The
 // cluster's non-seed member and its strongest seed record the identical
 // observation; only the scorer's self-exclusion will treat them differently.
 func TestCollectRecordsObservationsNotPolicy(t *testing.T) {

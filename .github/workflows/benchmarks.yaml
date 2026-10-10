@@ -1,0 +1,117 @@
+name: Benchmarks
+
+# Gates a pull request's benchmarks on the newest nightly run of main, the
+# baseline benchmarks-nightly.yaml keeps: retrieval quality and allocations
+# fail on a regression, time is reported for a reviewer to judge, since the
+# baseline was timed on another runner. With no baseline yet the benchmarks
+# still run and are reported, and the gate passes. The gates are the pytest
+# tests in tests/perf.
+#
+# The report is posted on the pull request by the gate job itself, and goes to
+# benchmarks-report.yaml as an artifact, which posts it to Discord and, for a
+# pull request from a fork, on the pull request, with the secrets and the
+# write token this workflow does not get there.
+
+on:
+  # Every pull request, with no paths filter: the gate is a required check,
+  # and a required check has to report on every pull request. One that
+  # changes no package a gate benchmarks runs no benchmark and reports that.
+  pull_request:
+    # labeled, unlabeled and edited re-run the gate when a regression is
+    # accepted with the label and the Perf: line, or the acceptance withdrawn.
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    # One name on every pull request, the one branch protection requires. The
+    # server's release pull request runs every gate, retrieval seeded with
+    # embeddings included; any other runs the gates its changes can affect.
+    name: Benchmark gate
+    # benchstat compares only runs on the same CPU, and ubuntu-latest hands
+    # out more than one model; every Arm runner is a Cobalt 100, so this
+    # gate and the nightly run that is its baseline always share one. The
+    # nightly workflow runs on the same label.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      RELEASE: ${{ github.head_ref == 'release-please--branches--main--components--fraise' }}
+    permissions:
+      contents: read
+      actions: read # the nightly baseline
+      pull-requests: write # the report, as a sticky comment
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # The checkout is the merge of the pull request into its base;
+          # its first parent is the base, which the gates diff against.
+          fetch-depth: 2
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version-file: "pyproject.toml"
+
+      # No baseline is not an error: the gates then measure and pass. That
+      # includes the nightly workflow not existing on main yet, which the
+      # action reports as a failed lookup rather than a missing artifact.
+      - name: Download the nightly baseline
+        id: baseline
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
+        with:
+          workflow: benchmarks-nightly.yaml
+          branch: main
+          workflow_conclusion: completed
+          name: benchmark-baseline
+          path: bin/perf/baseline
+          search_artifacts: true
+          if_no_artifact_found: warn
+      # The release gate also measures retrieval seeded with embeddings: they
+      # come from the cache, or are computed and cached on a miss. If they
+      # cannot be computed, the gate measures text only.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: vectors
+        if: env.RELEASE == 'true'
+        with:
+          path: bin/perf/locomo-vectors.json
+          key: locomo-vectors-${{ hashFiles('tests/perf/data/locomo-conv-26.json', 'tools/embed_locomo.py') }}
+      - name: Embed LoCoMo
+        if: env.RELEASE == 'true' && steps.vectors.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: make perf-vectors
+
+      # A regression fails this step and the check. Until the check is made
+      # required (rollout, week 1), that blocks nothing. A pull request runs
+      # only the gates whose packages it changes; the release gate runs all.
+      - name: Gate
+        env:
+          FRAISE_LOCOMO_VECTORS: ${{ hashFiles('bin/perf/locomo-vectors.json') != '' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
+        run: >-
+          make bench
+          BENCH_BASELINE=${{ steps.baseline.outputs.found_artifact == 'true' && 'bin/perf/baseline' || '' }}
+          BENCH_CHANGED_SINCE=${{ env.RELEASE != 'true' && 'HEAD^1' || '' }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: benchmarks
+          path: |
+            bin/perf/report.md
+            bin/perf/*.txt
+      # The report goes on the pull request whatever the verdict, updated on
+      # every push. A pull request from a fork gets a read-only token here, so
+      # benchmarks-report.yaml posts its report instead.
+      - name: Comment on the pull request
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('bin/perf/report.md') != ''
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88
+        with:
+          header: benchmarks
+          path: bin/perf/report.md

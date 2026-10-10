@@ -34,8 +34,8 @@ func ClampRank(rank int) uint16 {
 	return uint16(rank)
 }
 
-// clampCount bounds a funding-seed count to Contribution.Count's range, for
-// the same reason as clampRank: a wrapped count would misreport a heavily
+// ClampCount bounds a funding-seed count to Contribution.Count's range, for
+// the same reason as ClampRank: a wrapped count would misreport a heavily
 // funded anchor as barely funded.
 func ClampCount(count int) uint16 {
 	if count > math.MaxUint16 {
@@ -44,7 +44,7 @@ func ClampCount(count int) uint16 {
 	return uint16(count)
 }
 
-// clampDegree bounds an anchor degree to Contribution.Degree's range.
+// ClampDegree bounds an anchor degree to Contribution.Degree's range.
 func ClampDegree(degree int) uint32 {
 	if int64(degree) > math.MaxUint32 {
 		return math.MaxUint32

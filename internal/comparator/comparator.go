@@ -31,7 +31,7 @@ import (
 // zero if a == b, and a positive number if a > b.
 type Comparator[T any] func(a, b T) int
 
-// TimeComparator provides a basic comparison on time.Time
+// TimeComparator orders time.Time values chronologically.
 func TimeComparator(a, b time.Time) int {
 	switch {
 	case a.After(b):

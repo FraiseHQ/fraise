@@ -32,8 +32,7 @@ import (
 )
 
 // excessTraversalGraph builds the smallest graph exercising every band rule:
-// a source fact on two anchors — one shared with a sibling, one exclusive —
-// plus a fact reachable only beyond the two-band horizon.
+// a source fact on two anchors, one shared with a sibling and one exclusive.
 //
 //	source  — topic "left" (with sibling), entity "right" (alone)
 //	sibling — topic "left" only
@@ -76,10 +75,9 @@ func runExcess(t *testing.T, g *graph.InMemoryGraph[uint64, float64], source uin
 }
 
 // TestExcessTraversalBands pins the two-band shape: the source's anchors at
-// depth 1 (both edge directions — the topic is reached through an outgoing
-// IsAbout, the entity through the same directionality Mentions uses), their
-// members at depth 2, ascending key within each band, and the source itself
-// among the members of its own anchors.
+// depth 1 (reached along its outgoing IsAbout and Mentions edges), their
+// members at depth 2 (along the anchors' incoming edges), ascending key within
+// each band, and the source itself among the members of its own anchors.
 func TestExcessTraversalBands(t *testing.T) {
 	g, source, sibling, left, right := excessTraversalGraph(t)
 	r := runExcess(t, g, source)
@@ -101,9 +99,9 @@ func TestExcessTraversalBands(t *testing.T) {
 	}
 }
 
-// TestExcessTraversalParentsCarryFullIncidence pins the field the band shape
-// exists for: a member on two of the source's anchors is two observations,
-// not one, so Parents carries both while Parent keeps a canonical entry.
+// TestExcessTraversalParentsCarryFullIncidence pins Parents: a member on two of
+// the source's anchors is two observations, not one, so Parents carries both
+// while Parent keeps a canonical entry.
 func TestExcessTraversalParentsCarryFullIncidence(t *testing.T) {
 	g, source, sibling, left, right := excessTraversalGraph(t)
 	r := runExcess(t, g, source)

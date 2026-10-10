@@ -31,9 +31,7 @@ import (
 
 // TestCanonicalAcceptsAnyCasing pins the half of the contract an operator
 // notices: whatever casing they type is accepted and rewritten to the one
-// spelling everything downstream compares against. "error" is the case from the
-// bug report — it matched no arm of the logger's case-sensitive switch and so
-// silently produced INFO logs.
+// spelling everything downstream compares against.
 func TestCanonicalAcceptsAnyCasing(t *testing.T) {
 	cases := []struct {
 		value    string
@@ -65,9 +63,9 @@ func TestCanonicalAcceptsAnyCasing(t *testing.T) {
 
 // TestCanonicalRejectsUnknownValue pins the other half: an unrecognised value
 // is an error naming the setting and listing what it accepts, not a silent
-// fallback. The message is asserted in full because it is the entire remedy an
-// operator gets — an error that says only "invalid value" leaves them guessing
-// at the spelling, which is barely better than the default it replaced.
+// fallback, and the value is left as typed. Each part of the message is
+// asserted because the message is the operator's only remedy: an error that
+// says only "invalid value" leaves them guessing at the spelling.
 func TestCanonicalRejectsUnknownValue(t *testing.T) {
 	value := "verbose"
 	err := Canonical(&value, "log.level", LogLevels)
@@ -100,9 +98,9 @@ func TestValidateAcceptsTheDefaults(t *testing.T) {
 
 // TestValidateChecksEverySetting guards against a setting being validated in
 // one place and forgotten in another. Each case poisons exactly one setting of
-// an otherwise-default config, so a value left out of validate shows up as this
-// test passing where it should fail — the whole point being that no setting
-// keeps a silent fallback while its neighbours are checked.
+// an otherwise-default config, so a setting left out of validate fails its
+// case: no setting may keep a silent fallback while its neighbours are
+// checked.
 //
 // The setting's dotted name is asserted too: with this many settings checked in
 // one function, "invalid value" alone would not tell an operator which line to
@@ -121,6 +119,9 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
+		{"scheduler.workers", func(c *ConfigSet, _ string) { c.Scheduler.Workers = -1 }},
+		{"db.max-depth", func(c *ConfigSet, _ string) { c.DB.MaxDepth = 3 }},
+		{"db.num-graphs", func(c *ConfigSet, _ string) { c.DB.NumGraphs = 300 }},
 	}
 
 	for _, tc := range cases {
@@ -141,12 +142,12 @@ func TestValidateChecksEverySetting(t *testing.T) {
 
 // TestValidateBoundsMinScoreRatio pins the domain of db.min-score-ratio: a
 // fraction of the best hit's relevance, so anything outside [0, 1] is rejected
-// at startup rather than acted on. Each value past the range is a distinct
-// silent failure the check replaces — 30 (an operator thinking in percent)
-// puts the bar above every hit so every recall comes back empty, a negative
-// ratio reads as "off", and NaN fails every comparison in the cutoff and
-// empties every recall too. The endpoints are kept: 0 is off and 1
-// keeps only hits tied with the best, both meaningful settings.
+// at startup rather than acted on. Each value past the range would otherwise
+// fail silently: 30 (an operator thinking in percent) puts the bar above
+// every hit so every recall comes back empty, a negative ratio reads as
+// "off", and NaN fails every comparison in the cutoff and empties every
+// recall too. The endpoints are kept: 0 is off and 1 keeps only hits tied
+// with the best, both meaningful settings.
 func TestValidateBoundsMinScoreRatio(t *testing.T) {
 	for _, ratio := range []float64{0, 0.3, 1} {
 		c := New()
@@ -164,6 +165,96 @@ func TestValidateBoundsMinScoreRatio(t *testing.T) {
 			t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
 		}
 		for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+	}
+}
+
+// TestValidateBoundsWorkers pins the floor of scheduler.workers. Adjust only
+// replaces a zero with the default, so a negative count would otherwise reach
+// Scheduler.Start, whose loop starts no worker: the server would accept
+// queries into its queue and never answer them, then 429 once the queue
+// filled. validate runs after Adjust, so a zero has already become the default
+// by then and the check never sees one.
+func TestValidateBoundsWorkers(t *testing.T) {
+	for _, workers := range []int{1, 4} {
+		c := New()
+		c.Scheduler.Workers = workers
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with workers = %d returned error: %v, want it accepted", workers, err)
+		}
+	}
+
+	for _, workers := range []int{0, -1, math.MinInt} {
+		c := New()
+		c.Scheduler.Workers = workers
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with workers = %d = %v, want an ErrInvalidValue", workers, err)
+		}
+		for _, want := range []string{"scheduler.workers", "accepted: 1 or more"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+	}
+}
+
+// TestValidateBoundsMaxDepth pins the domain of db.max-depth: the lanes are
+// depth 0, 1 and 2, and search has nothing past 2. A ceiling of 3 or more
+// would let depth:3 through the parser's range check to be answered exactly
+// as depth 2, the silent substitution the ceiling exists to refuse; a
+// negative ceiling would reject every recall that names a depth. Lowering
+// the ceiling stays allowed: 1 keeps recalls off the max-recall lane.
+func TestValidateBoundsMaxDepth(t *testing.T) {
+	for _, depth := range []int{0, 1, 2} {
+		c := New()
+		c.DB.MaxDepth = depth
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with max-depth = %d returned error: %v, want it accepted", depth, err)
+		}
+	}
+
+	for _, depth := range []int{-1, 3, 10} {
+		c := New()
+		c.DB.MaxDepth = depth
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with max-depth = %d = %v, want an ErrInvalidValue", depth, err)
+		}
+		for _, want := range []string{"db.max-depth", "accepted: 0 to 2"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+	}
+}
+
+// TestValidateBoundsNumGraphs pins the domain of db.num-graphs to what a
+// selector can address. Selectors are uint8, so 256 graphs (@0 to @255) is the
+// most a query can reach: 300 would start a server holding 44 graphs no
+// selector can name, and a negative count would quietly get the default. Both
+// endpoints are kept: one graph is a single-tenant store, 256 is every
+// selector in use.
+func TestValidateBoundsNumGraphs(t *testing.T) {
+	for _, n := range []int{1, DefaultNumGraph, 256} {
+		c := New()
+		c.DB.NumGraphs = n
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with num-graphs = %d returned error: %v, want it accepted", n, err)
+		}
+	}
+
+	for _, n := range []int{-1, 0, 257, 300} {
+		c := New()
+		c.DB.NumGraphs = n
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with num-graphs = %d = %v, want an ErrInvalidValue", n, err)
+		}
+		for _, want := range []string{"db.num-graphs", "accepted: 1 to 256"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error %q does not mention %q", err, want)
 			}

@@ -7,11 +7,11 @@ navLabel: "Database"
 | Setting | Flag | Default | Meaning |
 |------------------------|-------------------------|-----------|-----------------------------------------------------------|
 | `precision` | `-precision` | `float32` | float width of embeddings and scores: `float32` `float64` |
-| `num-graphs` | `-num-graphs` | `8` | independent graphs allocated; selectors are `0..n-1` |
+| `num-graphs` | `-num-graphs` | `8` | independent graphs allocated, in `[1, 256]`; selectors are `0..n-1` |
 | `default-top` | `-default-top` | `10` | results returned when a recall omits `top:` |
 | `default-depth` | `-default-depth` | `0` | retrieval lane when a recall omits `depth:` (0 = floor) |
 | `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it |
-| `max-depth` | `-max-depth` | `2` | ceiling on `depth:` (lanes are 0, 1 and 2) |
+| `max-depth` | `-max-depth` | `2` | ceiling on `depth:`, in `[0, 2]` (lanes are 0, 1 and 2); the server refuses to start on a value outside it |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
 | `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
@@ -26,17 +26,17 @@ seed-size = 64
 
 ## Precision is a compile-time type parameter
 
-Both instantiations are built into the binary and this setting picks which one runs. `float32` halves the memory of every vector and score at a precision embedding models comfortably exceed in noise — choose `float64` only with a reason to.
+Both instantiations are built into the binary and this setting picks which one runs. `float32` halves the memory of every vector and score, and its precision is finer than the noise in embedding models; choose `float64` only with a reason to.
 
 ## Ceilings versus defaults
 
-The three ceilings exist so **one query cannot force unbounded work**. They bound what a *client* may ask for; the defaults above them are what it gets when it asks for nothing. A value past a ceiling is rejected with the range in the message — see [Bounds](/docs/query-language/tokens/bounds).
+The three ceilings exist so **one query cannot force unbounded work**. They bound what a *client* may ask for; the defaults are what it gets when it asks for nothing. A value past a ceiling is rejected with the range in the message — see [Bounds](/docs/query-language/tokens/bounds).
 
 ## Score cutoff
 
-A recall fills its list to `top:` by default, and the tail of a filled list — hits scoring a tenth of the first — rarely holds the answer but costs the model context tokens all the same. `min-score-ratio` makes the list stop where the evidence does: after ranking, any hit whose relevance is below the ratio times the best hit's relevance is dropped. The ratio is a fraction in `[0, 1]`, and the server refuses to start on a value outside it. The scores and their order are untouched, raw units stay raw, the list is just shorter; a ratio is scale-free, so the same setting means the same thing whatever units the scorer produces.
+A recall fills its list to `top:` by default, and the tail of a filled list — hits scoring a tenth of the first — rarely holds the answer but costs the model context tokens all the same. `min-score-ratio` makes the list stop where the evidence does: after ranking, any hit whose relevance is below the ratio times the best relevance in the ranked list is dropped. The ratio is a fraction in `[0, 1]`, and the server refuses to start on a value outside it. The scores and their order are untouched; only the list is shorter. A ratio is scale-free, so the same setting means the same thing whatever units the scorer produces.
 
-Relevance here is what the evidence says about a hit, before [recency decay](/docs/retrieval/memory-model/temporality) and the ranking boost scale it into the score the list is ordered by. Decay still ranks an older fact below a newer one with the same evidence, but it never pushes it under the bar: two facts filed under the same anchors both clear a ratio or both miss it, whatever their age. The score a hit carries in the response is the decayed one, so a kept hit can show a score below the ratio times the first hit's, and the hit ranked first is cut like any other when its evidence is far below the best's.
+Relevance here is what the evidence says about a hit, before [recency decay](/docs/retrieval/memory-model/temporality) and the ranking boost scale it into the score the list is ordered by. Decay still ranks an older fact below a newer one with the same evidence, but it never pushes it under the bar: two facts with the same evidence both clear a ratio or both miss it, whatever their age. The score a hit carries in the response is the decayed one, so a kept hit can show a score below the ratio times the first hit's, and the hit ranked first is cut like any other when its evidence is far below the best's.
 
 The hit with the best relevance always clears its own bar, so a result that matched is shortened, never emptied; `top:` still caps it from above.
 
@@ -49,7 +49,7 @@ The cutoff is **off by default** because the trade is yours to make: it buys pre
 
 ## `num-graphs`
 
-Graphs are allocated at startup and the count never grows: a selector is an index, not a lookup. Empty graphs cost almost nothing, so allocate for the isolation you want, not the load you have. See [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+Graphs are allocated at startup and the count never grows: a selector is an index, not a lookup. A selector is a `uint8`, so `256` graphs is every selector a query can name, and startup refuses a count past it rather than allocate graphs nothing can reach. Empty graphs cost almost nothing, so allocate for the isolation you want, not the load you have. See [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
 
 ## `[db.hashing-function]`
 

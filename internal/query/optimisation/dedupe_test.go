@@ -20,8 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Internal test (package optimisation) so dedupeStrings can be exercised
-// directly in addition to Dedupe.Optimise.
+// External tests: dedupeStrings is unexported, so it is exercised through
+// Dedupe.Optimise.
 package optimisation_test
 
 import (
@@ -31,10 +31,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/query"
 	"github.com/FraiseHQ/fraise/internal/query/optimisation"
 )
-
-var _ optimisation.Optimisation[string, float32] = (*optimisation.Dedupe[string, float32])(nil)
-
-// --- Dedupe.Optimise --------------------------------------------------------
 
 func TestDedupeOptimiseRecall(t *testing.T) {
 	in := &query.Recall[string, float32]{
@@ -101,8 +97,6 @@ func TestDedupeOptimisePassthrough(t *testing.T) {
 		t.Errorf("Optimise replaced a non-Recall query; want the same value returned")
 	}
 }
-
-// --- Pipeline (integration) -------------------------------------------------
 
 // NewPipeline wires in a Dedupe stage, so the default pipeline deduplicates
 // Recall queries end to end.

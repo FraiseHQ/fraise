@@ -20,7 +20,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Unit tests for the pure query-string builders."""
+"""Tests for the pure query-string builders.
+
+The unit tests pin the strings they build; the tests marked ``integration``
+send those strings to a live server, whose parser is the judge of whether
+they parse.
+"""
 
 import warnings
 
@@ -31,6 +36,7 @@ from fraise_sdk.query import build_recall, build_remember
 
 
 def test_remember_minimal():
+    """A bare remember is the default graph and the quoted fact."""
     assert (
         build_remember("the parrot is turquoise")
         == "remember@0 'the parrot is turquoise'"
@@ -38,6 +44,7 @@ def test_remember_minimal():
 
 
 def test_remember_with_graph_topics_and_entities():
+    """The selector is glued to the verb, and the topics precede the entities."""
     got = build_remember(
         "anne loves the color orange",
         graph=3,
@@ -48,6 +55,7 @@ def test_remember_with_graph_topics_and_entities():
 
 
 def test_remember_with_vector_appends_placeholder():
+    """``with_vector`` appends the placeholder the client binds in the parameters."""
     got = build_remember("the parrot is turquoise", graph=6, with_vector=True)
     assert got == f"remember@6 'the parrot is turquoise' vec:${VECTOR_PARAM}"
 
@@ -58,6 +66,7 @@ def test_remember_escapes_apostrophes():
 
 
 def test_remember_rejects_empty_value():
+    """A blank fact raises FraiseQueryError instead of being sent."""
     with pytest.raises(FraiseQueryError):
         build_remember("   ")
 
@@ -95,19 +104,23 @@ def test_recall_query_phrase_escapes_apostrophes():
 
 
 def test_recall_with_keywords_and_clauses():
+    """Keywords come first, bare, then the top and depth clauses."""
     got = build_recall(["anna", "bob"], graph=2, top=10, depth=2)
     assert got == "recall@2 anna bob top:10 depth:2"
 
 
 def test_recall_with_vector_only():
+    """A vector alone seeds the recall, which then carries only the placeholder."""
     assert build_recall(graph=6, with_vector=True) == f"recall@6 vec:${VECTOR_PARAM}"
 
 
 def test_recall_topic_seed_is_enough():
+    """A topic alone seeds the recall, so no keyword is needed."""
     assert build_recall(topics=["birds"]) == "recall@0 topic:birds"
 
 
 def test_recall_requires_a_seed():
+    """A recall with no keyword, query, anchor or vector has nothing to search from."""
     with pytest.raises(FraiseQueryError, match="at least one seed"):
         build_recall(graph=1)
 
@@ -125,11 +138,11 @@ def test_recall_requires_a_seed():
 def test_a_bare_string_where_a_sequence_is_wanted_is_rejected(build, args, param, kind):
     """``topics="billing"`` is refused by name, never expanded letter by letter.
 
-    ``str`` satisfies ``Sequence[str]``, so the bare string type-checks and
-    used to iterate into ``topic:b topic:i topic:l ...``: the write succeeded,
-    the fact was filed under one anchor per letter, and a recall by ``billing``
-    found nothing. Every path that takes a sequence is covered — the five reach
-    the check independently — and the message names the fix.
+    ``str`` satisfies ``Sequence[str]``, so the bare string type-checks.
+    Iterated, it would file the fact under ``topic:b topic:i topic:l ...``,
+    one anchor per letter, and a recall by ``billing`` would find nothing. The
+    five cases are every path that takes a sequence, each reaching the check
+    independently, and the message names the fix.
     """
     with pytest.raises(FraiseQueryError) as exc_info:
         build(*args, **{param: "billing"})
@@ -148,7 +161,7 @@ def test_recall_rejects_non_positive_top(bad):
 
 @pytest.mark.parametrize("bad", [-1, -2])
 def test_recall_rejects_negative_depth(bad):
-    """depth must be non-negative; a negative walk length is meaningless."""
+    """depth must be non-negative; there is no lane below the floor."""
     with pytest.raises(FraiseQueryError):
         build_recall(["x"], depth=bad)
 
@@ -159,16 +172,18 @@ def test_recall_emits_depth_zero():
 
 
 def test_negative_graph_is_rejected():
+    """A negative graph raises before anything is sent."""
     with pytest.raises(FraiseQueryError, match="non-negative"):
         build_remember("x", graph=-1)
 
 
 @pytest.mark.parametrize("bad", [256, 300, 99999])
 def test_graph_above_the_uint8_range_is_rejected(bad):
-    """A selector travels as a uint8, so 256 is not "too big" — it is graph 0.
+    """A selector travels as a uint8, so no graph above 255 can be named.
 
-    Refusing it here means a mistyped graph id fails in the caller's own stack
-    trace rather than reading or writing somebody else's memory.
+    Narrowed to a uint8, 256 would be graph 0: somebody else's memory. The
+    builder refuses it before any request, so a mistyped graph id fails in the
+    caller's own stack trace.
     """
     with pytest.raises(FraiseQueryError, match="at most 255"):
         build_remember("x", graph=bad)
@@ -368,7 +383,7 @@ def test_the_vector_placeholder_binds_to_the_parameter_the_builder_names(
 
 @pytest.mark.integration
 def test_the_vector_placeholder_is_really_bound_not_ignored(client, query_graph):
-    """The same string without its parameter is rejected for the unbound name.
+    """A placeholder sent without its parameter is rejected for the unbound name.
 
     The mirror of the test above: if the server ignored the placeholder rather
     than binding it, that test would prove nothing.
@@ -393,14 +408,12 @@ def test_the_vector_placeholder_is_really_bound_not_ignored(client, query_graph)
 def test_a_recall_seeded_without_keywords_parses(kwargs, client, query_graph, encode):
     """Every keyword-free seed the builder allows is accepted by the grammar.
 
-    ``build_recall`` documents "a recall needs at least one seed: keywords, a
-    vector, or a topic/entity filter" and builds ``recall@2 topic:weather`` (or
-    ``vec:$v``, or ``entity:...``) accordingly. The grammar used to want a word
-    or quoted phrase before any clause and answered 400, so
-    ``client.recall(topics=[...])`` and ``client.recall(vector=[...])`` — pure
-    anchor and pure semantic search — were unreachable, and callers seeded with
-    a keyword matching nothing ("zzznomatch") to get past the parser. The two
-    agree now, and this is what says so.
+    ``build_recall`` takes a topic, an entity or a vector as a recall's only
+    seed, and builds ``recall@2 topic:weather`` (or ``vec:$v``, or
+    ``entity:...``) accordingly. If the grammar disagreed,
+    ``client.recall(topics=[...])`` and ``client.recall(vector=[...])``, pure
+    anchor and pure semantic search, could not be asked without a keyword the
+    caller does not mean.
     """
     text = build_recall(graph=query_graph, **kwargs)
     parameters = (
@@ -429,8 +442,7 @@ def test_a_keyword_spelled_search_word_survives_the_grammar(
 
     The builder quotes these because a bare reserved word is syntax in every
     position and in any casing — ``recall@2 since 7d`` is a parse error. Only a
-    live parser can prove the quoting is the right escape, which is what this
-    file is for.
+    live parser can prove the quoting is the right escape.
     """
     with pytest.warns(FraiseWarning, match="is a reserved word"):
         text = build_recall(keywords, graph=query_graph)
@@ -493,13 +505,19 @@ def test_a_bound_past_the_servers_ceiling_names_the_range(
 
 @pytest.mark.integration
 def test_the_builders_agree_with_the_graphs_vector_dimension(
-    client, query_graph, vector_dim
+    client, query_graph, vector_dim, encode
 ):
     """A vector of the wrong width reaches the index and is refused there.
 
+    The first vector a graph stores fixes its width, so the test stores one at
+    the suite's width itself rather than relying on an earlier test to have
+    done it: run alone, the mis-sized vector would otherwise be the first, be
+    accepted, and fix the graph at the wrong width for every test after it.
     Incidentally proof that the vector is bound and used, rather than parsed
     and dropped on the floor.
     """
+    sized = build_remember("a well-sized vector", graph=query_graph, with_vector=True)
+    client.query(sized, parameters={VECTOR_PARAM: encode("a well-sized vector")})
     text = build_remember("a mis-sized vector", graph=query_graph, with_vector=True)
     with pytest.raises(FraiseAPIError):
         client.query(text, parameters={VECTOR_PARAM: [0.5] * (vector_dim // 2)})

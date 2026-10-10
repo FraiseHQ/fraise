@@ -35,7 +35,7 @@ func TestRememberIsWrite(t *testing.T) {
 	}
 }
 
-// Unlike Recall, Remember.SetGraphID has a pointer receiver, so the update
+// Remember.SetGraphID has a pointer receiver, like Recall's, so the update
 // persists when called through a pointer.
 func TestRememberSetGraphIDPersists(t *testing.T) {
 	r := &Remember[string, float32]{}

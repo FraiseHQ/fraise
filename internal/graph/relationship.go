@@ -28,7 +28,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
-// Fact mentions NamedEntity relationship
+// Mentions is the relationship from a fact to a named entity it mentions.
 type Mentions[K comparable] struct {
 	Fact        *Fact[K]
 	NamedEntity *NamedEntity[K]
@@ -37,27 +37,37 @@ type Mentions[K comparable] struct {
 	Hasher hash.Hasher[K, string]
 }
 
+// Key implements [Node]: the edge's Hash under its own Hasher, the key the
+// graph stores it under and records in its adjacency maps.
 func (m Mentions[K]) Key() K {
 	return m.Hash(m.Hasher)
 }
 
+// GetAttributes implements [Node]: it returns the edge's attributes, whose
+// timestamp records when the link was made.
 func (m Mentions[K]) GetAttributes() *NodeAttributes {
 	return &m.NodeAttributes
 }
 
+// GetTimestamp implements [Node]: it returns when the link was made.
 func (m Mentions[K]) GetTimestamp() time.Time {
 	return m.Timestamp
 }
 
+// GetValue implements [Node]: it returns the edge's attribute value. The
+// edge's identity is the pair it connects, not this value (see Hash).
 func (m Mentions[K]) GetValue() string {
 	return m.Value
 }
 
+// Source implements [Relationship]: it returns the fact the edge leaves.
 func (m Mentions[K]) Source() *Entity[K] {
 	var e Entity[K] = m.Fact
 	return &e
 }
 
+// Target implements [Relationship]: it returns the named entity the fact is
+// linked to.
 func (m Mentions[K]) Target() *Entity[K] {
 	var e Entity[K] = m.NamedEntity
 	return &e
@@ -70,7 +80,7 @@ func (m Mentions[K]) Hash(h hash.Hasher[K, string]) K {
 	return h.Hash("mentions:" + m.Fact.Value + "\x00" + m.NamedEntity.Value)
 }
 
-// Fact is about Topic relationship
+// IsAbout is the relationship from a fact to a topic it is filed under.
 type IsAbout[K comparable] struct {
 	Fact  *Fact[K]
 	Topic *Topic[K]
@@ -79,27 +89,37 @@ type IsAbout[K comparable] struct {
 	Hasher hash.Hasher[K, string]
 }
 
+// Key implements [Node]: the edge's Hash under its own Hasher, the key the
+// graph stores it under and records in its adjacency maps.
 func (a IsAbout[K]) Key() K {
 	return a.Hash(a.Hasher)
 }
 
+// GetAttributes implements [Node]: it returns the edge's attributes, whose
+// timestamp records when the link was made.
 func (a IsAbout[K]) GetAttributes() *NodeAttributes {
 	return &a.NodeAttributes
 }
 
+// GetTimestamp implements [Node]: it returns when the link was made.
 func (a IsAbout[K]) GetTimestamp() time.Time {
 	return a.Timestamp
 }
 
+// GetValue implements [Node]: it returns the edge's attribute value. The
+// edge's identity is the pair it connects, not this value (see Hash).
 func (a IsAbout[K]) GetValue() string {
 	return a.Value
 }
 
+// Source implements [Relationship]: it returns the fact the edge leaves.
 func (a IsAbout[K]) Source() *Entity[K] {
 	var e Entity[K] = a.Fact
 	return &e
 }
 
+// Target implements [Relationship]: it returns the topic the fact is
+// linked to.
 func (a IsAbout[K]) Target() *Entity[K] {
 	var e Entity[K] = a.Topic
 	return &e

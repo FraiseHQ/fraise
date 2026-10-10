@@ -27,10 +27,16 @@ import (
 	"unicode"
 )
 
+// Position locates a token in the query. Column counts runes, not bytes, so a
+// position points at the right character of a query with non-ASCII text.
 type Position struct {
 	Column int
 }
 
+// Lexer scans one query into tokens on demand. Input holds the query as runes,
+// so a multi-byte character is one column; Character is the last rune
+// consumed and CurrentPos its 1-based column, which is also the index of the
+// next rune to read.
 type Lexer struct {
 	Input      []rune
 	Offset     int
@@ -39,13 +45,13 @@ type Lexer struct {
 	NextPos    Position
 }
 
-// Returns a new Lexer pointer from a string
+// New returns a Lexer over input.
 func New(input string) *Lexer {
 	l := Lexer{
 		Input: []rune(input),
 	}
 	l.readCharacter()
-	// initalise positions
+	// initialise positions
 	l.CurrentPos = Position{
 		Column: 0,
 	}
@@ -55,6 +61,9 @@ func New(input string) *Lexer {
 	return &l
 }
 
+// SkipBlank advances past spaces, tabs and carriage returns without emitting a
+// token. It stops at a newline, which ends an instruction rather than
+// separating words.
 func (l *Lexer) SkipBlank() {
 	for isBlank(l.peek()) {
 		l.readCharacter()
@@ -71,9 +80,9 @@ func (l *Lexer) readCharacter() {
 	l.NextPos.Column++
 }
 
-// checks if rune is white space. A newline is deliberately absent: it separates
-// instructions, and swallowing it as blank is what let "recall ferry\nbridge"
-// read as one two-term recall instead of the two commands it looks like.
+// isBlank reports whether ch is a space, tab or carriage return. A newline is
+// not blank: it ends an instruction, so "recall ferry\nbridge" is two lines
+// rather than one two-term recall.
 func isBlank(ch rune) bool {
 	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r')
 }
@@ -85,6 +94,10 @@ func isWordCharacter(ch rune) bool {
 	return unicode.IsLetter(ch) || unicode.IsDigit(ch)
 }
 
+// Next scans and returns the next token, and an EOL token on every call once
+// the input is exhausted. A phrase whose closing quote is missing comes back
+// as an ILLEGAL token carrying the text read, so the parser can report it as
+// unterminated.
 func (l *Lexer) Next() Token {
 	var tok Token
 
@@ -122,9 +135,9 @@ func (l *Lexer) Next() Token {
 		literal := l.scanWhitespace()
 		tok = Token{Type: WHITESPACE, Literal: literal}
 	case rune(0):
-		// peek reads 0 both past the end and at a NUL in the input; only the
-		// first is the end. Reading a NUL as the end dropped everything after
-		// it without a word — "recall foo\x00bar baz" ran as a recall for foo.
+		// peek returns 0 both past the end and at a NUL in the input; only the
+		// first is the end. A NUL is its own token, so the parser rejects it
+		// instead of dropping the rest of the query.
 		if l.CurrentPos.Column < len(l.Input) {
 			l.readCharacter()
 			tok = Token{Type: NUL, Literal: string(l.Character)}
@@ -140,13 +153,12 @@ func (l *Lexer) Next() Token {
 		tokLiteral := l.scanString()
 		tokType, reserved := KeywordsMap[tokLiteral]
 		if !reserved {
-			// Casing un-reserves a keyword everywhere except immediately before
-			// a ':', where nothing else it could be exists: no production puts a
-			// bare word in front of a colon, so "DEPTH:5" can only be the depth
-			// clause, and reading it as one is what lets a repeated clause be
-			// caught as a duplicate instead of blamed on the casing. Away from a
-			// colon the spelling still has to match — "RECALL x" stays a parse
-			// error rather than a command silently rewritten on the way in.
+			// A mis-cased keyword lexes as a LITERAL, except immediately
+			// before a ':': no production puts a bare word in front of a colon,
+			// so "DEPTH:5" can only be the depth clause, and lexing it as one
+			// lets a repeated clause be reported as a duplicate rather than as
+			// a casing mistake. Away from a ':' the spelling must match, so
+			// "RECALL x" is not a command.
 			if l.peek() == rune(':') {
 				tokType, reserved = KeywordsMap[strings.ToLower(tokLiteral)]
 			}
@@ -160,7 +172,8 @@ func (l *Lexer) Next() Token {
 	return tok
 }
 
-// peeks current character
+// peek returns the character at the current position, or 0 past the end of
+// input.
 func (l *Lexer) peek() rune {
 	if l.CurrentPos.Column >= len(l.Input) {
 		return rune(0)
@@ -177,7 +190,8 @@ func (l *Lexer) scanWhitespace() string {
 	return string(res)
 }
 
-// scans a bare word: the run of word characters from the current position
+// scanString scans a bare word: the run of word characters from the current
+// position.
 func (l *Lexer) scanString() string {
 	var res []rune
 	for isWordCharacter(l.peek()) {
@@ -188,19 +202,18 @@ func (l *Lexer) scanString() string {
 }
 
 // scanPhrase reads an opaque single-quoted phrase: every character between the
-// quotes is taken literally — reserved words and symbols carry no meaning — so
-// realistic facts can be stored verbatim. A doubled quote (”) is an escaped
-// literal quote; the first single quote that is not doubled closes the phrase.
+// quotes is data, reserved words and symbols included, so a fact is stored
+// verbatim. A doubled single quote is an escaped quote; the first single quote
+// that is not doubled closes the phrase.
 //
 // The opening quote is at the current position. On success a PHRASE token with
 // the decoded (unquoted, unescaped) text is returned. If the input ends before
 // a closing quote, an ILLEGAL token carrying the partial text is returned so the
 // parser can report an unterminated phrase.
 //
-// End of input is detected by position, not by peek() returning rune(0): JSON
-// may legally carry a NUL escape (\u0000) inside free-flowing text, and a
-// phrase must swallow it as data like any other character rather than
-// misreport the phrase as unterminated.
+// End of input is detected by position, not by peek returning 0, because a NUL
+// inside a phrase (JSON can carry one as \u0000) is data like any other
+// character.
 func (l *Lexer) scanPhrase() Token {
 	start := l.CurrentPos
 	l.readCharacter() // consume the opening quote

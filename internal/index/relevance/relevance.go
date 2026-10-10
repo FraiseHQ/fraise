@@ -24,14 +24,15 @@ package relevance
 
 // Relevance is the pluggable relevance model of a text index. The index owns
 // tokenization, postings and the total-order ranking; Relevance owns every
-// number in between — and the corpus statistics those numbers need, which it
-// maintains through the lifecycle hooks. Query-side methods are pure and are
-// consulted under the index's readers' lock; lifecycle methods run only on
-// the write path.
+// number in between, and the corpus statistics those numbers need, which it
+// maintains through the lifecycle hooks. Query-side methods only read the
+// model's state, since concurrent searches call them under the graph's read
+// lock; lifecycle methods run only on the write path.
 //
-// The model is installed at construction time and never swapped mid-corpus:
-// a plugin arriving after the first Insert would score against empty
-// statistics. This is contract, not a guarded invariant.
+// The model is installed before the first Insert and never swapped: one
+// installed later would score against statistics missing every document
+// already indexed. The index does not enforce this; it is part of the
+// contract.
 type Relevance[K comparable, P float32 | float64] interface {
 	// Indexed records a document's statistics. On update the index calls
 	// Removed with the old tokens first, so key is always absent here.
@@ -51,13 +52,11 @@ type Relevance[K comparable, P float32 | float64] interface {
 	Weight(df, docs int) P
 
 	// Prepare folds whatever corpus-wide statistic Increment needs into one
-	// value, computed once per query from live state. It is called exactly
-	// once, before the first Increment, and its result is threaded through
-	// every Increment call for that query rather than cached on the model:
-	// Relevance methods run under the index's readers' lock, so concurrent
-	// queries can share one model instance, and a value cached on the
-	// receiver would race across them. Models with nothing to precompute
-	// return 0.
+	// value, computed from live state once per query, before the first
+	// Increment. The result is passed to every Increment of that query rather
+	// than cached on the model: concurrent queries share one model under the
+	// graph's read lock, and a value cached on the receiver would race across
+	// them. Models with nothing to precompute return 0.
 	Prepare() P
 
 	// Increment is one document's gain for matching one term. prepared is
@@ -65,8 +64,9 @@ type Relevance[K comparable, P float32 | float64] interface {
 	Increment(weight P, key K, tf int, prepared P) P
 
 	// Finalize folds the accumulated score and match breadth into the final
-	// relevance; coverage lives here. matched and total are the idf mass of
-	// the query terms the document matched and of all of them, in the 1/1024
-	// fixed point Search hands in.
+	// relevance; coverage lives here. matched and total carry the idf mass
+	// (summed Weight) of the query terms the document matched, m, and of every
+	// query term a live document holds, W, in 1/1024 fixed point: matched is
+	// ⌊1024·m⌋ and total is ⌊1024·W⌋ + 1, which is never zero.
 	Finalize(score P, matched, total int) P
 }

@@ -69,8 +69,8 @@ func captureStdout(t *testing.T, fn func()) string {
 }
 
 // TestNewLogger checks that a logger is constructed for every supported level
-// and format, and that a config which never went through config.Parse — so
-// carries an unset or unrecognised value — still yields a working logger
+// and format, and that a config which never went through config.Parse, and so
+// carries an unset or unrecognised value, still yields a working logger
 // instead of panicking. Startup rejects unrecognised values before they reach
 // here; these rows only pin that the fallback is a logger, not a crash.
 func TestNewLogger(t *testing.T) {
@@ -101,12 +101,10 @@ func TestNewLogger(t *testing.T) {
 	}
 }
 
-// TestLevelFiltersLowerSeverities is the bug report as a test: the configured
-// level must decide what comes out. The reported symptom was starting with
-// -log-level error and still seeing INFO lines, because the level never made it
-// past a case-sensitive switch — a logger that returns a valid *Logger for any
-// input, which is all the older tests here checked, is exactly what let that
-// through.
+// TestLevelFiltersLowerSeverities checks that the configured level decides
+// what is emitted: at -log-level error, no INFO line comes out. A valid
+// *Logger for every input, which is all TestNewLogger checks, does not show
+// that.
 //
 // Configs are built with the canonical constants because that is what
 // config.Parse hands NewLogger; the casing an operator types is the config
@@ -148,11 +146,8 @@ func TestLevelFiltersLowerSeverities(t *testing.T) {
 	}
 }
 
-// TestFormatSelectsHandler pins that both accepted formats reach a handler of
-// their own. "text" is the one that matters: it is the default, and it used to
-// be absent from the switch, working only because it fell through to the same
-// handler the default arm happened to build — so the default was never
-// exercised as a value, and a typo in it would have gone unnoticed.
+// TestFormatSelectsHandler pins that each accepted format, including the
+// default "text", produces its own encoding.
 func TestFormatSelectsHandler(t *testing.T) {
 	cases := []struct {
 		format string
@@ -175,10 +170,9 @@ func TestFormatSelectsHandler(t *testing.T) {
 	}
 }
 
-// TestDisableTimestampDropsTheTime pins log.disable-timestamp, which the
-// logger used to ignore: every line carried a time whatever the setting said.
-// Off, the default, keeps the timestamp; on removes it in both encodings, for
-// a supervisor that stamps every line it collects.
+// TestDisableTimestampDropsTheTime pins log.disable-timestamp. Off, the
+// default, keeps the timestamp; on removes it in both encodings, for a
+// supervisor that stamps every line it collects.
 func TestDisableTimestampDropsTheTime(t *testing.T) {
 	cases := []struct {
 		format  string

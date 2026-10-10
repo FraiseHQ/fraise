@@ -6,7 +6,7 @@ navLabel: "Scheduler"
 
 | Setting | Flag | Default | Meaning |
 |-------------------|--------------------|-------------------------|-----------------------------------------------|
-| `workers` | `-workers` | `max(2, GOMAXPROCS(0))` | worker goroutines executing streams |
+| `workers` | `-workers` | `max(2, GOMAXPROCS(0))` | worker goroutines executing streams, at least `1` |
 | `buffer-size` | `-buffer-size` | `200` | queue depth |
 | `enqueue-timeout` | `-enqueue-timeout` | `2s` | how long a submit waits for room before a 429 |
 

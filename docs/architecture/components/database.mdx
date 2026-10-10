@@ -1,9 +1,9 @@
 ---
 title: "Database"
-description: "The layer that owns the graphs and translates a stream into calls on one of them"
+description: "The layer that owns the graphs and resolves a stream's selector to the one it runs against"
 ---
 
-The database owns the graphs and translates a stream into calls on one of them.
+The database owns the graphs: it builds them at startup, with the search algorithms the configuration names, and resolves a stream's selector to the graph the stream runs against.
 
 It allocates `num-graphs` graphs at startup and **never grows**: a selector is an index, not a lookup. That is what makes graph selection O(1) and what makes an out-of-range selector a clean error rather than an allocation.
 
@@ -22,7 +22,7 @@ See [Durability](/docs/operations/durability) for what the store keeps across a 
 
 | Structure | Contents |
 |---|---|
-| nodes | facts, entities and topics, keyed by a hash of their kind and value |
+| nodes | facts, entities and topics, keyed by a hash of their kind and value, plus one node per relationship |
 | adjacency maps | incoming and outgoing edges: each fact's links to the entities it mentions and the topics it is about |
 | text index | full-text search over fact values |
 | vector index | RP-tree forest, when embeddings are provided |

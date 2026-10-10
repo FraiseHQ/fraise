@@ -83,8 +83,8 @@ func TestSelectOutOfRange(t *testing.T) {
 	}
 }
 
-// TestStopReinitialises checks that Stop keeps the store usable by leaving the
-// default number of (empty) graph slots in place.
+// TestStopReinitialises checks that Stop drops the graphs but keeps the default
+// number of empty graph slots.
 func TestStopReinitialises(t *testing.T) {
 	d, err := db.NewDB[uint64, float32](config.New())
 	if err != nil {
@@ -101,9 +101,9 @@ func TestStopReinitialises(t *testing.T) {
 	}
 }
 
-// TestStatsSafeAcrossLifecycle guards against the nil-pointer landmine: Stats
-// must be callable at any point — before Start, after Start, after Stop —
-// without panicking, and must report one entry per graph slot.
+// TestStatsSafeAcrossLifecycle checks that Stats can be called before Start,
+// after Start and after Stop without panicking on an empty slot, and reports
+// one entry per graph slot each time.
 func TestStatsSafeAcrossLifecycle(t *testing.T) {
 	d, err := db.NewDB[uint64, float32](config.New())
 	if err != nil {

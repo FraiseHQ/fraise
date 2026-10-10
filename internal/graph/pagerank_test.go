@@ -94,8 +94,66 @@ func TestPageRankEmptyGraph(t *testing.T) {
 	}
 }
 
+// TestPageRankSkipsNodesLeftIsolatedByDelete pins rank's contract that
+// isolated nodes are not ranked, for nodes made isolated by Delete rather than
+// stored without edges. Deleting a fact's only topic, or the edge itself, must
+// take the fact out of both edge views; a row left behind empty would make it
+// a dangling vertex, which takes a share of every teleport and is boosted at
+// search time despite having no neighbours. A second fact keeps its edge so
+// the graph is not empty and rank has something to score.
+func TestPageRankSkipsNodesLeftIsolatedByDelete(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name       string
+		deleteEdge bool // delete the IsAbout itself rather than its topic
+	}{
+		{name: "delete the topic"},
+		{name: "delete the relationship", deleteEdge: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newGraph()
+			h := g.GetHasher()
+
+			fact := mkFact(g, "alice works at acme", now)
+			topic := mkTopic(g, "work", now)
+			about := graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: h}
+			other := mkFact(g, "bob plays chess", now)
+			otherTopic := mkTopic(g, "games", now)
+			otherAbout := graph.IsAbout[uint64]{Fact: &other, Topic: otherTopic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: h}
+			for _, node := range []graph.Node[uint64]{fact, topic, about, other, otherTopic, otherAbout} {
+				mustSet(t, g, node)
+			}
+
+			var deleted graph.Node[uint64] = topic
+			isolated := []uint64{fact.Key()}
+			if tc.deleteEdge {
+				deleted = about
+				isolated = append(isolated, topic.Key())
+			}
+			if err := g.Delete(deleted); err != nil {
+				t.Fatalf("Delete = %v, want nil", err)
+			}
+
+			res, err := graph.NewPageRank[uint64, float64](0.85, 100, 1e-9).Run(g)
+			if err != nil {
+				t.Fatalf("Run = %v, want nil", err)
+			}
+			scores := res.(graph.RankingResult[uint64, float64]).Scores
+			for _, key := range isolated {
+				if score, ranked := scores[key]; ranked {
+					t.Errorf("scores[%d] = %v, want the isolated node unranked", key, score)
+				}
+			}
+			if got, want := len(scores), 2; got != want {
+				t.Errorf("ranked %d vertices, want %d (the surviving fact and its topic)", got, want)
+			}
+		})
+	}
+}
+
 // factLink is a test-only fact->fact relationship. Production edges only run
-// fact->tag (Mentions, IsAbout), which gives facts no in-links and therefore
+// fact->anchor (Mentions, IsAbout), which gives facts no in-links and therefore
 // near-uniform PageRank; linking facts directly lets the test build a star
 // whose hub is itself a fact — the only node kind Search returns as a hit.
 type factLink struct {
@@ -115,7 +173,7 @@ func (l factLink) Source() *graph.Entity[uint64] { var e graph.Entity[uint64] = 
 func (l factLink) Target() *graph.Entity[uint64] { var e graph.Entity[uint64] = l.dst; return &e }
 
 // TestSearchWithPageRankRanking pins the boost stage: the installed ranking
-// multiplies relevance by graph centrality. Two facts match the query with
+// boosts relevance by graph centrality. Two facts match the query with
 // bit-identical text mass (same term frequency, same length, decay off), so
 // without a ranking only the key tiebreak orders them; with PageRank
 // installed, the fact the star concentrates its mass on comes out first

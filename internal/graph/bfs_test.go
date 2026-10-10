@@ -147,12 +147,11 @@ func TestBFSTraverse(t *testing.T) {
 }
 
 // TestSearchWithConfiguredTraversal shows the traversal seam changing what
-// Search returns. BFS remains available as a tree-shaped strategy: it
-// observes the same anchors as the excess traversal but discovers each member
-// through a single parent, and the collection layer accepts both shapes. The
-// storm fixture's silent cluster member is funded under either installed
-// strategy; with no traversal at all the graph channel is off and only text
-// matches surface.
+// Search returns. BFS is a tree-shaped traversal: it observes the same anchors
+// as ExcessTraversal but reaches each member through a single parent, and the
+// collection layer accepts both shapes, so the storm fixture's silent cluster
+// member is funded with BFS installed. With no traversal the graph channel is
+// off and only text matches surface.
 func TestSearchWithConfiguredTraversal(t *testing.T) {
 	find := func(values []string, want string) bool {
 		for _, v := range values {
@@ -163,11 +162,10 @@ func TestSearchWithConfiguredTraversal(t *testing.T) {
 		return false
 	}
 
-	// No traversal: text-only, the silent member cannot surface. NewGraph
-	// installs none — the traversal arrives from configuration at db.Start —
-	// so a bare graph is exactly the channel-off case. The fixture's topics
-	// are named on both searches so the filter is held fixed and the
-	// traversal seam is what is left to vary.
+	// No traversal: NewGraph installs none (db.Start installs one from
+	// configuration), so on a bare graph the graph channel is off and the
+	// silent member cannot surface. Both searches name the fixture's topics,
+	// so the filter is the same on both and only the traversal differs.
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	bare := graph.NewGraph[uint64, float64](cfg)

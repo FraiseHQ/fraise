@@ -29,18 +29,18 @@ import "strings"
 //
 // The trailing annotation is release-please's marker: when it opens a release
 // PR it rewrites the literal on this line to the version being cut, in the same
-// commit that updates CHANGELOG.md, and tags that commit on merge. The tag and
-// this constant therefore cannot drift — do not edit it by hand.
+// commit that updates docs/changelog.md, and tags that commit on merge. The tag
+// and this constant therefore cannot drift — do not edit it by hand.
 //
 // GoReleaser additionally overrides it via -ldflags -X on a release build. The
 // linker only rewrites string variables that are uninitialized or set to a
 // constant expression, so this must stay a plain literal — never computed.
-var Version = "0.2.2" // x-release-please-version
+var Version = "0.3.1" // x-release-please-version
 
 var (
 	// Commit is the short git commit the binary was built from.
 	Commit = "none"
-	// Date is the commit/build date (RFC3339) of the release.
+	// Date is the date (RFC3339) of the commit the release was built from.
 	Date = "unknown"
 )
 

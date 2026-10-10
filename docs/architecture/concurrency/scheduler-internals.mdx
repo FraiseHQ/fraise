@@ -13,10 +13,10 @@ The `Scheduler` manages when and how streams are executed. It implements a work-
 |---|---|---|
 | `nil` | the stream is on the queue | — |
 | `ErrQueueFull` | the queue stayed saturated for `enqueue-timeout` | **429** — back off |
-| `ErrShutdown` | the scheduler is stopping or was never started | **503** |
-| wrapped `ctx.Err()` | the caller gave up first | no live request left to answer |
+| `ErrShutdown` | the scheduler is stopping, stopped or was never started | **503** |
+| `ErrEnqueueStream` wrapping `ctx.Err()` | the caller gave up first | no live request left to answer |
 
-A caller is therefore never parked indefinitely on a full, nil, or closed queue.
+A caller is therefore never parked indefinitely on a full or nil queue.
 
 ## Worker lifecycle
 

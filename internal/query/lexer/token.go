@@ -27,53 +27,63 @@ import (
 	"strings"
 )
 
-// Represents tokens returned by the lexer
+// Token is one token of a query, as the lexer returns it.
 type Token struct {
 	Type    TokenType
 	Literal string
-	// Pos is where a parse error blaming this token is reported: the 1-based
-	// column of the token's *last* character, for every token type (a phrase's
-	// closing quote, EOL's end of input). The parser cannot derive this from
-	// the lexer's CurrentPos, because its one-token lookahead has already moved
-	// CurrentPos past the following token — an error quoting one word would
-	// point at the next one.
+	// Pos is the 1-based column of the token's last character, for every token
+	// type (a phrase's closing quote; for EOL, the end of input), and is where
+	// a parse error blaming the token is reported. The parser cannot use the
+	// lexer's CurrentPos instead: its one-token lookahead has already moved it
+	// past the following token.
 	Pos Position
 }
 
+// TokenType classifies a token. The predicates on it (IsKeyword, IsCommand,
+// IsBlank and the rest) group the types the parser treats alike.
 type TokenType int
 
+// The token types, grouped by the role they play in the grammar.
 const (
+	// ILLEGAL is a token the lexer could not complete: a phrase whose closing
+	// quote is missing, carrying the text read before the input ended. It is
+	// the zero value, so an unset type is never mistaken for a real token.
 	ILLEGAL TokenType = iota
 
-	// literal
+	// LITERAL is a bare word that is not reserved where it stands.
 	LITERAL
 	// PHRASE is an opaque single-quoted string, scanned verbatim: reserved
 	// words and symbols inside it carry no special meaning, and a doubled
 	// quote ('') is an escaped literal quote.
 	PHRASE
 
-	// commands
+	// DESCRIBE and EXPLAIN are the prefixes.
+	DESCRIBE
+	EXPLAIN
+
+	// RECALL, REMEMBER, FORGET and UPDATE are the commands.
 	RECALL
 	REMEMBER
 	FORGET
 	UPDATE
 
-	// operators
+	// PLUS, TILDE and MINUS are the operators.
 	PLUS
 	TILDE
 	MINUS
 
-	// punctuation
+	// LPAREN, RPAREN and COMMA are the punctuation.
 	LPAREN
 	RPAREN
 	COMMA
 
-	// separators (between two statements)
+	// AT, COLON and DOLLAR are the separators: '@' before a graph selector,
+	// ':' between a clause keyword and its value, '$' before a parameter name.
 	AT
 	COLON
 	DOLLAR
 
-	// blank characters
+	// WHITESPACE is a run of blank characters.
 	WHITESPACE
 	// NUL is a NUL character outside a phrase. It is its own token, rather
 	// than read as the end of input, so the rest of the query cannot be
@@ -81,15 +91,16 @@ const (
 	NUL
 	// SPECIAL is any other character outside a phrase that is not a letter, a
 	// digit, whitespace or punctuation. It is its own token so a word ends at
-	// it and the parser can name it: a bare word that absorbed one read
-	// "ferry;" as a term, answering a query the caller never wrote.
+	// it and the parser can name it; absorbed into a word, "ferry;" would be
+	// a search term.
 	SPECIAL
 
-	// end of line
+	// EOL is the end of input, and NEWLINE the newline that ends an
+	// instruction.
 	EOL
 	NEWLINE
 
-	// fields
+	// TOPIC, ENTITY, SINCE, UNTIL, TOP and DEPTH are the fields.
 	TOPIC
 	ENTITY
 	SINCE
@@ -97,43 +108,53 @@ const (
 	TOP
 	DEPTH
 
-	// param ref
+	// VEC is the vector field, whose value is a parameter reference ($name)
 	VEC
 )
 
+// TokenMap spells each token type for [TokenType.String]: a keyword as it is
+// written, a symbol as itself, and any other type by a lower-case name.
 var TokenMap = map[TokenType]string{
-	RECALL:   "recall",
-	REMEMBER: "remember",
-	FORGET:   "forget",
-	UPDATE:   "update",
-	COLON:    ":",
-	LPAREN:   "(",
-	RPAREN:   ")",
-	DOLLAR:   "$",
-	PHRASE:   "phrase",
-	NEWLINE:  "\n",
-	NUL:      "\x00",
-	PLUS:     "+",
-	TILDE:    "~",
-	MINUS:    "-",
-	TOPIC:    "topic",
-	ENTITY:   "entity",
-	SINCE:    "since",
-	UNTIL:    "until",
-	TOP:      "top",
-	DEPTH:    "depth",
-	LITERAL:  "literal",
-	VEC:      "vec",
-	EOL:      "eol",
-	AT:       "@",
-	COMMA:    "'",
+	DESCRIBE:   "describe",
+	EXPLAIN:    "explain",
+	RECALL:     "recall",
+	REMEMBER:   "remember",
+	FORGET:     "forget",
+	UPDATE:     "update",
+	COLON:      ":",
+	LPAREN:     "(",
+	RPAREN:     ")",
+	DOLLAR:     "$",
+	PHRASE:     "phrase",
+	NEWLINE:    "\n",
+	NUL:        "\x00",
+	PLUS:       "+",
+	TILDE:      "~",
+	MINUS:      "-",
+	TOPIC:      "topic",
+	ENTITY:     "entity",
+	SINCE:      "since",
+	UNTIL:      "until",
+	TOP:        "top",
+	DEPTH:      "depth",
+	LITERAL:    "literal",
+	VEC:        "vec",
+	EOL:        "eol",
+	AT:         "@",
+	COMMA:      "'",
+	WHITESPACE: "whitespace",
 }
 
+// KeywordsMap maps each reserved word, in its exact lower-case spelling, to
+// its token type. The lexer types a bare word by looking it up here, so a word
+// missing from it is a LITERAL wherever it stands.
 var KeywordsMap = map[string]TokenType{
 	"recall":   RECALL,
 	"remember": REMEMBER,
 	"forget":   FORGET,
 	"update":   UPDATE,
+	"explain":  EXPLAIN,
+	"describe": DESCRIBE,
 	"topic":    TOPIC,
 	"entity":   ENTITY,
 	"since":    SINCE,
@@ -143,30 +164,39 @@ var KeywordsMap = map[string]TokenType{
 	"vec":      VEC,
 }
 
-// IsKeyword reports whether t is a reserved word — a type the lexer assigns by
-// spelling alone. Spelling alone must not make a word syntax: the parser asks
-// this in value position (the right-hand side of a field's ':', the leading
-// term of a recall) to read a reserved word back as ordinary data, so a stored
-// word that happens to be "top" or "entity" needs no quoting there.
+// IsKeyword reports whether t is a reserved word: a type the lexer assigns by
+// spelling alone. Whether the word is syntax depends on where it stands, which
+// the parser decides: after a field's ':' it is data (entity:top names the
+// anchor "top"), while among a recall's terms it is an error.
 func (t TokenType) IsKeyword() bool {
 	switch t {
-	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC:
+	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC, EXPLAIN, DESCRIBE:
 		return true
 	default:
 		return false
 	}
 }
 
-// func (t Token)
-
-// IsCommand reports whether t is one of the verbs a query can open with. A
-// query is one instruction, so a command token anywhere but the first position
-// is a second command rather than a stray word — the parser asks this to say so
-// instead of blaming the token, which is the only form of the message a caller
-// can act on.
+// IsCommand reports whether t is a command verb: recall, remember, forget or
+// update. A query is one instruction, so the parser reports a command word
+// after the first position as a second command or a word to quote, never as a
+// stray token or the start of a clause.
 func (t TokenType) IsCommand() bool {
 	switch t {
 	case RECALL, REMEMBER, FORGET, UPDATE:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsPrefix reports whether t is one of the words that stand in front of a
+// command. A prefix is reserved like a command and has no ':' form either, so
+// the parser asks this to keep a clause repair out of its message: offering
+// explain:<value> sent the caller to a query that is itself an error.
+func (t TokenType) IsPrefix() bool {
+	switch t {
+	case EXPLAIN, DESCRIBE:
 		return true
 	default:
 		return false
@@ -177,12 +207,11 @@ func (t TokenType) String() string {
 	return TokenMap[t]
 }
 
-// Describe renders the token as an error message should name it. End of input
-// carries no literal, and quoting it produces `""` — an empty string the caller
-// never wrote and cannot act on, which turns a repairable mistake ("recall
-// ferry top") into what reads like a parser bug. Naming it here rather than at
-// each message keeps every error agreeing on what to call a token, the same way
-// Pos keeps them agreeing on where one is.
+// Describe names the token as an error message should: end of input and a
+// newline by name, anything else quoted. End of input has no literal, and
+// quoted it would read as an empty pair of double quotes, a string the caller
+// never wrote. Naming tokens here keeps error messages agreeing on what to
+// call one, as Pos keeps them agreeing on where it is.
 func (t Token) Describe() string {
 	switch t.Type {
 	case EOL:
@@ -194,7 +223,7 @@ func (t Token) Describe() string {
 	}
 }
 
-// checks that a token is a blank
+// IsBlank reports whether t is a WHITESPACE or NUL token.
 func (t TokenType) IsBlank() bool {
 	switch t {
 	case WHITESPACE, NUL:
@@ -204,7 +233,7 @@ func (t TokenType) IsBlank() bool {
 	}
 }
 
-// checks that a token is an end of line character
+// IsEndOfLine reports whether t is end of input or a newline.
 func (t TokenType) IsEndOfLine() bool {
 	switch t {
 	case EOL, NEWLINE:
@@ -214,7 +243,7 @@ func (t TokenType) IsEndOfLine() bool {
 	}
 }
 
-// checks that a token is a separator
+// IsSeparator reports whether t is '@', ':' or '$'.
 func (t TokenType) IsSeparator() bool {
 	switch t {
 	case AT, COLON, DOLLAR:
@@ -225,10 +254,10 @@ func (t TokenType) IsSeparator() bool {
 }
 
 // IsMisCasedKeyword reports whether the token is a bare word spelling a reserved
-// word in the wrong case. The lexer types a keyword by spelling, and forgives
-// casing only immediately before a ':' (see its keyword lookup), so everywhere
-// else a mis-cased keyword arrives as an ordinary literal — and wherever a
-// clause could have started, that literal is a mistake rather than a term.
+// word in the wrong case. The lexer types a keyword by spelling and forgives
+// casing only immediately before a ':' (see Lexer.Next), so everywhere else a
+// mis-cased keyword arrives as a LITERAL, which the parser rejects wherever a
+// clause could start.
 func (t Token) IsMisCasedKeyword() bool {
 	if t.Type != LITERAL {
 		return false

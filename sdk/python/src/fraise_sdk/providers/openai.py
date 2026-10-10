@@ -22,8 +22,9 @@
 
 """OpenAI providers: an embedder and an anchor extractor.
 
-Optional: the ``openai`` client is imported lazily and ships with the ``openai``
-extra (``pip install 'fraise-sdk[openai]'``), so the core SDK depends on neither.
+Optional: the ``openai`` client ships with the ``openai`` extra
+(``pip install 'fraise-sdk[openai]'``). The package does not import this module,
+so the core SDK does not depend on it; import the providers from here.
 """
 
 from __future__ import annotations
@@ -33,6 +34,14 @@ from collections.abc import Sequence
 
 from fraise_sdk.errors import FraiseError
 from fraise_sdk.providers.base import Anchor, Embedder, Extractor
+
+try:
+    import openai
+except ImportError as exc:  # pragma: no cover - exercised only without the extra
+    raise ImportError(
+        "The OpenAI providers require the 'openai' extra. "
+        "Install it with:  pip install 'fraise-sdk[openai]'"
+    ) from exc
 
 # The instructions and output shape the published benchmark ingests with, word
 # for word, so an SDK user's write path is the one the numbers measure.
@@ -54,7 +63,7 @@ _ANCHORS_SCHEMA = {
 }
 
 # A reasoning model's hidden reasoning tokens share the completion budget and
-# vary call to call; uncapped, a long reasoning pass has truncated the JSON
+# vary from call to call, and a budget they exhaust truncates the JSON
 # mid-string. 16k is generous headroom for one message's anchors.
 _MAX_COMPLETION_TOKENS = 16000
 
@@ -83,13 +92,6 @@ class OpenAIEmbedder(Embedder):
         api_key: str | None = None,
     ) -> None:
         if client is None:
-            try:
-                import openai
-            except ImportError as exc:  # pragma: no cover - only without the extra
-                raise ImportError(
-                    "OpenAIEmbedder requires the 'openai' extra. "
-                    "Install it with:  pip install 'fraise-sdk[openai]'"
-                ) from exc
             client = openai.OpenAI(api_key=api_key)
         self._client = client
         self._model = model
@@ -108,10 +110,10 @@ class OpenAIExtractor(Extractor):
     """The topic and entity anchors of one message, from an OpenAI chat model.
 
     One chat completion per message, constrained to a strict JSON schema of
-    ``topics`` and ``entities``, each value becoming one :class:`Anchor`. The default model is ``gpt-5-mini``, with the
-    prompt and output shape the published benchmark ingests with. The message
-    text only goes in: it is never rewritten, so what is remembered is exactly
-    what was said.
+    ``topics`` and ``entities``, each value becoming one :class:`Anchor`. The
+    default model is ``gpt-5-mini``, with the prompt and output shape the
+    published benchmark ingests with. The message is only read, never
+    rewritten, so what is remembered is what was said.
 
     Pass your own configured ``openai.OpenAI`` client, or let one be built from
     the environment (``OPENAI_API_KEY``, optionally overridden by ``api_key``).
@@ -128,13 +130,6 @@ class OpenAIExtractor(Extractor):
         api_key: str | None = None,
     ) -> None:
         if client is None:
-            try:
-                import openai
-            except ImportError as exc:  # pragma: no cover - only without the extra
-                raise ImportError(
-                    "OpenAIExtractor requires the 'openai' extra. "
-                    "Install it with:  pip install 'fraise-sdk[openai]'"
-                ) from exc
             client = openai.OpenAI(api_key=api_key)
         self._client = client
         self._model = model

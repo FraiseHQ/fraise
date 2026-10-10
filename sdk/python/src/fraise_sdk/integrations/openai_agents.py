@@ -47,6 +47,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fraise_sdk.client import FraiseClient
+from fraise_sdk.constants import DEFAULT_TOP, MAX_DEPTH
 from fraise_sdk.errors import FraiseError
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
@@ -58,22 +59,6 @@ except ImportError as exc:  # pragma: no cover - exercised only without the extr
         "The OpenAI Agents integration requires the 'openai-agents' package. "
         "Install it with:  pip install 'fraise-sdk[openai]'"
     ) from exc
-
-# Tool-call budget: a sane ceiling so the model does not have to reason about
-# scale, overridable per call within the tool's own arguments. Depth has no
-# default here: an omitted clause takes the lane the server is configured
-# with, which is the operator's choice of how much graph a plain question
-# gets.
-DEFAULT_TOP = 5
-
-# The retrieval lanes are 0, 1 and 2 by design — the scorer runs at most one
-# anchor-mediated round — so a larger depth is not a deeper search but a
-# request the server rejects at parse time. The bound rides on the parameter's
-# annotation, which the framework turns into both the schema's range and a
-# validation of every call, so the model gets a correction it can act on
-# rather than a round trip that fails. An operator can only lower the ceiling
-# (max-depth), and the server's own rejection still surfaces as a tool error.
-MAX_DEPTH = 2
 
 
 def recall_tool(

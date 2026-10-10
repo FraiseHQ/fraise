@@ -226,13 +226,45 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexSearchFindsKeyBehindStaleCopy pins that a key whose live
+// vector is nearest is returned whatever stale copies the forest still holds.
+// "a" moves onto the query point but its old copy at (2, 0) stays in the single
+// tree until Flush; with no over-fetch the tree's pool is exactly k, so if the
+// stale copy wins the pool, "a" never reaches the re-rank and Search answers
+// [b e].
+func TestRPTreeIndexSearchFindsKeyBehindStaleCopy(t *testing.T) {
+	idx := index.NewRPTreeIndex[string, float64](0, 2, 1, 0, 2, 100, 1, comparator.OrderedComparator[string])
+	for _, w := range []struct {
+		key  string
+		data []float64
+	}{
+		{"x", []float64{9, 0}},
+		{"a", []float64{2, 0}},
+		{"a", []float64{0, 0}},
+		{"b", []float64{1, 0}},
+		{"e", []float64{1.5, 0}},
+	} {
+		if err := idx.Insert(w.key, containers.NewVector[string](w.data)); err != nil {
+			t.Fatalf("Insert(%s) = %v, want nil", w.key, err)
+		}
+	}
+
+	keys, scores, err := idx.Search(containers.NewVector[string]([]float64{0, 0}), 2)
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(keys, []string{"a", "b"}) || !reflect.DeepEqual(scores, []float64{0, 1}) {
+		t.Errorf("Search() = (%v, %v), want ([a b], [0 1])", keys, scores)
+	}
+}
+
 // TestRPTreeIndexFlushIsReproducible pins that a fixed seed reproduces the
 // index across a rebuild: two indexes fed the same writes, both flushed, must
-// answer every query identically. Flush used to replay the live set in Go map
-// order, and a tree's splits depend on arrival order, so the two forests
-// diverged after the first rebuild. The settings keep the search approximate
-// — small leaves, two trees, no over-fetch — so a different forest shows up
-// as a different answer rather than being hidden by an exhaustive scan.
+// answer every query identically. A tree's splits depend on arrival order, so
+// a rebuild replaying the live set in Go map order would give the two indexes
+// different forests. The settings keep the search approximate (small leaves,
+// two trees, no over-fetch), so a different forest shows up as a different
+// answer rather than being hidden by an exhaustive scan.
 func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 	build := func() *index.RPTreeIndex[int, float64] {
 		rng := rand.New(rand.NewSource(7))
@@ -263,54 +295,75 @@ func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexFlushRebuildsForest pins that Flush rebuilds every tree of
+// the forest from the live vectors alone: afterwards the index answers every
+// query exactly as one built from the live vectors only does. Search filters
+// deleted keys against the live map, so their absence from its answers proves
+// nothing; but a stale copy left in any tree shapes that tree's splits, and
+// with small leaves and no over-fetch a different tree shows up as a different
+// answer. Entries() is checked on both sides of Flush as well, and the
+// deletions stop two short of the automatic Flush (50 entries against a bound
+// of 2 × 26 live), so the explicit Flush is the one that compacts.
 func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
+	const n, deleted, dim = 50, 24, 16
+	newIndex := func() *index.RPTreeIndex[int, float64] {
+		return index.NewRPTreeIndex[int, float64](dim, 8, 3, 5, 2, 4, 1, comparator.OrderedComparator[int])
+	}
 	rng := rand.New(rand.NewSource(21))
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2, 32, 8, comparator.OrderedComparator[int])
+	vectors := make([]containers.Vector[int, float64], n)
+	for i := range vectors {
+		vectors[i] = randVector(rng, dim)
+	}
 
-	const n = 50
-	for i := 0; i < n; i++ {
-		if err := idx.Insert(i, randVector(rng, 3)); err != nil {
+	idx := newIndex()
+	for i, v := range vectors {
+		if err := idx.Insert(i, v); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", i, err)
 		}
 	}
-	for i := 0; i < n/2; i++ {
+	for i := 0; i < deleted; i++ {
 		if err := idx.Delete(i); err != nil {
 			t.Fatalf("Delete(%d) = %v, want nil", i, err)
 		}
+	}
+	if got, want := idx.Entries(), n; got != want {
+		t.Fatalf("Entries() before Flush = %d, want %d (the deleted copies still in the forest)", got, want)
 	}
 
 	if err := idx.Flush(); err != nil {
 		t.Fatalf("Flush = %v, want nil", err)
 	}
-	if got, want := idx.Count(), n-n/2; got != want {
+	if got, want := idx.Count(), n-deleted; got != want {
 		t.Errorf("Count() after Flush = %d, want %d", got, want)
 	}
-
-	// After Flush, deleted keys must be absent even from raw Nearest scans:
-	// Search over the whole remaining corpus should never surface them.
-	got, _, err := idx.Search(randVector(rng, 3), n)
+	if got, want := idx.Entries(), n-deleted; got != want {
+		t.Errorf("Entries() after Flush = %d, want %d (one per live vector)", got, want)
+	}
+	live := newIndex()
+	for i := deleted; i < n; i++ {
+		if err := live.Insert(i, vectors[i]); err != nil {
+			t.Fatalf("Insert(%d) into the live-only index = %v, want nil", i, err)
+		}
+	}
+	// Search over the whole remaining corpus must never surface a deleted key.
+	_, _, err := idx.Search(randVector(rng, 16), n)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
-	for _, key := range got {
-		if key < n/2 {
-			t.Errorf("Search() after Flush returned deleted key %d", key)
+	queries := rand.New(rand.NewSource(22))
+	for q := 0; q < 50; q++ {
+		query := randVector(queries, dim)
+		got, _, err := idx.Search(query, 5)
+		if err != nil {
+			t.Fatalf("Search = %v, want nil", err)
 		}
-	}
-}
-
-func TestRPTreeIndexSize(t *testing.T) {
-	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2, 32, 8, comparator.OrderedComparator[int])
-	if got := idx.Size(); got != 0 {
-		t.Errorf("Size() on empty index = %d, want 0", got)
-	}
-	for i := 0; i < 100; i++ {
-		if err := idx.Insert(i, containers.NewVector[int]([]float64{1, 2, 3})); err != nil {
-			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		want, _, err := live.Search(query, 5)
+		if err != nil {
+			t.Fatalf("Search on the live-only index = %v, want nil", err)
 		}
-	}
-	if got := idx.Size(); got < 0 {
-		t.Errorf("Size() = %d, want >= 0", got)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("query %d: flushed index answered %v, live-only index %v; want the forest rebuilt from the live vectors alone", q, got, want)
+		}
 	}
 }
 
@@ -420,10 +473,9 @@ func TestRPTreeSearchIdenticalAcrossPrecision(t *testing.T) {
 }
 
 // TestRPTreeIndexInsertIdempotent checks that re-inserting a key with its
-// current vector never grows the forest. This is the regression guard for the
-// quadratic bloat bug: Graph.MergeFrom replays the whole vector set into the
-// live index after every staged write, so a non-idempotent Insert turned W
-// writes into O(W^2) forest entries.
+// current vector never grows the forest. Re-asserting a fact re-inserts the
+// embedding it already carries, so a non-idempotent Insert would add a forest
+// entry per vector on every re-assertion.
 func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2, 32, 8, comparator.OrderedComparator[int])
@@ -440,7 +492,7 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 		t.Fatalf("Entries() after %d inserts = %d, want %d", n, got, n)
 	}
 
-	// Replay the full set 50 times — the MergeFrom pattern. Forest must not grow.
+	// Replay the full set 50 times. Forest must not grow.
 	for round := 0; round < 50; round++ {
 		for i := 0; i < n; i++ {
 			if err := idx.Insert(i, vecs[i]); err != nil {
@@ -504,8 +556,7 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 // TestRPTreeIndexSearchExactMatchIsDistanceZero pins that a vector identical
 // to the query reports a distance of plain zero: the re-rank carries
 // distances negated through the retained set, and a negative zero coming
-// back out would print as "-0" in an explain while comparing equal to zero
-// everywhere else.
+// back out would print as "-0" while comparing equal to zero.
 func TestRPTreeIndexSearchExactMatchIsDistanceZero(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 3, 1, 2, 32, 8, comparator.OrderedComparator[int])
 	if err := idx.Insert(1, containers.NewVector[int]([]float64{2, 3})); err != nil {

@@ -20,8 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Client tests with requests.Session patched out — no server required.
+"""Client tests against a patched requests.Session, and against a live server.
 
+The tests marked ``integration`` need the live server; the rest need none.
 Setup lives in conftest.py; this file is assertions.
 """
 
@@ -33,10 +34,28 @@ import requests
 from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
 from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
+from fraise_sdk.models import GraphStats
 from fraise_sdk.providers import Anchor
 
 
+def test_closing_closes_the_session_the_client_owns(session):
+    """Leaving the context manager closes the session the client created."""
+    with FraiseClient():
+        pass
+    session.close.assert_called_once_with()
+
+
+def test_an_injected_session_is_left_open(respond, no_hits):
+    """A session passed in is left open: the caller owns it, so the caller closes it."""
+    injected = MagicMock()
+    respond(injected, no_hits)
+    with FraiseClient(session=injected):
+        pass
+    injected.close.assert_not_called()
+
+
 def test_remember_posts_expected_query(session, query_url):
+    """remember posts one query: the graph, the quoted fact and its topic."""
     FraiseClient().remember("the parrot is turquoise", graph=3, topics=["color"])
     session.post.assert_called_once_with(
         query_url,
@@ -46,6 +65,7 @@ def test_remember_posts_expected_query(session, query_url):
 
 
 def test_remember_with_vector_sends_parameters(session, sent):
+    """A vector travels out of band: the query names ``vec:$v``, the parameters carry it."""
     FraiseClient().remember("kingfisher is blue", graph=6, vector=[0.5, 0.5])
     assert sent(session) == {
         "query": "remember@6 'kingfisher is blue' vec:$v",
@@ -68,6 +88,7 @@ def test_a_bare_string_topic_is_rejected_before_any_request(session):
 
 
 def test_recall_parses_hits(session, respond, sent):
+    """recall sends its keywords and clauses and parses the hits in the server's order."""
     respond(
         session,
         {
@@ -141,10 +162,9 @@ def test_explain_returns_each_hit_with_its_contributions(
 def test_recall_empty_results(session):
     """A populated graph that matched nothing is an empty, falsey result.
 
-    ``empty`` is False here and that is the whole point of the flag: it reports
-    on the graph, not on the result set, and this graph holds facts the query
-    missed — so rephrasing is the thing to try. Compare the 204 test below,
-    where rephrasing would never have helped.
+    ``empty`` is False here: it reports on the graph, not on the result set,
+    and this graph holds facts the query missed, so rephrasing is the thing to
+    try. Compare the 204 test below, where rephrasing would never have helped.
     """
     result = FraiseClient().recall("nothingindexed")
     assert result.count == 0
@@ -157,11 +177,9 @@ def test_recall_of_an_empty_graph_is_marked_empty(session, respond_no_content):
     """A 204 means the graph searched holds nothing, and carries no body.
 
     The distinction rides the status line, so a client that parsed only the
-    body would report this identically to the miss above — which is the bug
-    the status exists to fix. The result is still a RecallResult: recall's
-    return type does not change shape on an empty graph, or every caller would
-    have to None-check the most ordinary path there is, a read before the
-    first write.
+    body would report this identically to the miss above. The result is still
+    a RecallResult, so a caller reading before its first write needs no None
+    check.
     """
     respond_no_content(session)
 
@@ -177,8 +195,8 @@ def test_a_bodiless_204_reaches_query_as_an_empty_body(session, respond_no_conte
     """The raw escape hatch answers a 204 with ``{}`` rather than raising.
 
     ``query`` returns the decoded body and a 204 has none, so ``{}`` is the
-    truthful answer. It is also why the typed ``recall`` exists: the status
-    that carries the meaning is not visible through this method.
+    truthful answer. Telling an empty graph from a miss takes ``recall``,
+    which reads the status this method does not return.
     """
     respond_no_content(session)
 
@@ -188,11 +206,9 @@ def test_a_bodiless_204_reaches_query_as_an_empty_body(session, respond_no_conte
 def test_remember_accepts_the_write_acknowledgement(session, respond):
     """A write is answered with its own shape, not a recall's envelope.
 
-    The server acknowledges with ``{"status": "ok"}``; before that split an
-    accepted write and a recall that matched nothing were the same bytes, so a
-    fact that never landed was indistinguishable from one that did. The client
-    must accept the new shape without reaching for ``results``, which is no
-    longer there.
+    The server acknowledges with ``{"status": "ok"}``, so a stored fact never
+    reads like a recall that matched nothing. The client must accept that
+    body without reaching for ``results``, which it does not carry.
     """
     respond(session, {"status": "ok"})
 
@@ -230,9 +246,10 @@ def test_recall_surfaces_server_warnings(session, respond, server_warning):
 def test_a_reserved_word_keyword_warns_at_the_callers_line(session, sent):
     """``recall("since", "7d")`` is sent quoted and warns before it is sent.
 
-    The warning is decided three frames deep, in the query builder, and still
-    names this file: the caller's own call is the line they can change, and a
-    warning pointing into the SDK would leave them looking for it.
+    The warning is decided in the query builder, several calls below this
+    line, and still names this file: the caller's own call is the line they
+    can change, and a warning pointing into the SDK would leave them looking
+    for it.
     """
     with pytest.warns(FraiseWarning, match="is a reserved word") as record:
         FraiseClient().recall("since", "7d")
@@ -254,9 +271,9 @@ def test_recall_without_warnings_is_silent(session):
 
 
 def test_raw_query_emits_server_warnings(session, respond, server_warning):
-    """The raw query() escape hatch emits FraiseWarning too: every operation
-    funnels through it, so remember() and any future typed helper inherit the
-    channel without plumbing of their own.
+    """The raw query() escape hatch emits FraiseWarning too: warnings are
+    emitted on the path every request takes, so query() and the typed helpers
+    share one channel without plumbing of their own.
     """
     respond(
         session, {"results": {"count": 0, "hits": []}, "warnings": [server_warning]}
@@ -269,6 +286,7 @@ def test_raw_query_emits_server_warnings(session, respond, server_warning):
 
 
 def test_api_error_surfaces_server_message(session, respond):
+    """A non-2xx answer raises FraiseAPIError with the status and the server's message."""
     respond(session, {"error": "could not parse query"}, status_code=400)
     with pytest.raises(FraiseAPIError) as excinfo:
         FraiseClient().recall("bogus")
@@ -291,6 +309,7 @@ def test_an_error_with_a_non_json_body_still_raises(session, respond):
 
 
 def test_unreachable_server_raises_fraise_error(session):
+    """A connection failure raises FraiseError saying the server could not be reached."""
     session.post.side_effect = requests.ConnectionError("refused")
     with pytest.raises(FraiseError, match="could not reach fraise"):
         FraiseClient().recall("anything")
@@ -381,13 +400,12 @@ def test_check_compatibility_strict_raises_when_the_version_is_unknown(session):
         FraiseClient().check_compatibility(strict=True)
 
 
-@pytest.mark.parametrize("version", ["0.1.0", "99.0.0", "0.0.9", "0.1", "abc", "x.y.z"])
+@pytest.mark.parametrize("version", ["0.2.2", "99.0.0", "0.0.9", "0.1", "abc", "x.y.z"])
 def test_check_compatibility_warns_outside_the_supported_range(
     session, respond_get, version
 ):
-    """A version outside SUPPORTED_SERVER — above it, below it, or too
-    mangled to parse at all — warns and answers False: the SDK keeps
-    working, eyes open."""
+    """A version outside SUPPORTED_SERVER, whether above it, below it or too
+    mangled to parse, warns and answers False rather than raising."""
     respond_get(session, {"version": version})
     with pytest.warns(UserWarning, match="outside this SDK's supported range"):
         assert FraiseClient().check_compatibility() is False
@@ -402,40 +420,60 @@ def test_check_compatibility_strict_raises_outside_the_supported_range(
         FraiseClient().check_compatibility(strict=True)
 
 
-@pytest.mark.parametrize("version", ["0.2.1", "v0.2.15", "v0.2.0"])
+@pytest.mark.parametrize("version", ["0.3.1", "v0.3.15", "v0.3.0"])
 def test_check_compatibility_accepts_a_supported_version(session, respond_get, version):
-    """An in-range version answers True with no warning — a ``v`` prefix and
-    a pre-release suffix are spelling, not incompatibility. The literals sit
-    inside SUPPORTED_SERVER (>=0.1.0,<0.2.0) and rot with it on purpose,
-    like the integration suite's live pin."""
+    """An in-range version answers True with no warning, and a ``v`` prefix
+    is spelling, not incompatibility. The literals sit inside SUPPORTED_SERVER
+    and must move with it, like the live-server test below."""
     respond_get(session, {"version": version})
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert FraiseClient().check_compatibility() is True
 
 
-# -- lifecycle ----------------------------------------------------------------
+def test_stats_returns_one_row_per_graph_in_id_order(
+    session, respond_get, stats_url, stats_response
+):
+    """Each graph's snapshot becomes one row, in id order, the empty graph kept.
+
+    Keeping graph 1's row of zeros is what makes the list's length the server's
+    graph count and puts every row at its graph's id; ``order`` and ``size``
+    arrive renamed to what they count.
+    """
+    respond_get(session, stats_response)
+
+    stats = FraiseClient().stats()
+
+    session.get.assert_called_once_with(stats_url, timeout=DEFAULT_TIMEOUT_SECONDS)
+    assert stats == [
+        GraphStats(id=0, vertices=4, edges=3, nodes=7, vectors=0, forest_entries=0),
+        GraphStats(id=1, vertices=0, edges=0, nodes=0, vectors=0, forest_entries=0),
+        GraphStats(id=2, vertices=1, edges=0, nodes=1, vectors=1, forest_entries=1),
+    ]
 
 
-def test_closing_closes_the_session_the_client_owns(session):
-    with FraiseClient():
-        pass
-    session.close.assert_called_once_with()
+def test_stats_raises_on_an_error_status(session, respond_get):
+    """A non-2xx answer raises FraiseAPIError rather than reading as no graphs.
+
+    An empty list would say the server holds nothing, which is exactly what a
+    caller checking a restore must not be told when the read failed.
+    """
+    respond_get(session, {"error": "internal error"}, status_code=500)
+    with pytest.raises(FraiseAPIError) as excinfo:
+        FraiseClient().stats()
+    assert excinfo.value.status_code == 500
+    assert "internal error" in excinfo.value.message
 
 
-def test_an_injected_session_is_left_open(respond, no_hits):
-    # The caller owns what the caller passed in; closing it would be rude.
-    injected = MagicMock()
-    respond(injected, no_hits)
-    with FraiseClient(session=injected):
-        pass
-    injected.close.assert_not_called()
-
-
-# -- embedding --------------------------------------------------------------
+def test_stats_raises_when_unreachable(session):
+    """A transport failure raises FraiseError, where health() would answer False."""
+    session.get.side_effect = requests.ConnectionError("refused")
+    with pytest.raises(FraiseError, match="could not reach fraise"):
+        FraiseClient().stats()
 
 
 def test_configured_embedder_encodes_remember_value(session, sent, callable_embedder):
+    """With an embedder, remember encodes the fact itself and sends its vector."""
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("the parrot is turquoise", graph=6)
     assert sent(session) == {
@@ -446,23 +484,26 @@ def test_configured_embedder_encodes_remember_value(session, sent, callable_embe
 
 
 def test_configured_embedder_encodes_recall_keywords(session, sent, callable_embedder):
+    """Without a query phrase, recall encodes its keywords joined by spaces."""
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).recall("kingfisher", "blue", graph=6)
     assert sent(session)["query"] == "recall@6 kingfisher blue vec:$v"
-    # Defaults to the space-joined keywords when no explicit query phrase is given.
     embedder.assert_called_once_with("kingfisher blue")
 
 
 def test_recall_query_phrase_overrides_keywords_for_embedding(
     session, sent, callable_embedder
 ):
+    """With a query phrase, the phrase is what gets encoded.
+
+    The question itself travels as one quoted phrase term ahead of the
+    keywords, never as bare words the grammar could read as clauses.
+    """
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).recall(
         "zzznomatch", graph=6, query="a sleepy kitten in the sun"
     )
     embedder.assert_called_once_with("a sleepy kitten in the sun")
-    # The question itself travels as one quoted phrase term, ahead of the
-    # bare keywords — never as unquoted words the grammar could claim.
     assert (
         sent(session)["query"]
         == "recall@6 'a sleepy kitten in the sun' zzznomatch vec:$v"
@@ -470,6 +511,7 @@ def test_recall_query_phrase_overrides_keywords_for_embedding(
 
 
 def test_explicit_vector_wins_over_embedder(session, sent, callable_embedder):
+    """An explicit vector is sent as given, and the embedder is not called."""
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("x is y", graph=6, vector=[0.1, 0.2])
     assert sent(session)["parameters"] == {"v": [0.1, 0.2]}
@@ -477,6 +519,7 @@ def test_explicit_vector_wins_over_embedder(session, sent, callable_embedder):
 
 
 def test_embed_false_skips_a_configured_embedder(session, sent, callable_embedder):
+    """``embed=False`` stores the fact without a vector, embedder or not."""
     embedder = callable_embedder()
     FraiseClient(embedder=embedder).remember("x is y", graph=6, embed=False)
     assert "parameters" not in sent(session)
@@ -484,18 +527,19 @@ def test_embed_false_skips_a_configured_embedder(session, sent, callable_embedde
 
 
 def test_embed_true_without_embedder_raises(session):
+    """``embed=True`` on a client with no embedder raises rather than sending no vector."""
     with pytest.raises(FraiseError, match="no embedder"):
         FraiseClient().remember("x is y", embed=True)
 
 
 def test_no_embedder_sends_no_vector(session, sent):
+    """A client without an embedder sends no vector parameters."""
     FraiseClient().remember("x is y", graph=6)
     assert "parameters" not in sent(session)
 
 
 def test_embedder_object_is_called_through_its_embed_method(session, sent):
-    # An Embedder exposes both .embed and __call__; the client must take the
-    # named method, or __call__ would recurse straight back into it.
+    """An Embedder is called through ``embed``, not ``__call__``, which only delegates."""
     embedder = MagicMock()
     embedder.embed.return_value = [1.0, 2.0, 3.0]
     FraiseClient(embedder=embedder).remember("hello world", graph=6)
@@ -504,18 +548,15 @@ def test_embedder_object_is_called_through_its_embed_method(session, sent):
     embedder.assert_not_called()
 
 
-# -- extraction -------------------------------------------------------------
-
-
 def test_configured_extractor_files_the_fact_under_its_anchors(
     session, sent, callable_extractor
 ):
     """Extracted anchors follow the given ones, and the text is stored verbatim.
 
-    The extractor reads the text exactly as passed, apostrophe included. It
-    finds "travel" and "Anne", which were given already in another casing —
-    the server folds anchors to lower case, so they would be repeats and are
-    dropped — and "Lisbon airport", which is not one plain word and is quoted.
+    The extractor reads the text exactly as passed, apostrophe included. Of
+    what it finds, "travel" was given already and "Anne" was given in another
+    casing; the server folds anchors to lower case, so both would be repeats
+    and are dropped. "Lisbon airport" is not one plain word and is quoted.
     """
     extractor = callable_extractor()
     FraiseClient(extractor=extractor).remember(
@@ -668,8 +709,8 @@ def test_explain_breaks_down_the_ranking_recall_returns(
 def test_check_compatibility_accepts_the_live_server(client):
     """The running server falls inside SUPPORTED_SERVER, silently.
 
-    The one assertion here that rots on its own: SUPPORTED_SERVER is a
-    hardcoded range, and this fails the day the image moves outside it.
+    SUPPORTED_SERVER is a hardcoded range, so this fails the day the image
+    moves outside it.
     """
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -681,6 +722,23 @@ def test_check_compatibility_accepts_the_live_server(client):
 def test_check_compatibility_strict_does_not_raise(client):
     """Strict mode passes against a supported server instead of raising."""
     assert client.check_compatibility(strict=True) is True
+
+
+@pytest.mark.integration
+def test_stats_counts_what_was_remembered(client, stats_graph):
+    """The stats graph's row counts exactly the facts, anchors and vector written.
+
+    The graph is claimed for this test alone, so its counts are exact rather
+    than lower bounds: six vertices (three facts, one topic, two entities),
+    five fact-to-anchor edges, eleven nodes and one vector, which a forest with
+    nothing to compact holds as one entry. Every other row is at its own id.
+    """
+    stats = client.stats()
+
+    assert [row.id for row in stats] == list(range(len(stats)))
+    assert stats[stats_graph] == GraphStats(
+        id=stats_graph, vertices=6, edges=5, nodes=11, vectors=1, forest_entries=1
+    )
 
 
 @pytest.mark.integration
@@ -697,9 +755,8 @@ def test_a_fact_is_found_under_the_anchors_extracted_for_it(
 ):
     """A fact the extractor tagged is recalled by those anchors, verbatim.
 
-    The anchors are the extractor's, not the caller's — none were given — and
-    a recall by either one, the multi-word entity included, returns the fact
-    exactly as written.
+    No anchors were given, so they are the extractor's, and a recall by the
+    topic or by the multi-word entity returns the fact exactly as written.
     """
     fact = "Anne's flight lands at Lisbon airport at noon"
     with FraiseClient(fraise_url, extractor=callable_extractor()) as client:
@@ -715,8 +772,8 @@ def test_a_fact_is_found_under_the_anchors_extracted_for_it(
 def test_a_failed_extraction_still_stores_the_fact(fraise_url, round_trip_graph):
     """An extractor that fails costs the anchors: the fact itself is stored.
 
-    It is found by its own words afterwards, which is the whole promise — a
-    failed extraction never loses the message it was reading.
+    It is found by its own words afterwards, so a failed extraction never
+    loses the message it was reading.
     """
     extractor = MagicMock(side_effect=RuntimeError("rate limited"))
     del extractor.extract
@@ -731,15 +788,14 @@ def test_a_failed_extraction_still_stores_the_fact(fraise_url, round_trip_graph)
 
 @pytest.mark.integration
 def test_a_lone_seed_hub_stays_silent(instrument_graph, instrument_topic, client):
-    """A single seed's topic hub holds exactly the background rate, so its
-    siblings never surface on reachability alone — in either graph lane.
+    """A single seed's topic hub holds exactly its fair share, so it transmits
+    nothing and its siblings never surface, in either graph lane.
 
-    This is the excess-transmission contract through the SDK: an anchor is
-    heard only when its members matched better than its size predicts. The
-    topic is named so the filter holds the candidates to the hub's members;
-    the two depths are then the two lanes that run the round, depth=1
-    admitting an anchor only well above its fair share and depth=2 at the
-    fair share itself, and the hub declines to transmit at either bar.
+    This is hub silence through the SDK: an anchor is heard only when its
+    members matched better than its size predicts. The topic is named so the
+    filter keeps the hub's members, whose absence is then the hub's silence.
+    depth=1 admits an anchor only well above its fair share and depth=2 any
+    anchor above it, and the hub clears neither bar.
     """
     for depth in (1, 2):
         hits = client.recall(
@@ -781,15 +837,12 @@ def test_a_topic_filter_narrows_a_keyword_recall(
 def test_recall_is_reachable_with_an_anchor_and_no_keyword(
     instrument_graph, instrument_topic, client
 ):
-    """``client.recall(topics=[...])`` — "everything about X" — reaches the
+    """``client.recall(topics=[...])``, "everything about X", reaches the
     server instead of failing in the parser.
 
-    The typed helper has always documented an anchor as a seed of its own, but
-    the grammar demanded a text term before any clause, so this call answered
-    400 and callers padded it with a keyword they did not mean. The count is
-    deliberately not asserted: what an anchor-seeded walk *returns* is the
-    retrieval model's business, and this pins only that the question can be
-    asked at all.
+    An anchor seeds a recall on its own, so a caller need not pad it with a
+    keyword they do not mean. The count is not asserted: this pins that the
+    question can be asked, not what it returns.
     """
     result = client.recall(graph=instrument_graph, topics=[instrument_topic])
     assert result.count >= 0
@@ -914,9 +967,9 @@ def test_query_returns_the_decoded_body(client, instrument_graph, no_match):
 def test_query_returns_the_write_acknowledgement(client, round_trip_graph):
     """A write answers with its own shape, not a recall's empty envelope.
 
-    Pinned against the live server because this is a wire contract: the client
-    branches on the "status" key to tell a stored fact from a search that
-    found nothing, and the two were the same bytes before the split.
+    Pinned against the live server because it is a wire contract:
+    ``{"status": "ok"}`` is what tells a stored fact from a search that found
+    nothing.
     """
     body = client.query(
         f"remember@{round_trip_graph} 'the acknowledgement is its own shape'"
@@ -930,9 +983,9 @@ def test_recall_of_an_empty_graph_says_the_graph_is_empty(client, empty_graph):
     """A recall of a graph nothing was ever written to sets ``empty``.
 
     The server carries this in the status line (204) and it survives into the
-    result, which is the whole point: without it the caller sees the same
-    empty result as a query that simply missed, and debugs the query when it
-    should be checking whether it ever wrote.
+    result. Without it the caller sees the same empty result as a query that
+    missed, and debugs the query when it should be checking whether it ever
+    wrote.
     """
     result = client.recall("zebras", graph=empty_graph)
 

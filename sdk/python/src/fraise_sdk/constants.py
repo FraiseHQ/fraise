@@ -32,6 +32,10 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 QUERY_PATH = "/api/v1/q"
 EXPLAIN_PATH = "/api/v1/explain"
 
+# The per-graph snapshot route. The server computes it on demand from the live
+# graphs, one entry per allocated graph, so it reads the store, never a cache.
+STATS_PATH = "/api/v1/stats"
+
 # 204 No Content is how the server answers a recall of a graph that holds
 # nothing. It is a success, not an error, and it has no body: the distinction
 # between "nothing is stored here" and "nothing matched" is the status itself.
@@ -39,17 +43,16 @@ NO_CONTENT = 204
 
 # Server versions this SDK is verified against. Keep in sync with COMPATIBILITY.md
 # and bump when a release starts relying on newer server behaviour.
-SUPPORTED_SERVER = ">=0.2.0,<0.3.0"
-SERVER_MIN = (0, 2, 0)
-SERVER_MAX_EXCLUSIVE = (0, 3, 0)
+SUPPORTED_SERVER = ">=0.3.0,<0.4.0"
+SERVER_MIN = (0, 3, 0)
+SERVER_MAX_EXCLUSIVE = (0, 4, 0)
 
 # Name bound to the out-of-band vector in the request parameters.
 VECTOR_PARAM = "v"
 
-# The highest graph a query can name. A selector travels as a uint8, so 256 does
-# not fail — it wraps to graph 0 unless the server catches it, which is why this
-# is a hard edge rather than a hint. Which selectors below it exist is the
-# server's business, and only it can answer that.
+# The highest graph a query can name: the selector is a uint8, so the builders
+# refuse a larger one before anything is sent. Which graphs up to it exist
+# depends on the server's num-graphs setting, and only the server checks that.
 MAX_GRAPH = 255
 
 # The grammar's reserved words, mirroring the server's keyword table. A bare term
@@ -68,31 +71,34 @@ KEYWORDS = frozenset(
         "top",
         "depth",
         "vec",
+        "explain",
+        "describe",
     }
 )
 
-# The name the memory server registers under. Tool identifiers Claude sees are
-# namespaced as ``mcp__<server>__<tool>``, so this drives both the mcp_servers
-# key and the allowed_tools entries — keep them in sync via `allowed_tools`.
+# The Claude integration's server and tool names. Claude sees a tool as
+# ``mcp__<server>__<tool>``, so the mcp_servers key and the allowed_tools
+# entries must name the same server; `allowed_tools` builds the entries from
+# these names.
 DEFAULT_SERVER_NAME = "fraise_memory"
 RECALL_TOOL = "recall_memory"
 REMEMBER_TOOL = "remember_fact"
 
-# Tool-call budget: a sane ceiling so the model need not reason about scale.
-# Depth has no default here: an omitted clause takes the lane the server is
-# configured with, which is the operator's choice of how much graph a plain
-# question gets.
+# The recall tool's default top, so the model need not choose one. There is no
+# default depth: an omitted clause takes the lane the server is configured
+# with, which is the operator's choice of how much graph a plain question
+# gets.
 DEFAULT_TOP = 5
 
-# The retrieval lanes are 0, 1 and 2 by design — the scorer runs at most one
-# anchor-mediated round — so a larger depth is not a deeper search but a
-# request the server rejects at parse time. The bound is stated in the schema
-# and enforced before the call, so the model gets a correction it can act on
-# rather than a round trip that fails. An operator can only lower the ceiling
-# (max-depth), and the server's own rejection still surfaces as a tool error.
+# The retrieval lanes are 0, 1 and 2: a search runs at most one
+# anchor-mediated round, so the server rejects a larger depth at parse time.
+# The tool's schema states the bound and the tool checks it before calling, so
+# the model gets a correction it can act on rather than a failed round trip.
+# An operator can only lower the ceiling (max-depth), and the server's own
+# rejection still surfaces as a tool error.
 MAX_DEPTH = 2
 
-# The SDK's own files. A warning is attributed to the first frame outside them —
-# the caller's line, however deep in the SDK the warning was decided — which a
-# fixed stacklevel gets right for one call path only.
+# The SDK's own files. A warning is attributed to the first frame outside them,
+# the caller's line, however deep in the SDK it was raised; a fixed stacklevel
+# is right for one call path only.
 SDK_FILES = (os.path.dirname(os.path.abspath(__file__)) + os.sep,)

@@ -25,7 +25,7 @@ Three topics: `cluster` files 3 facts, two of which match the query with mass 8 
 | `hub` | 6 | 2 | 10.67 | no — one weak match among six facts |
 | `giant` | 10 | — | not touched | no, and it does not weigh in $\rho_0$ |
 
-$\rho_0 = (14 + 2)/(3 + 6) = 16/9$. The third `cluster` fact, which matched nothing, receives $\alpha^2 (14 - 0 - 5.33)/3 \approx 0.72$ — the surplus shared across `cluster`'s three edges and attenuated over two — while the two facts that matched keep their own mass plus a smaller share, since a fact never funds its own boost.
+$\rho_0 = (14 + 2)/(3 + 6) = 16/9$. The third `cluster` fact, which matched nothing, receives $\alpha^2 (14 - 0 - 5.33)/3 \approx 0.72$: the surplus shared across `cluster`'s three edges and attenuated over two. The two facts that matched keep their own mass plus a smaller share, since a fact never funds its own boost.
 
 ## Why untouched anchors stay out
 
@@ -41,7 +41,7 @@ $$
 \sum_{A \in T} \bigl( M_A - d_A \, \rho_0 \bigr) = \sum M - \rho_0 \sum d = 0
 $$
 
-so admission is a comparison among the anchors one query reached: an anchor speaks when it concentrates more of the query's evidence than its size accounts for next to the others. Three consequences follow, and all three are the intended reading:
+so admission is a comparison among the anchors one query reached: an anchor speaks when it concentrates more of the query's evidence than its size accounts for next to the others. Three consequences follow, all of them intended:
 
 - **A query that reaches one anchor transmits nothing.** That anchor holds exactly its share — $M = d \cdot (M/d)$ — and with nothing to compare it against there is no evidence that it concentrates anything.
 - **A query with one seed admits on degree alone.** Every anchor it touches observes the same mass $m$, so an anchor clears its share exactly when its degree is below the touched mean. That is the correct inference: an anchor of degree 3 holding $m$ *is* more surprising than an anchor of degree 300 holding the same $m$.
@@ -59,4 +59,4 @@ so admission is a comparison among the anchors one query reached: an anchor spea
 | `bfs` | tree-shaped incidence, kept for comparison runs |
 | `none` | the graph channel off — text/vector search only |
 
-`scoring-algorithm` selects the fold deriving relevance from the pooled evidence. `rrf` remains available for comparison runs — its dampening constant is fixed at 60, the literature standard, because a comparison baseline is not tunable — but it carries no null model, which is why `excess` is the default. See [Algorithm settings](/docs/configuration/reference/algorithms).
+`scoring-algorithm` selects the fold deriving relevance from the pooled evidence. `rrf` remains available for comparison runs, with its dampening constant fixed at the literature-standard 60, since a comparison baseline is not tunable. It carries no null model, which is why `excess` is the default. See [Algorithm settings](/docs/configuration/reference/algorithms).

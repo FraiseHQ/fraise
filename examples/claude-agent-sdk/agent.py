@@ -60,13 +60,13 @@ async def ask(options: ClaudeAgentOptions, prompt: str) -> None:
 
 
 async def main() -> None:
-    """Example runner."""
+    """Run the two-turn demo."""
     fraise = FraiseClient(os.environ.get("FRAISE_URL", "http://localhost:9876"))
 
     # This example is keyword-only. To vectorise, pass an embedder to
     # memory_server(fraise, embedder=...). Anthropic has no embeddings API, so
-    # you'd use OpenAIEmbedder (from fraise_sdk.providers) with an OPENAI_API_KEY
-    # set alongside ANTHROPIC_API_KEY.
+    # you'd use OpenAIEmbedder (from fraise_sdk.providers.openai, which needs
+    # the openai extra) with an OPENAI_API_KEY set alongside ANTHROPIC_API_KEY.
     options = ClaudeAgentOptions(
         system_prompt=(
             "You have a long-term memory. When the user shares a durable fact "

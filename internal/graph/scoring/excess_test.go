@@ -39,9 +39,9 @@ func excessContributions(m float64, graphs ...scoring.Contribution[uint64, float
 	return append(out, graphs...)
 }
 
-// TestExcessScorerFloor is Property 5.2 at the fold: a graph-free list folds
-// to exactly its seed mass, and any graph observation can only add — the
-// hinge clips negative surplus to zero instead of subtracting.
+// TestExcessScorerFloor pins the BM25 floor at the fold: a graph-free list
+// folds to exactly its seed mass, and a graph observation can only add, since
+// the hinge clips a negative surplus to zero instead of subtracting it.
 func TestExcessScorerFloor(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 
@@ -55,12 +55,12 @@ func TestExcessScorerFloor(t *testing.T) {
 	}
 }
 
-// TestExcessScorerHubSilenceAndPreemption pins the hinge arithmetic exactly
-// (Properties 5.3 and 5.4). With background 2, a degree-6 anchor observing
-// mass 14 owes 12 to the null and 2 to the candidate's own mass (self-
-// exclusion): it transmits nothing — fair share exactly. Shrink its degree to
-// 3 and the same observation carries surplus 6 spread over its 3 edges, of
-// which α² = 1/4 arrives per edge.
+// TestExcessScorerHubSilenceAndPreemption pins the hinge arithmetic behind hub
+// silence and earned preemption. With background 2, a degree-6 anchor
+// observing mass 14 owes 12 to the background and 2 to the candidate's own
+// mass (self-exclusion), so it transmits nothing. Shrink its degree to 3 and
+// the same observation holds surplus 6, or 2 per edge, of which α² = 1/4
+// arrives.
 func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 
@@ -83,9 +83,9 @@ func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	}
 }
 
-// TestExcessScorerScaleInvariance is Property 5.5 at the fold: scaling the
-// masses and the background by the same power of two scales the score exactly
-// — the methodology has no absolute scale to destabilize.
+// TestExcessScorerScaleInvariance pins scale invariance at the fold: scaling
+// the masses and the background by the same power of two scales the score
+// exactly, since nothing in the fold depends on an absolute scale.
 func TestExcessScorerScaleInvariance(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 	list := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 3, Count: 2})
@@ -103,8 +103,8 @@ func TestExcessScorerScaleInvariance(t *testing.T) {
 
 // TestExcessScorerPurity pins the Scorer contract's purity clause: folding
 // the same list twice yields the identical result and leaves the list
-// unmutated, and binding a background never mutates the shared instance —
-// Search shares it across concurrent queries.
+// unmutated, and binding a background never mutates the shared instance,
+// which Search shares across concurrent queries.
 func TestExcessScorerPurity(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 	list := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 3, Count: 2})
@@ -124,11 +124,11 @@ func TestExcessScorerPurity(t *testing.T) {
 	}
 }
 
-// TestExcessScorerAnchorSightingsAreSeedMass pins the anchor-seeded fold: anchor
-// sightings sum into the seed mass exactly as text and vector ones do — one
-// unit per named anchor a fact is filed under, so two sightings fold to 2 —
-// and that mass is self-excluded by the hinge like any other, so a graph
-// observation on top of it transmits only what exceeds it.
+// TestExcessScorerAnchorSightingsAreSeedMass pins the anchor-seeded fold:
+// anchor sightings sum into the seed mass as text and vector ones do, one unit
+// per named anchor a fact is filed under, so two sightings fold to 2. The
+// hinge self-excludes that mass like any other, so a graph observation on top
+// of it transmits only what exceeds it.
 func TestExcessScorerAnchorSightingsAreSeedMass(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 

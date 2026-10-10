@@ -30,7 +30,7 @@ import (
 
 // TestRRFConsensusBeatsASingleFavourite is the fusion property the scorer
 // exists for: a candidate two sources place at rank 3 outranks one a single
-// source places at rank 1 (2/63 > 1/61). k = 60 is what buys this — a bare
+// source places at rank 1 (2/63 > 1/61). k = 60 is what buys this: a bare
 // reciprocal rank would hand the single rank-1 sighting the win.
 func TestRRFConsensusBeatsASingleFavourite(t *testing.T) {
 	scorer := scoring.NewRRFScorer[uint64, float64](60)
@@ -67,10 +67,9 @@ func rrfScoresExactly[P float32 | float64](t *testing.T) {
 			P(1) / P(60),
 		},
 		{
-			// Score 999 and Hop 200 change nothing: rank is the only input.
-			// Magnitudes carry no rank information, and hop already shaped
-			// the walk rank; weighing either would re-introduce the scale
-			// calibration RRF exists to avoid.
+			// Score 999 changes nothing: rank is the only input, and
+			// weighing magnitudes would reintroduce the scale calibration
+			// RRF exists to avoid.
 			"score and hop are deliberately ignored",
 			60,
 			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcGraph, Score: 999, Rank: 0}},
@@ -87,8 +86,8 @@ func rrfScoresExactly[P float32 | float64](t *testing.T) {
 			P(1)/P(60) + P(1)/P(61) + P(1)/P(62),
 		},
 		{
-			// An anchor sighting has no list, so it ranks 0 like any
-			// seed: the same 1/k, whatever mass it carries.
+			// An anchor sighting has no list, so its Rank is 0 and it
+			// scores 1/k, whatever mass it carries.
 			"an anchor sighting is a rank-0 sighting",
 			60,
 			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcAnchor, Score: 1, Rank: 0}},

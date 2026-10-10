@@ -13,10 +13,10 @@ fraise -config /etc/fraise/fraise.config.toml -log-level error
 ## How a value is resolved
 
 1. Every setting starts at its built-in default.
-2. The config file is read (`fraise.config.toml` in the working directory unless `-config` says otherwise). A key that maps to no known setting is an error, not a typo the server ignores, and so is a file that is not valid TOML.
+2. The config file is read (`fraise.config.toml` in the working directory unless `-config` says otherwise). A key that maps to no known setting is an error, not a typo the server ignores, and so is a file that is not valid TOML or a value of the wrong type.
 3. The command line is applied over the top.
 4. Anything still at its zero value falls back to the default.
-5. Settings with a fixed vocabulary are validated.
+5. Settings with a fixed vocabulary, the ranges of `min-score-ratio` and `max-depth`, and the floor of `workers` are validated.
 
 ## A missing config file is not an error
 
@@ -32,7 +32,7 @@ fraise: config: invalid value: db.precision = "floast32" (accepted: float32, flo
 
 <Note title="Case-insensitive matching" type="note">
 
-  Values from that fixed vocabulary are matched without regard to case, so `-log-level error` and `-log-level ERROR` are the same request. Anything else would silently substitute a value nobody asked for: the first version of this server treated `-log-level error` as unrecognised and quietly logged at INFO, and the only symptom was output the operator was trying to suppress.
+  Values from a fixed vocabulary are matched without regard to case and stored in their canonical spelling, so `-log-level error` and `-log-level ERROR` are the same request.
 
 </Note>
 

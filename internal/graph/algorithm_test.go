@@ -34,8 +34,8 @@ import (
 )
 
 // testConfig returns a ConfigSet carrying the flag defaults (applied by
-// config.New) plus the vector-search parameters, which are otherwise only set
-// during a full Parse. NewGraph reads those to size its RPTree index.
+// config.New) with a smaller vector forest than the default: 8 projection
+// dimensions and 4 trees. NewGraph reads these to size its RPTree index.
 func testConfig() *config.ConfigSet {
 	cfg := config.New()
 	cfg.DB.VectorSearch.ProjectionDimension = 8
@@ -46,8 +46,8 @@ func testConfig() *config.ConfigSet {
 
 // fakeGraph is a minimal Graph implementation used to unit-test the graph
 // algorithms (BFS, PageRank) against arbitrary topologies that the typed
-// Fact->Entity relationships cannot express (cycles, chains). Only the methods
-// the algorithms touch — Get, AdjacencyMap and PredecessorMap — carry real
+// Fact->Entity relationships cannot express (cycles, chains). Get, the edge
+// views (AdjacencyMap, PredecessorMap, Neighbours) and the counts carry real
 // behaviour; the rest are inert stubs.
 type fakeGraph struct {
 	vertices map[uint64]bool
@@ -126,8 +126,6 @@ func (g *fakeGraph) Put(uint64, graph.Node[uint64]) error               { return
 func (g *fakeGraph) Delete(graph.Node[uint64]) error                    { return nil }
 func (g *fakeGraph) GetVectorIndex() index.VectorIndex[uint64, float64] { return nil }
 func (g *fakeGraph) GetTextIndex() index.TextIndex[uint64, float64]     { return nil }
-func (g *fakeGraph) MergeFrom(graph.Graph[uint64, float64])             {}
-func (g *fakeGraph) Copy() graph.Graph[uint64, float64]                 { return g }
 func (g *fakeGraph) Nodes() map[uint64]graph.Node[uint64]               { return nil }
 func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) ([]*graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64, error) {
 	return nil, nil, nil, 0, nil

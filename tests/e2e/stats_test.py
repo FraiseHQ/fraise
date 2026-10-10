@@ -45,10 +45,9 @@ def test_vector_forest_stays_bounded_under_writes(get, query, vector):
     """Sustained writes must not bloat the vector forest: forest_entries stays
     within the flush-factor bound (2x) of live vectors.
 
-    Regression test for the quadratic-bloat bug where every write re-inserted
-    all staged vectors into the live forest (~W^2/2 entries after W writes);
-    with 40 writes the pre-fix forest holds ~800 entries for ~40 vectors, so
-    the 2x bound fails loudly on a regression. The bound is a per-graph
+    A write that re-inserted every staged vector into the live forest would
+    grow it quadratically (~W^2/2 entries after W writes, ~800 for these 40),
+    so the 2x bound fails loudly on that regression. The bound is a per-graph
     invariant, so writes from other tests on this graph don't disturb it.
     """
     graph = 4

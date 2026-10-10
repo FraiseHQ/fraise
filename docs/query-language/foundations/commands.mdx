@@ -35,7 +35,7 @@ seeding_field = anchor | vec_field ;
 modifier      = since_field | until_field | depth_field | top_field ;
 ```
 
-A term, an anchor and a vector are all seeds, so `recall topic:billing` and `recall vec:$v` are questions — expand from here and rank what you reach.
+A term, an anchor and a vector are all seeds, so `recall topic:billing` and `recall vec:$v` are complete questions: a term or a vector is matched against its index, and anchors on their own seed the search with every fact filed under them.
 
 <Note title="Modifiers are not seeds" type="warning">
 
@@ -43,7 +43,7 @@ A term, an anchor and a vector are all seeds, so `recall topic:billing` and `rec
 
 </Note>
 
-After the first field, a bare term is an error. The fields themselves interleave in any order, but only anchors may repeat: a repeated anchor adds a filter, a repeated modifier is a duplicate-clause error.
+After the first field, a bare term is an error. The fields themselves interleave in any order, but only anchors may repeat: a repeated anchor adds to the list, a repeated modifier is a duplicate-clause error.
 
 ### Seeds versus modifiers
 
@@ -59,7 +59,7 @@ After the first field, a bare term is an error. The fields themselves interleave
 
 ## Graph selectors
 
-A selector is glued to the verb, with no whitespace before the `@`:
+A selector is glued to the verb, with no whitespace on either side of the `@`:
 
 ```text
 recall@3 auth topic:auth entity:okta
@@ -70,7 +70,7 @@ remember@3 'acme signed with okta' topic:auth entity:okta
 graph_selector = '@' integer ;   (* default 0 *)
 ```
 
-The selector is lexed *with* the command as one token. An absent selector means graph 0. Selectors are `uint8` and bounded twice over — the parser rejects anything that does not fit the type, and the server rejects selectors past the allocated count. See [Bounds](/docs/query-language/tokens/bounds) and [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+An absent selector means graph 0. Selectors are `uint8` and bounded twice over: the parser rejects anything that does not fit the type, and the server rejects selectors past the allocated count. See [Bounds](/docs/query-language/tokens/bounds) and [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
 
 ## Reserved but unimplemented
 

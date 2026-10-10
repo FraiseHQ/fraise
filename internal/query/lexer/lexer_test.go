@@ -423,7 +423,7 @@ func Test_ComplexQueries(t *testing.T) {
 			},
 		},
 		{
-			// "or"/"and" are no longer keywords; they now scan as plain literals.
+			// "or" and "and" are not keywords: they lex as plain literals.
 			name:  "former boolean keywords lex as literals",
 			input: "recall (anna or bob) and topic:job",
 			expected: []lexer.Token{
@@ -565,10 +565,10 @@ func Test_PositionTracking(t *testing.T) {
 
 // TestTokenPosIsLastCharacter pins the contract the parser's error positions
 // rest on: a token's Pos is the 1-based column of its last character. The
-// parser cannot compute this itself — cur/peek read a token ahead, so by the
-// time it rejects a token the lexer's CurrentPos has passed the following one
-// — so if this drifts, every "parse error at column N" silently points at the
-// wrong word while still reading like a precise message.
+// parser cannot compute this itself, because its lookahead has moved the
+// lexer's CurrentPos past the following token by the time it rejects one. If
+// this drifts, every "parse error at column N" points at the wrong word while
+// still reading like a precise message.
 func TestTokenPosIsLastCharacter(t *testing.T) {
 	// The columns below are the 1-based index of each token's final character:
 	// "recall" ends at 6, "@" at 7, "2" at 8, the space after it at 9, "anna"
@@ -604,8 +604,8 @@ func TestTokenPosIsLastCharacter(t *testing.T) {
 		}
 	}
 
-	// EOL carries the end of input, so an error about a clause cut short lands
-	// past the last character rather than at column 0.
+	// EOL's Pos is the end of input (the input's length), so an error about a
+	// clause cut short points at the end of the query rather than at column 0.
 	if tok := l.Next(); tok.Type != lexer.EOL || tok.Pos.Column != len(input) {
 		t.Errorf("EOL Pos.Column = %d (type %v), want %d", tok.Pos.Column, tok.Type, len(input))
 	}
@@ -615,12 +615,12 @@ func TestTokenPosIsLastCharacter(t *testing.T) {
 // above: its Pos is its closing quote, so the parser's one blaming rule holds
 // for every token type.
 //
-// NOTE: scanPhrase does record the *opening* quote (`Pos: start`), meaning to
-// report an unterminated phrase where it began, but Next(true) assigns tok.Pos
-// after the switch and overwrites it — so that position never reaches the
-// parser. If that assignment is ever made conditional, the phrase cases here
-// and in TestScanPhraseUnterminatedRecordsPosition are what should change,
-// together with the Token.Pos contract.
+// NOTE: scanPhrase records the opening quote (`Pos: start`), meaning to report
+// an unterminated phrase where it began, but Next assigns tok.Pos after the
+// switch and overwrites it, so that position never reaches the parser. If that
+// assignment is ever made conditional, the phrase cases here and in
+// TestScanPhraseUnterminatedRecordsPosition are what should change, together
+// with the Token.Pos contract.
 func TestPhrasePosIsLastCharacter(t *testing.T) {
 	// "remember 'a fact' topic:x" — the closing quote is the 17th character.
 	l := lexer.New("remember 'a fact' topic:x")
@@ -761,13 +761,11 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 	}
 }
 
-// Test_NewlineIsItsOwnToken pins that a newline ends an instruction instead of
-// blending into the whitespace around it. Folded into blank, "recall anna\nbob"
-// lexed as one two-term recall — a second line silently joining the first, which
-// is exactly the multi-command shape the grammar forbids. Spaces, tabs and CR
-// stay blank — a WHITESPACE token on either side of the newline, never part of
-// it — and the parser decides whether a trailing newline is a second
-// instruction or just the end of the text.
+// Test_NewlineIsItsOwnToken pins that a newline is its own token rather than
+// part of the whitespace around it, so "recall anna\nbob" is two lines, not
+// one two-term recall. Spaces, tabs and CR stay blank (a WHITESPACE token on
+// either side of the newline, never part of it), and the parser decides
+// whether a trailing newline is a second instruction or the end of the text.
 func Test_NewlineIsItsOwnToken(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -851,8 +849,9 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 
 // TestScanPhrase covers the opaque single-quoted phrase scanner: everything
 // between the quotes is one PHRASE token taken verbatim (reserved words and
-// symbols included), ” is an escaped quote, and an unclosed quote yields an
-// ILLEGAL token so the parser can report an unterminated phrase.
+// symbols included), a doubled single quote is an escaped quote, and an
+// unclosed quote yields an ILLEGAL token so the parser can report an
+// unterminated phrase.
 func TestScanPhrase(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -891,8 +890,9 @@ func TestScanPhrase(t *testing.T) {
 	}
 }
 
-// TestScanPhraseUnterminatedRecordsPosition checks that an unterminated phrase
-// reports the position of its opening quote (used by the parser's error).
+// TestScanPhraseUnterminatedRecordsPosition checks only that the word before an
+// unterminated phrase lexes on its own. The opening-quote position it is named
+// for never reaches the parser (see the NOTE on TestPhrasePosIsLastCharacter).
 func TestScanPhraseUnterminatedRecordsPosition(t *testing.T) {
 	// opening quote is the 5th rune (0-indexed column 4): "foo <'>bar"
 	got := lexer.New("foo 'bar").Next() // first token is the bare word "foo"

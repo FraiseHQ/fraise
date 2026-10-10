@@ -43,11 +43,11 @@ func parsed(t *testing.T, args ...string) *config.ConfigSet {
 }
 
 // TestNewWiresTheBridgeFromConfig pins New's wiring: with no -addr the daemon
-// address derives from the same config the daemon reads — `fraise mcp -config
-// x` must find whatever `fraise -config x` serves — and construction doubles
-// as the schema smoke test, because the SDK's AddTool panics on a tool schema
-// that fails to compile. A schema edit that breaks registration fails here,
-// at unit speed, not at the first live handshake.
+// address derives from the config's port, so `fraise mcp -config x` finds
+// whatever `fraise -config x` serves. Construction doubles as the schema smoke
+// test: the SDK's AddTool panics on a tool schema that fails to resolve, so a
+// schema edit that breaks registration fails here, at unit speed, rather than
+// at the first live handshake.
 func TestNewWiresTheBridgeFromConfig(t *testing.T) {
 	s := New(parsed(t, "-port", "4242"))
 

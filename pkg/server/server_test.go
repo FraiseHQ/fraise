@@ -91,12 +91,11 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
-// TestFailuresOutsideTheHandlersKeepTheErrorShape pins that every failure
-// answers {"error": ...}, including the two gin produces itself: an unknown
-// route (or a known path with the wrong method) used to be a plain-text 404,
-// and a recovered panic a 500 with no body at all — neither parses as the
-// error shape a client decodes every other failure with. A panic's detail
-// stays in the log, never in the body.
+// TestFailuresOutsideTheHandlersKeepTheErrorShape pins that the two failures
+// gin answers itself, an unknown route (or a known path with the wrong method)
+// and a recovered panic, use the same {"error": ...} shape a client decodes
+// every other failure with. A panic's detail stays in the log, never in the
+// body.
 func TestFailuresOutsideTheHandlersKeepTheErrorShape(t *testing.T) {
 	s := newTestServer(t)
 	s.router.GET("/panics", func(*gin.Context) { panic("boom") })
@@ -165,10 +164,10 @@ func TestQueryOutOfRangeGraph(t *testing.T) {
 	}
 }
 
-// TestQueryWrappingGraphSelectorRejected guards the tenant-isolation fix: a
-// selector past the uint8 range used to wrap into a valid-looking graph
-// (@256 -> 0, @300 -> 44), silently executing against the wrong graph instead
-// of being rejected. Each must now return 400 before execution.
+// TestQueryWrappingGraphSelectorRejected checks that a selector past the uint8
+// range is rejected with 400 before execution. Wrapped into a valid-looking
+// graph (@256 -> 0, @300 -> 44), it would silently run against the wrong
+// graph, breaking tenant isolation.
 func TestQueryWrappingGraphSelectorRejected(t *testing.T) {
 	s := newTestServer(t)
 
@@ -279,8 +278,8 @@ func TestQueryVectorDimensionMismatch(t *testing.T) {
 
 // TestRecallVectorDimensionMismatch is the read half of the dimension rule:
 // a recall carrying a vector of the wrong width is rejected with 400 naming
-// both dimensions, exactly as a write is. It used to answer 200 from the text
-// index alone, dropping the semantic half of the question without a word.
+// both dimensions, as a write is. A 200 from the text index alone would drop
+// the semantic half of the question without a word.
 func TestRecallVectorDimensionMismatch(t *testing.T) {
 	s := newTestServer(t)
 
@@ -322,11 +321,10 @@ func TestQuerySuccess(t *testing.T) {
 }
 
 // TestQueryWriteIsAcknowledged pins the write response apart from a read's.
-// Before the split, an accepted write answered with a recall's empty envelope,
-// so {"count":0,"hits":[]} meant both "stored" and "matched nothing" and a
-// fact that never landed was indistinguishable on the wire from one that did.
-// The status token is what tells them apart, and both SDKs branch on it — if
-// this test has to change, their parsing changes with it.
+// With a recall's empty envelope, {"count":0,"hits":[]} would mean both
+// "stored" and "matched nothing". The status token is what tells them apart,
+// and the MCP bridge returns it as its remember tool's output: if this test
+// has to change, the bridge changes with it.
 func TestQueryWriteIsAcknowledged(t *testing.T) {
 	s := newTestServer(t)
 
@@ -360,9 +358,8 @@ func TestQueryEmptyGraphIsNoContent(t *testing.T) {
 
 // TestQueryNoMatchOnPopulatedGraphIsEmptyResults is the other half of the pair:
 // the graph holds facts and none of them matched, which stays 200 with an empty
-// result set. Losing this distinction is the whole point of the 204 — a caller
-// that cannot tell the two apart debugs its query when it should be checking
-// whether it ever wrote.
+// result set. A caller that cannot tell this from the 204 debugs its query when
+// it should be checking whether it ever wrote.
 func TestQueryNoMatchOnPopulatedGraphIsEmptyResults(t *testing.T) {
 	s := newTestServer(t)
 
@@ -401,8 +398,8 @@ func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
 }
 
 // TestStatsEndpoint checks that GET /api/v1/stats returns one snapshot per
-// graph and that a committed write with a vector is reflected in the counts —
-// including the forest_entries gauge the bloat regression tests key off.
+// graph and that a committed write with a vector is reflected in the counts,
+// including the forest_entries gauge the end-to-end forest-bloat test reads.
 func TestStatsEndpoint(t *testing.T) {
 	s := newTestServer(t)
 

@@ -39,12 +39,12 @@ def test_initialize_names_the_server(mcp):
 def test_tools_list_carries_both_tools_with_their_schemas(mcp):
     """tools/list names recall and remember, each carrying the wire schemas.
 
-    The schemas mirror the HTTP query API: query required on the way in, and
-    on the way out whatever that side of the API answers with — results for a
-    recall, the status token for a write, which the server keeps apart so a
-    stored fact is not the same bytes as a recall that matched nothing. A
-    client that validates against these — as the Go SDK itself does — depends
-    on them being here and matching the daemon.
+    The schemas mirror the HTTP query API: query is required on the way in,
+    and on the way out each tool requires what that side of the API answers
+    with, results for a recall and the status token for a write. The Go SDK
+    validates every tool result against its output schema before sending it,
+    and a client may validate against them too, so they must be present and
+    match the daemon.
     """
     tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
 

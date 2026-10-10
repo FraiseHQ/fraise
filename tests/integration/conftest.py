@@ -48,7 +48,8 @@ from pathlib import Path
 import pytest
 import requests
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SUITE_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SUITE_DIR.parents[1]
 
 _DAEMON_WAIT_SECONDS = 30
 _READ_TIMEOUT_SECONDS = 15
@@ -69,8 +70,11 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(items):
     # Every test under this directory drives real processes, so the mark is
     # applied here, once, instead of as a line to forget in each new module.
+    # The hook sees every collected item, not only this directory's, so the
+    # path check keeps the mark off e2e tests collected in the same run.
     for item in items:
-        item.add_marker(pytest.mark.integration)
+        if item.path.resolve().is_relative_to(_SUITE_DIR):
+            item.add_marker(pytest.mark.integration)
 
 
 def _free_port() -> int:

@@ -53,8 +53,8 @@ GREEN          := \033[0;32m
 YELLOW         := \033[0;33m
 RESET          := \033[0m
 
-# Build flags. Injects the same pkg/version symbols GoReleaser sets on a
-# release (see .goreleaser.yaml), so every build path reports its real version.
+# Build flags for build-go: the same pkg/version symbols GoReleaser sets on a
+# release (see .goreleaser.yaml), so a local build reports its real version.
 VERSION_PKG    := github.com/FraiseHQ/fraise/pkg/version
 LDFLAGS        := -X '$(VERSION_PKG).Version=$(BUILD_VERSION)' \
                   -X '$(VERSION_PKG).Commit=$(BUILD)' \
@@ -95,7 +95,7 @@ coverage: coverage-go coverage-py
 
 test-all: test-go test-py ## Run tests for Go and all SDKs
 
-test-go: ## Run Go tests with verbose output
+test-go: ## Run Go tests
 	@echo "$(CYAN)Running Go tests...$(RESET)"
 	$(GO_TEST) ./...
 
@@ -110,20 +110,23 @@ coverage-py: ## Run Python SDK unit tests with coverage report (integration-mark
 		--cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term
 	@echo "$(GREEN)✓ Coverage report: coverage-py.xml$(RESET)"
 
+test-go-short: ## Run Go tests in short mode
+	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
+	$(GO_TEST) -short ./...
+
 test-go-bench: ## Run Go benchmarks
 	@echo "$(CYAN)Running Go benchmarks...$(RESET)"
 	$(GO_TEST) -bench=. -benchmem ./...
 
-# Host port fraise binds to for the test suites (override if 9876 is taken).
+# Host port the test suites publish fraise on (override if 9877 is taken).
 # Both suites run pytest locally and reach the container through this port.
 FRAISE_E2E_PORT ?= 9877
 
 COMPOSE        := docker compose -f docker-compose.yaml
 
-# Dump the server's logs when a suite fails. pytest says which assertion broke;
-# only the container says why — a panic, a rejected write, a config it did not
-# like on boot. Printed before the trap tears the container down, since after
-# that the logs are gone.
+# Dump the server's logs when a suite fails: pytest says which assertion broke,
+# the container says why (a panic, a rejected write, a bad config). They print
+# before the trap tears the container down, which discards them.
 FRAISE_LOGS    = echo "$(YELLOW)--- fraise server logs ---$(RESET)"; \
                  $(COMPOSE) logs --no-color --tail=200 fraise
 
@@ -147,12 +150,58 @@ test-integration: build-go ## Run server + MCP bridge integration tests (pytest 
 
 test-py: ## Run Python unit tests with pytest (integration-marked tests excluded)
 	@echo "$(CYAN)Running Python tests...$(RESET)"
-	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m "not integration" || echo "$(YELLOW)⚠ No Python tests configured$(RESET)"
+	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m "not integration"
 
 test-watch: ## Run Go tests in watch mode (requires reflex)
 	@echo "$(CYAN)Running Go tests in watch mode...$(RESET)"
 	@which reflex > /dev/null || (echo "$(YELLOW)Installing reflex...$(RESET)" && $(GO_CMD) install github.com/cespare/reflex@latest)
 	reflex -r '\.go$$' -s -- $(GO_TEST) -v ./...
+
+##@ Benchmarks
+
+# The benchmarks are Go benchmarks beside the code they measure; the gates on
+# them are pytest tests in tests/perf, which run them on the working tree and
+# compare them with a nightly run's outputs in BENCH_BASELINE through
+# benchstat. Each run leaves its own outputs in PERF_OUT under the same names,
+# so a nightly run's PERF_OUT is the next baseline.
+# BENCH_CHANGED_SINCE, a git ref, runs only the gates whose packages changed
+# since it; a pull request passes its base.
+BENCH_BASELINE ?=
+BENCH_CHANGED_SINCE ?=
+PERF_OUT       ?= $(BIN_DIR)/perf
+GATES          := $(UV_CMD) run --package tests pytest --import-mode=importlib
+GATE_ARGS       = --bench-out=$(PERF_OUT) $(if $(BENCH_BASELINE),--bench-baseline=$(BENCH_BASELINE)) \
+                  $(if $(BENCH_CHANGED_SINCE),--bench-changed-since=$(BENCH_CHANGED_SINCE))
+
+bench: ## Run the pull request gates, against the nightly run in BENCH_BASELINE if one is given
+	$(GATES) tests/perf -m "bench and not nightly" $(GATE_ARGS)
+
+bench-nightly: ## Run every gate, HTTP latency included, against BENCH_BASELINE if one is given
+	$(GATES) tests/perf -m bench $(GATE_ARGS)
+
+# The history takes one sample per benchmark, a trend rather than a
+# comparison, and retrieval quality as {name, unit, value} JSON so it is
+# charted as bigger-is-better: github-action-benchmark's own go parser takes
+# every unit as smaller-is-better. A retrieval value is one whose unit is a
+# metric of the benchmark, with an @ in its name. Each series is shaped from
+# the outputs the night has: a gate that failed wrote none, and leaves its
+# series out rather than costing the others theirs.
+HISTORY_LATENCY   = $(wildcard $(PERF_OUT)/internal-*.txt $(PERF_OUT)/pkg-server-BenchmarkHTTP.txt)
+HISTORY_RETRIEVAL = $(wildcard $(PERF_OUT)/pkg-server-BenchmarkRetrievalQuality.txt)
+
+bench-history: ## Shape the run in PERF_OUT for the history github-action-benchmark keeps
+	@if [ -n "$(HISTORY_LATENCY)" ]; then \
+	  awk '!/^Benchmark/ || !seen[$$1]++' $(HISTORY_LATENCY) > $(PERF_OUT)/history-latency.txt; \
+	else echo "No latency output to record"; fi
+	@if [ -n "$(HISTORY_RETRIEVAL)" ]; then \
+	  awk '/^Benchmark/ { name = $$1; sub(/-[0-9]+$$/, "", name); \
+	      for (i = 3; i < NF; i += 2) if ($$(i + 1) ~ /@/) \
+	        printf "%s{\"name\":\"%s - %s\",\"unit\":\"%s\",\"value\":%s}", (n++ ? "," : "["), name, $$(i + 1), $$(i + 1), $$i } \
+	    END { print (n ? "]" : "[]") }' $(HISTORY_RETRIEVAL) > $(PERF_OUT)/history-retrieval.json; \
+	else echo "No retrieval output to record"; fi
+
+perf-vectors: ## Embed the LoCoMo sample once, for the runs that seed with vectors
+	$(UV_CMD) run --package tests --extra embeddings python tools/embed_locomo.py tests/perf/data/locomo-conv-26.json $(PERF_OUT)/locomo-vectors.json
 
 ##@ Development
 
@@ -208,7 +257,7 @@ lint-docker: ## Lint Dockerfiles via hadolint (pre-commit)
 	@echo "$(CYAN)Linting Dockerfiles...$(RESET)"
 	@$(PRECOMMIT) hadolint-docker
 
-check: fmt lint test ## Format, lint, and test Go code
+check: fmt lint test ## Format and lint all code, then run the Go tests
 	@echo "$(GREEN)✓ All checks passed$(RESET)"
 
 check-all: fmt lint test-all ## Format, lint, and test everything
@@ -222,7 +271,7 @@ clean-go: ## Clean Go build artifacts
 	@echo "$(CYAN)Cleaning Go artifacts...$(RESET)"
 	$(GO_CLEAN)
 	rm -rf $(BIN_DIR)/
-	rm -f coverage.out coverage.html
+	rm -f coverage.txt
 	@echo "$(GREEN)✓ Go artifacts cleaned$(RESET)"
 
 clean-py: ## Clean Python build artifacts

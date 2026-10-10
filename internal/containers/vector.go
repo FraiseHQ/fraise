@@ -37,14 +37,20 @@ type Vector[K comparable, P float32 | float64] struct {
 	Data []P
 }
 
+// NewVector returns a Vector over data.
 func NewVector[K comparable, P float32 | float64](data []P) Vector[K, P] {
 	return Vector[K, P]{Data: data}
 }
 
+// Dim returns the number of coordinates, the dimensionality the vector index
+// checks every insert and search against.
 func (v Vector[K, P]) Dim() int {
 	return len(v.Data)
 }
 
+// Empty reports whether the vector has no coordinates, nil and zero-length
+// Data alike. A query given no vector carries the zero Vector, so Empty is how
+// recall and remember tell that no vector search was asked for.
 func (v Vector[K, P]) Empty() bool {
 	if v.Data == nil {
 		return true
@@ -79,9 +85,10 @@ func (v Vector[K, P]) Distance(other Vector[K, P]) P {
 }
 
 // Hash keys the vector through h and renders the key for folding into an
-// enclosing query's hash material. The coordinates hash in a stable, lossless
-// form: exact hex floats so distinct vectors never render alike, delimited so
-// [1, 23] and [12, 3] do not collide.
+// enclosing query's hash material. The material is each coordinate as an
+// exact hex float, NUL-delimited, so distinct vectors never share it. If two
+// did, a recall bound to one would reuse the plan cached for the other and
+// search with the wrong vector.
 func (v Vector[K, P]) Hash(h hash.Hasher[K, string]) string {
 	var b strings.Builder
 	for i, x := range v.Data {

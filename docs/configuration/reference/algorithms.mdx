@@ -34,7 +34,7 @@ Selects the traversal moving seed evidence through the graph:
 
 ## `scoring-algorithm`
 
-Selects the fold deriving relevance from the pooled evidence. `rrf` remains available for comparison runs — its dampening constant is fixed at 60, the literature standard, because a comparison baseline is not tunable — but it carries **no null model**, which is why `excess` is the default. See [Excess transmission](/docs/retrieval/ranking/excess-transmission).
+Selects the fold deriving relevance from the pooled evidence. `rrf` remains available for comparison runs, with its dampening constant fixed at 60, the literature standard, because a comparison baseline is not tunable. It carries **no null model**, which is why `excess` is the default. See [Excess transmission](/docs/retrieval/ranking/excess-transmission).
 
 ## `relevance-model`
 

@@ -6,7 +6,7 @@ fraise is pre-1.0. Only the most recent release receives security fixes; there a
 
 | Version | Supported |
 |---|---|
-| 0.1.x (latest release) | yes |
+| 0.2.x (latest release) | yes |
 | anything older | no |
 
 ## Reporting a vulnerability
@@ -45,4 +45,4 @@ What *is* in scope, at any release: remote crashes or panics reachable from a we
 
 ## Supply chain
 
-Releases are built by GitHub Actions from a tag on `main`, published with SLSA provenance attestation, and the container images are built by native multi-arch runners. If you find a way to influence a published binary or image without write access to the repository, that is a vulnerability and I want to hear about it.
+Releases are built by GitHub Actions from a tag on `main` and published with SLSA provenance attestation; the amd64 and arm64 container images are built and attested by GitHub Actions too. If you find a way to influence a published binary or image without write access to the repository, that is a vulnerability and I want to hear about it.

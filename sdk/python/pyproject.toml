@@ -1,6 +1,6 @@
 [project]
 name = "fraise-sdk"
-version = "0.1.0-rc.2"
+version = "0.1.1"
 description = "Fraise SDK"
 readme = "README.md"
 authors = [
@@ -13,13 +13,13 @@ dependencies = [
 
 [project.optional-dependencies]
 openai = [
-    "openai-agents>=0.19.4",
+    "openai-agents>=0.23.1",
 ]
 anthropic = [
-    "claude-agent-sdk>=0.2.148",
+    "claude-agent-sdk>=0.2.163",
 ]
 huggingface = [
-    "huggingface-hub>=1.27.0",
+    "huggingface-hub>=2.1.1",
 ]
 dev = [
     "pytest>=9.1.1",

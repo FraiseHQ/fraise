@@ -22,12 +22,13 @@
 
 """Providers — backends that embed text into vectors or find its anchors.
 
-The contracts live in :mod:`fraise_sdk.providers.base`; concrete providers live
-in their own modules and depend on their own optional extras — currently
-:class:`OpenAIEmbedder` and :class:`OpenAIExtractor` (``fraise-sdk[openai]``),
-and :class:`HuggingFaceEmbedder` (``fraise-sdk[huggingface]``). Importing this
-package pulls in no vendor SDK: each provider imports its client inside
-``__init__``, not at module scope.
+The contracts live in :mod:`fraise_sdk.providers.base` and are re-exported here.
+Concrete providers live in their own modules, each depending on its own optional
+extra, and are imported from those modules rather than from this package:
+:mod:`fraise_sdk.providers.openai` (``OpenAIEmbedder``, ``OpenAIExtractor``;
+``fraise-sdk[openai]``) and :mod:`fraise_sdk.providers.huggingface`
+(``HuggingFaceEmbedder``; ``fraise-sdk[huggingface]``). Keeping them out of
+this package is what keeps ``import fraise_sdk`` free of vendor SDKs.
 """
 
 from fraise_sdk.providers.base import (
@@ -39,8 +40,6 @@ from fraise_sdk.providers.base import (
     resolve_embedder,
     resolve_extractor,
 )
-from fraise_sdk.providers.huggingface import HuggingFaceEmbedder
-from fraise_sdk.providers.openai import OpenAIEmbedder, OpenAIExtractor
 
 __all__ = [
     "Anchor",
@@ -48,9 +47,6 @@ __all__ = [
     "EmbedderLike",
     "Extractor",
     "ExtractorLike",
-    "HuggingFaceEmbedder",
-    "OpenAIEmbedder",
-    "OpenAIExtractor",
     "resolve_embedder",
     "resolve_extractor",
 ]

@@ -46,8 +46,8 @@ import (
 
 // InMemoryGraph is the in-process implementation of Graph. Nodes live in a
 // key-addressed map, relationships in a pair of mirrored adjacency maps, and
-// two secondary indices serve hybrid search: a BTree full-text index over the
-// nodes' values and an RPTree (random projection forest) vector index over
+// two secondary indices serve hybrid search: a BTree full-text index over fact
+// text and an RPTree (random projection forest) vector index over
 // caller-provided embeddings.
 type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	idToNodes     map[K]Node[K] // all nodes
@@ -57,13 +57,11 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	textIndex   *index.BTreeIndex[K, P]
 	vectorIndex *index.RPTreeIndex[K, P]
 
-	// traversal, ranking and scorer are the pluggable search algorithms (see
-	// Traversal, Ranking and Scorer). traversal nil hears no structure — the
-	// graph channel is off and search is text/vector only (db.Start installs
-	// the ExcessTraversal per config.SearchAlgorithm); ranking nil applies no
-	// structural boost. scorer folds each candidate's contributions into its
-	// relevance score and is never nil — the graph starts with the
-	// ExcessScorer, because unscored candidates cannot rank at all.
+	// traversal, ranking and scorer are the pluggable search algorithms,
+	// installed by db.Start from configuration. A nil traversal turns the
+	// graph channel off (text and vector search only) and a nil ranking
+	// applies no boost. scorer is never nil: NewGraph installs the
+	// ExcessScorer, since candidates cannot be ranked without one.
 	traversal Traversal[K, P]
 	ranking   Ranking[K, P]
 	scorer    scoring.Scorer[K, P]
@@ -75,21 +73,21 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	mu sync.RWMutex
 }
 
-// SetTraversal installs the traversal algorithm Search expands seeds with
-// (typically an algorithms.Traversal such as BFS).
+// SetTraversal installs the traversal Search expands seeds with, such as
+// ExcessTraversal or BFS.
 func (g *InMemoryGraph[K, P]) SetTraversal(t Traversal[K, P]) {
 	g.traversal = t
 }
 
-// SetRanking installs the global ranking algorithm Search boosts scores with
-// (typically an algorithms.Ranking such as PageRank).
+// SetRanking installs the global ranking Search boosts scores with, such as
+// PageRank.
 func (g *InMemoryGraph[K, P]) SetRanking(r Ranking[K, P]) {
 	g.ranking = r
 }
 
 // SetScorer installs the scorer Search folds candidate contributions with.
-// nil is ignored rather than stored: unlike its peers, whose nil means "use
-// the fallback behaviour", a graph without a scorer cannot rank at all.
+// nil is ignored: a nil traversal or ranking switches a stage off, but a
+// graph without a scorer cannot rank at all.
 func (g *InMemoryGraph[K, P]) SetScorer(s scoring.Scorer[K, P]) {
 	if s == nil {
 		return
@@ -97,13 +95,16 @@ func (g *InMemoryGraph[K, P]) SetScorer(s scoring.Scorer[K, P]) {
 	g.scorer = s
 }
 
+// NewGraph returns an empty graph with its indexes, relevance model and
+// hasher configured from cfg and the [scoring.ExcessScorer] installed.
+// [InMemoryGraph.SetTraversal] and [InMemoryGraph.SetRanking] install the
+// traversal and ranking.
 func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGraph[K, P] {
-	// The tokenizer and relevance model are installed at the index's
-	// construction site, before any insert, per their mid-corpus contracts.
-	// Stemming makes morphological variants find each other — recall
-	// keywords rarely arrive in the fact's exact inflection — and the excess
-	// methodology needs BM25's raw retrieval mass; "matchcount", the index's
-	// own default, remains selectable for comparison runs.
+	// The tokenizer and relevance model must be installed before the first
+	// insert. Stemming lets a keyword find other inflections of the same
+	// word. BM25 is configured by default because the excess scorer needs its
+	// raw retrieval mass; "matchcount", the index's own default, stays
+	// selectable for comparison runs.
 	textIndex := index.NewBTreeIndex[K, P](comparator.OrderedComparator[K])
 	textIndex.SetTokenizer(nlp.StemmingTokenizer{})
 	if cfg.DB.RelevanceModel.Name == config.RelevanceBM25 {
@@ -132,48 +133,48 @@ func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGr
 	return g
 }
 
-// write lock
+// Lock acquires the graph's write lock.
 func (g *InMemoryGraph[K, P]) Lock() {
 	g.mu.Lock()
 }
 
-// read lock
+// RLock acquires the graph's read lock.
 func (g *InMemoryGraph[K, P]) RLock() {
 	g.mu.RLock()
 }
 
-// write unlock
+// Unlock releases the graph's write lock.
 func (g *InMemoryGraph[K, P]) Unlock() {
 	g.mu.Unlock()
 }
 
-// read unlock
+// RUnlock releases the graph's read lock.
 func (g *InMemoryGraph[K, P]) RUnlock() {
 	g.mu.RUnlock()
 }
 
-// Get hasher
+// GetHasher returns the hasher the graph derives node keys with.
 func (g *InMemoryGraph[K, P]) GetHasher() hash.Hasher[K, string] {
 	return g.hasher
 }
 
 // Get returns the node stored under key, or nil if absent.
 func (g *InMemoryGraph[K, P]) Get(key K) Node[K] {
-	node, ok := g.idToNodes[key]
+	node, ok := g.Nodes()[key]
 	if !ok {
 		return nil
 	}
 	return node
 }
 
-// Set inserts a new node under its own ID, returning ErrNodeAlreadyExists if
+// Set inserts a new node under its own key, returning ErrNodeAlreadyExists if
 // the key is taken.
 func (g *InMemoryGraph[K, P]) Set(node Node[K]) error {
 	if node == nil {
 		return ErrNilNode
 	}
 	n := node
-	if _, exists := g.idToNodes[n.Key()]; exists {
+	if _, exists := g.Nodes()[n.Key()]; exists {
 		return ErrNodeAlreadyExists
 	}
 	return g.store(n.Key(), n)
@@ -187,29 +188,24 @@ func (g *InMemoryGraph[K, P]) Put(key K, node Node[K]) error {
 	return g.store(key, node)
 }
 
-// textLanguage is the language whose stop words are cleaned from text on both
-// sides of the text index: a fact's value in store, the query keywords in
-// gatherSeeds. The two must agree — a stop word cleaned from one side but not
-// the other is a term only that side carries, and its stem can collide with a
-// content word's ("own" with "owns") — so both read this one tag
-// NOTE: fraise doesn't have multi-lingual support just yet
-// this would need to be paramaterized at term.
+// textLanguage is the language whose stop words are removed from text on both
+// sides of the text index: a fact's value in store and the query keywords in
+// gatherSeeds. Both sides must use the same language, or a stop word kept on
+// one side leaves a stem that collides with a content word's ("own" with
+// "owns"). English is the only language supported for now.
 var textLanguage = language.English
 
-// store records the node and (re)indexes its value in the text index. Only
-// facts are indexed. Relationship nodes carry no text at all, and indexing
-// them as empty documents inflated the corpus count ~3× and crushed avgdl —
-// silently distorting every idf and length norm the text scores are built
-// from. Anchors (Topic, NamedEntity) do carry text, and every one of those
-// consequences applies to them harder: a one- or two-token name is exactly
-// the document BM25's length norm rewards most, so an anchor whose name is
-// the query term outranks every real fact and takes the top of the seed list.
-// It cannot pay for the slot. An anchor seed transmits nothing — its
-// neighbours are facts, so ExcessTraversal finds no anchors from it and
-// observes no mass — and timeFilter drops it before it can be a hit. The
-// guard is load-bearing for retrieval quality, not an optimization: anchors
-// earn their place in retrieval by mediating transmission between facts, not
-// by being retrievable themselves.
+// store records the node and indexes a fact's value in the text index. Only
+// facts are indexed. Relationships carry no text, and as empty documents they
+// would skew the corpus statistics (document count, average length) every
+// BM25 score is built from. Anchors (Topic, NamedEntity) are left out because
+// a one- or two-word name is the document BM25's length norm favours most: an
+// anchor named like the query term would take the top seed slots while
+// transmitting nothing (its neighbours are facts, not anchors) and never being
+// returned as a hit.
+//
+// A fact the text index already holds under key, re-asserted through Put, is
+// replaced through Update; a new one is added through Insert.
 func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	g.idToNodes[key] = node
 
@@ -235,7 +231,12 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	_, isFact := node.(Fact[K])
 	if attrs := node.GetAttributes(); isFact && attrs != nil && attrs.Value != "" {
 
-		if err := g.textIndex.Insert(key, stopwords.CleanContent(attrs.Value, textLanguage)); err != nil {
+		text := g.GetTextIndex()
+		write := text.Insert
+		if _, err := text.Retrieve(key); err == nil {
+			write = text.Update
+		}
+		if err := write(key, stopwords.CleanContent(attrs.Value, textLanguage)); err != nil {
 			logger.Warn("Failed to index node text", "error", err)
 			return err
 		}
@@ -243,81 +244,90 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	return nil
 }
 
-// dropRelationship removes an edge's own node, the counterpart of the store
-// call that recorded it. A relationship is never a vertex in the adjacency maps
-// and never carries a vector, so idToNodes and the text index are the only
-// places it occupies.
+// dropRelationship removes a relationship's own node. The caller removes its
+// adjacency entries; a relationship is not a vertex and has no vector.
 func (g *InMemoryGraph[K, P]) dropRelationship(key K) {
 	delete(g.idToNodes, key)
-	_ = g.textIndex.Delete(key)
 }
 
-// Delete removes the node, its incident relationships and its index entries.
-// Whichever end of an edge is deleted, the edge leaves as a whole — its node and
-// both adjacency entries — because the two halves are one fact about the graph:
-// a Mentions left in idToNodes describes an edge that no longer exists (Nodes
-// and Stats keep reporting it, and it keeps its text-index entry), while an
-// adjacency entry left behind names a relationship node that is no longer
-// stored, so Size counts an edge AdjacencyMap cannot resolve.
+// unlink removes the edge source -> target from both adjacency views and drops
+// any row it leaves empty. A row's presence is what makes a node a vertex to
+// anything that enumerates the views (PageRank collects its vertices from
+// them), so a node whose last edge goes must leave both views with it, or it
+// is ranked as a dangling vertex instead of left out as isolated.
+func (g *InMemoryGraph[K, P]) unlink(source, target K) {
+	delete(g.nodeToTargets[source], target)
+	if len(g.nodeToTargets[source]) == 0 {
+		delete(g.nodeToTargets, source)
+	}
+	delete(g.nodeToSources[target], source)
+	if len(g.nodeToSources[target]) == 0 {
+		delete(g.nodeToSources, target)
+	}
+}
+
+// Delete removes the node, its index entries and its incident relationships.
+// Deleting either endpoint of an edge, or the relationship itself, removes the
+// edge as a whole (its node and both adjacency entries), so Nodes, Size and
+// AdjacencyMap never disagree about which edges exist. A node left with no
+// edges has no row in either view, so it is isolated rather than dangling.
 func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	if node == nil {
 		return ErrNilNode
 	}
 	key := node.Key()
-	stored, ok := g.idToNodes[key]
+	stored, ok := g.Nodes()[key]
 	if !ok {
 		return ErrNodeNotFound
 	}
 
-	// Deleting an endpoint: the adjacency maps hold each edge's own key as their
-	// value, so the relationship nodes to prune are exactly what the walk over
-	// this node's rows yields.
+	// Deleting an endpoint: its adjacency rows hold each incident edge's key,
+	// so walking them finds the relationship nodes to drop.
 	for target, edge := range g.nodeToTargets[key] {
-		delete(g.nodeToSources[target], key)
+		g.unlink(key, target)
 		g.dropRelationship(edge)
 	}
 	for source, edge := range g.nodeToSources[key] {
-		delete(g.nodeToTargets[source], key)
+		g.unlink(source, key)
 		g.dropRelationship(edge)
 	}
-	delete(g.nodeToTargets, key)
-	delete(g.nodeToSources, key)
 	delete(g.idToNodes, key)
 
-	// Deleting the edge itself: a relationship is not a vertex, so it owns no
-	// rows of its own — the pair of entries store wrote into its endpoints' rows
-	// is its whole presence in the graph. The stored node decides this, not the
-	// caller's copy, since the key is what the graph was asked to remove.
+	// Deleting a relationship: it has no rows of its own, only the two entries
+	// store wrote into its endpoints' rows. The stored node is inspected rather
+	// than the argument, since the key is what identifies the node to remove.
 	if r, isEdge := stored.(Relationship[K]); isEdge {
 		source := (*r.Source()).Key()
 		target := (*r.Target()).Key()
-		delete(g.nodeToTargets[source], target)
-		delete(g.nodeToSources[target], source)
+		g.unlink(source, target)
 	}
 
 	// The node may legitimately be absent from either index.
-	_ = g.textIndex.Delete(key)
+	_ = g.GetTextIndex().Delete(key)
 	_ = g.vectorIndex.Delete(key)
 	return nil
 }
 
+// Nodes returns the live node map. Every read of the graph's nodes goes
+// through it; only store, Delete and dropRelationship write the map itself.
 func (g *InMemoryGraph[K, P]) Nodes() map[K]Node[K] {
 	return g.idToNodes
 }
 
+// AdjacencyMap implements [Graph]: it returns a deep copy of the outgoing
+// edges, so a caller holding it cannot corrupt the graph's own rows.
 func (g *InMemoryGraph[K, P]) AdjacencyMap() map[K]map[K]K {
 	return exportEdges(g.nodeToTargets)
 }
 
+// PredecessorMap implements [Graph]: it returns a deep copy of the incoming
+// edges, so a caller holding it cannot corrupt the graph's own rows.
 func (g *InMemoryGraph[K, P]) PredecessorMap() map[K]map[K]K {
 	return exportEdges(g.nodeToSources)
 }
 
-// Neighbours returns the keys adjacent to key in either direction without
-// copying the whole edge set: it allocates one slice sized to that node's
-// own degree. This is the read a source-rooted traversal needs — the
-// per-seed ExcessTraversal uses it instead of AdjacencyMap/PredecessorMap,
-// which each deep-copy every edge in the graph on every call.
+// Neighbours returns the keys adjacent to key in either direction, allocating
+// a single slice of the node's degree.
 func (g *InMemoryGraph[K, P]) Neighbours(key K) []K {
 	out := make([]K, 0, len(g.nodeToTargets[key])+len(g.nodeToSources[key]))
 	for neighbour := range g.nodeToTargets[key] {
@@ -329,8 +339,8 @@ func (g *InMemoryGraph[K, P]) Neighbours(key K) []K {
 	return out
 }
 
-// exportEdges converts the internal edge maps to the pointer-valued shape the
-// Graph interface exposes.
+// exportEdges returns a deep copy of an edge map, so a caller cannot mutate
+// the graph's own rows.
 func exportEdges[K comparable](edges map[K]map[K]K) map[K]map[K]K {
 	out := make(map[K]map[K]K, len(edges))
 	for from, tos := range edges {
@@ -344,12 +354,11 @@ func exportEdges[K comparable](edges map[K]map[K]K) map[K]map[K]K {
 }
 
 // Order returns the number of vertices in the graph: facts, entities and
-// topics. Relationships are stored as nodes too, and satisfy Entity, so they
-// are excluded by kind — counting them made order equal nodes, and the stats
-// endpoint reported every edge a second time as a vertex.
+// topics. Relationships are stored as nodes and satisfy Entity, so they are
+// excluded explicitly; they are edges, which Size counts.
 func (g *InMemoryGraph[K, P]) Order() int {
 	order := 0
-	for _, node := range g.idToNodes {
+	for _, node := range g.Nodes() {
 		if _, isEdge := node.(Relationship[K]); isEdge {
 			continue
 		}
@@ -369,11 +378,14 @@ func (g *InMemoryGraph[K, P]) Size() int {
 	return size
 }
 
+// Stats implements [Graph]: it snapshots the vertex, edge, node and vector
+// counts, plus the forest entries whose excess over Vectors is the vector
+// index's pending compaction.
 func (g *InMemoryGraph[K, P]) Stats() GraphStats {
 	return GraphStats{
 		Order:   g.Order(),
 		Size:    g.Size(),
-		Nodes:   len(g.idToNodes),
+		Nodes:   len(g.Nodes()),
 		Vectors: g.GetVectorIndex().Count(),
 		// Entries - Count is the vector index's compaction debt; the index's
 		// automatic Flush keeps it bounded (see rptree flush-factor).
@@ -381,22 +393,25 @@ func (g *InMemoryGraph[K, P]) Stats() GraphStats {
 	}
 }
 
-// Returns the graph vector index
+// GetVectorIndex returns the graph's vector index.
 func (g *InMemoryGraph[K, P]) GetVectorIndex() index.VectorIndex[K, P] {
 	return g.vectorIndex
 }
 
-// Returns the graph full text search index
+// GetTextIndex returns the graph's full-text index.
 func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 	return g.textIndex
 }
 
+// Search implements [Graph.Search]. It collects candidates, folds each with the
+// installed scorer and boosts by the installed ranking, applies the time window
+// and recency decay, keeps the top hits (score descending, then key ascending,
+// so identical queries return identical hits) and finally drops hits below the
+// db.min-score-ratio cutoff.
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error) {
-	// A. Collection: the retrieval stages pool everything they observe about
-	// every candidate — text seeds, vector seeds, anchor transmission, or
-	// with anchors alone the anchors' own members — as Contribution records,
-	// plus the one query-global observation (the background rate). No stage
-	// computes policy.
+	// A. Collection: every observation of every candidate (text and vector
+	// seeds, anchor transmission, or the named anchors' members when they
+	// seed alone) as Contributions, and the query's background rate.
 	candidates, background, err := g.collect(keywords, vector, topics, entities, depth, top)
 	if err != nil {
 		return nil, nil, nil, 0, err
@@ -414,20 +429,14 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	}
 	g.boost(scores)
 
-	// C. Time filtered (since or until)
-
+	// C. Time window and recency decay.
 	kept, ranked := g.timeFilter(keys, scores, since, until)
 
-	// D. Rank the candidates and truncate to top
-	//
-	// The candidates arrive in the order the candidate map was iterated in, so
-	// the ranking has to be a total order for identical queries to return
-	// identical hits: score descending, then fact key. Facts of equal score are
-	// ordered by key rather than left as the map presented them, because
-	// truncation would otherwise keep an arbitrary subset of a tied group.
-	// TopK keeps only the top best under that order without sorting every
-	// candidate, so a query that returns few results out of many candidates
-	// pays O(n log top) instead of O(n log n).
+	// D. Rank and truncate to top. Map iteration order is random, so the
+	// order must be total for identical queries to return identical hits:
+	// score descending, then key ascending. Without the key tie-break,
+	// truncation would keep an arbitrary subset of a tied group. TopK costs
+	// O(n log top) rather than the O(n log n) of a full sort.
 
 	ranker := containers.NewTopK[K, P](top, comparator.OrderedComparator[K])
 	for _, key := range kept {
@@ -442,7 +451,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	scoresOut := make([]P, len(rankedKeys))
 	contributions := make([][]scoring.Contribution[K, P], len(rankedKeys))
 	for i, key := range rankedKeys {
-		node := g.idToNodes[key]
+		node := g.Nodes()[key]
 		nodes[i] = &node
 		scoresOut[i] = rankedScores[i]
 		contributions[i] = candidates[key]
@@ -453,17 +462,14 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	return nodes, scoresOut, contributions, background, nil
 }
 
-// scoreCutoff applies db.min-score-ratio (see DBConfig) to a best-first
-// ranking. A hit's relevance is its scorer output, before the boost and decay
-// its score carries, refolded here from its contributions for the ranked hits
-// alone: the scorer is pure, so this is the value stage B computed, at O(top)
-// rather than a copy of every candidate's. The bar is MinScoreRatio × the
-// best relevance in the list, and a hit is kept if its relevance clears it —
-// each judged on its own, since relevance does not descend along a
-// decay-ordered list and the first miss is not the end of the hits that
-// clear it. With the ratio at most 1 the best hit clears its own bar, so the
-// list is never emptied. Kept hits keep their order and their scores; a ratio
-// of zero returns the ranking unchanged.
+// scoreCutoff applies db.min-score-ratio to a best-first ranking: it keeps
+// each hit whose relevance (the scorer's output, before boost and decay) is at
+// least MinScoreRatio times the best relevance in the list. Relevance is
+// refolded from the contributions of the ranked hits only; the scorer is pure,
+// so this reproduces stage B's values in O(top). Every hit is tested, not a
+// prefix, because a decay-ordered list is not sorted by relevance. Kept hits
+// keep their order and scores, the best hit always survives (the ratio is at
+// most 1), and a zero ratio is a no-op.
 func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.Scorer[K, P], candidates scoring.Candidates[K, P]) ([]K, []P) {
 	ratio := g.config.DB.MinScoreRatio
 	if ratio <= 0 || len(keys) == 0 {
@@ -484,29 +490,20 @@ func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.S
 	return keys[:keep], scores[:keep]
 }
 
-// collect runs the retrieval stages and pools their sightings into one
-// candidate map: text and vector seeding, then the installed traversal from
-// every seed, then the topic/entity filters. Stages record Contributions and
-// compute no policy — the hinge, the null model and the attenuation live
-// entirely in the Scorer — and the second return is the background rate, the
-// query-global observation that fold needs. The error is the vector seed's
-// dimension mismatch, the one question collection cannot answer as asked.
+// collect runs the retrieval stages and pools their observations into one
+// candidate map: text and vector seeding, then the traversal from every seed,
+// then the topic and entity filters. It also returns the background rate the
+// scorer needs. Stages only record Contributions; the hinge, the null model
+// and the attenuation belong to the Scorer. The error is a vector dimension
+// mismatch.
 //
-// A call with nothing to match — no keywords and no vector — takes the one
-// other seeding there is: the named anchors' own members. The anchors are
-// seeds there rather than filters on top (the pool is their union by
-// construction, a fact filed under several of them holding one sighting per
-// anchor), no traversal runs — depth is inert, since every member is already
-// in hand and expanding from all of them would return most of the graph —
-// and no anchor is observed, so the background is zero: the scorer folds
-// each member's own seed mass, and the recency decay ranks the results from
-// there.
+// With no keywords and no vector, the named anchors' members are the seeds
+// instead (see Graph.Search). No traversal runs, since expanding from every
+// member would return most of the graph, and the background is zero.
 //
-// The named topics and entities are resolved to their anchor keys here, once
-// per query, and every stage works on the keys: the door (gatherMembers) and
-// the filter (findNeighbours) then agree by construction on which node a
-// name denotes, and the filter tests adjacency by lookup instead of comparing
-// values around every candidate.
+// Topic and entity names are resolved to anchor keys once per query, so
+// gatherMembers and findNeighbours agree on which node a name denotes and the
+// filter is a key lookup.
 func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P, error) {
 	topicKeys, entityKeys := g.anchorKeys(topics, entities)
 	candidates := make(scoring.Candidates[K, P])
@@ -522,11 +519,10 @@ func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vecto
 	return candidates, background, nil
 }
 
-// anchorKeys resolves each named value to the key the store files it under —
-// the Topic or NamedEntity hash of the value — in query order. A topic and an
-// entity of one name are two anchors, and a name nothing is filed under
-// resolves to a key no node holds, so it seeds nothing and filters
-// everything out, the same as a value no node carries.
+// anchorKeys resolves topic and entity names to the keys of their anchor
+// nodes, in query order. A topic and an entity with the same name are
+// different anchors. A name nothing is filed under resolves to a key no node
+// holds, so it seeds nothing and, as a filter, excludes everything.
 func (g *InMemoryGraph[K, P]) anchorKeys(topics []string, entities []string) (topicKeys []K, entityKeys []K) {
 	topicKeys = make([]K, 0, len(topics))
 	for _, value := range topics {
@@ -539,16 +535,12 @@ func (g *InMemoryGraph[K, P]) anchorKeys(topics []string, entities []string) (to
 	return topicKeys, entityKeys
 }
 
-// gatherMembers seeds the candidate pool from the named anchors' adjacency
-// rows: every fact filed under a named topic or entity, carrying one
-// SrcAnchor contribution of unit mass per named anchor it is filed under, so
-// a fact under two of them holds twice the seed mass of a fact under one —
-// it answers more of the question. An anchor nothing is filed under has an
-// empty row, so an unknown anchor seeds nothing. Anchors are visited in
-// query order — topics, then entities — and a repeated one once, so a
-// candidate's list is appended in a fixed order for the scorer's fold. Only
-// facts seed: an anchor's row holds facts by construction, and only facts
-// are memories.
+// gatherMembers seeds the candidate pool with every fact filed under a named
+// anchor. Each fact gets one SrcAnchor contribution of unit mass per named
+// anchor it is filed under, so a fact under two of them starts with twice the
+// mass of a fact under one. Anchors are visited once each in query order
+// (topics, then entities), so contributions are appended in a fixed order for
+// the scorer's fold.
 func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candidates scoring.Candidates[K, P]) {
 	anchors := make([]K, 0, len(topicKeys)+len(entityKeys))
 	named := make(map[K]struct{}, len(topicKeys)+len(entityKeys))
@@ -564,7 +556,7 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 	for _, anchor := range anchors {
 		degree := scoring.ClampDegree(len(g.nodeToTargets[anchor]) + len(g.nodeToSources[anchor]))
 		for _, member := range g.Neighbours(anchor) {
-			if _, isFact := g.idToNodes[member].(Fact[K]); !isFact {
+			if _, isFact := g.Nodes()[member].(Fact[K]); !isFact {
 				continue
 			}
 			candidates[member] = append(candidates[member], scoring.Contribution[K, P]{
@@ -581,25 +573,18 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 }
 
 // gatherSeeds seeds the candidate pool from the text index (keywords) and the
-// vector index (query embedding), appending one Contribution per sighting; a
-// key surfaced by both sources holds one from each. The keywords are cleaned
-// of stop words with the same CleanContent and textLanguage store applies to
-// a fact's text, so the two sides of the index share one vocabulary: a stop
-// word in the query is not a search term, and neither is the stem it would
-// otherwise reduce to — "own" stems to the term "owns" does, and left in it
-// would surface every fact about owning. Text contributions carry the BM25 ×
-// coverage mass; vector contributions carry the similarity 1/(1+distance),
-// converted here so Contribution.Score is bigger-is-better for every source —
-// the index reports distance, where smaller is nearer.
-// The candidate budget is max(seed-size, top): the text list must track the
-// requested result size, because a budget capped below top silently flatlines
-// every ranking past seed-size ("fair seeding").
-// The seed keys return in ascending key order: scorers fold contribution
-// lists as floats, so the traversal must observe in a deterministic order or
-// the low bits of a shared anchor's mass drift between identical queries.
-// An empty index seeds nothing; a vector of the wrong dimension is the error
-// returned, since the caller is asking with a different embedding model than
-// the graph was built with.
+// vector index (embedding), appending one Contribution per hit; a key found by
+// both gets one from each. Keywords are cleaned of stop words exactly as store
+// cleans a fact's text, so both sides of the index share one vocabulary. Text
+// contributions carry the BM25 × coverage mass and vector contributions the
+// similarity 1/(1+distance), so Score is bigger-is-better for every source.
+//
+// Each source is asked for max(seed-size, top) candidates, so the text
+// ranking is never cut off before top. The seed keys are returned in
+// ascending order: the traversal folds floats, and a fixed order keeps
+// identical queries scoring identically. An empty index seeds nothing; a
+// vector of the wrong dimension is an error, since it comes from a different
+// embedding model than the graph's.
 func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates scoring.Candidates[K, P], top int) ([]K, error) {
 	seedK := g.config.DB.SeedSize
 	if top > seedK {
@@ -609,7 +594,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.textIndex.Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK); err == nil {
+		if keys, scores, err := g.GetTextIndex().Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
@@ -644,68 +629,56 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	return seeds, nil
 }
 
-// depthOneAdmission is the depth-1 precision lane's multiplier on an anchor's
-// fair share of the background null: at depth 1 an anchor must clear this many
-// times its null-expected mass before it transmits, so only strongly
-// above-chance anchors pass (higher precision, lower recall). depth >= 2
-// admits at the plain fair share (× 1). A methodology constant, not
-// configuration — tune it here.
+// depthOneAdmission multiplies an anchor's fair share at depth 1: the anchor
+// transmits only when its observed mass exceeds this many times its fair
+// share, trading recall for precision. depth 2 admits at the fair share
+// itself. It is a methodology constant, not configuration.
 const depthOneAdmission = 2
 
-// findNeighbours runs the installed traversal from every seed and pools what
-// it observes, in two passes. The door into the graph is the seeds
-// themselves: each traversal opens from the anchors its seed is filed under,
-// so a recall enters the graph through whatever its matches are about
-// whether or not it names a topic or entity. An anchor the query names is a
-// filter on the pooled candidates, applied after the round; it is not what
-// lets the round run, because an agent asking a question rarely knows how
-// the answer was filed, and a lane that only acted through a name it had to
-// guess would never engage. Pass 1 observes: each seed's mass — the
-// scorer's fold of the seed's own contributions, fixed before any traversal
-// so scores cannot depend on traversal order — is accumulated onto every
-// anchor the traversal reaches at depth 1, alongside the anchor's degree and
-// its funding-seed count; the background rate is then the total observed mass
-// over the total degree of every touched anchor, silent ones included (the
-// null model weighs what the traversal saw, not what later speaks). Pass 2
-// expands: only anchors whose mass exceeds their size-proportional share of
-// the background — the admission prune; anything at or below background
-// transmits nothing by Property 5.3, so a fat fair-share hub costs O(1) here,
-// not O(degree) — append one SrcGraph contribution per (member, anchor):
-// the anchor's full observed mass, its identity, degree and seed count. The
-// hinge, the fair-share subtraction and the attenuation stay in the Scorer;
-// this layer records observations. depth selects the lane: 0 skips the
-// traversal and only seed mass scores (the floor); 1 and 2 both run the
-// single anchor-mediated round, depth 1 admitting anchors only above
-// depthOneAdmission * fair share (the precision lane) and depth 2 at plain
-// fair share (max recall). The pooled candidates are then filtered by
-// the named topic and entity anchors regardless of the lane, so a named
-// anchor narrows what the round may return without deciding whether it runs.
+// findNeighbours runs the traversal from every seed, pools what it observes
+// into candidates, applies the topic and entity filters, and returns the
+// background rate.
+//
+// The round opens from the anchors each seed is filed under, whether or not
+// the query names a topic or entity: an agent rarely knows how the answer was
+// filed, and a lane that acted only through a name it had to guess would
+// never engage. A named anchor filters the pooled candidates after the round;
+// it does not decide whether the round runs.
+//
+// Pass 1 observes. Each seed's mass, the scorer's fold of its own
+// contributions, is added to every anchor the traversal reaches at depth 1,
+// along with the anchor's degree and how many seeds funded it. The background
+// rate is the total observed mass over the total degree of every touched
+// anchor, silent ones included.
+//
+// Pass 2 expands. An anchor whose mass exceeds its fair share (degree ×
+// background, raised by depthOneAdmission at depth 1) appends one SrcGraph
+// contribution per member, carrying its full observed mass, identity, degree
+// and seed count. An anchor at or below its fair share transmits nothing (hub
+// silence), so pass 2 skips it without visiting its members. The hinge, the
+// fair-share subtraction and the attenuation are left to the Scorer.
+//
+// depth 0 skips both passes, so only seed mass scores. The filters apply in
+// every lane.
 func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candidates[K, P], topicKeys []K, entityKeys []K, depth int) P {
-	// depth 0 completes no transmission: the candidates are the text/vector
-	// seeds alone, scored by their own mass (the floor), the anchor expansion
-	// skipped entirely — the fast, text-only lane. depth 1 and 2 both run the
-	// one anchor-mediated round (the excess scorer); they differ only in pass
-	// 2's admission bar (see depthOneAdmission). Neither iterates — a second
-	// round re-observes the first round's concentrated mass through sibling
-	// anchors and collapses recall (measured), so depth is capped at 2. The
-	// round is gated on the lane and on having a seed to open from, never on
-	// the filters: the admission prune against the background rate is what
-	// keeps a hub the seeds happen to share from transmitting, so opening
-	// from every seed's anchors costs nothing the method does not already
-	// bound.
+	// The traversal runs at depth 1 or 2 whenever there is a seed to open
+	// from. The filters never gate it: admission against the background rate
+	// is what keeps a hub the seeds happen to share silent. There is a single
+	// round; a second would re-observe the first round's mass through sibling
+	// anchors and collapse recall, which is why depth stops at 2.
 	var background P
 	if depth >= 1 && g.traversal != nil && len(seeds) > 0 {
-		// Every seed's fused mass is fixed before any traversal appends
-		// SrcGraph contributions; seed fusion runs the unbound scorer — no
-		// traversal has observed anything yet, so there is no null to bind.
+		// Fix every seed's mass before any SrcGraph contribution is
+		// appended, so scores cannot depend on traversal order. The scorer
+		// is unbound: nothing has been observed yet, so there is no
+		// background.
 		seedScores := make(map[K]P, len(seeds))
 		for _, seed := range seeds {
 			seedScores[seed] = g.scorer.Score(candidates[seed])
 		}
 
-		// Pass 1 (observe): per-anchor mass, seed count, degree, and — once
-		// per anchor, from whichever traversal touches it first — its member
-		// band, already deduplicated and ascending per the traversal contract.
+		// Pass 1 (observe): each anchor's mass, seed count and degree, and
+		// its members, recorded from the first traversal that touches it.
 		anchorMass := make(map[K]P)
 		anchorSeeds := make(map[K]int)
 		degree := make(map[K]int)
@@ -719,14 +692,14 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 			if err != nil || !ok {
 				continue
 			}
-			// An anchor's member band is identical from every seed that
-			// touches it, so it is recorded exactly once — on first touch —
-			// while its observed mass accumulates across every touching seed.
+			// ExcessTraversal reports an anchor's full membership, the seed
+			// included, so the members are the same from every seed and are
+			// recorded on first touch; the anchor's mass accumulates over
+			// every seed that touches it.
 			newAnchors := make(map[K]struct{})
 			for _, vertex := range r.Order {
-				// Only anchor vertices observe mass: a traversal may surface
-				// other node kinds at depth 1 (BFS follows every edge), and a
-				// fact is a candidate, never an observer.
+				// Only anchors observe mass. BFS follows every edge, so it can
+				// reach other kinds of node at depth 1.
 				if r.Depth[vertex] != 1 || !isAnchor[K, P](g, vertex) {
 					continue
 				}
@@ -743,11 +716,10 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 				if r.Depth[vertex] != 2 {
 					continue
 				}
-				// Full incidence when the traversal carries it (the excess
-				// traversal's Parents); a tree-shaped traversal (BFS) yields
-				// single-parent incidence through the canonical Parent — a
-				// member is then observed through the one anchor that
-				// discovered it, which is the honest reading of a tree.
+				// Use the full incidence when the traversal provides it
+				// (ExcessTraversal's Parents). A tree-shaped traversal such as
+				// BFS has only Parent, so a member is observed through the
+				// one anchor that discovered it.
 				parents := r.Parents[vertex]
 				if len(parents) == 0 {
 					if parent, ok := r.Parent[vertex]; ok {
@@ -773,14 +745,11 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 			background = totalMass / P(totalDegree)
 		}
 
-		// Pass 2 (expand): anchors above their admitted share. depth 1 is the
-		// precision lane — it raises the bar to depthOneAdmission × fair share,
-		// so only strongly-above-chance anchors transmit; depth 2 admits at the
-		// plain fair share. The test is cross-multiplied — M_A·Σd against
-		// d_A·ΣM, rather than M_A against d_A·ρ₀ — because the division rounds:
-		// an anchor holding exactly its share must stay silent, and a query
-		// reaching a single anchor (M_A = ΣM, d_A = Σd) used to clear d·(M/d)
-		// by a rounding error and transmit noise to its members.
+		// Pass 2 (expand): anchors above their admitted share transmit. The
+		// test compares M_A·Σd with d_A·ΣM rather than M_A with d_A·ρ₀,
+		// because the division rounds: an anchor holding exactly its share,
+		// such as the only anchor a query reaches, must stay silent, and a
+		// rounding error could let it clear the bar.
 		admission := P(1)
 		if depth == 1 {
 			admission = depthOneAdmission
@@ -809,10 +778,10 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 	return background
 }
 
-// boost multiplies each pooled score by the installed ranker's mean-normalised
-// global score: an average node is unchanged, central nodes gain, and nodes
-// unknown to the ranker (e.g. isolated ones) keep their pooled score. A nil
-// ranker boosts nothing.
+// boost multiplies each score by 1 + n·s, where s is the node's score from the
+// installed ranking and n the number of nodes it ranked, so n·s is 1 for an
+// average node. Scores only grow: a node the ranking did not score (an
+// isolated one, say) keeps its score, and a nil ranking boosts nothing.
 func (g *InMemoryGraph[K, P]) boost(scores map[K]P) {
 	if g.ranking == nil {
 		return
@@ -830,13 +799,10 @@ func (g *InMemoryGraph[K, P]) boost(scores map[K]P) {
 	}
 }
 
-// matchesFilter reports whether the node passes an anchor filter: trivially
-// if anchors is empty, otherwise if it is one of the anchors or is adjacent to
-// one (facts are tagged with topics/entities by being linked to the Topic/
-// NamedEntity node carrying that value). The anchors are the keys the query's
-// names resolve to under anchorKeys — the same keys the door opens — so a
-// candidate is tested by adjacency lookup, O(1) per anchor, and never by
-// comparing values around it.
+// matchesFilter reports whether key passes an anchor filter: always when
+// anchors is empty, otherwise when key is one of the anchors or adjacent to
+// one. A fact is filed under a topic or entity by an edge to its anchor node,
+// so the test is one adjacency lookup per anchor.
 func (g *InMemoryGraph[K, P]) matchesFilter(key K, anchors []K) bool {
 	if len(anchors) == 0 {
 		return true
@@ -855,27 +821,24 @@ func (g *InMemoryGraph[K, P]) matchesFilter(key K, anchors []K) bool {
 	return false
 }
 
-// timeFilter drops nodes outside [since, until) — either bound is unbounded
-// when zero — and returns the surviving keys with their scores decayed by
-// recency: a fact's score is multiplied by 0.5^(age/half-life), so of two
-// equally relevant facts the more recent one outranks the older ("recent
-// memories outrank older ones"). The half-life comes from Engine.Halflife; a
-// non-positive value disables decay. A timestamp in the future decays as age
-// zero — recency never boosts a score above its relevance.
+// timeFilter keeps the facts inside [since, until), a zero bound being open,
+// and decays each kept score by recency: score × 0.5^(age/half-life), so of
+// two equally relevant facts the more recent ranks first. The half-life is
+// Engine.Halflife; a non-positive value disables decay. A future timestamp
+// counts as age zero, so decay never raises a score.
 func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Time, until time.Time) ([]K, map[K]P) {
 	now := time.Now()
 	halflife := g.config.Engine.Halflife
 
 	kept := make([]K, 0, len(keys))
 	for _, key := range keys {
-		node, ok := g.idToNodes[key]
+		node, ok := g.Nodes()[key]
 		if !ok {
 			delete(scores, key)
 			continue
 		}
-		// Only facts are memories: Topic/NamedEntity nodes exist to seed and
-		// filter searches (they are walked through and matched against), but
-		// they are never returned as hits themselves.
+		// Only facts are hits: anchors seed and filter searches but are
+		// never returned.
 		if _, isFact := node.(Fact[K]); !isFact {
 			delete(scores, key)
 			continue
@@ -900,38 +863,9 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 	return kept, scores
 }
 
-// Copy returns a deep copy of the graph: nodes, relationships and both
-// indices are rebuilt so mutating one graph never affects the other.
-func (g *InMemoryGraph[K, P]) Copy() Graph[K, P] {
-	out := NewGraph[K, P](g.config)
-	for key, node := range g.idToNodes {
-		_ = out.store(key, node)
-	}
-	for key, vector := range g.vectorIndex.Vectors() {
-		_ = out.vectorIndex.Insert(key, vector)
-	}
-	return out
-}
-
-// MergeFrom merges the contents of in into this graph: nodes, relationships
-// and index entries. On key collision the incoming node wins.
-func (g *InMemoryGraph[K, P]) MergeFrom(in Graph[K, P]) {
-	other, ok := in.(*InMemoryGraph[K, P])
-	if !ok {
-		return
-	}
-
-	for key, node := range other.idToNodes {
-		_ = g.store(key, node)
-	}
-	for key, vector := range other.vectorIndex.Vectors() {
-		_ = g.vectorIndex.Insert(key, vector)
-	}
-}
-
-// IsEmpty reports whether the graph holds nothing at all. It is asked under
-// the graph lock, so it must stay O(1): deriving it from Stats walked every
-// node and adjacency row, and made each call linear in the size of the graph.
+// IsEmpty reports whether the graph holds no nodes. Callers ask it under the
+// graph lock, so it is O(1) rather than derived from Stats, which walks every
+// node.
 func (s *InMemoryGraph[K, P]) IsEmpty() bool {
-	return len(s.idToNodes) == 0
+	return len(s.Nodes()) == 0
 }

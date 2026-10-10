@@ -30,8 +30,8 @@ import (
 )
 
 // TestClampsSaturateInsteadOfWrapping pins the overflow guards on the
-// Contribution fields: a position or hop beyond the field's range saturates at
-// the maximum (worst) value. A plain cast would wrap, ranking an overflow
+// Contribution fields: a rank, count or degree beyond the field's range
+// saturates at its maximum. A plain cast would wrap, ranking an overflow
 // position as if it were among the best.
 func TestClampsSaturateInsteadOfWrapping(t *testing.T) {
 	if got := scoring.ClampRank(3); got != 3 {

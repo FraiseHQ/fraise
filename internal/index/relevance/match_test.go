@@ -20,11 +20,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// External pins of the default relevance model. MatchCount is the ranking
-// the index shipped with before relevance became pluggable — one point per
-// query-term occurrence, repeats included — so these pins spell that
-// contract out method by method. The randomized equivalence pin against the
-// pre-plugin ranking lives with the index, which owns the drive loop.
+// External pins of MatchCount, the relevance model a BTreeIndex starts with:
+// one point per query-term occurrence, repeats included, spelled out method
+// by method. The randomized equivalence pin against an independent oracle
+// lives with the index, which owns the drive loop.
 
 package relevance_test
 
@@ -36,9 +35,8 @@ import (
 )
 
 // TestMatchCountTermsKeepsRepeats pins the query-side stream as the
-// identity: a repeated query term stays in the stream, in order, because a
-// repeat always earned its own point in the pre-plugin ranking — the
-// contrast with BM25's distinct-first-occurrence dedup.
+// identity: a repeated query term stays in the stream, in order, and earns
+// its own point, unlike under BM25's distinct-first-occurrence dedup.
 func TestMatchCountTermsKeepsRepeats(t *testing.T) {
 	model := relevance.MatchCount[int, float32]{}
 	tokens := []string{"tide", "moon", "tide", "wave", "moon"}

@@ -1,10 +1,10 @@
 # Build context is the repository root (see docker-compose.yaml) so this image
-# can install the local, unpublished fraise-sdk alongside the example.
+# can install fraise-sdk from this checkout alongside the example.
 #
 # The base is a plain minimal Ubuntu, not a python image: uv supplies both the
 # interpreter and the resolver, so nothing here needs a preinstalled Python or
 # pip. uv itself ships as a static binary, copied from its published image.
-FROM ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+FROM ubuntu@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /uvx /usr/local/bin/
 

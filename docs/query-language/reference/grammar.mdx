@@ -11,24 +11,26 @@ The normative grammar. Everything else in this section is commentary on it.
 (* Fraise Query Language (FQL) — v2                             *)
 (* ============================================================ *)
 
-query           = recall_query | remember_query ;
+query           = recall_query | remember_query | forget_query | update_query ;
 
 (* ------------------------------------------------------------ *)
 (* RECALL                                                       *)
 (* ------------------------------------------------------------ *)
 
-recall_query    = recall_cmd recall_body ;
+prefix          = 'explain' | 'describe' ;
+recall_query    = prefix? recall_cmd recall_body ;
 recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
 
 (* SEMANTIC RULE: a recall needs at least one *seed*, and the      *)
 (* terms come first. A term, an anchor and a vector are all seeds, *)
-(* so 'recall topic:billing' and 'recall vec:$v' are questions —   *)
-(* expand from here and rank what you reach. A modifier is not a   *)
+(* so 'recall topic:billing' and 'recall vec:$v' are complete      *)
+(* questions: a term or vector is matched, and anchors alone seed  *)
+(* the search with each fact filed under them. A modifier is not a *)
 (* seed: it scopes a search, so 'recall top:3' and 'recall         *)
 (* since:7d' start nothing and are errors. After the first field a *)
 (* bare term is an error. The fields themselves interleave in any  *)
-(* order, but only anchors may repeat: a repeated anchor adds a    *)
-(* filter, a repeated modifier is a duplicate-clause error.        *)
+(* order, but only anchors may repeat: a repeated anchor adds to   *)
+(* the list, a repeated modifier is a duplicate-clause error.      *)
 (* A bare reserved word is never a term, in any casing: it is one  *)
 (* ':' away from a clause, so it is an error naming both repairs;  *)
 (* quote it ('top') to search for the word itself. A recall whose  *)
@@ -41,7 +43,7 @@ seeding_field   = anchor | vec_field ;   (* enough on its own to start a search 
 
 term            = bare_word | phrase ;        (* soft ranking seed (SHOULD) *)
 
-anchor          = anchor_field ;              (* every anchor filters; there is no way to say MUST_NOT *)
+anchor          = anchor_field ;              (* a filter beside a term or vector, a seed alone; there is no way to say MUST_NOT *)
 anchor_field    = topic_field | entity_field ;
 topic_field     = 'topic'  ':' anchor_value ;
 entity_field    = 'entity' ':' anchor_value ;
@@ -62,13 +64,39 @@ vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 (* optionally its embedding. Anchors are not required: a fact with *)
 (* none is stored and reachable by text search alone.              *)
 remember_query  = remember_cmd phrase (anchor_field | vec_field)* ;
-remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace before '@' *)
+remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace around '@' *)
+
+(* ------------------------------------------------------------ *)
+(* FORGET                                                       *)
+(* ------------------------------------------------------------ *)
+
+forget_query    = forget_cmd forget_body ;
+forget_cmd      = 'forget' graph_selector? ;
+forget_body     = phrase | forget_field+ ;
+forget_field    = anchor_field | since_field | until_field ;
+
+(* ------------------------------------------------------------ *)
+(* UPDATE                                                       *)
+(* ------------------------------------------------------------ *)
+
+update_query    = update_cmd phrase phrase? update_field* ;   (* at least one of: second phrase, update_field *)
+update_cmd      = 'update' graph_selector? ;
+update_field    = anchor_field | vec_field ;
+
+(* ------------------------------------------------------------ *)
+(* RESERVED WORDS                                               *)
+(* ------------------------------------------------------------ *)
+
+reserved_word   = command | prefix | field_name ;
+command         = 'recall' | 'remember' | 'forget' | 'update' ;
+prefix          = 'explain' | 'describe' ;
+field_name      = 'topic' | 'entity' | 'since' | 'until' | 'top' | 'depth' | 'vec' ;
 
 (* ------------------------------------------------------------ *)
 (* SHARED                                                       *)
 (* ------------------------------------------------------------ *)
 
-graph_selector  = '@' integer ;                (* default 0; lexed WITH the command as one token: (recall|remember)(@[0-9]+)? *)
+graph_selector  = '@' integer ;                (* default 0; glued to the command, no space around '@': (recall|remember)(@[0-9]+)? *)
 
 (* ------------------------------------------------------------ *)
 (* LITERALS                                                     *)
@@ -92,6 +120,18 @@ rfc3339           = ?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{
 param_ref         = '$' param_name ;
 param_name        = bare_word ;                (* matched exactly against a key of the request's parameters: never folded *)
 ```
+
+## Status
+
+The grammar above is all of v2. Which of it a server accepts depends on its version; the words are reserved from the first v2 release whether or not their production is implemented, so adding a production later is never a breaking change.
+
+| Production | Reserved since | Planned for | Issue |
+| --- | --- | --- | --- |
+| `forget_query`, `update_query` | 0.3.0 | 0.5.0 | [#172](https://github.com/FraiseHQ/fraise/issues/172) |
+| `prefix` `'explain'` on `recall_query` | 0.3.0 | 0.4.0 | [#433](https://github.com/FraiseHQ/fraise/issues/433) |
+| `prefix` `'describe'` on `recall_query` | 0.3.0 | 0.4.0 | [#434](https://github.com/FraiseHQ/fraise/issues/434) |
+
+A server that reserves a production but does not accept it answers a query opening with its word with `expected a command (recall, remember), found "<word>"`; a server that accepts it answers as the production says. The conformance suite carries one row per production and per status, so an SDK can tell the two apart.
 
 ## Reading it
 

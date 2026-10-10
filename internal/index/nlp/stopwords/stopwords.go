@@ -48,16 +48,14 @@ func toSet(words []string) map[string]struct{} {
 
 // CleanContent removes tag's stop words from content and returns the words
 // that survive, in their original spelling and order, joined by single
-// spaces. Matching is case-insensitive, and words are delimited the way the
-// tokenizer delimits them — nlp.Words is the one definition of the boundary —
-// so punctuation never shields a stop word and the terms removed here are
-// exactly the terms the index would otherwise have carried.
-// Cleaning only removes, never rewrites: every surviving word still reaches
-// the index as written. A tag that does not state its language (Base infers
-// "en" for language.Und, at low confidence) or states one with no stop-word
-// list gets content back verbatim — a stop word is only noise in the language
-// that owns it, so removal on a guess would drop meaning, and dropping
-// nothing is the only safe answer.
+// spaces. Matching is case-insensitive, and words are split by nlp.Words, the
+// tokenizer's own boundary, so punctuation never shields a stop word and the
+// words removed here are exactly terms the index would otherwise carry.
+//
+// A tag that does not state its language (Base infers "en" for language.Und,
+// at low confidence), or states one with no stop-word list, gets content back
+// verbatim: a stop word is noise only in its own language, so removing words
+// on a guess would drop meaning.
 func CleanContent(content string, tag language.Tag) string {
 	base, conf := tag.Base()
 	if conf < language.Exact {

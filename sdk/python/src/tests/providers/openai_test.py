@@ -22,55 +22,60 @@
 
 """OpenAI provider tests against a mocked openai client — no vendor calls."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk import FraiseClient, FraiseError
 from fraise_sdk.providers.base import Anchor, Embedder, Extractor
-from fraise_sdk.providers.openai import OpenAIEmbedder, OpenAIExtractor
 
-DEFAULT_MODEL = "text-embedding-3-small"
+# The providers import their client at module scope, so skip the whole file
+# when the optional 'openai' extra is not installed.
+pytest.importorskip("openai", reason="requires the 'openai' extra")
 
-
-def _client(embedding=(0.1, 0.2, 0.3)) -> MagicMock:
-    """A mock ``openai.OpenAI`` answering with one embedding."""
-    client = MagicMock()
-    client.embeddings.create.return_value = MagicMock(
-        data=[MagicMock(embedding=list(embedding))]
-    )
-    return client
+from fraise_sdk.providers.openai import OpenAIEmbedder, OpenAIExtractor  # noqa: E402
 
 
-def test_openai_embedder_calls_client_and_returns_vector():
-    client = _client()
-    embedder = OpenAIEmbedder(model=DEFAULT_MODEL, client=client, dimensions=3)
+def test_openai_embedder_calls_client_and_returns_vector(
+    embeddings_client, openai_default_model
+):
+    """embed sends the model, text and dimensions and returns the embedding."""
+    client = embeddings_client()
+    embedder = OpenAIEmbedder(model=openai_default_model, client=client, dimensions=3)
     assert embedder.embed("hello") == [0.1, 0.2, 0.3]
     client.embeddings.create.assert_called_once_with(
-        model=DEFAULT_MODEL, input="hello", dimensions=3
+        model=openai_default_model, input="hello", dimensions=3
     )
 
 
-def test_openai_embedder_is_callable_and_omits_dimensions_when_unset():
-    client = _client()
+def test_openai_embedder_is_callable_and_omits_dimensions_when_unset(
+    embeddings_client, openai_default_model
+):
+    """Calling the embedder embeds, under the default model and with no dimensions.
+
+    An unset ``dimensions`` is left out of the request, so the model answers at
+    its full width.
+    """
+    client = embeddings_client()
     OpenAIEmbedder(client=client)("world")  # __call__ inherited from the Embedder ABC
-    client.embeddings.create.assert_called_once_with(model=DEFAULT_MODEL, input="world")
+    client.embeddings.create.assert_called_once_with(
+        model=openai_default_model, input="world"
+    )
 
 
-def test_openai_embedder_is_an_embedder():
-    assert isinstance(OpenAIEmbedder(client=_client()), Embedder)
+def test_openai_embedder_is_an_embedder(embeddings_client):
+    """OpenAIEmbedder satisfies the Embedder contract the client resolves."""
+    assert isinstance(OpenAIEmbedder(client=embeddings_client()), Embedder)
 
 
-def test_openai_embedder_builds_its_own_client_from_the_api_key():
-    """Without an injected client the embedder imports openai and builds one.
+def test_openai_embedder_builds_its_own_client_from_the_api_key(embeddings_client):
+    """Without an injected client the embedder builds its own OpenAI client.
 
-    The import is lazy and lives inside ``__init__``, so it is patched in
-    ``sys.modules`` — that keeps the test running whether or not the optional
-    'openai' extra is installed.
+    The vendor module is patched where the provider imported it, so the test
+    pins what the provider builds without a real client or an API key.
     """
     openai = MagicMock()
-    openai.OpenAI.return_value = _client()
-    with patch.dict(sys.modules, {"openai": openai}):
+    openai.OpenAI.return_value = embeddings_client()
+    with patch("fraise_sdk.providers.openai.openai", openai):
         embedder = OpenAIEmbedder(api_key="sk-test")
     openai.OpenAI.assert_called_once_with(api_key="sk-test")
     assert embedder.embed("hello") == [0.1, 0.2, 0.3]
@@ -130,24 +135,20 @@ def test_openai_extractor_is_an_extractor(chat_client):
 
 
 def test_openai_extractor_builds_its_own_client_from_the_api_key(chat_client):
-    """Without an injected client the extractor imports openai and builds one.
+    """Without an injected client the extractor builds its own OpenAI client.
 
-    The import is lazy and lives inside ``__init__``, so it is patched in
-    ``sys.modules`` — that keeps the test running whether or not the optional
-    'openai' extra is installed.
+    The vendor module is patched where the provider imported it, so the test
+    pins what the provider builds without a real client or an API key.
     """
     openai = MagicMock()
     openai.OpenAI.return_value = chat_client('{"topics": ["birds"], "entities": []}')
-    with patch.dict(sys.modules, {"openai": openai}):
+    with patch("fraise_sdk.providers.openai.openai", openai):
         extractor = OpenAIExtractor(api_key="sk-test")
 
     openai.OpenAI.assert_called_once_with(api_key="sk-test")
     assert extractor.extract("the heron fishes") == [
         Anchor(value="birds", type="topic")
     ]
-
-
-# -- integration --------------------------------------------------------------
 
 
 @pytest.mark.integration

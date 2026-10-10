@@ -29,11 +29,11 @@ import (
 	"time"
 
 	"github.com/FraiseHQ/fraise/internal/containers"
-	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
 // fakeHasher records the last value it was asked to hash and returns a
-// deterministic, inspectable key. Shared by the recall/remember tests.
+// deterministic, inspectable key. Shared by the recall, remember and stream
+// tests.
 type fakeHasher struct{ last string }
 
 func (h *fakeHasher) Hash(s string) string {
@@ -44,12 +44,6 @@ func (h *fakeHasher) Hash(s string) string {
 func (h *fakeHasher) Seed() uint64 {
 	return 0
 }
-
-var (
-	_ hash.Hasher[string, string] = (*fakeHasher)(nil)
-	// SetGraphID has a pointer receiver, so only *Recall satisfies Query.
-	_ Query[string, float32] = (*Recall[string, float32])(nil)
-)
 
 func TestRecallIsWrite(t *testing.T) {
 	var r Recall[string, float32]

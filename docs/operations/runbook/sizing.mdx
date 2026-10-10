@@ -12,7 +12,7 @@ description: "Memory is the constraint — what a vector costs, what a graph cos
 | Grows with | Bounded by |
 |---|---|
 | facts, entities, relationships | nothing — there is no eviction |
-| vector forest entries | `flush-factor × live vectors`, enforced by rebuilds |
+| vector forest entries | `flush-factor × live vectors` per tree, enforced by rebuilds |
 | the plan cache | `cache-capacity` entries (LRU) |
 | the scheduler queue | `buffer-size`, then 429s |
 

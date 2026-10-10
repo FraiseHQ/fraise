@@ -24,8 +24,8 @@ package relevance
 
 import "math"
 
-// BM25 constants: the standard Robertson–Walker defaults, internal on
-// purpose. The retrieval methodology requires raw, untuned BM25 units — the
+// BM25 constants: the standard Robertson–Walker defaults, deliberately not
+// configurable. The retrieval methodology needs raw, untuned BM25 units: the
 // anchor-level excess statistic sums seed masses across documents, and a
 // per-dataset knob here would break the commensurability that keeps the text
 // channel and those sums on one scale. The model is documented at
@@ -45,9 +45,9 @@ const (
 // BM25 is the Robertson–Walker relevance model scaled by query coverage:
 // idf-weighted, length-normalized term frequency, times the share of the
 // query's idf mass the document matched, so a document matching more of the
-// query — and its rarer terms — outranks one repeating a single term. It owns the length
-// statistics its normalization needs and maintains them through the
-// lifecycle hooks.
+// query, and its rarer terms, outranks one repeating a single term. It owns
+// the length statistics its normalization needs and maintains them through
+// the lifecycle hooks.
 type BM25[K comparable, P float32 | float64] struct {
 	lengths  map[K]int // key -> document length in tokens
 	totalLen int       // sum of lengths (avgdl = totalLen / len(lengths))
@@ -68,7 +68,7 @@ func (b *BM25[K, P]) Indexed(key K, tokens []string) {
 // len(tokens): the tokenizer may have changed since the insert, and the
 // statistics must retire exactly what they admitted.
 func (b *BM25[K, P]) Removed(key K, _ []string) {
-	b.totalLen -= b.lengths[key]
+	b.totalLen -= b.Lengths()[key]
 	delete(b.lengths, key)
 }
 
@@ -95,16 +95,17 @@ func (b *BM25[K, P]) Weight(df, docs int) P {
 	return P(math.Log(float64(1 + (n-P(df)+0.5)/(P(df)+0.5))))
 }
 
-// Prepare folds the corpus's current avgdl into n2 = bm25K1*bm25B/avgdl, the
-// length-norm term's avgdl-dependent half: computed once here from live
-// state rather than cached on the model, so it stays safe under concurrent
-// queries sharing this instance, and Increment turns it into one multiply
-// per posting entry instead of a division.
+// Prepare returns n2 = bm25K1*bm25B/avgdl, the avgdl-dependent half of the
+// length norm, from the corpus's current statistics. Computing it per query
+// rather than caching it on the model keeps the shared instance safe under
+// concurrent queries, and it leaves Increment one multiply per posting entry
+// instead of a division.
 func (b *BM25[K, P]) Prepare() P {
-	if len(b.lengths) == 0 || b.totalLen == 0 {
+	lengths, totalLen := b.Lengths(), b.TotalLen()
+	if len(lengths) == 0 || totalLen == 0 {
 		return 0
 	}
-	avgdl := P(b.totalLen) / P(len(b.lengths))
+	avgdl := P(totalLen) / P(len(lengths))
 	return bm25K1 * bm25B / avgdl
 }
 
@@ -112,14 +113,13 @@ func (b *BM25[K, P]) Prepare() P {
 // is this query's Prepare() result.
 func (b *BM25[K, P]) Increment(weight P, key K, tf int, n2 P) P {
 	freq := P(tf)
-	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*P(b.lengths[key]))
+	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*P(b.Lengths()[key]))
 }
 
-// Finalize scales by coverage: matched over total, the idf mass of the query
-// terms the document matched over that of all of them, both in the fixed
-// point Search hands in. A full match scales by just under 1, and a rare
-// term covers more of the query than a common one. An alternative coverage
-// multiplier is a one-line swap in this slot.
+// Finalize scales by coverage, matched over total: the share of the query's
+// idf mass the document matched, in the fixed point Relevance.Finalize
+// describes. A full match scales by just under 1, and a rare term covers more
+// of the query than a common one.
 func (b *BM25[K, P]) Finalize(score P, matched, total int) P {
 	return score * P(matched) / P(total)
 }
@@ -129,7 +129,8 @@ func (b BM25[K, P]) TotalLen() int {
 	return b.totalLen
 }
 
-// Getter for lengths attribute
+// Lengths returns the recorded document lengths in tokens, by key. It is the
+// model's own map, not a copy.
 func (b BM25[K, P]) Lengths() map[K]int {
 	return b.lengths
 }
