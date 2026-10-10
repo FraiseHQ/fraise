@@ -370,19 +370,19 @@ func TestBTreeIndexStemmingUnifiesInflections(t *testing.T) {
 	}
 }
 
-// expandIndex is the Expand fixture, on the graph's own tokenizer and
-// relevance model so the terms and weights are the ones a recall sees:
+// expandIndex is the Expand fixture, on the graph's own tokenizer and the
+// given relevance model, so the terms are the ones a recall sees:
 //
 //	1: nadia sailed regatta dawn   <- the feedback document
 //	2: regatta ended dusk          <- shares "regatta" with 1 (df 2)
 //	3: dawn broke harbour          <- shares "dawn" with 1 and 5 (df 3)
 //	4: sails dry                   <- "sails" stems to "sail", as "sailed" does
 //	5: dawn mist
-func expandIndex(t *testing.T) *index.BTreeIndex[int, float64] {
+func expandIndex(t *testing.T, model relevance.Relevance[int, float64]) *index.BTreeIndex[int, float64] {
 	t.Helper()
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	idx.SetTokenizer(nlp.StemmingTokenizer{})
-	idx.SetRelevance(relevance.NewBM25[int, float64]())
+	idx.SetRelevance(model)
 	for key, doc := range map[int]string{
 		1: "nadia sailed regatta dawn",
 		2: "regatta ended dusk",
@@ -397,38 +397,45 @@ func expandIndex(t *testing.T) *index.BTreeIndex[int, float64] {
 	return idx
 }
 
-// TestBTreeIndexExpandRanksByIdfAndSkipsWhatReachesNothing pins the
+// TestBTreeIndexExpandRanksRarestFirstAndSkipsWhatReachesNothing pins the
 // expansion's selection: the feedback document's terms come back rarest
 // first (regatta, df 2, before dawn, df 3), a term the query already asked
 // for is left out even when the document spells it differently (the query's
 // "sailed" and the document's "sails" are one stem), and a term confined to
 // the feedback document — nadia, df 1 — is left out because it can surface
 // no document the first pass did not already rank. n truncates the ranked
-// list.
-func TestBTreeIndexExpandRanksByIdfAndSkipsWhatReachesNothing(t *testing.T) {
-	idx := expandIndex(t)
+// list. The order is the same under every relevance model: MatchCount prices
+// every term at one point, and ranking by its weight would fall through to
+// spelling and put dawn before regatta.
+func TestBTreeIndexExpandRanksRarestFirstAndSkipsWhatReachesNothing(t *testing.T) {
+	for _, model := range []relevance.Relevance[int, float64]{
+		relevance.NewBM25[int, float64](),
+		relevance.MatchCount[int, float64]{},
+	} {
+		idx := expandIndex(t, model)
 
-	if got, want := idx.Expand("sails", []int{1}, 10), []string{"regatta", "dawn"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("Expand(sails, [1]) = %v, want %v", got, want)
-	}
-	if got, want := idx.Expand("sails", []int{1}, 1), []string{"regatta"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("Expand(sails, [1], n=1) = %v, want %v", got, want)
-	}
-	if got := idx.Expand("sails", []int{1}, 0); got != nil {
-		t.Errorf("Expand(n=0) = %v, want nil", got)
-	}
-	if got := idx.Expand("sails", nil, 10); got != nil {
-		t.Errorf("Expand(no feedback) = %v, want nil", got)
+		if got, want := idx.Expand("sails", []int{1}, 10), []string{"regatta", "dawn"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("%T: Expand(sails, [1]) = %v, want %v", model, got, want)
+		}
+		if got, want := idx.Expand("sails", []int{1}, 1), []string{"regatta"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("%T: Expand(sails, [1], n=1) = %v, want %v", model, got, want)
+		}
+		if got := idx.Expand("sails", []int{1}, 0); got != nil {
+			t.Errorf("%T: Expand(n=0) = %v, want nil", model, got)
+		}
+		if got := idx.Expand("sails", nil, 10); got != nil {
+			t.Errorf("%T: Expand(no feedback) = %v, want nil", model, got)
+		}
 	}
 }
 
 // TestBTreeIndexExpandReturnsSpellingsNotStems pins that the expansion is
 // made of words as the document wrote them: "sailed", not the stem "sail"
 // the postings hold. The expanded query goes back through the tokenizer, and
-// a stem is not guaranteed to stem to itself. Equal weights (both df 2) are
+// a stem is not guaranteed to stem to itself. Equal rarity (both df 2) is
 // ordered by spelling, which is what makes the result a total order.
 func TestBTreeIndexExpandReturnsSpellingsNotStems(t *testing.T) {
-	idx := expandIndex(t)
+	idx := expandIndex(t, relevance.NewBM25[int, float64]())
 
 	if got, want := idx.Expand("mist", []int{1}, 10), []string{"regatta", "sailed", "dawn"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Expand(mist, [1]) = %v, want %v", got, want)
@@ -440,7 +447,7 @@ func TestBTreeIndexExpandReturnsSpellingsNotStems(t *testing.T) {
 // nowhere else and so cannot add a candidate, and is dropped — only "dawn",
 // which reaches 3 and 5, remains. A key with no document is skipped.
 func TestBTreeIndexExpandConfinedToTheFeedbackSet(t *testing.T) {
-	idx := expandIndex(t)
+	idx := expandIndex(t, relevance.NewBM25[int, float64]())
 
 	if got, want := idx.Expand("sails", []int{1, 2, 99}, 10), []string{"dawn"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Expand(sails, [1 2 99]) = %v, want %v", got, want)

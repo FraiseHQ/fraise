@@ -226,10 +226,13 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 }
 
 // Expand returns up to n spellings to add to query from the documents under
-// keys — the feedback set of a pseudo-relevance round — ranked by the
-// installed Relevance model's term weight (the idf, under BM25) descending,
-// then by spelling, so the choice is a total order and two identical rounds
-// expand identically. A spelling is a word as it appears in the document
+// keys — the feedback set of a pseudo-relevance round — rarest first: by
+// document frequency ascending, then by spelling, so the choice is a total
+// order and two identical rounds expand identically. Rarity is read off the
+// postings rather than the installed Relevance model's term weight: under
+// BM25 the two orders agree, since idf falls as df rises, but a model that
+// prices every term alike (MatchCount) would tie them all and hand the
+// budget to the alphabetically first words. A spelling is a word as it appears in the document
 // rather than the stem the postings hold, because the expanded query goes
 // back through Search and so through the tokenizer: re-stemming a stem is not
 // guaranteed to land on itself, and a term returned as its stem could then
@@ -237,8 +240,8 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 //
 // Two kinds of term are left out. One already in the query adds no reach
 // and the query carries it anyway. One whose posting holds no document
-// outside the feedback set can surface no new candidate — under pure idf the
-// rarest terms are exactly the ones confined to a single document, so without
+// outside the feedback set can surface no new candidate — the rarest terms
+// of all are exactly the ones confined to a single document, so without
 // this rule the budget would go to spellings that only re-find the seeds. A
 // key with no document is skipped, not an error: the feedback set is whatever
 // the first pass ranked, and a document retired between the passes is not
@@ -259,7 +262,7 @@ func (idx *BTreeIndex[K, P]) Expand(query string, keys []K, n int) []string {
 
 	type candidate struct {
 		spelling string
-		weight   P
+		df       int
 	}
 	candidates := make([]candidate, 0)
 	seen := make(map[string]struct{})
@@ -305,14 +308,14 @@ func (idx *BTreeIndex[K, P]) Expand(query string, keys []K, n int) []string {
 			}
 			candidates = append(candidates, candidate{
 				spelling: strings.ToLower(word),
-				weight:   idx.relevance.Weight(list.live, len(idx.documents)),
+				df:       list.live,
 			})
 		}
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].weight != candidates[j].weight {
-			return candidates[i].weight > candidates[j].weight
+		if candidates[i].df != candidates[j].df {
+			return candidates[i].df < candidates[j].df
 		}
 		return candidates[i].spelling < candidates[j].spelling
 	})

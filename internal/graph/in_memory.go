@@ -647,8 +647,8 @@ const (
 
 // feedback runs the pseudo-relevance round over the text channel: the top
 // feedbackSeeds hits of the first pass — the keys the index ranked, best
-// first — lend the query the entities they mention and their highest-idf
-// terms (see BTreeIndex.Expand), and one more text pass over the widened
+// first — lend the query the entities they mention and their rarest terms
+// (see BTreeIndex.Expand), and one more text pass over the widened
 // query appends its sightings as further SrcText contributions on the same
 // pool. It is how a fact that shares no word with the question becomes a
 // candidate: multi-hop evidence that is only reachable through the terms the
