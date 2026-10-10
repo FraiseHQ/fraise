@@ -19,7 +19,7 @@ dependencies = [
 # `uv sync --extra embeddings`.
 [project.optional-dependencies]
 embeddings = [
-    "transformers>=5.18.0",
+    "transformers>=5.19.0",
     "torch>=2.14.1",
 ]
 

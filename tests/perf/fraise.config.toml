@@ -1,0 +1,7 @@
+# The server the pkg/server benchmarks start. It runs on its defaults: a
+# benchmark of a tuned configuration says nothing about the one users get.
+# Precision is named because the benchmark instantiates the server for it, as
+# the binary does, and a key set here applies to base and head alike.
+
+[db]
+precision = "float32"

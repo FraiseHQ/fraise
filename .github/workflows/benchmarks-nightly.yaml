@@ -1,0 +1,137 @@
+name: Benchmarks nightly
+
+# Measures main every night, every gate in tests/perf included: HTTP latency
+# at ten and a hundred thousand facts, and retrieval quality both text only
+# and seeded with embeddings. Its outputs are the baseline every pull request
+# and release gate compares with until the next night, and are appended to
+# the history. It is itself compared with the night before, so a regression
+# that was merged anyway still shows; that fails the run, which blocks
+# nothing, and benchmarks-report.yaml posts the report every night.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+# One at a time, none cancelled: each reads the baseline and the history the
+# one before it saved.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  nightly:
+    name: Measure main
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write # comments on the commit when the history alerts
+      actions: read # the previous baseline and history
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version-file: "pyproject.toml"
+
+      # No baseline is not an error: the gates then measure and pass, as on
+      # the first night.
+      - name: Download the previous baseline
+        id: baseline
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
+        with:
+          workflow: benchmarks-nightly.yaml
+          branch: main
+          workflow_conclusion: completed
+          name: benchmark-baseline
+          path: bin/perf/baseline
+          search_artifacts: true
+          if_no_artifact_found: warn
+      # The embeddings come from the cache, or are computed and cached on a
+      # miss, for this night and every release gate after it. If they cannot
+      # be computed, the night measures text only.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: vectors
+        with:
+          path: bin/perf/locomo-vectors.json
+          key: locomo-vectors-${{ hashFiles('tests/perf/data/locomo-conv-26.json', 'tools/embed_locomo.py') }}
+      - name: Embed LoCoMo
+        if: steps.vectors.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: make perf-vectors
+
+      - name: Gate
+        env:
+          FRAISE_LOCOMO_VECTORS: ${{ hashFiles('bin/perf/locomo-vectors.json') != '' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
+        run: make bench-nightly BENCH_BASELINE=${{ steps.baseline.outputs.found_artifact == 'true' && 'bin/perf/baseline' || '' }}
+
+      - name: Save the baseline
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-baseline
+          path: bin/perf/*.txt
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: benchmarks
+          path: bin/perf/report.md
+
+      # The history is one file, downloaded from the night before, appended
+      # to and uploaded again. It compares a night with the one before, on
+      # whichever runner each got, so an alert is a prompt to look, never a
+      # failure. Both suites append to the one file, each under its own name.
+      - uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
+        if: always()
+        continue-on-error: true # the first night starts the history
+        with:
+          workflow: benchmarks-nightly.yaml
+          branch: main
+          workflow_conclusion: completed
+          name: benchmark-history
+          path: bin/perf/history
+          search_artifacts: true
+          if_no_artifact_found: warn
+      - name: Shape the history
+        if: always()
+        run: make bench-history
+      - name: Record latency
+        if: always()
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Latency
+          tool: go
+          output-file-path: bin/perf/history-latency.txt
+          go-force-package-suffix: true
+          external-data-json-path: bin/perf/history/benchmarks.json
+          alert-threshold: "125%"
+          comment-on-alert: true
+          fail-on-alert: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Record retrieval quality
+        if: always()
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Retrieval quality
+          tool: customBiggerIsBetter
+          output-file-path: bin/perf/history-retrieval.json
+          external-data-json-path: bin/perf/history/benchmarks.json
+          alert-threshold: "101%"
+          comment-on-alert: true
+          fail-on-alert: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: benchmark-history
+          path: bin/perf/history/benchmarks.json
+          if-no-files-found: error
+          retention-days: 90
