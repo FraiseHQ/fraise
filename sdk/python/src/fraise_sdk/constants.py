@@ -86,8 +86,8 @@ REMEMBER_TOOL = "remember_fact"
 
 # The recall tool's default top, so the model need not choose one. There is no
 # default depth: an omitted clause takes the lane the server is configured
-# with, and the tool names no topic or entity, so a lane above 0 would only
-# draw a warning.
+# with, which is the operator's choice of how much graph a plain question
+# gets.
 DEFAULT_TOP = 5
 
 # The retrieval lanes are 0, 1 and 2: a search runs at most one

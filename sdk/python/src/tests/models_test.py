@@ -243,15 +243,15 @@ def test_an_empty_result_set_parses(client, models_graph, no_match):
 def test_a_warned_response_carries_the_warning_verbatim(tide_result):
     """A recall the server ran with a warning surfaces it as a list of strings.
 
-    The fixture asks for depth:2 with no topic or entity, which the server
-    answers from the text and vector indices alone and flags. The exact text is
-    pinned so a client can show it unchanged; the empty-list shape of a clean
-    response is a unit concern, covered by the ``from_json`` tests above.
+    The fixture's recall carries the bare stop word "the" beside its phrase,
+    which stored facts never contain, so the server runs the recall on the
+    phrase and flags the term. The exact text is pinned so a client can show it
+    unchanged; the empty-list shape of a clean response is a unit concern,
+    covered by the ``from_json`` tests above.
     """
     assert tide_result.warnings == [
-        "parse warning at column 19: depth:2 has no effect: the graph is searched "
-        "only through a topic:/entity: anchor and this recall names none, so it "
-        "runs on the text and vector indices alone"
+        'parse warning at column 17: term "the" is a stop word: stored facts '
+        "never contain it, so it cannot match"
     ]
 
 

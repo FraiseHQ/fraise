@@ -817,7 +817,7 @@ def embedding_client():
 def recalled_values(client):
     """A helper that returns the values a single-keyword recall finds.
 
-    The recall names no anchor, so it runs on the text and vector indices alone.
+    The recall runs at depth 0, so only the text and vector indices answer.
 
     Args:
         client: the plain client the helper recalls through.
@@ -932,7 +932,10 @@ def tide_result(client):
     """Store the tide facts and return the RecallResult a two-hit recall parses.
 
     Shared by every response-shape assertion so they all read the same live
-    response rather than each provoking their own.
+    response rather than each provoking their own. The recall carries the bare
+    stop word "the" beside its phrase so the response also carries a warning,
+    for the assertion that reads one; the term matches nothing and changes no
+    hit.
 
     Args:
         client: the plain client to write and recall through.
@@ -942,7 +945,7 @@ def tide_result(client):
     """
     for phrase in _TIDE_FACTS.values():
         client.remember(phrase, graph=_MODELS_GRAPH, topics=[_TIDE_TOPIC])
-    return client.recall("tide", graph=_MODELS_GRAPH, depth=2)
+    return client.recall("tide", "the", graph=_MODELS_GRAPH, depth=2)
 
 
 @pytest.fixture(scope="module")

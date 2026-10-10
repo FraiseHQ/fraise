@@ -191,7 +191,9 @@ type Graph[K comparable, P float32 | float64] interface {
 	//               anchor-mediated round and differ only in the admission
 	//               bar: 1 admits only strongly above-chance anchors
 	//               (precision), 2 any anchor above its fair share (recall).
-	//               The round runs only when a topic or entity is named.
+	//               The round opens from the anchors the seeds are filed
+	//               under, whether or not a topic or entity is named; a
+	//               named one filters what it returns.
 	//   - top:      maximum number of results
 	//   - since:    inclusive lower time bound; zero is unbounded
 	//   - until:    exclusive upper time bound; zero is unbounded

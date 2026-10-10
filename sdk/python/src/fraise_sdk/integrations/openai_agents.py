@@ -94,8 +94,9 @@ def recall_tool(
                 indices only; 1 also lets topics and entities that clearly
                 concentrate the matches pull in the facts filed under them; 2
                 admits them at their fair share for maximum recall. The graph
-                lanes need a topic or entity on the recall, which this tool
-                does not name, so omit it and the server's default applies.
+                lanes open from the topics and entities the matches are filed
+                under, so no anchor has to be named; omit it and the server's
+                default applies.
 
         """
         vector = encode(" ".join(keywords)) if encode and keywords else None

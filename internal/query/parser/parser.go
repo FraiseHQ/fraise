@@ -336,23 +336,6 @@ func (p *parser[K, P]) warnMisCasedKeyword(tok lexer.Token) {
 	})
 }
 
-// warnDepthWithoutGraph flags a depth above 0 on a recall naming no anchor.
-// The graph is entered only through a topic: or entity: anchor, so such a
-// recall runs on the text and vector indices alone and the depth has no
-// effect. The query still runs; the warning says the clause did nothing and
-// what would give it an effect. depth:0 asks for nothing the recall cannot do,
-// and an omitted depth is the operator's default, not the caller's choice, so
-// neither warns.
-func (p *parser[K, P]) warnDepthWithoutGraph(r *RecallCommandNode[K, P]) {
-	if !r.HasDepth() || r.depth.value == 0 || len(r.topics) > 0 || len(r.entities) > 0 {
-		return
-	}
-	p.warns = append(p.warns, Warning{
-		Msg: fmt.Sprintf("%s has no effect: the graph is searched only through a topic:/entity: anchor and this recall names none, so it runs on the text and vector indices alone", r.depth.String()),
-		Pos: r.depth.key.Pos,
-	})
-}
-
 // warnStopWords flags each bare term that is an English stop word, and rejects
 // a recall left with nothing to search. Stored facts are cleaned of stop words
 // on their way into the index by CleanContent with the same English tag, so a
@@ -589,8 +572,6 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	if err := p.warnStopWords(&r); err != nil {
 		return nil, err
 	}
-
-	p.warnDepthWithoutGraph(&r)
 
 	return &r, nil
 }

@@ -3,7 +3,7 @@ title: "Warnings"
 description: "The query shapes that run but carry a warning, and the neighbouring shapes that stay silent"
 ---
 
-An error rejects a query; a warning accompanies one that ran. A query that could mean two things is never a warning — the parser does not guess, so `recall since 7d`, one `:` away from `recall since:7d`, is an [error](/docs/http-api/errors) naming both repairs. A warning is only ever about a query with exactly one reading that carries something it should not: a keyword spelled against the language, or a term or clause that, in that query, has nothing to act on. The hits are real and complete either way; the warning says what to change so the next query is clean.
+An error rejects a query; a warning accompanies one that ran. A query that could mean two things is never a warning — the parser does not guess, so `recall since 7d`, one `:` away from `recall since:7d`, is an [error](/docs/http-api/errors) naming both repairs. A warning is only ever about a query with exactly one reading that carries something it should not: a keyword spelled against the language, or a term that, in that query, has nothing to act on. The hits are real and complete either way; the warning says what to change so the next query is clean.
 
 Warnings travel beside the results, never instead of them, and the key is absent when there is nothing to say — the response shape of a clean query is unchanged:
 
@@ -18,7 +18,7 @@ Each entry is positioned like a parse error — `parse warning at column N:`, th
 
 ## Queries that warn
 
-Three shapes warn: a mis-cased clause, and two that carry something with nothing to act on.
+Two shapes warn: a mis-cased clause, and one that carries a term with nothing to act on.
 
 ### 1. A clause whose keyword is not lower case
 
@@ -36,18 +36,7 @@ A word glued to a `:` has exactly one reading, so the clause runs — see [Keywo
 
 </Note>
 
-### 2. A retrieval lane with no anchor to act through
-
-`depth:1` and `depth:2` choose how anchors pass evidence on, and a recall enters the graph only through the `topic:`/`entity:` anchors it names. On a recall that names none, the lane is valid but has nothing to act through: the query runs on the text and vector indexes alone, exactly as `depth:0` would, and the warning says so at the `depth` clause.
-
-| query | reading that runs | what it warns about |
-|---------------------------|------------------------------------|------------------------------------------------|
-| `recall parrot depth:2` | a text search for "parrot" | `depth:2` has no effect without an anchor |
-| `recall parrot topic:birds depth:2` | — | nothing: the anchor gives the lane a graph to act through |
-
-See [Retrieval lanes](/docs/retrieval/ranking/depth).
-
-### 3. A search term that is a stop word
+### 2. A search term that is a stop word
 
 Stored facts are cleaned of English stop words on their way into the index, so a bare stop word among a recall's terms can never match. The recall runs on its other seeds, and there is one warning per stop word, at its column. The parser decides what a stop word is with the same list and the same word boundaries the index uses, so the two cannot disagree.
 
@@ -64,6 +53,7 @@ Every neighbouring shape has one reading and nothing inert in it, so it carries 
 
 - `recall 'since' 7d` — quoting a reserved word is how to search for it.
 - `recall x since:7d` — an actual clause is what it says it is.
+- `recall parrot depth:2` — the lane opens from the anchors the matches are filed under, so it has something to act through whether or not one is named; see [Retrieval lanes](/docs/retrieval/ranking/depth).
 - `entity:top`, `entity:Top` — value position: after a field's `:` only a value can appear, so there is nothing to mistake it for.
 - `recall 'the'` — a phrase is a seed whatever its words.
 - `recall since 7d`, `recall x since 7d` — a bare reserved word among the terms is an **error** naming both repairs, not a warning; running either reading would answer a question the caller may not have asked.

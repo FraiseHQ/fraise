@@ -65,8 +65,8 @@ def test_the_fact_asked_about_outranks_its_neighbourhood(query, ranked_hits):
     smallest shape where an anchor speaks. The cluster's silent member is
     funded, attenuated by α², and lands behind both facts that matched; the
     hub transmits nothing, so its notes, which all contain "geyser", rank on
-    their own text match alone. Both topics are named because the graph is
-    entered only through an anchor the recall names.
+    their own text match alone. Both topics are named so the filter keeps the
+    hub's notes admissible, which makes their ranking the hub's silence.
     """
     graph = 0
     direct = (

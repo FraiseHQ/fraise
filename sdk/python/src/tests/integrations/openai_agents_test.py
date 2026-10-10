@@ -108,9 +108,9 @@ def test_recall_defaults_top_and_leaves_depth_to_the_server(
     mock_client, invoke_function_tool
 ):
     """An omitted top takes the tool's default; an omitted depth is passed as
-    None so no clause is emitted and the server's configured lane applies. A
-    tool-side depth would be a lane the tool cannot use, since it names no
-    topic or entity, and any value above the floor draws a warning per call.
+    None so no clause is emitted and the server's configured lane applies: how
+    much graph a plain question gets is the operator's setting, not a choice
+    the tool makes on every call.
     """
     client = mock_client()
     invoke_function_tool(recall_tool(client), keywords=["a"])

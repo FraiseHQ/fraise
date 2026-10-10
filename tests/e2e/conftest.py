@@ -631,9 +631,8 @@ _PULSAR_ENTITY = "vela"
 # The surplus probe: a small "weather" cluster concentrates the query's mass
 # while a larger "archive" hub holds no more than its fair share of it, so
 # exactly one anchor speaks and its silent member is funded by transmission
-# alone. The explain recalls name both topics because the graph is entered
-# only through an anchor the recall names; naming the hub keeps its memos in
-# the candidate set, so their absence is its silence and not the filter's
+# alone. The explain recalls name both topics so the filter keeps the hub's
+# memos admissible: their absence is then its silence and not the filter's
 # doing.
 _STORM_CLUSTER_TOPIC = "weather"
 _STORM_HUB_TOPIC = "archive"

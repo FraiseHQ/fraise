@@ -792,10 +792,10 @@ def test_a_lone_seed_hub_stays_silent(instrument_graph, instrument_topic, client
     nothing and its siblings never surface, in either graph lane.
 
     This is hub silence through the SDK: an anchor is heard only when its
-    members matched better than its size predicts. The topic is named because
-    the anchor round runs only through an anchor the recall names. depth=1
-    admits an anchor only well above its fair share and depth=2 any anchor
-    above it, and the hub clears neither bar.
+    members matched better than its size predicts. The topic is named so the
+    filter keeps the hub's members, whose absence is then the hub's silence.
+    depth=1 admits an anchor only well above its fair share and depth=2 any
+    anchor above it, and the hub clears neither bar.
     """
     for depth in (1, 2):
         hits = client.recall(

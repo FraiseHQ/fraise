@@ -1022,6 +1022,12 @@ const depthOneAdmission = 2
 // into candidates, applies the topic and entity filters, and returns the
 // background rate.
 //
+// The round opens from the anchors each seed is filed under, whether or not
+// the query names a topic or entity: an agent rarely knows how the answer was
+// filed, and a lane that acted only through a name it had to guess would
+// never engage. A named anchor filters the pooled candidates after the round;
+// it does not decide whether the round runs.
+//
 // Pass 1 observes. Each seed's mass, the scorer's fold of its own
 // contributions, is added to every anchor the traversal reaches at depth 1,
 // along with the anchor's degree and how many seeds funded it. The background
@@ -1038,14 +1044,13 @@ const depthOneAdmission = 2
 // depth 0 skips both passes, so only seed mass scores. The filters apply in
 // every lane.
 func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candidates[K, P], topicKeys []K, entityKeys []K, depth int) P {
-	// The traversal runs at depth 1 or 2, and only when the query names a
-	// topic or entity: a recall naming neither is a text and vector search
-	// whatever its depth, and the parser warns when it asks for more. There
-	// is a single round; a second would re-observe the first round's mass
-	// through sibling anchors and collapse recall, which is why depth stops
-	// at 2.
+	// The traversal runs at depth 1 or 2 whenever there is a seed to open
+	// from. The filters never gate it: admission against the background rate
+	// is what keeps a hub the seeds happen to share silent. There is a single
+	// round; a second would re-observe the first round's mass through sibling
+	// anchors and collapse recall, which is why depth stops at 2.
 	var background P
-	if depth >= 1 && g.traversal != nil && len(seeds) > 0 && (len(topicKeys) > 0 || len(entityKeys) > 0) {
+	if depth >= 1 && g.traversal != nil && len(seeds) > 0 {
 		// Fix every seed's mass before any SrcGraph contribution is
 		// appended, so scores cannot depend on traversal order. The scorer
 		// is unbound: nothing has been observed yet, so there is no

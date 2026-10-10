@@ -28,7 +28,7 @@ A vector reaches the server as a request **parameter**, bound to a `vec:$v` refe
 
 ## Vectors are a seed, not an answer
 
-A vector is one seed among several: a recall may carry it alongside terms and anchors, or on its own. The vector index contributes its nearest neighbours — `seed-size` of them, or `top:` when that is larger — and the text index its own matches, each carrying its raw mass; a fact found by both adds the two. When the recall names an anchor and takes `depth:1` or `depth:2`, anchors then pass their surplus on to their facts, and the result decays by age.
+A vector is one seed among several: a recall may carry it alongside terms and anchors, or on its own. The vector index contributes its nearest neighbours — `seed-size` of them, or `top:` when that is larger — and the text index its own matches, each carrying its raw mass; a fact found by both adds the two. When the recall takes `depth:1` or `depth:2`, the anchors those matches are filed under then pass their surplus on to their facts, and the result decays by age.
 
 <Note title="One signal, not the ranking" type="note">
   **Semantic similarity is one signal feeding a ranking, never the ranking itself.**

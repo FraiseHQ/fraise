@@ -248,7 +248,7 @@ def test_vector_search_with_real_embeddings(query, embedding_docs):
         assert status == 200, body.get("error")
 
     # A phrase close in meaning to the cat document, sharing none of its words.
-    # The recall keyword matches no stored text and the recall names no anchor,
+    # The recall keyword matches no stored text and the recall runs at depth 0,
     # so only the vector index decides the result.
     query_vec = embed("a sleepy kitten dozing in the afternoon sun")
     status, body = query(
