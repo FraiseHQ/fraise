@@ -31,6 +31,9 @@ downloads into ``--bench-baseline``; every run leaves its own in
 ``--bench-out`` under the same names, which is how a nightly run becomes the
 next baseline. Without a baseline for a gate there is nothing to compare
 against yet: the benchmarks still run and are reported, and the gate passes.
+A baseline measured on another machine is one benchstat does not compare
+with: the gate could not measure, and the report names both machines and
+shows this run's numbers.
 Gates sharing a marker share one measurement.
 
 A pull request labelled perf-regression-accepted with a ``Perf:`` line in its
@@ -163,8 +166,13 @@ def _single(text):
 
 
 def _table(base, head):
-    """benchstat's comparison of base with head as a markdown table, or head's own numbers when there is no base."""
-    if base is None:
+    """benchstat's comparison of base with head as a markdown table, or head's own numbers when nothing of it compares."""
+    rows = (
+        _rows(_run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"]))
+        if base
+        else []
+    )
+    if not rows:
         lines = ["| benchmark | unit | this run |", "|---|---|---:|"]
         csv_text = _run([*_BENCHSTAT, "-format", "csv", str(head)])
         return lines + [
@@ -175,9 +183,7 @@ def _table(base, head):
         "| benchmark | unit | baseline | this run | vs base | |",
         "|---|---|---:|---:|---:|---|",
     ]
-    for row in _rows(
-        _run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"])
-    ):
+    for row in rows:
         test = "exact" if row.p is None else f"p={row.p:.3f}"
         delta = f"**{row.delta}**" if row.significant else row.delta
         lines.append(
@@ -188,6 +194,17 @@ def _table(base, head):
 
 def _measured(path):
     return path.is_file() and "\nBenchmark" in path.read_text()
+
+
+def _machine(path):
+    """The machine a benchmark output was measured on, as its goos, goarch and cpu lines name it.
+
+    benchstat compares only outputs whose lines agree, so a baseline measured
+    on another machine has nothing in common with this run.
+    """
+    lines = dict(re.findall(r"^(goos|goarch|cpu): *(.*?) *$", path.read_text(), re.M))
+    machine = f"{lines.get('goos')}/{lines.get('goarch')}"
+    return f"{machine} ({lines['cpu']})" if lines.get("cpu") else machine
 
 
 def pytest_addoption(parser):
@@ -351,7 +368,14 @@ def pytest_sessionfinish(session, exitstatus):
     out = Path(session.config.getoption("bench_out")).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    compared = [name for name, (base, _) in runs.items() if base]
+    elsewhere = {
+        name: (_machine(base), _machine(head))
+        for name, (base, head) in runs.items()
+        if base and _machine(base) != _machine(head)
+    }
+    compared = [
+        name for name, (base, _) in runs.items() if base and name not in elsewhere
+    ]
     kinds = {kind for kind, _, _ in outcomes}
     # The headline is what the outcomes add up to, worst first: a broken
     # limit, then a gate that could not measure, then a regression accepted.
@@ -368,6 +392,12 @@ def pytest_sessionfinish(session, exitstatus):
     lines = [headline, ""]
     if not runs and "Could not measure" not in kinds:
         lines += ["No package a gate benchmarks changed.", ""]
+    elif elsewhere:
+        before, after = next(iter(elsewhere.values()))
+        lines += [
+            f"The newest nightly run of `main` ran on {before} and this run on {after}, and benchstat compares only runs on one machine, so these are this run's numbers.",
+            "",
+        ]
     elif len(compared) == len(runs) and runs:
         lines += ["Compared with the newest nightly run of `main`.", ""]
     elif compared:
@@ -382,8 +412,16 @@ def pytest_sessionfinish(session, exitstatus):
         ]
 
     for kind in ("Failed", "Could not measure", "Accepted"):
+        # A gate whose baseline ran on another machine could not measure for
+        # the reason the sentence above gives once for all of them.
         listed = [
-            f"- {_gate(item)}: {message}" for k, item, message in outcomes if k == kind
+            f"- {_gate(item)}: {message}"
+            for k, item, message in outcomes
+            if k == kind
+            and not (
+                k == "Could not measure"
+                and " ".join(item.get_closest_marker("bench").args) in elsewhere
+            )
         ]
         if listed:
             lines += [f"**{kind}**", "", *listed, ""]
@@ -432,8 +470,10 @@ def comparison(request, pytestconfig):
     With no baseline for them yet the rows are empty: there is nothing to
     regress from, so every limit holds, and the report shows what was
     measured. With a baseline the rows are never empty: a comparison that
-    matched nothing would hold every limit without checking one, so it fails
-    the gate as a run that could not measure.
+    matched nothing would hold every limit without checking one, so a
+    baseline measured on another machine, which benchstat does not compare
+    with this run, fails the gate as a run that could not measure, and so
+    does one that has none of this run's benchmarks.
     """
     marker = request.node.get_closest_marker("bench")
     package, pattern = marker.args
@@ -462,13 +502,14 @@ def comparison(request, pytestconfig):
     base, head = runs[name]
     if base is None:
         return []
-    text = _run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"])
-    rows = _rows(text)
-    if not rows:
+    if _machine(base) != _machine(head):
         pytest.fail(
-            f"benchstat compared nothing of {base.name} with this run:\n{text[-4000:]}",
+            f"the baseline ran on {_machine(base)}, this run on {_machine(head)}",
             pytrace=False,
         )
+    rows = _rows(_run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"]))
+    if not rows:
+        pytest.fail("none of this run's benchmarks is in the baseline", pytrace=False)
     return rows
 
 
