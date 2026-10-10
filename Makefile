@@ -157,6 +157,52 @@ test-watch: ## Run Go tests in watch mode (requires reflex)
 	@which reflex > /dev/null || (echo "$(YELLOW)Installing reflex...$(RESET)" && $(GO_CMD) install github.com/cespare/reflex@latest)
 	reflex -r '\.go$$' -s -- $(GO_TEST) -v ./...
 
+##@ Benchmarks
+
+# The benchmarks are Go benchmarks beside the code they measure; the gates on
+# them are pytest tests in tests/perf, which run them on the working tree and
+# compare them with a nightly run's outputs in BENCH_BASELINE through
+# benchstat. Each run leaves its own outputs in PERF_OUT under the same names,
+# so a nightly run's PERF_OUT is the next baseline.
+# BENCH_CHANGED_SINCE, a git ref, runs only the gates whose packages changed
+# since it; a pull request passes its base.
+BENCH_BASELINE ?=
+BENCH_CHANGED_SINCE ?=
+PERF_OUT       ?= $(BIN_DIR)/perf
+GATES          := $(UV_CMD) run --package tests pytest --import-mode=importlib
+GATE_ARGS       = --bench-out=$(PERF_OUT) $(if $(BENCH_BASELINE),--bench-baseline=$(BENCH_BASELINE)) \
+                  $(if $(BENCH_CHANGED_SINCE),--bench-changed-since=$(BENCH_CHANGED_SINCE))
+
+bench: ## Run the pull request gates, against the nightly run in BENCH_BASELINE if one is given
+	$(GATES) tests/perf -m "bench and not nightly" $(GATE_ARGS)
+
+bench-nightly: ## Run every gate, HTTP latency included, against BENCH_BASELINE if one is given
+	$(GATES) tests/perf -m bench $(GATE_ARGS)
+
+# The history takes one sample per benchmark, a trend rather than a
+# comparison, and retrieval quality as {name, unit, value} JSON so it is
+# charted as bigger-is-better: github-action-benchmark's own go parser takes
+# every unit as smaller-is-better. A retrieval value is one whose unit is a
+# metric of the benchmark, with an @ in its name. Each series is shaped from
+# the outputs the night has: a gate that failed wrote none, and leaves its
+# series out rather than costing the others theirs.
+HISTORY_LATENCY   = $(wildcard $(PERF_OUT)/internal-*.txt $(PERF_OUT)/pkg-server-BenchmarkHTTP.txt)
+HISTORY_RETRIEVAL = $(wildcard $(PERF_OUT)/pkg-server-BenchmarkRetrievalQuality.txt)
+
+bench-history: ## Shape the run in PERF_OUT for the history github-action-benchmark keeps
+	@if [ -n "$(HISTORY_LATENCY)" ]; then \
+	  awk '!/^Benchmark/ || !seen[$$1]++' $(HISTORY_LATENCY) > $(PERF_OUT)/history-latency.txt; \
+	else echo "No latency output to record"; fi
+	@if [ -n "$(HISTORY_RETRIEVAL)" ]; then \
+	  awk '/^Benchmark/ { name = $$1; sub(/-[0-9]+$$/, "", name); \
+	      for (i = 3; i < NF; i += 2) if ($$(i + 1) ~ /@/) \
+	        printf "%s{\"name\":\"%s - %s\",\"unit\":\"%s\",\"value\":%s}", (n++ ? "," : "["), name, $$(i + 1), $$(i + 1), $$i } \
+	    END { print (n ? "]" : "[]") }' $(HISTORY_RETRIEVAL) > $(PERF_OUT)/history-retrieval.json; \
+	else echo "No retrieval output to record"; fi
+
+perf-vectors: ## Embed the LoCoMo sample once, for the runs that seed with vectors
+	$(UV_CMD) run --package tests --extra embeddings python tools/embed_locomo.py tests/perf/data/locomo-conv-26.json $(PERF_OUT)/locomo-vectors.json
+
 ##@ Development
 
 dev: ## Run development server
