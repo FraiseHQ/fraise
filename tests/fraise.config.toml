@@ -11,7 +11,7 @@ format = "json"
 disable-timestamp = true
 
 [engine]
-half-life = "168h"
+half-life = "2160h"
 cache-capacity = 1024
 
 [db]

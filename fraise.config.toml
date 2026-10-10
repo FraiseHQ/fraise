@@ -28,7 +28,7 @@
 # enqueue-timeout = "2s"
 
 [engine]
-# half-life = "168h"          # negative disables recency decay; 0 means the default
+# half-life = "2160h"         # negative disables recency decay; 0 means the default
 # cache-capacity = 1000
 
 [db]

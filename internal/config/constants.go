@@ -155,8 +155,12 @@ const (
 	// index insert or search can be asked to do.
 	DefaultMaxVectorDimension int = 4096
 
-	// DefaultHalflife is the time-decay half-life applied to fact scores.
-	DefaultHalflife time.Duration = 7 * 24 * time.Hour
+	// DefaultHalflife is the time-decay half-life applied to fact scores. Decay
+	// multiplies the whole score, so the half-life bounds how far recency
+	// overrides relevance. A long-term memory measures it in months: the newer
+	// of two equal facts still ranks first, and a strong match from last
+	// quarter still outranks a weak one from today.
+	DefaultHalflife time.Duration = 90 * 24 * time.Hour
 
 	// DefaultSeedSize is the minimum candidate budget each source (text and
 	// vector index) contributes to a search; the effective budget is
