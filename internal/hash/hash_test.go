@@ -26,8 +26,17 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
+
+// hasher returns the Hasher NewHasher builds for the named function and seed.
+func hasher(name string, seed uint64) hash.Hasher[uint64, string] {
+	cfg := &config.ConfigSet{}
+	cfg.DB.HashingFunction.Name = name
+	cfg.DB.HashingFunction.Seed = seed
+	return hash.NewHasher[uint64](cfg)
+}
 
 // TestXXH64KnownVectors pins the implementation to the values the reference
 // implementation produces at seed 0, so it proves correctness, not just
@@ -90,6 +99,43 @@ func TestT1haCoversAllTailLengths(t *testing.T) {
 			t.Errorf("T1haHash collision between length %d and %d (%#016x)", prev, n, got)
 		}
 		seen[got] = n
+	}
+}
+
+// TestNewHasherPinsTheConfiguredFunctionAndSeed pins NewHasher's selection to
+// exact digests: the t1ha arm with its seed, and xxhash for its own name and
+// for an unset one. Every node key a server derives comes from this hasher, so
+// a wrong arm or a dropped seed would key the store with a hash the operator
+// never chose, and no key written before the change would be found after it.
+func TestNewHasherPinsTheConfiguredFunctionAndSeed(t *testing.T) {
+	cases := []struct {
+		name string
+		seed uint64
+		want uint64
+	}{
+		{config.HashingT1ha, 42, 0x90f18c6ab3c1c1de},
+		{config.HashingXxhash, 0, 0x44bc2cf5ad770999},
+		{"", 0, 0x44bc2cf5ad770999},
+	}
+	for _, c := range cases {
+		h := hasher(c.name, c.seed)
+		if got := h.Hash("abc"); got != c.want {
+			t.Errorf("NewHasher(%q, seed %d).Hash(\"abc\") = %#016x, want %#016x", c.name, c.seed, got, c.want)
+		}
+		if got := h.Seed(); got != c.seed {
+			t.Errorf("NewHasher(%q, seed %d).Seed() = %d, want %d", c.name, c.seed, got, c.seed)
+		}
+	}
+}
+
+// TestSeedChangesOutput verifies the configured seed actually perturbs the
+// digest for both hashers, so two servers seeded apart never share keys.
+func TestSeedChangesOutput(t *testing.T) {
+	const in = "the same input"
+	for _, name := range []string{config.HashingT1ha, config.HashingXxhash} {
+		if hasher(name, 0).Hash(in) == hasher(name, 1).Hash(in) {
+			t.Errorf("%s: different seeds produced the same hash", name)
+		}
 	}
 }
 

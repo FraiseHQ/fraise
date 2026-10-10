@@ -5,7 +5,7 @@ description: "The reserved words of FQL, where they read as syntax and where as 
 
 Tokens form the vocabulary of the Fraise query language, in four classes: keywords, [identifiers](/docs/query-language/tokens/identifiers), [literals](/docs/query-language/tokens/literals) and [punctuation](/docs/query-language/tokens/punctuation).
 
-Keywords are the commands and the field names. **A reserved word is syntax wherever a search term can stand; quote it to search for it**: `recall top` and `recall food topic` are errors, and `recall 'top'` searches for the word. After a field's `:` only a value can appear, so there a keyword is ordinary data: `entity:top` files under the word "top".
+Keywords are the prefixes, the commands and the field names. **A reserved word is syntax wherever a search term can stand; quote it to search for it**: `recall top` and `recall food topic` are errors, and `recall 'top'` searches for the word. After a field's `:` only a value can appear, so there a keyword is ordinary data: `entity:top` files under the word "top".
 
 One tie-breaker resolves the boundary: **a keyword immediately followed by `:` is always a field**, so `top:3` never means the word "top", and `entity:top:3` is an error rather than a guess.
 

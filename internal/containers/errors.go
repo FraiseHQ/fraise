@@ -34,8 +34,7 @@ var (
 	// ErrPriorityQueueCapacity is returned when a priority queue is created with
 	// a capacity that is not strictly positive.
 	ErrPriorityQueueCapacity = errors.New("containers: priority queue capacity must be strictly positive")
-	// ErrEmptyPriorityQueue is returned when popping or peeking an empty
-	// priority queue.
+	// ErrEmptyPriorityQueue is returned by Dequeue on an empty priority queue.
 	ErrEmptyPriorityQueue = errors.New("containers: priority queue is empty")
 	// ErrInvalidTime is returned by ParseTimeValue when the input is neither a
 	// relative duration ("7d") nor a parseable absolute date.

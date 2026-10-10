@@ -39,7 +39,6 @@ type Position struct {
 // next rune to read.
 type Lexer struct {
 	Input      []rune
-	Offset     int
 	Character  rune
 	CurrentPos Position
 	NextPos    Position
@@ -215,13 +214,12 @@ func (l *Lexer) scanString() string {
 // inside a phrase (JSON can carry one as \u0000) is data like any other
 // character.
 func (l *Lexer) scanPhrase() Token {
-	start := l.CurrentPos
 	l.readCharacter() // consume the opening quote
 
 	var res []rune
 	for {
 		if l.CurrentPos.Column >= len(l.Input) {
-			return Token{Type: ILLEGAL, Literal: string(res), Pos: start}
+			return Token{Type: ILLEGAL, Literal: string(res)}
 		}
 		switch l.peek() {
 		case rune('\''):
@@ -233,7 +231,7 @@ func (l *Lexer) scanPhrase() Token {
 				continue
 			}
 			// a lone quote closes the phrase
-			return Token{Type: PHRASE, Literal: string(res), Pos: start}
+			return Token{Type: PHRASE, Literal: string(res)}
 		default:
 			res = append(res, l.peek())
 			l.readCharacter()

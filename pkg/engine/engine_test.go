@@ -172,3 +172,34 @@ func TestPlanCachesQuery(t *testing.T) {
 		t.Fatalf("second Plan returned error: %v", err)
 	}
 }
+
+// TestPlanCachesUnderTheParsedQuerysHash pins the cache key to the query as
+// parsed, not as optimised. Dedupe rewrites a recall in place, so keying the
+// entry by the rewritten query's hash would store "anna anna" under the hash
+// of "anna", and the next request for "anna anna", which looks up its own
+// parsed hash, would miss and be optimised again on every call.
+func TestPlanCachesUnderTheParsedQuerysHash(t *testing.T) {
+	cfg := config.New()
+	e := newEngine(t, cfg)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer e.Stop()
+
+	const text = "recall@0 anna anna topic:color topic:color"
+	q, _, err := query.Parse[uint64, float32](text, nil, cfg)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if _, err := e.Plan(q); err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+
+	again, _, err := query.Parse[uint64, float32](text, nil, cfg)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if _, ok := e.Cache.Get(again.Hash(e.Hasher)); !ok {
+		t.Fatal("a repeat of a query Dedupe rewrote missed the plan cache")
+	}
+}

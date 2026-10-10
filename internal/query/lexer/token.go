@@ -72,10 +72,9 @@ const (
 	TILDE
 	MINUS
 
-	// LPAREN, RPAREN and COMMA are the punctuation.
+	// LPAREN and RPAREN are the punctuation.
 	LPAREN
 	RPAREN
-	COMMA
 
 	// AT, COLON and DOLLAR are the separators: '@' before a graph selector,
 	// ':' between a clause keyword and its value, '$' before a parameter name.
@@ -141,7 +140,6 @@ var TokenMap = map[TokenType]string{
 	VEC:        "vec",
 	EOL:        "eol",
 	AT:         "@",
-	COMMA:      "'",
 	WHITESPACE: "whitespace",
 }
 

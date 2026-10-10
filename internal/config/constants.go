@@ -161,7 +161,7 @@ const (
 	// DefaultSeedSize is the minimum candidate budget each source (text and
 	// vector index) contributes to a search; the effective budget is
 	// max(seed-size, top), so a large recall is never starved of candidates.
-	DefaultSeedSize uint = 10
+	DefaultSeedSize int = 10
 
 	// DefaultMinScoreRatio leaves the score cutoff (DBConfig.MinScoreRatio)
 	// off.
@@ -170,13 +170,13 @@ const (
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
 
-	// DefaultProjectionDimention is the dimension vectors are randomly projected
+	// DefaultProjectionDimension is the dimension vectors are randomly projected
 	// down to inside each RP-tree. It is the number of split directions a tree
 	// can draw on, so a narrow projection makes every level of a deep tree reuse
 	// the same few directions and the partition stops resembling the space.
 	// Ingest does not pay for it: a split names one row and routing reads one
 	// row (Projection.ApplyRow).
-	DefaultProjectionDimention int = 128
+	DefaultProjectionDimension int = 128
 
 	// DefaultNumberTrees is how many RP-trees form the vector index forest. A
 	// single tree is a weak approximator, and the forest makes up for it with

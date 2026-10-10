@@ -212,7 +212,7 @@ func marshalHit(t *testing.T, contributions []query.HitContribution[float32]) st
 		Value:     "the parrot is turquoise",
 		Timestamp: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 	}}
-	h := query.Hit[string, float32]{Node: &node, Score: 0.5, Contributions: contributions}
+	h := query.Hit[string, float32]{Node: node, Score: 0.5, Contributions: contributions}
 	out, err := json.Marshal(h)
 	if err != nil {
 		t.Fatalf("Marshal(Hit) = %v, want nil", err)

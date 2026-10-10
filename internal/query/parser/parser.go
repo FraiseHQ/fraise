@@ -413,7 +413,7 @@ func (p *parser[K, P]) parseQuery() (CommandNode, error) {
 	case lexer.RECALL:
 		return (*p).parseRecall()
 	default:
-		return nil, p.errf(p.cur.Pos, "expected a command (recall, remember), found %q", p.cur.Literal)
+		return nil, p.errf(p.cur.Pos, "expected a command (recall, remember), found %s", p.cur.Describe())
 	}
 }
 
@@ -671,8 +671,9 @@ func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
 // different query instead of failing. A blank after the keyword is diagnosed
 // by what follows it: before a ':' it is a space inside the clause, before a
 // value it is a missing ':' (errMissingColon), and before the end it is a
-// dangling keyword (errKeywordAsClause). A blank after the ':' is a space
-// inside the clause too.
+// dangling keyword (errKeywordAsClause). Anything else glued to the keyword in
+// place of the ':' is diagnosed the same way, as a missing ':' or a dangling
+// keyword. A blank after the ':' is a space inside the clause too.
 func (p *parser[K, P]) parseSeparator(key lexer.Token) error {
 	if p.cur.Type == lexer.WHITESPACE {
 		switch p.peek.Type {
@@ -685,7 +686,10 @@ func (p *parser[K, P]) parseSeparator(key lexer.Token) error {
 		}
 	}
 	if _, err := p.expect(lexer.COLON); err != nil {
-		return p.errf(p.cur.Pos, "Expected colon, but found %s", p.cur.Describe())
+		if p.cur.Type.IsEndOfLine() {
+			return p.errKeywordAsClause(key)
+		}
+		return p.errMissingColon(key, p.clauseValue(key, p.cur))
 	}
 	if p.cur.Type == lexer.WHITESPACE {
 		return p.errf(p.cur.Pos, "no space allowed after :")
@@ -745,6 +749,15 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, lexer.Token, containers.Ti
 		return lexer.Token{}, lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: out of range (at most %d%c)", strings.ToLower(key.Literal), tok.Describe(), rangeErr.Max, rangeErr.Unit)
 	case err != nil:
 		return lexer.Token{}, lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: expected a duration like 7d or a quoted date like '2026-01-15'", strings.ToLower(key.Literal), tok.Describe())
+	}
+
+	// Only an absolute time is quoted, because it carries a '-'. A quoted
+	// duration is rejected rather than read: accepting since:'7d' would make
+	// two spellings of one clause, and the quote is how the grammar tells a
+	// date from a duration.
+	if _, relative := t.(containers.RelativeTime[K]); relative && tok.Type == lexer.PHRASE {
+		clause := strings.ToLower(key.Literal)
+		return lexer.Token{}, lexer.Token{}, nil, p.errf(tok.Pos, "invalid %s value %s: a duration is not quoted — write %s:%s", clause, tok.Describe(), clause, tok.Literal)
 	}
 
 	return key, tok, t, nil
@@ -808,7 +821,7 @@ func (p *parser[K, P]) parsePhrase() (*PhraseNode, error) {
 	}
 
 	if !p.cur.Type.IsBlank() && !p.cur.Type.IsEndOfLine() {
-		return nil, p.errf(p.cur.Pos, "expected a whitespace, found %q", p.cur.Literal)
+		return nil, p.errf(p.cur.Pos, "expected a whitespace, found %s", p.cur.Describe())
 	}
 
 	return &PhraseNode{value: tok.Literal, pos: tok.Pos}, nil

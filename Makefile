@@ -277,6 +277,7 @@ clean-go: ## Clean Go build artifacts
 clean-py: ## Clean Python build artifacts
 	@echo "$(CYAN)Cleaning Python artifacts...$(RESET)"
 	@cd $(PY_DIR) && rm -rf dist/ .pytest_cache/ __pycache__/
+	rm -f coverage-py.xml .coverage
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@echo "$(GREEN)✓ Python artifacts cleaned$(RESET)"

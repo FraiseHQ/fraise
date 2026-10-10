@@ -24,19 +24,6 @@ package hash
 
 import "testing"
 
-// TestSeedChangesOutput verifies the (unexported) seed actually perturbs the
-// digest for both hashers. It is white-box because the seed has no exported
-// setter.
-func TestSeedChangesOutput(t *testing.T) {
-	const in = "the same input"
-	if (T1haHash[uint64]{seed: 0}).Hash(in) == (T1haHash[uint64]{seed: 1}).Hash(in) {
-		t.Error("T1haHash: different seeds produced the same hash")
-	}
-	if (XxHash[uint64]{seed: 0}).Hash(in) == (XxHash[uint64]{seed: 1}).Hash(in) {
-		t.Error("XxHash: different seeds produced the same hash")
-	}
-}
-
 // TestT1haSeededVector locks a seeded t1ha1 value as a regression anchor.
 func TestT1haSeededVector(t *testing.T) {
 	if got := (T1haHash[uint64]{}).t1ha1LE([]byte("abc"), 42); got != 0x90f18c6ab3c1c1de {

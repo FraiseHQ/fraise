@@ -148,6 +148,38 @@ func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
 	}
 }
 
+// TestTimeValuesAreQuotedOnlyWhenAbsolute pins the grammar's split between the
+// two time forms: a date carries a '-' and is quoted, a duration is a bare
+// word. A quoted duration is an error naming the unquoted spelling, so one
+// clause has one spelling and the quote keeps telling a date from a duration.
+func TestTimeValuesAreQuotedOnlyWhenAbsolute(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string // "" when the query must parse
+	}{
+		{"recall x since:7d", ""},
+		{"recall x since:'2026-01-15'", ""},
+		{"recall x until:'2026-01-15T10:00:00Z'", ""},
+		{"recall x since:'7d'", `invalid since value "7d": a duration is not quoted — write since:7d`},
+		{"recall x until:'3h'", `invalid until value "3h": a duration is not quoted — write until:3h`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("Parse(%q) = %v, want it to parse", tc.query, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse(%q) = %v, want an error containing %q", tc.query, err, tc.want)
+			}
+		})
+	}
+}
+
 // TestClauseErrorsSurfaceUnmangled pins that a clause helper's positioned
 // error reaches the caller as-is: not re-wrapped, and not garbled by a bad
 // format verb into `&{%!e(string=...)}`, which would destroy the message an
@@ -165,7 +197,7 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 		// vec: on both commands: parseVecField's positioned error must reach
 		// the caller unwrapped, like every other clause's.
 		{"recall x vec:v", "expected param field operator $"},
-		{"remember 'a fact' vec$:v", "Expected colon"}, // a remember: among a recall's terms a bare vec is a keyword term
+		{"remember 'a fact' vec$:v", "is missing its ':'"}, // a remember: among a recall's terms a bare vec is a keyword term
 		{"recall x vec:$", "expected literal"},
 		{"remember 'a fact' vec:v", "expected param field operator $"},
 		{"remember 'a fact' vec:$", "expected literal"},
@@ -359,11 +391,13 @@ func TestRememberPhrase(t *testing.T) {
 }
 
 // TestRememberPhraseRoundTrip checks that a fact containing an apostrophe
-// survives String() reconstruction (the inner quote is doubled again), and
-// that a quoted anchor value comes back quoted.
+// survives String() reconstruction (the inner quote is doubled again), that a
+// quoted anchor value comes back quoted, and that the selector is printed only
+// when it was written, as a recall's is.
 func TestRememberPhraseRoundTrip(t *testing.T) {
-	// String() always renders the graph selector (@0 by default), so include it.
+	// The selector is printed as written: absent when the query has none.
 	queries := []string{
+		"remember 'alice''s laptop' topic:devices",
 		"remember@0 'alice''s laptop' topic:devices",
 		"remember@0 'a fact' topic:'machine-learning' entity:'o''brien'",
 	}
@@ -1258,7 +1292,7 @@ func TestBareModifierOnARememberIsRejected(t *testing.T) {
 }
 
 // TestVecWithoutColonIsRejected pins that vec followed by anything but ':' is
-// rejected with the token it found, on both commands. Among a recall's terms a
+// rejected with the clause repair, on both commands. Among a recall's terms a
 // bare vec is a keyword term, so these cases put it where only a clause can
 // start: after a remember's fact, or after a recall's first clause.
 func TestVecWithoutColonIsRejected(t *testing.T) {
@@ -1266,8 +1300,8 @@ func TestVecWithoutColonIsRejected(t *testing.T) {
 		query string
 		want  string
 	}{
-		{"remember 'a' vec$:v", `Expected colon, but found "$"`},
-		{"recall x topic:y vec$:v", `Expected colon, but found "$"`},
+		{"remember 'a' vec$:v", `"vec" is missing its ':': write vec:$<name>`},
+		{"recall x topic:y vec$:v", `"vec" is missing its ':': write vec:$<name>`},
 	}
 
 	for _, tc := range cases {
