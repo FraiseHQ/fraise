@@ -171,19 +171,17 @@ const (
 	// off.
 	DefaultMinScoreRatio float64 = 0
 
-	// DefaultWindowGamma leaves the window (DBConfig.WindowGamma) off: a fact
-	// is scored on its own terms. 0.3 is the operating point measured on
-	// LoCoMo, where it raised F1@10 from 0.378 to 0.502 and single-hop turn
-	// recall@10 from 0.70 to 0.81; it is opt-in until the benchmark gates
-	// carry it.
-	DefaultWindowGamma float64 = 0
+	// DefaultWindowGamma is the window (DBConfig.WindowGamma) a fact is
+	// scored with: the operating point measured on LoCoMo, where it raised
+	// F1@10 from 0.378 to 0.502 and single-hop turn recall@10 from 0.70 to
+	// 0.81. A negative value turns the window off; 0 means this default.
+	DefaultWindowGamma float64 = 0.3
 
-	// DefaultAggregate leaves grouping (DBConfig.Aggregate) off; "spread"
-	// turns it on with the thresholds below, the operating point measured on
-	// LoCoMo (session recall@10 from 0.899 to 0.945, multi-hop from 0.671 to
-	// 0.817, precision up as well); it is opt-in until the benchmark gates
-	// carry it.
-	DefaultAggregate string = AggregateNone
+	// DefaultAggregate turns grouping (DBConfig.Aggregate) on with the
+	// thresholds below, the operating point measured on LoCoMo (session
+	// recall@10 from 0.899 to 0.945, multi-hop from 0.671 to 0.817, precision
+	// up as well); "none" turns it off.
+	DefaultAggregate string = AggregateSpread
 
 	// DefaultAggregatePool is how many ranked candidates grouping considers.
 	DefaultAggregatePool int = 60

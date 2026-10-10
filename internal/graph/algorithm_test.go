@@ -40,6 +40,11 @@ func testConfig() *config.ConfigSet {
 	cfg.DB.VectorSearch.ProjectionDimension = 8
 	cfg.DB.VectorSearch.NumberTrees = 4
 	cfg.DB.VectorSearch.Seed = 4
+	// The pins below describe the plain pipeline, one fact scored on its own
+	// terms and one slot per fact; the window and the grouping, both on by
+	// default, have their own tests, which turn them on explicitly.
+	cfg.DB.WindowGamma = -1
+	cfg.DB.Aggregate.Name = config.AggregateNone
 	return cfg
 }
 

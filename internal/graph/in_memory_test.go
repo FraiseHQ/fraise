@@ -1659,7 +1659,7 @@ func BenchmarkSearch(b *testing.B) {
 // answer becomes a hit without holding a query term, and a fact under
 // another topic, however close in time, borrows nothing, because adjacency
 // is in write order under a shared anchor, not in time alone. With the
-// window off (the default) the same graph scores exactly as before.
+// window off (a negative share) the same graph scores as the plain search.
 func TestInMemoryGraphSearchWindowScoresAnExchange(t *testing.T) {
 	build := func(gamma float64) *graph.InMemoryGraph[uint64, float64] {
 		cfg := testConfig()
@@ -1694,7 +1694,7 @@ func TestInMemoryGraphSearchWindowScoresAnExchange(t *testing.T) {
 		return out
 	}
 
-	alone := search(build(0))
+	alone := search(build(-1))
 	if _, ok := alone["the dashboards are green"]; ok {
 		t.Fatalf("window off: Search returned the dashboards fact, which holds no query term")
 	}
@@ -1837,12 +1837,13 @@ func TestInMemoryGraphSearchGroupsAnAggregationQuestion(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchAggregateOffIsTheRanking pins that with
-// db.aggregate off (the default) the same aggregation question returns the
-// plain ranking truncated to top, no group, spread 0, so the engine an
-// operator never configured is the one that was measured.
+// db.aggregate set to none the same aggregation question returns the plain
+// ranking truncated to top, no group, spread 0, so an operator who turns
+// grouping off gets the engine that was measured without it.
 func TestInMemoryGraphSearchAggregateOffIsTheRanking(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
+	cfg.DB.Aggregate.Name = config.AggregateNone
 	g := aggregationGraph(t, cfg)
 	result, err := g.Search([]string{"tournament"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
 	if err != nil {

@@ -489,7 +489,12 @@ func BenchmarkRecallCommit(b *testing.B) {
 // well doubles the mass of every fact filed under both, and a term beside the
 // anchor seeds from the text index with the anchor as a filter.
 func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
-	g := graph.NewGraph[uint64, float32](config.New())
+	// The window is off: the last case pins that an anchor filters rather
+	// than lists, and under the window the match's neighbours would be hits
+	// of their own.
+	cfg := config.New()
+	cfg.DB.WindowGamma = -1
+	g := graph.NewGraph[uint64, float32](cfg)
 	facts := []string{"the deploy runs at noon", "the deploy key lives in vault", "the deploy log is archived weekly"}
 	for _, value := range facts {
 		w := &Remember[uint64, float32]{Value: value, Topics: []string{"deploys"}, Entities: []string{"ops"}}

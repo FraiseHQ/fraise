@@ -190,9 +190,10 @@ func (c *ConfigSet) validate() error {
 		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
 	}
 
-	// A window share past 1 would let a neighbour outweigh the fact itself.
-	if w := c.DB.WindowGamma; !(w >= 0 && w <= 1) {
-		return fmt.Errorf("%w: db.window-gamma = %v (accepted: 0 to 1)", ErrInvalidValue, w)
+	// A window share past 1 would let a neighbour outweigh the fact itself;
+	// a negative share is the window off.
+	if w := c.DB.WindowGamma; !(w <= 1) {
+		return fmt.Errorf("%w: db.window-gamma = %v (accepted: 1 or less, negative is off)", ErrInvalidValue, w)
 	}
 
 	// The grouping thresholds each have a floor below which grouping could

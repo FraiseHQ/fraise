@@ -149,9 +149,11 @@ func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGr
 		sequences: make(map[K]*sequence[K]),
 	}
 	// The window needs the graph's notion of adjacency, which only exists
-	// once the graph does, so it is installed last. A gamma of 0 leaves the
-	// index on the plain search.
-	textIndex.SetWindow(P(cfg.DB.WindowGamma), g.contiguous)
+	// once the graph does, so it is installed last. A non-positive gamma
+	// leaves the index on the plain search.
+	if cfg.DB.WindowGamma > 0 {
+		textIndex.SetWindow(P(cfg.DB.WindowGamma), g.contiguous)
+	}
 	return g
 }
 

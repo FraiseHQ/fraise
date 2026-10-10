@@ -292,23 +292,39 @@ min-score-ratio = 0.3
 }
 
 // TestConfigSet_WindowAndAggregate pins the resting state of the two
-// retrieval settings added for the window and grouping: both off, with the
-// grouping thresholds at their measured operating point so that turning
-// grouping on by name alone runs the configuration that was benchmarked. The
-// file and the flags reach the same fields.
+// retrieval settings added for the window and grouping: both on, at the
+// operating point that was benchmarked, so a config that never mentions
+// them runs the engine that was measured; a negative share and the name
+// none are the two ways off, and 0 for the share means the default, as it
+// does for the half-life. The file and the flags reach the same fields.
 func TestConfigSet_WindowAndAggregate(t *testing.T) {
 	c := config.New()
-	if c.DB.WindowGamma != 0 {
-		t.Errorf("DB.WindowGamma default: got %v, want 0 (off)", c.DB.WindowGamma)
+	if c.DB.WindowGamma != 0.3 {
+		t.Errorf("DB.WindowGamma default: got %v, want 0.3", c.DB.WindowGamma)
 	}
-	want := config.Aggregate{Name: config.AggregateNone, Pool: 60, Spread: 4, Ratio: 0.5, MinSize: 3, MaxGroups: 2}
+	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 4, Ratio: 0.5, MinSize: 3, MaxGroups: 2}
 	if c.DB.Aggregate != want {
 		t.Errorf("DB.Aggregate default: got %+v, want %+v", c.DB.Aggregate, want)
 	}
 
+	off := config.New()
+	if err := off.Parse([]string{"-config", missingConfig(t), "-window-gamma", "-1", "-aggregate", "none"}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if off.DB.WindowGamma != -1 || off.DB.Aggregate.Name != config.AggregateNone {
+		t.Errorf("off: got gamma %v, aggregate %q, want -1 and none to survive Parse", off.DB.WindowGamma, off.DB.Aggregate.Name)
+	}
+	zero := config.New()
+	if err := zero.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0"}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if zero.DB.WindowGamma != 0.3 {
+		t.Errorf("DB.WindowGamma from an explicit 0: got %v, want the default 0.3", zero.DB.WindowGamma)
+	}
+
 	const contents = `
 [db]
-window-gamma = 0.3
+window-gamma = 0.5
 
 [db.aggregate]
 name = "spread"
@@ -323,8 +339,8 @@ pool = 40
 	if err := f.Parse([]string{"-config", path}); err != nil {
 		t.Fatalf("Parse() error = %v, want nil", err)
 	}
-	if f.DB.WindowGamma != 0.3 {
-		t.Errorf("DB.WindowGamma: got %v, want 0.3", f.DB.WindowGamma)
+	if f.DB.WindowGamma != 0.5 {
+		t.Errorf("DB.WindowGamma: got %v, want 0.5", f.DB.WindowGamma)
 	}
 	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 4, Ratio: 0.5, MinSize: 3, MaxGroups: 2}
 	if f.DB.Aggregate != want {

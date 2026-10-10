@@ -20,6 +20,13 @@ precision = "float64"
 default-top = 10
 default-depth = 2
 seed-size = 64
+# The suite pins the plain pipeline: one fact scored on its own terms and one
+# slot per fact. The window and the grouping, on by default, are off here;
+# their own coverage is the Go suite, which turns them on per test.
+window-gamma = -1
+
+[db.aggregate]
+name = "none"
 
 [db.hashing-function]
 name = "xxhash"

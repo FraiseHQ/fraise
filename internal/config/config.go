@@ -159,9 +159,10 @@ type DBConfig struct {
 	// Window: the share of its temporal neighbours' term counts and length a
 	// fact borrows when the text index scores it. Two facts written one after
 	// the other under the same anchor are usually one exchange, a question and
-	// its answer, and at 0 each is scored as a fragment of it. A fact that
-	// holds none of a term but sits beside one that does is then a match too.
-	// 0 (the default) is off; validate rejects anything outside [0, 1].
+	// its answer, and scored alone each is a fragment of it. A fact that holds
+	// none of a term but sits beside one that does is a match too. A negative
+	// value turns the window off, as a negative half-life turns decay off; 0
+	// means the default. validate rejects anything above 1.
 	WindowGamma float64 `toml:"window-gamma"`
 
 	// Aggregate groups the hits a recall returns (see [Aggregate]).
@@ -353,7 +354,7 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
 	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits whose relevance is below this fraction of the best hit's (0 = off)")
-	flagSet.Float64Var(&config.DB.WindowGamma, "window-gamma", DefaultWindowGamma, "Share of its temporal neighbours' matches a fact borrows when scored (0 = off)")
+	flagSet.Float64Var(&config.DB.WindowGamma, "window-gamma", DefaultWindowGamma, "Share of its temporal neighbours' matches a fact borrows when scored (negative = off)")
 	flagSet.StringVar(&config.DB.Aggregate.Name, "aggregate", DefaultAggregate, "Group hits that matched by the same rare term (none, spread)")
 	flagSet.IntVar(&config.DB.Aggregate.Pool, "aggregate-pool", DefaultAggregatePool, "Ranked candidates the grouping considers")
 	flagSet.IntVar(&config.DB.Aggregate.Spread, "aggregate-spread", DefaultAggregateSpread, "Distinct facets the top of the ranking must span before grouping runs")
@@ -500,9 +501,9 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
-	// DB.MinScoreRatio and DB.WindowGamma need no Adjust: their default, 0,
-	// is the zero value and means off, so an absent key and an explicit 0
-	// already agree.
+	// DB.MinScoreRatio needs no Adjust: its default, 0, is the zero value and
+	// means off, so an absent key and an explicit 0 already agree.
+	Adjust(&c.DB.WindowGamma, DefaultWindowGamma)
 	Adjust(&c.DB.Aggregate.Name, DefaultAggregate)
 	Adjust(&c.DB.Aggregate.Pool, DefaultAggregatePool)
 	Adjust(&c.DB.Aggregate.Spread, DefaultAggregateSpread)
