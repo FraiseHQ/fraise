@@ -45,10 +45,9 @@ type Projection[K comparable, P float32 | float64] struct {
 	rows [][]P // random unit vectors; one per projected coordinate
 }
 
-// newProjection draws projDim random unit vectors in dim-dimensional space,
-// deterministically from seed.
-func newProjection[K comparable, P float32 | float64](dim, projDim int, seed uint64) Projection[K, P] {
-	rng := rand.New(rand.NewSource(int64(seed)))
+// newProjection draws projDim random unit vectors in dim-dimensional space
+// from rng.
+func newProjection[K comparable, P float32 | float64](dim, projDim int, rng *rand.Rand) Projection[K, P] {
 	rows := make([][]P, projDim)
 	for i := range rows {
 		row := make([]P, dim)
@@ -137,6 +136,11 @@ type RPTree[K comparable, T any, P float32 | float64] struct {
 // splits, and overfetch is how many candidates Nearest gathers per result
 // asked for.
 //
+// The projection and the split choices are drawn in turn from one generator
+// seeded with seed, so a tree's randomness is a function of its seed alone: a
+// forest that seeds its trees consecutively gets trees whose draws are
+// independent of each other's, which is what its recall rests on.
+//
 // The tree has no defaults of its own: they are configuration, applied where
 // the index is built. The clamps below are validity floors, the smallest value
 // each parameter is meaningful at, not defaults.
@@ -150,14 +154,15 @@ func NewRPTree[K comparable, T any, P float32 | float64](dim, projDim int, seed 
 	if overfetch < 1 {
 		overfetch = 1
 	}
+	rng := rand.New(rand.NewSource(int64(seed)))
 	return &RPTree[K, T, P]{
-		proj:      newProjection[K, P](dim, projDim, seed),
+		proj:      newProjection[K, P](dim, projDim, rng),
 		root:      &RPTreeNode[K, T, P]{},
 		dim:       dim,
 		projDim:   projDim,
 		leafSize:  leafSize,
 		overfetch: overfetch,
-		rng:       rand.New(rand.NewSource(int64(seed) + 1)),
+		rng:       rng,
 	}
 }
 
