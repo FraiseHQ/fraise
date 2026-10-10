@@ -174,9 +174,10 @@ const (
 	// DefaultWindowGamma is the window (DBConfig.WindowGamma) a fact is
 	// scored with: the operating point measured on LoCoMo by the retrieval
 	// quality benchmark, where with the spread below it raised p@1 from 0.726
-	// to 0.761. Alone it stacks the slots with one exchange, which is what the
-	// spread undoes. A negative value turns the window off; 0 means this
-	// default.
+	// to 0.761. Alone it raised F1@10 from 0.396 to 0.519 and lowered session
+	// recall@10 from 0.880 to 0.865, stacking the slots with one exchange,
+	// which is what the spread undoes. A negative value turns the window off;
+	// 0 means this default.
 	DefaultWindowGamma float64 = 0.3
 
 	// DefaultAggregate spreads a flat ranking's slots over its facets
