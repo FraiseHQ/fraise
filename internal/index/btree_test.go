@@ -65,7 +65,7 @@ func TestBTreeIndexRetrieveMissing(t *testing.T) {
 
 func TestBTreeIndexSearchEmpty(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
-	if _, _, err := idx.Search("anything", 0); !errors.Is(err, index.ErrEmptyIndex) {
+	if _, _, err := idx.Search("anything", 0, nil); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search on empty index = %v, want ErrEmptyIndex", err)
 	}
 }
@@ -88,7 +88,7 @@ func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 		}
 	}
 
-	got, scores, err := idx.Search("quick brown fox", 0)
+	got, scores, err := idx.Search("quick brown fox", 0, nil)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -129,7 +129,7 @@ func TestBTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			for i := 0; i < 20; i++ {
-				got, _, err := idx.Search("sky", tc.k)
+				got, _, err := idx.Search("sky", tc.k, nil)
 				if err != nil {
 					t.Fatalf("Search(sky, %d) = %v, want nil", tc.k, err)
 				}
@@ -147,7 +147,7 @@ func TestBTreeIndexSearchNoMatchOnNonEmptyIndex(t *testing.T) {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
 
-	got, _, err := idx.Search("nonexistent", 0)
+	got, _, err := idx.Search("nonexistent", 0, nil)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil (no match is not an error)", err)
 	}
@@ -165,10 +165,10 @@ func TestBTreeIndexUpdateMovesPostings(t *testing.T) {
 		t.Fatalf("Update = %v, want nil", err)
 	}
 
-	if got, _, err := idx.Search("apples", 0); err != nil || len(got) != 0 {
+	if got, _, err := idx.Search("apples", 0, nil); err != nil || len(got) != 0 {
 		t.Errorf("Search(apples) after update = (%v, %v), want (empty, nil)", got, err)
 	}
-	got, _, err := idx.Search("oranges", 0)
+	got, _, err := idx.Search("oranges", 0, nil)
 	if err != nil || len(got) != 1 || got[0] != 1 {
 		t.Errorf("Search(oranges) after update = (%v, %v), want ([1], nil)", got, err)
 	}
@@ -202,7 +202,7 @@ func TestBTreeIndexDelete(t *testing.T) {
 
 	// Term "shared" is still referenced by doc 2, so it must still be
 	// searchable.
-	got, _, err := idx.Search("shared", 0)
+	got, _, err := idx.Search("shared", 0, nil)
 	if err != nil || len(got) != 1 || got[0] != 2 {
 		t.Errorf("Search(shared) after deleting doc 1 = (%v, %v), want ([2], nil)", got, err)
 	}
@@ -212,7 +212,7 @@ func TestBTreeIndexDelete(t *testing.T) {
 	}
 	// The index itself is now empty, which is a distinct condition from "no
 	// document matched the query".
-	if _, _, err := idx.Search("shared", 0); !errors.Is(err, index.ErrEmptyIndex) {
+	if _, _, err := idx.Search("shared", 0, nil); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search(shared) after deleting all docs = %v, want ErrEmptyIndex", err)
 	}
 }
@@ -239,7 +239,7 @@ func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
 	if err != nil || got != "second version" {
 		t.Errorf("Retrieve(1) = (%q, %v), want (\"second version\", nil)", got, err)
 	}
-	if got, _, err := idx.Search("first", 0); err != nil || len(got) != 0 {
+	if got, _, err := idx.Search("first", 0, nil); err != nil || len(got) != 0 {
 		t.Errorf("Search(first) after overwrite = (%v, %v), want (empty, nil)", got, err)
 	}
 }
@@ -268,7 +268,7 @@ func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 		t.Fatalf("Insert(2) = %v, want nil", err)
 	}
 
-	keys, scores, err := idx.Search("red green", 0)
+	keys, scores, err := idx.Search("red green", 0, nil)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -324,7 +324,7 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 	}
 
 	// k <= 0 returns all four matches.
-	all, _, err := idx.Search("sky", 0)
+	all, _, err := idx.Search("sky", 0, nil)
 	if err != nil {
 		t.Fatalf("Search(sky, 0) = %v, want nil", err)
 	}
@@ -334,7 +334,7 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 
 	// A positive k caps the results.
 	for _, k := range []int{1, 2, 3} {
-		got, scores, err := idx.Search("sky", k)
+		got, scores, err := idx.Search("sky", k, nil)
 		if err != nil {
 			t.Fatalf("Search(sky, %d) = %v, want nil", k, err)
 		}
@@ -343,6 +343,45 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 		}
 		if len(scores) != len(got) {
 			t.Errorf("Search(sky, %d): %d keys but %d scores", k, len(got), len(scores))
+		}
+	}
+}
+
+// TestBTreeIndexSearchKeepFiltersBeforeTruncation pins that keep narrows which
+// documents compete for the k places rather than filtering the global top k:
+// the two accepted documents rank last on "sky" and must still both return.
+// Their scores are those of the unfiltered search, since a filter changes no
+// term weight.
+func TestBTreeIndexSearchKeepFiltersBeforeTruncation(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	// Each key pads "sky" with one more filler word, so BM25's length norm
+	// ranks the keys in ascending order.
+	for key := 0; key < 10; key++ {
+		if err := idx.Insert(key, "sky"+strings.Repeat(" cloud", key)); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	all, allScores, err := idx.Search("sky", 0, nil)
+	if err != nil {
+		t.Fatalf("Search(sky, 0) = %v, want nil", err)
+	}
+	want := map[int]float64{}
+	for i, key := range all {
+		if key >= 8 {
+			want[key] = allScores[i]
+		}
+	}
+
+	got, scores, err := idx.Search("sky", 2, func(key int) bool { return key >= 8 })
+	if err != nil {
+		t.Fatalf("Search(sky, 2, keep) = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(got, []int{8, 9}) {
+		t.Fatalf("Search(sky, 2, keep >= 8) = %v, want [8 9]", got)
+	}
+	for i, key := range got {
+		if scores[i] != want[key] {
+			t.Errorf("score of %d under keep = %v, want its unfiltered %v", key, scores[i], want[key])
 		}
 	}
 }
@@ -361,7 +400,7 @@ func TestBTreeIndexStemmingUnifiesInflections(t *testing.T) {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
 
-	keys, _, err := idx.Search("runs", 0)
+	keys, _, err := idx.Search("runs", 0, nil)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -419,12 +458,12 @@ func TestSearchPurity(t *testing.T) {
 				}
 			}
 
-			firstKeys, firstScores, err := idx.Search("red green", 0)
+			firstKeys, firstScores, err := idx.Search("red green", 0, nil)
 			if err != nil {
 				t.Fatalf("Search = %v, want nil", err)
 			}
 			for i := 0; i < 10; i++ {
-				keys, scores, err := idx.Search("red green", 0)
+				keys, scores, err := idx.Search("red green", 0, nil)
 				if err != nil || !reflect.DeepEqual(keys, firstKeys) || !reflect.DeepEqual(scores, firstScores) {
 					t.Fatalf("call %d: %v %v (err %v), want %v %v every call", i+2, keys, scores, err, firstKeys, firstScores)
 				}
@@ -466,7 +505,7 @@ func TestMatchCountEquivalentToPrePluginRanking(t *testing.T) {
 			}
 			query := strings.Join(queryTokens, " ")
 
-			gotKeys, gotScores, err := idx.Search(query, 0)
+			gotKeys, gotScores, err := idx.Search(query, 0, nil)
 			if err != nil {
 				t.Fatalf("Search(%q) = %v, want nil", query, err)
 			}
@@ -535,7 +574,7 @@ func TestBTreeIndexDeleteTombstonesUntilFlush(t *testing.T) {
 		t.Fatalf("Entries() after one delete = %d, want Count()+1 = %d (the tombstones wait for Flush)", got, want)
 	}
 
-	before, beforeScores, err := idx.Search("quick brown", 0)
+	before, beforeScores, err := idx.Search("quick brown", 0, nil)
 	if err != nil {
 		t.Fatalf("Search before Flush = %v, want nil", err)
 	}
@@ -545,7 +584,7 @@ func TestBTreeIndexDeleteTombstonesUntilFlush(t *testing.T) {
 	if got, want := idx.Entries(), idx.Count(); got != want {
 		t.Errorf("Entries() after Flush = %d, want Count() = %d", got, want)
 	}
-	after, afterScores, err := idx.Search("quick brown", 0)
+	after, afterScores, err := idx.Search("quick brown", 0, nil)
 	if err != nil {
 		t.Fatalf("Search after Flush = %v, want nil", err)
 	}
@@ -581,7 +620,7 @@ func TestBTreeIndexCompactsWhenDeadOutnumberLive(t *testing.T) {
 	if got, want := idx.Entries(), 1; got != want {
 		t.Errorf("Entries() after the second delete = %d, want %d (two dead against one live compacts)", got, want)
 	}
-	got, _, err := idx.Search("shared", 0)
+	got, _, err := idx.Search("shared", 0, nil)
 	if err != nil || !reflect.DeepEqual(got, []int{3}) {
 		t.Errorf("Search(shared) after compaction = (%v, %v), want ([3], nil)", got, err)
 	}
@@ -619,7 +658,7 @@ func BenchmarkBTreeIndexSearch(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		if _, _, err := idx.Search("w0 w1 w2", 20); err != nil {
+		if _, _, err := idx.Search("w0 w1 w2", 20, nil); err != nil {
 			b.Fatalf("Search = %v, want nil", err)
 		}
 	}

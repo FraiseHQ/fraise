@@ -275,9 +275,13 @@ type probe[K comparable, T any, P float32 | float64] struct {
 // adversarial case for a projection index; clustered embeddings do better at
 // every factor.
 //
+// A non-nil keep admits only the leaf nodes whose key it accepts, and the
+// budget counts admitted nodes, so a selective keep probes further instead of
+// returning short; when too few nodes pass, the walk exhausts the tree.
+//
 // Ties between equally deviating probes resolve by the order they were deferred,
 // so the walk is a function of the tree and the query alone.
-func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int) []TreeNode[K, T, P] {
+func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) []TreeNode[K, T, P] {
 	if k <= 0 || t.length == 0 {
 		return nil
 	}
@@ -305,8 +309,20 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int) []TreeNode[K, T, P] {
 		return n.data
 	}
 
+	// admit appends the leaf's nodes that keep accepts. It copies even when
+	// keep is nil: the pool must never share a leaf's backing array, or
+	// appending to it would write into the leaf's spare capacity.
+	admit := func(candidates, leaf []TreeNode[K, T, P]) []TreeNode[K, T, P] {
+		for _, node := range leaf {
+			if keep == nil || keep(node.Key()) {
+				candidates = append(candidates, node)
+			}
+		}
+		return candidates
+	}
+
 	budget := k * t.overfetch
-	candidates := descend(t.root)
+	candidates := admit(nil, descend(t.root))
 	// The deferred set stays small — one entry per level per probe — so the
 	// closest is found by scan rather than by carrying a second heap.
 	for len(candidates) < budget && len(deferred) > 0 {
@@ -320,7 +336,7 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int) []TreeNode[K, T, P] {
 		deferred = append(deferred[:best], deferred[best+1:]...)
 		// Probes are subtrees the descent turned away from, so they partition
 		// what has not been visited: no leaf is reached twice.
-		candidates = append(candidates, descend(next.node)...)
+		candidates = admit(candidates, descend(next.node))
 	}
 	if len(candidates) == 0 {
 		return nil
