@@ -109,11 +109,22 @@ func (b *BM25[K, P]) Prepare() P {
 	return bm25K1 * bm25B / avgdl
 }
 
-// Increment is the idf-weighted, length-normalized term-frequency gain. n2
-// is this query's Prepare() result.
+// Length is the document's recorded length in tokens, the value Increment
+// normalises a plain search by; a key never indexed has length 0.
+func (b *BM25[K, P]) Length(key K) P {
+	return P(b.Lengths()[key])
+}
+
+// Increment is Gain at the posting's count and the document's own recorded
+// length. n2 is this query's Prepare() result.
 func (b *BM25[K, P]) Increment(weight P, key K, tf int, n2 P) P {
-	freq := P(tf)
-	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*P(b.Lengths()[key]))
+	return b.Gain(weight, P(tf), P(b.lengths[key]), n2)
+}
+
+// Gain is the idf-weighted, length-normalized term-frequency gain at term
+// frequency tf and document length length.
+func (b *BM25[K, P]) Gain(weight P, tf P, length P, n2 P) P {
+	return weight * tf * (bm25K1 + 1) / (tf + bm25N1 + n2*length)
 }
 
 // Finalize scales by coverage, matched over total: the share of the query's

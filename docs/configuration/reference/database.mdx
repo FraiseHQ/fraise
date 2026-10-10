@@ -15,6 +15,7 @@ navLabel: "Database"
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
 | `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
+| `window-gamma` | `-window-gamma` | `0` | window: the share of its temporal neighbours' matches a fact borrows when scored, in `[0, 1]`; `0` is off |
 
 ```toml
 [db]
@@ -46,6 +47,39 @@ min-score-ratio = 0.3
 ```
 
 The cutoff is **off by default** because the trade is yours to make: it buys precision with a little recall. [`/explain`](/docs/http-api/endpoints/explain) breaks a hit down into the contributions its relevance is folded from.
+
+## Window
+
+Two facts written one after the other under the same anchor are usually one exchange, a question and its answer, a statement and its follow-up, and scored one by one each is a fragment of it: the turn holding the question's words and the turn holding the answer's split the query between them and neither covers it. `window-gamma` lets a fact borrow that share of each of its temporal neighbours' term counts and length when the text index scores it, so the exchange matches as a whole. A fact that holds none of a query term but sits beside one that does becomes a candidate too, worth `gamma` of an own match. Neighbours are the facts written just before and after under a shared anchor, in write order, not in time alone: a fact under another topic borrows nothing however close its timestamp.
+
+```toml
+[db]
+window-gamma = 0.3
+```
+
+The window is **off by default** so the engine an operator never configured is the one that was measured without it. `0.3` is the operating point measured on LoCoMo (one graph per conversation, every turn under its conversation and session topics, keywords only): F1@10 from 0.378 to 0.502, precision@10 from 0.257 to 0.377, single-hop turn recall@10 from 0.704 to 0.813 and adversarial from 0.726 to 0.830, against session recall@10 from 0.899 to 0.881, since the slots a neighbour takes come from other sessions. A read costs about twice as long, the neighbours' postings being merged per term. The server refuses to start on a value outside `[0, 1]`: past 1 a neighbour would outweigh the fact itself.
+
+## `[db.aggregate]`
+
+| Setting | Flag | Default | Meaning |
+|--------------|-------------------------|----------|-------------------------------------------------------------|
+| `name` | `-aggregate` | `none` | `none` returns facts only; `spread` folds candidates that matched by the same rare term into group hits when the gate below clears |
+| `pool` | `-aggregate-pool` | `60` | ranked candidates the grouping considers, from the top |
+| `spread` | `-aggregate-spread` | `4` | the gate: distinct facets the top of the ranking must span before grouping runs |
+| `ratio` | `-aggregate-ratio` | `0.5` | share of the best score a candidate needs to count towards the spread, in `[0, 1]` |
+| `min-size` | `-aggregate-min-size` | `3` | smallest cluster returned as one group hit, at least 2 |
+| `max-groups` | `-aggregate-max-groups` | `2` | most group hits one recall returns |
+
+```toml
+[db.aggregate]
+name = "spread"
+```
+
+An aggregation question, "how many tournaments has Nate entered", "what types of yoga has Maria practiced", has one piece of evidence per session, and ten slots cannot hold nine sessions when the best session's neighbouring turns fill the top of the list. A group hit can: one slot carrying every fact that matched the query by the same rare term, its members best first, and the slots it frees go to the next best facts. In the response a group is marked `"kind": "group"`, carries its `key` term, a `count` and its `members`, each in the wire form of a fact hit; its own `value`, `timestamp` and `score` are its best member's, so a client that reads every hit as a fact still reads something true. A fact hit carries none of those keys, so the wire form a client knew before groups existed is unchanged.
+
+The gate is the result's **spread**: how many distinct facets the first twenty candidates scoring at least `ratio` of the best belong to. A facet is the finest anchor a candidate is filed under beyond the anchors the query named, since those are shared by every candidate and say nothing: on a graph filed by session it is the session, and a candidate under no other anchor is its own facet. A specific question peaks on one or two facets and is returned as facts; an aggregation question is flat across many and is grouped. [`/explain`](/docs/http-api/endpoints/explain) reports the spread the gate read as `spread` on the result. Grouping needs a term to group by, so a recall with no keywords, a vector or an anchor alone, is never grouped.
+
+Grouping is **off by default** and measured on LoCoMo at the defaults above (same protocol as the window's): session recall@10 from 0.899 to 0.945, recall@1 from 0.648 to 0.758, precision@10 from 0.257 to 0.311 and F1@10 from 0.378 to 0.437; by category at k = 10, multi-hop from 0.671 to 0.817, open-domain from 0.637 to 0.782, single-hop from 0.966 to 0.985 and adversarial from 0.975 to 0.993, with a group hit on 946 of the 1,982 questions averaging 25 members. With the window at 0.3 as well: recall@10 0.931, precision@10 0.404, F1@10 0.539, recall@1 0.775, multi-hop 0.751, open-domain 0.741, single-hop turn recall 0.858. The `pool` is the size of the answer to an aggregation question as much as a cost, so raise it with care: a group of sixty members is sixty facts in one slot.
 
 ## `num-graphs`
 

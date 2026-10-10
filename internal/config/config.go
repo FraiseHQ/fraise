@@ -156,6 +156,17 @@ type DBConfig struct {
 	// precision to the operator; validate rejects anything outside [0, 1].
 	MinScoreRatio float64 `toml:"min-score-ratio"`
 
+	// Window: the share of its temporal neighbours' term counts and length a
+	// fact borrows when the text index scores it. Two facts written one after
+	// the other under the same anchor are usually one exchange, a question and
+	// its answer, and at 0 each is scored as a fragment of it. A fact that
+	// holds none of a term but sits beside one that does is then a match too.
+	// 0 (the default) is off; validate rejects anything outside [0, 1].
+	WindowGamma float64 `toml:"window-gamma"`
+
+	// Aggregate groups the hits a recall returns (see [Aggregate]).
+	Aggregate Aggregate `toml:"aggregate"`
+
 	// database hashing function
 	HashingFunction HashingFunction `toml:"hashing-function"`
 
@@ -225,6 +236,43 @@ type RankingAlgorithm struct {
 
 	// PageRank convergence threshold on the score delta
 	PageRankTol float64 `toml:"pagerank-tol"`
+}
+
+// Aggregate is the db.aggregate table: whether a recall folds candidates that
+// matched the query by the same rare term into one group hit, one of
+// [AggregateAlgorithms], and the thresholds the fold runs with. It answers
+// the aggregation question, "how many", "what types", "which ones", whose
+// evidence is one instance per session: ten slots cannot hold nine
+// sessions, but one group hit carrying its members can, and the slots it
+// frees go to the next best facts. The gate is the result's spread: a
+// specific question peaks on one or two sessions and is left alone, an
+// aggregation question is flat across many.
+type Aggregate struct {
+	// none or spread
+	Name string `toml:"name"`
+
+	// Pool is how many ranked candidates the grouping considers, from the
+	// top. A larger pool makes bigger groups, so it is the size of the
+	// answer to an aggregation question as much as a cost.
+	Pool int `toml:"pool"`
+
+	// Spread is the gate: the number of distinct facets (the finest anchor a
+	// candidate is filed under, beyond those the query named) the top of the
+	// ranking must span, at scores within Ratio of the best, before grouping
+	// runs.
+	Spread int `toml:"spread"`
+
+	// Ratio is the share of the best score a candidate must reach to count
+	// towards the spread.
+	Ratio float64 `toml:"ratio"`
+
+	// MinSize is the smallest group returned as one hit; a smaller cluster
+	// stays as individual facts.
+	MinSize int `toml:"min-size"`
+
+	// MaxGroups caps the group hits one recall returns; the largest groups
+	// win.
+	MaxGroups int `toml:"max-groups"`
 }
 
 // VectorSearch is the db.vector-search table, shaping the vector index's forest
@@ -305,6 +353,13 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
 	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits whose relevance is below this fraction of the best hit's (0 = off)")
+	flagSet.Float64Var(&config.DB.WindowGamma, "window-gamma", DefaultWindowGamma, "Share of its temporal neighbours' matches a fact borrows when scored (0 = off)")
+	flagSet.StringVar(&config.DB.Aggregate.Name, "aggregate", DefaultAggregate, "Group hits that matched by the same rare term (none, spread)")
+	flagSet.IntVar(&config.DB.Aggregate.Pool, "aggregate-pool", DefaultAggregatePool, "Ranked candidates the grouping considers")
+	flagSet.IntVar(&config.DB.Aggregate.Spread, "aggregate-spread", DefaultAggregateSpread, "Distinct facets the top of the ranking must span before grouping runs")
+	flagSet.Float64Var(&config.DB.Aggregate.Ratio, "aggregate-ratio", DefaultAggregateRatio, "Share of the best score a candidate needs to count towards the spread")
+	flagSet.IntVar(&config.DB.Aggregate.MinSize, "aggregate-min-size", DefaultAggregateMinSize, "Smallest cluster returned as one group hit")
+	flagSet.IntVar(&config.DB.Aggregate.MaxGroups, "aggregate-max-groups", DefaultAggregateMaxGroups, "Most group hits one recall returns")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
@@ -445,8 +500,15 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
-	// DB.MinScoreRatio needs no Adjust: its default, 0, is the zero value and
-	// means off, so an absent key and an explicit 0 already agree.
+	// DB.MinScoreRatio and DB.WindowGamma need no Adjust: their default, 0,
+	// is the zero value and means off, so an absent key and an explicit 0
+	// already agree.
+	Adjust(&c.DB.Aggregate.Name, DefaultAggregate)
+	Adjust(&c.DB.Aggregate.Pool, DefaultAggregatePool)
+	Adjust(&c.DB.Aggregate.Spread, DefaultAggregateSpread)
+	Adjust(&c.DB.Aggregate.Ratio, DefaultAggregateRatio)
+	Adjust(&c.DB.Aggregate.MinSize, DefaultAggregateMinSize)
+	Adjust(&c.DB.Aggregate.MaxGroups, DefaultAggregateMaxGroups)
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)

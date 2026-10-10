@@ -81,6 +81,11 @@ type QueryResult[K comparable, P float32 | float64] struct {
 	// before boost and recency decay):
 	// S = m + α²·Σ max(0, (M_A − m − d_A·ρ₀)/d_A).
 	Background P `json:"background,omitempty"`
+
+	// Spread is the number of facets the top of the ranking spanned, the
+	// statistic the grouping gate (db.aggregate) read, attached only in
+	// explain mode so a client can see why a recall did or did not group.
+	Spread int `json:"spread,omitempty"`
 }
 
 // Hit is one fact in a recall's result: the stored node and its final score,
@@ -97,6 +102,14 @@ type Hit[K comparable, P float32 | float64] struct {
 	// form, anchors resolved to their values, because resolving them needs the
 	// graph, which only Commit holds.
 	Contributions []HitContribution[P]
+
+	// Members and Key make the hit a group (see graph.Hit): the facts that
+	// matched the query by the same rare term, best first, and that term.
+	// Node and Score are then the best member's. nil Members is a fact hit,
+	// which keeps the wire form of every hit a client saw before groups
+	// existed unchanged.
+	Members []Hit[K, P]
+	Key     string
 }
 
 // HitContribution is the wire form of one contribution, with the source
@@ -121,20 +134,33 @@ type HitContribution[P float32 | float64] struct {
 // value, timestamp and score, with no nested Node object. The contributions
 // appear only when the hit carries them (explain mode), so an ordinary query
 // response has no contributions key.
+//
+// A group hit is marked kind "group" and carries its key term, its member
+// count and its members, each in the wire form of a fact hit; its own value,
+// timestamp and score are its best member's, so a client that reads hits as
+// facts still reads something true. A fact hit carries none of those keys.
 func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	node := *h.Node
 
-	return json.Marshal(struct {
+	wire := struct {
+		Kind          string               `json:"kind,omitempty"`
+		Key           string               `json:"key,omitempty"`
 		Value         string               `json:"value"`
 		Timestamp     time.Time            `json:"timestamp"`
 		Score         P                    `json:"score"`
+		Count         int                  `json:"count,omitempty"`
+		Members       []Hit[K, P]          `json:"members,omitempty"`
 		Contributions []HitContribution[P] `json:"contributions,omitempty"`
 	}{
 		Value:         node.GetValue(),
 		Timestamp:     node.GetTimestamp(),
 		Score:         h.Score,
 		Contributions: h.Contributions,
-	})
+	}
+	if len(h.Members) > 0 {
+		wire.Kind, wire.Key, wire.Count, wire.Members = "group", h.Key, len(h.Members), h.Members
+	}
+	return json.Marshal(wire)
 }
 
 // checkVector vets the vector the parser bound to placeholder name. The parser

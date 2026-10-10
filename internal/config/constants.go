@@ -171,6 +171,38 @@ const (
 	// off.
 	DefaultMinScoreRatio float64 = 0
 
+	// DefaultWindowGamma leaves the window (DBConfig.WindowGamma) off: a fact
+	// is scored on its own terms. 0.3 is the operating point measured on
+	// LoCoMo, where it raised F1@10 from 0.378 to 0.502 and single-hop turn
+	// recall@10 from 0.70 to 0.81; it is opt-in until the benchmark gates
+	// carry it.
+	DefaultWindowGamma float64 = 0
+
+	// DefaultAggregate leaves grouping (DBConfig.Aggregate) off; "spread"
+	// turns it on with the thresholds below, the operating point measured on
+	// LoCoMo (session recall@10 from 0.899 to 0.945, multi-hop from 0.671 to
+	// 0.817, precision up as well); it is opt-in until the benchmark gates
+	// carry it.
+	DefaultAggregate string = AggregateNone
+
+	// DefaultAggregatePool is how many ranked candidates grouping considers.
+	DefaultAggregatePool int = 60
+
+	// DefaultAggregateSpread is the number of distinct facets the top of the
+	// ranking must span, at scores within DefaultAggregateRatio of the best,
+	// before grouping runs.
+	DefaultAggregateSpread int = 4
+
+	// DefaultAggregateRatio is the share of the best score a candidate needs
+	// to count towards the spread.
+	DefaultAggregateRatio float64 = 0.5
+
+	// DefaultAggregateMinSize is the smallest cluster returned as a group.
+	DefaultAggregateMinSize int = 3
+
+	// DefaultAggregateMaxGroups caps the group hits per recall.
+	DefaultAggregateMaxGroups int = 2
+
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
 

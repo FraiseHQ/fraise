@@ -291,6 +291,55 @@ min-score-ratio = 0.3
 	}
 }
 
+// TestConfigSet_WindowAndAggregate pins the resting state of the two
+// retrieval settings added for the window and grouping: both off, with the
+// grouping thresholds at their measured operating point so that turning
+// grouping on by name alone runs the configuration that was benchmarked. The
+// file and the flags reach the same fields.
+func TestConfigSet_WindowAndAggregate(t *testing.T) {
+	c := config.New()
+	if c.DB.WindowGamma != 0 {
+		t.Errorf("DB.WindowGamma default: got %v, want 0 (off)", c.DB.WindowGamma)
+	}
+	want := config.Aggregate{Name: config.AggregateNone, Pool: 60, Spread: 4, Ratio: 0.5, MinSize: 3, MaxGroups: 2}
+	if c.DB.Aggregate != want {
+		t.Errorf("DB.Aggregate default: got %+v, want %+v", c.DB.Aggregate, want)
+	}
+
+	const contents = `
+[db]
+window-gamma = 0.3
+
+[db.aggregate]
+name = "spread"
+pool = 40
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, config.DefaultConfigFile)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+	f := config.New()
+	if err := f.Parse([]string{"-config", path}); err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
+	}
+	if f.DB.WindowGamma != 0.3 {
+		t.Errorf("DB.WindowGamma: got %v, want 0.3", f.DB.WindowGamma)
+	}
+	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 4, Ratio: 0.5, MinSize: 3, MaxGroups: 2}
+	if f.DB.Aggregate != want {
+		t.Errorf("DB.Aggregate from file: got %+v, want %+v (the unset thresholds keep their defaults)", f.DB.Aggregate, want)
+	}
+
+	fl := config.New()
+	if err := fl.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0.5", "-aggregate", "SPREAD", "-aggregate-max-groups", "1"}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if fl.DB.WindowGamma != 0.5 || fl.DB.Aggregate.Name != config.AggregateSpread || fl.DB.Aggregate.MaxGroups != 1 {
+		t.Errorf("flags: got gamma %v, aggregate %+v, want 0.5 and spread with max-groups 1", fl.DB.WindowGamma, fl.DB.Aggregate)
+	}
+}
+
 // missingConfig returns a -config path that does not exist, so Parse takes the
 // no-config-file branch, the one an operator running the binary with nothing
 // but flags is on.

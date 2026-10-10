@@ -56,6 +56,12 @@ type BTreeIndex[K comparable, P float32 | float64] struct {
 	tokenizer nlp.Tokenizer
 	relevance relevance.Relevance[K, P]
 	compare   comparator.Comparator[K] // document key ordering
+
+	// gamma and neighbours are the window a search scores with (see
+	// SetWindow): a document borrows gamma of each neighbour's term counts
+	// and length. gamma 0 or a nil neighbours is the plain search.
+	gamma      P
+	neighbours func(K) []K
 }
 
 // posting is one document's sighting of a term: its key and how often the
@@ -119,6 +125,19 @@ func (idx *BTreeIndex[K, P]) SetRelevance(r relevance.Relevance[K, P]) {
 	idx.relevance = r
 }
 
+// SetWindow installs the window a search scores with. A document then
+// borrows gamma of each of its neighbours' term counts and length, so a
+// question answered across two adjacent facts, or a reply whose question is
+// the fact before it, is scored as the exchange it is rather than as two
+// fragments. neighbours reports the documents adjacent to a key; the index
+// does not know what adjacency means, only the graph does (the facts written
+// just before and after under the same anchor), so the graph installs it.
+// gamma is a share in [0, 1]: 0, or a nil neighbours, is the plain search.
+func (idx *BTreeIndex[K, P]) SetWindow(gamma P, neighbours func(K) []K) {
+	idx.gamma = gamma
+	idx.neighbours = neighbours
+}
+
 // Insert tokenizes value, adds key to the posting list of each of its terms
 // and stores the raw document for Retrieve. If key is already indexed, its
 // previous document is replaced.
@@ -164,6 +183,13 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 // a document gains per match, and how match breadth folds into the final
 // relevance.
 //
+// With a window installed (SetWindow), a document's term frequency and
+// length for each term are its own plus gamma times its neighbours', and a
+// document that holds none of a term but sits beside one that does is a
+// match too, so the candidates are the matching documents and their
+// neighbours. Coverage counts a borrowed term as matched: the exchange
+// covers the query, not the fragment.
+//
 // Documents of equal score are ordered by key, the total order SearchIndex
 // promises. k bounds the number of results; k <= 0 returns every match.
 func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
@@ -187,6 +213,10 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	scores := make(map[K]P, maxPosting)
 	matched := make(map[K]P, maxPosting)
 	prepared := idx.relevance.Prepare()
+	var w *window[K, P]
+	if idx.gamma > 0 && idx.neighbours != nil {
+		w = &window[K, P]{index: idx, neighbours: make(map[K][]K, maxPosting), lengths: make(map[K]P, maxPosting)}
+	}
 
 	var totalW P
 	for _, term := range terms {
@@ -197,6 +227,10 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		}
 		weight := idx.relevance.Weight(list.live, len(idx.documents))
 		totalW += weight
+		if w != nil {
+			w.accumulate(list, weight, prepared, scores, matched)
+			continue
+		}
 		for _, p := range list.entries {
 			if p.tf == 0 {
 				continue
@@ -222,6 +256,99 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	}
 	logger.Debug("Text search matched documents", "matches", len(keys), "k", k)
 	return keys, out, nil
+}
+
+// window is one search's view of the installed window: the neighbours and
+// window length of every document it has met, resolved once each, since both
+// are fixed for the query and a document is met once per term it or a
+// neighbour holds.
+type window[K comparable, P float32 | float64] struct {
+	index      *BTreeIndex[K, P]
+	neighbours map[K][]K
+	lengths    map[K]P
+}
+
+// adjacent returns key's neighbours, asking the graph the first time.
+func (w *window[K, P]) adjacent(key K) []K {
+	if n, ok := w.neighbours[key]; ok {
+		return n
+	}
+	n := w.index.neighbours(key)
+	w.neighbours[key] = n
+	return n
+}
+
+// length returns key's window length: its own plus gamma of each neighbour's.
+func (w *window[K, P]) length(key K) P {
+	if l, ok := w.lengths[key]; ok {
+		return l
+	}
+	l := w.index.relevance.Length(key)
+	for _, n := range w.adjacent(key) {
+		l += w.index.gamma * w.index.relevance.Length(n)
+	}
+	w.lengths[key] = l
+	return l
+}
+
+// accumulate scores one term's posting list into scores and matched under
+// the window. The term's frequency per document is its own count plus gamma
+// of each neighbour's: a posting lends to its neighbours, so a document is
+// accumulated from up to three postings before it is scored, which is why the
+// saturation runs after the list rather than per posting.
+func (w *window[K, P]) accumulate(list *postingList[K], weight P, prepared P, scores map[K]P, matched map[K]P) {
+	idx := w.index
+	frequency := make(map[K]P, list.live)
+	for _, p := range list.entries {
+		if p.tf == 0 {
+			continue
+		}
+		frequency[p.key] += P(p.tf)
+		for _, n := range w.adjacent(p.key) {
+			frequency[n] += idx.gamma * P(p.tf)
+		}
+	}
+	for key, tf := range frequency {
+		scores[key] += idx.relevance.Gain(weight, tf, w.length(key), prepared)
+		matched[key] += weight
+	}
+}
+
+// KeyTerms reports, for each of keys, the query term it holds that the
+// relevance model weighs highest: the rarest of the query's terms the
+// document matched, the one that most defines why it matched. A key holding
+// none of the terms, or not indexed, is absent from the result. The window
+// is not consulted: a document is keyed by what it holds itself.
+//
+// Search's grouping is built on this: candidates that matched the query by
+// the same rare term are instances of one thing the query asked about.
+func (idx *BTreeIndex[K, P]) KeyTerms(query string, keys []K) map[K]string {
+	terms := idx.relevance.Terms(idx.tokenizer.Tokenize(query))
+	type weighted struct {
+		list   *postingList[K]
+		weight P
+	}
+	lists := make([]weighted, 0, len(terms))
+	probe := &postingList[K]{}
+	for _, term := range terms {
+		probe.term = term
+		if list, ok := idx.tree.Find(probe); ok && list.live > 0 {
+			lists = append(lists, weighted{list, idx.relevance.Weight(list.live, len(idx.documents))})
+		}
+	}
+	// Rarest first; a tie keeps query order, so the result is deterministic.
+	sort.SliceStable(lists, func(i, j int) bool { return lists[i].weight > lists[j].weight })
+
+	out := make(map[K]string, len(keys))
+	for _, key := range keys {
+		for _, w := range lists {
+			if i, found := w.list.find(key, idx.compare); found && w.list.entries[i].tf > 0 {
+				out[key] = w.list.term
+				break
+			}
+		}
+	}
+	return out
 }
 
 // Count reports the number of indexed documents.

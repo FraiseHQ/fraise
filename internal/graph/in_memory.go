@@ -70,7 +70,24 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 
 	config *config.ConfigSet
 
+	// sequences caches, per anchor, its member facts in the order they were
+	// written: the view contiguous reads a fact's temporal neighbours from.
+	// An anchor's sequence is built on first use, under sequenceMu because
+	// searches share the graph's read lock, and dropped by every write that
+	// touches the anchor or one of its members, so a sequence is never stale
+	// and a graph never searched with a window never builds one.
+	sequences  map[K]*sequence[K]
+	sequenceMu sync.Mutex
+
 	mu sync.RWMutex
+}
+
+// sequence is one anchor's member facts ordered by write time, then key, with
+// each member's position so a neighbour lookup is a map read and two slice
+// reads rather than a search.
+type sequence[K comparable] struct {
+	keys []K
+	at   map[K]int
 }
 
 // SetTraversal installs the traversal Search expands seeds with, such as
@@ -126,10 +143,15 @@ func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGr
 			cfg.DB.VectorSearch.Overfetch,
 			comparator.OrderedComparator[K],
 		),
-		scorer: scoring.NewExcessScorer[K, P](),
-		hasher: hash.NewHasher[K](cfg),
-		config: cfg,
+		scorer:    scoring.NewExcessScorer[K, P](),
+		hasher:    hash.NewHasher[K](cfg),
+		config:    cfg,
+		sequences: make(map[K]*sequence[K]),
 	}
+	// The window needs the graph's notion of adjacency, which only exists
+	// once the graph does, so it is installed last. A gamma of 0 leaves the
+	// index on the plain search.
+	textIndex.SetWindow(P(cfg.DB.WindowGamma), g.contiguous)
 	return g
 }
 
@@ -208,6 +230,7 @@ var textLanguage = language.English
 // replaced through Update; a new one is added through Insert.
 func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	g.idToNodes[key] = node
+	g.dropSequences(key)
 
 	r, ok := node.(Relationship[K])
 	if ok {
@@ -226,6 +249,9 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 		}
 
 		g.nodeToSources[target][source] = r.Key()
+		// The edge files source under target, so target's sequence has a
+		// new member.
+		g.dropSequences(source)
 	}
 
 	_, isFact := node.(Fact[K])
@@ -279,6 +305,10 @@ func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	stored, ok := g.Nodes()[key]
 	if !ok {
 		return ErrNodeNotFound
+	}
+	g.dropSequences(key)
+	if r, isEdge := stored.(Relationship[K]); isEdge {
+		g.dropSequences((*r.Source()).Key())
 	}
 
 	// Deleting an endpoint: its adjacency rows hold each incident edge's key,
@@ -337,6 +367,82 @@ func (g *InMemoryGraph[K, P]) Neighbours(key K) []K {
 		out = append(out, neighbour)
 	}
 	return out
+}
+
+// contiguous returns the facts written immediately before and after key under
+// each anchor it is filed under, in ascending key order, each once. It is the
+// neighbours function the text index's window scores with (see
+// [index.BTreeIndex.SetWindow]): two facts adjacent in time under a shared
+// anchor are one exchange, a question and its answer, a statement and its
+// follow-up, and the window lets the exchange match as a whole. A fact filed
+// under no anchor has no neighbours. Searches call it under the graph's read
+// lock.
+func (g *InMemoryGraph[K, P]) contiguous(key K) []K {
+	var out []K
+	for anchor := range g.nodeToTargets[key] {
+		if !isAnchor[K, P](g, anchor) {
+			continue
+		}
+		seq := g.sequence(anchor)
+		i, ok := seq.at[key]
+		if !ok {
+			continue
+		}
+		if i > 0 {
+			out = append(out, seq.keys[i-1])
+		}
+		if i+1 < len(seq.keys) {
+			out = append(out, seq.keys[i+1])
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// sequence returns anchor's members in write order, building and caching it
+// on first use. Members are the facts adjacent to the anchor; ties on the
+// timestamp (a batch written in one instant) are broken by key, so the order
+// is total and two searches agree on who neighbours whom.
+func (g *InMemoryGraph[K, P]) sequence(anchor K) *sequence[K] {
+	g.sequenceMu.Lock()
+	defer g.sequenceMu.Unlock()
+	if seq, ok := g.sequences[anchor]; ok {
+		return seq
+	}
+	seq := &sequence[K]{at: make(map[K]int, len(g.nodeToSources[anchor]))}
+	for member := range g.nodeToSources[anchor] {
+		if _, isFact := g.Nodes()[member].(Fact[K]); isFact {
+			seq.keys = append(seq.keys, member)
+		}
+	}
+	slices.SortFunc(seq.keys, func(a, b K) int {
+		if c := g.Nodes()[a].GetTimestamp().Compare(g.Nodes()[b].GetTimestamp()); c != 0 {
+			return c
+		}
+		return comparator.OrderedComparator(a, b)
+	})
+	for i, member := range seq.keys {
+		seq.at[member] = i
+	}
+	g.sequences[anchor] = seq
+	return seq
+}
+
+// dropSequences discards the cached sequence of key and of every node
+// adjacent to it. A write to a fact moves it in each of its anchors'
+// sequences (a re-asserted fact takes a new timestamp), a new edge adds a
+// member, a deleted node removes one: all three reach here, under the write
+// lock, so a cached sequence never outlives the writes that would change it.
+func (g *InMemoryGraph[K, P]) dropSequences(key K) {
+	g.sequenceMu.Lock()
+	defer g.sequenceMu.Unlock()
+	delete(g.sequences, key)
+	for neighbour := range g.nodeToTargets[key] {
+		delete(g.sequences, neighbour)
+	}
+	for neighbour := range g.nodeToSources[key] {
+		delete(g.sequences, neighbour)
+	}
 }
 
 // exportEdges returns a deep copy of an edge map, so a caller cannot mutate
@@ -406,15 +512,26 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 // Search implements [Graph.Search]. It collects candidates, folds each with the
 // installed scorer and boosts by the installed ranking, applies the time window
 // and recency decay, keeps the top hits (score descending, then key ascending,
-// so identical queries return identical hits) and finally drops hits below the
-// db.min-score-ratio cutoff.
-func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error) {
+// so identical queries return identical hits), drops hits below the
+// db.min-score-ratio cutoff and, under db.aggregate, folds candidates that
+// matched by the same rare term into group hits.
+func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (Result[K, P], error) {
+	// Grouping reads a pool deeper than top, since the point of a group is
+	// to hold what top slots cannot, and the seeds have to be gathered that
+	// deep for the pool to exist; a keyword-less query has no term to group
+	// by.
+	grouping := g.config.DB.Aggregate.Name == config.AggregateSpread && len(keywords) > 0 && top > 0
+	pool := top
+	if grouping && g.config.DB.Aggregate.Pool > pool {
+		pool = g.config.DB.Aggregate.Pool
+	}
+
 	// A. Collection: every observation of every candidate (text and vector
 	// seeds, anchor transmission, or the named anchors' members when they
 	// seed alone) as Contributions, and the query's background rate.
-	candidates, background, err := g.collect(keywords, vector, topics, entities, depth, top)
+	candidates, background, err := g.collect(keywords, vector, topics, entities, depth, pool)
 	if err != nil {
-		return nil, nil, nil, 0, err
+		return Result[K, P]{}, err
 	}
 
 	// B. Scoring: the scorer folds each candidate's contributions into one
@@ -432,13 +549,12 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	// C. Time window and recency decay.
 	kept, ranked := g.timeFilter(keys, scores, since, until)
 
-	// D. Rank and truncate to top. Map iteration order is random, so the
-	// order must be total for identical queries to return identical hits:
-	// score descending, then key ascending. Without the key tie-break,
+	// D. Rank and truncate to the pool. Map iteration order is random, so
+	// the order must be total for identical queries to return identical
+	// hits: score descending, then key ascending. Without the key tie-break,
 	// truncation would keep an arbitrary subset of a tied group. TopK costs
-	// O(n log top) rather than the O(n log n) of a full sort.
-
-	ranker := containers.NewTopK[K, P](top, comparator.OrderedComparator[K])
+	// O(n log pool) rather than the O(n log n) of a full sort.
+	ranker := containers.NewTopK[K, P](pool, comparator.OrderedComparator[K])
 	for _, key := range kept {
 		ranker.Offer(key, ranked[key])
 	}
@@ -447,19 +563,164 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	// E. Score cutoff (db.min-score-ratio)
 	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
 
-	nodes := make([]*Node[K], len(rankedKeys))
-	scoresOut := make([]P, len(rankedKeys))
-	contributions := make([][]scoring.Contribution[K, P], len(rankedKeys))
-	for i, key := range rankedKeys {
-		node := g.Nodes()[key]
-		nodes[i] = &node
-		scoresOut[i] = rankedScores[i]
-		contributions[i] = candidates[key]
+	// F. Grouping (db.aggregate), then the answer.
+	result := Result[K, P]{Background: background}
+	if grouping {
+		result.Hits, result.Spread = g.group(rankedKeys, rankedScores, candidates, keywords, topics, entities, top)
+	} else {
+		result.Hits = g.hits(rankedKeys, rankedScores, candidates)
 	}
 
 	logger.Debug("Graph search completed",
-		"candidates", len(kept), "returned", len(rankedKeys))
-	return nodes, scoresOut, contributions, background, nil
+		"candidates", len(kept), "returned", len(result.Hits), "spread", result.Spread)
+	return result, nil
+}
+
+// hits turns a ranking into fact hits, each carrying the contributions its
+// score was folded from.
+func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Candidates[K, P]) []Hit[K, P] {
+	out := make([]Hit[K, P], len(keys))
+	for i, key := range keys {
+		node := g.Nodes()[key]
+		out[i] = Hit[K, P]{Node: &node, Score: scores[i], Contributions: candidates[key]}
+	}
+	return out
+}
+
+// spreadWindow is how deep into the ranking the grouping gate looks when it
+// measures spread. Twenty is two slots of the default top: enough to tell a
+// ranking that peaks on one or two facets from one that is flat across many,
+// without reading the whole pool. It is a methodology constant, not
+// configuration.
+const spreadWindow = 20
+
+// group folds the ranked pool into at most top hits under db.aggregate. It
+// first measures the spread: how many distinct facets the first spreadWindow
+// candidates scoring at least ratio times the best belong to. A facet is the
+// finest anchor a candidate is filed under beyond the anchors the query named
+// (those are shared by every candidate and say nothing), or the candidate
+// itself when it has none: on a graph filed by session, the spread is the
+// number of sessions near the top. Below the configured spread the ranking
+// is a specific question and is returned as fact hits, truncated to top.
+//
+// At or above it, the pool's candidates are keyed by the rarest query term
+// each holds (see [index.BTreeIndex.KeyTerms]) and every key with at least
+// min-size members becomes a group hit: its members best first, its score its
+// best member's. The largest groups, up to max-groups, take the first slots,
+// ties broken by key term so the fold is deterministic; the remaining slots
+// go to the best ungrouped candidates in rank order. The spread is returned
+// for explain whether or not grouping ran.
+func (g *InMemoryGraph[K, P]) group(keys []K, scores []P, candidates scoring.Candidates[K, P], keywords []string, topics []string, entities []string, top int) ([]Hit[K, P], int) {
+	cfg := g.config.DB.Aggregate
+	topicKeys, entityKeys := g.anchorKeys(topics, entities)
+	named := make(map[K]struct{}, len(topicKeys)+len(entityKeys))
+	for _, anchor := range slices.Concat(topicKeys, entityKeys) {
+		named[anchor] = struct{}{}
+	}
+
+	spread := 0
+	if len(keys) > 0 {
+		facets := make(map[K]struct{}, spreadWindow)
+		bar := P(cfg.Ratio) * scores[0]
+		for i := 0; i < len(keys) && i < spreadWindow; i++ {
+			if scores[i] < bar {
+				continue
+			}
+			facets[g.facet(keys[i], named)] = struct{}{}
+		}
+		spread = len(facets)
+	}
+	plain := func() []Hit[K, P] {
+		if len(keys) > top {
+			keys, scores = keys[:top], scores[:top]
+		}
+		return g.hits(keys, scores, candidates)
+	}
+	if spread < cfg.Spread {
+		return plain(), spread
+	}
+
+	pool := keys
+	if len(pool) > cfg.Pool {
+		pool = pool[:cfg.Pool]
+	}
+	terms := g.textIndex.KeyTerms(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), pool)
+	members := make(map[string][]int)
+	order := make([]string, 0)
+	for i, key := range pool {
+		term, ok := terms[key]
+		if !ok {
+			continue
+		}
+		if _, seen := members[term]; !seen {
+			order = append(order, term)
+		}
+		members[term] = append(members[term], i)
+	}
+	groups := make([]string, 0, len(order))
+	for _, term := range order {
+		if len(members[term]) >= cfg.MinSize {
+			groups = append(groups, term)
+		}
+	}
+	if len(groups) == 0 {
+		return plain(), spread
+	}
+	sort.SliceStable(groups, func(a, b int) bool {
+		if len(members[groups[a]]) != len(members[groups[b]]) {
+			return len(members[groups[a]]) > len(members[groups[b]])
+		}
+		return groups[a] < groups[b]
+	})
+	if len(groups) > cfg.MaxGroups {
+		groups = groups[:cfg.MaxGroups]
+	}
+
+	hits := make([]Hit[K, P], 0, top)
+	grouped := make(map[K]struct{})
+	for _, term := range groups {
+		hit := Hit[K, P]{Key: term}
+		for _, i := range members[term] {
+			node := g.Nodes()[keys[i]]
+			hit.Members = append(hit.Members, &node)
+			hit.MemberScores = append(hit.MemberScores, scores[i])
+			grouped[keys[i]] = struct{}{}
+		}
+		hit.Node, hit.Score, hit.Contributions = hit.Members[0], hit.MemberScores[0], candidates[keys[members[term][0]]]
+		hits = append(hits, hit)
+	}
+	for i, key := range keys {
+		if len(hits) >= top {
+			break
+		}
+		if _, ok := grouped[key]; ok {
+			continue
+		}
+		node := g.Nodes()[key]
+		hits = append(hits, Hit[K, P]{Node: &node, Score: scores[i], Contributions: candidates[key]})
+	}
+	if len(hits) > top {
+		hits = hits[:top]
+	}
+	return hits, spread
+}
+
+// facet is the finest anchor key is filed under beyond the named ones: the
+// adjacent topic or entity with the fewest members, ties broken by key, so a
+// session anchor wins over the conversation it sits in and the person it
+// mentions. A fact under no other anchor is its own facet.
+func (g *InMemoryGraph[K, P]) facet(key K, named map[K]struct{}) K {
+	facet, degree := key, -1
+	for anchor := range g.nodeToTargets[key] {
+		if _, isNamed := named[anchor]; isNamed || !isAnchor[K, P](g, anchor) {
+			continue
+		}
+		d := len(g.nodeToSources[anchor])
+		if degree == -1 || d < degree || (d == degree && anchor < facet) {
+			facet, degree = anchor, d
+		}
+	}
+	return facet
 }
 
 // scoreCutoff applies db.min-score-ratio to a best-first ranking: it keeps

@@ -91,6 +91,14 @@ const (
 	RankingPageRank string = "pagerank"
 )
 
+// db.aggregate.name — whether a recall folds candidates that matched by the
+// same rare term into group hits; "none" returns facts only, "spread" groups
+// when the ranking's spread clears the configured gate.
+const (
+	AggregateNone   string = "none"
+	AggregateSpread string = "spread"
+)
+
 // The values each setting accepts, in the order the error message lists them.
 // They are the single source of truth for the accepted set, and consumers
 // switch on the same constants. A value added here needs a case in each of
@@ -112,6 +120,8 @@ var (
 	RelevanceModels = []string{RelevanceBM25, RelevanceMatchCount}
 
 	RankingAlgorithms = []string{RankingNone, RankingPageRank}
+
+	AggregateAlgorithms = []string{AggregateNone, AggregateSpread}
 )
 
 // Canonical rewrites *v to whichever accepted value it matches
@@ -165,6 +175,7 @@ func (c *ConfigSet) validate() error {
 		{&c.DB.RankingAlgorithm.Name, "db.ranking-algorithm.name", RankingAlgorithms},
 		{&c.DB.ScoringAlgorithm.Name, "db.scoring-algorithm.name", ScoringAlgorithms},
 		{&c.DB.RelevanceModel.Name, "db.relevance-model.name", RelevanceModels},
+		{&c.DB.Aggregate.Name, "db.aggregate.name", AggregateAlgorithms},
 	}
 
 	for _, s := range settings {
@@ -177,6 +188,29 @@ func (c *ConfigSet) validate() error {
 	// fails every comparison, is rejected too instead of slipping through.
 	if r := c.DB.MinScoreRatio; !(r >= 0 && r <= 1) {
 		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
+	}
+
+	// A window share past 1 would let a neighbour outweigh the fact itself.
+	if w := c.DB.WindowGamma; !(w >= 0 && w <= 1) {
+		return fmt.Errorf("%w: db.window-gamma = %v (accepted: 0 to 1)", ErrInvalidValue, w)
+	}
+
+	// The grouping thresholds each have a floor below which grouping could
+	// never run or would group every single fact.
+	if r := c.DB.Aggregate.Ratio; !(r >= 0 && r <= 1) {
+		return fmt.Errorf("%w: db.aggregate.ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
+	}
+	if p := c.DB.Aggregate.Pool; p < 1 {
+		return fmt.Errorf("%w: db.aggregate.pool = %d (accepted: 1 or more)", ErrInvalidValue, p)
+	}
+	if sp := c.DB.Aggregate.Spread; sp < 1 {
+		return fmt.Errorf("%w: db.aggregate.spread = %d (accepted: 1 or more)", ErrInvalidValue, sp)
+	}
+	if m := c.DB.Aggregate.MinSize; m < 2 {
+		return fmt.Errorf("%w: db.aggregate.min-size = %d (accepted: 2 or more)", ErrInvalidValue, m)
+	}
+	if m := c.DB.Aggregate.MaxGroups; m < 1 {
+		return fmt.Errorf("%w: db.aggregate.max-groups = %d (accepted: 1 or more)", ErrInvalidValue, m)
 	}
 
 	if w := c.Scheduler.Workers; w < 1 {
