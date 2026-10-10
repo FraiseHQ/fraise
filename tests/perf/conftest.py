@@ -431,7 +431,9 @@ def comparison(request, pytestconfig):
 
     With no baseline for them yet the rows are empty: there is nothing to
     regress from, so every limit holds, and the report shows what was
-    measured.
+    measured. With a baseline the rows are never empty: a comparison that
+    matched nothing would hold every limit without checking one, so it fails
+    the gate as a run that could not measure.
     """
     marker = request.node.get_closest_marker("bench")
     package, pattern = marker.args
@@ -460,7 +462,14 @@ def comparison(request, pytestconfig):
     base, head = runs[name]
     if base is None:
         return []
-    return _rows(_run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"]))
+    text = _run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"])
+    rows = _rows(text)
+    if not rows:
+        pytest.fail(
+            f"benchstat compared nothing of {base.name} with this run:\n{text[-4000:]}",
+            pytrace=False,
+        )
+    return rows
 
 
 @pytest.fixture
