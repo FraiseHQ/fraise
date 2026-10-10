@@ -281,6 +281,27 @@ func TestRPTreeNearestIsExactWhenKCoversTheTree(t *testing.T) {
 	}
 }
 
+// TestRPTreeNearestKIsACapNotASize pins that k bounds the answer without
+// sizing any allocation: k reaches here from a recall's top:, so a k far past
+// the tree, which no machine could reserve memory for, must still return every
+// stored point. If the pool were sized on k, this would panic in makeslice.
+func TestRPTreeNearestKIsACapNotASize(t *testing.T) {
+	rng := rand.New(rand.NewSource(37))
+	const dim = 4
+	const n = 50
+
+	rt := trees.NewRPTree[int, string, float64](dim, 4, 4, 8, 2)
+	for i := range n {
+		if err := rt.Insert(randPoint(rng, i, dim)); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+
+	if got := rt.Nearest(randPoint(rng, -1, dim), 1<<50); len(got) != n {
+		t.Fatalf("Nearest(k=1<<50) returned %d of %d points, want all", len(got), n)
+	}
+}
+
 // TestRPTreeOverfetchWidensTheCandidatePool pins what the configured factor
 // buys. The projection only decides where to look and true distance decides
 // what comes back, so more candidates can improve the answer or tie but never

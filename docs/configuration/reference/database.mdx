@@ -10,7 +10,7 @@ navLabel: "Database"
 | `num-graphs` | `-num-graphs` | `8` | independent graphs allocated, in `[1, 256]`; selectors are `0..n-1` |
 | `default-top` | `-default-top` | `10` | results returned when a recall omits `top:` |
 | `default-depth` | `-default-depth` | `0` | retrieval lane when a recall omits `depth:` (0 = floor) |
-| `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it |
+| `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it; at least `1`, and the server refuses to start on a value below it |
 | `max-depth` | `-max-depth` | `2` | ceiling on `depth:`, in `[0, 2]` (lanes are 0, 1 and 2); the server refuses to start on a value outside it |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
