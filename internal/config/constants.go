@@ -171,6 +171,12 @@ const (
 	// off.
 	DefaultMinScoreRatio float64 = 0
 
+	// DefaultRelevanceFeedback keeps the second text pass off: pseudo-relevance
+	// feedback is standard and cheap — one more index pass, no model — but it
+	// can add distractors as readily as the second hop it exists to reach, so
+	// it stays opt-in until measured.
+	DefaultRelevanceFeedback bool = false
+
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000
 
