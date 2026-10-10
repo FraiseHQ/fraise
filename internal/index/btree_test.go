@@ -37,6 +37,25 @@ import (
 	"github.com/FraiseHQ/fraise/internal/index/relevance"
 )
 
+// TestBTreeIndexRelevanceReadsBackTheInstalledModel pins the read-back startup
+// relies on: a fresh index reports MatchCount, and after SetRelevance the
+// model it ranks with is the one installed — not a copy, not the default.
+func TestBTreeIndexRelevanceReadsBackTheInstalledModel(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	if got := idx.Relevance().Name(); got != "matchcount" {
+		t.Errorf("fresh index Relevance().Name() = %q, want %q", got, "matchcount")
+	}
+	bm25 := relevance.NewBM25[int, float64]()
+	idx.SetRelevance(bm25)
+	if got := idx.Relevance(); got != relevance.Relevance[int, float64](bm25) {
+		t.Errorf("Relevance() after SetRelevance = %v, want the installed BM25", got)
+	}
+	idx.SetRelevance(nil)
+	if got := idx.Relevance(); got != relevance.Relevance[int, float64](bm25) {
+		t.Errorf("Relevance() after SetRelevance(nil) = %v, want BM25 kept", got)
+	}
+}
+
 func TestBTreeIndexInsertAndRetrieve(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 

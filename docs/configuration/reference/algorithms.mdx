@@ -43,6 +43,8 @@ Selects how the text index turns a match into a number:
 - `bm25` — raw idf-weighted mass $\times$ match breadth against the query's idf mass, what the excess methodology consumes;
 - `matchcount` — one point per query-term occurrence, the pre-BM25 ranking, for comparison runs.
 
+At startup the server reads the model back from every graph's text index and refuses to start if it is not the configured one, then logs it once as `relevance=bm25`. A wrong model answers every query, only with worse ranking, so nothing downstream would flag it. `/api/v1/stats` reports the same read-back per graph as [`relevance`](/docs/http-api/endpoints/stats).
+
 ## `ranking-algorithm`
 
 The pagerank knobs are read **only** when `ranking-algorithm` is `pagerank`; `none` applies no global ranking boost.

@@ -27,3 +27,9 @@ import "errors"
 // ErrIndexOutOfBounds is returned by Select when the graph selector is outside
 // the range of allocated graphs. Callers can match it with errors.Is.
 var ErrIndexOutOfBounds = errors.New("db: graph index out of bounds")
+
+// ErrRelevanceModelMismatch is returned by Start when a graph's text index
+// ranks with a relevance model other than the configured one. The wiring from
+// configuration to index can sever without any query failing, only ranking
+// worse, so startup refuses to serve rather than degrade silently.
+var ErrRelevanceModelMismatch = errors.New("db: relevance model mismatch")

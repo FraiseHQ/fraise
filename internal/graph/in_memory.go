@@ -390,6 +390,7 @@ func (g *InMemoryGraph[K, P]) Stats() GraphStats {
 		// Entries - Count is the vector index's compaction debt; the index's
 		// automatic Flush keeps it bounded (see rptree flush-factor).
 		ForestEntries: g.GetVectorIndex().Entries(),
+		Relevance:     g.textIndex.Relevance().Name(),
 	}
 }
 

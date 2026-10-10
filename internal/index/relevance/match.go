@@ -22,10 +22,15 @@
 
 package relevance
 
+import "github.com/FraiseHQ/fraise/internal/config"
+
 // MatchCount is the relevance model a BTreeIndex starts with: one point per
 // query-term occurrence, repeats included. A match count needs no corpus
 // statistics, so every lifecycle hook is a no-op.
 type MatchCount[K comparable, P float32 | float64] struct{}
+
+// Name is [config.RelevanceMatchCount].
+func (MatchCount[K, P]) Name() string { return config.RelevanceMatchCount }
 
 // Indexed records nothing: a match count keeps no statistics.
 func (MatchCount[K, P]) Indexed(K, []string) {}
