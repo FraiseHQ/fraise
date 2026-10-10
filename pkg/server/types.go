@@ -22,10 +22,6 @@
 
 package server
 
-// Request is a placeholder for a generic incoming request payload.
-type Request struct {
-}
-
 // ErrorResponse is the JSON error body returned to clients: a single
 // human-readable message under "error". The HTTP status code carries the
 // category (4xx client error, 5xx server error), so it is not duplicated in the

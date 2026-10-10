@@ -45,8 +45,7 @@ cache key, the *wrong* answers were: a package-level serialization helper, a
 `Hash() string` method outside the hasher contract, or an identity
 `Hasher[string, string]` to bridge signatures. All of those are glue.
 
-The right answer — what's in the tree now — was to give `Vector[K, P]` and
-`TimeValue[K]` the type parameter and the same method shape as their peers:
+The right answer — what's in the tree now — was to give `Vector[K, P]` and `TimeValue[K]` the type parameter and a `Hash` taking the same `Hasher[K, string]` as their peers. Where a peer returns the key `K`, a component returns that key rendered as a string, the material its enclosing query folds in:
 
 ```go
 func (v Vector[K, P]) Hash(h hash.Hasher[K, string]) string

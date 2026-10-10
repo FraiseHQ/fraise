@@ -145,7 +145,7 @@ type Graph[K comparable, P float32 | float64] interface {
 	// index.ErrInvalidDimension, rather than a text-only answer that silently
 	// ignores it. A graph with nothing indexed is not an error; it returns no
 	// hits.
-	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error)
+	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]Node[K], []P, [][]scoring.Contribution[K, P], P, error)
 
 	// The graph's read-write lock, exposed so a caller can hold one lock
 	// across a sequence of calls (e.g. Get then Put). The usual

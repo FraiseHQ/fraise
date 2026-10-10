@@ -408,7 +408,7 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 // and recency decay, keeps the top hits (score descending, then key ascending,
 // so identical queries return identical hits) and finally drops hits below the
 // db.min-score-ratio cutoff.
-func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error) {
+func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]Node[K], []P, [][]scoring.Contribution[K, P], P, error) {
 	// A. Collection: every observation of every candidate (text and vector
 	// seeds, anchor transmission, or the named anchors' members when they
 	// seed alone) as Contributions, and the query's background rate.
@@ -447,12 +447,11 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	// E. Score cutoff (db.min-score-ratio)
 	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
 
-	nodes := make([]*Node[K], len(rankedKeys))
+	nodes := make([]Node[K], len(rankedKeys))
 	scoresOut := make([]P, len(rankedKeys))
 	contributions := make([][]scoring.Contribution[K, P], len(rankedKeys))
 	for i, key := range rankedKeys {
-		node := g.Nodes()[key]
-		nodes[i] = &node
+		nodes[i] = g.Nodes()[key]
 		scoresOut[i] = rankedScores[i]
 		contributions[i] = candidates[key]
 	}
@@ -683,8 +682,11 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 			t := g.traversal.Clone()
 			t.SetSource(seed)
 			result, err := t.Run(g)
+			if err != nil {
+				continue
+			}
 			r, ok := result.(TraversalResult[K])
-			if err != nil || !ok {
+			if !ok {
 				continue
 			}
 			// ExcessTraversal reports an anchor's full membership, the seed
@@ -782,8 +784,11 @@ func (g *InMemoryGraph[K, P]) boost(scores map[K]P) {
 		return
 	}
 	result, err := g.ranking.Run(g)
-	r, _ := result.(RankingResult[K, P])
-	if err != nil || len(r.Scores) == 0 {
+	if err != nil {
+		return
+	}
+	r, ok := result.(RankingResult[K, P])
+	if !ok || len(r.Scores) == 0 {
 		return
 	}
 	n := P(len(r.Scores))
@@ -861,6 +866,6 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 // IsEmpty reports whether the graph holds no nodes. Callers ask it under the
 // graph lock, so it is O(1) rather than derived from Stats, which walks every
 // node.
-func (s *InMemoryGraph[K, P]) IsEmpty() bool {
-	return len(s.Nodes()) == 0
+func (g *InMemoryGraph[K, P]) IsEmpty() bool {
+	return len(g.Nodes()) == 0
 }

@@ -127,7 +127,7 @@ func (g *fakeGraph) Delete(graph.Node[uint64]) error                    { return
 func (g *fakeGraph) GetVectorIndex() index.VectorIndex[uint64, float64] { return nil }
 func (g *fakeGraph) GetTextIndex() index.TextIndex[uint64, float64]     { return nil }
 func (g *fakeGraph) Nodes() map[uint64]graph.Node[uint64]               { return nil }
-func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) ([]*graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64, error) {
+func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) ([]graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64, error) {
 	return nil, nil, nil, 0, nil
 }
 func (g *fakeGraph) RLock()        {}

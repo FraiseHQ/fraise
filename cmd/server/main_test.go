@@ -35,16 +35,14 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 )
 
-// withArgs sets the process's command line for one test, restoring it after.
+// args builds the arguments main hands to Parse once the command is stripped.
 // A missing -config keeps the run off whatever fraise.config.toml happens to sit
 // in the working directory, so the flags under test are the whole configuration.
-func withArgs(t *testing.T, flags ...string) {
+func args(t *testing.T, flags ...string) []string {
 	t.Helper()
 
 	missing := filepath.Join(t.TempDir(), "does-not-exist.toml")
-	original := os.Args
-	os.Args = append([]string{"fraise", "-config", missing}, flags...)
-	t.Cleanup(func() { os.Args = original })
+	return append([]string{"-config", missing}, flags...)
 }
 
 // TestRunRefusesToStartOnAnInvalidValue is the startup contract at the level
@@ -72,10 +70,8 @@ func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.flag+"="+tc.value, func(t *testing.T) {
-			withArgs(t, tc.flag, tc.value)
-
 			c := config.New()
-			cfgErr := c.Parse(os.Args[1:])
+			cfgErr := c.Parse(args(t, tc.flag, tc.value))
 			err := run("serve", context.Background(), c, cfgErr)
 
 			if !errors.Is(err, config.ErrInvalidValue) {
@@ -108,10 +104,8 @@ func TestRunAcceptsAnyCasingOfAValueThatIsAccepted(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.flag+"="+tc.value, func(t *testing.T) {
-			withArgs(t, tc.flag, tc.value)
-
 			c := config.New()
-			err := c.Parse(os.Args[1:])
+			err := c.Parse(args(t, tc.flag, tc.value))
 
 			if errors.Is(err, config.ErrInvalidValue) {
 				t.Fatalf("%s %s would stop startup: %v", tc.flag, tc.value, err)
@@ -126,10 +120,8 @@ func TestRunAcceptsAnyCasingOfAValueThatIsAccepted(t *testing.T) {
 // must not take the fatal branch, or the server could not start without a
 // file.
 func TestRunSurvivesAMissingConfigFile(t *testing.T) {
-	withArgs(t)
-
 	c := config.New()
-	err := c.Parse(os.Args[1:])
+	err := c.Parse(args(t))
 
 	if !errors.Is(err, config.ErrMissingFile) {
 		t.Fatalf("Parse with no config file = %v, want ErrMissingFile reported", err)
@@ -171,10 +163,8 @@ func TestRunRefusesToStartOnAnUnusableConfigFile(t *testing.T) {
 // into serving — `fraise sevre -config x` starting the server would hide the
 // typo behind a running process.
 func TestRunRejectsAnUnknownCommand(t *testing.T) {
-	withArgs(t)
-
 	c := config.New()
-	cfgErr := c.Parse(os.Args[1:])
+	cfgErr := c.Parse(args(t))
 	err := run("sevre", context.Background(), c, cfgErr)
 
 	if err == nil || !strings.Contains(err.Error(), `"sevre"`) {
@@ -195,11 +185,9 @@ func TestRunRejectsAnUnknownCommand(t *testing.T) {
 func TestRunTreatsHelpAsSuccess(t *testing.T) {
 	for _, name := range []string{"-h", "-help"} {
 		t.Run(name, func(t *testing.T) {
-			withArgs(t, name)
-
 			c := config.New()
 			c.SetOutput(io.Discard) // the usage text is not this test's business
-			cfgErr := c.Parse(os.Args[1:])
+			cfgErr := c.Parse(args(t, name))
 
 			if !errors.Is(cfgErr, flag.ErrHelp) {
 				t.Fatalf("Parse(%s) = %v, want flag.ErrHelp", name, cfgErr)
@@ -217,11 +205,9 @@ func TestRunTreatsHelpAsSuccess(t *testing.T) {
 // as ErrInvalidFlag so it stays fatal here, rather than silently serving with
 // a default the operator never asked for.
 func TestRunRejectsAnUnknownFlag(t *testing.T) {
-	withArgs(t, "-bogus")
-
 	c := config.New()
 	c.SetOutput(io.Discard)
-	cfgErr := c.Parse(os.Args[1:])
+	cfgErr := c.Parse(args(t, "-bogus"))
 
 	if !errors.Is(cfgErr, config.ErrInvalidFlag) {
 		t.Fatalf("Parse(-bogus) = %v, want it to wrap ErrInvalidFlag", cfgErr)

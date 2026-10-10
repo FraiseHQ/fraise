@@ -130,19 +130,14 @@ func run(cmd string, ctx context.Context, c *config.ConfigSet, cfgErr error) err
 		// P (embedding/score precision) is a compile-time type parameter, so the
 		// config value selects which instantiation to build and run here. Both are
 		// compiled in; the whole stack below is generic over P.
-		switch c.DB.Precision {
-		case config.PrecisionFloat32:
-			logger.Info("Using single precision", "precision", config.PrecisionFloat32)
-			return runServer[float32](ctx, c)
-		case config.PrecisionFloat64:
+		// Parse has already set an absent precision to its default and rejected
+		// anything else, so float64 is the one value that is not float32.
+		if c.DB.Precision == config.PrecisionFloat64 {
 			logger.Info("Using double precision", "precision", config.PrecisionFloat64)
 			return runServer[float64](ctx, c)
-		default:
-			// Startup rejects any other value, so this is an unset config, and the
-			// documented default is what it means.
-			logger.Warn("Precision unset, using the default", "precision", config.DefaultPrecision)
-			return runServer[float32](ctx, c)
 		}
+		logger.Info("Using single precision", "precision", config.PrecisionFloat32)
+		return runServer[float32](ctx, c)
 
 	case "version":
 		fmt.Println(version.Version)

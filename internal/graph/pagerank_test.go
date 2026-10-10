@@ -223,7 +223,7 @@ func TestSearchWithPageRankRanking(t *testing.T) {
 	g = build()
 	g.SetRanking(graph.NewPageRank[uint64, float64](0.85, 100, 1e-9))
 	nodes, _, _, _, _ = g.Search([]string{"alpha"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{})
-	if len(nodes) != 2 || (*nodes[0]).GetValue() != "alpha central note" {
+	if len(nodes) != 2 || nodes[0].GetValue() != "alpha central note" {
 		t.Errorf("Search with PageRank ranking did not put the central fact first")
 	}
 }

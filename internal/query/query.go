@@ -88,7 +88,7 @@ type QueryResult[K comparable, P float32 | float64] struct {
 // because a client needs the fact's value, timestamp and score, not the graph
 // node.
 type Hit[K comparable, P float32 | float64] struct {
-	Node  *graph.Node[K]
+	Node  graph.Node[K]
 	Score P
 
 	// Contributions is the hit's per-source breakdown, set only in explain
@@ -122,16 +122,14 @@ type HitContribution[P float32 | float64] struct {
 // appear only when the hit carries them (explain mode), so an ordinary query
 // response has no contributions key.
 func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
-	node := *h.Node
-
 	return json.Marshal(struct {
 		Value         string               `json:"value"`
 		Timestamp     time.Time            `json:"timestamp"`
 		Score         P                    `json:"score"`
 		Contributions []HitContribution[P] `json:"contributions,omitempty"`
 	}{
-		Value:         node.GetValue(),
-		Timestamp:     node.GetTimestamp(),
+		Value:         h.Node.GetValue(),
+		Timestamp:     h.Node.GetTimestamp(),
 		Score:         h.Score,
 		Contributions: h.Contributions,
 	})

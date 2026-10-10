@@ -35,8 +35,4 @@ var (
 	// ErrInvalidDimension is returned when a vector's dimensionality does not
 	// match the index it is being used with.
 	ErrInvalidDimension = errors.New("index: invalid vector dimension")
-	// ErrFailedToCreateIndex is returned when an index cannot be constructed.
-	ErrFailedToCreateIndex = errors.New("index: failed to create index")
-	// ErrFailedToLoadIndex is returned when an existing index cannot be loaded.
-	ErrFailedToLoadIndex = errors.New("index: failed to load index")
 )

@@ -19,7 +19,7 @@ client.recall(query="colourful birds")                         # encoded for you
 | Embedder | Default model | Notes |
 |---|---|---|
 | `OpenAIEmbedder` | `text-embedding-3-small` | its `dimensions` parameter can be set to match a graph's existing dimension |
-| `HuggingFaceEmbedder` | `sentence-transformers/all-MiniLM-L6-v2` | sentence-level models only: a model returning one vector per token is rejected |
+| `HuggingFaceEmbedder` | `sentence-transformers/all-MiniLM-L6-v2` | its `dimensions` parameter can be set to match a graph's existing dimension; sentence-level models only: a model returning one vector per token is rejected |
 | anything else | — | an `Embedder` subclass, or a bare `callable(text) -> Sequence[float]` |
 
 Both vendor SDKs are optional extras, imported only by the embedder's own module (`fraise_sdk.providers.openai`, `fraise_sdk.providers.huggingface`), so `import fraise_sdk` stays cheap for callers who use neither.

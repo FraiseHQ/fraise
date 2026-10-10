@@ -64,18 +64,18 @@ func mustSet[P float32 | float64](t *testing.T, g *graph.InMemoryGraph[uint64, P
 	}
 }
 
-func values(nodes []*graph.Node[uint64]) []string {
+func values(nodes []graph.Node[uint64]) []string {
 	out := make([]string, len(nodes))
 	for i, n := range nodes {
-		out[i] = (*n).GetValue()
+		out[i] = n.GetValue()
 	}
 	return out
 }
 
-func keys(nodes []*graph.Node[uint64]) []uint64 {
+func keys(nodes []graph.Node[uint64]) []uint64 {
 	out := make([]uint64, len(nodes))
 	for i, n := range nodes {
-		out[i] = (*n).Key()
+		out[i] = n.Key()
 	}
 	return out
 }
@@ -343,7 +343,7 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact3, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
 	nodes, scores, _, _, _ := g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
+	if len(nodes) != 1 || nodes[0].GetValue() != "alice works at acme" {
 		t.Fatalf("Search(acme) = %v, want [alice works at acme]", values(nodes))
 	}
 	if len(scores) != 1 || scores[0] <= 0 {
@@ -356,7 +356,7 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	// entity named and depth 2, the traversal runs and still funds nothing.
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
 	nodes, _, _, _, _ = g.Search([]string{"acme"}, containers.Vector[uint64, float64]{}, nil, []string{"alice"}, 2, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
+	if len(nodes) != 1 || nodes[0].GetValue() != "alice works at acme" {
 		t.Errorf("Search(acme, depth=2) = %v, want only the direct hit — a lone anchor has no surplus to transmit", values(nodes))
 	}
 }
@@ -377,7 +377,7 @@ func TestInMemoryGraphSearchByVector(t *testing.T) {
 	}
 
 	nodes, _, _, _, _ := g.Search(nil, containers.NewVector[uint64]([]float64{0.9, 0.1}), nil, nil, 0, 1, time.Time{}, time.Time{})
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alpha" {
+	if len(nodes) != 1 || nodes[0].GetValue() != "alpha" {
 		t.Errorf("Search(vector near alpha) = %v, want [alpha]", values(nodes))
 	}
 }
@@ -424,7 +424,7 @@ func TestInMemoryGraphSearchTopicFilter(t *testing.T) {
 
 	// Both facts match "alice", but only fact1 is tagged with topic "work".
 	nodes, _, _, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
+	if len(nodes) != 1 || nodes[0].GetValue() != "alice works at acme" {
 		t.Errorf("Search(alice, topic=work) = %v, want [alice works at acme]", values(nodes))
 	}
 }
@@ -438,12 +438,12 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 	mustSet(t, g, mkFact(g, "alice recent fact", recent))
 
 	nodes, _, _, _, _ := g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{})
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice recent fact" {
+	if len(nodes) != 1 || nodes[0].GetValue() != "alice recent fact" {
 		t.Errorf("Search(alice, since=2025) = %v, want [alice recent fact]", values(nodes))
 	}
 
 	nodes, _, _, _, _ = g.Search([]string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice ancient fact" {
+	if len(nodes) != 1 || nodes[0].GetValue() != "alice ancient fact" {
 		t.Errorf("Search(alice, until=2025) = %v, want [alice ancient fact]", values(nodes))
 	}
 }
@@ -508,7 +508,7 @@ func TestNewGraphInstallsStemmingTokenizer(t *testing.T) {
 	mustSet(t, g, mkFact(g, "jules blogs about lighthouses", time.Now()))
 
 	nodes, _, _, _, _ := g.Search([]string{"blogging"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 || (*nodes[0]).GetValue() != "jules blogs about lighthouses" {
+	if len(nodes) != 1 || nodes[0].GetValue() != "jules blogs about lighthouses" {
 		t.Fatalf("Search(blogging) = %v, want the blogs fact — inflections must unify", values(nodes))
 	}
 }
@@ -562,8 +562,8 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 	if len(nodes) != 2 {
 		t.Fatalf("Search(comet) returned %d nodes, want 2", len(nodes))
 	}
-	if (*nodes[0]).GetValue() != "comet sighted today" {
-		t.Errorf("Search(comet) ranked %q first, want the recent fact", (*nodes[0]).GetValue())
+	if nodes[0].GetValue() != "comet sighted today" {
+		t.Errorf("Search(comet) ranked %q first, want the recent fact", nodes[0].GetValue())
 	}
 	if scores[0] <= scores[1] {
 		t.Errorf("recent fact score %v not above old fact score %v", scores[0], scores[1])
@@ -887,8 +887,8 @@ func TestSearchScoresNeverBelowTextMass(t *testing.T) {
 		textMass[key] = textScores[i]
 	}
 	for i, node := range nodes {
-		if m := textMass[(*node).Key()]; scores[i] < m {
-			t.Errorf("hit %q scored %v below its own text mass %v", (*node).GetValue(), scores[i], m)
+		if m := textMass[node.Key()]; scores[i] < m {
+			t.Errorf("hit %q scored %v below its own text mass %v", node.GetValue(), scores[i], m)
 		}
 	}
 }
@@ -1168,7 +1168,7 @@ func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 	if len(nodes) == 0 {
 		t.Fatalf("Search returned no results, want the nearest fact")
 	}
-	if got := (*nodes[0]).GetValue(); got != "beta fact about kites" {
+	if got := nodes[0].GetValue(); got != "beta fact about kites" {
 		t.Errorf("nearest result = %q, want the beta fact", got)
 	}
 	if len(scores) != len(nodes) {
@@ -1233,7 +1233,7 @@ func anchorGraph(t *testing.T) (g *graph.InMemoryGraph[uint64, float64], harbour
 // vector — with the given anchors, cap and window. It asks for depth 2 on
 // purpose: a test that passes through it also proves the lane is inert when
 // the anchors seed.
-func searchByAnchors(g *graph.InMemoryGraph[uint64, float64], topics, entities []string, top int, since, until time.Time) ([]*graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64, error) {
+func searchByAnchors(g *graph.InMemoryGraph[uint64, float64], topics, entities []string, top int, since, until time.Time) ([]graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64, error) {
 	return g.Search(nil, containers.Vector[uint64, float64]{}, topics, entities, 2, top, since, until)
 }
 
