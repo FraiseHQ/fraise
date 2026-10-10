@@ -215,7 +215,7 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	prepared := idx.relevance.Prepare()
 	var w *window[K, P]
 	if idx.gamma > 0 && idx.neighbours != nil {
-		w = &window[K, P]{index: idx, neighbours: make(map[K][]K, maxPosting), lengths: make(map[K]P, maxPosting)}
+		w = &window[K, P]{index: idx, neighbours: make(map[K][]K, maxPosting), lengths: make(map[K]P, maxPosting), frequency: make(map[K]P, maxPosting)}
 	}
 
 	var totalW P
@@ -261,11 +261,13 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 // window is one search's view of the installed window: the neighbours and
 // window length of every document it has met, resolved once each, since both
 // are fixed for the query and a document is met once per term it or a
-// neighbour holds.
+// neighbour holds, and the frequency table accumulate fills for one term at a
+// time, kept across terms so a query allocates it once.
 type window[K comparable, P float32 | float64] struct {
 	index      *BTreeIndex[K, P]
 	neighbours map[K][]K
 	lengths    map[K]P
+	frequency  map[K]P
 }
 
 // adjacent returns key's neighbours, asking the graph the first time.
@@ -298,7 +300,8 @@ func (w *window[K, P]) length(key K) P {
 // saturation runs after the list rather than per posting.
 func (w *window[K, P]) accumulate(list *postingList[K], weight P, prepared P, scores map[K]P, matched map[K]P) {
 	idx := w.index
-	frequency := make(map[K]P, list.live)
+	frequency := w.frequency
+	clear(frequency)
 	for _, p := range list.entries {
 		if p.tf == 0 {
 			continue

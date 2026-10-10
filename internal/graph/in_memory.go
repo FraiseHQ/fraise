@@ -76,7 +76,14 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	// searches share the graph's read lock, and dropped by every write that
 	// touches the anchor or one of its members, so a sequence is never stale
 	// and a graph never searched with a window never builds one.
-	sequences  map[K]*sequence[K]
+	sequences map[K]*sequence[K]
+
+	// contiguity caches, per fact, what contiguous returned for it: a pure
+	// function of the cached sequences of its anchors, so it is dropped with
+	// any of them. A window search asks for the neighbours of every matched
+	// fact, and between writes the answer does not change.
+	contiguity map[K][]K
+
 	sequenceMu sync.Mutex
 
 	mu sync.RWMutex
@@ -143,10 +150,11 @@ func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGr
 			cfg.DB.VectorSearch.Overfetch,
 			comparator.OrderedComparator[K],
 		),
-		scorer:    scoring.NewExcessScorer[K, P](),
-		hasher:    hash.NewHasher[K](cfg),
-		config:    cfg,
-		sequences: make(map[K]*sequence[K]),
+		scorer:     scoring.NewExcessScorer[K, P](),
+		hasher:     hash.NewHasher[K](cfg),
+		config:     cfg,
+		sequences:  make(map[K]*sequence[K]),
+		contiguity: make(map[K][]K),
 	}
 	// The window needs the graph's notion of adjacency, which only exists
 	// once the graph does, so it is installed last. A non-positive gamma
@@ -378,8 +386,14 @@ func (g *InMemoryGraph[K, P]) Neighbours(key K) []K {
 // anchor are one exchange, a question and its answer, a statement and its
 // follow-up, and the window lets the exchange match as a whole. A fact filed
 // under no anchor has no neighbours. Searches call it under the graph's read
-// lock.
+// lock, once per matched fact, so the answer is cached until a write drops it
+// (see dropSequences) and a repeated lookup allocates nothing.
 func (g *InMemoryGraph[K, P]) contiguous(key K) []K {
+	g.sequenceMu.Lock()
+	defer g.sequenceMu.Unlock()
+	if out, ok := g.contiguity[key]; ok {
+		return out
+	}
 	var out []K
 	for anchor := range g.nodeToTargets[key] {
 		if !isAnchor[K, P](g, anchor) {
@@ -398,16 +412,17 @@ func (g *InMemoryGraph[K, P]) contiguous(key K) []K {
 		}
 	}
 	slices.Sort(out)
-	return slices.Compact(out)
+	out = slices.Compact(out)
+	g.contiguity[key] = out
+	return out
 }
 
 // sequence returns anchor's members in write order, building and caching it
 // on first use. Members are the facts adjacent to the anchor; ties on the
 // timestamp (a batch written in one instant) are broken by key, so the order
-// is total and two searches agree on who neighbours whom.
+// is total and two searches agree on who neighbours whom. The caller holds
+// sequenceMu.
 func (g *InMemoryGraph[K, P]) sequence(anchor K) *sequence[K] {
-	g.sequenceMu.Lock()
-	defer g.sequenceMu.Unlock()
 	if seq, ok := g.sequences[anchor]; ok {
 		return seq
 	}
@@ -435,16 +450,32 @@ func (g *InMemoryGraph[K, P]) sequence(anchor K) *sequence[K] {
 // sequences (a re-asserted fact takes a new timestamp), a new edge adds a
 // member, a deleted node removes one: all three reach here, under the write
 // lock, so a cached sequence never outlives the writes that would change it.
+// A dropped sequence takes its members' cached contiguity with it, and key's
+// own, so every cached neighbour list is read off sequences still cached.
 func (g *InMemoryGraph[K, P]) dropSequences(key K) {
 	g.sequenceMu.Lock()
 	defer g.sequenceMu.Unlock()
-	delete(g.sequences, key)
+	delete(g.contiguity, key)
+	g.dropSequence(key)
 	for neighbour := range g.nodeToTargets[key] {
-		delete(g.sequences, neighbour)
+		g.dropSequence(neighbour)
 	}
 	for neighbour := range g.nodeToSources[key] {
-		delete(g.sequences, neighbour)
+		g.dropSequence(neighbour)
 	}
+}
+
+// dropSequence discards anchor's cached sequence and the cached contiguity of
+// each of its members. The caller holds sequenceMu.
+func (g *InMemoryGraph[K, P]) dropSequence(anchor K) {
+	seq, ok := g.sequences[anchor]
+	if !ok {
+		return
+	}
+	for _, member := range seq.keys {
+		delete(g.contiguity, member)
+	}
+	delete(g.sequences, anchor)
 }
 
 // exportEdges returns a deep copy of an edge map, so a caller cannot mutate
