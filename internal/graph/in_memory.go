@@ -515,23 +515,23 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 // installed scorer and boosts by the installed ranking, applies the time window
 // and recency decay, keeps the top hits (score descending, then key ascending,
 // so identical queries return identical hits), drops hits below the
-// db.min-score-ratio cutoff and, under db.aggregate, folds candidates that
-// matched by the same rare term into group hits.
+// db.min-score-ratio cutoff and, under db.aggregate, spends the top slots
+// across the facets a flat ranking spans rather than down the ranking.
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (Result[K, P], error) {
-	// Grouping reads a pool deeper than top, since the point of a group is
-	// to hold what top slots cannot, and the seeds have to be gathered that
-	// deep for the pool to exist; a keyword-less query has no term to group
-	// by.
-	grouping := g.config.DB.Aggregate.Name == config.AggregateSpread && len(keywords) > 0 && top > 0
+	// Aggregation reads a pool deeper than top, since the facets it spreads
+	// the slots over, and the members a group holds, lie below what top
+	// slots would keep, and the indexes have to be read that deep for the
+	// pool to exist.
+	aggregating := g.config.DB.Aggregate.Name != config.AggregateNone && top > 0
 	pool := top
-	if grouping && g.config.DB.Aggregate.Pool > pool {
+	if aggregating && g.config.DB.Aggregate.Pool > pool {
 		pool = g.config.DB.Aggregate.Pool
 	}
 
 	// A. Collection: every observation of every candidate (text and vector
 	// seeds, anchor transmission, or the named anchors' members when they
 	// seed alone) as Contributions, and the query's background rate.
-	candidates, background, err := g.collect(keywords, vector, topics, entities, depth, pool)
+	candidates, background, err := g.collect(keywords, vector, topics, entities, depth, top, pool)
 	if err != nil {
 		return Result[K, P]{}, err
 	}
@@ -565,10 +565,10 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	// E. Score cutoff (db.min-score-ratio)
 	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
 
-	// F. Grouping (db.aggregate), then the answer.
+	// F. Aggregation (db.aggregate), then the answer.
 	result := Result[K, P]{Background: background}
-	if grouping {
-		result.Hits, result.Spread = g.group(rankedKeys, rankedScores, candidates, keywords, topics, entities, top)
+	if aggregating {
+		result.Hits, result.Spread = g.aggregate(rankedKeys, rankedScores, candidates, keywords, topics, entities, top)
 	} else {
 		result.Hits = g.hits(rankedKeys, rankedScores, candidates)
 	}
@@ -589,30 +589,32 @@ func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Cand
 	return out
 }
 
-// spreadWindow is how deep into the ranking the grouping gate looks when it
-// measures spread. Twenty is two slots of the default top: enough to tell a
+// spreadWindow is how deep into the ranking the aggregation gate looks when
+// it measures spread. Twenty is two slots of the default top: enough to tell a
 // ranking that peaks on one or two facets from one that is flat across many,
 // without reading the whole pool. It is a methodology constant, not
 // configuration.
 const spreadWindow = 20
 
-// group folds the ranked pool into at most top hits under db.aggregate. It
-// first measures the spread: how many distinct facets the first spreadWindow
-// candidates scoring at least ratio times the best belong to. A facet is the
-// finest anchor a candidate is filed under beyond the anchors the query named
-// (those are shared by every candidate and say nothing), or the candidate
-// itself when it has none: on a graph filed by session, the spread is the
-// number of sessions near the top. Below the configured spread the ranking
-// is a specific question and is returned as fact hits, truncated to top.
+// aggregate draws at most top hits from the ranked pool under db.aggregate.
+// It first measures the spread: how many distinct facets the first
+// spreadWindow candidates scoring at least ratio times the best belong to. A
+// facet is the finest anchor a candidate is filed under beyond the anchors the
+// query named (those are shared by every candidate and say nothing), or the
+// candidate itself when it has none: on a graph filed by session, the spread
+// is the number of sessions near the top. Below the configured spread the
+// ranking is a specific question, peaked on one context, and is returned as
+// it is, truncated to top.
 //
-// At or above it, the pool's candidates are keyed by the rarest query term
-// each holds (see [index.BTreeIndex.KeyTerms]) and every key with at least
-// min-size members becomes a group hit: its members best first, its score its
-// best member's. The largest groups, up to max-groups, take the first slots,
-// ties broken by key term so the fold is deterministic; the remaining slots
-// go to the best ungrouped candidates in rank order. The spread is returned
-// for explain whether or not grouping ran.
-func (g *InMemoryGraph[K, P]) group(keys []K, scores []P, candidates scoring.Candidates[K, P], keywords []string, topics []string, entities []string, top int) ([]Hit[K, P], int) {
+// At or above it the question is broad, and ten slots down a ranking that
+// leans on one context would hold that context ten times over: the slots are
+// spread over the facets instead (see spread), so the answer covers as many
+// contexts as the pool offers before it deepens any. Under the group
+// algorithm the pool is also folded into group hits (see groups), each placed
+// at the first of its members the spread order reaches and standing in for
+// all of them. The spread is returned for explain whether or not the slots
+// were spread.
+func (g *InMemoryGraph[K, P]) aggregate(keys []K, scores []P, candidates scoring.Candidates[K, P], keywords []string, topics []string, entities []string, top int) ([]Hit[K, P], int) {
 	cfg := g.config.DB.Aggregate
 	topicKeys, entityKeys := g.anchorKeys(topics, entities)
 	named := make(map[K]struct{}, len(topicKeys)+len(entityKeys))
@@ -632,16 +634,82 @@ func (g *InMemoryGraph[K, P]) group(keys []K, scores []P, candidates scoring.Can
 		}
 		spread = len(facets)
 	}
-	plain := func() []Hit[K, P] {
+	if spread < cfg.Spread {
 		if len(keys) > top {
 			keys, scores = keys[:top], scores[:top]
 		}
-		return g.hits(keys, scores, candidates)
-	}
-	if spread < cfg.Spread {
-		return plain(), spread
+		return g.hits(keys, scores, candidates), spread
 	}
 
+	// Groups are folded from the ranking, so their members come best first,
+	// and placed along the spread order, so a group stands where the spread
+	// would have put its first member.
+	var groups []Hit[K, P]
+	var grouped map[K]int
+	if cfg.Name == config.AggregateGroup && len(keywords) > 0 {
+		groups, grouped = g.groups(keys, scores, candidates, keywords)
+	}
+	keys, scores = g.spread(keys, scores, named)
+
+	hits := make([]Hit[K, P], 0, top)
+	placed := make([]bool, len(groups))
+	for i, key := range keys {
+		if len(hits) >= top {
+			break
+		}
+		if j, ok := grouped[key]; ok {
+			if !placed[j] {
+				placed[j] = true
+				hits = append(hits, groups[j])
+			}
+			continue
+		}
+		node := g.Nodes()[key]
+		hits = append(hits, Hit[K, P]{Node: &node, Score: scores[i], Contributions: candidates[key]})
+	}
+	return hits, spread
+}
+
+// spread reorders a ranking so that every facet gets its best cap candidates
+// before any facet gets more: a walk down the ranking takes a candidate whose
+// facet has fewer than cap taken and defers the rest, and the deferred follow
+// in rank order. The first candidate is always taken, so the best hit is the
+// best hit whether or not the slots were spread; a ranking with fewer facets
+// than slots is still filled; a ranking on a single facet comes back as it
+// was. The order within a facet is the ranking's, so what is deferred is
+// each facet's weaker matches, never its best.
+func (g *InMemoryGraph[K, P]) spread(keys []K, scores []P, named map[K]struct{}) ([]K, []P) {
+	taken := make(map[K]int)
+	spreadKeys := make([]K, 0, len(keys))
+	spreadScores := make([]P, 0, len(keys))
+	var deferredKeys []K
+	var deferredScores []P
+	for i, key := range keys {
+		facet := g.facet(key, named)
+		if taken[facet] >= g.config.DB.Aggregate.Cap {
+			deferredKeys = append(deferredKeys, key)
+			deferredScores = append(deferredScores, scores[i])
+			continue
+		}
+		taken[facet]++
+		spreadKeys = append(spreadKeys, key)
+		spreadScores = append(spreadScores, scores[i])
+	}
+	return append(spreadKeys, deferredKeys...), append(spreadScores, deferredScores...)
+}
+
+// groups folds the first pool candidates of a ranking into group hits. The
+// candidates are keyed by the rarest query term each holds (see
+// [index.BTreeIndex.KeyTerms]): the candidates that matched the query by the
+// same rare term are instances of one thing the query asked about, and every
+// term with at least min-size of them becomes a group hit, its members best
+// first, its node, score and contributions its best member's. The largest
+// groups win, up to max-groups, ties broken by term so the fold is
+// deterministic. The groups come back with the index of the group each
+// grouped key belongs to, so the caller can place a group where it meets a
+// member and skip the others.
+func (g *InMemoryGraph[K, P]) groups(keys []K, scores []P, candidates scoring.Candidates[K, P], keywords []string) ([]Hit[K, P], map[K]int) {
+	cfg := g.config.DB.Aggregate
 	pool := keys
 	if len(pool) > cfg.Pool {
 		pool = pool[:cfg.Pool]
@@ -659,52 +727,36 @@ func (g *InMemoryGraph[K, P]) group(keys []K, scores []P, candidates scoring.Can
 		}
 		members[term] = append(members[term], i)
 	}
-	groups := make([]string, 0, len(order))
+	folded := make([]string, 0, len(order))
 	for _, term := range order {
 		if len(members[term]) >= cfg.MinSize {
-			groups = append(groups, term)
+			folded = append(folded, term)
 		}
 	}
-	if len(groups) == 0 {
-		return plain(), spread
-	}
-	sort.SliceStable(groups, func(a, b int) bool {
-		if len(members[groups[a]]) != len(members[groups[b]]) {
-			return len(members[groups[a]]) > len(members[groups[b]])
+	sort.SliceStable(folded, func(a, b int) bool {
+		if len(members[folded[a]]) != len(members[folded[b]]) {
+			return len(members[folded[a]]) > len(members[folded[b]])
 		}
-		return groups[a] < groups[b]
+		return folded[a] < folded[b]
 	})
-	if len(groups) > cfg.MaxGroups {
-		groups = groups[:cfg.MaxGroups]
+	if len(folded) > cfg.MaxGroups {
+		folded = folded[:cfg.MaxGroups]
 	}
 
-	hits := make([]Hit[K, P], 0, top)
-	grouped := make(map[K]struct{})
-	for _, term := range groups {
+	groups := make([]Hit[K, P], 0, len(folded))
+	grouped := make(map[K]int)
+	for j, term := range folded {
 		hit := Hit[K, P]{Key: term}
 		for _, i := range members[term] {
 			node := g.Nodes()[keys[i]]
 			hit.Members = append(hit.Members, &node)
 			hit.MemberScores = append(hit.MemberScores, scores[i])
-			grouped[keys[i]] = struct{}{}
+			grouped[keys[i]] = j
 		}
 		hit.Node, hit.Score, hit.Contributions = hit.Members[0], hit.MemberScores[0], candidates[keys[members[term][0]]]
-		hits = append(hits, hit)
+		groups = append(groups, hit)
 	}
-	for i, key := range keys {
-		if len(hits) >= top {
-			break
-		}
-		if _, ok := grouped[key]; ok {
-			continue
-		}
-		node := g.Nodes()[key]
-		hits = append(hits, Hit[K, P]{Node: &node, Score: scores[i], Contributions: candidates[key]})
-	}
-	if len(hits) > top {
-		hits = hits[:top]
-	}
-	return hits, spread
+	return groups, grouped
 }
 
 // facet is the finest anchor key is filed under beyond the named ones: the
@@ -760,6 +812,12 @@ func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.S
 // and the attenuation belong to the Scorer. The error is a vector dimension
 // mismatch.
 //
+// top is how many hits the recall asks for and pool how many candidates the
+// ranking will consider, top itself or deeper under db.aggregate: each index
+// is read pool deep, and the traversal expands from the first max(seed-size,
+// top) of each reading, so an aggregation that reads deeper does not
+// traverse deeper (see gatherSeeds).
+//
 // With no keywords and no vector, the named anchors' members are the seeds
 // instead (see Graph.Search). No traversal runs, since expanding from every
 // member would return most of the graph, and the background is zero.
@@ -767,14 +825,14 @@ func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.S
 // Topic and entity names are resolved to anchor keys once per query, so
 // gatherMembers and findNeighbours agree on which node a name denotes and the
 // filter is a key lookup.
-func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P, error) {
+func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, pool int) (scoring.Candidates[K, P], P, error) {
 	topicKeys, entityKeys := g.anchorKeys(topics, entities)
 	candidates := make(scoring.Candidates[K, P])
 	if len(keywords) == 0 && vector.Empty() {
 		g.gatherMembers(topicKeys, entityKeys, candidates)
 		return candidates, 0, nil
 	}
-	seeds, err := g.gatherSeeds(keywords, vector, candidates, top)
+	seeds, err := g.gatherSeeds(keywords, vector, candidates, top, pool)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -842,25 +900,36 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // contributions carry the BM25 × coverage mass and vector contributions the
 // similarity 1/(1+distance), so Score is bigger-is-better for every source.
 //
-// Each source is asked for max(seed-size, top) candidates, so the text
-// ranking is never cut off before top. The seed keys are returned in
-// ascending order: the traversal folds floats, and a fixed order keeps
-// identical queries scoring identically. An empty index seeds nothing; a
-// vector of the wrong dimension is an error, since it comes from a different
-// embedding model than the graph's.
-func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates scoring.Candidates[K, P], top int) ([]K, error) {
+// Each source is asked for pool candidates, at least max(seed-size, top), so
+// the text ranking is never cut off before top, and every candidate read is
+// pooled on its own evidence. The seeds, the keys the traversal expands from,
+// are the first max(seed-size, top) of each source's reading: what an
+// aggregation reads below that stands on its text or vector match alone, so
+// reading deeper for it costs index lookups, not traversals. The seed keys
+// are returned in ascending order: the traversal folds floats, and a fixed
+// order keeps identical queries scoring identically. An empty index seeds
+// nothing; a vector of the wrong dimension is an error, since it comes from
+// a different embedding model than the graph's.
+func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates scoring.Candidates[K, P], top int, pool int) ([]K, error) {
 	seedK := g.config.DB.SeedSize
 	if top > seedK {
 		seedK = top
 	}
+	if seedK > pool {
+		pool = seedK
+	}
+	seeded := make(map[K]struct{}, seedK)
 
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.GetTextIndex().Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK); err == nil {
+		if keys, scores, err := g.GetTextIndex().Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), pool); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
+				if rank < seedK {
+					seeded[key] = struct{}{}
+				}
 			}
 		} else {
 			logger.Debug("Text index yielded no seeds", "error", err)
@@ -868,7 +937,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 
 	if !vector.Empty() {
-		keys, distances, err := g.vectorIndex.Search(vector, seedK)
+		keys, distances, err := g.vectorIndex.Search(vector, pool)
 		switch {
 		case errors.Is(err, index.ErrInvalidDimension):
 			return nil, err
@@ -878,12 +947,15 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 			vectorSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1})
+				if rank < seedK {
+					seeded[key] = struct{}{}
+				}
 			}
 		}
 	}
 
-	seeds := make([]K, 0, len(candidates))
-	for key := range candidates {
+	seeds := make([]K, 0, len(seeded))
+	for key := range seeded {
 		seeds = append(seeds, key)
 	}
 	sort.Slice(seeds, func(i, j int) bool { return seeds[i] < seeds[j] })

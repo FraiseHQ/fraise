@@ -1786,17 +1786,17 @@ func aggregationGraph(t *testing.T, cfg *config.ConfigSet) *graph.InMemoryGraph[
 	return g
 }
 
-// TestInMemoryGraphSearchGroupsAnAggregationQuestion pins db.aggregate: a
-// query whose matches spread across sessions at similar scores is an
-// aggregation question, and its matches by the same rare term come back as
-// one group hit, members best first, in a single slot, so a top of three
-// holds what five slots could not. The spread is reported for explain. The
-// same graph asked a specific question, matched by one session, is left as
-// fact hits below the gate.
+// TestInMemoryGraphSearchGroupsAnAggregationQuestion pins the group
+// algorithm of db.aggregate: a query whose matches spread across sessions at
+// similar scores is an aggregation question, and its matches by the same rare
+// term come back as one group hit, members best first, in a single slot, so a
+// top of three holds what five slots could not. The spread is reported for
+// explain. The same graph asked a specific question, matched by one session,
+// is left as fact hits below the gate.
 func TestInMemoryGraphSearchGroupsAnAggregationQuestion(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
-	cfg.DB.Aggregate = config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 3, Ratio: 0.5, MinSize: 3, MaxGroups: 2}
+	cfg.DB.Aggregate = config.Aggregate{Name: config.AggregateGroup, Pool: 60, Spread: 3, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
 	g := aggregationGraph(t, cfg)
 
 	result, err := g.Search([]string{"tournament"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
@@ -1839,7 +1839,7 @@ func TestInMemoryGraphSearchGroupsAnAggregationQuestion(t *testing.T) {
 // TestInMemoryGraphSearchAggregateOffIsTheRanking pins that with
 // db.aggregate set to none the same aggregation question returns the plain
 // ranking truncated to top, no group, spread 0, so an operator who turns
-// grouping off gets the engine that was measured without it.
+// the aggregation off gets the engine that was measured without it.
 func TestInMemoryGraphSearchAggregateOffIsTheRanking(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -1856,5 +1856,168 @@ func TestInMemoryGraphSearchAggregateOffIsTheRanking(t *testing.T) {
 		if hit.Members != nil {
 			t.Errorf("Search returned a group with aggregation off")
 		}
+	}
+}
+
+// spreadGraph files a conversation whose matches for "deploy" lean on one
+// session: ops holds three short deploy turns, which outscore the one longer
+// deploy turn in each of planning and budget. Ranked down, the top three are
+// all ops; spread, they cover the three sessions.
+func spreadGraph(t *testing.T, cfg *config.ConfigSet) *graph.InMemoryGraph[uint64, float64] {
+	t.Helper()
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	conv := mkTopic(g, "conv", now)
+	mustSet(t, g, conv)
+	sessions := map[string][]string{
+		"ops":      {"deploy started", "deploy finished", "deploy verified"},
+		"planning": {"the deploy is planned for friday afternoon"},
+		"budget":   {"the deploy budget covers the quarter"},
+	}
+	i := 0
+	for _, name := range []string{"ops", "planning", "budget"} {
+		session := mkTopic(g, name, now)
+		mustSet(t, g, session)
+		for _, value := range sessions[name] {
+			ts := now.Add(time.Duration(i) * time.Second)
+			i++
+			fact := mkFact(g, value, ts)
+			mustSet(t, g, fact)
+			for _, topic := range []*graph.Topic[uint64]{conv, session} {
+				mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+			}
+		}
+	}
+	return g
+}
+
+// session reports the facet the spread files value under: the session topic
+// it is filed under beyond the conversation.
+func session(value string) string {
+	switch {
+	case strings.HasPrefix(value, "deploy "):
+		return "ops"
+	case strings.Contains(value, "planned"):
+		return "planning"
+	default:
+		return "budget"
+	}
+}
+
+// TestInMemoryGraphSearchSpreadsAFlatRankingOverFacets pins the spread
+// algorithm of db.aggregate, the recall setting: once the ranking's spread
+// clears the gate, the slots go to one fact per facet before any facet gets
+// a second, so a top of three covers three sessions where the ranking would
+// have spent all three on ops. The best hit stays first, since it is the
+// first fact of its facet; the facts deferred by the cap follow in rank order
+// once every facet is served, so a larger top fills with ops again; and a
+// cap of two gives ops two slots before planning gets one. The ratio is 0 so
+// every candidate near the top counts towards the spread, whatever the
+// relevance model makes of the lengths.
+func TestInMemoryGraphSearchSpreadsAFlatRankingOverFacets(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.Aggregate = config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0, Cap: 1, MinSize: 3, MaxGroups: 2}
+	g := spreadGraph(t, cfg)
+	sessionsOf := func(hits []graph.Hit[uint64, float64]) []string {
+		out := make([]string, len(hits))
+		for i, hit := range hits {
+			out[i] = session((*hit.Node).GetValue())
+		}
+		return out
+	}
+
+	result, err := g.Search([]string{"deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	if result.Spread != 3 {
+		t.Errorf("Spread = %d, want 3: the three sessions near the top", result.Spread)
+	}
+	got := sessionsOf(result.Hits)
+	if len(got) != 3 || got[0] != "ops" {
+		t.Fatalf("Search = %v, want three hits led by the best, an ops turn", got)
+	}
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, []string{"budget", "ops", "planning"}) {
+		t.Errorf("Search covers %v, want every session once", got)
+	}
+
+	wide, err := g.Search([]string{"deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 5, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search(top 5) = %v, want nil", err)
+	}
+	if got := sessionsOf(wide.Hits); len(got) != 5 || got[3] != "ops" || got[4] != "ops" {
+		t.Errorf("Search(top 5) = %v, want the two deferred ops turns after the three sessions", got)
+	}
+
+	cfg.DB.Aggregate.Cap = 2
+	two, err := g.Search([]string{"deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search(cap 2) = %v, want nil", err)
+	}
+	if got := sessionsOf(two.Hits); len(got) != 3 || got[0] != "ops" || got[1] != "ops" || got[2] == "ops" {
+		t.Errorf("Search(cap 2) = %v, want two ops turns then another session's", got)
+	}
+}
+
+// TestInMemoryGraphSearchSpreadKeepsAPeakedRanking pins the gate: a ranking
+// whose spread falls short of db.aggregate.spread is a specific question and
+// is returned as ranked, all three slots to ops, with the spread still
+// reported for explain.
+func TestInMemoryGraphSearchSpreadKeepsAPeakedRanking(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.Aggregate = config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 4, Ratio: 0, Cap: 1, MinSize: 3, MaxGroups: 2}
+	g := spreadGraph(t, cfg)
+	result, err := g.Search([]string{"deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	if result.Spread != 3 {
+		t.Errorf("Spread = %d, want 3 reported below the gate", result.Spread)
+	}
+	for _, hit := range result.Hits {
+		if session((*hit.Node).GetValue()) != "ops" {
+			t.Errorf("Search = %v, want the ranking as it is, all ops, below the gate", values(result.Nodes()))
+		}
+	}
+}
+
+// TestInMemoryGraphSearchGroupSitsAtItsRank pins where a group hit goes: at
+// the first slot the spread would have given one of its members, not ahead
+// of a better fact. A query naming a rare term and a common one ranks the
+// rare term's one match first; the common term's three matches fold into a
+// group that follows it, so the best hit is still the best hit.
+func TestInMemoryGraphSearchGroupSitsAtItsRank(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.Aggregate = config.Aggregate{Name: config.AggregateGroup, Pool: 60, Spread: 2, Ratio: 0, Cap: 1, MinSize: 3, MaxGroups: 2}
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	conv := mkTopic(g, "conv", now)
+	mustSet(t, g, conv)
+	for i, value := range []string{"the rollback plan", "deploy started", "deploy finished", "deploy verified"} {
+		ts := now.Add(time.Duration(i) * time.Second)
+		session := mkTopic(g, "session"+strconv.Itoa(i), ts)
+		mustSet(t, g, session)
+		fact := mkFact(g, value, ts)
+		mustSet(t, g, fact)
+		for _, topic := range []*graph.Topic[uint64]{conv, session} {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+		}
+	}
+	result, err := g.Search([]string{"rollback", "deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	if len(result.Hits) != 2 {
+		t.Fatalf("Search = %v, want the rollback fact and one deploy group", values(result.Nodes()))
+	}
+	if first := (*result.Hits[0].Node).GetValue(); first != "the rollback plan" || result.Hits[0].Members != nil {
+		t.Errorf("first hit = %q (group %q), want the rollback fact, the best match, as a fact hit", first, result.Hits[0].Key)
+	}
+	if group := result.Hits[1]; group.Key != "deploy" || len(group.Members) != 3 {
+		t.Errorf("second hit = key %q with %d members, want the deploy group behind the better fact", group.Key, len(group.Members))
 	}
 }

@@ -52,7 +52,7 @@ Facts written one after the other under the same anchor are usually one exchange
 
 A recall returns its `top:` best candidates — and, with the score cutoff on, fewer: `db.min-score-ratio` drops the hits whose relevance, before recency decay and the ranking boost, is below a fraction of the best hit's. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
 
-With [`db.aggregate`](/docs/configuration/reference/database#dbaggregate) on, a recall whose matches spread across many sessions at similar scores, the shape of an aggregation question, folds the candidates that matched by the same rare term into one group hit holding them all, best first, and spends the freed slots on the next best facts. The gate is the ranking's spread, so a specific question is returned as facts. It is on by default; `name = "none"` turns it off.
+With [`db.aggregate`](/docs/configuration/reference/database#dbaggregate) set to `spread`, a recall whose matches spread across several facets, the sessions of a conversation, say, at similar scores, the shape of a broad question, spends its slots one facet at a time: each facet's best fact before any facet's second, the deferred facts after, so ten slots cover ten sessions where the ranking alone would have spent them on one exchange. The gate is the ranking's spread, so a specific question is returned as ranked. It is on by default, the recall setting; `name = "none"` returns the ranking as it is, and `name = "group"` adds group hits, one slot carrying every candidate that matched by the same rare term, best first.
 
 ## Why a recall needs a seed
 

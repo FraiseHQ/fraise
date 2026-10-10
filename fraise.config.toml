@@ -44,12 +44,13 @@
 # window-gamma = 0.3          # share of its temporal neighbours' matches a fact borrows when scored, at most 1; negative disables; 0 means the default
 
 [db.aggregate]
-# name = "spread"             # spread none: fold candidates matched by the same rare term into group hits
-# pool = 60                   # ranked candidates the grouping considers
-# spread = 4                  # distinct facets the top of the ranking must span before grouping runs
+# name = "spread"             # spread group none: how a flat ranking's slots are spent; spread fills them one facet at a time, group folds same-term matches into group hits as well
+# pool = 60                   # ranked candidates the aggregation draws from
+# spread = 2                  # distinct facets the top of the ranking must span before the slots are spread; 1 spreads every ranking
 # ratio = 0.5                 # share of the best score a candidate needs to count towards the spread
-# min-size = 3                # smallest cluster returned as one group hit
-# max-groups = 2              # most group hits one recall returns
+# cap = 1                     # fact hits one facet takes before the next facet gets its first
+# min-size = 3                # smallest cluster returned as one group hit (group)
+# max-groups = 2              # most group hits one recall returns (group)
 
 [db.hashing-function]
 # name = "xxhash"             # xxhash t1ha

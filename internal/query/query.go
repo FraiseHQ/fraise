@@ -83,8 +83,8 @@ type QueryResult[K comparable, P float32 | float64] struct {
 	Background P `json:"background,omitempty"`
 
 	// Spread is the number of facets the top of the ranking spanned, the
-	// statistic the grouping gate (db.aggregate) read, attached only in
-	// explain mode so a client can see why a recall did or did not group.
+	// statistic the aggregation gate (db.aggregate) read, attached only in
+	// explain mode so a client can see why a recall was or was not spread.
 	Spread int `json:"spread,omitempty"`
 }
 

@@ -49,7 +49,7 @@ A successful recall carries ranked hits, highest score first — relevance after
 
 ### A group hit
 
-With [`db.aggregate`](/docs/configuration/reference/database#dbaggregate) on, a recall whose matches spread across many sessions at similar scores, an aggregation question, folds the candidates that matched by the same rare term into one hit:
+With [`db.aggregate`](/docs/configuration/reference/database#dbaggregate) set to `group`, off by default, a recall whose matches spread across many sessions at similar scores, an aggregation question, folds the candidates that matched by the same rare term into one hit:
 
 ```json
 {
@@ -66,7 +66,7 @@ With [`db.aggregate`](/docs/configuration/reference/database#dbaggregate) on, a 
 }
 ```
 
-`members` are the group's facts, best first, each in the shape of a fact hit; `key` is the term they share and `count` how many there are. The group's own `value`, `timestamp` and `score` are its best member's, so a client that reads every hit as a fact still reads a true one. A fact hit carries none of these keys, and the top-level `count` counts a group as one hit.
+`members` are the group's facts, best first, each in the shape of a fact hit; `key` is the term they share and `count` how many there are. The group's own `value`, `timestamp` and `score` are its best member's, so a client that reads every hit as a fact still reads a true one. A fact hit carries none of these keys, and the top-level `count` counts a group as one hit. A group sits where its first member would have: a better fact still comes before it.
 
 ### A write is acknowledged, not answered with results
 

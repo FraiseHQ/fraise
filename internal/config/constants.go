@@ -172,28 +172,40 @@ const (
 	DefaultMinScoreRatio float64 = 0
 
 	// DefaultWindowGamma is the window (DBConfig.WindowGamma) a fact is
-	// scored with: the operating point measured on LoCoMo, where it raised
-	// F1@10 from 0.378 to 0.502 and single-hop turn recall@10 from 0.70 to
-	// 0.81. A negative value turns the window off; 0 means this default.
+	// scored with: the operating point measured on LoCoMo by the retrieval
+	// quality benchmark, where with the spread below it raised p@1 from 0.726
+	// to 0.761. Alone it stacks the slots with one exchange, which is what the
+	// spread undoes. A negative value turns the window off; 0 means this
+	// default.
 	DefaultWindowGamma float64 = 0.3
 
-	// DefaultAggregate turns grouping (DBConfig.Aggregate) on with the
-	// thresholds below, the operating point measured on LoCoMo (session
-	// recall@10 from 0.899 to 0.945, multi-hop from 0.671 to 0.817, precision
-	// up as well); "none" turns it off.
+	// DefaultAggregate spreads a flat ranking's slots over its facets
+	// (DBConfig.Aggregate) with the thresholds below: the recall setting
+	// measured on LoCoMo by the retrieval quality benchmark, where with the
+	// window it raised session recall@10 from 0.880 to 0.924 and multi-hop
+	// from 0.604 to 0.712 for an F1@10 of 0.345 against 0.396. "group" folds
+	// the matches by one rare term into group hits as well; "none" is the
+	// ranking as it is.
 	DefaultAggregate string = AggregateSpread
 
-	// DefaultAggregatePool is how many ranked candidates grouping considers.
+	// DefaultAggregatePool is how many ranked candidates the aggregation
+	// draws from.
 	DefaultAggregatePool int = 60
 
 	// DefaultAggregateSpread is the number of distinct facets the top of the
 	// ranking must span, at scores within DefaultAggregateRatio of the best,
-	// before grouping runs.
-	DefaultAggregateSpread int = 4
+	// before the slots are spread: two, so a ranking is spread as soon as a
+	// second facet competes with the first.
+	DefaultAggregateSpread int = 2
 
 	// DefaultAggregateRatio is the share of the best score a candidate needs
 	// to count towards the spread.
 	DefaultAggregateRatio float64 = 0.5
+
+	// DefaultAggregateCap is how many fact hits one facet takes before the
+	// next facet gets its first: one, so the slots cover as many facets as the
+	// pool offers.
+	DefaultAggregateCap int = 1
 
 	// DefaultAggregateMinSize is the smallest cluster returned as a group.
 	DefaultAggregateMinSize int = 3

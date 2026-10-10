@@ -292,17 +292,18 @@ min-score-ratio = 0.3
 }
 
 // TestConfigSet_WindowAndAggregate pins the resting state of the two
-// retrieval settings added for the window and grouping: both on, at the
-// operating point that was benchmarked, so a config that never mentions
-// them runs the engine that was measured; a negative share and the name
-// none are the two ways off, and 0 for the share means the default, as it
-// does for the half-life. The file and the flags reach the same fields.
+// retrieval settings added for the window and the aggregation: the window on
+// and the slots spread, at the recall setting that was benchmarked, so a
+// config that never mentions them runs the engine that was measured; group
+// hits are opt-in; a negative share and the name none are the two ways off,
+// and 0 for the share means the default, as it does for the half-life. The
+// file and the flags reach the same fields.
 func TestConfigSet_WindowAndAggregate(t *testing.T) {
 	c := config.New()
 	if c.DB.WindowGamma != 0.3 {
 		t.Errorf("DB.WindowGamma default: got %v, want 0.3", c.DB.WindowGamma)
 	}
-	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 4, Ratio: 0.5, MinSize: 3, MaxGroups: 2}
+	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
 	if c.DB.Aggregate != want {
 		t.Errorf("DB.Aggregate default: got %+v, want %+v", c.DB.Aggregate, want)
 	}
@@ -342,17 +343,17 @@ pool = 40
 	if f.DB.WindowGamma != 0.5 {
 		t.Errorf("DB.WindowGamma: got %v, want 0.5", f.DB.WindowGamma)
 	}
-	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 4, Ratio: 0.5, MinSize: 3, MaxGroups: 2}
+	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
 	if f.DB.Aggregate != want {
 		t.Errorf("DB.Aggregate from file: got %+v, want %+v (the unset thresholds keep their defaults)", f.DB.Aggregate, want)
 	}
 
 	fl := config.New()
-	if err := fl.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0.5", "-aggregate", "SPREAD", "-aggregate-max-groups", "1"}); !errors.Is(err, config.ErrMissingFile) {
+	if err := fl.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0.5", "-aggregate", "GROUP", "-aggregate-cap", "2", "-aggregate-max-groups", "1"}); !errors.Is(err, config.ErrMissingFile) {
 		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
 	}
-	if fl.DB.WindowGamma != 0.5 || fl.DB.Aggregate.Name != config.AggregateSpread || fl.DB.Aggregate.MaxGroups != 1 {
-		t.Errorf("flags: got gamma %v, aggregate %+v, want 0.5 and spread with max-groups 1", fl.DB.WindowGamma, fl.DB.Aggregate)
+	if fl.DB.WindowGamma != 0.5 || fl.DB.Aggregate.Name != config.AggregateGroup || fl.DB.Aggregate.Cap != 2 || fl.DB.Aggregate.MaxGroups != 1 {
+		t.Errorf("flags: got gamma %v, aggregate %+v, want 0.5 and group with cap 2 and max-groups 1", fl.DB.WindowGamma, fl.DB.Aggregate)
 	}
 }
 

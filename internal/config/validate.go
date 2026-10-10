@@ -91,12 +91,14 @@ const (
 	RankingPageRank string = "pagerank"
 )
 
-// db.aggregate.name — whether a recall folds candidates that matched by the
-// same rare term into group hits; "none" returns facts only, "spread" groups
-// when the ranking's spread clears the configured gate.
+// db.aggregate.name — how a recall spends its top slots once the ranking's
+// spread clears the configured gate; "none" returns the ranking as it is,
+// "spread" fills the slots one facet at a time, "group" does so and folds the
+// candidates that matched by the same rare term into group hits as well.
 const (
 	AggregateNone   string = "none"
 	AggregateSpread string = "spread"
+	AggregateGroup  string = "group"
 )
 
 // The values each setting accepts, in the order the error message lists them.
@@ -121,7 +123,7 @@ var (
 
 	RankingAlgorithms = []string{RankingNone, RankingPageRank}
 
-	AggregateAlgorithms = []string{AggregateNone, AggregateSpread}
+	AggregateAlgorithms = []string{AggregateNone, AggregateSpread, AggregateGroup}
 )
 
 // Canonical rewrites *v to whichever accepted value it matches
@@ -196,8 +198,9 @@ func (c *ConfigSet) validate() error {
 		return fmt.Errorf("%w: db.window-gamma = %v (accepted: 1 or less, negative is off)", ErrInvalidValue, w)
 	}
 
-	// The grouping thresholds each have a floor below which grouping could
-	// never run or would group every single fact.
+	// The aggregation thresholds each have a floor below which the
+	// aggregation could never run, would take no fact for a facet, or would
+	// group every single fact.
 	if r := c.DB.Aggregate.Ratio; !(r >= 0 && r <= 1) {
 		return fmt.Errorf("%w: db.aggregate.ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
 	}
@@ -206,6 +209,9 @@ func (c *ConfigSet) validate() error {
 	}
 	if sp := c.DB.Aggregate.Spread; sp < 1 {
 		return fmt.Errorf("%w: db.aggregate.spread = %d (accepted: 1 or more)", ErrInvalidValue, sp)
+	}
+	if n := c.DB.Aggregate.Cap; n < 1 {
+		return fmt.Errorf("%w: db.aggregate.cap = %d (accepted: 1 or more)", ErrInvalidValue, n)
 	}
 	if m := c.DB.Aggregate.MinSize; m < 2 {
 		return fmt.Errorf("%w: db.aggregate.min-size = %d (accepted: 2 or more)", ErrInvalidValue, m)

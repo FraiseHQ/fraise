@@ -61,7 +61,7 @@ type Hit[K comparable, P float32 | float64] struct {
 // Result is what Search returns: the hits best first, the query's background
 // rate ρ₀, which explain serializes so a client can recompute each hit's
 // relevance, and Spread, the number of facets the top of the ranking spanned
-// (the statistic the grouping gate read; 0 when grouping is off).
+// (the statistic the aggregation gate read; 0 when the aggregation is off).
 type Result[K comparable, P float32 | float64] struct {
 	Hits       []Hit[K, P]
 	Background P
@@ -174,9 +174,10 @@ type Graph[K comparable, P float32 | float64] interface {
 	// first, at most top of them, each with the contributions its score was
 	// folded from, and the query's background rate (see Result). An
 	// implementation may return fewer than top hits when its own retrieval
-	// policy, such as a score cutoff, drops the tail, and may fold several
-	// facts into one group hit (see Hit) when the query reads as an
-	// aggregation.
+	// policy, such as a score cutoff, drops the tail, may spend the top slots
+	// across the facets a flat ranking spans rather than down the ranking,
+	// and may fold several facts into one group hit (see Hit) when the query
+	// reads as an aggregation.
 	//
 	// The criteria combine to narrow the result:
 	//   - keywords: full-text terms matched against the text index
