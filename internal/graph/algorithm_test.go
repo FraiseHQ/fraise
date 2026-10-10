@@ -28,7 +28,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
-	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/internal/index"
 )
@@ -41,6 +40,11 @@ func testConfig() *config.ConfigSet {
 	cfg.DB.VectorSearch.ProjectionDimension = 8
 	cfg.DB.VectorSearch.NumberTrees = 4
 	cfg.DB.VectorSearch.Seed = 4
+	// The pins below describe the plain pipeline, one fact scored on its own
+	// terms and the slots down the ranking; the window and the spread, both
+	// on by default, have their own tests, which turn them on explicitly.
+	cfg.DB.WindowGamma = -1
+	cfg.DB.Aggregate.Name = config.AggregateNone
 	return cfg
 }
 
@@ -127,8 +131,8 @@ func (g *fakeGraph) Delete(graph.Node[uint64]) error                    { return
 func (g *fakeGraph) GetVectorIndex() index.VectorIndex[uint64, float64] { return nil }
 func (g *fakeGraph) GetTextIndex() index.TextIndex[uint64, float64]     { return nil }
 func (g *fakeGraph) Nodes() map[uint64]graph.Node[uint64]               { return nil }
-func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) ([]*graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64, error) {
-	return nil, nil, nil, 0, nil
+func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) (graph.Result[uint64, float64], error) {
+	return graph.Result[uint64, float64]{}, nil
 }
 func (g *fakeGraph) RLock()        {}
 func (g *fakeGraph) Lock()         {}

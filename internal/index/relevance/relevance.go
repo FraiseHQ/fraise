@@ -59,9 +59,22 @@ type Relevance[K comparable, P float32 | float64] interface {
 	// them. Models with nothing to precompute return 0.
 	Prepare() P
 
-	// Increment is one document's gain for matching one term. prepared is
-	// this query's Prepare() result.
+	// Increment is one document's gain for matching one term at the
+	// posting's term frequency, normalised by the document's own recorded
+	// length. prepared is this query's Prepare() result.
 	Increment(weight P, key K, tf int, prepared P) P
+
+	// Gain is Increment generalised to a term frequency and a document
+	// length the index measured itself: a window search's, where a
+	// document's count and length include a share of its temporal
+	// neighbours', which is why both are P rather than int. Increment is Gain
+	// at the posting's count and the document's own Length.
+	Gain(weight P, tf P, length P, prepared P) P
+
+	// Length is the document length the model normalises by, in tokens as
+	// it recorded them at Indexed, and 0 for a model that does not
+	// normalise; the window's length is built from it.
+	Length(key K) P
 
 	// Finalize folds the accumulated score and match breadth into the final
 	// relevance; coverage lives here. matched and total carry the idf mass

@@ -91,6 +91,16 @@ const (
 	RankingPageRank string = "pagerank"
 )
 
+// db.aggregate.name — how a recall spends its top slots once the ranking's
+// spread clears the configured gate; "none" returns the ranking as it is,
+// "spread" fills the slots one facet at a time, "group" does so and folds the
+// candidates that matched by the same rare term into group hits as well.
+const (
+	AggregateNone   string = "none"
+	AggregateSpread string = "spread"
+	AggregateGroup  string = "group"
+)
+
 // The values each setting accepts, in the order the error message lists them.
 // They are the single source of truth for the accepted set, and consumers
 // switch on the same constants. A value added here needs a case in each of
@@ -112,6 +122,8 @@ var (
 	RelevanceModels = []string{RelevanceBM25, RelevanceMatchCount}
 
 	RankingAlgorithms = []string{RankingNone, RankingPageRank}
+
+	AggregateAlgorithms = []string{AggregateNone, AggregateSpread, AggregateGroup}
 )
 
 // Canonical rewrites *v to whichever accepted value it matches
@@ -143,7 +155,10 @@ func Canonical(v *string, name string, accepted []string) error {
 // and silently empty every recall. db.max-depth caps a recall's depth clause,
 // and search has no lane past 2: a higher ceiling would let depth:3 through
 // to be silently answered as depth 2, and a negative one would reject every
-// recall that names a depth. scheduler.workers has a floor: Adjust only
+// recall that names a depth. db.max-top has a floor for the same reason: a
+// ceiling below 1 would reject every recall that names a top. It has no
+// upper bound, since how many hits one recall may ask for is the operator's
+// call. scheduler.workers has a floor: Adjust only
 // replaces a zero, so a negative count would reach the scheduler, which would
 // start no worker and leave every accepted query waiting forever.
 // db.num-graphs is bounded by the selector: a selector is a uint8, so a graph
@@ -162,6 +177,7 @@ func (c *ConfigSet) validate() error {
 		{&c.DB.RankingAlgorithm.Name, "db.ranking-algorithm.name", RankingAlgorithms},
 		{&c.DB.ScoringAlgorithm.Name, "db.scoring-algorithm.name", ScoringAlgorithms},
 		{&c.DB.RelevanceModel.Name, "db.relevance-model.name", RelevanceModels},
+		{&c.DB.Aggregate.Name, "db.aggregate.name", AggregateAlgorithms},
 	}
 
 	for _, s := range settings {
@@ -176,6 +192,34 @@ func (c *ConfigSet) validate() error {
 		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
 	}
 
+	// A window share past 1 would let a neighbour outweigh the fact itself;
+	// a negative share is the window off.
+	if w := c.DB.WindowGamma; !(w <= 1) {
+		return fmt.Errorf("%w: db.window-gamma = %v (accepted: 1 or less, negative is off)", ErrInvalidValue, w)
+	}
+
+	// The aggregation thresholds each have a floor below which the
+	// aggregation could never run, would take no fact for a facet, or would
+	// group every single fact.
+	if r := c.DB.Aggregate.Ratio; !(r >= 0 && r <= 1) {
+		return fmt.Errorf("%w: db.aggregate.ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
+	}
+	if p := c.DB.Aggregate.Pool; p < 1 {
+		return fmt.Errorf("%w: db.aggregate.pool = %d (accepted: 1 or more)", ErrInvalidValue, p)
+	}
+	if sp := c.DB.Aggregate.Spread; sp < 1 {
+		return fmt.Errorf("%w: db.aggregate.spread = %d (accepted: 1 or more)", ErrInvalidValue, sp)
+	}
+	if n := c.DB.Aggregate.Cap; n < 1 {
+		return fmt.Errorf("%w: db.aggregate.cap = %d (accepted: 1 or more)", ErrInvalidValue, n)
+	}
+	if m := c.DB.Aggregate.MinSize; m < 2 {
+		return fmt.Errorf("%w: db.aggregate.min-size = %d (accepted: 2 or more)", ErrInvalidValue, m)
+	}
+	if m := c.DB.Aggregate.MaxGroups; m < 1 {
+		return fmt.Errorf("%w: db.aggregate.max-groups = %d (accepted: 1 or more)", ErrInvalidValue, m)
+	}
+
 	if w := c.Scheduler.Workers; w < 1 {
 		return fmt.Errorf("%w: scheduler.workers = %d (accepted: 1 or more)", ErrInvalidValue, w)
 	}
@@ -183,6 +227,10 @@ func (c *ConfigSet) validate() error {
 	// An operator may lower the ceiling, never raise it past the last lane.
 	if d := c.DB.MaxDepth; d < 0 || d > 2 {
 		return fmt.Errorf("%w: db.max-depth = %d (accepted: 0 to 2)", ErrInvalidValue, d)
+	}
+
+	if m := c.DB.MaxTop; m < 1 {
+		return fmt.Errorf("%w: db.max-top = %d (accepted: 1 or more)", ErrInvalidValue, m)
 	}
 
 	if n := c.DB.NumGraphs; n < 1 || n > math.MaxUint8+1 {
