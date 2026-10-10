@@ -457,7 +457,7 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 // here ⌊1024·idf⌋/(⌊1024·idf⌋+1) = 294/295. The decay factor is the score's
 // ratio to that mass.
 func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
-	halflife := testConfig().Engine.Halflife // default 7d
+	halflife := testConfig().Engine.Halflife // default 90d
 
 	cases := []struct {
 		name string
@@ -581,6 +581,42 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 	}
 	if scores[0] <= scores[1] {
 		t.Errorf("recent fact score %v not above old fact score %v", scores[0], scores[1])
+	}
+}
+
+// TestInMemoryGraphSearchRecencyKeepsRelevance pins what the default
+// half-life is for: decay multiplies the whole score, so the half-life decides
+// whether a month of age outweighs matching the query. A fact matching both
+// query terms, written 30 days ago, faces one matching a single term, written
+// now; two non-matching facts keep the terms' idf apart. Under the default the
+// full match ranks first. Under a one-week half-life it keeps 0.5^(30/7) ≈ 5%
+// of its score and the weak match overtakes it: on a graph used for months,
+// nothing older than a few weeks would rank.
+func TestInMemoryGraphSearchRecencyKeepsRelevance(t *testing.T) {
+	cases := []struct {
+		name     string
+		halflife time.Duration
+		want     []string
+	}{
+		{"the default keeps the full match first", testConfig().Engine.Halflife, []string{"glacier survey from the north ridge", "glacier sighted today"}},
+		{"a one-week half-life lets the weak match win", 7 * 24 * time.Hour, []string{"glacier sighted today", "glacier survey from the north ridge"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.Engine.Halflife = tc.halflife
+			g := graph.NewGraph[uint64, float64](cfg)
+			now := time.Now()
+			mustSet(t, g, mkFact(g, "glacier survey from the north ridge", now.Add(-30*24*time.Hour)))
+			mustSet(t, g, mkFact(g, "glacier sighted today", now))
+			mustSet(t, g, mkFact(g, "harbour cranes at dawn", now))
+			mustSet(t, g, mkFact(g, "pilot boat on watch", now))
+
+			nodes, scores, _, _, _ := g.Search([]string{"glacier", "survey"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("Search(glacier survey, half-life=%v) = %v (scores %v), want %v", tc.halflife, got, scores, tc.want)
+			}
+		})
 	}
 }
 
@@ -1289,7 +1325,7 @@ func TestInMemoryGraphSearchSeedsFromAnchorMembersNewestFirst(t *testing.T) {
 // term, the same two clauses narrow to facts filed under both). A fact filed
 // under both named anchors carries a sighting from each, twice the seed mass,
 // which at an hour's age puts it ahead of the fresher singly-filed fact
-// (2 × 0.5^(1h/168h) against 1); the rest follow newest first. The sightings
+// (2 × 0.5^(1h/2160h) against 1); the rest follow newest first. The sightings
 // arrive in query order, topics then entities, so the fold is byte-identical
 // run to run.
 func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
