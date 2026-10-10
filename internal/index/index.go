@@ -64,7 +64,13 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// index's key comparator. Candidates are pooled from maps, so without that
 	// tiebreak the k kept by truncation would be an arbitrary subset of a tied
 	// group and two identical queries could rank the same matches differently.
-	Search(query V, k int) ([]K, []P, error)
+	//
+	// A non-nil keep restricts the search to the keys it accepts: a rejected
+	// key is never ranked, so it never takes one of the k places. Filtering
+	// after truncation instead would drop every accepted key ranked below k
+	// across the whole index, and a selective filter would return short or
+	// empty while accepted matches exist. A nil keep accepts every key.
+	Search(query V, k int, keep func(K) bool) ([]K, []P, error)
 }
 
 // TextIndex is a full-text index: it tokenizes string documents on insert and

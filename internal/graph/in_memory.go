@@ -412,7 +412,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	// A. Collection: every observation of every candidate (text and vector
 	// seeds, anchor transmission, or the named anchors' members when they
 	// seed alone) as Contributions, and the query's background rate.
-	candidates, background, err := g.collect(keywords, vector, topics, entities, depth, top)
+	candidates, background, err := g.collect(keywords, vector, topics, entities, depth, top, since, until)
 	if err != nil {
 		return nil, nil, nil, 0, err
 	}
@@ -429,7 +429,8 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	}
 	g.boost(scores)
 
-	// C. Time window and recency decay.
+	// C. Time window and recency decay. The seeds are already inside the
+	// window; the traversal and the anchor members are not.
 	kept, ranked := g.timeFilter(keys, scores, since, until)
 
 	// D. Rank and truncate to top. Map iteration order is random, so the
@@ -493,9 +494,18 @@ func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.S
 // collect runs the retrieval stages and pools their observations into one
 // candidate map: text and vector seeding, then the traversal from every seed,
 // then the topic and entity filters. It also returns the background rate the
-// scorer needs. Stages only record Contributions; the hinge, the null model
-// and the attenuation belong to the Scorer. The error is a vector dimension
-// mismatch.
+// scorer needs.
+//
+// The named anchors and the [since, until) window restrict what the seeding
+// searches, not what it keeps: each index is handed a keep that rejects a fact
+// outside them, so the seeds are the best matches among the facts the query
+// can return. Seeding globally and filtering afterwards would lose a fact that
+// ranks below the seed budget across the whole graph but first under its
+// anchor, and on a graph shared by many topics the recall would come back
+// short or empty while matching facts exist.
+//
+// Stages only record Contributions; the hinge, the null model and the
+// attenuation belong to the Scorer. The error is a vector dimension mismatch.
 //
 // With no keywords and no vector, the named anchors' members are the seeds
 // instead (see Graph.Search). No traversal runs, since expanding from every
@@ -504,14 +514,22 @@ func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.S
 // Topic and entity names are resolved to anchor keys once per query, so
 // gatherMembers and findNeighbours agree on which node a name denotes and the
 // filter is a key lookup.
-func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int) (scoring.Candidates[K, P], P, error) {
+func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (scoring.Candidates[K, P], P, error) {
 	topicKeys, entityKeys := g.anchorKeys(topics, entities)
 	candidates := make(scoring.Candidates[K, P])
 	if len(keywords) == 0 && vector.Empty() {
 		g.gatherMembers(topicKeys, entityKeys, candidates)
 		return candidates, 0, nil
 	}
-	seeds, err := g.gatherSeeds(keywords, vector, candidates, top)
+	// An unrestricted query hands the indexes a nil keep, so it pays nothing
+	// per posting.
+	var keep func(K) bool
+	if len(topicKeys) > 0 || len(entityKeys) > 0 || !since.IsZero() || !until.IsZero() {
+		keep = func(key K) bool {
+			return g.matchesFilter(key, topicKeys) && g.matchesFilter(key, entityKeys) && g.inWindow(key, since, until)
+		}
+	}
+	seeds, err := g.gatherSeeds(keywords, vector, keep, candidates, top)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -579,13 +597,13 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // contributions carry the BM25 × coverage mass and vector contributions the
 // similarity 1/(1+distance), so Score is bigger-is-better for every source.
 //
-// Each source is asked for max(seed-size, top) candidates, so the text
-// ranking is never cut off before top. The seed keys are returned in
-// ascending order: the traversal folds floats, and a fixed order keeps
-// identical queries scoring identically. An empty index seeds nothing; a
+// Each source is asked for max(seed-size, top) candidates among the keys keep
+// accepts, so the text ranking is never cut off before top. The seed keys are
+// returned in ascending order: the traversal folds floats, and a fixed order
+// keeps identical queries scoring identically. An empty index seeds nothing; a
 // vector of the wrong dimension is an error, since it comes from a different
 // embedding model than the graph's.
-func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates scoring.Candidates[K, P], top int) ([]K, error) {
+func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], keep func(K) bool, candidates scoring.Candidates[K, P], top int) ([]K, error) {
 	seedK := g.config.DB.SeedSize
 	if top > seedK {
 		seedK = top
@@ -594,7 +612,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	var textSeeds, vectorSeeds int
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.GetTextIndex().Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK); err == nil {
+		if keys, scores, err := g.GetTextIndex().Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), seedK, keep); err == nil {
 			textSeeds = len(keys)
 			for rank, key := range keys {
 				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
@@ -605,7 +623,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 
 	if !vector.Empty() {
-		keys, distances, err := g.vectorIndex.Search(vector, seedK)
+		keys, distances, err := g.vectorIndex.Search(vector, seedK, keep)
 		switch {
 		case errors.Is(err, index.ErrInvalidDimension):
 			return nil, err
@@ -838,16 +856,12 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 			delete(scores, key)
 			continue
 		}
-		ts := node.GetAttributes().Timestamp
-		if !since.IsZero() && ts.Before(since) {
-			delete(scores, key)
-			continue
-		}
-		if !until.IsZero() && !ts.Before(until) {
+		if !g.inWindow(key, since, until) {
 			delete(scores, key)
 			continue
 		}
 
+		ts := node.GetAttributes().Timestamp
 		if halflife > 0 {
 			if age := now.Sub(ts); age > 0 {
 				scores[key] *= P(math.Pow(0.5, age.Seconds()/halflife.Seconds()))
@@ -856,6 +870,21 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 		kept = append(kept, key)
 	}
 	return kept, scores
+}
+
+// inWindow reports whether the node under key is timestamped inside [since,
+// until), a zero bound being open. The seeding and the final time filter both
+// ask it, so a fact the indexes may seed is exactly a fact the window keeps.
+func (g *InMemoryGraph[K, P]) inWindow(key K, since time.Time, until time.Time) bool {
+	node, ok := g.Nodes()[key]
+	if !ok {
+		return false
+	}
+	ts := node.GetAttributes().Timestamp
+	if !since.IsZero() && ts.Before(since) {
+		return false
+	}
+	return until.IsZero() || ts.Before(until)
 }
 
 // IsEmpty reports whether the graph holds no nodes. Callers ask it under the

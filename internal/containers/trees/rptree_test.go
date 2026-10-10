@@ -97,7 +97,7 @@ func TestRPTreeEmpty(t *testing.T) {
 	if got := rt.Len(); got != 0 {
 		t.Errorf("Len() = %d, want 0", got)
 	}
-	if got := rt.Nearest(&point{coord: []float64{0, 0, 0}}, 3); got != nil {
+	if got := rt.Nearest(&point{coord: []float64{0, 0, 0}}, 3, nil); got != nil {
 		t.Errorf("Nearest on empty tree = %v, want nil", got)
 	}
 }
@@ -136,7 +136,7 @@ func TestRPTreeNearestExactWhenSingleLeaf(t *testing.T) {
 	query := randPoint(rng, -1, dim)
 	want := bruteForceNearest(points, query, 5)
 
-	got := rt.Nearest(query, 5)
+	got := rt.Nearest(query, 5, nil)
 	if len(got) != len(want) {
 		t.Fatalf("Nearest returned %d nodes, want %d", len(got), len(want))
 	}
@@ -166,7 +166,7 @@ func TestRPTreeNearestPoolsEachKeyAtItsNearestCopy(t *testing.T) {
 		}
 	}
 
-	got := rt.Nearest(&point{coord: []float64{0, 0}}, 2)
+	got := rt.Nearest(&point{coord: []float64{0, 0}}, 2, nil)
 	if len(got) != 2 {
 		t.Fatalf("Nearest returned %d nodes, want 2", len(got))
 	}
@@ -197,7 +197,7 @@ func TestRPTreeNearestReturnsSubsetOfStoredNodes(t *testing.T) {
 	}
 
 	query := randPoint(rng, -1, dim)
-	got := rt.Nearest(query, k)
+	got := rt.Nearest(query, k, nil)
 	if len(got) > k {
 		t.Fatalf("Nearest returned %d nodes, want at most %d", len(got), k)
 	}
@@ -240,7 +240,7 @@ func TestRPTreeNearestFillsKBeyondOneLeaf(t *testing.T) {
 		}
 	}
 
-	if got := rt.Nearest(randPoint(rng, -1, dim), k); len(got) != k {
+	if got := rt.Nearest(randPoint(rng, -1, dim), k, nil); len(got) != k {
 		t.Fatalf("Nearest(k=%d) returned %d nodes out of %d stored, want %d — the search stopped at one leaf", k, len(got), n, k)
 	}
 }
@@ -266,7 +266,7 @@ func TestRPTreeNearestIsExactWhenKCoversTheTree(t *testing.T) {
 	}
 
 	query := randPoint(rng, -1, dim)
-	got := rt.Nearest(query, n)
+	got := rt.Nearest(query, n, nil)
 	if len(got) != n {
 		t.Fatalf("Nearest(k=n) returned %d of %d points, want all — probing must exhaust the tree", len(got), n)
 	}
@@ -310,7 +310,7 @@ func TestRPTreeOverfetchWidensTheCandidatePool(t *testing.T) {
 	}
 
 	kth := func(rt *trees.RPTree[int, string, float64]) float64 {
-		got := rt.Nearest(query, k)
+		got := rt.Nearest(query, k, nil)
 		if len(got) != k {
 			t.Fatalf("Nearest returned %d nodes, want %d", len(got), k)
 		}
@@ -324,9 +324,60 @@ func TestRPTreeOverfetchWidensTheCandidatePool(t *testing.T) {
 
 	// Exhausting the tree leaves nothing for the approximation to miss.
 	want := bruteForceNearest(points, query, k)
-	for i, node := range build(n).Nearest(query, k) {
+	for i, node := range build(n).Nearest(query, k, nil) {
 		if node.Key() != want[i] {
 			t.Errorf("with over-fetch %d, Nearest()[%d].Key() = %d, want %d — a factor past the tree size must be exact", n, i, node.Key(), want[i])
+		}
+	}
+}
+
+// TestRPTreeNearestKeepProbesForAcceptedNodes pins that keep counts against
+// the budget only the nodes it accepts. One node in fifty is accepted, so at
+// over-fetch 1 the first leaves hold almost none of them: a tree that filtered
+// after gathering k candidates would return short, where Nearest must probe
+// on until it holds k accepted nodes. Exhausting the tree makes the filtered
+// answer exact.
+func TestRPTreeNearestKeepProbesForAcceptedNodes(t *testing.T) {
+	rng := rand.New(rand.NewSource(37))
+	const dim = 4
+	const n = 600
+	const k = 5
+
+	points := make([]*point, n)
+	accepted := make([]*point, 0, n/50)
+	for i := range points {
+		points[i] = randPoint(rng, i, dim)
+		if i%50 == 0 {
+			accepted = append(accepted, points[i])
+		}
+	}
+	keep := func(key int) bool { return key%50 == 0 }
+	query := randPoint(rng, -1, dim)
+
+	build := func(overfetch int) *trees.RPTree[int, string, float64] {
+		rt := trees.NewRPTree[int, string, float64](dim, 4, 3, 8, overfetch)
+		for _, p := range points {
+			if err := rt.Insert(p); err != nil {
+				t.Fatalf("Insert(%d) = %v, want nil", p.Key(), err)
+			}
+		}
+		return rt
+	}
+
+	got := build(1).Nearest(query, k, keep)
+	if len(got) != k {
+		t.Fatalf("Nearest(k=%d, keep) returned %d nodes, want %d — the budget counted rejected nodes", k, len(got), k)
+	}
+	for _, node := range got {
+		if !keep(node.Key()) {
+			t.Errorf("Nearest(keep) returned key %d, which keep rejects", node.Key())
+		}
+	}
+
+	want := bruteForceNearest(accepted, query, k)
+	for i, node := range build(n).Nearest(query, k, keep) {
+		if node.Key() != want[i] {
+			t.Errorf("with over-fetch %d, Nearest(keep)[%d].Key() = %d, want %d — the nearest accepted nodes", n, i, node.Key(), want[i])
 		}
 	}
 }
@@ -391,7 +442,7 @@ func TestRPTreeDeterministicAcrossRuns(t *testing.T) {
 		out := make([][]int, 0, 50)
 		for q := 0; q < 50; q++ {
 			keys := make([]int, 0, k)
-			for _, node := range rt.Nearest(randPoint(rng, -1, 3).Point(), k) {
+			for _, node := range rt.Nearest(randPoint(rng, -1, 3).Point(), k, nil) {
 				keys = append(keys, node.Key())
 			}
 			out = append(out, keys)
@@ -479,7 +530,7 @@ func TestRPTreeWithVectorNodes(t *testing.T) {
 	}
 
 	query := trees.NewVectorNode(-1, containers.NewVector[int]([]float64{50, 50, 50, 50})).Point()
-	got := rt.Nearest(query, 3)
+	got := rt.Nearest(query, 3, nil)
 	if len(got) != 3 {
 		t.Fatalf("Nearest returned %d nodes, want 3", len(got))
 	}

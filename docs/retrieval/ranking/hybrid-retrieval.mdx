@@ -14,7 +14,7 @@ Each temporal memory graph indexes every fact's text in a full-text search index
 
 ## The seeds
 
-A recall pulls candidates from each source it can use, each carrying its raw retrieval mass; the text and vector indexes are each asked for `seed-size` of them, or `top:` when that is larger:
+A recall pulls candidates from each source it can use, each carrying its raw retrieval mass; the text and vector indexes are each asked for `seed-size` of them, or `top:` when that is larger. Named anchors and `since:`/`until:` restrict what the indexes search: the seeds are the best matches among the facts filed under the named anchors and inside the time window, never a cut of the whole graph filtered afterwards, so a fact that ranks first under its anchor is seeded however many matches the rest of the graph holds:
 
 | Source | Mass it carries |
 |---|---|
