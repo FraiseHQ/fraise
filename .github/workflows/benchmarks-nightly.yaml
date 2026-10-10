@@ -25,7 +25,10 @@ permissions:
 jobs:
   nightly:
     name: Measure main
-    runs-on: ubuntu-latest
+    # The CPU of every pull request's gate in benchmarks.yaml, which benchstat
+    # needs to compare this night's outputs with it: every Arm runner is a
+    # Cobalt 100.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     permissions:
       contents: write # comments on the commit when the history alerts

@@ -34,7 +34,11 @@ jobs:
     # server's release pull request runs every gate, retrieval seeded with
     # embeddings included; any other runs the gates its changes can affect.
     name: Benchmark gate
-    runs-on: ubuntu-latest
+    # benchstat compares only runs on the same CPU, and ubuntu-latest hands
+    # out more than one model; every Arm runner is a Cobalt 100, so this
+    # gate and the nightly run that is its baseline always share one. The
+    # nightly workflow runs on the same label.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     env:
       RELEASE: ${{ github.head_ref == 'release-please--branches--main--components--fraise' }}
