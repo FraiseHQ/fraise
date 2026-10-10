@@ -710,11 +710,11 @@ func (g *InMemoryGraph[K, P]) aggregate(keys []K, scores []P, candidates scoring
 // was. The order within a facet is the ranking's, so what is deferred is
 // each facet's weaker matches, never its best.
 func (g *InMemoryGraph[K, P]) spread(keys []K, scores []P, named map[K]struct{}) ([]K, []P) {
-	taken := make(map[K]int)
+	taken := make(map[K]int, len(keys))
 	spreadKeys := make([]K, 0, len(keys))
 	spreadScores := make([]P, 0, len(keys))
-	var deferredKeys []K
-	var deferredScores []P
+	deferredKeys := make([]K, 0, len(keys))
+	deferredScores := make([]P, 0, len(keys))
 	for i, key := range keys {
 		facet := g.facet(key, named)
 		if taken[facet] >= g.config.DB.Aggregate.Cap {
@@ -956,8 +956,18 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 		// Index errors (empty index) just mean no text seeds.
 		if keys, scores, err := g.GetTextIndex().Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), pool); err == nil {
 			textSeeds = len(keys)
+			// The reading's sightings share one array, a candidate's first a
+			// capacity-one window onto it, so a pool-deep reading allocates
+			// once and a later append copies out instead of overwriting the
+			// next candidate's.
+			sightings := make([]scoring.Contribution[K, P], len(keys))
 			for rank, key := range keys {
-				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1})
+				sightings[rank] = scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1}
+				if candidates[key] == nil {
+					candidates[key] = sightings[rank : rank+1 : rank+1]
+				} else {
+					candidates[key] = append(candidates[key], sightings[rank])
+				}
 				if rank < seedK {
 					seeded[key] = struct{}{}
 				}
@@ -976,8 +986,15 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 			logger.Debug("Vector index yielded no seeds", "error", err)
 		default:
 			vectorSeeds = len(keys)
+			// One array for the reading, as for the text index's.
+			sightings := make([]scoring.Contribution[K, P], len(keys))
 			for rank, key := range keys {
-				candidates[key] = append(candidates[key], scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1})
+				sightings[rank] = scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1}
+				if candidates[key] == nil {
+					candidates[key] = sightings[rank : rank+1 : rank+1]
+				} else {
+					candidates[key] = append(candidates[key], sightings[rank])
+				}
 				if rank < seedK {
 					seeded[key] = struct{}{}
 				}
@@ -1204,7 +1221,7 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 			delete(scores, key)
 			continue
 		}
-		ts := node.GetAttributes().Timestamp
+		ts := node.GetTimestamp()
 		if !since.IsZero() && ts.Before(since) {
 			delete(scores, key)
 			continue
