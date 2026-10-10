@@ -14,7 +14,7 @@ Each temporal memory graph indexes every fact's text in a full-text search index
 
 ## The seeds
 
-A recall pulls candidates from each source it can use, each carrying its raw retrieval mass; the text and vector indexes are each asked for `seed-size` of them, or `top:` when that is larger:
+A recall pulls candidates from each source it can use, each carrying its raw retrieval mass; the text and vector indexes are each asked for `seed-size` of them, or `top:` when that is larger. They search only the facts filed under the recall's `topic:` and `entity:` anchors and stamped inside its `since:`/`until:` window, so a fact under a named anchor is found however many facts elsewhere in the graph match the terms better:
 
 | Source | Mass it carries |
 |---|---|

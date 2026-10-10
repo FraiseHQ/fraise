@@ -225,6 +225,24 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 // the pooled union is never sorted. Distances are measured against the live
 // vector, not the tree's copy.
 func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K, []P, error) {
+	return idx.search(query, k, nil)
+}
+
+// SearchWithin ranks like Search over the vectors admit accepts. The trees
+// know nothing of admit, so their candidates are filtered as they are pooled,
+// and when fewer than k survive, every tree is asked again for twice as many,
+// until k survive or the trees have nothing more to give. Each round pools
+// what the earlier ones saw, so the doubling costs at most twice its last
+// round. The more of the index admit rejects, the more rounds it takes: a
+// subset smaller than k is only known to be complete once the whole forest
+// has been walked.
+func (idx *RPTreeIndex[K, P]) SearchWithin(query containers.Vector[K, P], k int, admit func(K) bool) ([]K, []P, error) {
+	return idx.search(query, k, admit)
+}
+
+// search is the fan-out and re-rank behind Search and SearchWithin; a nil
+// admit admits every vector, and the forest is asked once.
+func (idx *RPTreeIndex[K, P]) search(query containers.Vector[K, P], k int, admit func(K) bool) ([]K, []P, error) {
 	if len(idx.vectors) == 0 {
 		return nil, nil, ErrEmptyIndex
 	}
@@ -237,21 +255,33 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K,
 
 	seen := make(map[K]bool)
 	nearest := containers.NewTopK[K, P](k, idx.compare)
-	for _, t := range idx.forest {
-		for _, node := range t.Nearest(q, k) {
-			key := node.Key()
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
+	var admitted int
+	for ask := k; ; ask *= 2 {
+		for _, t := range idx.forest {
+			for _, node := range t.Nearest(q, ask) {
+				key := node.Key()
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
 
-			// node may be stale (updated or deleted since it was inserted
-			// into this tree); vectors is the source of truth.
-			current, err := idx.Retrieve(key)
-			if err != nil {
-				continue
+				// node may be stale (updated or deleted since it was
+				// inserted into this tree); vectors is the source of truth.
+				current, err := idx.Retrieve(key)
+				if err != nil {
+					continue
+				}
+				if admit != nil && !admit(key) {
+					continue
+				}
+				nearest.Offer(key, -query.Distance(current))
+				admitted++
 			}
-			nearest.Offer(key, -query.Distance(current))
+		}
+		// Every tree holds the same entries, so one that has been asked for
+		// all of them has returned all of them.
+		if admit == nil || k <= 0 || admitted >= k || ask >= idx.Entries() {
+			break
 		}
 	}
 

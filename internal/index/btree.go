@@ -167,6 +167,21 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 // Documents of equal score are ordered by key, the total order SearchIndex
 // promises. k bounds the number of results; k <= 0 returns every match.
 func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
+	return idx.search(query, k, nil)
+}
+
+// SearchWithin ranks like Search over the documents admit accepts. A posting
+// whose document admit rejects is skipped in the same pass over the postings,
+// so the cost is that of Search whatever admit accepts. Term weights still
+// come from the whole corpus (a term's document frequency counts every live
+// document), so an admitted document scores as it does under Search.
+func (idx *BTreeIndex[K, P]) SearchWithin(query string, k int, admit func(K) bool) ([]K, []P, error) {
+	return idx.search(query, k, admit)
+}
+
+// search is the ranking loop behind Search and SearchWithin; a nil admit
+// admits every document.
+func (idx *BTreeIndex[K, P]) search(query string, k int, admit func(K) bool) ([]K, []P, error) {
 	if len(idx.documents) == 0 {
 		return nil, nil, ErrEmptyIndex
 	}
@@ -198,7 +213,7 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		weight := idx.relevance.Weight(list.live, len(idx.documents))
 		totalW += weight
 		for _, p := range list.entries {
-			if p.tf == 0 {
+			if p.tf == 0 || (admit != nil && !admit(p.key)) {
 				continue
 			}
 			scores[p.key] += idx.relevance.Increment(weight, p.key, p.tf, prepared)

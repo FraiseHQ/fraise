@@ -448,6 +448,124 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 	}
 }
 
+// zebraGraph files thirty short "zebra" facts under topic "a" and five long
+// ones under topic "b", the facts under "a" stamped at aTime and those under
+// "b" at bTime. The short facts outrank the long ones on "zebra" (BM25
+// length normalisation), so across the whole graph the five sit below any
+// top of thirty or less. It returns the values of the five.
+func zebraGraph(t *testing.T, g *graph.InMemoryGraph[uint64, float64], aTime, bTime time.Time) []string {
+	t.Helper()
+	a := mkTopic(g, "a", aTime)
+	b := mkTopic(g, "b", bTime)
+	mustSet(t, g, a)
+	mustSet(t, g, b)
+	for i := 1; i <= 30; i++ {
+		fact := mkFact(g, "zebra sighting number "+strconv.Itoa(i), aTime)
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: a, NodeAttributes: graph.NodeAttributes{Timestamp: aTime}, Hasher: g.GetHasher()})
+	}
+	long := make([]string, 0, 5)
+	for i := 1; i <= 5; i++ {
+		value := "a zebra was seen near the river bank by the old mill on a cold morning while the farmers were harvesting wheat and the children played football number " + strconv.Itoa(i)
+		fact := mkFact(g, value, bTime)
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: b, NodeAttributes: graph.NodeAttributes{Timestamp: bTime}, Hasher: g.GetHasher()})
+		long = append(long, value)
+	}
+	sort.Strings(long)
+	return long
+}
+
+// TestInMemoryGraphSearchAnchorChoosesWhatIsSearched pins that a named
+// anchor restricts what the indexes search, not what is kept of a ranking
+// over the whole graph: "zebra" under topic "b" at top 10 returns all five
+// facts filed there, though thirty facts under "a" outrank them on the term.
+// Seeded from the global top-k and filtered afterwards, it returned none, in
+// every lane.
+func TestInMemoryGraphSearchAnchorChoosesWhatIsSearched(t *testing.T) {
+	for _, depth := range []int{0, 1, 2} {
+		g := noDecayGraph()
+		now := time.Now()
+		want := zebraGraph(t, g, now, now)
+
+		nodes, _, _, _, err := g.Search([]string{"zebra"}, containers.Vector[uint64, float64]{}, []string{"b"}, nil, depth, 10, time.Time{}, time.Time{})
+		if err != nil {
+			t.Fatalf("depth %d: Search(zebra, topic=b) = %v, want nil", depth, err)
+		}
+		got := values(nodes)
+		sort.Strings(got)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("depth %d: Search(zebra, topic=b, top=10) = %v, want the 5 facts under b", depth, got)
+		}
+	}
+}
+
+// TestInMemoryGraphSearchTimeWindowChoosesWhatIsSearched pins the same for
+// since and until: a time-bounded recall searches the facts inside its
+// window, so matches outside it, however well they rank, cannot crowd out the
+// ones inside. The five long facts are the only ones in the window each time.
+func TestInMemoryGraphSearchTimeWindowChoosesWhatIsSearched(t *testing.T) {
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	recent := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	cut := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	g := noDecayGraph()
+	want := zebraGraph(t, g, old, recent)
+	nodes, _, _, _, _ := g.Search([]string{"zebra"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, cut, time.Time{})
+	got := values(nodes)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Search(zebra, since=2025, top=10) = %v, want the 5 facts stamped after it", got)
+	}
+
+	g = noDecayGraph()
+	want = zebraGraph(t, g, recent, old)
+	nodes, _, _, _, _ = g.Search([]string{"zebra"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, cut)
+	got = values(nodes)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Search(zebra, until=2025, top=10) = %v, want the 5 facts stamped before it", got)
+	}
+}
+
+// TestInMemoryGraphSearchAnchorChoosesWhatTheVectorSearches pins the anchor
+// restriction on the vector lane: thirty facts under "a" lie nearer the query
+// than the three under "b", so the forest's global nearest neighbours hold
+// none of the three, and a recall under "b" must still find them all.
+func TestInMemoryGraphSearchAnchorChoosesWhatTheVectorSearches(t *testing.T) {
+	g := noDecayGraph()
+	now := time.Now()
+	a := mkTopic(g, "a", now)
+	b := mkTopic(g, "b", now)
+	mustSet(t, g, a)
+	mustSet(t, g, b)
+	file := func(value string, topic *graph.Topic[uint64], vec []float64) {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](vec)); err != nil {
+			t.Fatalf("vector Insert(%q) = %v, want nil", value, err)
+		}
+	}
+	for i := 1; i <= 30; i++ {
+		file("near fact "+strconv.Itoa(i), a, []float64{1, float64(i) / 100, 0})
+	}
+	want := []string{"far fact 1", "far fact 2", "far fact 3"}
+	for i, value := range want {
+		file(value, b, []float64{0, float64(i) / 100, 1})
+	}
+
+	nodes, _, _, _, err := g.Search(nil, containers.NewVector[uint64]([]float64{1, 0, 0}), []string{"b"}, nil, 0, 10, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search(vector, topic=b) = %v, want nil", err)
+	}
+	got := values(nodes)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Search(vector, topic=b, top=10) = %v, want the 3 facts under b", got)
+	}
+}
+
 // TestInMemoryGraphSearchRecencyDecayFactor pins the decay formula the README
 // promises ("recent memories outrank older ones"): a fact's score is
 // multiplied by 0.5^(age/half-life). A lone fact in a one-document corpus has
