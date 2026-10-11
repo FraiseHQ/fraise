@@ -425,6 +425,13 @@ def pytest_sessionfinish(session, exitstatus):
         ]
         if listed:
             lines += [f"**{kind}**", "", *listed, ""]
+        # A broken limit says how to accept it, so the way out is on the
+        # pull request that needs it rather than only in the docs.
+        if listed and kind == "Failed":
+            lines += [
+                f"A regression worth what it costs can be accepted: label the pull request `{_ACCEPT_LABEL}` and add a line to its description that starts with `Perf:` and says why. See [Accepting a regression](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).",
+                "",
+            ]
     slower = [
         f"- **{item.get_closest_marker('bench').args[0].removeprefix('./')}** · {row}"
         for k, item, row in outcomes
