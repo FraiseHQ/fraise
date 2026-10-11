@@ -304,7 +304,7 @@ func TestConfigSet_WindowAndAggregate(t *testing.T) {
 	if c.DB.WindowGamma != 0.3 {
 		t.Errorf("DB.WindowGamma default: got %v, want 0.3", c.DB.WindowGamma)
 	}
-	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
+	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0.5, Cap: 2, MinSize: 3, MaxGroups: 2}
 	if c.DB.Aggregate != want {
 		t.Errorf("DB.Aggregate default: got %+v, want %+v", c.DB.Aggregate, want)
 	}
@@ -347,7 +347,7 @@ pool = 40
 	if f.DB.WindowGamma != 0.5 {
 		t.Errorf("DB.WindowGamma: got %v, want 0.5", f.DB.WindowGamma)
 	}
-	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
+	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 2, Ratio: 0.5, Cap: 2, MinSize: 3, MaxGroups: 2}
 	if f.DB.Aggregate != want {
 		t.Errorf("DB.Aggregate from file: got %+v, want %+v (the unset thresholds keep their defaults)", f.DB.Aggregate, want)
 	}

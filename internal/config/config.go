@@ -242,9 +242,10 @@ type RankingAlgorithm struct {
 
 // Aggregate is the db.aggregate table: how a recall spends its top slots when
 // the ranking is flat across facets, one of [AggregateAlgorithms], and the
-// thresholds it runs with. A facet is the finest anchor a candidate is filed
-// under beyond those the query named: on a graph filed by session, the
-// session. A broad question, "how many", "what types", "what did we decide",
+// thresholds it runs with. A facet is the finest timeline anchor a candidate
+// is filed under beyond those the query named, one whose facts were written
+// as one unbroken run: on a graph filed by session, the session, whatever
+// labels its facts also carry. A broad question, "how many", "what types", "what did we decide",
 // has its evidence spread over many facets, and ten slots down a ranking
 // that leans on one of them hold that one ten times over; spread fills the
 // slots one facet at a time instead, and group folds the matches by the same
@@ -272,7 +273,8 @@ type Aggregate struct {
 
 	// Cap is how many fact hits one facet takes before the next facet gets
 	// its first; the facts deferred by it follow in rank order once every
-	// facet is served. 1 is the recall setting: as many facets as slots.
+	// facet is served. 2 lets a session keep its best exchange pair; 1 is
+	// the recall end: as many facets as slots.
 	Cap int `toml:"cap"`
 
 	// MinSize is the smallest group returned as one hit; a smaller cluster

@@ -27,6 +27,7 @@ import (
 	"math"
 	"math/rand"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2019,5 +2020,104 @@ func TestInMemoryGraphSearchGroupSitsAtItsRank(t *testing.T) {
 	}
 	if group := result.Hits[1]; group.Key != "deploy" || len(group.Members) != 3 {
 		t.Errorf("second hit = key %q with %d members, want the deploy group behind the better fact", group.Key, len(group.Members))
+	}
+}
+
+// labelledGraph files two sessions of one conversation, each turn under the
+// conversation, its session and its speaker, as a client tagging its own
+// memories would, plus written labels: every ops turn about the deploy has
+// a label of its own, and "rollout" is a label shared by a planning turn and
+// a budget turn written a session apart. The labels are finer than the
+// session and run across it, the shape that misled the spread and the window.
+func labelledGraph(t *testing.T, cfg *config.ConfigSet) *graph.InMemoryGraph[uint64, float64] {
+	t.Helper()
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	conv := mkTopic(g, "conv", now)
+	mustSet(t, g, conv)
+	speakers := []*graph.NamedEntity[uint64]{mkEntity(g, "alice", now), mkEntity(g, "bob", now)}
+	for _, s := range speakers {
+		mustSet(t, g, s)
+	}
+	turns := []struct{ session, value, label string }{
+		{"ops", "deploy started", "start"},
+		{"ops", "deploy finished", "finish"},
+		{"ops", "deploy verified", "verify"},
+		{"planning", "the deploy is planned for friday afternoon", ""},
+		{"planning", "the rollout waits for the review", "rollout"},
+		{"budget", "the deploy budget covers the quarter", ""},
+		{"budget", "the rollout needs a second region", "rollout"},
+	}
+	sessions := map[string]*graph.Topic[uint64]{}
+	labels := map[string]*graph.Topic[uint64]{}
+	for i, turn := range turns {
+		ts := now.Add(time.Duration(i) * time.Second)
+		if sessions[turn.session] == nil {
+			sessions[turn.session] = mkTopic(g, turn.session, ts)
+			mustSet(t, g, sessions[turn.session])
+		}
+		fact := mkFact(g, turn.value, ts)
+		mustSet(t, g, fact)
+		anchors := []*graph.Topic[uint64]{conv, sessions[turn.session]}
+		if turn.label != "" {
+			if labels[turn.label] == nil {
+				labels[turn.label] = mkTopic(g, turn.label, ts)
+				mustSet(t, g, labels[turn.label])
+			}
+			anchors = append(anchors, labels[turn.label])
+		}
+		for _, topic := range anchors {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+		}
+		mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: speakers[i%2], NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+	}
+	return g
+}
+
+// TestInMemoryGraphSearchSpreadGroupsByTimeline pins that the spread groups
+// by the session, the finest anchor whose facts were written as one run,
+// and not by the finer labels a client wrote: each ops turn has a label of
+// its own, which as the facet made every turn its own facet and left all
+// three slots to ops. The speaker is skipped for the same reason; its turns
+// interleave.
+func TestInMemoryGraphSearchSpreadGroupsByTimeline(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.Aggregate = config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0, Cap: 1, MinSize: 3, MaxGroups: 2}
+	g := labelledGraph(t, cfg)
+	result, err := g.Search([]string{"deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	got := values(result.Nodes())
+	if len(got) != 3 || !strings.HasPrefix(got[0], "deploy ") {
+		t.Fatalf("Search = %v, want three hits led by an ops turn", got)
+	}
+	if strings.HasPrefix(got[1], "deploy ") || strings.HasPrefix(got[2], "deploy ") {
+		t.Errorf("Search = %v, want one ops turn then the planning and budget turns: the session is the facet, not the label", got)
+	}
+}
+
+// TestInMemoryGraphSearchWindowBorrowsAlongTimelines pins that the window
+// lends only between facts adjacent under a timeline anchor. The two rollout
+// turns share a label but sit a session apart; under the label each is the
+// other's neighbour, and lending through it would make the planning turn a
+// match for "region", which only the budget turn holds.
+func TestInMemoryGraphSearchWindowBorrowsAlongTimelines(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.WindowGamma = 0.5
+	g := labelledGraph(t, cfg)
+	nodes, _, _, _, err := search(g, []string{"region"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 10, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	for _, value := range values(nodes) {
+		if value == "the rollout waits for the review" {
+			t.Errorf("Search = %v, want the planning turn absent: it neighbours the budget turn only through the label", values(nodes))
+		}
+	}
+	if !slices.Contains(values(nodes), "the deploy budget covers the quarter") {
+		t.Errorf("Search = %v, want the budget turn before the match among the hits: they are one session's exchange", values(nodes))
 	}
 }

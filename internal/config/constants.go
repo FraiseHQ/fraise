@@ -204,9 +204,11 @@ const (
 	DefaultAggregateRatio float64 = 0.5
 
 	// DefaultAggregateCap is how many fact hits one facet takes before the
-	// next facet gets its first: one, so the slots cover as many facets as the
-	// pool offers.
-	DefaultAggregateCap int = 1
+	// next facet gets its first: two, so a session keeps its best exchange
+	// pair before the next session is served. Measured on a replica of the
+	// amb LoCoMo run with written tags, cap 2 gives recall@10 0.899 and F1
+	// 0.329 where cap 1 gives 0.925 and 0.288: 1 is the recall end.
+	DefaultAggregateCap int = 2
 
 	// DefaultAggregateMinSize is the smallest cluster returned as a group.
 	DefaultAggregateMinSize int = 3
