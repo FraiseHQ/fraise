@@ -69,7 +69,7 @@ docker run --rm -p 9876:9876 ghcr.io/fraisehq/fraise:edge
 
    Formatting is handled automatically in CI — don't spend time on style, and don't expect review comments about it.
 5. Open the pull request. Describe **what problem it solves**, not just what the code does. If it closes an issue, write `Closes #123` in the description.
-6. **The Benchmark gate** measures your change against `main` for retrieval quality and allocations, and comments the results on the pull request. Some regressions are worth what they cost, such as a ranking change that trades one metric for a larger gain in another. To merge one, label the pull request `perf-regression-accepted` and add a line to its description that starts with `Perf:` and says why. Both are required: the label alone changes nothing. See [Benchmarks](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).
+6. **The Benchmark gate** measures your change against `main` for retrieval quality and allocations, and comments the results on the pull request. Some regressions are worth what they cost, such as a ranking change that trades one metric for a larger gain in another. To merge one, label the pull request `perf-regression-accepted`. See [Benchmarks](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).
 7. **Sign the [CLA](https://github.com/FraiseHQ/cla/blob/main/cla.md) on your first PR** — a bot comments with the exact phrase to reply with, and the check clears for all your future contributions.
 
 Draft PRs are welcome. If you want early feedback on an approach before polishing it, open one as a draft and say so.

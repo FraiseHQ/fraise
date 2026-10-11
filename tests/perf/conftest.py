@@ -36,8 +36,7 @@ with: the gate could not measure, and the report names both machines and
 shows this run's numbers.
 Gates sharing a marker share one measurement.
 
-A pull request labelled perf-regression-accepted with a ``Perf:`` line in its
-description marks every gate xfail with that line as the reason: its
+A pull request labelled perf-regression-accepted marks every gate xfail: its
 regressions still show, as accepted. A gate fails through ``fail_regressed``
 with the rows that broke its limit, so the report shows them as a table. The
 session ends by writing report.md, the verdict, those tables and benchstat's,
@@ -319,18 +318,9 @@ def pytest_collection_modifyitems(config, items):
     pr = json.loads(Path(path).read_text()).get("pull_request") if path else None
     if not pr or _ACCEPT_LABEL not in {label["name"] for label in pr.get("labels", [])}:
         return
-    reason = next(
-        (
-            line.strip()
-            for line in (pr.get("body") or "").splitlines()
-            if line.startswith("Perf:")
-        ),
-        None,
-    )
-    if reason:
-        for item in items:
-            if item.get_closest_marker("bench"):
-                item.add_marker(pytest.mark.xfail(reason=reason, strict=False))
+    for item in items:
+        if item.get_closest_marker("bench"):
+            item.add_marker(pytest.mark.xfail(reason=_ACCEPT_LABEL, strict=False))
 
 
 @pytest.hookimpl(wrapper=True)
@@ -374,8 +364,7 @@ def _gate(item):
 def _gates(outcomes):
     """Each gate's outcome as a paragraph naming it, then the rows that broke its limit as a table.
 
-    An accepted gate names the pull request's reason beside it. A gate with
-    no rows to show, one that failed on something other than its limit, gives
+    A gate with no rows to show, one that failed on something other than its limit, gives
     its message instead. A slowdown is reported row by row, and a gate's rows
     share one table under its package alone: the heading already says what
     the gate checks.
@@ -389,8 +378,7 @@ def _gates(outcomes):
         if rows:
             package = item.get_closest_marker("bench").args[0].removeprefix("./")
             name = f"**{package}**" if kind == "Slower" else _gate(item)
-            reason = f": {message}" if kind == "Accepted" else ""
-            lines += [f"{name}{reason}", "", *_compared(rows), ""]
+            lines += [name, "", *_compared(rows), ""]
         else:
             lines += [f"- {_gate(item)}: {message}", ""]
     return lines
@@ -476,7 +464,7 @@ def pytest_sessionfinish(session, exitstatus):
         if kind == "Failed":
             lines += [
                 "> [!TIP]",
-                f"> To accept a regression worth what it costs, label the pull request `{_ACCEPT_LABEL}` and add a line to its description that starts with `Perf:` and says why. See [Accepting a regression](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).",
+                f"> To accept a regression worth what it costs, label the pull request `{_ACCEPT_LABEL}`. See [Accepting a regression](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).",
                 "",
             ]
     skipped = sorted(

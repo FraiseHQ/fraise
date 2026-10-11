@@ -17,9 +17,9 @@ on:
   # and a required check has to report on every pull request. One that
   # changes no package a gate benchmarks runs no benchmark and reports that.
   pull_request:
-    # labeled, unlabeled and edited re-run the gate when a regression is
-    # accepted with the label and the Perf: line, or the acceptance withdrawn.
-    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+    # labeled and unlabeled re-run the gate when a regression is accepted
+    # with the label, or the acceptance withdrawn.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
