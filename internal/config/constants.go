@@ -172,13 +172,13 @@ const (
 	DefaultMinScoreRatio float64 = 0
 
 	// DefaultWindowGamma is the window (DBConfig.WindowGamma) a fact is
-	// scored with: the operating point measured on LoCoMo by the retrieval
-	// quality benchmark, where with the spread below it raised p@1 from 0.726
-	// to 0.761. Alone it raised F1@10 from 0.396 to 0.519 and lowered session
-	// recall@10 from 0.880 to 0.865, stacking the slots with one exchange,
-	// which is what the spread undoes. A negative value turns the window off;
-	// 0 means this default.
-	DefaultWindowGamma float64 = 0.3
+	// scored with: off. The window ranks an exchange as a whole, which buys
+	// precision and stacks the slots with one session's turns; the default is
+	// the recall setting, so it is off. Measured on the ten LoCoMo
+	// conversations, one graph each, with every ranking spread: session
+	// recall@10 0.932 with it off, 0.935 at 0.3, for precision 0.117 either
+	// way. A positive share, at most 1, turns it on; 0 means this default.
+	DefaultWindowGamma float64 = -1
 
 	// DefaultAggregate spreads a flat ranking's slots over its facets
 	// (DBConfig.Aggregate) with the thresholds below: the recall setting
@@ -195,9 +195,12 @@ const (
 
 	// DefaultAggregateSpread is the number of distinct facets the top of the
 	// ranking must span, at scores within DefaultAggregateRatio of the best,
-	// before the slots are spread: two, so a ranking is spread as soon as a
-	// second facet competes with the first.
-	DefaultAggregateSpread int = 2
+	// before the slots are spread: one, so every ranking is spread, the
+	// recall end. Measured on the ten LoCoMo conversations, one graph each,
+	// with the window off: session recall@10 0.932, multi-hop 0.757 and
+	// open-domain 0.712, against 0.925, 0.736 and 0.644 for the 0.3.2
+	// defaults (window 0.3, gate 2), for precision 0.117 against 0.231.
+	DefaultAggregateSpread int = 1
 
 	// DefaultAggregateRatio is the share of the best score a candidate needs
 	// to count towards the spread.

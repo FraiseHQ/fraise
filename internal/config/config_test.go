@@ -293,7 +293,7 @@ min-score-ratio = 0.3
 
 // TestConfigSet_WindowAndAggregate pins the resting state of the two
 // retrieval settings added for the window and the aggregation: the window on
-// and the slots spread, at the recall setting that was benchmarked, so a
+// off and every ranking spread, the recall setting that was benchmarked, so a
 // config that never mentions them runs the engine that was measured; group
 // hits are opt-in; a negative share and the name none are the two ways off,
 // and 0 for the share means the default, as it does for the half-life, while
@@ -301,10 +301,10 @@ min-score-ratio = 0.3
 // same fields.
 func TestConfigSet_WindowAndAggregate(t *testing.T) {
 	c := config.New()
-	if c.DB.WindowGamma != 0.3 {
-		t.Errorf("DB.WindowGamma default: got %v, want 0.3", c.DB.WindowGamma)
+	if c.DB.WindowGamma != -1 {
+		t.Errorf("DB.WindowGamma default: got %v, want -1, off", c.DB.WindowGamma)
 	}
-	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
+	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 1, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
 	if c.DB.Aggregate != want {
 		t.Errorf("DB.Aggregate default: got %+v, want %+v", c.DB.Aggregate, want)
 	}
@@ -320,8 +320,8 @@ func TestConfigSet_WindowAndAggregate(t *testing.T) {
 	if err := zero.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0", "-aggregate-ratio", "0"}); !errors.Is(err, config.ErrMissingFile) {
 		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
 	}
-	if zero.DB.WindowGamma != 0.3 {
-		t.Errorf("DB.WindowGamma from an explicit 0: got %v, want the default 0.3", zero.DB.WindowGamma)
+	if zero.DB.WindowGamma != -1 {
+		t.Errorf("DB.WindowGamma from an explicit 0: got %v, want the default -1", zero.DB.WindowGamma)
 	}
 	if zero.DB.Aggregate.Ratio != 0 {
 		t.Errorf("DB.Aggregate.Ratio from an explicit 0: got %v, want 0 kept", zero.DB.Aggregate.Ratio)
@@ -347,7 +347,7 @@ pool = 40
 	if f.DB.WindowGamma != 0.5 {
 		t.Errorf("DB.WindowGamma: got %v, want 0.5", f.DB.WindowGamma)
 	}
-	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
+	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 1, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
 	if f.DB.Aggregate != want {
 		t.Errorf("DB.Aggregate from file: got %+v, want %+v (the unset thresholds keep their defaults)", f.DB.Aggregate, want)
 	}
