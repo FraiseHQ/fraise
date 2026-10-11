@@ -481,12 +481,13 @@ _EXTRACTED_ANCHORS = (
 
 @pytest.fixture
 def callable_extractor():
-    """Callable building a mock of the bare ``callable(text) -> anchors`` shape.
+    """Callable building a mock of the bare ``callable(text, context) -> anchors`` shape.
 
     Returns:
         ``callable() -> MagicMock`` answering every text with the same four
-        anchors — two topics, two entities. A fresh mock per call, so a test
-        can assert on the text its own extractor was given.
+        anchors — two topics, two entities — whatever its context. A fresh
+        mock per call, so a test can assert on the text and the context its
+        own extractor was given.
     """
 
     def _callable_extractor() -> MagicMock:

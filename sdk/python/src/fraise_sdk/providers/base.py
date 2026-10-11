@@ -25,7 +25,8 @@
 :class:`Embedder` is the abstract base an embedding provider subclasses:
 implement ``embed(text) -> Sequence[float]`` and instances are usable directly
 and as a callable. :class:`Extractor` is its counterpart for anchors:
-implement ``extract(text) -> list[Anchor]``.
+implement ``extract(text, context) -> list[Anchor]``, where the
+:class:`Context` is what the message's graph already holds.
 :class:`~fraise_sdk.client.FraiseClient` accepts either, or for convenience any
 bare callable of the same shape.
 
@@ -59,8 +60,33 @@ class Anchor:
     type: Literal["topic", "entity"]
 
 
+@dataclass(frozen=True)
+class Context:
+    """What a graph already holds when its next message is tagged.
+
+    Facts reach one another through the graph only by sharing an anchor. A
+    message tagged in isolation loses that twice: "she signed the papers"
+    names nobody, and a subject that recurs sessions apart comes back under a
+    new spelling each time, so the walk has no anchor to cross. ``recent``
+    lets the extractor resolve a reference to what a nearby message named;
+    ``vocabulary`` lets it file a recurring subject under the anchor the graph
+    already has. The client keeps one per graph; an empty one is a graph that
+    holds nothing yet.
+
+    Attributes:
+        recent: the messages stored in the graph just before this one, oldest
+            first.
+        vocabulary: the anchors extraction filed the graph's facts under,
+            spelled as the server stores them (trimmed, lower case), most used
+            first.
+    """
+
+    recent: tuple[str, ...] = ()
+    vocabulary: tuple[Anchor, ...] = ()
+
+
 # For callers who would rather pass a plain function than subclass Extractor.
-ExtractorLike = Callable[[str], Sequence[Anchor]]
+ExtractorLike = Callable[[str, Context], Sequence[Anchor]]
 
 
 class Embedder(ABC):
@@ -84,19 +110,25 @@ class Extractor(ABC):
     """Abstract base for anything that finds the anchors a message belongs under.
 
     Subclasses implement :meth:`extract`; :meth:`__call__` then comes for free,
-    so an instance works anywhere a plain ``callable(text)`` is expected. An
-    extractor may raise when it cannot read a message: the client stores the
-    message anyway, without the extracted anchors, and warns.
+    so an instance works anywhere a plain ``callable(text, context)`` is
+    expected. An extractor may raise when it cannot read a message: the client
+    stores the message anyway, without the extracted anchors, and warns.
     """
 
     @abstractmethod
-    def extract(self, text: str) -> list[Anchor]:
-        """Return the topics and entities ``text`` is about, as anchors."""
+    def extract(self, text: str, context: Context) -> list[Anchor]:
+        """Return the topics and entities ``text`` is about, as anchors.
+
+        Args:
+            text: the message to tag, as it will be stored.
+            context: what the message's graph already holds, for resolving
+                its references and reusing the graph's anchors.
+        """
         raise NotImplementedError
 
-    def __call__(self, text: str) -> list[Anchor]:
+    def __call__(self, text: str, context: Context) -> list[Anchor]:
         """Extract ``text``'s anchors, so an instance is usable as a callable."""
-        return self.extract(text)
+        return self.extract(text, context)
 
 
 def resolve_embedder(embedder: Embedder | EmbedderLike | None) -> EmbedderLike | None:
