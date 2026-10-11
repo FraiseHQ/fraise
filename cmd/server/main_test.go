@@ -66,6 +66,9 @@ func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 		{"-search-algorithm", "dfs", "db.search-algorithm.name"},
 		{"-ranking-algorithm", "hits", "db.ranking-algorithm.name"},
 		{"-min-score-ratio", "30", "db.min-score-ratio"},
+		{"-window-gamma", "2", "db.window-gamma"},
+		{"-aggregate", "cluster", "db.aggregate.name"},
+		{"-aggregate-min-size", "1", "db.aggregate.min-size"},
 		{"-workers", "-1", "scheduler.workers"},
 		{"-max-depth", "3", "db.max-depth"},
 	}

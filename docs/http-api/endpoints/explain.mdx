@@ -4,7 +4,7 @@ description: "The same pipeline as /q, with the per-source contributions each hi
 navLabel: "Explain"
 ---
 
-The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from, and the result carries the query's `background` rate, omitted when it is zero.
+The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from, and the result carries the query's `background` rate, omitted when it is zero, and, with [`db.aggregate`](/docs/configuration/reference/database#dbaggregate) on, the `spread` the aggregation gate read, the number of facets the top of the ranking spanned, omitted when it is zero. A group hit's contributions are its best member's.
 
 Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
 
