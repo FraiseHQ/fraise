@@ -155,8 +155,12 @@ const (
 	// index insert or search can be asked to do.
 	DefaultMaxVectorDimension int = 4096
 
-	// DefaultHalflife is the time-decay half-life applied to fact scores.
-	DefaultHalflife time.Duration = 7 * 24 * time.Hour
+	// DefaultHalflife is the time-decay half-life applied to fact scores. Decay
+	// multiplies the whole score, so the half-life bounds how far recency
+	// overrides relevance. A long-term memory measures it in months: the newer
+	// of two equal facts still ranks first, and a strong match from last
+	// quarter still outranks a weak one from today.
+	DefaultHalflife time.Duration = 90 * 24 * time.Hour
 
 	// DefaultSeedSize is the minimum candidate budget each source (text and
 	// vector index) contributes to a search; the effective budget is
@@ -166,6 +170,49 @@ const (
 	// DefaultMinScoreRatio leaves the score cutoff (DBConfig.MinScoreRatio)
 	// off.
 	DefaultMinScoreRatio float64 = 0
+
+	// DefaultWindowGamma is the window (DBConfig.WindowGamma) a fact is
+	// scored with: the operating point measured on LoCoMo by the retrieval
+	// quality benchmark, where with the spread below it raised p@1 from 0.726
+	// to 0.761. Alone it raised F1@10 from 0.396 to 0.519 and lowered session
+	// recall@10 from 0.880 to 0.865, stacking the slots with one exchange,
+	// which is what the spread undoes. A negative value turns the window off;
+	// 0 means this default.
+	DefaultWindowGamma float64 = 0.3
+
+	// DefaultAggregate spreads a flat ranking's slots over its facets
+	// (DBConfig.Aggregate) with the thresholds below: the recall setting
+	// measured on LoCoMo by the retrieval quality benchmark, where with the
+	// window it raised session recall@10 from 0.880 to 0.924 and multi-hop
+	// from 0.604 to 0.712 for an F1@10 of 0.345 against 0.396. "group" folds
+	// the matches by one rare term into group hits as well; "none" is the
+	// ranking as it is.
+	DefaultAggregate string = AggregateSpread
+
+	// DefaultAggregatePool is how many ranked candidates the aggregation
+	// draws from.
+	DefaultAggregatePool int = 60
+
+	// DefaultAggregateSpread is the number of distinct facets the top of the
+	// ranking must span, at scores within DefaultAggregateRatio of the best,
+	// before the slots are spread: two, so a ranking is spread as soon as a
+	// second facet competes with the first.
+	DefaultAggregateSpread int = 2
+
+	// DefaultAggregateRatio is the share of the best score a candidate needs
+	// to count towards the spread.
+	DefaultAggregateRatio float64 = 0.5
+
+	// DefaultAggregateCap is how many fact hits one facet takes before the
+	// next facet gets its first: one, so the slots cover as many facets as the
+	// pool offers.
+	DefaultAggregateCap int = 1
+
+	// DefaultAggregateMinSize is the smallest cluster returned as a group.
+	DefaultAggregateMinSize int = 3
+
+	// DefaultAggregateMaxGroups caps the group hits per recall.
+	DefaultAggregateMaxGroups int = 2
 
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000

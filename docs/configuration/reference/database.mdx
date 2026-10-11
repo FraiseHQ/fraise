@@ -10,11 +10,12 @@ navLabel: "Database"
 | `num-graphs` | `-num-graphs` | `8` | independent graphs allocated, in `[1, 256]`; selectors are `0..n-1` |
 | `default-top` | `-default-top` | `10` | results returned when a recall omits `top:` |
 | `default-depth` | `-default-depth` | `0` | retrieval lane when a recall omits `depth:` (0 = floor) |
-| `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it |
+| `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it; `0` takes the default, and the server refuses to start on a negative value |
 | `max-depth` | `-max-depth` | `2` | ceiling on `depth:`, in `[0, 2]` (lanes are 0, 1 and 2); the server refuses to start on a value outside it |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
 | `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
+| `window-gamma` | `-window-gamma` | `0.3` | window: the share of its temporal neighbours' matches a fact borrows when scored, at most `1`; negative is off, `0` is the default |
 
 ```toml
 [db]
@@ -46,6 +47,44 @@ min-score-ratio = 0.3
 ```
 
 The cutoff is **off by default** because the trade is yours to make: it buys precision with a little recall. [`/explain`](/docs/http-api/endpoints/explain) breaks a hit down into the contributions its relevance is folded from.
+
+## Window
+
+Two facts written one after the other under the same anchor are usually one exchange, a question and its answer, a statement and its follow-up, and scored one by one each is a fragment of it: the turn holding the question's words and the turn holding the answer's split the query between them and neither covers it. `window-gamma` lets a fact borrow that share of each of its temporal neighbours' term counts and length when the text index scores it, so the exchange matches as a whole. A fact that holds none of a query term but sits beside one that does becomes a candidate too, worth `gamma` of an own match. Neighbours are the facts written just before and after under a shared anchor, in write order, not in time alone: a fact under another topic borrows nothing however close its timestamp.
+
+```toml
+[db]
+window-gamma = 0.3
+```
+
+The window is **on by default** at `0.3`. On its own it trades breadth for precision: an exchange that matches as a whole ranks above its fragments, so the first hits are more often the right ones, but its turns then take several slots in one session, and those slots came from other sessions. The [spread](#dbaggregate) below gives the slots back, which is why the two ship together. A read costs more with the window on, in proportion to how many facts match, since every match lends its counts to its neighbours term by term. A negative value turns the window off, as a negative half-life turns decay off, and `0` means the default; the server refuses to start on a value past 1, where a neighbour would outweigh the fact itself.
+
+## `[db.aggregate]`
+
+| Setting | Flag | Default | Meaning |
+|--------------|-------------------------|----------|-------------------------------------------------------------|
+| `name` | `-aggregate` | `spread` | `spread` fills the slots one facet at a time once the gate below clears; `group` does so and folds candidates that matched by the same rare term into group hits as well; `none` returns the ranking as it is |
+| `pool` | `-aggregate-pool` | `60` | ranked candidates the aggregation draws from, from the top |
+| `spread` | `-aggregate-spread` | `2` | the gate: distinct facets the top of the ranking must span before the slots are spread; `1` spreads every ranking |
+| `ratio` | `-aggregate-ratio` | `0.5` | share of the best score a candidate needs to count towards the spread, in `[0, 1]` |
+| `cap` | `-aggregate-cap` | `1` | fact hits one facet takes before the next facet gets its first, at least 1 |
+| `min-size` | `-aggregate-min-size` | `3` | smallest cluster returned as one group hit, at least 2; `group` only |
+| `max-groups` | `-aggregate-max-groups` | `2` | most group hits one recall returns; `group` only |
+
+```toml
+[db.aggregate]
+name = "none"
+```
+
+A broad question, "how many tournaments has Nate entered", "what did we decide about the budget", has its evidence spread over many sessions, and ten slots down a ranking that leans on one session hold that session ten times over: the [window](#window) makes an exchange match as a whole, and the exchange's turns then take the slots the other sessions needed. `spread` spends the slots across the facets instead. A facet is the finest anchor a candidate is filed under beyond the anchors the query named, since those are shared by every candidate and say nothing: on a graph filed by session it is the session, and a candidate under no other anchor is its own facet. Walking down the ranking, each facet gets its best `cap` candidates before any facet gets more, and the candidates deferred follow in rank order once every facet is served, so a ranking with fewer facets than slots still fills them and a ranking on one facet comes back as it was. The best hit is always first, being the first of its facet.
+
+The gate is the ranking's **spread**: how many distinct facets the first twenty candidates scoring at least `ratio` of the best belong to. A specific question peaks on one facet with nothing else near the top and is returned as ranked; at the default gate a ranking is spread as soon as a second facet competes with the first. [`/explain`](/docs/http-api/endpoints/explain) reports the spread the gate read as `spread` on the result. The spread applies in every lane: a recall seeded by a vector or by an anchor alone is spread over its facets like a keyword recall.
+
+The spread is **on by default** at the thresholds above, the recall setting: with the window on, the slots of a broad question reach more of the sessions its evidence lies in, the questions that join several sessions gaining most, and the best hit stays first. It costs precision per slot, since a spread list names more sessions than a stacked one, each with fewer of its turns; that trade is the point of the setting. `spread = 1` spreads every ranking, the far end of it; `name = "none"` with the window on is the precision end; `cap` moves between them.
+
+The aggregation reads each index `pool` deep rather than `top`, so the facets below the top are there to spread over. The traversal still expands from the first `max(seed-size, top)` matches of each index, so the deeper pool costs index reads, not traversals, and a keyword recall costs what it did. The vector index probes in proportion to what it is asked for, so a recall seeded by a vector costs more as the pool deepens; `pool` is the dial.
+
+`group` adds group hits to the spread. The pool's candidates are keyed by the rarest query term each holds, and every term held by at least `min-size` of them becomes one hit carrying them all, best first, the largest `max-groups` such clusters winning. In the response a group is marked `"kind": "group"`, carries its `key` term, a `count` and its `members`, each in the wire form of a fact hit; its own `value`, `timestamp` and `score` are its best member's, so a client that reads every hit as a fact still reads something true, and a fact hit carries none of those keys, so the wire form a client knew before groups existed is unchanged. A group takes the slot the spread would have given the first of its members, so a better fact still comes first. It is one slot standing for all of its members, which is why it is opt-in: a client that reads hit values alone, as the benchmark does, sees one session where the members span many, and loses the others; a client that reads the members gets the members. Groups need a term to group by, so a recall with no keywords is spread but never grouped. The `pool` is the size of a group as much as a cost, so raise it with care under `group`: a group of sixty members is sixty facts in one slot.
 
 ## `num-graphs`
 

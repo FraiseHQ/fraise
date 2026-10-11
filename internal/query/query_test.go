@@ -251,3 +251,33 @@ func TestHitMarshalSerializesContributions(t *testing.T) {
 		t.Errorf("Marshal(Hit) = %s, want %s", got, want)
 	}
 }
+
+// TestHitMarshalSerializesAGroup pins the group wire shape: a hit with
+// members is marked kind "group" and carries its key term, its member count
+// and its members in the wire form of fact hits, while its own value,
+// timestamp and score remain its best member's, so a client that ignores
+// the extra keys still reads a true fact. The ordinary shape (the two tests
+// above) is unchanged, since a fact hit has no members.
+func TestHitMarshalSerializesAGroup(t *testing.T) {
+	fact := func(value string, score float32) query.Hit[string, float32] {
+		var node graph.Node[string] = graph.Fact[string]{NodeAttributes: graph.NodeAttributes{
+			Value:     value,
+			Timestamp: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		}}
+		return query.Hit[string, float32]{Node: &node, Score: score}
+	}
+	best := fact("won the regional tournament", 2)
+	h := query.Hit[string, float32]{Node: best.Node, Score: best.Score, Key: "tournament",
+		Members: []query.Hit[string, float32]{best, fact("entered another tournament", 1.5)}}
+	out, err := json.Marshal(h)
+	if err != nil {
+		t.Fatalf("Marshal(Hit) = %v, want nil", err)
+	}
+	want := `{"kind":"group","key":"tournament","value":"won the regional tournament","timestamp":"2026-01-02T03:04:05Z","score":2,"count":2,` +
+		`"members":[` +
+		`{"value":"won the regional tournament","timestamp":"2026-01-02T03:04:05Z","score":2},` +
+		`{"value":"entered another tournament","timestamp":"2026-01-02T03:04:05Z","score":1.5}]}`
+	if got := string(out); got != want {
+		t.Errorf("Marshal(group Hit) = %s, want %s", got, want)
+	}
+}

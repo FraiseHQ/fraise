@@ -43,6 +43,69 @@ type GraphStats struct {
 	ForestEntries int `json:"forest_entries"`
 }
 
+// Hit is one entry of a search result: a fact and its final score, after
+// boost and recency decay, with the contributions the score was folded from.
+// A group hit stands for several facts that matched the query by the same
+// rare term: Node and Score are its best member's, Members holds every
+// member best first (Node among them) with MemberScores parallel to it, and
+// Key is the term they share. A fact hit has no Members and no Key.
+type Hit[K comparable, P float32 | float64] struct {
+	Node          *Node[K]
+	Score         P
+	Contributions []scoring.Contribution[K, P]
+	Members       []*Node[K]
+	MemberScores  []P
+	Key           string
+}
+
+// Result is what Search returns: the hits best first, the query's background
+// rate ρ₀, which explain serializes so a client can recompute each hit's
+// relevance, and Spread, the number of facets the top of the ranking spanned
+// (the statistic the aggregation gate read; 0 when the aggregation is off).
+type Result[K comparable, P float32 | float64] struct {
+	Hits       []Hit[K, P]
+	Background P
+	Spread     int
+}
+
+// Nodes returns the hits' facts in order, a group hit represented by its
+// best member; nil when there are no hits, so a caller can tell an empty
+// result from a populated one as it could when Search returned slices.
+func (r Result[K, P]) Nodes() []*Node[K] {
+	if len(r.Hits) == 0 {
+		return nil
+	}
+	out := make([]*Node[K], len(r.Hits))
+	for i, hit := range r.Hits {
+		out[i] = hit.Node
+	}
+	return out
+}
+
+// Scores returns the hits' scores in order, parallel to Nodes.
+func (r Result[K, P]) Scores() []P {
+	if len(r.Hits) == 0 {
+		return nil
+	}
+	out := make([]P, len(r.Hits))
+	for i, hit := range r.Hits {
+		out[i] = hit.Score
+	}
+	return out
+}
+
+// Contributions returns the hits' contributions in order, parallel to Nodes.
+func (r Result[K, P]) Contributions() [][]scoring.Contribution[K, P] {
+	if len(r.Hits) == 0 {
+		return nil
+	}
+	out := make([][]scoring.Contribution[K, P], len(r.Hits))
+	for i, hit := range r.Hits {
+		out[i] = hit.Contributions
+	}
+	return out
+}
+
 // Graph is a temporal memory graph, the unit of storage in the database. As
 // with Redis databases, a server holds several graphs addressed by index (the
 // @N selector in FQL).
@@ -108,11 +171,13 @@ type Graph[K comparable, P float32 | float64] interface {
 	Stats() GraphStats
 
 	// Search runs a hybrid query over the graph. It returns the hits best
-	// first as three parallel slices of at most top entries (nodes, scores,
-	// and the contributions each score was folded from) and the query's
-	// background rate, which explain serializes so a client can recompute
-	// each hit's relevance. An implementation may return fewer than top hits
-	// when its own retrieval policy, such as a score cutoff, drops the tail.
+	// first, at most top of them, each with the contributions its score was
+	// folded from, and the query's background rate (see Result). An
+	// implementation may return fewer than top hits when its own retrieval
+	// policy, such as a score cutoff, drops the tail, may spend the top slots
+	// across the facets a flat ranking spans rather than down the ranking,
+	// and may fold several facts into one group hit (see Hit) when the query
+	// reads as an aggregation.
 	//
 	// The criteria combine to narrow the result:
 	//   - keywords: full-text terms matched against the text index
@@ -145,7 +210,7 @@ type Graph[K comparable, P float32 | float64] interface {
 	// index.ErrInvalidDimension, rather than a text-only answer that silently
 	// ignores it. A graph with nothing indexed is not an error; it returns no
 	// hits.
-	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*Node[K], []P, [][]scoring.Contribution[K, P], P, error)
+	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (Result[K, P], error)
 
 	// The graph's read-write lock, exposed so a caller can hold one lock
 	// across a sequence of calls (e.g. Get then Put). The usual
