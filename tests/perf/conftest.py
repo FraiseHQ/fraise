@@ -238,9 +238,25 @@ def pytest_configure(config):
     config.stash[_OUTCOMES] = []
 
 
-# The module's dependencies: code every benchmark runs that no package's .go
-# files show, so a change to them exercises every gate.
-_EVERYTHING = ("go.mod", "go.sum")
+# What the benchmarks run or read that no package's source shows: the
+# module's dependencies, the LoCoMo sample, the server configuration the
+# benchmarks start with and the embeddings they seed with. A change to one
+# changes the numbers, so it exercises every gate.
+_EVERYTHING = (
+    "go.mod",
+    "go.sum",
+    "tests/perf/data/",
+    "tests/perf/fraise.config.toml",
+    "tools/embed_locomo.py",
+)
+
+
+def _benchmarked(path):
+    """Whether a changed .go file is code a benchmark runs: package source, or a test file that defines benchmarks."""
+    if not path.endswith("_test.go"):
+        return True
+    file = _ROOT / path
+    return file.is_file() and "\nfunc Benchmark" in file.read_text()
 
 
 def _unchanged(items, since):
@@ -249,9 +265,10 @@ def _unchanged(items, since):
     A gate's packages are its package and every package of this module it
     builds on, its tests' imports included (``go list -deps -test``): a
     benchmark measures all the code it runs, so a change anywhere in that set
-    is a change it can see, and a change outside it is one it cannot. Only
-    source counts: a test file, a gate or what runs them changes no number a
-    benchmark measures, and the release gate runs every gate whatever changed.
+    is a change it can see, and a change outside it is one it cannot. A test
+    file counts only when it defines benchmarks, and the gates and what runs
+    them not at all: neither changes a number a benchmark measures, and the
+    release gate runs every gate whatever changed.
     """
     changed = _run(["git", "diff", "--name-only", since, "HEAD"]).split()
     if any(path.startswith(_EVERYTHING) for path in changed):
@@ -259,7 +276,7 @@ def _unchanged(items, since):
     dirs = {
         str((_ROOT / path).parent.resolve())
         for path in changed
-        if path.endswith(".go") and not path.endswith("_test.go")
+        if path.endswith(".go") and _benchmarked(path)
     }
     packages, unchanged = {}, {}
     for item in items:
