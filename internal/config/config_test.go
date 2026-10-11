@@ -291,6 +291,76 @@ min-score-ratio = 0.3
 	}
 }
 
+// TestConfigSet_WindowAndAggregate pins the resting state of the two
+// retrieval settings added for the window and the aggregation: the window on
+// and the slots spread, at the recall setting that was benchmarked, so a
+// config that never mentions them runs the engine that was measured; group
+// hits are opt-in; a negative share and the name none are the two ways off,
+// and 0 for the share means the default, as it does for the half-life, while
+// 0 for the ratio is a ratio and is kept. The file and the flags reach the
+// same fields.
+func TestConfigSet_WindowAndAggregate(t *testing.T) {
+	c := config.New()
+	if c.DB.WindowGamma != 0.3 {
+		t.Errorf("DB.WindowGamma default: got %v, want 0.3", c.DB.WindowGamma)
+	}
+	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
+	if c.DB.Aggregate != want {
+		t.Errorf("DB.Aggregate default: got %+v, want %+v", c.DB.Aggregate, want)
+	}
+
+	off := config.New()
+	if err := off.Parse([]string{"-config", missingConfig(t), "-window-gamma", "-1", "-aggregate", "none"}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if off.DB.WindowGamma != -1 || off.DB.Aggregate.Name != config.AggregateNone {
+		t.Errorf("off: got gamma %v, aggregate %q, want -1 and none to survive Parse", off.DB.WindowGamma, off.DB.Aggregate.Name)
+	}
+	zero := config.New()
+	if err := zero.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0", "-aggregate-ratio", "0"}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if zero.DB.WindowGamma != 0.3 {
+		t.Errorf("DB.WindowGamma from an explicit 0: got %v, want the default 0.3", zero.DB.WindowGamma)
+	}
+	if zero.DB.Aggregate.Ratio != 0 {
+		t.Errorf("DB.Aggregate.Ratio from an explicit 0: got %v, want 0 kept", zero.DB.Aggregate.Ratio)
+	}
+
+	const contents = `
+[db]
+window-gamma = 0.5
+
+[db.aggregate]
+name = "spread"
+pool = 40
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, config.DefaultConfigFile)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+	f := config.New()
+	if err := f.Parse([]string{"-config", path}); err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
+	}
+	if f.DB.WindowGamma != 0.5 {
+		t.Errorf("DB.WindowGamma: got %v, want 0.5", f.DB.WindowGamma)
+	}
+	want = config.Aggregate{Name: config.AggregateSpread, Pool: 40, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
+	if f.DB.Aggregate != want {
+		t.Errorf("DB.Aggregate from file: got %+v, want %+v (the unset thresholds keep their defaults)", f.DB.Aggregate, want)
+	}
+
+	fl := config.New()
+	if err := fl.Parse([]string{"-config", missingConfig(t), "-window-gamma", "0.5", "-aggregate", "GROUP", "-aggregate-cap", "2", "-aggregate-max-groups", "1"}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if fl.DB.WindowGamma != 0.5 || fl.DB.Aggregate.Name != config.AggregateGroup || fl.DB.Aggregate.Cap != 2 || fl.DB.Aggregate.MaxGroups != 1 {
+		t.Errorf("flags: got gamma %v, aggregate %+v, want 0.5 and group with cap 2 and max-groups 1", fl.DB.WindowGamma, fl.DB.Aggregate)
+	}
+}
+
 // missingConfig returns a -config path that does not exist, so Parse takes the
 // no-config-file branch, the one an operator running the binary with nothing
 // but flags is on.
