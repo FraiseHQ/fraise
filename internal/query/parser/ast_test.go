@@ -30,6 +30,8 @@ import (
 
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
@@ -48,14 +50,14 @@ func TestGraphSelectorNode(t *testing.T) {
 		end:   pos(2),
 	}
 
-	if got := n.Value(); got != 3 {
-		t.Errorf("Value() = %d, want 3", got)
+	if got, want := n.Value(), uint8(3); got != want {
+		t.Errorf("Value() = %d, want %d", got, want)
 	}
-	if got := n.Pos(); got != pos(1) {
-		t.Errorf("Pos() = %v, want %v", got, pos(1))
+	if got, want := n.Pos(), pos(1); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(2) {
-		t.Errorf("End() = %v, want %v", got, pos(2))
+	if got, want := n.End(), pos(2); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -68,17 +70,17 @@ func TestRememberCommandNode(t *testing.T) {
 		end:      pos(42),
 	}
 
-	if got := n.selector; got != sel {
-		t.Errorf("Selector() = %+v, want %+v", got, sel)
+	if got, want := n.selector, sel; got != want {
+		t.Errorf("selector = %+v, want %+v", got, want)
 	}
-	if got := n.Selector(); got != 5 {
-		t.Errorf("Selector().Value() = %d, want 5", got)
+	if got, want := n.Selector(), uint8(5); got != want {
+		t.Errorf("Selector() = %d, want %d", got, want)
 	}
-	if got := n.Pos(); got != pos(0) {
-		t.Errorf("Pos() = %v, want %v", got, pos(0))
+	if got, want := n.Pos(), pos(0); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(42) {
-		t.Errorf("End() = %v, want %v", got, pos(42))
+	if got, want := n.End(), pos(42); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -91,14 +93,14 @@ func TestRecallCommandNode(t *testing.T) {
 		end:      pos(9),
 	}
 
-	if got := n.selector; got != sel {
-		t.Errorf("Selector() = %+v, want %+v", got, sel)
+	if got, want := n.selector, sel; got != want {
+		t.Errorf("selector = %+v, want %+v", got, want)
 	}
-	if got := n.Pos(); got != pos(3) {
-		t.Errorf("Pos() = %v, want %v", got, pos(3))
+	if got, want := n.Pos(), pos(3); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(9) {
-		t.Errorf("End() = %v, want %v", got, pos(9))
+	if got, want := n.End(), pos(9); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -110,17 +112,17 @@ func TestTermNode(t *testing.T) {
 		end:   pos(9),
 	}
 
-	if got := n.Literal(); got != "hello" {
-		t.Errorf("Literal() = %q, want %q", got, "hello")
+	if got, want := n.Literal(), "hello"; got != want {
+		t.Errorf("Literal() = %q, want %q", got, want)
 	}
-	if got := n.String(); got != "hello" {
-		t.Errorf("String() = %q, want %q", got, "hello")
+	if got, want := n.String(), "hello"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
 	}
-	if got := n.Pos(); got != pos(4) {
-		t.Errorf("Pos() = %v, want %v", got, pos(4))
+	if got, want := n.Pos(), pos(4); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(9) {
-		t.Errorf("End() = %v, want %v", got, pos(9))
+	if got, want := n.End(), pos(9); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -138,11 +140,11 @@ func TestTerms(t *testing.T) {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
 	// Pos comes from the first term, End from the last term's Pos.
-	if got := terms.Pos(); got != pos(0) {
-		t.Errorf("Pos() = %v, want %v", got, pos(0))
+	if got, want := terms.Pos(), pos(0); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := terms.End(); got != pos(12) {
-		t.Errorf("End() = %v, want %v", got, pos(12))
+	if got, want := terms.End(), pos(12); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -173,11 +175,11 @@ func TestPhraseNode(t *testing.T) {
 	if got, want := n.String(), "the lazy dog"; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
-	if got := n.Pos(); got != pos(2) {
-		t.Errorf("Pos() = %v, want %v", got, pos(2))
+	if got, want := n.Pos(), pos(2); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(20) {
-		t.Errorf("End() = %v, want %v", got, pos(20))
+	if got, want := n.End(), pos(20); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -196,17 +198,17 @@ func TestEntityFieldNode(t *testing.T) {
 		end:   pos(8),
 	}
 
-	if got := n.Key(); got != "entity" {
-		t.Errorf("Key() = %q, want %q", got, "entity")
+	if got, want := n.Key(), "entity"; got != want {
+		t.Errorf("Key() = %q, want %q", got, want)
 	}
-	if got := n.Value(); got != "alice" {
-		t.Errorf("Value() = %q, want %q", got, "alice")
+	if got, want := n.Value(), "alice"; got != want {
+		t.Errorf("Value() = %q, want %q", got, want)
 	}
-	if got := n.Pos(); got != pos(1) {
-		t.Errorf("Pos() = %v, want %v", got, pos(1))
+	if got, want := n.Pos(), pos(1); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(8) {
-		t.Errorf("End() = %v, want %v", got, pos(8))
+	if got, want := n.End(), pos(8); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -218,23 +220,21 @@ func TestTopicFieldNode(t *testing.T) {
 		end:   pos(10),
 	}
 
-	if got := n.Key(); got != "topic" {
-		t.Errorf("Key() = %q, want %q", got, "topic")
+	if got, want := n.Key(), "topic"; got != want {
+		t.Errorf("Key() = %q, want %q", got, want)
 	}
-	if got := n.Value(); got != "weather" {
-		t.Errorf("Value() = %q, want %q", got, "weather")
+	if got, want := n.Value(), "weather"; got != want {
+		t.Errorf("Value() = %q, want %q", got, want)
 	}
-	if got := n.Pos(); got != pos(3) {
-		t.Errorf("Pos() = %v, want %v", got, pos(3))
+	if got, want := n.Pos(), pos(3); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(10) {
-		t.Errorf("End() = %v, want %v", got, pos(10))
+	if got, want := n.End(), pos(10); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
-//
 // AnchorFieldNode delegates Key/Value/Pos/End to its wrapped FieldNode.
-
 func TestAnchorFieldNode(t *testing.T) {
 	field := EntityFieldNode{
 		key:   tok(lexer.ENTITY, "entity"),
@@ -249,23 +249,23 @@ func TestAnchorFieldNode(t *testing.T) {
 		field:  field,
 	}
 
-	if got := n.Clause(); got != &clause {
-		t.Errorf("Clause() = %+v, want %+v", got, clause)
+	if got, want := n.Clause(), &clause; got != want {
+		t.Errorf("Clause() = %+v, want %+v", got, want)
 	}
-	if got := n.Field(); got != FieldNode[string](field) {
-		t.Errorf("Field() = %+v, want %+v", got, field)
+	if got, want := n.Field(), FieldNode[string](field); got != want {
+		t.Errorf("Field() = %+v, want %+v", got, want)
 	}
-	if got := n.Key(); got != "entity" {
-		t.Errorf("Key() = %q, want %q (delegated)", got, "entity")
+	if got, want := n.Key(), "entity"; got != want {
+		t.Errorf("Key() = %q, want %q (delegated)", got, want)
 	}
-	if got := n.Value(); got != "bob" {
-		t.Errorf("Value() = %q, want %q (delegated)", got, "bob")
+	if got, want := n.Value(), "bob"; got != want {
+		t.Errorf("Value() = %q, want %q (delegated)", got, want)
 	}
-	if got := n.Pos(); got != pos(5) {
-		t.Errorf("Pos() = %v, want %v (delegated)", got, pos(5))
+	if got, want := n.Pos(), pos(5); got != want {
+		t.Errorf("Pos() = %v, want %v (delegated)", got, want)
 	}
-	if got := n.End(); got != pos(12) {
-		t.Errorf("End() = %v, want %v (delegated)", got, pos(12))
+	if got, want := n.End(), pos(12); got != want {
+		t.Errorf("End() = %v, want %v (delegated)", got, want)
 	}
 }
 
@@ -278,17 +278,17 @@ func TestSinceFieldNode(t *testing.T) {
 		end:   pos(6),
 	}
 
-	if got := n.Key(); got != "since" {
-		t.Errorf("Key() = %q, want %q", got, "since")
+	if got, want := n.Key(), "since"; got != want {
+		t.Errorf("Key() = %q, want %q", got, want)
 	}
-	if got := n.Value(); got != containers.TimeValue[uint64](tv) {
-		t.Errorf("Value() = %v, want %v", got, tv)
+	if got, want := n.Value(), containers.TimeValue[uint64](tv); got != want {
+		t.Errorf("Value() = %v, want %v", got, want)
 	}
-	if got := n.Pos(); got != pos(1) {
-		t.Errorf("Pos() = %v, want %v", got, pos(1))
+	if got, want := n.Pos(), pos(1); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(6) {
-		t.Errorf("End() = %v, want %v", got, pos(6))
+	if got, want := n.End(), pos(6); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -301,17 +301,17 @@ func TestUntilFieldNode(t *testing.T) {
 		end:   pos(7),
 	}
 
-	if got := n.Key(); got != "until" {
-		t.Errorf("Key() = %q, want %q", got, "until")
+	if got, want := n.Key(), "until"; got != want {
+		t.Errorf("Key() = %q, want %q", got, want)
 	}
-	if got := n.Value(); got != containers.TimeValue[uint64](tv) {
-		t.Errorf("Value() = %v, want %v", got, tv)
+	if got, want := n.Value(), containers.TimeValue[uint64](tv); got != want {
+		t.Errorf("Value() = %v, want %v", got, want)
 	}
-	if got := n.Pos(); got != pos(2) {
-		t.Errorf("Pos() = %v, want %v", got, pos(2))
+	if got, want := n.Pos(), pos(2); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(7) {
-		t.Errorf("End() = %v, want %v", got, pos(7))
+	if got, want := n.End(), pos(7); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -323,17 +323,17 @@ func TestTopFieldNode(t *testing.T) {
 		end:   pos(4),
 	}
 
-	if got := n.Key(); got != "top" {
-		t.Errorf("Key() = %q, want %q", got, "top")
+	if got, want := n.Key(), "top"; got != want {
+		t.Errorf("Key() = %q, want %q", got, want)
 	}
-	if got := n.Value(); got != 10 {
-		t.Errorf("Value() = %d, want 10", got)
+	if got, want := n.Value(), 10; got != want {
+		t.Errorf("Value() = %d, want %d", got, want)
 	}
-	if got := n.Pos(); got != pos(1) {
-		t.Errorf("Pos() = %v, want %v", got, pos(1))
+	if got, want := n.Pos(), pos(1); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(4) {
-		t.Errorf("End() = %v, want %v", got, pos(4))
+	if got, want := n.End(), pos(4); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -345,17 +345,17 @@ func TestDepthFieldNode(t *testing.T) {
 		end:   pos(6),
 	}
 
-	if got := n.Key(); got != "depth" {
-		t.Errorf("Key() = %q, want %q", got, "depth")
+	if got, want := n.Key(), "depth"; got != want {
+		t.Errorf("Key() = %q, want %q", got, want)
 	}
-	if got := n.Value(); got != 2 {
-		t.Errorf("Value() = %d, want 2", got)
+	if got, want := n.Value(), 2; got != want {
+		t.Errorf("Value() = %d, want %d", got, want)
 	}
-	if got := n.Pos(); got != pos(1) {
-		t.Errorf("Pos() = %v, want %v", got, pos(1))
+	if got, want := n.Pos(), pos(1); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(6) {
-		t.Errorf("End() = %v, want %v", got, pos(6))
+	if got, want := n.End(), pos(6); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
 
@@ -369,19 +369,19 @@ func TestVecFieldNode(t *testing.T) {
 		end:   pos(5),
 	}
 
-	if got := n.Key(); got != "vec" {
-		t.Errorf("Key() = %q, want %q", got, "vec")
+	if got, want := n.Key(), "vec"; got != want {
+		t.Errorf("Key() = %q, want %q", got, want)
 	}
-	if got := n.Param(); got != "q" {
-		t.Errorf("Param() = %q, want %q", got, "q")
+	if got, want := n.Param(), "q"; got != want {
+		t.Errorf("Param() = %q, want %q", got, want)
 	}
-	if got := n.Value(); len(got) != 3 || got[0] != 0.1 || got[2] != 0.3 {
-		t.Errorf("Value() = %v, want %v", got, vec)
+	if diff := cmp.Diff(vec, n.Value()); diff != "" {
+		t.Errorf("Value() mismatch (-want +got):\n%s", diff)
 	}
-	if got := n.Pos(); got != pos(1) {
-		t.Errorf("Pos() = %v, want %v", got, pos(1))
+	if got, want := n.Pos(), pos(1); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
 	}
-	if got := n.End(); got != pos(5) {
-		t.Errorf("End() = %v, want %v", got, pos(5))
+	if got, want := n.End(), pos(5); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
 	}
 }
