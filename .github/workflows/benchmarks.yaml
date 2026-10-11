@@ -74,17 +74,17 @@ jobs:
           path: bin/perf/baseline
           search_artifacts: true
           if_no_artifact_found: warn
-      # The release gate also measures retrieval seeded with embeddings: they
-      # come from the cache, or are computed and cached on a miss. If they
-      # cannot be computed, the gate measures text only.
+      # Every gate also measures retrieval seeded with embeddings: they come
+      # from the cache, or are computed and cached on a miss, so a pull
+      # request that changes how the lanes combine is measured on both. If
+      # they cannot be computed, the gate measures text only.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: vectors
-        if: env.RELEASE == 'true'
         with:
           path: bin/perf/locomo-vectors.json
           key: locomo-vectors-${{ hashFiles('tests/perf/data/locomo-conv-26.json', 'tools/embed_locomo.py') }}
       - name: Embed LoCoMo
-        if: env.RELEASE == 'true' && steps.vectors.outputs.cache-hit != 'true'
+        if: steps.vectors.outputs.cache-hit != 'true'
         continue-on-error: true
         run: make perf-vectors
 

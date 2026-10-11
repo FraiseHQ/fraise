@@ -304,8 +304,8 @@ func TestConfigSet_WindowAndAggregate(t *testing.T) {
 	if c.DB.WindowGamma != 0.3 {
 		t.Errorf("DB.WindowGamma default: got %v, want 0.3", c.DB.WindowGamma)
 	}
-	if c.DB.VectorBoost != 1 {
-		t.Errorf("DB.VectorBoost default: got %v, want 1", c.DB.VectorBoost)
+	if c.DB.VectorBoost != 3 {
+		t.Errorf("DB.VectorBoost default: got %v, want 3", c.DB.VectorBoost)
 	}
 	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
 	if c.DB.Aggregate != want {

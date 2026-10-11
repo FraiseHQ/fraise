@@ -15,7 +15,7 @@ navLabel: "Database"
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
 | `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
-| `vector-boost` | `-vector-boost` | `1` | extra weight of vector similarity when the best text hit covers little of the query, at most `10`; negative is off, `0` is the default |
+| `vector-boost` | `-vector-boost` | `3` | extra weight of vector similarity when the best text hit covers little of the query, at most `10`; negative is off, `0` is the default |
 | `window-gamma` | `-window-gamma` | `0.3` | window: the share of its temporal neighbours' matches a fact borrows when scored, at most `1`; negative is off, `0` is the default |
 
 ```toml
@@ -55,10 +55,10 @@ A recall with both words and an embedding sums the two lanes, and when the words
 
 ```toml
 [db]
-vector-boost = 1
+vector-boost = 3
 ```
 
-The boost is **on by default** at `1`: an embedding counts double when the words found nothing. A negative value turns it off, `0` means the default, and the server refuses to start on a value past `10`, where any embedding would drown any text match.
+The boost is **on by default** at `3`: an embedding counts four times over when the words found nothing, two and a half times when the best hit held half the query. A negative value turns it off, `0` means the default, and the server refuses to start on a value past `10`, where any embedding would drown any text match.
 
 ## Window
 

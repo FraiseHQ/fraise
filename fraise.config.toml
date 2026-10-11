@@ -41,7 +41,7 @@
 # max-vector-dimension = 4096
 # seed-size = 10
 # min-score-ratio = 0         # drop hits whose relevance is under this fraction of the best hit's, in [0, 1]; 0 = off
-# vector-boost = 1           # extra weight of vector similarity when the best text hit covers little of the query, at most 10; negative disables; 0 means the default
+# vector-boost = 3           # extra weight of vector similarity when the best text hit covers little of the query, at most 10; negative disables; 0 means the default
 # window-gamma = 0.3          # share of its temporal neighbours' matches a fact borrows when scored, at most 1; negative disables; 0 means the default
 
 [db.aggregate]
