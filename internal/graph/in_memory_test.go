@@ -2121,3 +2121,72 @@ func TestInMemoryGraphSearchWindowBorrowsAlongTimelines(t *testing.T) {
 		t.Errorf("Search = %v, want the budget turn before the match among the hits: they are one session's exchange", values(nodes))
 	}
 }
+
+// TestInMemoryGraphSearchWindowSurvivesReassertion pins that a turn said
+// again in a later session leaves the earlier session a timeline. Facts are
+// keyed by value, so the recurring "thanks" is one fact re-asserted with a
+// new timestamp and a second session edge; ordered by its own timestamp it
+// stretched the first session over the second and took the window from it,
+// so the boat question stopped borrowing its answer's "red". Both sessions
+// must still lend.
+func TestInMemoryGraphSearchWindowSurvivesReassertion(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.WindowGamma = 0.5
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	sessions := map[string]*graph.Topic[uint64]{"boats": mkTopic(g, "boats", now), "weather": mkTopic(g, "weather", now)}
+	for _, session := range sessions {
+		mustSet(t, g, session)
+	}
+	turns := []struct{ session, value string }{
+		{"boats", "what colour is the boat"},
+		{"boats", "it is painted red"},
+		{"boats", "thanks"},
+		{"weather", "the weather is cold"},
+		{"weather", "snow is forecast"},
+		{"weather", "thanks"},
+	}
+	for i, turn := range turns {
+		ts := now.Add(time.Duration(i) * time.Second)
+		fact := mkFact(g, turn.value, ts)
+		if err := g.Put(fact.Key(), fact); err != nil {
+			t.Fatalf("Put(%q) = %v, want nil", turn.value, err)
+		}
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: sessions[turn.session], NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+	}
+	for _, c := range []struct{ term, borrower string }{
+		{"red", "what colour is the boat"},
+		{"cold", "snow is forecast"},
+	} {
+		nodes, _, _, _, err := search(g, []string{c.term}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+		if err != nil {
+			t.Fatalf("Search = %v, want nil", err)
+		}
+		if !slices.Contains(values(nodes), c.borrower) {
+			t.Errorf("Search(%q) = %v, want %q among the hits: its session is still one run", c.term, values(nodes), c.borrower)
+		}
+	}
+}
+
+// TestInMemoryGraphSearchWindowStopsAtTheSession pins that the window lends
+// along the finest timeline anchor only. The conversation holds both sessions
+// in one run, so under it the last ops turn and the first planning turn are
+// adjacent; lending through it would make the ops turn a match for "friday",
+// which only the planning turn holds.
+func TestInMemoryGraphSearchWindowStopsAtTheSession(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.WindowGamma = 0.5
+	g := labelledGraph(t, cfg)
+	nodes, _, _, _, err := search(g, []string{"friday"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	if slices.Contains(values(nodes), "deploy verified") {
+		t.Errorf("Search = %v, want the last ops turn absent: it neighbours the planning turn only through the conversation", values(nodes))
+	}
+	if !slices.Contains(values(nodes), "the rollout waits for the review") {
+		t.Errorf("Search = %v, want the planning turn after the match among the hits: they are one session's exchange", values(nodes))
+	}
+}

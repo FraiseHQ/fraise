@@ -71,7 +71,8 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	config *config.ConfigSet
 
 	// sequences caches, per anchor, its member facts in the order they were
-	// written: the view contiguous reads a fact's temporal neighbours from.
+	// filed under it: the view contiguous reads a fact's temporal neighbours
+	// from.
 	// An anchor's sequence is built on first use, under sequenceMu because
 	// searches share the graph's read lock, and dropped by every write that
 	// touches the anchor or one of its members, so a sequence is never stale
@@ -84,13 +85,12 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	// fact, and between writes the answer does not change.
 	contiguity map[K][]K
 
-	// order caches every fact's position in the graph's write order, and
-	// timelines whether each anchor's facts form one unbroken run of it (see
-	// isTimeline). Any fact write can join or split a run anywhere, a fact
-	// re-asserted in the middle of a session moves to the end, so both are
-	// dropped, with every cached contiguity read through them, by any write
-	// to a fact; an edge write drops its anchor's verdict with its sequence.
-	order     map[K]int
+	// order caches every filing, a fact's edge to an anchor, in the order the
+	// filings were written, and timelines whether each anchor's filings form
+	// one unbroken run of it (see isTimeline). A new or deleted filing can
+	// join or split a run anywhere, so both are dropped, with every cached
+	// contiguity read through them, by any write to a fact or an edge.
+	order     *sequence[K]
 	timelines map[K]bool
 
 	sequenceMu sync.Mutex
@@ -98,9 +98,9 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	mu sync.RWMutex
 }
 
-// sequence is one anchor's member facts ordered by write time, then key, with
-// each member's position so a neighbour lookup is a map read and two slice
-// reads rather than a search.
+// sequence is a run of keys in filing order, then key, with each key's
+// position so a neighbour lookup is a map read and two slice reads rather
+// than a search: an anchor's member facts, or the graph's filings.
 type sequence[K comparable] struct {
 	keys []K
 	at   map[K]int
@@ -389,17 +389,17 @@ func (g *InMemoryGraph[K, P]) Neighbours(key K) []K {
 	return out
 }
 
-// contiguous returns the facts written immediately before and after key under
-// each timeline anchor it is filed under (see isTimeline), in ascending key
-// order, each once. It is the neighbours function the text index's window
-// scores with (see [index.BTreeIndex.SetWindow]): two facts adjacent in time
-// under a shared anchor are one exchange, a question and its answer, a
-// statement and its follow-up, and the window lets the exchange match as a
-// whole. Only a timeline anchor says two facts are one exchange: under a
-// speaker or a written label the fact before is the previous mention, often
-// in another session, and borrowing from it blurs the exchange into
-// everything that shares the label. A fact filed under no timeline anchor has
-// no neighbours. Searches call it under the graph's read lock, once per
+// contiguous returns the facts filed immediately before and after key under
+// the finest timeline anchor it is filed under (see finest), in ascending key
+// order. It is the neighbours function the text index's window scores with
+// (see [index.BTreeIndex.SetWindow]): two facts adjacent in time under a
+// shared anchor are one exchange, a question and its answer, a statement and
+// its follow-up, and the window lets the exchange match as a whole. Only the
+// finest timeline anchor says two facts are one exchange: under a speaker or
+// a written label the fact before is the previous mention, often in another
+// session, and under the conversation a session sits in, a session's last
+// turn and the next session's first are adjacent without being one exchange.
+// A fact filed under no timeline anchor has no neighbours. Searches call it under the graph's read lock, once per
 // matched fact, so the answer is cached until a write drops it (see
 // dropSequences) and a repeated lookup allocates nothing.
 func (g *InMemoryGraph[K, P]) contiguous(key K) []K {
@@ -409,33 +409,29 @@ func (g *InMemoryGraph[K, P]) contiguous(key K) []K {
 		return out
 	}
 	var out []K
-	for anchor := range g.nodeToTargets[key] {
-		if !isAnchor[K, P](g, anchor) || !g.isTimeline(anchor) {
-			continue
-		}
+	if anchor := g.finest(key, nil); anchor != key {
 		seq := g.sequence(anchor)
-		i, ok := seq.at[key]
-		if !ok {
-			continue
-		}
+		i := seq.at[key]
 		if i > 0 {
 			out = append(out, seq.keys[i-1])
 		}
 		if i+1 < len(seq.keys) {
 			out = append(out, seq.keys[i+1])
 		}
+		slices.Sort(out)
 	}
-	slices.Sort(out)
-	out = slices.Compact(out)
 	g.contiguity[key] = out
 	return out
 }
 
-// sequence returns anchor's members in write order, building and caching it
-// on first use. Members are the facts adjacent to the anchor; ties on the
-// timestamp (a batch written in one instant) are broken by key, so the order
-// is total and two searches agree on who neighbours whom. The caller holds
-// sequenceMu.
+// sequence returns anchor's members in the order they were filed under it,
+// building and caching it on first use. Members are the facts adjacent to
+// the anchor, placed by their edge's timestamp rather than their own: a
+// re-asserted fact takes a new timestamp but keeps the edges it was first
+// filed with, so it stays where it was said in an earlier session while
+// taking its place in the new one. Ties (a batch written in one instant) are
+// broken by key, so the order is total and two searches agree on who
+// neighbours whom. The caller holds sequenceMu.
 func (g *InMemoryGraph[K, P]) sequence(anchor K) *sequence[K] {
 	if seq, ok := g.sequences[anchor]; ok {
 		return seq
@@ -446,8 +442,9 @@ func (g *InMemoryGraph[K, P]) sequence(anchor K) *sequence[K] {
 			seq.keys = append(seq.keys, member)
 		}
 	}
+	filings := g.nodeToSources[anchor]
 	slices.SortFunc(seq.keys, func(a, b K) int {
-		if c := g.Nodes()[a].GetTimestamp().Compare(g.Nodes()[b].GetTimestamp()); c != 0 {
+		if c := g.idToNodes[filings[a]].GetTimestamp().Compare(g.idToNodes[filings[b]].GetTimestamp()); c != 0 {
 			return c
 		}
 		return comparator.OrderedComparator(a, b)
@@ -460,17 +457,17 @@ func (g *InMemoryGraph[K, P]) sequence(anchor K) *sequence[K] {
 }
 
 // dropSequences discards the cached sequence of key and of every node
-// adjacent to it. A write to a fact moves it in each of its anchors'
-// sequences (a re-asserted fact takes a new timestamp), a new edge adds a
-// member, a deleted node removes one: all three reach here, under the write
-// lock, so a cached sequence never outlives the writes that would change it.
+// adjacent to it. A new edge adds a member to its anchor's sequence and a
+// new filing to the graph's order, a deleted node removes them: both reach
+// here, under the write lock, so a cached sequence never outlives the writes
+// that would change it.
 // A dropped sequence takes its members' cached contiguity with it, and key's
 // own, so every cached neighbour list is read off sequences still cached.
 func (g *InMemoryGraph[K, P]) dropSequences(key K) {
 	g.sequenceMu.Lock()
 	defer g.sequenceMu.Unlock()
 	_, isFact := g.idToNodes[key].(Fact[K])
-	if _, ordered := g.order[key]; isFact || ordered {
+	if _, isEdge := g.idToNodes[key].(Relationship[K]); isFact || isEdge {
 		g.order = nil
 		clear(g.timelines)
 		clear(g.contiguity)
@@ -499,49 +496,70 @@ func (g *InMemoryGraph[K, P]) dropSequence(anchor K) {
 	delete(g.timelines, anchor)
 }
 
-// writeOrder returns every fact's position in the graph's write order, by
-// timestamp then key as an anchor's sequence orders its members, building
-// and caching it on first use. The caller holds sequenceMu.
-func (g *InMemoryGraph[K, P]) writeOrder() map[K]int {
+// writeOrder returns every filing, a fact's edge to an anchor, in the order
+// the filings were written, by timestamp then key as an anchor's sequence
+// orders its members, building and caching it on first use. The caller
+// holds sequenceMu.
+func (g *InMemoryGraph[K, P]) writeOrder() *sequence[K] {
 	if g.order != nil {
 		return g.order
 	}
-	facts := make([]K, 0, len(g.idToNodes))
-	for key, node := range g.idToNodes {
-		if _, isFact := node.(Fact[K]); isFact {
-			facts = append(facts, key)
+	order := &sequence[K]{}
+	for source, targets := range g.nodeToTargets {
+		if _, isFact := g.idToNodes[source].(Fact[K]); !isFact {
+			continue
+		}
+		for target, edge := range targets {
+			if isAnchor[K, P](g, target) {
+				order.keys = append(order.keys, edge)
+			}
 		}
 	}
-	slices.SortFunc(facts, func(a, b K) int {
+	slices.SortFunc(order.keys, func(a, b K) int {
 		if c := g.idToNodes[a].GetTimestamp().Compare(g.idToNodes[b].GetTimestamp()); c != 0 {
 			return c
 		}
 		return comparator.OrderedComparator(a, b)
 	})
-	g.order = make(map[K]int, len(facts))
-	for i, key := range facts {
-		g.order[key] = i
+	order.at = make(map[K]int, len(order.keys))
+	for i, edge := range order.keys {
+		order.at[edge] = i
 	}
-	return g.order
+	g.order = order
+	return order
 }
 
-// isTimeline reports whether anchor's facts were written as one unbroken run:
-// at least two of them, and no fact outside the anchor written between its
-// first and its last. A session is a timeline; a speaker, whose turns
+// isTimeline reports whether anchor's facts were filed as one unbroken run:
+// at least two of them, and no fact outside the anchor filed between its
+// first filing and its last. A session is a timeline; a speaker, whose turns
 // interleave with the other speaker's, is not, and nor is a topic or entity
 // a writer files across sessions. The window and the spread both read an
 // anchor as "said in the same stretch", which only a timeline guarantees;
-// the property is read off the write order rather than the anchor's name, so
-// it holds for whatever anchors a client writes. The caller holds sequenceMu.
+// the property is read off the filing order rather than the anchor's name,
+// so it holds for whatever anchors a client writes. Filings rather than
+// facts are what is ordered, so a turn re-asserted in a later session, a
+// recurring "thanks", leaves the session it was first said in a run. The
+// caller holds sequenceMu.
 func (g *InMemoryGraph[K, P]) isTimeline(anchor K) bool {
 	if timeline, ok := g.timelines[anchor]; ok {
 		return timeline
 	}
+	filings := g.nodeToSources[anchor]
 	seq := g.sequence(anchor)
-	timeline := false
-	if len(seq.keys) >= 2 {
+	timeline := len(seq.keys) >= 2
+	if timeline {
 		order := g.writeOrder()
-		timeline = order[seq.keys[len(seq.keys)-1]]-order[seq.keys[0]]+1 == len(seq.keys)
+		first := order.at[filings[seq.keys[0]]]
+		last := first
+		for _, member := range seq.keys {
+			first, last = min(first, order.at[filings[member]]), max(last, order.at[filings[member]])
+		}
+		for _, edge := range order.keys[first : last+1] {
+			if _, isMember := filings[(*g.idToNodes[edge].(Relationship[K]).Source()).Key()]; !isMember {
+				timeline = false
+				break
+			}
+		}
 	}
 	g.timelines[anchor] = timeline
 	return timeline
@@ -860,15 +878,23 @@ func (g *InMemoryGraph[K, P]) groups(keys []K, scores []P, candidates scoring.Ca
 }
 
 // facet is the finest timeline anchor key is filed under beyond the named
-// ones (see isTimeline): the one with the fewest members, ties broken by key,
-// so a session wins over the conversation it sits in. A facet is a stretch of
-// the record the slots are spread over; a speaker or a written label is not
-// one, and taken as the facet the finest label makes nearly every fact its
-// own facet and the spread a no-op. A fact under no other timeline anchor is
-// its own facet.
+// ones (see finest). A facet is a stretch of the record the slots are spread
+// over; a speaker or a written label is not one, and taken as the facet the
+// finest label makes nearly every fact its own facet and the spread a no-op.
+// A fact under no other timeline anchor is its own facet.
 func (g *InMemoryGraph[K, P]) facet(key K, named map[K]struct{}) K {
 	g.sequenceMu.Lock()
 	defer g.sequenceMu.Unlock()
+	return g.finest(key, named)
+}
+
+// finest is the finest timeline anchor key is filed under beyond the named
+// ones (see isTimeline): the one with the fewest members, ties broken by key,
+// so a session wins over the conversation it sits in, or key itself when
+// there is none. The window reads neighbours along it and the spread files
+// a fact under it, so the two agree on what one stretch of the record is.
+// The caller holds sequenceMu.
+func (g *InMemoryGraph[K, P]) finest(key K, named map[K]struct{}) K {
 	facet, degree := key, -1
 	for anchor := range g.nodeToTargets[key] {
 		if _, isNamed := named[anchor]; isNamed || !isAnchor[K, P](g, anchor) || !g.isTimeline(anchor) {
