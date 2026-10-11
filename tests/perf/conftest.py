@@ -238,37 +238,28 @@ def pytest_configure(config):
     config.stash[_OUTCOMES] = []
 
 
-# A change outside any package's .go files that still changes what every gate
-# measures or how it runs: the module's dependencies, the gates themselves,
-# and what runs them (the Makefile targets, the gate workflow, the Python
-# environment pytest runs in, the embeddings the release gate seeds with). A
-# pull request changing one of these exercises every gate, so a broken change
-# to the gates cannot pass by skipping them all.
-_EVERYTHING = (
-    "go.mod",
-    "go.sum",
-    "tests/perf/",
-    "Makefile",
-    "pyproject.toml",
-    "uv.lock",
-    "tools/embed_locomo.py",
-    ".github/workflows/benchmarks.yaml",
-)
+# The module's dependencies: code every benchmark runs that no package's .go
+# files show, so a change to them exercises every gate.
+_EVERYTHING = ("go.mod", "go.sum")
 
 
 def _unchanged(items, since):
     """The gates none of whose benchmarks' packages changed since the ref, with why.
 
     A gate's packages are its package and every package of this module it
-    builds on, tests included (``go list -deps -test``): a benchmark measures
-    all the code it runs, so a change anywhere in that set is a change it can
-    see, and a change outside it is one it cannot.
+    builds on, its tests' imports included (``go list -deps -test``): a
+    benchmark measures all the code it runs, so a change anywhere in that set
+    is a change it can see, and a change outside it is one it cannot. Only
+    source counts: a test file, a gate or what runs them changes no number a
+    benchmark measures, and the release gate runs every gate whatever changed.
     """
     changed = _run(["git", "diff", "--name-only", since, "HEAD"]).split()
     if any(path.startswith(_EVERYTHING) for path in changed):
         return {}
     dirs = {
-        str((_ROOT / path).parent.resolve()) for path in changed if path.endswith(".go")
+        str((_ROOT / path).parent.resolve())
+        for path in changed
+        if path.endswith(".go") and not path.endswith("_test.go")
     }
     packages, unchanged = {}, {}
     for item in items:
