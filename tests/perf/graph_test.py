@@ -39,7 +39,7 @@ def test_slowdowns_are_reported(comparison, warn_slower):
 
 
 @pytest.mark.bench("./internal/graph", "BenchmarkSearch")
-def test_allocations_do_not_grow(comparison):
+def test_allocations_do_not_grow(comparison, fail_regressed):
     """No benchmark allocates 5% more per operation, or allocates at all where it did not.
 
     Allocations are counted, not timed, so they do not vary with the runner
@@ -48,4 +48,4 @@ def test_allocations_do_not_grow(comparison):
     grown = [
         row for row in comparison if row.unit == "allocs/op" and row.change >= 0.05
     ]
-    assert not grown
+    fail_regressed(grown)
