@@ -15,7 +15,6 @@ navLabel: "Database"
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
 | `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
-| `vector-boost` | `-vector-boost` | `3` | extra weight of vector similarity when the best text hit covers little of the query, at most `10`; negative is off, `0` is the default |
 | `window-gamma` | `-window-gamma` | `0.3` | window: the share of its temporal neighbours' matches a fact borrows when scored, at most `1`; negative is off, `0` is the default |
 
 ```toml
@@ -49,16 +48,17 @@ min-score-ratio = 0.3
 
 The cutoff is **off by default** because the trade is yours to make: it buys precision with a little recall. [`/explain`](/docs/http-api/endpoints/explain) breaks a hit down into the contributions its relevance is folded from.
 
-## Vector boost
+## Vector weight
 
-A recall with both words and an embedding sums the two lanes, and when the words answer the question the text index should lead. When they do not, when the question is phrased in words the memory never used, the text index still returns its best partial matches and their mass competes with the embedding's on equal terms. `vector-boost` weights the vector similarity of every candidate by $1 + \text{boost} \times (1 - c)$, where $c$ is the coverage of the best text hit: the share of the idf mass of the query's words, among those the memory holds at all, that the hit holds itself. A best hit holding every word leaves the embedding at its plain similarity, breaking ties; a best hit holding a common word alone, or no text hit at all, multiplies it by up to $1 + \text{boost}$, and the embedding, which does not need the words, carries the ranking. The weight is one number per query, so the vector lane's own order is kept and only its mass against the text's moves. It only applies to a recall carrying both words and a vector.
+A recall with both words and an embedding sums the two lanes, and when the words answer the question the text index should lead. When they do not, when the question is phrased in words the memory never used, the text index still returns its best partial matches and their mass competes with the embedding's on equal terms. So the vector similarity of every candidate is weighted by the information the text did not find:
 
-```toml
-[db]
-vector-boost = 3
-```
+$$
+w_v = \frac{I_q}{I_{\text{hit}}} = 1 + \frac{I_q - I_{\text{hit}}}{I_{\text{hit}}}, \qquad I(S) = \sum_{t \in S} -\log_2 \frac{\text{df}_t}{N}
+$$
 
-The boost is **on by default** at `3`: an embedding counts four times over when the words found nothing, two and a half times when the best hit held half the query. A negative value turns it off, `0` means the default, and the server refuses to start on a value past `10`, where any embedding would drown any text match.
+where $I_q$ is the information in the query's words, $I_{\text{hit}}$ the part of it the best text hit holds, $\text{df}_t$ the number of facts holding word $t$ and $N$ the number of facts. A word's information is its surprisal, the bits of the event that a fact picked at random holds it: a rare word carries many bits, a word every fact holds carries none. Words no fact holds have no estimate and are left out of both sums.
+
+The weight is the bits the text missed per bit it found, plus one. A best hit holding every word of the query leaves the embedding at its plain similarity, breaking ties; a hit holding half the query's information doubles it, a quarter quadruples it, and the embedding, which does not need the words, carries the ranking. Being a ratio of information, it reads the same for a long question as for a short one, and it has no setting: there is no constant to tune. A recall with no text hit has the embedding as its only seed, at weight 1. The weight is one number per query, so the vector lane's own order is kept and only its mass against the text's moves; a recall without both words and a vector is unaffected.
 
 ## Window
 

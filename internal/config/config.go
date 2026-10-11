@@ -165,15 +165,6 @@ type DBConfig struct {
 	// means the default. validate rejects anything above 1.
 	WindowGamma float64 `toml:"window-gamma"`
 
-	// VectorBoost weights a recall's vector similarity by how little its
-	// words found: by 1 + boost × (1 − c), c the share of the query the best
-	// text hit covers. A recall answered by its words leaves the embedding
-	// breaking ties; one phrased in words the memory does not use hands the
-	// ranking to the embedding, which does not need the words. A negative
-	// value turns the boost off, 0 means the default; validate rejects
-	// anything above 10.
-	VectorBoost float64 `toml:"vector-boost"`
-
 	// Aggregate is how a recall spends its top slots when the ranking is flat
 	// across contexts (see [Aggregate]).
 	Aggregate Aggregate `toml:"aggregate"`
@@ -371,7 +362,6 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
 	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits whose relevance is below this fraction of the best hit's (0 = off)")
-	flagSet.Float64Var(&config.DB.VectorBoost, "vector-boost", DefaultVectorBoost, "Extra weight of vector similarity when the best text hit covers little of the query (negative = off)")
 	flagSet.Float64Var(&config.DB.WindowGamma, "window-gamma", DefaultWindowGamma, "Share of its temporal neighbours' matches a fact borrows when scored (negative = off)")
 	flagSet.StringVar(&config.DB.Aggregate.Name, "aggregate", DefaultAggregate, "How a flat ranking's slots are spent (none, spread, group)")
 	flagSet.IntVar(&config.DB.Aggregate.Pool, "aggregate-pool", DefaultAggregatePool, "Ranked candidates the aggregation draws from")
@@ -523,7 +513,6 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// DB.MinScoreRatio needs no Adjust: its default, 0, is the zero value and
 	// means off, so an absent key and an explicit 0 already agree.
 	Adjust(&c.DB.WindowGamma, DefaultWindowGamma)
-	Adjust(&c.DB.VectorBoost, DefaultVectorBoost)
 	Adjust(&c.DB.Aggregate.Name, DefaultAggregate)
 	Adjust(&c.DB.Aggregate.Pool, DefaultAggregatePool)
 	Adjust(&c.DB.Aggregate.Spread, DefaultAggregateSpread)

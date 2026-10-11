@@ -24,6 +24,7 @@ package index_test
 
 import (
 	"errors"
+	"math"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -757,13 +758,14 @@ func TestBTreeIndexKeyTerms(t *testing.T) {
 	}
 }
 
-// TestBTreeIndexCoverage pins the significance a recall's vector weight is
-// read from: the share of the query's idf mass a document holds itself, 1
-// for a document holding every term, a fraction weighted towards the rare
-// term for one holding some, 0 for one holding none, for a key not indexed,
-// and for a query whose terms no document holds. A rare term weighs more
-// than a common one, so matching it alone covers more of the query.
-func TestBTreeIndexCoverage(t *testing.T) {
+// TestBTreeIndexInformation pins the information a recall's vector weight is
+// read from, in bits: a term held by df of the N live documents carries
+// −log₂(df/N), the query carries the sum over its distinct known terms, and a
+// document holds the sum over those it holds. Of four documents, "deploy" is
+// in three (0.415 bits) and "friday" in two (1 bit). A key not indexed holds
+// nothing, a repeated query term counts once, and a term no document holds
+// adds nothing to either side.
+func TestBTreeIndexInformation(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	idx.SetRelevance(relevance.NewBM25[int, float64]())
 	for key, doc := range map[int]string{
@@ -776,23 +778,24 @@ func TestBTreeIndexCoverage(t *testing.T) {
 			t.Fatalf("Insert(%d) = %v, want nil", key, err)
 		}
 	}
-	if got := idx.Coverage("deploy friday", 1); got != 1 {
-		t.Errorf("Coverage(both terms held) = %v, want 1", got)
-	}
-	common, rare := idx.Coverage("deploy friday", 2), idx.Coverage("deploy friday", 4)
-	if !(common > 0 && common < rare && rare < 1) {
-		t.Errorf("Coverage(common term only) = %v, Coverage(rarer term only) = %v, want 0 < common < rare < 1", common, rare)
-	}
-	if got := idx.Coverage("deploy friday", 3) + idx.Coverage("deploy friday", 4); got != 1 {
-		t.Errorf("Coverage of the two halves sums to %v, want 1: the shares partition the query's mass", got)
-	}
-	for name, got := range map[string]float64{
-		"a key not indexed":   idx.Coverage("deploy friday", 9),
-		"a key holding none":  idx.Coverage("lunch", 1),
-		"unknown query terms": idx.Coverage("zebra", 1),
+	deploy, friday := -math.Log2(3.0/4), 1.0
+	for _, tc := range []struct {
+		name        string
+		query       string
+		key         int
+		total, held float64
+	}{
+		{"both terms held", "deploy friday", 1, deploy + friday, deploy + friday},
+		{"the common term only", "deploy friday", 2, deploy + friday, deploy},
+		{"the rarer term only", "deploy friday", 4, deploy + friday, friday},
+		{"a key not indexed", "deploy friday", 9, deploy + friday, 0},
+		{"a repeated term", "friday friday", 4, friday, friday},
+		{"an unknown term", "friday zebra", 4, friday, friday},
+		{"only unknown terms", "zebra", 1, 0, 0},
 	} {
-		if got != 0 {
-			t.Errorf("Coverage(%s) = %v, want 0", name, got)
+		total, held := idx.Information(tc.query, tc.key)
+		if math.Abs(total-tc.total) > 1e-12 || math.Abs(held-tc.held) > 1e-12 {
+			t.Errorf("%s: Information = %v, %v, want %v, %v", tc.name, total, held, tc.total, tc.held)
 		}
 	}
 }

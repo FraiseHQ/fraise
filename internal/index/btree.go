@@ -23,6 +23,7 @@
 package index
 
 import (
+	"math"
 	"slices"
 	"sort"
 
@@ -420,33 +421,38 @@ func (idx *BTreeIndex[K, P]) KeyTerms(query string, keys []K) map[K]string {
 	return out
 }
 
-// Coverage reports how much of query key holds itself: the share of the idf
-// mass of the query's terms that some live document holds (the W of
-// Finalize) carried by the terms key holds, in [0, 1]. It is the
-// significance of a text match, the same breadth the relevance model folds
-// into the score, read for one document: 1 when key holds every term the
-// corpus knows, near 0 when it matched on a common word alone. A query whose
-// terms no document holds, or a key not indexed, has coverage 0. The window
-// is not consulted, as in KeyTerms: a document covers what it holds.
-func (idx *BTreeIndex[K, P]) Coverage(query string, key K) P {
-	var held, total P
+// Information reports, in bits, how much information query carries and how
+// much of it key holds. A term's information is its surprisal in the index,
+// −log₂(df/N): the bits of the event that a document picked at random holds
+// it, N being the live documents and df those holding the term, so a rare
+// term carries many bits and a term every document holds carries none. The
+// query carries the sum over its distinct terms that some live document
+// holds, and key holds the sum over those it holds itself; the difference is
+// the information in the terms key lacks. Summing assumes terms occur
+// independently. A term no live document holds has no estimate and is left
+// out of both, and a key not indexed holds 0. The window is not consulted,
+// as in KeyTerms: a document holds what it holds.
+func (idx *BTreeIndex[K, P]) Information(query string, key K) (total P, held P) {
+	n := float64(len(idx.documents))
 	probe := &postingList[K]{}
-	for _, term := range idx.relevance.Terms(idx.tokenizer.Tokenize(query)) {
+	seen := make(map[string]struct{})
+	for _, term := range idx.tokenizer.Tokenize(query) {
+		if _, dup := seen[term]; dup {
+			continue
+		}
+		seen[term] = struct{}{}
 		probe.term = term
 		list, ok := idx.tree.Find(probe)
 		if !ok || list.live == 0 {
 			continue
 		}
-		weight := idx.relevance.Weight(list.live, len(idx.documents))
-		total += weight
+		bits := P(-math.Log2(float64(list.live) / n))
+		total += bits
 		if i, found := list.find(key, idx.compare); found && list.entries[i].tf > 0 {
-			held += weight
+			held += bits
 		}
 	}
-	if total == 0 {
-		return 0
-	}
-	return held / total
+	return total, held
 }
 
 // Count reports the number of indexed documents.

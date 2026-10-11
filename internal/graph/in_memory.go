@@ -931,16 +931,20 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // contributions carry the BM25 × coverage mass and vector contributions the
 // similarity 1/(1+distance), so Score is bigger-is-better for every source.
 //
-// The vector similarity is weighted by how little the text found
-// (db.vector-boost): by 1 + boost × (1 − c), where c is the coverage of the
-// best text hit (see [index.BTreeIndex.Coverage]), and 0 when the text index
-// found nothing. A query whose words a fact holds outright is answered by
-// the text index and the embedding only breaks ties; a query phrased in
-// words the memory does not use leaves the best text hit covering little of
-// it, and the embedding, which does not need the words, carries the ranking.
-// The weight is one number per query, applied to every vector sighting, so
-// the vector ranking's order is kept and only its mass against the text's
-// moves.
+// The vector similarity is weighted by the information the text did not
+// find: by I_q / I_hit = 1 + (I_q − I_hit) / I_hit, where I_q is the
+// information in the query's words and I_hit the part of it the best text
+// hit holds (see [index.BTreeIndex.Information]), so the embedding is
+// credited with the bits the text missed per bit it found. A query whose
+// words the best hit holds outright weighs the embedding at 1, as it always
+// has, and the text leads; a hit holding half the query's information
+// doubles it; one holding a quarter quadruples it, and the embedding, which
+// does not need the words, carries the ranking. The weight is a ratio of
+// information, so it reads the same for a long question as for a short one,
+// and it has no constant to tune. With no text hit the embedding is the only
+// seed and its weight is 1. The weight is one number per query, applied to
+// every vector sighting, so the vector ranking's order is kept and only its
+// mass against the text's moves.
 //
 // Each source is asked for pool candidates, at least max(seed-size, top), so
 // the text ranking is never cut off before top, and every candidate read is
@@ -963,14 +967,16 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	seeded := make(map[K]struct{}, seedK)
 
 	var textSeeds, vectorSeeds int
-	var coverage P
+	weight := P(1)
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
 		query := stopwords.CleanContent(strings.Join(keywords, " "), textLanguage)
 		if keys, scores, err := g.GetTextIndex().Search(query, pool); err == nil {
 			textSeeds = len(keys)
 			if len(keys) > 0 && !vector.Empty() {
-				coverage = g.textIndex.Coverage(query, keys[0])
+				if total, held := g.textIndex.Information(query, keys[0]); held > 0 {
+					weight = total / held
+				}
 			}
 			// The reading's sightings share one array, a candidate's first a
 			// capacity-one window onto it, so a pool-deep reading allocates
@@ -1004,10 +1010,6 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 			vectorSeeds = len(keys)
 			// One array for the reading, as for the text index's.
 			sightings := make([]scoring.Contribution[K, P], len(keys))
-			weight := P(1)
-			if boost := g.config.DB.VectorBoost; boost > 0 {
-				weight += P(boost) * (1 - coverage)
-			}
 			for rank, key := range keys {
 				sightings[rank] = scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: weight / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1}
 				if candidates[key] == nil {

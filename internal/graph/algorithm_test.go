@@ -41,11 +41,9 @@ func testConfig() *config.ConfigSet {
 	cfg.DB.VectorSearch.NumberTrees = 4
 	cfg.DB.VectorSearch.Seed = 4
 	// The pins below describe the plain pipeline, one fact scored on its own
-	// terms, the slots down the ranking and the two lanes summed as they
-	// score; the window, the spread and the vector boost, all on by default,
-	// have their own tests, which turn them on explicitly.
+	// terms and the slots down the ranking; the window and the spread, both
+	// on by default, have their own tests, which turn them on explicitly.
 	cfg.DB.WindowGamma = -1
-	cfg.DB.VectorBoost = -1
 	cfg.DB.Aggregate.Name = config.AggregateNone
 	return cfg
 }

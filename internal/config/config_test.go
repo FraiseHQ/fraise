@@ -304,19 +304,16 @@ func TestConfigSet_WindowAndAggregate(t *testing.T) {
 	if c.DB.WindowGamma != 0.3 {
 		t.Errorf("DB.WindowGamma default: got %v, want 0.3", c.DB.WindowGamma)
 	}
-	if c.DB.VectorBoost != 3 {
-		t.Errorf("DB.VectorBoost default: got %v, want 3", c.DB.VectorBoost)
-	}
 	want := config.Aggregate{Name: config.AggregateSpread, Pool: 60, Spread: 2, Ratio: 0.5, Cap: 1, MinSize: 3, MaxGroups: 2}
 	if c.DB.Aggregate != want {
 		t.Errorf("DB.Aggregate default: got %+v, want %+v", c.DB.Aggregate, want)
 	}
 
 	off := config.New()
-	if err := off.Parse([]string{"-config", missingConfig(t), "-window-gamma", "-1", "-vector-boost", "-1", "-aggregate", "none"}); !errors.Is(err, config.ErrMissingFile) {
+	if err := off.Parse([]string{"-config", missingConfig(t), "-window-gamma", "-1", "-aggregate", "none"}); !errors.Is(err, config.ErrMissingFile) {
 		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
 	}
-	if off.DB.WindowGamma != -1 || off.DB.VectorBoost != -1 || off.DB.Aggregate.Name != config.AggregateNone {
+	if off.DB.WindowGamma != -1 || off.DB.Aggregate.Name != config.AggregateNone {
 		t.Errorf("off: got gamma %v, aggregate %q, want -1 and none to survive Parse", off.DB.WindowGamma, off.DB.Aggregate.Name)
 	}
 	zero := config.New()
