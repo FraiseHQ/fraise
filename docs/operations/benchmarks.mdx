@@ -43,13 +43,13 @@ Both start the server as the binary does, on `tests/perf/fraise.config.toml`, an
 
 ## The gates
 
-A gate is a pytest test in `tests/perf`, one file per Go package: `server_test.py` judges `pkg/server`'s benchmarks, `graph_test.py` those of `internal/graph`, and so on. Its marker names the benchmarks and how to run them, and the test asserts its limits on the comparison it is handed:
+A gate is a pytest test in `tests/perf`, one file per Go package: `server_test.py` judges `pkg/server`'s benchmarks, `graph_test.py` those of `internal/graph`, and so on. Its marker names the benchmarks and how to run them, and the test checks its limits on the comparison it is handed, failing with the rows that broke them:
 
 ```python
 @pytest.mark.bench("./internal/graph", "BenchmarkSearch")
-def test_allocations_do_not_grow(comparison):
+def test_allocations_do_not_grow(comparison, fail_regressed):
     grown = [row for row in comparison if row.unit == "allocs/op" and row.change >= 0.05]
-    assert not grown
+    fail_regressed(grown)
 ```
 
 Each row is one benchmark and unit of [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat)'s comparison of the baseline with this run: each side's median, and for a timed unit a Mann-Whitney U test, so a difference counts only at p < 0.05. A unit the benchmark declares exact counts any difference. benchstat names units in base units, so time per operation is `sec/op`.
@@ -65,7 +65,7 @@ Retrieval and allocations are counted, not timed, so they are the same on any ma
 
 ## Reading the report
 
-Every gate run posts one comment on its pull request, updated on every push, whatever the verdict. It opens with the verdict, lists the gates that failed, with how to [accept](#accepting-a-regression) what they caught, and the regressions accepted, then has a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone. The raw `go test` output is attached to the run as the `benchmarks` artifact.
+Every gate run posts one comment on its pull request, updated on every push, whatever the verdict. It opens with the verdict, then a table per gate that failed, of the benchmarks that broke its limit, with how to [accept](#accepting-a-regression) what they caught, the same for the regressions accepted and the slowdowns, then a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone. The raw `go test` output is attached to the run as the `benchmarks` artifact.
 
 ## Accepting a regression
 
