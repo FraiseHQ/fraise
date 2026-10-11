@@ -51,8 +51,7 @@ const (
 // Scorer folds one candidate's contributions into its relevance score;
 // higher wins. Search folds each seed's own contributions before any
 // traversal (fixing the seed masses the traversal aggregates), then every
-// candidate's full list, and with the score cutoff on it refolds the ranked
-// hits. One instance is shared by every concurrent search on the graph, so
+// candidate's full list. One instance is shared by every concurrent search on the graph, so
 // implementations must be pure: no mutation of the slice, no mutable state,
 // same input same output.
 //

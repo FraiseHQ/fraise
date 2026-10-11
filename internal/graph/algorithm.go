@@ -37,15 +37,14 @@ const (
 )
 
 // Algorithm is the common root of the graph algorithms. Run executes the
-// algorithm on g; the result is a TraversalResult for a Traversal and a
-// RankingResult for a Ranking.
+// algorithm on g; the result is a TraversalResult for a Traversal.
 type Algorithm[K comparable, P float32 | float64] interface {
 	Run(g Graph[K, P]) (AlgorithmResult, error)
 }
 
 // AlgorithmResult is what [Algorithm.Run] returns: a [TraversalResult] for a
-// [Traversal] and a [RankingResult] for a [Ranking]. It has no methods, so the
-// caller type-asserts to the result its algorithm produces.
+// [Traversal]. It has no methods, so the caller type-asserts to the result its
+// algorithm produces.
 type AlgorithmResult interface {
 }
 
@@ -71,14 +70,6 @@ type TraversalResult[K comparable] struct {
 	Depth map[K]int
 }
 
-// RankingResult captures the outcome of a whole-graph ranking.
-type RankingResult[K comparable, P float32 | float64] struct {
-	AlgorithmResult
-
-	// Scores maps each vertex to its computed score.
-	Scores map[K]P
-}
-
 // Traversal explores a graph from a source vertex, in an order defined by the
 // implementation: BFS visits every reachable vertex breadth-first, and
 // ExcessTraversal only the source's anchors and their members. K is the vertex
@@ -97,13 +88,4 @@ type Traversal[K comparable, P float32 | float64] interface {
 	// per-run state, so each walk can set its own source and run on its own
 	// instance instead of mutating a shared one.
 	Clone() Traversal[K, P]
-}
-
-// Ranking scores vertices from the graph's global structure rather than from a
-// single source (PageRank and other centralities).
-type Ranking[K comparable, P float32 | float64] interface {
-	Algorithm[K, P]
-
-	// rank scores the vertices of g, keyed by vertex.
-	rank(g Graph[K, P]) (map[K]P, error)
 }
