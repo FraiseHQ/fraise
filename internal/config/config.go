@@ -155,9 +155,6 @@ type DBConfig struct {
 	// graph search traversal algorithm
 	SearchAlgorithm SearchAlgorithm `toml:"search-algorithm"`
 
-	// graph search ranking boost (none, pagerank)
-	RankingAlgorithm RankingAlgorithm `toml:"ranking-algorithm"`
-
 	// relevance fold (excess, rrf)
 	ScoringAlgorithm ScoringAlgorithm `toml:"scoring-algorithm"`
 
@@ -200,24 +197,6 @@ type RelevanceModel struct {
 	// name (bm25, matchcount): the text index's relevance model — how a
 	// document's match against the query becomes a number
 	Name string `toml:"name"`
-}
-
-// RankingAlgorithm is the db.ranking-algorithm table: the global boost
-// applied to relevance, one of [RankingAlgorithms], and the PageRank
-// parameters, which apply only when that boost is pagerank.
-type RankingAlgorithm struct {
-	// none or pagerank
-	Name string `toml:"name"`
-
-	// PageRank probability of following an edge (used when
-	// ranking-algorithm is pagerank)
-	PageRankDamping float64 `toml:"pagerank-damping"`
-
-	// PageRank iteration cap
-	PageRankMaxIter int `toml:"pagerank-max-iter"`
-
-	// PageRank convergence threshold on the score delta
-	PageRankTol float64 `toml:"pagerank-tol"`
 }
 
 // Aggregate is the db.aggregate table: how a recall spends its top slots
@@ -321,12 +300,8 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
-	flagSet.StringVar(&config.DB.RankingAlgorithm.Name, "ranking-algorithm", DefaultRankingAlgorithm, "Graph search ranking boost")
 	flagSet.StringVar(&config.DB.ScoringAlgorithm.Name, "scoring-algorithm", DefaultScoringAlgorithm, "Relevance fold (excess, rrf)")
 	flagSet.StringVar(&config.DB.RelevanceModel.Name, "relevance-model", DefaultRelevanceModel, "Text-index relevance model (bm25, matchcount)")
-	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankDamping, "pagerank-damping", DefaultPageRankDamping, "PageRank damping factor")
-	flagSet.IntVar(&config.DB.RankingAlgorithm.PageRankMaxIter, "pagerank-max-iter", DefaultPageRankMaxIter, "PageRank iteration cap")
-	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankTol, "pagerank-tol", DefaultPageRankTol, "PageRank convergence threshold")
 
 	// vector search
 	flagSet.IntVar(&config.DB.VectorSearch.ProjectionDimension, "rptree-projection-dimension", DefaultProjectionDimention, "RP Tree Projection dimension")
@@ -463,12 +438,8 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)
-	Adjust(&c.DB.RankingAlgorithm.Name, DefaultRankingAlgorithm)
 	Adjust(&c.DB.ScoringAlgorithm.Name, DefaultScoringAlgorithm)
 	Adjust(&c.DB.RelevanceModel.Name, DefaultRelevanceModel)
-	Adjust(&c.DB.RankingAlgorithm.PageRankDamping, DefaultPageRankDamping)
-	Adjust(&c.DB.RankingAlgorithm.PageRankMaxIter, DefaultPageRankMaxIter)
-	Adjust(&c.DB.RankingAlgorithm.PageRankTol, DefaultPageRankTol)
 
 	// vector search
 	Adjust(&c.DB.VectorSearch.ProjectionDimension, DefaultProjectionDimention)

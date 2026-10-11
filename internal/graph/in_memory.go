@@ -57,13 +57,12 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 	textIndex   *index.BTreeIndex[K, P]
 	vectorIndex *index.RPTreeIndex[K, P]
 
-	// traversal, ranking and scorer are the pluggable search algorithms,
-	// installed by db.Start from configuration. A nil traversal turns the
-	// graph channel off (text and vector search only) and a nil ranking
-	// applies no boost. scorer is never nil: NewGraph installs the
-	// ExcessScorer, since candidates cannot be ranked without one.
+	// traversal and scorer are the pluggable search algorithms, installed by
+	// db.Start from configuration. A nil traversal turns the graph channel
+	// off (text and vector search only). scorer is never nil: NewGraph
+	// installs the ExcessScorer, since candidates cannot be ranked without
+	// one.
 	traversal Traversal[K, P]
-	ranking   Ranking[K, P]
 	scorer    scoring.Scorer[K, P]
 
 	hasher hash.Hasher[K, string]
@@ -79,15 +78,9 @@ func (g *InMemoryGraph[K, P]) SetTraversal(t Traversal[K, P]) {
 	g.traversal = t
 }
 
-// SetRanking installs the global ranking Search boosts scores with, such as
-// PageRank.
-func (g *InMemoryGraph[K, P]) SetRanking(r Ranking[K, P]) {
-	g.ranking = r
-}
-
 // SetScorer installs the scorer Search folds candidate contributions with.
-// nil is ignored: a nil traversal or ranking switches a stage off, but a
-// graph without a scorer cannot rank at all.
+// nil is ignored: a nil traversal switches the graph channel off, but a graph
+// without a scorer cannot rank at all.
 func (g *InMemoryGraph[K, P]) SetScorer(s scoring.Scorer[K, P]) {
 	if s == nil {
 		return
@@ -97,8 +90,7 @@ func (g *InMemoryGraph[K, P]) SetScorer(s scoring.Scorer[K, P]) {
 
 // NewGraph returns an empty graph with its indexes, relevance model and
 // hasher configured from cfg and the [scoring.ExcessScorer] installed.
-// [InMemoryGraph.SetTraversal] and [InMemoryGraph.SetRanking] install the
-// traversal and ranking.
+// [InMemoryGraph.SetTraversal] installs the traversal.
 func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGraph[K, P] {
 	// The tokenizer and relevance model must be installed before the first
 	// insert. Stemming lets a keyword find other inflections of the same
@@ -252,9 +244,9 @@ func (g *InMemoryGraph[K, P]) dropRelationship(key K) {
 
 // unlink removes the edge source -> target from both adjacency views and drops
 // any row it leaves empty. A row's presence is what makes a node a vertex to
-// anything that enumerates the views (PageRank collects its vertices from
-// them), so a node whose last edge goes must leave both views with it, or it
-// is ranked as a dangling vertex instead of left out as isolated.
+// anything that enumerates the views, so a node whose last edge goes must
+// leave both views with it, or it is counted as a dangling vertex instead of
+// left out as isolated.
 func (g *InMemoryGraph[K, P]) unlink(source, target K) {
 	delete(g.nodeToTargets[source], target)
 	if len(g.nodeToTargets[source]) == 0 {
@@ -403,8 +395,7 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 }
 
 // Search implements [Graph.Search]. It collects candidates, folds each with the
-// installed scorer and boosts by the installed ranking, applies the time window
-// and recency decay, keeps the top hits (score descending, then key ascending,
+// installed scorer, applies the time window and recency decay, keeps the top hits (score descending, then key ascending,
 // so identical queries return identical hits) and spends the top slots across
 // the facets the ranking spans rather than down it (see aggregate).
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (Result[K, P], error) {
@@ -426,8 +417,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	}
 
 	// B. Scoring: the scorer folds each candidate's contributions into one
-	// relevance score given the background, and the installed ranker (if any)
-	// boosts the result.
+	// relevance score given the background.
 	scores := make(map[K]P, len(candidates))
 	keys := make([]K, 0, len(candidates))
 	scorer := g.scorer.WithBackground(background)
@@ -435,7 +425,6 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		scores[key] = scorer.Score(contributions)
 		keys = append(keys, key)
 	}
-	g.boost(scores)
 
 	// C. Time window and recency decay.
 	kept, ranked := g.timeFilter(keys, scores, since, until)
@@ -882,27 +871,6 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 		}
 	}
 	return background
-}
-
-// boost multiplies each score by 1 + n·s, where s is the node's score from the
-// installed ranking and n the number of nodes it ranked, so n·s is 1 for an
-// average node. Scores only grow: a node the ranking did not score (an
-// isolated one, say) keeps its score, and a nil ranking boosts nothing.
-func (g *InMemoryGraph[K, P]) boost(scores map[K]P) {
-	if g.ranking == nil {
-		return
-	}
-	result, err := g.ranking.Run(g)
-	r, _ := result.(RankingResult[K, P])
-	if err != nil || len(r.Scores) == 0 {
-		return
-	}
-	n := P(len(r.Scores))
-	for key := range scores {
-		if s, ok := r.Scores[key]; ok {
-			scores[key] *= 1 + s*n
-		}
-	}
 }
 
 // matchesFilter reports whether key passes an anchor filter: always when

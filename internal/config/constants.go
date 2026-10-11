@@ -113,20 +113,6 @@ const (
 	// available for comparison runs.
 	DefaultRelevanceModel string = RelevanceBM25
 
-	// DefaultRankingAlgorithm is the global ranking boost applied to relevance
-	// scores; "none" disables it (the alternative is "pagerank").
-	DefaultRankingAlgorithm string = RankingNone
-
-	// DefaultPageRankDamping is the PageRank damping factor (used when ranking is
-	// "pagerank").
-	DefaultPageRankDamping float64 = 0.85
-
-	// DefaultPageRankMaxIter caps the number of PageRank power-iteration steps.
-	DefaultPageRankMaxIter int = 100
-
-	// DefaultPageRankTol is the convergence threshold that stops PageRank early.
-	DefaultPageRankTol float64 = 1e-6
-
 	// DefaultTop is how many ranked results a recall returns when no top clause
 	// is given.
 	DefaultTop int = 10

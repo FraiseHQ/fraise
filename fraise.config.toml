@@ -52,12 +52,6 @@
 [db.search-algorithm]
 # name = "excess"             # none bfs excess
 
-[db.ranking-algorithm]
-# name = "none"               # none pagerank
-# pagerank-damping = 0.85
-# pagerank-max-iter = 100
-# pagerank-tol = 1e-6
-
 [db.scoring-algorithm]
 # name = "excess"             # excess rrf
 

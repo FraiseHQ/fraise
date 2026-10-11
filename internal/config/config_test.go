@@ -381,7 +381,6 @@ func TestParseRejectsUnknownDBFlags(t *testing.T) {
 		{"-precision", "float16"},
 		{"-hashing-function", "murmur"},
 		{"-search-algorithm", "dfs"},
-		{"-ranking-algorithm", "hits"},
 		{"-scoring-algorithm", "tfidf"},
 		{"-relevance-model", "tfidf"},
 	} {
@@ -408,7 +407,6 @@ func TestParseCanonicalisesDBFlags(t *testing.T) {
 		"-precision", "Float64",
 		"-hashing-function", "T1ha",
 		"-search-algorithm", "EXCESS",
-		"-ranking-algorithm", "PAGERANK",
 	}
 
 	if err := c.Parse(args); errors.Is(err, config.ErrInvalidValue) {
@@ -423,9 +421,6 @@ func TestParseCanonicalisesDBFlags(t *testing.T) {
 	}
 	if c.DB.SearchAlgorithm.Name != config.SearchExcess {
 		t.Errorf("DB.SearchAlgorithm.Name = %q, want %q", c.DB.SearchAlgorithm.Name, config.SearchExcess)
-	}
-	if c.DB.RankingAlgorithm.Name != config.RankingPageRank {
-		t.Errorf("DB.RankingAlgorithm.Name = %q, want %q", c.DB.RankingAlgorithm.Name, config.RankingPageRank)
 	}
 }
 

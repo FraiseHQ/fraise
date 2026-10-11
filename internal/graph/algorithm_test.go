@@ -44,7 +44,7 @@ func testConfig() *config.ConfigSet {
 }
 
 // fakeGraph is a minimal Graph implementation used to unit-test the graph
-// algorithms (BFS, PageRank) against arbitrary topologies that the typed
+// algorithms (BFS) against arbitrary topologies that the typed
 // Fact->Entity relationships cannot express (cycles, chains). Get, the edge
 // views (AdjacencyMap, PredecessorMap, Neighbours) and the counts carry real
 // behaviour; the rest are inert stubs.

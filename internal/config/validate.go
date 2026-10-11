@@ -84,13 +84,6 @@ const (
 	RelevanceMatchCount string = "matchcount"
 )
 
-// db.ranking-algorithm.name — the global boost applied to relevance scores;
-// "none" disables it.
-const (
-	RankingNone     string = "none"
-	RankingPageRank string = "pagerank"
-)
-
 // The values each setting accepts, in the order the error message lists them.
 // They are the single source of truth for the accepted set, and consumers
 // switch on the same constants. A value added here needs a case in each of
@@ -110,8 +103,6 @@ var (
 	ScoringAlgorithms = []string{ScoringExcess, ScoringRRF}
 
 	RelevanceModels = []string{RelevanceBM25, RelevanceMatchCount}
-
-	RankingAlgorithms = []string{RankingNone, RankingPageRank}
 )
 
 // Canonical rewrites *v to whichever accepted value it matches
@@ -160,7 +151,6 @@ func (c *ConfigSet) validate() error {
 		{&c.DB.Precision, "db.precision", Precisions},
 		{&c.DB.HashingFunction.Name, "db.hashing-function.name", HashingFunctions},
 		{&c.DB.SearchAlgorithm.Name, "db.search-algorithm.name", SearchAlgorithms},
-		{&c.DB.RankingAlgorithm.Name, "db.ranking-algorithm.name", RankingAlgorithms},
 		{&c.DB.ScoringAlgorithm.Name, "db.scoring-algorithm.name", ScoringAlgorithms},
 		{&c.DB.RelevanceModel.Name, "db.relevance-model.name", RelevanceModels},
 	}

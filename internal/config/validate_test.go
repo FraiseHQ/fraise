@@ -115,7 +115,6 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.precision", func(c *ConfigSet, v string) { c.DB.Precision = v }},
 		{"db.hashing-function.name", func(c *ConfigSet, v string) { c.DB.HashingFunction.Name = v }},
 		{"db.search-algorithm.name", func(c *ConfigSet, v string) { c.DB.SearchAlgorithm.Name = v }},
-		{"db.ranking-algorithm.name", func(c *ConfigSet, v string) { c.DB.RankingAlgorithm.Name = v }},
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 		{"db.aggregate.pool", func(c *ConfigSet, _ string) { c.DB.Aggregate.Pool = 0 }},
@@ -271,7 +270,6 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 	c.DB.Precision = "Float64"
 	c.DB.HashingFunction.Name = "T1HA"
 	c.DB.SearchAlgorithm.Name = "EXCESS"
-	c.DB.RankingAlgorithm.Name = "PageRank"
 	c.DB.ScoringAlgorithm.Name = "RRF"
 	c.DB.RelevanceModel.Name = "BM25"
 
@@ -285,7 +283,6 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 		{"db.precision", c.DB.Precision, PrecisionFloat64},
 		{"db.hashing-function.name", c.DB.HashingFunction.Name, HashingT1ha},
 		{"db.search-algorithm.name", c.DB.SearchAlgorithm.Name, SearchExcess},
-		{"db.ranking-algorithm.name", c.DB.RankingAlgorithm.Name, RankingPageRank},
 		{"db.scoring-algorithm.name", c.DB.ScoringAlgorithm.Name, ScoringRRF},
 		{"db.relevance-model.name", c.DB.RelevanceModel.Name, RelevanceBM25},
 	} {
