@@ -2021,3 +2021,79 @@ func TestInMemoryGraphSearchGroupSitsAtItsRank(t *testing.T) {
 		t.Errorf("second hit = key %q with %d members, want the deploy group behind the better fact", group.Key, len(group.Members))
 	}
 }
+
+// vectorBoostGraph stores two facts, one whose words answer the query and one
+// found only by its embedding, nearest to the query vector.
+func vectorBoostGraph(t *testing.T, boost float64) (*graph.InMemoryGraph[uint64, float64], graph.Fact[uint64]) {
+	t.Helper()
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.VectorBoost = boost
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	text := mkFact(g, "the deploy runs friday", now)
+	mustSet(t, g, text)
+	vector := mkFact(g, "release scheduled end of week", now)
+	mustSet(t, g, vector)
+	for fact, v := range map[graph.Fact[uint64]][]float64{text: {0, 1}, vector: {1, 0}} {
+		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](v)); err != nil {
+			t.Fatalf("vector Insert = %v, want nil", err)
+		}
+	}
+	return g, vector
+}
+
+// vectorScore runs a recall and returns the vector contribution of the fact
+// found by its embedding.
+func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords []string, key uint64) float64 {
+	t.Helper()
+	nodes, _, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), nil, nil, 0, 10, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	for i, node := range nodes {
+		if (*node).Key() != key {
+			continue
+		}
+		for _, c := range contributions[i] {
+			if c.Src == scoring.SrcVector {
+				return c.Score
+			}
+		}
+	}
+	t.Fatalf("Search = %v, want the embedding's fact among the hits with a vector contribution", values(nodes))
+	return 0
+}
+
+// TestInMemoryGraphSearchBoostsVectorsOnWeakText pins db.vector-boost: the
+// vector similarity is weighted by 1 + boost × (1 − c), c the coverage of the
+// best text hit. A best hit holding every query word the memory knows
+// (c = 1) leaves the embedding at its plain similarity; one holding half of
+// them, "deploy" of "deploy release", each word in one fact, raises it by
+// half the boost; words the memory holds none of, so no text hit at all,
+// raise it by the full boost; and with the boost off nothing moves whatever
+// the words.
+func TestInMemoryGraphSearchBoostsVectorsOnWeakText(t *testing.T) {
+	off, key := vectorBoostGraph(t, -1)
+	plain := vectorScore(t, off, []string{"deploy", "friday"}, key.Key())
+	if got := vectorScore(t, off, []string{"zebra"}, key.Key()); got != plain {
+		t.Errorf("boost off: vector score %v on unknown words, want the plain %v", got, plain)
+	}
+
+	on, key := vectorBoostGraph(t, 1)
+	strong := vectorScore(t, on, []string{"deploy", "friday"}, key.Key())
+	half := vectorScore(t, on, []string{"deploy", "release"}, key.Key())
+	none := vectorScore(t, on, []string{"zebra"}, key.Key())
+	if math.Abs(strong-plain) > 1e-12 {
+		t.Errorf("full coverage: vector score %v, want the plain %v: the words answered the query", strong, plain)
+	}
+	if math.Abs(half-1.5*plain) > 1e-12 {
+		t.Errorf("half coverage: vector score %v, want 1.5 times the plain %v at boost 1", half, plain)
+	}
+	if !(strong < half && half < none) {
+		t.Errorf("vector scores %v (full), %v (half), %v (none), want them rising as the text covers less", strong, half, none)
+	}
+	if math.Abs(none-2*plain) > 1e-12 {
+		t.Errorf("no text hit: vector score %v, want twice the plain %v at boost 1", none, plain)
+	}
+}

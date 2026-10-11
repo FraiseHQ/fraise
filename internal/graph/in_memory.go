@@ -931,6 +931,17 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // contributions carry the BM25 × coverage mass and vector contributions the
 // similarity 1/(1+distance), so Score is bigger-is-better for every source.
 //
+// The vector similarity is weighted by how little the text found
+// (db.vector-boost): by 1 + boost × (1 − c), where c is the coverage of the
+// best text hit (see [index.BTreeIndex.Coverage]), and 0 when the text index
+// found nothing. A query whose words a fact holds outright is answered by
+// the text index and the embedding only breaks ties; a query phrased in
+// words the memory does not use leaves the best text hit covering little of
+// it, and the embedding, which does not need the words, carries the ranking.
+// The weight is one number per query, applied to every vector sighting, so
+// the vector ranking's order is kept and only its mass against the text's
+// moves.
+//
 // Each source is asked for pool candidates, at least max(seed-size, top), so
 // the text ranking is never cut off before top, and every candidate read is
 // pooled on its own evidence. The seeds, the keys the traversal expands from,
@@ -952,10 +963,15 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	seeded := make(map[K]struct{}, seedK)
 
 	var textSeeds, vectorSeeds int
+	var coverage P
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
-		if keys, scores, err := g.GetTextIndex().Search(stopwords.CleanContent(strings.Join(keywords, " "), textLanguage), pool); err == nil {
+		query := stopwords.CleanContent(strings.Join(keywords, " "), textLanguage)
+		if keys, scores, err := g.GetTextIndex().Search(query, pool); err == nil {
 			textSeeds = len(keys)
+			if len(keys) > 0 && !vector.Empty() {
+				coverage = g.textIndex.Coverage(query, keys[0])
+			}
 			// The reading's sightings share one array, a candidate's first a
 			// capacity-one window onto it, so a pool-deep reading allocates
 			// once and a later append copies out instead of overwriting the
@@ -988,8 +1004,12 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 			vectorSeeds = len(keys)
 			// One array for the reading, as for the text index's.
 			sightings := make([]scoring.Contribution[K, P], len(keys))
+			weight := P(1)
+			if boost := g.config.DB.VectorBoost; boost > 0 {
+				weight += P(boost) * (1 - coverage)
+			}
 			for rank, key := range keys {
-				sightings[rank] = scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1}
+				sightings[rank] = scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: weight / (P(1) + distances[rank]), Rank: scoring.ClampRank(rank), Count: 1}
 				if candidates[key] == nil {
 					candidates[key] = sightings[rank : rank+1 : rank+1]
 				} else {

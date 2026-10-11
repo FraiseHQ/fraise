@@ -420,6 +420,35 @@ func (idx *BTreeIndex[K, P]) KeyTerms(query string, keys []K) map[K]string {
 	return out
 }
 
+// Coverage reports how much of query key holds itself: the share of the idf
+// mass of the query's terms that some live document holds (the W of
+// Finalize) carried by the terms key holds, in [0, 1]. It is the
+// significance of a text match, the same breadth the relevance model folds
+// into the score, read for one document: 1 when key holds every term the
+// corpus knows, near 0 when it matched on a common word alone. A query whose
+// terms no document holds, or a key not indexed, has coverage 0. The window
+// is not consulted, as in KeyTerms: a document covers what it holds.
+func (idx *BTreeIndex[K, P]) Coverage(query string, key K) P {
+	var held, total P
+	probe := &postingList[K]{}
+	for _, term := range idx.relevance.Terms(idx.tokenizer.Tokenize(query)) {
+		probe.term = term
+		list, ok := idx.tree.Find(probe)
+		if !ok || list.live == 0 {
+			continue
+		}
+		weight := idx.relevance.Weight(list.live, len(idx.documents))
+		total += weight
+		if i, found := list.find(key, idx.compare); found && list.entries[i].tf > 0 {
+			held += weight
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return held / total
+}
+
 // Count reports the number of indexed documents.
 func (idx *BTreeIndex[K, P]) Count() int {
 	return len(idx.documents)

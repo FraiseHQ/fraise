@@ -756,3 +756,43 @@ func TestBTreeIndexKeyTerms(t *testing.T) {
 		t.Errorf("KeyTerms = %v, want %v", got, want)
 	}
 }
+
+// TestBTreeIndexCoverage pins the significance a recall's vector weight is
+// read from: the share of the query's idf mass a document holds itself, 1
+// for a document holding every term, a fraction weighted towards the rare
+// term for one holding some, 0 for one holding none, for a key not indexed,
+// and for a query whose terms no document holds. A rare term weighs more
+// than a common one, so matching it alone covers more of the query.
+func TestBTreeIndexCoverage(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetRelevance(relevance.NewBM25[int, float64]())
+	for key, doc := range map[int]string{
+		1: "deploy friday",
+		2: "deploy monday",
+		3: "deploy tuesday",
+		4: "friday lunch",
+	} {
+		if err := idx.Insert(key, doc); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	if got := idx.Coverage("deploy friday", 1); got != 1 {
+		t.Errorf("Coverage(both terms held) = %v, want 1", got)
+	}
+	common, rare := idx.Coverage("deploy friday", 2), idx.Coverage("deploy friday", 4)
+	if !(common > 0 && common < rare && rare < 1) {
+		t.Errorf("Coverage(common term only) = %v, Coverage(rarer term only) = %v, want 0 < common < rare < 1", common, rare)
+	}
+	if got := idx.Coverage("deploy friday", 3) + idx.Coverage("deploy friday", 4); got != 1 {
+		t.Errorf("Coverage of the two halves sums to %v, want 1: the shares partition the query's mass", got)
+	}
+	for name, got := range map[string]float64{
+		"a key not indexed":   idx.Coverage("deploy friday", 9),
+		"a key holding none":  idx.Coverage("lunch", 1),
+		"unknown query terms": idx.Coverage("zebra", 1),
+	} {
+		if got != 0 {
+			t.Errorf("Coverage(%s) = %v, want 0", name, got)
+		}
+	}
+}

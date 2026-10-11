@@ -19,7 +19,7 @@ A recall pulls candidates from each source it can use, each carrying its raw ret
 | Source | Mass it carries |
 |---|---|
 | text index | BM25 $\times$ coverage: the share of the query's idf mass the fact matched, so a fact matching every query term keeps its full BM25 score and a partial match is discounted by the informativeness of the terms it missed |
-| vector index | $1 / (1 + \text{distance})$ similarity |
+| vector index | $1 / (1 + \text{distance})$ similarity, weighted up when the best text hit covers little of the query ([`db.vector-boost`](/docs/configuration/reference/database#vector-boost)) |
 | named anchors, on a recall with no term or vector | a unit mass for each named anchor the fact is filed under |
 
 A fact found by more than one source carries the sum of their masses.

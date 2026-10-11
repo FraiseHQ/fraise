@@ -180,6 +180,13 @@ const (
 	// 0 means this default.
 	DefaultWindowGamma float64 = 0.3
 
+	// DefaultVectorBoost is the extra weight vector similarity gets when the
+	// best text hit covers none of the query (DBConfig.VectorBoost): one, so
+	// an embedding counts double when the words found nothing and as it
+	// always has when they found everything. A negative value turns the
+	// boost off; 0 means this default.
+	DefaultVectorBoost float64 = 1
+
 	// DefaultAggregate spreads a flat ranking's slots over its facets
 	// (DBConfig.Aggregate) with the thresholds below: the recall setting
 	// measured on LoCoMo by the retrieval quality benchmark, where with the

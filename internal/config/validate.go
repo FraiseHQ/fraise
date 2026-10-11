@@ -198,6 +198,12 @@ func (c *ConfigSet) validate() error {
 		return fmt.Errorf("%w: db.window-gamma = %v (accepted: 1 or less, negative is off)", ErrInvalidValue, w)
 	}
 
+	// A boost past 10 would let the embedding drown any text match; a
+	// negative boost is off.
+	if b := c.DB.VectorBoost; !(b <= 10) {
+		return fmt.Errorf("%w: db.vector-boost = %v (accepted: 10 or less, negative is off)", ErrInvalidValue, b)
+	}
+
 	// The aggregation thresholds each have a floor below which the
 	// aggregation could never run, would take no fact for a facet, or would
 	// group every single fact.

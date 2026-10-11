@@ -120,6 +120,7 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
 		{"db.window-gamma", func(c *ConfigSet, _ string) { c.DB.WindowGamma = 1.5 }},
+		{"db.vector-boost", func(c *ConfigSet, _ string) { c.DB.VectorBoost = 11 }},
 		{"db.aggregate.name", func(c *ConfigSet, v string) { c.DB.Aggregate.Name = v }},
 		{"db.aggregate.ratio", func(c *ConfigSet, _ string) { c.DB.Aggregate.Ratio = 2 }},
 		{"db.aggregate.pool", func(c *ConfigSet, _ string) { c.DB.Aggregate.Pool = 0 }},
