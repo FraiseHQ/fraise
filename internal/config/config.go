@@ -145,25 +145,15 @@ type DBConfig struct {
 	// more results than this is never starved of candidates.
 	SeedSize int `toml:"seed-size"`
 
-	// Score cutoff: a hit whose relevance is below this fraction of the best
-	// relevance in the ranked list is dropped, so a recall stops where the
-	// evidence does instead of filling to top. Relevance is the scorer's
-	// output before the ranking boost and recency decay; measured after
-	// decay, the bar would cut a fact with the same evidence as the best hit
-	// for being older. Only the length changes: order and scores are kept,
-	// and the best hit always clears its own bar, so a result that matched is
-	// never emptied. 0 (the default) is off, leaving the trade of recall for
-	// precision to the operator; validate rejects anything outside [0, 1].
-	MinScoreRatio float64 `toml:"min-score-ratio"`
+	// Aggregate is how a recall spends its top slots across the contexts its
+	// ranking spans (see [Aggregate]).
+	Aggregate Aggregate `toml:"aggregate"`
 
 	// database hashing function
 	HashingFunction HashingFunction `toml:"hashing-function"`
 
 	// graph search traversal algorithm
 	SearchAlgorithm SearchAlgorithm `toml:"search-algorithm"`
-
-	// graph search ranking boost (none, pagerank)
-	RankingAlgorithm RankingAlgorithm `toml:"ranking-algorithm"`
 
 	// relevance fold (excess, rrf)
 	ScoringAlgorithm ScoringAlgorithm `toml:"scoring-algorithm"`
@@ -209,22 +199,23 @@ type RelevanceModel struct {
 	Name string `toml:"name"`
 }
 
-// RankingAlgorithm is the db.ranking-algorithm table: the global boost
-// applied to relevance, one of [RankingAlgorithms], and the PageRank
-// parameters, which apply only when that boost is pagerank.
-type RankingAlgorithm struct {
-	// none or pagerank
-	Name string `toml:"name"`
+// Aggregate is the db.aggregate table: how a recall spends its top slots
+// across the facets its ranking spans. A facet is the finest anchor a
+// candidate is filed under beyond those the query named: on a graph filed by
+// session, the session. A broad question, "how many", "what types", "what did
+// we decide", has its evidence spread over many facets, and ten slots down a
+// ranking that leans on one of them hold that one ten times over; the slots
+// are filled one facet at a time instead, each facet's best first.
+type Aggregate struct {
+	// Pool is how many ranked candidates the slots are drawn from, from the
+	// top: the facets the slots are spread over come from it, so it is the
+	// breadth of the answer as much as a cost.
+	Pool int `toml:"pool"`
 
-	// PageRank probability of following an edge (used when
-	// ranking-algorithm is pagerank)
-	PageRankDamping float64 `toml:"pagerank-damping"`
-
-	// PageRank iteration cap
-	PageRankMaxIter int `toml:"pagerank-max-iter"`
-
-	// PageRank convergence threshold on the score delta
-	PageRankTol float64 `toml:"pagerank-tol"`
+	// Cap is how many fact hits one facet takes before the next facet gets
+	// its first; the facts deferred by it follow in rank order once every
+	// facet is served. 1 is the recall setting: as many facets as slots.
+	Cap int `toml:"cap"`
 }
 
 // VectorSearch is the db.vector-search table, shaping the vector index's forest
@@ -304,16 +295,13 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
-	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits whose relevance is below this fraction of the best hit's (0 = off)")
+	flagSet.IntVar(&config.DB.Aggregate.Pool, "aggregate-pool", DefaultAggregatePool, "Ranked candidates the slots are spread from")
+	flagSet.IntVar(&config.DB.Aggregate.Cap, "aggregate-cap", DefaultAggregateCap, "Fact hits one facet takes before the next facet gets its first")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
-	flagSet.StringVar(&config.DB.RankingAlgorithm.Name, "ranking-algorithm", DefaultRankingAlgorithm, "Graph search ranking boost")
 	flagSet.StringVar(&config.DB.ScoringAlgorithm.Name, "scoring-algorithm", DefaultScoringAlgorithm, "Relevance fold (excess, rrf)")
 	flagSet.StringVar(&config.DB.RelevanceModel.Name, "relevance-model", DefaultRelevanceModel, "Text-index relevance model (bm25, matchcount)")
-	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankDamping, "pagerank-damping", DefaultPageRankDamping, "PageRank damping factor")
-	flagSet.IntVar(&config.DB.RankingAlgorithm.PageRankMaxIter, "pagerank-max-iter", DefaultPageRankMaxIter, "PageRank iteration cap")
-	flagSet.Float64Var(&config.DB.RankingAlgorithm.PageRankTol, "pagerank-tol", DefaultPageRankTol, "PageRank convergence threshold")
 
 	// vector search
 	flagSet.IntVar(&config.DB.VectorSearch.ProjectionDimension, "rptree-projection-dimension", DefaultProjectionDimention, "RP Tree Projection dimension")
@@ -445,17 +433,13 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
-	// DB.MinScoreRatio needs no Adjust: its default, 0, is the zero value and
-	// means off, so an absent key and an explicit 0 already agree.
+	Adjust(&c.DB.Aggregate.Pool, DefaultAggregatePool)
+	Adjust(&c.DB.Aggregate.Cap, DefaultAggregateCap)
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)
-	Adjust(&c.DB.RankingAlgorithm.Name, DefaultRankingAlgorithm)
 	Adjust(&c.DB.ScoringAlgorithm.Name, DefaultScoringAlgorithm)
 	Adjust(&c.DB.RelevanceModel.Name, DefaultRelevanceModel)
-	Adjust(&c.DB.RankingAlgorithm.PageRankDamping, DefaultPageRankDamping)
-	Adjust(&c.DB.RankingAlgorithm.PageRankMaxIter, DefaultPageRankMaxIter)
-	Adjust(&c.DB.RankingAlgorithm.PageRankTol, DefaultPageRankTol)
 
 	// vector search
 	Adjust(&c.DB.VectorSearch.ProjectionDimension, DefaultProjectionDimention)

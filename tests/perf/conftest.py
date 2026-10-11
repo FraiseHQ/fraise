@@ -38,8 +38,10 @@ Gates sharing a marker share one measurement.
 
 A pull request labelled perf-regression-accepted with a ``Perf:`` line in its
 description marks every gate xfail with that line as the reason: its
-regressions still show, as accepted. The session ends by writing report.md,
-the verdict and benchstat's tables, which CI posts.
+regressions still show, as accepted. A gate fails through ``fail_regressed``
+with the rows that broke its limit, so the report shows them as a table. The
+session ends by writing report.md, the verdict, those tables and benchstat's,
+which CI posts.
 """
 
 import csv
@@ -64,6 +66,7 @@ _BENCHSTAT = [
 _ACCEPT_LABEL = "perf-regression-accepted"
 _RUNS = pytest.StashKey[dict]()
 _OUTCOMES = pytest.StashKey[list]()
+_REGRESSED = pytest.StashKey[list]()
 
 
 @dataclass(frozen=True)
@@ -145,7 +148,8 @@ def _quantity(value, unit):
         (b for b in scales if unit == f"{b}/op" or unit.endswith(f"-{b}")), None
     )
     if base is None or value == 0:
-        return f"{value:.4g}"
+        # A count is shown whole: 19,640 allocations, not 1.964e+04.
+        return f"{value:,.0f}" if value.is_integer() else f"{value:.4g}"
     factor, suffix = next(
         ((f, s) for f, s in reversed(scales[base]) if abs(value) >= f), scales[base][0]
     )
@@ -165,6 +169,21 @@ def _single(text):
     return rows
 
 
+def _compared(rows):
+    """Rows of benchstat's comparison as a markdown table, a significant change in bold."""
+    lines = [
+        "| benchmark | unit | baseline | this run | vs base | |",
+        "|---|---|---:|---:|---:|---|",
+    ]
+    for row in rows:
+        test = "exact" if row.p is None else f"p={row.p:.3f}"
+        delta = f"**{row.delta}**" if row.significant else row.delta
+        lines.append(
+            f"| {row.benchmark} | {row.unit} | {_quantity(row.base, row.unit)} | {_quantity(row.head, row.unit)} | {delta} | {test} |"
+        )
+    return lines
+
+
 def _table(base, head):
     """benchstat's comparison of base with head as a markdown table, or head's own numbers when nothing of it compares."""
     rows = (
@@ -179,17 +198,7 @@ def _table(base, head):
             f"| {name} | {unit} | {_quantity(value, unit)} |"
             for name, unit, value in _single(csv_text)
         ]
-    lines = [
-        "| benchmark | unit | baseline | this run | vs base | |",
-        "|---|---|---:|---:|---:|---|",
-    ]
-    for row in rows:
-        test = "exact" if row.p is None else f"p={row.p:.3f}"
-        delta = f"**{row.delta}**" if row.significant else row.delta
-        lines.append(
-            f"| {row.benchmark} | {row.unit} | {_quantity(row.base, row.unit)} | {_quantity(row.head, row.unit)} | {delta} | {test} |"
-        )
-    return lines
+    return _compared(rows)
 
 
 def _measured(path):
@@ -222,6 +231,12 @@ def pytest_addoption(parser):
         "--bench-changed-since",
         help="a git ref: run only the gates whose packages changed since it; without one every gate runs",
     )
+    group.addoption(
+        "--bench-always",
+        action="append",
+        default=[],
+        help="a path, or a directory ending in /, whose change since --bench-changed-since runs every gate; repeatable",
+    )
 
 
 def pytest_configure(config):
@@ -238,37 +253,34 @@ def pytest_configure(config):
     config.stash[_OUTCOMES] = []
 
 
-# A change outside any package's .go files that still changes what every gate
-# measures or how it runs: the module's dependencies, the gates themselves,
-# and what runs them (the Makefile targets, the gate workflow, the Python
-# environment pytest runs in, the embeddings the release gate seeds with). A
-# pull request changing one of these exercises every gate, so a broken change
-# to the gates cannot pass by skipping them all.
-_EVERYTHING = (
-    "go.mod",
-    "go.sum",
-    "tests/perf/",
-    "Makefile",
-    "pyproject.toml",
-    "uv.lock",
-    "tools/embed_locomo.py",
-    ".github/workflows/benchmarks.yaml",
-)
+def _benchmarked(path):
+    """Whether a changed .go file is code a benchmark runs: package source, or a test file that defines benchmarks."""
+    if not path.endswith("_test.go"):
+        return True
+    file = _ROOT / path
+    return file.is_file() and "\nfunc Benchmark" in file.read_text()
 
 
-def _unchanged(items, since):
+def _unchanged(items, since, always):
     """The gates none of whose benchmarks' packages changed since the ref, with why.
 
     A gate's packages are its package and every package of this module it
-    builds on, tests included (``go list -deps -test``): a benchmark measures
-    all the code it runs, so a change anywhere in that set is a change it can
-    see, and a change outside it is one it cannot.
+    builds on, its tests' imports included (``go list -deps -test``): a
+    benchmark measures all the code it runs, so a change anywhere in that set
+    is a change it can see, and a change outside it is one it cannot. A test
+    file counts only when it defines benchmarks, and the gates and what runs
+    them not at all: neither changes a number a benchmark measures, and the
+    release gate runs every gate whatever changed. What a benchmark runs or
+    reads that no package's source shows is in always, which the gate
+    workflow names: a change to one of those runs every gate.
     """
     changed = _run(["git", "diff", "--name-only", since, "HEAD"]).split()
-    if any(path.startswith(_EVERYTHING) for path in changed):
+    if any(path.startswith(tuple(always)) for path in changed):
         return {}
     dirs = {
-        str((_ROOT / path).parent.resolve()) for path in changed if path.endswith(".go")
+        str((_ROOT / path).parent.resolve())
+        for path in changed
+        if path.endswith(".go") and _benchmarked(path)
     }
     packages, unchanged = {}, {}
     for item in items:
@@ -299,7 +311,8 @@ def _unchanged(items, since):
 def pytest_collection_modifyitems(config, items):
     since = config.getoption("bench_changed_since")
     if since:
-        for item, reason in _unchanged(items, since).items():
+        always = config.getoption("bench_always")
+        for item, reason in _unchanged(items, since, always).items():
             item.add_marker(pytest.mark.skip(reason=reason))
 
     path = os.environ.get("GITHUB_EVENT_PATH")
@@ -327,19 +340,20 @@ def pytest_runtest_makereport(item, call):
     if item.get_closest_marker("bench") and (
         rep.when == "call" or (rep.when == "setup" and not rep.passed)
     ):
+        outcomes = item.config.stash[_OUTCOMES]
+        regressed = item.stash.get(_REGRESSED, [])
         if hasattr(rep, "wasxfail") and rep.skipped:
-            item.config.stash[_OUTCOMES].append(("Accepted", item, rep.wasxfail))
+            outcomes.append(("Accepted", item, rep.wasxfail, regressed))
         elif rep.skipped and isinstance(rep.longrepr, tuple):
             reason = rep.longrepr[2].removeprefix("Skipped: ")
-            item.config.stash[_OUTCOMES].append(("Not run", item, reason))
+            outcomes.append(("Not run", item, reason, []))
         elif rep.failed:
             # Failing at its call is a limit broken; failing at setup is a
             # run that never got its numbers (a build, a benchmark that
             # crashed), which says nothing about a regression.
             kind = "Failed" if rep.when == "call" else "Could not measure"
-            item.config.stash[_OUTCOMES].append(
-                (kind, item, call.excinfo.exconly()[:1000] if call.excinfo else "")
-            )
+            message = call.excinfo.exconly()[:1000] if call.excinfo else ""
+            outcomes.append((kind, item, message, regressed))
     return rep
 
 
@@ -355,6 +369,31 @@ def _gate(item):
     words = item.originalname.removeprefix("test_").replace("_", " ")
     param = f" ({item.callspec.id})" if hasattr(item, "callspec") else ""
     return f"**{item.get_closest_marker('bench').args[0].removeprefix('./')}** · {words}{param}"
+
+
+def _gates(outcomes):
+    """Each gate's outcome as a paragraph naming it, then the rows that broke its limit as a table.
+
+    An accepted gate names the pull request's reason beside it. A gate with
+    no rows to show, one that failed on something other than its limit, gives
+    its message instead. A slowdown is reported row by row, and a gate's rows
+    share one table under its package alone: the heading already says what
+    the gate checks.
+    """
+    grouped = {}
+    for kind, item, message, rows in outcomes:
+        _, message_, rows_ = grouped.get(item, (kind, message, []))
+        grouped[item] = (kind, message_, rows_ + rows)
+    lines = []
+    for item, (kind, message, rows) in grouped.items():
+        if rows:
+            package = item.get_closest_marker("bench").args[0].removeprefix("./")
+            name = f"**{package}**" if kind == "Slower" else _gate(item)
+            reason = f": {message}" if kind == "Accepted" else ""
+            lines += [f"{name}{reason}", "", *_compared(rows), ""]
+        else:
+            lines += [f"- {_gate(item)}: {message}", ""]
+    return lines
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -376,7 +415,7 @@ def pytest_sessionfinish(session, exitstatus):
     compared = [
         name for name, (base, _) in runs.items() if base and name not in elsewhere
     ]
-    kinds = {kind for kind, _, _ in outcomes}
+    kinds = {kind for kind, _, _, _ in outcomes}
     # The headline is what the outcomes add up to, worst first: a broken
     # limit, then a gate that could not measure, then a regression accepted.
     if "Failed" in kinds:
@@ -411,36 +450,39 @@ def pytest_sessionfinish(session, exitstatus):
             "",
         ]
 
-    for kind in ("Failed", "Could not measure", "Accepted"):
+    for kind in ("Failed", "Could not measure", "Accepted", "Slower"):
         # A gate whose baseline ran on another machine could not measure for
         # the reason the sentence above gives once for all of them.
         listed = [
-            f"- {_gate(item)}: {message}"
-            for k, item, message in outcomes
-            if k == kind
+            outcome
+            for outcome in outcomes
+            if outcome[0] == kind
             and not (
-                k == "Could not measure"
-                and " ".join(item.get_closest_marker("bench").args) in elsewhere
+                kind == "Could not measure"
+                and " ".join(outcome[1].get_closest_marker("bench").args) in elsewhere
             )
         ]
-        if listed:
-            lines += [f"**{kind}**", "", *listed, ""]
-    slower = [
-        f"- **{item.get_closest_marker('bench').args[0].removeprefix('./')}** · {row}"
-        for k, item, row in outcomes
-        if k == "Slower"
-    ]
-    if slower:
-        lines += [
-            "**Slower**, by 10% or more and significant; not a failure, the baseline was timed on another runner:",
-            "",
-            *slower,
-            "",
-        ]
+        if not listed:
+            continue
+        lines += [f"#### {kind}", ""]
+        if kind == "Slower":
+            lines += [
+                "By 10% or more and significant. Not a failure: the baseline was timed on another runner.",
+                "",
+            ]
+        lines += _gates(listed)
+        # A broken limit says how to accept it, so the way out is on the
+        # pull request that needs it rather than only in the docs.
+        if kind == "Failed":
+            lines += [
+                "> [!TIP]",
+                f"> To accept a regression worth what it costs, label the pull request `{_ACCEPT_LABEL}` and add a line to its description that starts with `Perf:` and says why. See [Accepting a regression](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).",
+                "",
+            ]
     skipped = sorted(
         {
             item.get_closest_marker("bench").args[0].removeprefix("./")
-            for k, item, _ in outcomes
+            for k, item, _, _ in outcomes
             if k == "Not run"
         }
     )
@@ -514,6 +556,23 @@ def comparison(request, pytestconfig):
 
 
 @pytest.fixture
+def fail_regressed(request):
+    """Fails the gate on the rows that broke its limit; with none, the gate passes.
+
+    The rows go into the report as a table under Failed, or under Accepted
+    when the pull request accepts its regressions, so a reviewer reads each
+    benchmark's baseline and change rather than an assertion's repr.
+    """
+
+    def fail(rows):
+        if rows:
+            request.node.stash[_REGRESSED] = list(rows)
+            pytest.fail("\n".join(map(str, rows)), pytrace=False)
+
+    return fail
+
+
+@pytest.fixture
 def warn_slower(request, pytestconfig):
     """Reports a significant slowdown for a reviewer to judge, without failing the gate.
 
@@ -523,8 +582,6 @@ def warn_slower(request, pytestconfig):
 
     def warn(row):
         warnings.warn(str(row), UserWarning, stacklevel=2)
-        before, after = _quantity(row.base, row.unit), _quantity(row.head, row.unit)
-        line = f"{row.benchmark} {row.unit}: {before} → {after} ({row.delta}, p={row.p:.3f})"
-        pytestconfig.stash[_OUTCOMES].append(("Slower", request.node, line))
+        pytestconfig.stash[_OUTCOMES].append(("Slower", request.node, "", [row]))
 
     return warn

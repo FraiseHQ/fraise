@@ -23,6 +23,7 @@
 package index
 
 import (
+	"math"
 	"slices"
 	"sort"
 
@@ -211,14 +212,11 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 			matched[p.key] += weight
 		}
 	}
-	for key := range scores {
-		scores[key] = idx.relevance.Finalize(scores[key], int(matched[key]*1024), int(totalW*1024)+1)
-	}
-
+	// Each document is finalized as it is offered, so the scores are read
+	// once rather than rewritten and read again.
 	top := containers.NewTopK[K, P](k, idx.compare)
-
 	for key, score := range scores {
-		top.Offer(key, score)
+		top.Offer(key, idx.relevance.Finalize(score, int(matched[key]*1024), int(totalW*1024)+1))
 	}
 	keys, ranked := top.Drain()
 
@@ -228,6 +226,39 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	}
 	logger.Debug("Text search matched documents", "matches", len(keys), "k", k)
 	return keys, out, nil
+}
+
+// Information reports, in bits, how much information query carries and how
+// much of it key holds. A term's information is its surprisal in the index,
+// −log₂(df/N): the bits of the event that a document picked at random holds
+// it, N being the live documents and df those holding the term, so a rare
+// term carries many bits and a term every document holds carries none. The
+// query carries the sum over its distinct terms that some live document
+// holds, and key holds the sum over those it holds itself; the difference is
+// the information in the terms key lacks. Summing assumes terms occur
+// independently. A term no live document holds has no estimate and is left
+// out of both, and a key not indexed holds 0.
+func (idx *BTreeIndex[K, P]) Information(query string, key K) (total P, held P) {
+	n := float64(len(idx.documents))
+	probe := &postingList[K]{}
+	seen := make(map[string]struct{})
+	for _, term := range idx.tokenizer.Tokenize(query) {
+		if _, dup := seen[term]; dup {
+			continue
+		}
+		seen[term] = struct{}{}
+		probe.term = term
+		list, ok := idx.tree.Find(probe)
+		if !ok || list.live == 0 {
+			continue
+		}
+		bits := P(-math.Log2(float64(list.live) / n))
+		total += bits
+		if i, found := list.find(key, idx.compare); found && list.entries[i].tf > 0 {
+			held += bits
+		}
+	}
+	return total, held
 }
 
 // Count reports the number of indexed documents.

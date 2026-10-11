@@ -40,7 +40,10 @@
 # max-depth = 2
 # max-vector-dimension = 4096
 # seed-size = 10
-# min-score-ratio = 0         # drop hits whose relevance is under this fraction of the best hit's, in [0, 1]; 0 = off
+
+[db.aggregate]
+# pool = 60                   # ranked candidates a recall's slots are spread from
+# cap = 1                     # fact hits one facet takes before the next facet gets its first
 
 [db.hashing-function]
 # name = "xxhash"             # xxhash t1ha
@@ -48,12 +51,6 @@
 
 [db.search-algorithm]
 # name = "excess"             # none bfs excess
-
-[db.ranking-algorithm]
-# name = "none"               # none pagerank
-# pagerank-damping = 0.85
-# pagerank-max-iter = 100
-# pagerank-tol = 1e-6
 
 [db.scoring-algorithm]
 # name = "excess"             # excess rrf

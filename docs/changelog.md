@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.3.3](https://github.com/FraiseHQ/fraise/compare/v0.3.2...v0.3.3) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **python:** extract anchors in the graph's context ([#531](https://github.com/FraiseHQ/fraise/issues/531))
+
+### Features
+
+* **graph:** weight vectors by the information the text missed ([#527](https://github.com/FraiseHQ/fraise/issues/527)) ([769fa12](https://github.com/FraiseHQ/fraise/commit/769fa12e5df72699c829634c45b7d6cd4a78be8c))
+* **python:** extract anchors in the graph's context ([#531](https://github.com/FraiseHQ/fraise/issues/531)) ([5787fcd](https://github.com/FraiseHQ/fraise/commit/5787fcd63718c0b12d275dbed158acf45c066ae2))
+
+
+### Maintenance
+
+* drop pagerank ([#528](https://github.com/FraiseHQ/fraise/issues/528)) ([1489275](https://github.com/FraiseHQ/fraise/commit/1489275f99a47c0e715f6831c0b2b9ee5d22543a))
+* **main:** release python 0.2.0 ([#534](https://github.com/FraiseHQ/fraise/issues/534)) ([1a6a77b](https://github.com/FraiseHQ/fraise/commit/1a6a77b799d749eb1b3c7a423e37394eb759a75b))
+* run benchmark gates only for the source they measure ([#530](https://github.com/FraiseHQ/fraise/issues/530)) ([d5c9338](https://github.com/FraiseHQ/fraise/commit/d5c9338f644a1c7e3d8b99143a0a021a02c9a696))
+
+## [0.3.2](https://github.com/FraiseHQ/fraise/compare/v0.3.1...v0.3.2) (2026-10-10)
+
+
+### Features
+
+* **graph:** window scoring and facet spread for recall ([#524](https://github.com/FraiseHQ/fraise/issues/524)) ([38cf2a2](https://github.com/FraiseHQ/fraise/commit/38cf2a2835d65e9d0255d95a317ab1f65905652a))
+
+
+### Bug fixes
+
+* default the decay half-life to 90 days ([#513](https://github.com/FraiseHQ/fraise/issues/513)) ([a919f92](https://github.com/FraiseHQ/fraise/commit/a919f92fe0a863cefebe3a6943d774bebae92158))
+* draw each rp-tree's randomness from one stream ([#525](https://github.com/FraiseHQ/fraise/issues/525)) ([94362fe](https://github.com/FraiseHQ/fraise/commit/94362fe9fcf08d96d74d8ce8435e6ed65599d1d1))
+* drop adjacency rows emptied by delete ([#509](https://github.com/FraiseHQ/fraise/issues/509)) ([fc62342](https://github.com/FraiseHQ/fraise/commit/fc623424543ec7627a9a924ef835e79a6fb77285))
+* reject num-graphs above 256 at startup ([#498](https://github.com/FraiseHQ/fraise/issues/498)) ([c8f1fb8](https://github.com/FraiseHQ/fraise/commit/c8f1fb8896a83afb45f2ed2ed69961295de6173a))
+* size the rp-tree pool on candidates, not top ([#514](https://github.com/FraiseHQ/fraise/issues/514)) ([c5e04d1](https://github.com/FraiseHQ/fraise/commit/c5e04d114426f1917c2be99ebc956d3c85c48565))
+
+
+### Maintenance
+
+* gate retrieval quality and latency in CI ([#507](https://github.com/FraiseHQ/fraise/issues/507)) ([c15f784](https://github.com/FraiseHQ/fraise/commit/c15f78450beabf82c423e481ec9af58280162978))
+* make test-py fail when pytest fails ([#505](https://github.com/FraiseHQ/fraise/issues/505)) ([15efd75](https://github.com/FraiseHQ/fraise/commit/15efd752539d49f6f5e2c51c453b560f09d6b521))
+
 ## [0.3.1](https://github.com/FraiseHQ/fraise/compare/v0.3.0...v0.3.1) (2026-10-08)
 
 

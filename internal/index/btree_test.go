@@ -24,6 +24,7 @@ package index_test
 
 import (
 	"errors"
+	"math"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -640,6 +641,48 @@ func BenchmarkBTreeIndexSearch(b *testing.B) {
 	for b.Loop() {
 		if _, _, err := idx.Search("w0 w1 w2", 20); err != nil {
 			b.Fatalf("Search = %v, want nil", err)
+		}
+	}
+}
+
+// TestBTreeIndexInformation pins the information a recall's vector weight is
+// read from, in bits: a term held by df of the N live documents carries
+// −log₂(df/N), the query carries the sum over its distinct known terms, and a
+// document holds the sum over those it holds. Of four documents, "deploy" is
+// in three (0.415 bits) and "friday" in two (1 bit). A key not indexed holds
+// nothing, a repeated query term counts once, and a term no document holds
+// adds nothing to either side.
+func TestBTreeIndexInformation(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetRelevance(relevance.NewBM25[int, float64]())
+	for key, doc := range map[int]string{
+		1: "deploy friday",
+		2: "deploy monday",
+		3: "deploy tuesday",
+		4: "friday lunch",
+	} {
+		if err := idx.Insert(key, doc); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	deploy, friday := -math.Log2(3.0/4), 1.0
+	for _, tc := range []struct {
+		name        string
+		query       string
+		key         int
+		total, held float64
+	}{
+		{"both terms held", "deploy friday", 1, deploy + friday, deploy + friday},
+		{"the common term only", "deploy friday", 2, deploy + friday, deploy},
+		{"the rarer term only", "deploy friday", 4, deploy + friday, friday},
+		{"a key not indexed", "deploy friday", 9, deploy + friday, 0},
+		{"a repeated term", "friday friday", 4, friday, friday},
+		{"an unknown term", "friday zebra", 4, friday, friday},
+		{"only unknown terms", "zebra", 1, 0, 0},
+	} {
+		total, held := idx.Information(tc.query, tc.key)
+		if math.Abs(total-tc.total) > 1e-12 || math.Abs(held-tc.held) > 1e-12 {
+			t.Errorf("%s: Information = %v, %v, want %v, %v", tc.name, total, held, tc.total, tc.held)
 		}
 	}
 }

@@ -10,11 +10,10 @@ navLabel: "Database"
 | `num-graphs` | `-num-graphs` | `8` | independent graphs allocated, in `[1, 256]`; selectors are `0..n-1` |
 | `default-top` | `-default-top` | `10` | results returned when a recall omits `top:` |
 | `default-depth` | `-default-depth` | `0` | retrieval lane when a recall omits `depth:` (0 = floor) |
-| `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it |
+| `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it; `0` takes the default, and the server refuses to start on a negative value |
 | `max-depth` | `-max-depth` | `2` | ceiling on `depth:`, in `[0, 2]` (lanes are 0, 1 and 2); the server refuses to start on a value outside it |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
 | `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
-| `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
 
 ```toml
 [db]
@@ -32,20 +31,35 @@ Both instantiations are built into the binary and this setting picks which one r
 
 The three ceilings exist so **one query cannot force unbounded work**. They bound what a *client* may ask for; the defaults are what it gets when it asks for nothing. A value past a ceiling is rejected with the range in the message — see [Bounds](/docs/query-language/tokens/bounds).
 
-## Score cutoff
+## Vector weight
 
-A recall fills its list to `top:` by default, and the tail of a filled list — hits scoring a tenth of the first — rarely holds the answer but costs the model context tokens all the same. `min-score-ratio` makes the list stop where the evidence does: after ranking, any hit whose relevance is below the ratio times the best relevance in the ranked list is dropped. The ratio is a fraction in `[0, 1]`, and the server refuses to start on a value outside it. The scores and their order are untouched; only the list is shorter. A ratio is scale-free, so the same setting means the same thing whatever units the scorer produces.
+A recall with both words and an embedding sums the two lanes, and when the words answer the question the text index should lead. When they do not, when the question is phrased in words the memory never used, the text index still returns its best partial matches and their mass competes with the embedding's on equal terms. So the vector similarity of every candidate is weighted by the information the text did not find:
 
-Relevance here is what the evidence says about a hit, before [recency decay](/docs/retrieval/memory-model/temporality) and the ranking boost scale it into the score the list is ordered by. Decay still ranks an older fact below a newer one with the same evidence, but it never pushes it under the bar: two facts with the same evidence both clear a ratio or both miss it, whatever their age. The score a hit carries in the response is the decayed one, so a kept hit can show a score below the ratio times the first hit's, and the hit ranked first is cut like any other when its evidence is far below the best's.
+$$
+w_v = \frac{I_q}{I_{\text{hit}}} = 1 + \frac{I_q - I_{\text{hit}}}{I_{\text{hit}}}, \qquad I(S) = \sum_{t \in S} -\log_2 \frac{\text{df}_t}{N}
+$$
 
-The hit with the best relevance always clears its own bar, so a result that matched is shortened, never emptied; `top:` still caps it from above.
+where $I_q$ is the information in the query's words, $I_{\text{hit}}$ the part of it the best text hit holds, the best among those the recall can return, filed under every topic and entity it names and inside its time range, $\text{df}_t$ the number of facts holding word $t$ and $N$ the number of facts. A word's information is its surprisal, the bits of the event that a fact picked at random holds it: a rare word carries many bits, a word every fact holds carries none. Words no fact holds have no estimate and are left out of both sums.
+
+The weight is the bits the text missed per bit it found, plus one. A best hit holding every word of the query leaves the embedding at its plain similarity, breaking ties; a hit holding half the query's information doubles it, a quarter quadruples it, and the embedding, which does not need the words, carries the ranking. Being a ratio of information, it reads the same for a long question as for a short one, and it has no setting: there is no constant to tune. A full match elsewhere in the graph says nothing about what the words found for this recall, so it is not the best hit; a recall with no text hit it can return keeps the embedding at weight 1. The weight is one number per query, so the vector lane's own order is kept and only its mass against the text's moves; a recall without both words and a vector is unaffected.
+
+## `[db.aggregate]`
+
+| Setting | Flag | Default | Meaning |
+|--------------|-------------------------|----------|-------------------------------------------------------------|
+| `pool` | `-aggregate-pool` | `60` | ranked candidates a recall's slots are spread from, from the top |
+| `cap` | `-aggregate-cap` | `1` | fact hits one facet takes before the next facet gets its first, at least 1 |
 
 ```toml
-[db]
-min-score-ratio = 0.3
+[db.aggregate]
+cap = 2
 ```
 
-The cutoff is **off by default** because the trade is yours to make: it buys precision with a little recall. [`/explain`](/docs/http-api/endpoints/explain) breaks a hit down into the contributions its relevance is folded from.
+A broad question, "how many tournaments has Nate entered", "what did we decide about the budget", has its evidence spread over many sessions, and ten slots down a ranking that leans on one session hold that session ten times over. So a recall spends its slots across the facets its ranking spans instead. A facet is the finest anchor a candidate is filed under beyond the anchors the query named, since those are shared by every candidate and say nothing: on a graph filed by session it is the session, and a candidate under no other anchor is its own facet. Walking down the ranking, each facet gets its best `cap` candidates before any facet gets more, and the candidates deferred follow in rank order once every facet is served, so a ranking with fewer facets than slots still fills them and a ranking on one facet comes back as it was. The best hit is always first, being the first of its facet. The spread applies in every lane: a recall seeded by a vector or by an anchor alone is spread over its facets like a keyword recall.
+
+`cap = 1`, the default, is the recall setting: the slots reach as many sessions as the pool offers, so a question whose evidence spans several sessions more often finds all of it in the list. It costs precision per slot, since a spread list names more sessions than a stacked one, each with fewer of its turns. A larger `cap` moves back towards the ranking as it is.
+
+The spread reads each index `pool` deep rather than `top`, so the facets below the top are there to spread over. The traversal still expands from the first `max(seed-size, top)` matches of each index, so the deeper pool costs index reads, not traversals. The vector index probes in proportion to what it is asked for, so a recall seeded by a vector costs more as the pool deepens; `pool` is the dial.
 
 ## `num-graphs`
 

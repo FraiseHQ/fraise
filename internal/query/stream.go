@@ -202,7 +202,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		"vector", !recall.Vector.Empty(),
 		"depth", recall.Parameters.Depth,
 		"top", recall.Parameters.Top)
-	nodes, scores, contributions, background, err := g.Search(
+	result, err := g.Search(
 		recall.Keywords,
 		recall.Vector,
 		recall.Topics,
@@ -217,7 +217,7 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	}
 
 	// copy results to Hit object
-	n := len(nodes)
+	n := len(result.Hits)
 	r := QueryResult[K, P]{
 		Count: n,
 		Hits:  make([]Hit[K, P], n),
@@ -225,18 +225,18 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 	if s.Explain {
 		// The background rate is query-level, so it rides on the result
 		// rather than on each hit (see QueryResult.Background).
-		r.Background = background
+		r.Background = result.Background
 	}
-	for i := 0; i < n; i++ {
-		r.Hits[i].Node = nodes[i]
-		r.Hits[i].Score = scores[i]
+	for i, hit := range result.Hits {
+		r.Hits[i].Node = hit.Node
+		r.Hits[i].Score = hit.Score
 		// Contributions are attached only in explain mode; a nil slice keeps
 		// them out of the ordinary response (see Hit.MarshalJSON). They are
 		// resolved to wire form here, under the graph lock, because a graph
 		// or anchor contribution names its anchor by key, and only the graph
 		// can turn that key into the topic or entity value a client reads.
 		if s.Explain {
-			r.Hits[i].Contributions = resolveContributions(g, contributions[i])
+			r.Hits[i].Contributions = resolveContributions(g, hit.Contributions)
 		}
 	}
 

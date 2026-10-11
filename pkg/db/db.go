@@ -72,8 +72,8 @@ func NewDB[K ~uint64, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P], er
 	return d, nil
 }
 
-// Start builds a fresh graph in every slot, with the traversal, scorer and
-// ranking the configuration names. The store is in-memory, so a Start after
+// Start builds a fresh graph in every slot, with the traversal and scorer the
+// configuration names. The store is in-memory, so a Start after
 // [DB.Stop] begins from empty graphs.
 //
 // Start fails with [ErrRelevanceModelMismatch] when a graph's text index does
@@ -89,7 +89,7 @@ func (d *DB[K, P]) Start() error {
 
 		// The search algorithms come from configuration. Startup rejects any
 		// name outside config's accepted lists, so a stage left at the graph's
-		// built-in default (no traversal, no ranking, the excess scorer) is
+		// built-in default (no traversal, the excess scorer) is
 		// what was configured, not an unrecognised name.
 		switch d.Config.DB.SearchAlgorithm.Name {
 		case config.SearchExcess:
@@ -99,13 +99,6 @@ func (d *DB[K, P]) Start() error {
 		}
 		if d.Config.DB.ScoringAlgorithm.Name == config.ScoringRRF {
 			g.SetScorer(scoring.NewRRFScorer[K, P](scoring.DefaultRRFK))
-		}
-		if d.Config.DB.RankingAlgorithm.Name == config.RankingPageRank {
-			g.SetRanking(graph.NewPageRank[K, P](
-				P(d.Config.DB.RankingAlgorithm.PageRankDamping),
-				d.Config.DB.RankingAlgorithm.PageRankMaxIter,
-				P(d.Config.DB.RankingAlgorithm.PageRankTol),
-			))
 		}
 
 		d.Graphs[i] = g
