@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.3](https://github.com/FraiseHQ/fraise/compare/v0.3.2...v0.3.3) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **python:** extract anchors in the graph's context ([#531](https://github.com/FraiseHQ/fraise/issues/531))
+
+### Features
+
+* **graph:** weight vectors by the information the text missed ([#527](https://github.com/FraiseHQ/fraise/issues/527)) ([769fa12](https://github.com/FraiseHQ/fraise/commit/769fa12e5df72699c829634c45b7d6cd4a78be8c))
+* **python:** extract anchors in the graph's context ([#531](https://github.com/FraiseHQ/fraise/issues/531)) ([5787fcd](https://github.com/FraiseHQ/fraise/commit/5787fcd63718c0b12d275dbed158acf45c066ae2))
+
+
+### Maintenance
+
+* drop pagerank ([#528](https://github.com/FraiseHQ/fraise/issues/528)) ([1489275](https://github.com/FraiseHQ/fraise/commit/1489275f99a47c0e715f6831c0b2b9ee5d22543a))
+* **main:** release python 0.2.0 ([#534](https://github.com/FraiseHQ/fraise/issues/534)) ([1a6a77b](https://github.com/FraiseHQ/fraise/commit/1a6a77b799d749eb1b3c7a423e37394eb759a75b))
+* run benchmark gates only for the source they measure ([#530](https://github.com/FraiseHQ/fraise/issues/530)) ([d5c9338](https://github.com/FraiseHQ/fraise/commit/d5c9338f644a1c7e3d8b99143a0a021a02c9a696))
+
 ## [0.3.2](https://github.com/FraiseHQ/fraise/compare/v0.3.1...v0.3.2) (2026-10-10)
 
 
