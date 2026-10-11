@@ -632,7 +632,8 @@ class FraiseClient:
         Returns:
             The topics and the entities to file ``value`` under, the given
             ones followed by the extracted ones, then the extracted anchors
-            alone, empty when nothing was extracted.
+            that repeat none of the given ones, empty when nothing was
+            extracted.
 
         Raises:
             FraiseError: if ``extract`` is ``True`` and the client has no
@@ -662,10 +663,23 @@ class FraiseClient:
                 skip_file_prefixes=SDK_FILES,
             )
             return topics, entities, []
+        # A given anchor the extractor repeats is the caller's filing, not
+        # extraction's, so it is left out of the anchors returned for the
+        # vocabulary.
+        given = {
+            Anchor(value=value.strip().lower(), type=kind)
+            for kind, values in (("topic", topics), ("entity", entities))
+            for value in values or ()
+        }
         return (
             _with_extracted(topics, [a.value for a in found if a.type == "topic"]),
             _with_extracted(entities, [a.value for a in found if a.type == "entity"]),
-            found,
+            [
+                anchor
+                for anchor in found
+                if Anchor(value=anchor.value.strip().lower(), type=anchor.type)
+                not in given
+            ],
         )
 
     def _context(self, graph: int) -> Context:
