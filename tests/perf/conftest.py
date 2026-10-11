@@ -222,6 +222,12 @@ def pytest_addoption(parser):
         "--bench-changed-since",
         help="a git ref: run only the gates whose packages changed since it; without one every gate runs",
     )
+    group.addoption(
+        "--bench-always",
+        action="append",
+        default=[],
+        help="a path, or a directory ending in /, whose change since --bench-changed-since runs every gate; repeatable",
+    )
 
 
 def pytest_configure(config):
@@ -238,19 +244,6 @@ def pytest_configure(config):
     config.stash[_OUTCOMES] = []
 
 
-# What the benchmarks run or read that no package's source shows: the
-# module's dependencies, the LoCoMo sample, the server configuration the
-# benchmarks start with and the embeddings they seed with. A change to one
-# changes the numbers, so it exercises every gate.
-_EVERYTHING = (
-    "go.mod",
-    "go.sum",
-    "tests/perf/data/",
-    "tests/perf/fraise.config.toml",
-    "tools/embed_locomo.py",
-)
-
-
 def _benchmarked(path):
     """Whether a changed .go file is code a benchmark runs: package source, or a test file that defines benchmarks."""
     if not path.endswith("_test.go"):
@@ -259,7 +252,7 @@ def _benchmarked(path):
     return file.is_file() and "\nfunc Benchmark" in file.read_text()
 
 
-def _unchanged(items, since):
+def _unchanged(items, since, always):
     """The gates none of whose benchmarks' packages changed since the ref, with why.
 
     A gate's packages are its package and every package of this module it
@@ -268,10 +261,12 @@ def _unchanged(items, since):
     is a change it can see, and a change outside it is one it cannot. A test
     file counts only when it defines benchmarks, and the gates and what runs
     them not at all: neither changes a number a benchmark measures, and the
-    release gate runs every gate whatever changed.
+    release gate runs every gate whatever changed. What a benchmark runs or
+    reads that no package's source shows is in always, which the gate
+    workflow names: a change to one of those runs every gate.
     """
     changed = _run(["git", "diff", "--name-only", since, "HEAD"]).split()
-    if any(path.startswith(_EVERYTHING) for path in changed):
+    if any(path.startswith(tuple(always)) for path in changed):
         return {}
     dirs = {
         str((_ROOT / path).parent.resolve())
@@ -307,7 +302,8 @@ def _unchanged(items, since):
 def pytest_collection_modifyitems(config, items):
     since = config.getoption("bench_changed_since")
     if since:
-        for item, reason in _unchanged(items, since).items():
+        always = config.getoption("bench_always")
+        for item, reason in _unchanged(items, since, always).items():
             item.add_marker(pytest.mark.skip(reason=reason))
 
     path = os.environ.get("GITHUB_EVENT_PATH")
