@@ -282,8 +282,8 @@ class FraiseClient:
         extracted anchors, never the fact: it is stored under the given ones,
         and a :class:`FraiseWarning` names the failure. The extractor reads
         ``value`` in ``graph``'s context, and once the server has stored the
-        fact, the fact joins that context, extracted or not; the given anchors
-        are the caller's own filing and stay out of its vocabulary.
+        fact, the fact joins that context, extracted or not; its vocabulary
+        counts only the anchors the extractor returned.
 
         A vector is attached when one is available: an explicit ``vector`` always
         wins; otherwise, if the client has an embedder, ``value`` is encoded

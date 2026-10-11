@@ -659,9 +659,9 @@ def test_the_vocabulary_is_what_extraction_filed_most_used_first(session):
     Each is spelled as the server stores it and counted once per fact, so
     "Anne" and " anne " are one entity, and an answer naming her twice is
     still one fact; a tie keeps the order of first use. The "conv-1" topic
-    given with every fact stays out: it is the caller's own filing, and,
-    counted on every fact, it would crowd out the subjects the extractor
-    reuses.
+    given with every fact stays out: the vocabulary counts only what the
+    extractor returns, and no message names it. Counted on every fact, a label
+    like it would crowd out the subjects the extractor reuses.
     """
     extractor = MagicMock(
         side_effect=[
