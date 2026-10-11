@@ -18,7 +18,7 @@ on:
   # changes no package a gate benchmarks runs no benchmark and reports that.
   pull_request:
     # labeled and unlabeled re-run the gate when a regression is accepted
-    # with the label, or the acceptance withdrawn.
+    # with the label and a Perf: comment, or the acceptance withdrawn.
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
@@ -93,6 +93,9 @@ jobs:
       # only the gates whose packages it changes; the release gate runs all.
       - name: Gate
         env:
+          # Reads the pull request's comments for an accepted regression's
+          # Perf: line.
+          GH_TOKEN: ${{ github.token }}
           FRAISE_LOCOMO_VECTORS: ${{ hashFiles('bin/perf/locomo-vectors.json') != '' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
           # What the benchmarks run or read that no package's source shows,
           # so a change to one runs every gate: the module's dependencies,

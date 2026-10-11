@@ -69,7 +69,13 @@ Every gate run posts one comment on its pull request, updated on every push, wha
 
 ## Accepting a regression
 
-Some changes are worth what they cost: a ranking change that trades a category's `p@1` for a large gain elsewhere, or a write path that allocates more to stop walking the graph. To merge one, label the pull request `perf-regression-accepted`. With it, every gate is expected to fail: its regressions still show in the report, as accepted. The night after it merges, the new numbers become the baseline.
+Some changes are worth what they cost: a ranking change that trades a category's `p@1` for a large gain elsewhere, or a write path that allocates more to stop walking the graph. To merge one, comment on the pull request with a line that starts with `Perf:` and says why, then label it `perf-regression-accepted`:
+
+```text
+Perf: single-hop p@1 drops 0.004 for +0.03 f1@10 on multi-hop; see the report.
+```
+
+Both are required. With them, every gate is expected to fail: its regressions still show in the report, as accepted, with the reason from the newest such comment. The label alone changes nothing, so every accepted regression has its reason in the history. The label is what re-runs the gate, so comment first; a reason added after the label counts from the next run. The night after it merges, the new numbers become the baseline.
 
 ## Running it locally
 
