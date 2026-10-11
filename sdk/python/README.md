@@ -87,7 +87,9 @@ fraise = FraiseClient("http://localhost:9876", extractor=OpenAIExtractor())
 fraise.remember("Anne's flight lands at Lisbon airport")   # stored verbatim, anchored for you
 ```
 
-An extractor is anything implementing the `Extractor` ABC (subclass it and define `extract(text) -> list[Anchor]`) or a plain `callable(text) -> list[Anchor]`, where an `Anchor` has a `value` and a `type`, `"topic"` or `"entity"`. Extracted anchors are added after any `topics=`/`entities=` you pass, without repeating one you gave, and the text itself is never rewritten. If extraction fails, the fact is stored anyway under the anchors you gave, with a `FraiseWarning`. Per call, `extract=True` requires an extractor and `extract=False` skips it. `OpenAIExtractor` (`gpt-5-mini` by default) uses the same instructions the published benchmark ingests with.
+An extractor is anything implementing the `Extractor` ABC (subclass it and define `extract(text, context) -> list[Anchor]`) or a plain `callable(text, context) -> list[Anchor]`, where an `Anchor` has a `value` and a `type`, `"topic"` or `"entity"`. Extracted anchors are added after any `topics=`/`entities=` you pass, without repeating one you gave, and the text itself is never rewritten. If extraction fails, the fact is stored anyway under the anchors you gave, with a `FraiseWarning`. Per call, `extract=True` requires an extractor and `extract=False` skips it. `OpenAIExtractor` (`gpt-5-mini` by default) uses the same instructions the published benchmark ingests with.
+
+The `context` is what the fact's graph already holds: its three latest facts (`recent`), and the fifty anchors extraction has filed most often there (`vocabulary`). It lets the extractor file "she" under the person a nearby message named, and a recurring subject under the anchor it already has, so related facts share the anchors the graph walk follows. The client keeps one context per graph, for as long as it lives.
 
 ## OpenAI Agents tools
 

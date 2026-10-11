@@ -35,7 +35,7 @@ from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
 from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
 from fraise_sdk.models import GraphStats
-from fraise_sdk.providers import Anchor
+from fraise_sdk.providers import Anchor, Context
 
 
 def test_closing_closes_the_session_the_client_owns(session):
@@ -553,17 +553,20 @@ def test_configured_extractor_files_the_fact_under_its_anchors(
 ):
     """Extracted anchors follow the given ones, and the text is stored verbatim.
 
-    The extractor reads the text exactly as passed, apostrophe included. Of
-    what it finds, "travel" was given already and "Anne" was given in another
-    casing; the server folds anchors to lower case, so both would be repeats
-    and are dropped. "Lisbon airport" is not one plain word and is quoted.
+    The extractor reads the text exactly as passed, apostrophe included, in
+    the empty context of a graph nothing was stored in yet. Of what it finds,
+    "travel" was given already and "Anne" was given in another casing; the
+    server folds anchors to lower case, so both would be repeats and are
+    dropped. "Lisbon airport" is not one plain word and is quoted.
     """
     extractor = callable_extractor()
     FraiseClient(extractor=extractor).remember(
         "Anne's flight lands at Lisbon airport", topics=["travel"], entities=["anne"]
     )
 
-    extractor.assert_called_once_with("Anne's flight lands at Lisbon airport")
+    extractor.assert_called_once_with(
+        "Anne's flight lands at Lisbon airport", Context()
+    )
     assert sent(session)["query"] == (
         "remember@0 'Anne''s flight lands at Lisbon airport' "
         "topic:travel topic:trips entity:anne entity:'Lisbon airport'"
@@ -626,9 +629,142 @@ def test_extractor_object_is_called_through_its_extract_method(session, sent):
     extractor.extract.return_value = [Anchor(value="birds", type="topic")]
     FraiseClient(extractor=extractor).remember("the heron fishes at dawn")
 
-    extractor.extract.assert_called_once_with("the heron fishes at dawn")
+    extractor.extract.assert_called_once_with("the heron fishes at dawn", Context())
     extractor.assert_not_called()
     assert sent(session)["query"] == "remember@0 'the heron fishes at dawn' topic:birds"
+
+
+def test_a_message_is_read_beside_the_three_stored_before_it(session):
+    """The extractor reads each message beside its graph's three latest, oldest first.
+
+    Three back is far enough to resolve "she" or "the agency" to what a nearby
+    message named. The message being read is not its own context, and the
+    oldest falls out as each new one is stored.
+    """
+    extractor = MagicMock(return_value=[])
+    del extractor.extract
+    client = FraiseClient(extractor=extractor)
+    for message in ["one", "two", "three", "four", "five"]:
+        client.remember(message, graph=3)
+
+    assert extractor.call_args.args == (
+        "five",
+        Context(recent=("two", "three", "four")),
+    )
+
+
+def test_the_vocabulary_is_what_extraction_filed_most_used_first(session):
+    """The vocabulary holds the anchors extraction filed the graph's facts under.
+
+    Each is spelled as the server stores it and counted once per fact, so
+    "Anne" and " anne " are one entity, and an answer naming her twice is
+    still one fact; a tie keeps the order of first use. The "conv-1" topic
+    given with every fact stays out: the vocabulary counts only what the
+    extractor returns, and no message names it. Counted on every fact, a label
+    like it would crowd out the subjects the extractor reuses.
+    """
+    extractor = MagicMock(
+        side_effect=[
+            [
+                Anchor(value="adoption", type="topic"),
+                Anchor(value="Anne", type="entity"),
+                Anchor(value=" anne ", type="entity"),
+            ],
+            [
+                Anchor(value="painting", type="topic"),
+                Anchor(value="Anne", type="entity"),
+            ],
+            [Anchor(value="adoption", type="topic")],
+            [],
+        ]
+    )
+    del extractor.extract
+    client = FraiseClient(extractor=extractor)
+    for message in ["one", "two", "three", "four"]:
+        client.remember(message, graph=1, topics=["conv-1"])
+
+    assert extractor.call_args.args[1].vocabulary == (
+        Anchor(value="adoption", type="topic"),
+        Anchor(value="anne", type="entity"),
+        Anchor(value="painting", type="topic"),
+    )
+
+
+def test_the_vocabulary_offers_the_fifty_most_used_anchors(session):
+    """Past fifty anchors, the vocabulary leaves out the least used.
+
+    Sixty topics are filed once each, then the sixtieth again: it leads, and
+    the forty-nine used first fill the rest. An anchor left out is still
+    counted, which is how "t59", outside the vocabulary when first filed, grew
+    into it by being used again.
+    """
+    answers = [[Anchor(value=f"t{i}", type="topic")] for i in range(60)]
+    extractor = MagicMock(
+        side_effect=[*answers, [Anchor(value="t59", type="topic")], []]
+    )
+    del extractor.extract
+    client = FraiseClient(extractor=extractor)
+    for i in range(62):
+        client.remember(f"message {i}", graph=4)
+
+    assert extractor.call_args.args[1].vocabulary == tuple(
+        Anchor(value=f"t{i}", type="topic") for i in [59, *range(49)]
+    )
+
+
+def test_a_graph_is_never_read_beside_another_graphs_messages(
+    session, callable_extractor
+):
+    """Each graph has its own context: nothing stored in one is read beside another's.
+
+    One client can serve many users' graphs; a shared context would put one
+    user's messages and names into the prompt that tags another's.
+    """
+    extractor = callable_extractor()
+    client = FraiseClient(extractor=extractor)
+    client.remember("Anne's flight lands at noon", graph=1)
+    client.remember("the kettle whistles", graph=2)
+
+    assert extractor.call_args.args == ("the kettle whistles", Context())
+
+
+def test_a_fact_the_server_refuses_never_joins_the_context(
+    session, respond, callable_extractor
+):
+    """Only a stored fact joins its graph's context: a refused write leaves none.
+
+    The context is what the graph holds, so a message the server turned away
+    has no place in it, and neither have the anchors extracted for it.
+    """
+    extractor = callable_extractor()
+    client = FraiseClient(extractor=extractor)
+    respond(session, {"error": "invalid query"}, status_code=400)
+    with pytest.raises(FraiseAPIError):
+        client.remember("the kettle whistles", graph=2)
+    respond(session, {"status": "ok"})
+    client.remember("the heron fishes at dawn", graph=2)
+
+    assert extractor.call_args.args == ("the heron fishes at dawn", Context())
+
+
+def test_a_fact_stored_without_extracted_anchors_still_joins_the_context(session):
+    """A fact stored with extract=False, or whose extraction failed, is still read.
+
+    It is part of the conversation the next message continues, whatever it
+    was filed under; only the vocabulary depends on what extraction found.
+    """
+    extractor = MagicMock(side_effect=[RuntimeError("rate limited"), []])
+    del extractor.extract
+    client = FraiseClient(extractor=extractor)
+    client.remember("Anne: I signed the papers", graph=5, extract=False)
+    with pytest.warns(FraiseWarning, match="anchor extraction failed"):
+        client.remember("Mel: that is huge", graph=5)
+    client.remember("Anne: she starts on Monday", graph=5)
+
+    assert extractor.call_args.args == (
+        "Anne: she starts on Monday",
+        Context(recent=("Anne: I signed the papers", "Mel: that is huge")),
+    )
 
 
 def test_recall_never_extracts(session, callable_extractor):
