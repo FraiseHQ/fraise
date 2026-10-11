@@ -1636,11 +1636,11 @@ func vectorWeightGraph(t *testing.T) (*graph.InMemoryGraph[uint64, float64], gra
 	return g, vector
 }
 
-// vectorScore runs a recall and returns the vector contribution of the fact
-// found by its embedding.
-func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords []string, key uint64) float64 {
+// vectorScore runs a recall, under topics and from since when they are set,
+// and returns the vector contribution of the fact found by its embedding.
+func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords []string, topics []string, since time.Time, key uint64) float64 {
 	t.Helper()
-	nodes, _, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), topics, nil, 0, 10, since, time.Time{})
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -1668,11 +1668,51 @@ func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords
 // the only seed, keeps weight 1.
 func TestInMemoryGraphSearchWeightsVectorsByMissingInformation(t *testing.T) {
 	g, key := vectorWeightGraph(t)
-	plain := vectorScore(t, g, []string{"deploy", "friday"}, key.Key())
-	if half := vectorScore(t, g, []string{"deploy", "release"}, key.Key()); math.Abs(half-2*plain) > 1e-12 {
+	plain := vectorScore(t, g, []string{"deploy", "friday"}, nil, time.Time{}, key.Key())
+	if half := vectorScore(t, g, []string{"deploy", "release"}, nil, time.Time{}, key.Key()); math.Abs(half-2*plain) > 1e-12 {
 		t.Errorf("half the information found: vector score %v, want twice the plain %v", half, plain)
 	}
-	if none := vectorScore(t, g, []string{"zebra"}, key.Key()); math.Abs(none-plain) > 1e-12 {
+	if none := vectorScore(t, g, []string{"zebra"}, nil, time.Time{}, key.Key()); math.Abs(none-plain) > 1e-12 {
 		t.Errorf("no text hit: vector score %v, want the plain %v", none, plain)
+	}
+}
+
+// TestInMemoryGraphSearchWeightsVectorsByTheHitsTheRecallKeeps pins the
+// vector weight to the best text hit the recall can return. "deploy release
+// notes" holds both words of "deploy release" but sits under another topic
+// and before the recall's since; inside ops and inside the time range, each
+// text hit holds one of the two words, half the query's information, so the
+// embedding counts double. Read off the unfiltered reading, the out-of-scope
+// full match would put the weight back at 1, and the embedding would compete
+// on equal terms with partial matches in exactly the recall it should lead.
+// The unfiltered recall keeps that full match, and with it weight 1.
+func TestInMemoryGraphSearchWeightsVectorsByTheHitsTheRecallKeeps(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	text := mkFact(g, "the deploy runs friday", now)
+	full := mkFact(g, "deploy release notes", now.Add(-48*time.Hour))
+	vector := mkFact(g, "scheduled end of week release", now)
+	ops, other := mkTopic(g, "ops", now), mkTopic(g, "other", now)
+	for _, n := range []graph.Node[uint64]{text, full, vector, ops, other} {
+		mustSet(t, g, n)
+	}
+	for fact, topic := range map[*graph.Fact[uint64]]*graph.Topic[uint64]{&text: ops, &vector: ops, &full: other} {
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	}
+	for fact, v := range map[graph.Fact[uint64]][]float64{text: {0, 1}, full: {0, 1}, vector: {1, 0}} {
+		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](v)); err != nil {
+			t.Fatalf("vector Insert = %v, want nil", err)
+		}
+	}
+
+	query := []string{"deploy", "release"}
+	plain := vectorScore(t, g, query, nil, time.Time{}, vector.Key())
+	if topic := vectorScore(t, g, query, []string{"ops"}, time.Time{}, vector.Key()); math.Abs(topic-2*plain) > 1e-12 {
+		t.Errorf("topic:ops: vector score %v, want twice the unfiltered %v", topic, plain)
+	}
+	if since := vectorScore(t, g, query, nil, now.Add(-24*time.Hour), vector.Key()); math.Abs(since-2*plain) > 1e-12 {
+		t.Errorf("since a day ago: vector score %v, want twice the unfiltered %v", since, plain)
 	}
 }
