@@ -44,9 +44,15 @@ A fact's relevance is its own mass plus everything transmitted to it.
 
 > *An anchor may only speak when its members matched better than its size alone predicted — hubs are heard exactly when they are surprising, silent when they are merely large, and never louder than their surplus divided among everyone listening.*
 
+### The window
+
+Facts written one after the other under the same anchor are usually one exchange, and scored one by one each is a fragment of it. With [`db.window-gamma`](/docs/configuration/reference/database#window) set, a fact borrows that share of each temporal neighbour's term counts and length when the text index scores it, so a question holding half the query and its answer holding the other half both cover the query, and a fact beside a match becomes a candidate even when it holds no query term itself. Neighbours are the facts written just before and after under a shared anchor. It is on by default; a negative share turns it off.
+
 ## Where the list stops
 
 A recall returns its `top:` best candidates — and, with the score cutoff on, fewer: `db.min-score-ratio` drops the hits whose relevance, before recency decay and the ranking boost, is below a fraction of the best hit's. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
+
+With [`db.aggregate`](/docs/configuration/reference/database#dbaggregate) set to `spread`, a recall whose matches spread across several facets, the sessions of a conversation, say, at similar scores, the shape of a broad question, spends its slots one facet at a time: each facet's best fact before any facet's second, the deferred facts after, so ten slots cover ten sessions where the ranking alone would have spent them on one exchange. The gate is the ranking's spread, so a specific question is returned as ranked. It is on by default, the recall setting; `name = "none"` returns the ranking as it is, and `name = "group"` adds group hits, one slot carrying every candidate that matched by the same rare term, best first.
 
 ## Why a recall needs a seed
 

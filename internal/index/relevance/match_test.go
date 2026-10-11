@@ -67,6 +67,9 @@ func TestMatchCountIncrementIgnoresTermFrequency(t *testing.T) {
 	if prepared != 0 {
 		t.Fatalf("Prepare = %v, want 0", prepared)
 	}
+	if got := model.Length(7); got != 0 {
+		t.Errorf("Length = %v, want 0 (a match count does not normalise by length)", got)
+	}
 	if got := model.Increment(1, 7, 1, prepared); got != 1 {
 		t.Errorf("Increment at tf 1 = %v, want 1", got)
 	}
@@ -75,6 +78,9 @@ func TestMatchCountIncrementIgnoresTermFrequency(t *testing.T) {
 	}
 	if got := model.Increment(2.5, 7, 3, prepared); got != 2.5 {
 		t.Errorf("Increment with weight 2.5 = %v, want the weight through whole", got)
+	}
+	if got := model.Gain(2.5, 1.5, 12, prepared); got != 2.5 {
+		t.Errorf("Gain at a window's fractional count = %v, want the weight through whole", got)
 	}
 }
 

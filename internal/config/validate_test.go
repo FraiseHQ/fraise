@@ -119,8 +119,17 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
 		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
+		{"db.window-gamma", func(c *ConfigSet, _ string) { c.DB.WindowGamma = 1.5 }},
+		{"db.aggregate.name", func(c *ConfigSet, v string) { c.DB.Aggregate.Name = v }},
+		{"db.aggregate.ratio", func(c *ConfigSet, _ string) { c.DB.Aggregate.Ratio = 2 }},
+		{"db.aggregate.pool", func(c *ConfigSet, _ string) { c.DB.Aggregate.Pool = 0 }},
+		{"db.aggregate.spread", func(c *ConfigSet, _ string) { c.DB.Aggregate.Spread = 0 }},
+		{"db.aggregate.cap", func(c *ConfigSet, _ string) { c.DB.Aggregate.Cap = 0 }},
+		{"db.aggregate.min-size", func(c *ConfigSet, _ string) { c.DB.Aggregate.MinSize = 1 }},
+		{"db.aggregate.max-groups", func(c *ConfigSet, _ string) { c.DB.Aggregate.MaxGroups = 0 }},
 		{"scheduler.workers", func(c *ConfigSet, _ string) { c.Scheduler.Workers = -1 }},
 		{"db.max-depth", func(c *ConfigSet, _ string) { c.DB.MaxDepth = 3 }},
+		{"db.max-top", func(c *ConfigSet, _ string) { c.DB.MaxTop = -1 }},
 		{"db.num-graphs", func(c *ConfigSet, _ string) { c.DB.NumGraphs = 300 }},
 	}
 
@@ -225,6 +234,35 @@ func TestValidateBoundsMaxDepth(t *testing.T) {
 			t.Fatalf("validate() with max-depth = %d = %v, want an ErrInvalidValue", depth, err)
 		}
 		for _, want := range []string{"db.max-depth", "accepted: 0 to 2"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+	}
+}
+
+// TestValidateBoundsMaxTop pins the floor of db.max-top: query.Parse rejects
+// a top: past the ceiling, so a ceiling below 1 would reject every recall that
+// names a top, while recalls that omit one kept working. There is no upper
+// bound: a large ceiling is a resource decision the operator owns, and the
+// search sizes its allocations on candidates rather than on top.
+func TestValidateBoundsMaxTop(t *testing.T) {
+	for _, m := range []int{1, DefaultMaxTop, 1 << 20} {
+		c := New()
+		c.DB.MaxTop = m
+		if err := c.validate(); err != nil {
+			t.Errorf("validate() with max-top = %d returned error: %v, want it accepted", m, err)
+		}
+	}
+
+	for _, m := range []int{-1, 0} {
+		c := New()
+		c.DB.MaxTop = m
+		err := c.validate()
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Fatalf("validate() with max-top = %d = %v, want an ErrInvalidValue", m, err)
+		}
+		for _, want := range []string{"db.max-top", "accepted: 1 or more"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error %q does not mention %q", err, want)
 			}
