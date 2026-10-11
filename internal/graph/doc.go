@@ -33,8 +33,7 @@
 //
 // [Graph.Search] seeds candidates from the text and vector indexes. When the
 // query names a topic or entity, a [Traversal] ([ExcessTraversal] or [BFS])
-// expands each seed through its anchors; each candidate's contributions are
-// then folded by a [scoring.Scorer], and a [Ranking] such as [PageRank] may
-// boost the result. Graph methods take no lock: callers hold the graph's read
-// or write lock around the calls they compose.
+// expands each seed through its anchors, and each candidate's contributions
+// are then folded by a [scoring.Scorer]. Graph methods take no lock: callers
+// hold the graph's read or write lock around the calls they compose.
 package graph

@@ -50,7 +50,7 @@ var parametersSchema = &jsonschema.Schema{
 }
 
 // hitSchema mirrors Hit.MarshalJSON: the stored fact, when it was written,
-// and its score (relevance after any ranking boost and recency decay). The
+// and its score (relevance after recency decay). The
 // score is on the scorer's own scale, an ordering rather than a probability,
 // and nothing caps it at 1.0.
 var hitSchema = &jsonschema.Schema{

@@ -1,5 +1,5 @@
 ---
-title: "Search, ranking and scoring algorithms"
+title: "Search and scoring algorithms"
 description: "The traversal, the fold and the relevance model — what each accepts, and which values exist only for comparison runs"
 navLabel: "Algorithms"
 ---
@@ -9,10 +9,6 @@ Each algorithm is its own table under `[db]`:
 | Setting | Flag | Default | Accepts |
 |------------------------------------------|----------------------|----------|----------------------------------|
 | `db.search-algorithm.name` | `-search-algorithm` | `excess` | `none` `bfs` `excess` |
-| `db.ranking-algorithm.name` | `-ranking-algorithm` | `none` | `none` `pagerank` |
-| `db.ranking-algorithm.pagerank-damping` | `-pagerank-damping` | `0.85` | probability of following an edge |
-| `db.ranking-algorithm.pagerank-max-iter` | `-pagerank-max-iter` | `100` | power-iteration cap |
-| `db.ranking-algorithm.pagerank-tol` | `-pagerank-tol` | `1e-6` | convergence threshold |
 | `db.scoring-algorithm.name` | `-scoring-algorithm` | `excess` | `excess` `rrf` |
 | `db.relevance-model.name` | `-relevance-model` | `bm25` | `bm25` `matchcount` |
 
@@ -43,10 +39,6 @@ Selects how the text index turns a match into a number:
 - `bm25` — raw idf-weighted mass $\times$ match breadth against the query's idf mass, what the excess methodology consumes;
 - `matchcount` — one point per query-term occurrence, the pre-BM25 ranking, for comparison runs.
 
-## `ranking-algorithm`
-
-The pagerank knobs are read **only** when `ranking-algorithm` is `pagerank`; `none` applies no global ranking boost.
-
 ## In short
 
-The defaults — `excess` / `none` / `excess` / `bm25` — are the shipped methodology. The other values exist so a comparison run can isolate one channel at a time, not as tuning surface for production.
+The defaults — `excess` / `excess` / `bm25` — are the shipped methodology. The other values exist so a comparison run can isolate one channel at a time, not as tuning surface for production.

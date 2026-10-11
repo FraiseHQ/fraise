@@ -115,18 +115,10 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.precision", func(c *ConfigSet, v string) { c.DB.Precision = v }},
 		{"db.hashing-function.name", func(c *ConfigSet, v string) { c.DB.HashingFunction.Name = v }},
 		{"db.search-algorithm.name", func(c *ConfigSet, v string) { c.DB.SearchAlgorithm.Name = v }},
-		{"db.ranking-algorithm.name", func(c *ConfigSet, v string) { c.DB.RankingAlgorithm.Name = v }},
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
-		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
-		{"db.window-gamma", func(c *ConfigSet, _ string) { c.DB.WindowGamma = 1.5 }},
-		{"db.aggregate.name", func(c *ConfigSet, v string) { c.DB.Aggregate.Name = v }},
-		{"db.aggregate.ratio", func(c *ConfigSet, _ string) { c.DB.Aggregate.Ratio = 2 }},
 		{"db.aggregate.pool", func(c *ConfigSet, _ string) { c.DB.Aggregate.Pool = 0 }},
-		{"db.aggregate.spread", func(c *ConfigSet, _ string) { c.DB.Aggregate.Spread = 0 }},
 		{"db.aggregate.cap", func(c *ConfigSet, _ string) { c.DB.Aggregate.Cap = 0 }},
-		{"db.aggregate.min-size", func(c *ConfigSet, _ string) { c.DB.Aggregate.MinSize = 1 }},
-		{"db.aggregate.max-groups", func(c *ConfigSet, _ string) { c.DB.Aggregate.MaxGroups = 0 }},
 		{"scheduler.workers", func(c *ConfigSet, _ string) { c.Scheduler.Workers = -1 }},
 		{"db.max-depth", func(c *ConfigSet, _ string) { c.DB.MaxDepth = 3 }},
 		{"db.max-top", func(c *ConfigSet, _ string) { c.DB.MaxTop = -1 }},
@@ -146,38 +138,6 @@ func TestValidateChecksEverySetting(t *testing.T) {
 				t.Errorf("error %q does not name the setting %q", err, tc.name)
 			}
 		})
-	}
-}
-
-// TestValidateBoundsMinScoreRatio pins the domain of db.min-score-ratio: a
-// fraction of the best hit's relevance, so anything outside [0, 1] is rejected
-// at startup rather than acted on. Each value past the range would otherwise
-// fail silently: 30 (an operator thinking in percent) puts the bar above
-// every hit so every recall comes back empty, a negative ratio reads as
-// "off", and NaN fails every comparison in the cutoff and empties every
-// recall too. The endpoints are kept: 0 is off and 1 keeps only hits tied
-// with the best, both meaningful settings.
-func TestValidateBoundsMinScoreRatio(t *testing.T) {
-	for _, ratio := range []float64{0, 0.3, 1} {
-		c := New()
-		c.DB.MinScoreRatio = ratio
-		if err := c.validate(); err != nil {
-			t.Errorf("validate() with min-score-ratio = %v returned error: %v, want it accepted", ratio, err)
-		}
-	}
-
-	for _, ratio := range []float64{-0.1, 1.0000001, 30, math.NaN(), math.Inf(1)} {
-		c := New()
-		c.DB.MinScoreRatio = ratio
-		err := c.validate()
-		if !errors.Is(err, ErrInvalidValue) {
-			t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
-		}
-		for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("error %q does not mention %q", err, want)
-			}
-		}
 	}
 }
 
@@ -310,7 +270,6 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 	c.DB.Precision = "Float64"
 	c.DB.HashingFunction.Name = "T1HA"
 	c.DB.SearchAlgorithm.Name = "EXCESS"
-	c.DB.RankingAlgorithm.Name = "PageRank"
 	c.DB.ScoringAlgorithm.Name = "RRF"
 	c.DB.RelevanceModel.Name = "BM25"
 
@@ -324,7 +283,6 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 		{"db.precision", c.DB.Precision, PrecisionFloat64},
 		{"db.hashing-function.name", c.DB.HashingFunction.Name, HashingT1ha},
 		{"db.search-algorithm.name", c.DB.SearchAlgorithm.Name, SearchExcess},
-		{"db.ranking-algorithm.name", c.DB.RankingAlgorithm.Name, RankingPageRank},
 		{"db.scoring-algorithm.name", c.DB.ScoringAlgorithm.Name, ScoringRRF},
 		{"db.relevance-model.name", c.DB.RelevanceModel.Name, RelevanceBM25},
 	} {
