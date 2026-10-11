@@ -94,10 +94,22 @@ jobs:
       - name: Gate
         env:
           FRAISE_LOCOMO_VECTORS: ${{ hashFiles('bin/perf/locomo-vectors.json') != '' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
+          # What the benchmarks run or read that no package's source shows,
+          # so a change to one runs every gate: the module's dependencies,
+          # the LoCoMo sample, the server configuration the benchmarks start
+          # with and the embeddings they seed with. The gates themselves and
+          # what runs them change no number, so they are not here.
+          BENCH_ALWAYS: >-
+            go.mod
+            go.sum
+            tests/perf/data/
+            tests/perf/fraise.config.toml
+            tools/embed_locomo.py
         run: >-
           make bench
           BENCH_BASELINE=${{ steps.baseline.outputs.found_artifact == 'true' && 'bin/perf/baseline' || '' }}
           BENCH_CHANGED_SINCE=${{ env.RELEASE != 'true' && 'HEAD^1' || '' }}
+          BENCH_ALWAYS="$BENCH_ALWAYS"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()

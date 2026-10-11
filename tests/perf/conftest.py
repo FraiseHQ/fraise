@@ -222,6 +222,12 @@ def pytest_addoption(parser):
         "--bench-changed-since",
         help="a git ref: run only the gates whose packages changed since it; without one every gate runs",
     )
+    group.addoption(
+        "--bench-always",
+        action="append",
+        default=[],
+        help="a path, or a directory ending in /, whose change since --bench-changed-since runs every gate; repeatable",
+    )
 
 
 def pytest_configure(config):
@@ -238,37 +244,34 @@ def pytest_configure(config):
     config.stash[_OUTCOMES] = []
 
 
-# A change outside any package's .go files that still changes what every gate
-# measures or how it runs: the module's dependencies, the gates themselves,
-# and what runs them (the Makefile targets, the gate workflow, the Python
-# environment pytest runs in, the embeddings the release gate seeds with). A
-# pull request changing one of these exercises every gate, so a broken change
-# to the gates cannot pass by skipping them all.
-_EVERYTHING = (
-    "go.mod",
-    "go.sum",
-    "tests/perf/",
-    "Makefile",
-    "pyproject.toml",
-    "uv.lock",
-    "tools/embed_locomo.py",
-    ".github/workflows/benchmarks.yaml",
-)
+def _benchmarked(path):
+    """Whether a changed .go file is code a benchmark runs: package source, or a test file that defines benchmarks."""
+    if not path.endswith("_test.go"):
+        return True
+    file = _ROOT / path
+    return file.is_file() and "\nfunc Benchmark" in file.read_text()
 
 
-def _unchanged(items, since):
+def _unchanged(items, since, always):
     """The gates none of whose benchmarks' packages changed since the ref, with why.
 
     A gate's packages are its package and every package of this module it
-    builds on, tests included (``go list -deps -test``): a benchmark measures
-    all the code it runs, so a change anywhere in that set is a change it can
-    see, and a change outside it is one it cannot.
+    builds on, its tests' imports included (``go list -deps -test``): a
+    benchmark measures all the code it runs, so a change anywhere in that set
+    is a change it can see, and a change outside it is one it cannot. A test
+    file counts only when it defines benchmarks, and the gates and what runs
+    them not at all: neither changes a number a benchmark measures, and the
+    release gate runs every gate whatever changed. What a benchmark runs or
+    reads that no package's source shows is in always, which the gate
+    workflow names: a change to one of those runs every gate.
     """
     changed = _run(["git", "diff", "--name-only", since, "HEAD"]).split()
-    if any(path.startswith(_EVERYTHING) for path in changed):
+    if any(path.startswith(tuple(always)) for path in changed):
         return {}
     dirs = {
-        str((_ROOT / path).parent.resolve()) for path in changed if path.endswith(".go")
+        str((_ROOT / path).parent.resolve())
+        for path in changed
+        if path.endswith(".go") and _benchmarked(path)
     }
     packages, unchanged = {}, {}
     for item in items:
@@ -299,7 +302,8 @@ def _unchanged(items, since):
 def pytest_collection_modifyitems(config, items):
     since = config.getoption("bench_changed_since")
     if since:
-        for item, reason in _unchanged(items, since).items():
+        always = config.getoption("bench_always")
+        for item, reason in _unchanged(items, since, always).items():
             item.add_marker(pytest.mark.skip(reason=reason))
 
     path = os.environ.get("GITHUB_EVENT_PATH")
@@ -425,6 +429,13 @@ def pytest_sessionfinish(session, exitstatus):
         ]
         if listed:
             lines += [f"**{kind}**", "", *listed, ""]
+        # A broken limit says how to accept it, so the way out is on the
+        # pull request that needs it rather than only in the docs.
+        if listed and kind == "Failed":
+            lines += [
+                f"A regression worth what it costs can be accepted: label the pull request `{_ACCEPT_LABEL}` and add a line to its description that starts with `Perf:` and says why. See [Accepting a regression](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).",
+                "",
+            ]
     slower = [
         f"- **{item.get_closest_marker('bench').args[0].removeprefix('./')}** · {row}"
         for k, item, row in outcomes
