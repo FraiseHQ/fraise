@@ -48,6 +48,8 @@ A fact's relevance is its own mass plus everything transmitted to it.
 
 A recall returns its `top:` best candidates, or every match when there are fewer.
 
+The order is total: hits of equal score rank newest first, then by key. The same recall against an unchanged graph returns the same hits in the same order, and when a tie straddles the `top:` cut, the newest facts are the ones kept.
+
 The slots are spread across the facets the ranking spans, the sessions of a conversation, say: each facet's best fact before any facet's second, the deferred facts after, so ten slots cover as many sessions as the pool offers before deepening any, and the best hit stays first. See [`db.aggregate`](/docs/configuration/reference/database#dbaggregate).
 
 ## Why a recall needs a seed
