@@ -214,12 +214,11 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 }
 
 // Search fans query out across the forest, pools the candidates, re-ranks them
-// by true distance and returns the keys of the k nearest vectors, and any
-// equidistant with the k-th, nearest first, together with their distances to
-// the query. Equidistant vectors are ordered by key: which of them the trees
-// happen to surface first is an artefact of insertion order, and the ranking
-// SearchIndex promises is a total order whose truncation to k keeps a tie
-// whole.
+// by true distance and returns the keys of the k nearest vectors, nearest
+// first, together with their distances to the query. Equidistant vectors are
+// ordered by key: which of them the trees happen to surface first is an
+// artefact of insertion order, and the ranking SearchIndex promises is a total
+// order that survives truncation to k.
 //
 // The re-rank keeps only the k best as it goes: TopK retains the largest
 // scores, so each pooled candidate is offered with its distance negated, and

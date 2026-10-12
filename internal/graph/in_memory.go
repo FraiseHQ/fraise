@@ -395,10 +395,9 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 }
 
 // Search implements [Graph.Search]. It collects candidates, folds each with the
-// installed scorer, applies the time window and recency decay, keeps the top
-// hits (score descending, then newest first, then key ascending, so identical
-// queries return identical hits) and spends the top slots across the facets
-// the ranking spans rather than down it (see aggregate).
+// installed scorer, applies the time window and recency decay, keeps the top hits (score descending, then key ascending,
+// so identical queries return identical hits) and spends the top slots across
+// the facets the ranking spans rather than down it (see aggregate).
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (Result[K, P], error) {
 	// The spread reads a pool deeper than top, since the facets it spreads
 	// the slots over lie below what top slots would keep, and the indexes
@@ -433,10 +432,10 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	// D. Rank and truncate to the pool. Map iteration order is random, so
 	// the order must be total for identical queries to return identical
-	// hits: score descending, then newest first, then key ascending (see
-	// newestFirst). TopK costs O(n log pool) rather than the O(n log n) of a
-	// full sort.
-	ranker := containers.NewTopK[K, P](pool, g.newestFirst)
+	// hits: score descending, then key ascending. Without the key tie-break,
+	// truncation would keep an arbitrary subset of a tied group. TopK costs
+	// O(n log pool) rather than the O(n log n) of a full sort.
+	ranker := containers.NewTopK[K, P](pool, comparator.OrderedComparator[K])
 	for _, key := range kept {
 		ranker.Offer(key, ranked[key])
 	}
@@ -530,23 +529,6 @@ func (g *InMemoryGraph[K, P]) facet(key K, named map[K]struct{}) K {
 		}
 	}
 	return facet
-}
-
-// newestFirst is Search's tie-break among equal scores: the newer fact first,
-// then the lower key. The timestamp must come before the key because decay
-// is measured against the clock: in float32, facts stored milliseconds apart
-// decay to one of two adjacent values, and where that boundary falls moves
-// with every call. Decay never ranks an older fact above a newer one of equal
-// relevance, so ordering each tie newest first makes the ranking the same
-// wherever the boundary falls; ordering it by key alone would let the clock
-// pick which facts top keeps. Both keys are stored facts: Search offers only
-// the candidates timeFilter keeps.
-func (g *InMemoryGraph[K, P]) newestFirst(a, b K) int {
-	nodes := g.Nodes()
-	if c := comparator.TimeComparator(nodes[b].GetAttributes().Timestamp, nodes[a].GetAttributes().Timestamp); c != 0 {
-		return c
-	}
-	return comparator.OrderedComparator(a, b)
 }
 
 // collect runs the retrieval stages and pools their observations into one

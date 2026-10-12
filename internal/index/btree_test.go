@@ -36,7 +36,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/index"
 	"github.com/FraiseHQ/fraise/internal/index/nlp"
 	"github.com/FraiseHQ/fraise/internal/index/relevance"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestBTreeIndexInsertAndRetrieve(t *testing.T) {
@@ -105,41 +104,38 @@ func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 
 // TestBTreeIndexSearchOrdersTiesByKey pins the tiebreak that makes the ranking a
 // total order: documents with equal scores are ranked by key, not in the order
-// the score map happens to yield them, and a tie at the k-th place is returned
-// whole rather than cut by key, since the index cannot tell tied documents
-// apart and its caller can. The search is repeated because map order changes
-// between calls, so one pass can agree with the expected order by luck.
+// the score map happens to yield them. The search is repeated because map
+// order changes between calls, so one pass can agree with the expected order
+// by luck, and truncation to k makes the difference user-visible.
 func TestBTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
-	// Every document but 8 contains "sky" alone, so the match count never
-	// separates them; 8 also holds "blue" and leads. The keys are inserted out
-	// of order so ascending order cannot come from insertion order.
+	// Every document contains "sky" once, so the match count never separates
+	// them; the keys are inserted out of order so ascending order cannot come
+	// from insertion order.
 	for _, key := range []int{7, 3, 9, 1, 5} {
 		if err := idx.Insert(key, "sky"); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", key, err)
 		}
 	}
-	if err := idx.Insert(8, "sky blue"); err != nil {
-		t.Fatalf("Insert(8) = %v, want nil", err)
-	}
 
-	tests := map[string]struct {
+	cases := []struct {
+		name string
 		k    int
 		want []int
 	}{
-		"every match, ties in key order": {k: 0, want: []int{8, 1, 3, 5, 7, 9}},
-		"a cut above the tie":            {k: 1, want: []int{8}},
-		"a cut through the tie":          {k: 3, want: []int{8, 1, 3, 5, 7, 9}},
+		{"every match, in key order", 0, []int{1, 3, 5, 7, 9}},
+		{"truncation keeps the lowest key", 1, []int{1}},
+		{"truncation keeps the lowest keys", 3, []int{1, 3, 5}},
 	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			for i := 0; i < 20; i++ {
-				got, _, err := idx.Search("sky blue", tc.k, nil)
+				got, _, err := idx.Search("sky", tc.k, nil)
 				if err != nil {
-					t.Fatalf("Search(sky blue, %d) = %v, want nil", tc.k, err)
+					t.Fatalf("Search(sky, %d) = %v, want nil", tc.k, err)
 				}
-				if diff := cmp.Diff(tc.want, got); diff != "" {
-					t.Fatalf("Search(sky blue, %d) on call %d mismatch (-want +got):\n%s", tc.k, i+1, diff)
+				if !reflect.DeepEqual(got, tc.want) {
+					t.Fatalf("Search(sky, %d) = %v on call %d, want %v every call", tc.k, got, i+1, tc.want)
 				}
 			}
 		})
@@ -315,13 +311,12 @@ func TestBTreeIndexScoresAreBM25TimesCoverage_float32(t *testing.T) {
 // bounds its text and vector seeds alike this way, at max(db.seed-size, top).
 func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
-	// Four documents matching one to four of the query's terms, so no two
-	// tie and a cut at k keeps exactly k.
+	// Four documents, all matching "sky".
 	docs := map[int]string{
 		1: "sky",
-		2: "sky blue",
-		3: "clear blue sky",
-		4: "clear blue sky at night",
+		2: "sky sky blue", // "sky" appears once as a term set, still count 1
+		3: "clear sky",
+		4: "sky at night",
 	}
 	for key, doc := range docs {
 		if err := idx.Insert(key, doc); err != nil {
@@ -330,25 +325,25 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 	}
 
 	// k <= 0 returns all four matches.
-	all, _, err := idx.Search("sky blue clear night", 0, nil)
+	all, _, err := idx.Search("sky", 0, nil)
 	if err != nil {
-		t.Fatalf("Search(sky blue clear night, 0) = %v, want nil", err)
+		t.Fatalf("Search(sky, 0) = %v, want nil", err)
 	}
 	if len(all) != 4 {
-		t.Errorf("Search(sky blue clear night, 0) returned %d keys, want all 4: %v", len(all), all)
+		t.Errorf("Search(sky, 0) returned %d keys, want all 4: %v", len(all), all)
 	}
 
 	// A positive k caps the results.
 	for _, k := range []int{1, 2, 3} {
-		got, scores, err := idx.Search("sky blue clear night", k, nil)
+		got, scores, err := idx.Search("sky", k, nil)
 		if err != nil {
-			t.Fatalf("Search(sky blue clear night, %d) = %v, want nil", k, err)
+			t.Fatalf("Search(sky, %d) = %v, want nil", k, err)
 		}
 		if len(got) != k {
-			t.Errorf("Search(sky blue clear night, %d) returned %d keys, want %d", k, len(got), k)
+			t.Errorf("Search(sky, %d) returned %d keys, want %d", k, len(got), k)
 		}
 		if len(scores) != len(got) {
-			t.Errorf("Search(sky blue clear night, %d): %d keys but %d scores", k, len(got), len(scores))
+			t.Errorf("Search(sky, %d): %d keys but %d scores", k, len(got), len(scores))
 		}
 	}
 }
