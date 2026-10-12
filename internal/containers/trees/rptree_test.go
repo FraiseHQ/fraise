@@ -297,7 +297,7 @@ func TestRPTreeNearestKIsACapNotASize(t *testing.T) {
 		}
 	}
 
-	if got := rt.Nearest(randPoint(rng, -1, dim), 1<<50); len(got) != n {
+	if got := rt.Nearest(randPoint(rng, -1, dim), 1<<50, nil); len(got) != n {
 		t.Fatalf("Nearest(k=1<<50) returned %d of %d points, want all", len(got), n)
 	}
 }

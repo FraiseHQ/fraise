@@ -469,7 +469,7 @@ func TestInMemoryGraphSearchAnchorFiltersBeforeSeeding(t *testing.T) {
 	}
 
 	for _, depth := range []int{0, 1, 2} {
-		nodes, _, _, _, err := g.Search([]string{"zebra"}, containers.Vector[uint64, float64]{}, []string{"b"}, nil, depth, 10, time.Time{}, time.Time{})
+		nodes, _, _, _, err := search(g, []string{"zebra"}, containers.Vector[uint64, float64]{}, []string{"b"}, nil, depth, 10, time.Time{}, time.Time{})
 		if err != nil {
 			t.Fatalf("Search(zebra, topic=b, depth=%d) = %v, want nil", depth, err)
 		}
@@ -495,7 +495,7 @@ func TestInMemoryGraphSearchWindowFiltersBeforeSeeding(t *testing.T) {
 	}
 
 	until := recent.Add(-24 * time.Hour)
-	nodes, _, _, _, err := g.Search([]string{"zebra"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, until)
+	nodes, _, _, _, err := search(g, []string{"zebra"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, until)
 	if err != nil {
 		t.Fatalf("Search(zebra, until) = %v, want nil", err)
 	}
@@ -528,7 +528,7 @@ func TestInMemoryGraphSearchAnchorFiltersVectorSeeds(t *testing.T) {
 	}
 
 	query := containers.NewVector[uint64]([]float64{1, 0, 0})
-	nodes, _, _, _, err := g.Search(nil, query, []string{"b"}, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, err := search(g, nil, query, []string{"b"}, nil, 0, 10, time.Time{}, time.Time{})
 	if err != nil {
 		t.Fatalf("Search(vec, topic=b) = %v, want nil", err)
 	}
@@ -869,7 +869,7 @@ func TestSearchBM25Floor(t *testing.T) {
 		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	}
 
-	nodes, scores, _, _, _ := g.Search([]string{"comet"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := search(g, []string{"comet"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 1, 10, time.Time{}, time.Time{})
 	textKeys, textScores, err := g.GetTextIndex().Search("comet", 10, nil)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
@@ -889,7 +889,7 @@ func TestSearchScoresNeverBelowTextMass(t *testing.T) {
 	g := noDecayGraph()
 	stormGraph(t, g)
 
-	nodes, scores, _, _, _ := g.Search([]string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
 	textKeys, textScores, err := g.GetTextIndex().Search("barometer storm", 20, nil)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
