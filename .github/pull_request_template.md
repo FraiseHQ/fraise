@@ -42,6 +42,10 @@
 
 <!-- Commands you ran, cases you covered, or "not tested — here's why". Honesty is fine. -->
 
+## Performance regression
+
+<!-- Only when the Benchmark gate fails on a regression worth what it costs: say what regressed and what it buys, then label the pull request `perf-regression-accepted`. The gate passes only with both. Leave it empty otherwise. -->
+
 ## Checklist
 
 - [ ] Tests pass locally
