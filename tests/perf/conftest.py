@@ -36,9 +36,9 @@ with: the gate could not measure, and the report names both machines and
 shows this run's numbers.
 Gates sharing a marker share one measurement.
 
-A pull request labelled perf-regression-accepted whose description fills in
-the template's Performance regression section marks every gate xfail with
-that section as the reason: its regressions still show, as accepted. A gate fails through ``fail_regressed``
+A pull request labelled perf-regression-accepted marks every gate xfail, with
+its description's Performance regression section as the reason when filled
+in: its regressions still show, as accepted. A gate fails through ``fail_regressed``
 with the rows that broke its limit, so the report shows them as a table. The
 session ends by writing report.md, the verdict, those tables and benchstat's,
 which CI posts.
@@ -312,12 +312,11 @@ def _unchanged(items, since, always):
 def _acceptance(pr):
     """Why the pull request accepts its regressions, or None when it does not.
 
-    It takes both the label and the description's Performance regression
-    section, from the pull request template, filled in: the label alone, or a
-    section holding only the template's comment, accepts nothing, so every
-    accepted regression has its reason in the history. The section runs to
-    the next heading of its level or above and is read as one line, the way
-    the report shows it beside each gate.
+    The label accepts them. The reason is the description's Performance
+    regression section, from the pull request template, when it is filled in,
+    and the label otherwise. The section runs to the next heading of its level
+    or above and is read as one line, the way the report shows it beside each
+    gate.
     """
     if not pr or _ACCEPT_LABEL not in {label["name"] for label in pr.get("labels", [])}:
         return None
@@ -328,7 +327,7 @@ def _acceptance(pr):
         re.M | re.S | re.I,
     )
     reason = " ".join(section[1].split()) if section else ""
-    return reason or None
+    return reason or f"labelled {_ACCEPT_LABEL}"
 
 
 def pytest_collection_modifyitems(config, items):
