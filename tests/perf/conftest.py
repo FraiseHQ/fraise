@@ -36,9 +36,9 @@ with: the gate could not measure, and the report names both machines and
 shows this run's numbers.
 Gates sharing a marker share one measurement.
 
-A pull request labelled perf-regression-accepted with a ``Perf:`` line in its
-description marks every gate xfail with that line as the reason: its
-regressions still show, as accepted. A gate fails through ``fail_regressed``
+A pull request labelled perf-regression-accepted whose description fills in
+the template's Performance regression section marks every gate xfail with
+that section as the reason: its regressions still show, as accepted. A gate fails through ``fail_regressed``
 with the rows that broke its limit, so the report shows them as a table. The
 session ends by writing report.md, the verdict, those tables and benchstat's,
 which CI posts.
@@ -64,6 +64,7 @@ _BENCHSTAT = [
     "golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68",
 ]
 _ACCEPT_LABEL = "perf-regression-accepted"
+_ACCEPT_SECTION = "Performance regression"
 _RUNS = pytest.StashKey[dict]()
 _OUTCOMES = pytest.StashKey[list]()
 _REGRESSED = pytest.StashKey[list]()
@@ -308,6 +309,28 @@ def _unchanged(items, since, always):
     return unchanged
 
 
+def _acceptance(pr):
+    """Why the pull request accepts its regressions, or None when it does not.
+
+    It takes both the label and the description's Performance regression
+    section, from the pull request template, filled in: the label alone, or a
+    section holding only the template's comment, accepts nothing, so every
+    accepted regression has its reason in the history. The section runs to
+    the next heading of its level or above and is read as one line, the way
+    the report shows it beside each gate.
+    """
+    if not pr or _ACCEPT_LABEL not in {label["name"] for label in pr.get("labels", [])}:
+        return None
+    body = re.sub(r"<!--.*?-->", "", pr.get("body") or "", flags=re.S)
+    section = re.search(
+        rf"^##[ \t]+{_ACCEPT_SECTION}[ \t\r]*$(.*?)(?=^#{{1,2}}[ \t]|\Z)",
+        body,
+        re.M | re.S | re.I,
+    )
+    reason = " ".join(section[1].split()) if section else ""
+    return reason or None
+
+
 def pytest_collection_modifyitems(config, items):
     since = config.getoption("bench_changed_since")
     if since:
@@ -317,16 +340,7 @@ def pytest_collection_modifyitems(config, items):
 
     path = os.environ.get("GITHUB_EVENT_PATH")
     pr = json.loads(Path(path).read_text()).get("pull_request") if path else None
-    if not pr or _ACCEPT_LABEL not in {label["name"] for label in pr.get("labels", [])}:
-        return
-    reason = next(
-        (
-            line.strip()
-            for line in (pr.get("body") or "").splitlines()
-            if line.startswith("Perf:")
-        ),
-        None,
-    )
+    reason = _acceptance(pr)
     if reason:
         for item in items:
             if item.get_closest_marker("bench"):
@@ -476,7 +490,7 @@ def pytest_sessionfinish(session, exitstatus):
         if kind == "Failed":
             lines += [
                 "> [!TIP]",
-                f"> To accept a regression worth what it costs, label the pull request `{_ACCEPT_LABEL}` and add a line to its description that starts with `Perf:` and says why. See [Accepting a regression](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).",
+                f"> To accept a regression worth what it costs, label the pull request `{_ACCEPT_LABEL}` and say why in the *{_ACCEPT_SECTION}* section of its description. See [Accepting a regression](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).",
                 "",
             ]
     skipped = sorted(
