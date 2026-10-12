@@ -35,7 +35,7 @@ seeding_field = anchor | vec_field ;
 modifier      = since_field | until_field | depth_field | top_field ;
 ```
 
-A term, an anchor and a vector are all seeds, so `recall topic:billing` and `recall vec:$v` are complete questions: a term or a vector is matched against its index, and anchors on their own seed the search with every fact filed under them.
+A term, an anchor and a vector are all seeds, so `recall topic:billing` and `recall vec:$v` are complete questions: a term or a vector is matched against its index, and anchors on their own seed the search with every fact filed under them. Beside a term or a vector an anchor raises the facts filed under it and excludes none.
 
 <Note title="Modifiers are not seeds" type="warning">
 

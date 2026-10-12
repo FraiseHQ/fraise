@@ -53,7 +53,7 @@
 # name = "excess"             # none bfs excess
 
 [db.scoring-algorithm]
-# name = "excess"             # excess rrf
+# name = "information"        # information excess rrf
 
 [db.relevance-model]
 # name = "bm25"               # bm25 matchcount

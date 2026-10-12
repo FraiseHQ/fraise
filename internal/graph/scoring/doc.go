@@ -24,15 +24,19 @@
 // into its relevance score.
 //
 // Collection records each observation as a [Contribution], tagged with the
-// [Source] that made it (text, vector, graph traversal or anchor seeding) and
-// carrying that source's raw mass, rank and anchor statistics, with no policy
-// applied. A [Scorer] owns the policy: [ExcessScorer], the default, sums the
-// seed mass and adds each anchor's attenuated surplus over its fair share
-// under the query's background rate, while [RRFScorer] fuses ranks alone for
-// comparison runs. Keeping policy out of collection means changing how
-// ranking works never touches the retrieval sites.
+// [Source] that made it (text, vector, graph traversal, named anchor or
+// anchor seeding) and carrying that source's raw mass, rank and anchor
+// statistics, with no policy applied. A [Scorer] owns the policy:
+// [InformationScorer], the default, weighs the text, vector and graph
+// channels by the bits each carries about every candidate against the
+// query's whole pool; [ExcessScorer] sums the seed mass and adds each
+// anchor's attenuated surplus over its fair share; [RRFScorer] fuses ranks
+// alone. The last two remain for comparison runs. Keeping policy out of
+// collection means changing how ranking works never touches the retrieval
+// sites.
 //
 // One Scorer instance is shared by every concurrent search on a graph, so a
-// Scorer is pure, and the background rate is bound per query through
-// [Scorer.WithBackground] rather than written into the shared instance.
+// Scorer is pure, and what a query observed as a whole (its background rate,
+// its text's weakness, its candidate pool) is bound per query through
+// [Scorer.Observe] rather than written into the shared instance.
 package scoring

@@ -31,7 +31,7 @@ Everything an agent does goes through `POST /api/v1/q`. One command per request.
     "results": {
       "count": 1,
       "hits": [
-        { "value": "the parrot is turquoise", "timestamp": "...", "score": 0.2867 }
+        { "value": "the parrot is turquoise", "timestamp": "...", "score": 1 }
       ]
     }
   }
@@ -68,7 +68,7 @@ recall billing entity:acme since:7d top:5
 | Piece | What it is |
 |---|---|
 | `billing` | a term — the seed the search starts from |
-| `entity:acme` | an anchor: beside a term it filters, on its own it seeds |
+| `entity:acme` | an anchor: beside a term it raises what is filed under it, on its own it seeds |
 | `since:7d` | a time bound, read as "ago" |
 | `top:5` | the result cap, 10 by default |
 

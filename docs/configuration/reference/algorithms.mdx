@@ -9,7 +9,7 @@ Each algorithm is its own table under `[db]`:
 | Setting | Flag | Default | Accepts |
 |------------------------------------------|----------------------|----------|----------------------------------|
 | `db.search-algorithm.name` | `-search-algorithm` | `excess` | `none` `bfs` `excess` |
-| `db.scoring-algorithm.name` | `-scoring-algorithm` | `excess` | `excess` `rrf` |
+| `db.scoring-algorithm.name` | `-scoring-algorithm` | `information` | `information` `excess` `rrf` |
 | `db.relevance-model.name` | `-relevance-model` | `bm25` | `bm25` `matchcount` |
 
 ```toml
@@ -17,7 +17,7 @@ Each algorithm is its own table under `[db]`:
 name = "excess"
 
 [db.scoring-algorithm]
-name = "excess"
+name = "information"
 ```
 
 ## `search-algorithm`
@@ -30,7 +30,13 @@ Selects the traversal moving seed evidence through the graph:
 
 ## `scoring-algorithm`
 
-Selects the fold deriving relevance from the pooled evidence. `rrf` remains available for comparison runs, with its dampening constant fixed at 60, the literature standard, because a comparison baseline is not tunable. It carries **no null model**, which is why `excess` is the default. See [Excess transmission](/docs/retrieval/ranking/excess-transmission).
+Selects the fold deriving relevance from the pooled evidence:
+
+- `information` — the default: each channel (text, vector, graph) is measured against its total over the recall's pool, and weighted by how sharply it tells the pool's facts apart;
+- `excess` — the seed mass plus the attenuated surplus, the fold the excess methodology was first specified with, and the only one keeping the [BM25 floor](/docs/retrieval/ranking/guarantees#bm25-floor);
+- `rrf` — available for comparison runs, with its dampening constant fixed at 60, the literature standard, because a comparison baseline is not tunable. It carries **no null model**.
+
+See [The fold](/docs/retrieval/ranking/hybrid-retrieval#the-fold).
 
 ## `relevance-model`
 
@@ -41,4 +47,4 @@ Selects how the text index turns a match into a number:
 
 ## In short
 
-The defaults — `excess` / `excess` / `bm25` — are the shipped methodology. The other values exist so a comparison run can isolate one channel at a time, not as tuning surface for production.
+The defaults — `excess` / `information` / `bm25` — are the shipped methodology. The other values exist so a comparison run can isolate one channel at a time, not as tuning surface for production.

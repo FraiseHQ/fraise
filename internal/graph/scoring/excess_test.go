@@ -45,12 +45,12 @@ func excessContributions(m float64, graphs ...scoring.Contribution[uint64, float
 func TestExcessScorerFloor(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 
-	if got := scorer.WithBackground(3).Score(excessContributions(8)); got != 8 {
+	if got := scorer.Observe(scoring.Observation[uint64, float64]{Background: 3}).Score(excessContributions(8)); got != 8 {
 		t.Errorf("graph-free fold = %v, want exactly the seed mass 8", got)
 	}
 	// An anchor far below background must not drag the score under m.
 	starved := excessContributions(8, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 1, Via: 1, Degree: 50, Count: 1})
-	if got := scorer.WithBackground(3).Score(starved); got != 8 {
+	if got := scorer.Observe(scoring.Observation[uint64, float64]{Background: 3}).Score(starved); got != 8 {
 		t.Errorf("fold with a deeply-below-background anchor = %v, want the floor 8", got)
 	}
 }
@@ -65,20 +65,20 @@ func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 
 	fairShare := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 6, Count: 2})
-	if got := scorer.WithBackground(2).Score(fairShare); got != 2 {
+	if got := scorer.Observe(scoring.Observation[uint64, float64]{Background: 2}).Score(fairShare); got != 2 {
 		t.Errorf("fair-share anchor fold = %v, want the seed mass 2 alone (hub silence)", got)
 	}
 
 	surplus := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 3, Count: 2})
-	if want := 2 + 0.25*(14-2-3*2.0)/3; scorer.WithBackground(2).Score(surplus) != want {
-		t.Errorf("surplus fold = %v, want m + α²·(M − m − d·ρ₀)/d = %v", scorer.WithBackground(2).Score(surplus), want)
+	if want := 2 + 0.25*(14-2-3*2.0)/3; scorer.Observe(scoring.Observation[uint64, float64]{Background: 2}).Score(surplus) != want {
+		t.Errorf("surplus fold = %v, want m + α²·(M − m − d·ρ₀)/d = %v", scorer.Observe(scoring.Observation[uint64, float64]{Background: 2}).Score(surplus), want)
 	}
 
 	// Earned preemption: a pure non-seed funded by a rich anchor outranks a
 	// weak seed of mass 1. Transmission is per-edge, so the anchor must clear
 	// α²·(M − d·ρ₀)/d > 1: at degree 3 and background 2, mass 20 funds 7/6.
 	nonSeed := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcGraph, Score: 20, Via: 1, Degree: 3, Count: 2}}
-	if got := scorer.WithBackground(2).Score(nonSeed); got <= 1 {
+	if got := scorer.Observe(scoring.Observation[uint64, float64]{Background: 2}).Score(nonSeed); got <= 1 {
 		t.Errorf("funded non-seed fold = %v, want it to preempt a weak seed's mass 1", got)
 	}
 }
@@ -96,7 +96,7 @@ func TestExcessScorerScaleInvariance(t *testing.T) {
 	for i := range scaled {
 		scaled[i].Score *= c
 	}
-	if got, want := scorer.WithBackground(2*c).Score(scaled), c*scorer.WithBackground(2).Score(list); got != want {
+	if got, want := scorer.Observe(scoring.Observation[uint64, float64]{Background: 2 * c}).Score(scaled), c*scorer.Observe(scoring.Observation[uint64, float64]{Background: 2}).Score(list); got != want {
 		t.Errorf("scaled fold = %v, want exactly c·original = %v", got, want)
 	}
 }
@@ -111,8 +111,8 @@ func TestExcessScorerPurity(t *testing.T) {
 	snapshot := make([]scoring.Contribution[uint64, float64], len(list))
 	copy(snapshot, list)
 
-	first := scorer.WithBackground(2).Score(list)
-	second := scorer.WithBackground(2).Score(list)
+	first := scorer.Observe(scoring.Observation[uint64, float64]{Background: 2}).Score(list)
+	second := scorer.Observe(scoring.Observation[uint64, float64]{Background: 2}).Score(list)
 	if first != second {
 		t.Errorf("two folds of one list = %v then %v, want identical", first, second)
 	}
@@ -121,6 +121,46 @@ func TestExcessScorerPurity(t *testing.T) {
 	}
 	if !reflect.DeepEqual(list, snapshot) {
 		t.Errorf("fold mutated its input: %+v, want %+v", list, snapshot)
+	}
+}
+
+// TestExcessScorerWeighsTheVectorByTheTextsWeakness pins the vector weight at
+// the fold: the vector contribution records the similarity as measured, and
+// the scorer counts it 1 + TextMissed = I_q / I_hit times. A text hit holding
+// half the question's information misses one bit per bit found, so the
+// similarity counts double beside the same text mass, and the zero
+// observation leaves it at its plain value.
+func TestExcessScorerWeighsTheVectorByTheTextsWeakness(t *testing.T) {
+	list := []scoring.Contribution[uint64, float64]{
+		{Src: scoring.SrcText, Score: 2, Rank: 0, Count: 1},
+		{Src: scoring.SrcVector, Score: 0.5, Rank: 0, Count: 1},
+	}
+	scorer := scoring.NewExcessScorer[uint64, float64]()
+
+	if got := scorer.Observe(scoring.Observation[uint64, float64]{}).Score(list); got != 2.5 {
+		t.Errorf("fold with nothing missed = %v, want text 2 + similarity 0.5", got)
+	}
+	if got := scorer.Observe(scoring.Observation[uint64, float64]{TextMissed: 1}).Score(list); got != 3 {
+		t.Errorf("fold with one bit missed per bit found = %v, want text 2 + 2·0.5", got)
+	}
+}
+
+// TestExcessScorerNamedObservationOwesNoFairShare pins the named term: a named
+// anchor's observation is folded like a graph observation but without the
+// fair share, since the query asked for that anchor. At background 2 an anchor
+// of degree 6 observing 14 owes 12 to the background and transmits nothing to
+// a candidate of mass 2; named, the same observation gives (14 − 2) / 6 = 2,
+// of which α² = 1/4 arrives.
+func TestExcessScorerNamedObservationOwesNoFairShare(t *testing.T) {
+	scorer := scoring.NewExcessScorer[uint64, float64]().Observe(scoring.Observation[uint64, float64]{Background: 2})
+
+	unnamed := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 6, Count: 2})
+	if got := scorer.Score(unnamed); got != 2 {
+		t.Errorf("unnamed fair-share anchor fold = %v, want the seed mass 2 alone (hub silence)", got)
+	}
+	named := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcNamed, Score: 14, Via: 1, Degree: 6, Count: 2})
+	if got, want := scorer.Score(named), 2+0.25*(14-2.0)/6; got != want {
+		t.Errorf("named anchor fold = %v, want m + α²·(M − m)/d = %v", got, want)
 	}
 }
 

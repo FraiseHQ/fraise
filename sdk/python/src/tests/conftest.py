@@ -636,6 +636,10 @@ _VECTOR_DIM = 8
 # A keyword no fact in any graph contains.
 _NO_MATCH = "zzznomatchzzz"
 
+# A topic no fact in any graph is filed under. Naming it opens the anchor round
+# without raising a single fact, so a test watches what the round alone does.
+_UNFILED_TOPIC = "unfiledprobe"
+
 # A server nothing is listening on: port 1 is reserved (tcpmux) and never bound
 # in the test environment, so connecting to it fails immediately rather than
 # hanging until a timeout.
@@ -742,6 +746,17 @@ def no_match():
         The keyword to seed a deliberately empty recall with.
     """
     return _NO_MATCH
+
+
+@pytest.fixture(scope="session")
+def unfiled_topic():
+    """A topic no fact in any graph is filed under.
+
+    Returns:
+        The topic to name when a recall must open the anchor round and raise
+        nothing by naming it.
+    """
+    return _UNFILED_TOPIC
 
 
 @pytest.fixture(scope="session")

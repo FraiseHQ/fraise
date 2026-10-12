@@ -167,13 +167,15 @@ type Graph[K comparable, P float32 | float64] interface {
 	// implementation may spend the top slots across the facets the ranking
 	// spans rather than down it.
 	//
-	// The criteria combine to narrow the result:
+	// keywords, vector, topics and entities each add evidence; only since and
+	// until narrow the result:
 	//   - keywords: full-text terms matched against the text index
 	//   - vector:   query embedding for nearest-neighbour search; nil or
 	//               empty skips the vector index
-	//   - topics:   keep only facts filed under at least one of these topics
-	//   - entities: keep only facts that mention at least one of these
-	//               entities
+	//   - topics:   every fact filed under one of these topics gains one
+	//               unit of mass per named anchor it is filed under; a fact
+	//               under none keeps the rank its other evidence gives it
+	//   - entities: the same, for the entities facts mention
 	//   - depth:    the retrieval lane. 0 ranks by seed mass alone and skips
 	//               the anchor traversal. 1 and 2 run the same single
 	//               anchor-mediated round and differ only in the admission
@@ -184,14 +186,17 @@ type Graph[K comparable, P float32 | float64] interface {
 	//   - since:    inclusive lower time bound; zero is unbounded
 	//   - until:    exclusive upper time bound; zero is unbounded
 	//
+	// A named topic or entity never removes a fact the other criteria found:
+	// a query that names the wrong anchor loses the boost, not the answer.
+	//
 	// With no keywords and no vector, the named topics and entities seed the
 	// search themselves, for questions like "what do I know about billing?".
-	// Every fact filed under any of them is a candidate, with one unit of mass
-	// per named anchor it is filed under, and is then scored, decayed, time
-	// filtered and capped like any other candidate, so under a single anchor
-	// the newest facts come first. No traversal runs, so depth has no effect,
-	// and the background is zero. An anchor nothing is filed under seeds
-	// nothing.
+	// Every fact filed under any of them is a candidate, with the same unit
+	// of mass per named anchor it is filed under, and is then scored,
+	// decayed, time filtered and capped like any other candidate, so under a
+	// single anchor the newest facts come first. No traversal runs, so depth
+	// has no effect, and the background is zero. An anchor nothing is filed
+	// under seeds nothing.
 	//
 	// The error reports a question that cannot be answered as asked: a vector
 	// whose dimension differs from the vector index's is

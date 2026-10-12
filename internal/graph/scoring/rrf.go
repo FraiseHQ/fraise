@@ -34,10 +34,11 @@ const DefaultRRFK = 60
 // RRFScorer fuses a candidate's contributions by reciprocal rank,
 // Σ 1/(k+Rank). Rank is the only input: the sources score on incomparable
 // scales, and RRF avoids calibrating them by trusting only the position each
-// source assigned. Contribution.Score is unused, and so is the query's
-// background rate: rank fusion has no null model, so it cannot tell a
+// source assigned. Contribution.Score is unused, and so is everything the
+// query observed: rank fusion has no null model, so it cannot tell a
 // surprising anchor from a merely large one. It is available as an
-// alternative fold for comparison runs; the default is the ExcessScorer.
+// alternative fold for comparison runs; the default is the
+// InformationScorer.
 //
 // The consensus property this buys: a candidate two sources place at Rank 3
 // outranks one a single source places at Rank 0 (2/(k+3) > 1/k for k = 60),
@@ -54,9 +55,9 @@ func NewRRFScorer[K comparable, P float32 | float64](k int) *RRFScorer[K, P] {
 	return &RRFScorer[K, P]{k: k}
 }
 
-// WithBackground returns the scorer itself: rank fusion carries no null
-// model (see the type comment), so there is nothing to bind.
-func (s *RRFScorer[K, P]) WithBackground(P) Scorer[K, P] {
+// Observe returns the scorer itself: rank fusion reads nothing the query
+// observed (see the type comment), so there is nothing to bind.
+func (s *RRFScorer[K, P]) Observe(Observation[K, P]) Scorer[K, P] {
 	return s
 }
 

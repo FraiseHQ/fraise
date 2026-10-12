@@ -88,7 +88,10 @@ func (d *DB[K, P]) Start() error {
 		case config.SearchBFS:
 			g.SetTraversal(graph.NewBFSTraversal[K, P](graph.Both))
 		}
-		if d.Config.DB.ScoringAlgorithm.Name == config.ScoringRRF {
+		switch d.Config.DB.ScoringAlgorithm.Name {
+		case config.ScoringInformation:
+			g.SetScorer(scoring.NewInformationScorer[K, P]())
+		case config.ScoringRRF:
 			g.SetScorer(scoring.NewRRFScorer[K, P](scoring.DefaultRRFK))
 		}
 

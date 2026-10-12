@@ -33,7 +33,7 @@ import (
 )
 
 // Recall is a read query: it searches the selected graph for the facts that
-// best match its Keywords and Vector, narrowed or seeded by its Entities and
+// best match its Keywords and Vector, raised or seeded by its Entities and
 // Topics, and ranked and bounded by Parameters. [Parse] builds one from a
 // recall command, and the engine's optimisation pipeline may rewrite its lists
 // before it is cached.
