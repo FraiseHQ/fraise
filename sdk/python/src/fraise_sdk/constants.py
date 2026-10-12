@@ -55,6 +55,14 @@ VECTOR_PARAM = "v"
 # depends on the server's num-graphs setting, and only the server checks that.
 MAX_GRAPH = 255
 
+# How much of its graph a message is tagged beside (providers.base.Context).
+# Three messages back is far enough to resolve "she" or "the agency" to what a
+# nearby message named. Fifty anchors cover a conversation's recurring
+# subjects; an anchor past them is still counted, and offered once it is used
+# more. Both bound the prompt every extracting remember pays for.
+MAX_RECENT = 3
+MAX_VOCABULARY = 50
+
 # The grammar's reserved words, mirroring the server's keyword table. A bare term
 # spelling one of these is syntax wherever a term stands, so the builder has to
 # know them to quote around them.

@@ -22,11 +22,12 @@
 
 """OpenAI provider tests against a mocked openai client — no vendor calls."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fraise_sdk import FraiseClient, FraiseError
-from fraise_sdk.providers.base import Anchor, Embedder, Extractor
+from fraise_sdk.providers.base import Anchor, Context, Embedder, Extractor
 
 # The providers import their client at module scope, so skip the whole file
 # when the optional 'openai' extra is not installed.
@@ -87,7 +88,9 @@ def test_openai_extractor_turns_the_answer_into_anchors(chat_client):
         '{"topics": ["travel"], "entities": ["Anne", "Lisbon airport"]}'
     )
 
-    anchors = OpenAIExtractor(client=client).extract("Anne lands at Lisbon airport")
+    anchors = OpenAIExtractor(client=client).extract(
+        "Anne lands at Lisbon airport", Context()
+    )
 
     assert anchors == [
         Anchor(value="travel", type="topic"),
@@ -96,23 +99,56 @@ def test_openai_extractor_turns_the_answer_into_anchors(chat_client):
     ]
 
 
-def test_openai_extractor_sends_the_message_verbatim(chat_client):
-    """The text reaches the model untouched, under a strict schema and a cap.
+def test_openai_extractor_sends_the_message_beside_its_context(chat_client):
+    """The message and its graph's context reach the model as one JSON object.
 
-    The completion cap is what keeps a reasoning model's hidden tokens from
-    truncating the JSON answer mid-string; the strict schema is what makes the
-    answer parseable at all. Both are part of the request the benchmark makes.
+    JSON carries the text losslessly, quotes included, and splits the
+    vocabulary into the topics and the entities an answer can reuse. Text
+    outside ASCII travels as itself, not as escapes a model reads less well and
+    pays more tokens for. The completion cap keeps a reasoning model's hidden
+    tokens from truncating the JSON answer mid-string; the strict schema is
+    what makes the answer parseable at all. All of it is part of the request
+    the benchmark makes.
     """
     client = chat_client('{"topics": [], "entities": []}')
-    text = "it's 3:30 — Anne's flight lands"
+    text = 'Anne: elle atterrit à Lisbonne — "enfin"'
+    context = Context(
+        recent=("Mel: when does she land?",),
+        vocabulary=(
+            Anchor(value="travel", type="topic"),
+            Anchor(value="anne", type="entity"),
+        ),
+    )
 
-    OpenAIExtractor(client=client).extract(text)
+    OpenAIExtractor(client=client).extract(text, context)
 
     request = client.chat.completions.create.call_args.kwargs
+    user = request["messages"][-1]
     assert request["model"] == "gpt-5-mini"
-    assert request["messages"][-1] == {"role": "user", "content": text}
+    assert user["role"] == "user"
+    assert json.loads(user["content"]) == {
+        "recent": ["Mel: when does she land?"],
+        "vocabulary": {"topics": ["travel"], "entities": ["anne"]},
+        "message": text,
+    }
+    assert "atterrit à Lisbonne —" in user["content"]
     assert request["max_completion_tokens"] == 16000
     assert request["response_format"]["json_schema"]["strict"] is True
+
+
+def test_openai_extractor_instructions_describe_every_field_it_sends(chat_client):
+    """Each field of the message sent is one the instructions describe by name.
+
+    The model learns what a field is for only from the instructions, so a
+    field renamed on one side alone would reach it unexplained.
+    """
+    client = chat_client('{"topics": [], "entities": []}')
+
+    OpenAIExtractor(client=client).extract("the kettle whistles", Context())
+
+    system, user = client.chat.completions.create.call_args.kwargs["messages"]
+    for field in json.loads(user["content"]):
+        assert f"- {field}:" in system["content"]
 
 
 @pytest.mark.parametrize("content", [None, '{"topics": ["tra', '{"topics": []}', "[]"])
@@ -126,7 +162,7 @@ def test_openai_extractor_raises_on_an_answer_it_cannot_read(chat_client, conten
     client = chat_client(content, finish_reason="length")
 
     with pytest.raises(FraiseError, match="finish_reason=length"):
-        OpenAIExtractor(client=client).extract("the kettle whistles")
+        OpenAIExtractor(client=client).extract("the kettle whistles", Context())
 
 
 def test_openai_extractor_is_an_extractor(chat_client):
@@ -146,7 +182,7 @@ def test_openai_extractor_builds_its_own_client_from_the_api_key(chat_client):
         extractor = OpenAIExtractor(api_key="sk-test")
 
     openai.OpenAI.assert_called_once_with(api_key="sk-test")
-    assert extractor.extract("the heron fishes") == [
+    assert extractor.extract("the heron fishes", Context()) == [
         Anchor(value="birds", type="topic")
     ]
 

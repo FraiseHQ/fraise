@@ -6,6 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/blevesearch/snowballstem v0.9.0
 	github.com/gin-gonic/gin v1.12.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/tsenart/vegeta/v12 v12.13.0
