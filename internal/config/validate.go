@@ -84,13 +84,6 @@ const (
 	RelevanceMatchCount string = "matchcount"
 )
 
-// db.ranking-algorithm.name — the global boost applied to relevance scores;
-// "none" disables it.
-const (
-	RankingNone     string = "none"
-	RankingPageRank string = "pagerank"
-)
-
 // The values each setting accepts, in the order the error message lists them.
 // They are the single source of truth for the accepted set, and consumers
 // switch on the same constants. A value added here needs a case in each of
@@ -110,8 +103,6 @@ var (
 	ScoringAlgorithms = []string{ScoringExcess, ScoringRRF}
 
 	RelevanceModels = []string{RelevanceBM25, RelevanceMatchCount}
-
-	RankingAlgorithms = []string{RankingNone, RankingPageRank}
 )
 
 // Canonical rewrites *v to whichever accepted value it matches
@@ -138,12 +129,13 @@ func Canonical(v *string, name string, accepted []string) error {
 // Every setting with a fixed vocabulary belongs here: one left out gets its
 // consumer's silent fallback, and nothing makes that visible from the
 // outside. The same holds for a numeric setting with a bounded domain:
-// db.min-score-ratio is a fraction of the best hit's relevance, and a value
-// past 1 (an operator thinking in percent) would put the bar above every hit
-// and silently empty every recall. db.max-depth caps a recall's depth clause,
+// db.max-depth caps a recall's depth clause,
 // and search has no lane past 2: a higher ceiling would let depth:3 through
 // to be silently answered as depth 2, and a negative one would reject every
-// recall that names a depth. scheduler.workers has a floor: Adjust only
+// recall that names a depth. db.max-top has a floor for the same reason: a
+// ceiling below 1 would reject every recall that names a top. It has no
+// upper bound, since how many hits one recall may ask for is the operator's
+// call. scheduler.workers has a floor: Adjust only
 // replaces a zero, so a negative count would reach the scheduler, which would
 // start no worker and leave every accepted query waiting forever.
 // db.num-graphs is bounded by the selector: a selector is a uint8, so a graph
@@ -159,7 +151,6 @@ func (c *ConfigSet) validate() error {
 		{&c.DB.Precision, "db.precision", Precisions},
 		{&c.DB.HashingFunction.Name, "db.hashing-function.name", HashingFunctions},
 		{&c.DB.SearchAlgorithm.Name, "db.search-algorithm.name", SearchAlgorithms},
-		{&c.DB.RankingAlgorithm.Name, "db.ranking-algorithm.name", RankingAlgorithms},
 		{&c.DB.ScoringAlgorithm.Name, "db.scoring-algorithm.name", ScoringAlgorithms},
 		{&c.DB.RelevanceModel.Name, "db.relevance-model.name", RelevanceModels},
 	}
@@ -170,10 +161,13 @@ func (c *ConfigSet) validate() error {
 		}
 	}
 
-	// Written as the accepted range rather than its complement so a NaN, which
-	// fails every comparison, is rejected too instead of slipping through.
-	if r := c.DB.MinScoreRatio; !(r >= 0 && r <= 1) {
-		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
+	// The pool and the cap each have a floor below which no slot could be
+	// drawn or no fact taken for a facet.
+	if p := c.DB.Aggregate.Pool; p < 1 {
+		return fmt.Errorf("%w: db.aggregate.pool = %d (accepted: 1 or more)", ErrInvalidValue, p)
+	}
+	if n := c.DB.Aggregate.Cap; n < 1 {
+		return fmt.Errorf("%w: db.aggregate.cap = %d (accepted: 1 or more)", ErrInvalidValue, n)
 	}
 
 	if w := c.Scheduler.Workers; w < 1 {
@@ -183,6 +177,10 @@ func (c *ConfigSet) validate() error {
 	// An operator may lower the ceiling, never raise it past the last lane.
 	if d := c.DB.MaxDepth; d < 0 || d > 2 {
 		return fmt.Errorf("%w: db.max-depth = %d (accepted: 0 to 2)", ErrInvalidValue, d)
+	}
+
+	if m := c.DB.MaxTop; m < 1 {
+		return fmt.Errorf("%w: db.max-top = %d (accepted: 1 or more)", ErrInvalidValue, m)
 	}
 
 	if n := c.DB.NumGraphs; n < 1 || n > math.MaxUint8+1 {

@@ -65,12 +65,19 @@ func (g *fakeGraph) RUnlock() { g.runlocks++ }
 func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]*graph.Node[string], []float32, [][]scoring.Contribution[string, float32], float32, error) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (graph.Result[string, float32], error) {
 	g.searchCalled = true
 	if g.searchErr != nil {
-		return nil, nil, nil, 0, g.searchErr
+		return graph.Result[string, float32]{}, g.searchErr
 	}
-	return g.searchNodes, g.searchScores, g.searchContribs, g.searchBackground, nil
+	result := graph.Result[string, float32]{Background: g.searchBackground, Hits: make([]graph.Hit[string, float32], len(g.searchNodes))}
+	for i, node := range g.searchNodes {
+		result.Hits[i] = graph.Hit[string, float32]{Node: node, Score: g.searchScores[i]}
+		if i < len(g.searchContribs) {
+			result.Hits[i].Contributions = g.searchContribs[i]
+		}
+	}
+	return result, nil
 }
 
 // GetHasher returns a real (fake) hasher rather than nil: the write path
@@ -271,9 +278,9 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	}
 
 	// A recall whose since: window covers only the re-assertion.
-	nodes, _, _, _, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
-	if len(nodes) != 1 {
-		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(nodes))
+	result, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
+	if len(result.Hits) != 1 {
+		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(result.Hits))
 	}
 }
 
@@ -392,7 +399,8 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			nodes, _, _, _, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			result, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			nodes := result.Nodes()
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
 				got = append(got, (*n).GetValue())

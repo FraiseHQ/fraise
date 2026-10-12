@@ -19,7 +19,7 @@ A recall pulls candidates from each source it can use, each carrying its raw ret
 | Source | Mass it carries |
 |---|---|
 | text index | BM25 $\times$ coverage: the share of the query's idf mass the fact matched, so a fact matching every query term keeps its full BM25 score and a partial match is discounted by the informativeness of the terms it missed |
-| vector index | $1 / (1 + \text{distance})$ similarity |
+| vector index | $1 / (1 + \text{distance})$ similarity, weighted by the information the best text hit missed ([vector weight](/docs/configuration/reference/database#vector-weight)) |
 | named anchors, on a recall with no term or vector | a unit mass for each named anchor the fact is filed under |
 
 A fact found by more than one source carries the sum of their masses.
@@ -46,7 +46,9 @@ A fact's relevance is its own mass plus everything transmitted to it.
 
 ## Where the list stops
 
-A recall returns its `top:` best candidates — and, with the score cutoff on, fewer: `db.min-score-ratio` drops the hits whose relevance, before recency decay and the ranking boost, is below a fraction of the best hit's. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
+A recall returns its `top:` best candidates, or every match when there are fewer.
+
+The slots are spread across the facets the ranking spans, the sessions of a conversation, say: each facet's best fact before any facet's second, the deferred facts after, so ten slots cover as many sessions as the pool offers before deepening any, and the best hit stays first. See [`db.aggregate`](/docs/configuration/reference/database#dbaggregate).
 
 ## Why a recall needs a seed
 

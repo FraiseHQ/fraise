@@ -28,7 +28,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
-	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/internal/index"
 )
@@ -45,7 +44,7 @@ func testConfig() *config.ConfigSet {
 }
 
 // fakeGraph is a minimal Graph implementation used to unit-test the graph
-// algorithms (BFS, PageRank) against arbitrary topologies that the typed
+// algorithms (BFS) against arbitrary topologies that the typed
 // Fact->Entity relationships cannot express (cycles, chains). Get, the edge
 // views (AdjacencyMap, PredecessorMap, Neighbours) and the counts carry real
 // behaviour; the rest are inert stubs.
@@ -127,8 +126,8 @@ func (g *fakeGraph) Delete(graph.Node[uint64]) error                    { return
 func (g *fakeGraph) GetVectorIndex() index.VectorIndex[uint64, float64] { return nil }
 func (g *fakeGraph) GetTextIndex() index.TextIndex[uint64, float64]     { return nil }
 func (g *fakeGraph) Nodes() map[uint64]graph.Node[uint64]               { return nil }
-func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) ([]*graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64, error) {
-	return nil, nil, nil, 0, nil
+func (g *fakeGraph) Search([]string, containers.Vector[uint64, float64], []string, []string, int, int, time.Time, time.Time) (graph.Result[uint64, float64], error) {
+	return graph.Result[uint64, float64]{}, nil
 }
 func (g *fakeGraph) RLock()        {}
 func (g *fakeGraph) Lock()         {}

@@ -25,29 +25,29 @@ package lexer_test
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
 
 func Test_newLexer(t *testing.T) {
 	l := lexer.New("recall anna topic:job")
-	if l.Character != rune('r') {
-		t.Error("Character should be:", rune('r'), "but got:", l.Character)
+	if got, want := l.Character, rune('r'); got != want {
+		t.Errorf("Character = %q, want %q", got, want)
 	}
 }
 
 func Test_Next(t *testing.T) {
 	l := lexer.New("remember anna 'I work at Google' topic:job")
-	token1 := l.Next()
-	token2 := l.Next()
-	token3 := l.Next()
-	if token1.Literal != "remember" || token1.Type != lexer.REMEMBER {
-		t.Error("Wrong Value")
+	got := []lexer.Token{l.Next(), l.Next(), l.Next()}
+	want := []lexer.Token{
+		{Type: lexer.REMEMBER, Literal: "remember"},
+		{Type: lexer.WHITESPACE, Literal: " "},
+		{Type: lexer.LITERAL, Literal: "anna"},
 	}
-	if token2.Literal != " " || token2.Type != lexer.WHITESPACE {
-		t.Error("Wrong Value")
-	}
-	if token3.Literal != "anna" || token3.Type != lexer.LITERAL {
-		t.Error("Wrong Value")
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+		t.Errorf("Next() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -56,73 +56,67 @@ func Test_NextUntilEol(t *testing.T) {
 	for i := 0; i < 7; i++ {
 		_ = l.Next()
 	}
-	token := l.Next()
-	if token.Literal != "" || token.Type != lexer.EOL {
-		t.Error("Wrong Value")
+	got := l.Next()
+	want := lexer.Token{Type: lexer.EOL, Literal: ""}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+		t.Errorf("Next() after the last token mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func Test_SpecialCharacters(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []lexer.Token
+	tests := map[string]struct {
+		input string
+		want  []lexer.Token
 	}{
-		{
-			name:  "colon token",
+		"colon token": {
 			input: "topic:job",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "job"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "parentheses tokens",
+		"parentheses tokens": {
 			input: "(anna)",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.LPAREN, Literal: "("},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.RPAREN, Literal: ")"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "dollar sign token",
+		"dollar sign token": {
 			input: "$vec",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.DOLLAR, Literal: "$"},
 				{Type: lexer.VEC, Literal: "vec"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "single quoted phrase",
+		"single quoted phrase": {
 			input: "'hello'",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.PHRASE, Literal: "hello"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "consecutive special chars",
+		"consecutive special chars": {
 			input: ":::",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			// The three anchor-clause markers are lexed but no production
-			// accepts them, so they exist only to be rejected by name. A word is
-			// letters and digits, so a '-' inside one ends it rather than joining
-			// it: foo-bar is written 'foo-bar'.
-			name:  "anchor markers are their own tokens",
+		// The three anchor-clause markers are lexed but no production
+		// accepts them, so they exist only to be rejected by name. A word is
+		// letters and digits, so a '-' inside one ends it rather than joining
+		// it: foo-bar is written 'foo-bar'.
+		"anchor markers are their own tokens": {
 			input: "+~-foo-bar",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.PLUS, Literal: "+"},
 				{Type: lexer.TILDE, Literal: "~"},
 				{Type: lexer.MINUS, Literal: "-"},
@@ -132,12 +126,11 @@ func Test_SpecialCharacters(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			// Any other character outside a phrase is a token of its own, one
-			// character long, so a word ends at it instead of absorbing it.
-			name:  "special characters are their own tokens",
+		// Any other character outside a phrase is a token of its own, one
+		// character long, so a word ends at it instead of absorbing it.
+		"special characters are their own tokens": {
 			input: "ferry;é_2",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.LITERAL, Literal: "ferry"},
 				{Type: lexer.SPECIAL, Literal: ";"},
 				{Type: lexer.LITERAL, Literal: "é"},
@@ -146,10 +139,9 @@ func Test_SpecialCharacters(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "nested parentheses",
+		"nested parentheses": {
 			input: "(())",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.LPAREN, Literal: "("},
 				{Type: lexer.LPAREN, Literal: "("},
 				{Type: lexer.RPAREN, Literal: ")"},
@@ -159,90 +151,79 @@ func Test_SpecialCharacters(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expected := range tt.expected {
-				token := l.Next()
-				if token.Type != expected.Type || token.Literal != expected.Literal {
-					t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
-						i, expected.Type, expected.Literal, token.Type, token.Literal)
-				}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			l := lexer.New(tc.input)
+			got := make([]lexer.Token, len(tc.want))
+			for i := range got {
+				got[i] = l.Next()
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", tc.input, diff)
 			}
 		})
 	}
 }
 
 func Test_AllKeyLITERALs(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected lexer.TokenType
+	tests := map[string]struct {
+		want lexer.TokenType
 	}{
-		{"recall", lexer.RECALL},
-		{"remember", lexer.REMEMBER},
-		{"forget", lexer.FORGET},
-		{"update", lexer.UPDATE},
-		{"topic", lexer.TOPIC},
-		{"since", lexer.SINCE},
-		{"until", lexer.UNTIL},
-		{"top", lexer.TOP},
-		{"depth", lexer.DEPTH},
-		{"vec", lexer.VEC},
+		"recall":   {want: lexer.RECALL},
+		"remember": {want: lexer.REMEMBER},
+		"forget":   {want: lexer.FORGET},
+		"update":   {want: lexer.UPDATE},
+		"topic":    {want: lexer.TOPIC},
+		"since":    {want: lexer.SINCE},
+		"until":    {want: lexer.UNTIL},
+		"top":      {want: lexer.TOP},
+		"depth":    {want: lexer.DEPTH},
+		"vec":      {want: lexer.VEC},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			token := l.Next()
-			if token.Type != tt.expected {
-				t.Errorf("Expected token type %v for %q, got %v", tt.expected, tt.input, token.Type)
-			}
-			if token.Literal != tt.input {
-				t.Errorf("Expected literal %q, got %q", tt.input, token.Literal)
+	for input, tc := range tests {
+		t.Run(input, func(t *testing.T) {
+			got := lexer.New(input).Next()
+			want := lexer.Token{Type: tc.want, Literal: input}
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", input, diff)
 			}
 		})
 	}
 }
 
 func Test_KeyLITERALCaseSensitivity(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected lexer.TokenType
+	tests := map[string]struct {
+		want lexer.TokenType
 	}{
-		{"RECALL", lexer.LITERAL},
-		{"ReCaLl", lexer.LITERAL},
-		{"Forget", lexer.LITERAL},
-		{"UPDATE", lexer.LITERAL},
+		"RECALL": {want: lexer.LITERAL},
+		"ReCaLl": {want: lexer.LITERAL},
+		"Forget": {want: lexer.LITERAL},
+		"UPDATE": {want: lexer.LITERAL},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			token := l.Next()
-			if token.Type != tt.expected {
-				t.Errorf("Expected %q to be tokenized as %v, got %v", tt.input, tt.expected, token.Type)
+	for input, tc := range tests {
+		t.Run(input, func(t *testing.T) {
+			if got := lexer.New(input).Next().Type; got != tc.want {
+				t.Errorf("lexing %q: type = %v, want %v", input, got, tc.want)
 			}
 		})
 	}
 }
 
 func Test_KeyLITERALsAsSubstrings(t *testing.T) {
-	tests := []struct {
-		input string
-	}{
-		{"remembering"},
-		{"recall123"},
-		{"forgetme"},
-		{"andthen"},
-		{"topical"},
+	tests := map[string]struct{}{
+		"remembering": {},
+		"recall123":   {},
+		"forgetme":    {},
+		"andthen":     {},
+		"topical":     {},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			token := l.Next()
-			if token.Type != lexer.LITERAL {
-				t.Errorf("Expected %q to be tokenized as LITERAL, got %v", tt.input, token.Type)
+	for input := range tests {
+		t.Run(input, func(t *testing.T) {
+			if got, want := lexer.New(input).Next().Type, lexer.LITERAL; got != want {
+				t.Errorf("lexing %q: type = %v, want %v", input, got, want)
 			}
 		})
 	}
@@ -252,45 +233,40 @@ func Test_KeyLITERALsAsSubstrings(t *testing.T) {
 // one WHITESPACE token carrying the run verbatim, wherever it sits — between
 // words, before the first or after the last.
 func Test_WhitespaceHandling(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []lexer.Token
+	tests := map[string]struct {
+		input string
+		want  []lexer.Token
 	}{
-		{
-			name:  "multiple spaces",
+		"multiple spaces": {
 			input: "recall    anna",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: "    "},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "tabs between tokens",
+		"tabs between tokens": {
 			input: "recall\t\tanna",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: "\t\t"},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "mixed whitespace",
+		"mixed whitespace": {
 			input: "recall \t \r anna",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: " \t \r "},
 				{Type: lexer.LITERAL, Literal: "anna"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "leading whitespace",
+		"leading whitespace": {
 			input: "   recall anna",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.WHITESPACE, Literal: "   "},
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: " "},
@@ -298,10 +274,9 @@ func Test_WhitespaceHandling(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "trailing whitespace",
+		"trailing whitespace": {
 			input: "recall anna   ",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
@@ -311,61 +286,55 @@ func Test_WhitespaceHandling(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expected := range tt.expected {
-				token := l.Next()
-				if token.Type != expected.Type || token.Literal != expected.Literal {
-					t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
-						i, expected.Type, expected.Literal, token.Type, token.Literal)
-				}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			l := lexer.New(tc.input)
+			got := make([]lexer.Token, len(tc.want))
+			for i := range got {
+				got[i] = l.Next()
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", tc.input, diff)
 			}
 		})
 	}
 }
 
 func Test_BoundaryConditions(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []lexer.Token
+	tests := map[string]struct {
+		input string
+		want  []lexer.Token
 	}{
-		{
-			name:  "empty input",
+		"empty input": {
 			input: "",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "whitespace only",
+		"whitespace only": {
 			input: "   \t\r  ",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.WHITESPACE, Literal: "   \t\r  "},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "single character",
+		"single character": {
 			input: "a",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.LITERAL, Literal: "a"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "single special character",
+		"single special character": {
 			input: ":",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "only special characters",
+		"only special characters": {
 			input: ":$()",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.DOLLAR, Literal: "$"},
 				{Type: lexer.LPAREN, Literal: "("},
@@ -375,15 +344,15 @@ func Test_BoundaryConditions(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expected := range tt.expected {
-				token := l.Next()
-				if token.Type != expected.Type || token.Literal != expected.Literal {
-					t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
-						i, expected.Type, expected.Literal, token.Type, token.Literal)
-				}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			l := lexer.New(tc.input)
+			got := make([]lexer.Token, len(tc.want))
+			for i := range got {
+				got[i] = l.Next()
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", tc.input, diff)
 			}
 		})
 	}
@@ -393,25 +362,21 @@ func Test_ReadPastEOL(t *testing.T) {
 	l := lexer.New("recall")
 	l.Next() // consume "recall"
 
-	token1 := l.Next() // first EOL
-	token2 := l.Next() // second EOL
-	token3 := l.Next() // third EOL
-
-	if token1.Type != lexer.EOL || token2.Type != lexer.EOL || token3.Type != lexer.EOL {
-		t.Error("Reading past EOL should continue returning EOL tokens")
+	got := []lexer.TokenType{l.Next().Type, l.Next().Type, l.Next().Type}
+	want := []lexer.TokenType{lexer.EOL, lexer.EOL, lexer.EOL}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("reading past EOL should keep returning EOL tokens: mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func Test_ComplexQueries(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []lexer.Token
+	tests := map[string]struct {
+		input string
+		want  []lexer.Token
 	}{
-		{
-			name:  "query with filter",
+		"query with filter": {
 			input: "recall anna topic:job",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
@@ -422,11 +387,10 @@ func Test_ComplexQueries(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			// "or" and "and" are not keywords: they lex as plain literals.
-			name:  "former boolean keywords lex as literals",
+		// "or" and "and" are not keywords: they lex as plain literals.
+		"former boolean keywords lex as literals": {
 			input: "recall (anna or bob) and topic:job",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LPAREN, Literal: "("},
@@ -445,10 +409,9 @@ func Test_ComplexQueries(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "with parameters",
+		"with parameters": {
 			input: "recall $vec top:5 depth:3",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.DOLLAR, Literal: "$"},
@@ -464,10 +427,9 @@ func Test_ComplexQueries(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "date filters",
+		"date filters": {
 			input: "recall anna since:'2024-01-01' until:'2024-12-31'",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
@@ -484,30 +446,28 @@ func Test_ComplexQueries(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expected := range tt.expected {
-				token := l.Next()
-				if token.Type != expected.Type || token.Literal != expected.Literal {
-					t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
-						i, expected.Type, expected.Literal, token.Type, token.Literal)
-				}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			l := lexer.New(tc.input)
+			got := make([]lexer.Token, len(tc.want))
+			for i := range got {
+				got[i] = l.Next()
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", tc.input, diff)
 			}
 		})
 	}
 }
 
 func Test_StringScanningEdgeCases(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []lexer.Token
+	tests := map[string]struct {
+		input string
+		want  []lexer.Token
 	}{
-		{
-			name:  "empty string between delimiters",
+		"empty string between delimiters": {
 			input: "topic::job",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.TOPIC, Literal: "topic"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.COLON, Literal: ":"},
@@ -515,19 +475,17 @@ func Test_StringScanningEdgeCases(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "LITERAL ending with special char",
+		"LITERAL ending with special char": {
 			input: "LITERAL:",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.LITERAL, Literal: "LITERAL"},
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "special char at start",
+		"special char at start": {
 			input: ":LITERAL",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.COLON, Literal: ":"},
 				{Type: lexer.LITERAL, Literal: "LITERAL"},
 				{Type: lexer.EOL, Literal: ""},
@@ -535,15 +493,15 @@ func Test_StringScanningEdgeCases(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expected := range tt.expected {
-				token := l.Next()
-				if token.Type != expected.Type || token.Literal != expected.Literal {
-					t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
-						i, expected.Type, expected.Literal, token.Type, token.Literal)
-				}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			l := lexer.New(tc.input)
+			got := make([]lexer.Token, len(tc.want))
+			for i := range got {
+				got[i] = l.Next()
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", tc.input, diff)
 			}
 		})
 	}
@@ -552,14 +510,14 @@ func Test_StringScanningEdgeCases(t *testing.T) {
 func Test_PositionTracking(t *testing.T) {
 	l := lexer.New("recall anna")
 
-	if l.CurrentPos.Column != 0 {
-		t.Errorf("Expected initial CurrentPos.Column to be 0, got %d", l.CurrentPos.Column)
+	if got, want := l.CurrentPos.Column, 0; got != want {
+		t.Errorf("initial CurrentPos.Column = %d, want %d", got, want)
 	}
 
 	l.Next() // consume "recall"
 
-	if l.CurrentPos.Column != 6 {
-		t.Errorf("After reading 'recall', expected CurrentPos.Column to be 6, got %d", l.CurrentPos.Column)
+	if got, want := l.CurrentPos.Column, 6; got != want {
+		t.Errorf("after reading 'recall', CurrentPos.Column = %d, want %d", got, want)
 	}
 }
 
@@ -570,14 +528,16 @@ func Test_PositionTracking(t *testing.T) {
 // this drifts, every "parse error at column N" points at the wrong word while
 // still reading like a precise message.
 func TestTokenPosIsLastCharacter(t *testing.T) {
+	type token struct {
+		Literal string
+		Column  int
+	}
+
 	// The columns below are the 1-based index of each token's final character:
 	// "recall" ends at 6, "@" at 7, "2" at 8, the space after it at 9, "anna"
 	// at 13, and so on.
 	input := "recall@2 anna topic:food top:10"
-	want := []struct {
-		literal string
-		column  int
-	}{
+	want := []token{
 		{"recall", 6},
 		{"@", 7},
 		{"2", 8},
@@ -594,14 +554,13 @@ func TestTokenPosIsLastCharacter(t *testing.T) {
 	}
 
 	l := lexer.New(input)
-	for _, w := range want {
+	got := make([]token, len(want))
+	for i := range got {
 		tok := l.Next()
-		if tok.Literal != w.literal {
-			t.Fatalf("token stream diverged: got %q, want %q", tok.Literal, w.literal)
-		}
-		if tok.Pos.Column != w.column {
-			t.Errorf("%q: Pos.Column = %d, want %d (its last character)", w.literal, tok.Pos.Column, w.column)
-		}
+		got[i] = token{tok.Literal, tok.Pos.Column}
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("token Pos.Column is not its last character: mismatch (-want +got):\n%s", diff)
 	}
 
 	// EOL's Pos is the end of input (the input's length), so an error about a
@@ -627,19 +586,19 @@ func TestPhrasePosIsLastCharacter(t *testing.T) {
 	l.Next() // remember
 	l.Next() // the space before the phrase
 
-	tok := l.Next()
-	if tok.Type != lexer.PHRASE {
-		t.Fatalf("got %v %q, want a PHRASE", tok.Type, tok.Literal)
+	got := l.Next()
+	if got.Type != lexer.PHRASE {
+		t.Fatalf("got %v %q, want a PHRASE", got.Type, got.Literal)
 	}
-	if tok.Pos.Column != 17 {
-		t.Errorf("phrase Pos.Column = %d, want 17 (its closing quote)", tok.Pos.Column)
+	if want := 17; got.Pos.Column != want {
+		t.Errorf("phrase Pos.Column = %d, want %d (its closing quote)", got.Pos.Column, want)
 	}
 }
 
 func Test_VeryLongQuery(t *testing.T) {
 	input := "recall $vec anna bob charlie +topic:personal ~topic:draft since:'2024-01-01' until:'2024-12-31' top:10 depth:5"
 
-	expected := []lexer.Token{
+	want := []lexer.Token{
 		{Type: lexer.RECALL, Literal: "recall"},
 		{Type: lexer.WHITESPACE, Literal: " "},
 		{Type: lexer.DOLLAR, Literal: "$"},
@@ -680,25 +639,23 @@ func Test_VeryLongQuery(t *testing.T) {
 	}
 
 	l := lexer.New(input)
-	for i, expected := range expected {
-		token := l.Next()
-		if token.Type != expected.Type || token.Literal != expected.Literal {
-			t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
-				i, expected.Type, expected.Literal, token.Type, token.Literal)
-		}
+	got := make([]lexer.Token, len(want))
+	for i := range got {
+		got[i] = l.Next()
+	}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+		t.Errorf("lexing %q mismatch (-want +got):\n%s", input, diff)
 	}
 }
 
 func Test_MultipleCommandsInSequence(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []lexer.Token
+	tests := map[string]struct {
+		input string
+		want  []lexer.Token
 	}{
-		{
-			name:  "remember with quoted content",
+		"remember with quoted content": {
 			input: "remember anna 'worked at Google from 2020 to 2023' topic:job",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.REMEMBER, Literal: "remember"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
@@ -711,10 +668,9 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "forget with multiple filters",
+		"forget with multiple filters": {
 			input: "forget anna topic:draft since:'2023-01-01'",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.FORGET, Literal: "forget"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
@@ -729,10 +685,9 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "update command",
+		"update command": {
 			input: "update anna 'new information' topic:job",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.UPDATE, Literal: "update"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
@@ -747,15 +702,15 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expected := range tt.expected {
-				token := l.Next()
-				if token.Type != expected.Type || token.Literal != expected.Literal {
-					t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
-						i, expected.Type, expected.Literal, token.Type, token.Literal)
-				}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			l := lexer.New(tc.input)
+			got := make([]lexer.Token, len(tc.want))
+			for i := range got {
+				got[i] = l.Next()
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", tc.input, diff)
 			}
 		})
 	}
@@ -767,15 +722,13 @@ func Test_MultipleCommandsInSequence(t *testing.T) {
 // either side of the newline, never part of it), and the parser decides
 // whether a trailing newline is a second instruction or the end of the text.
 func Test_NewlineIsItsOwnToken(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []lexer.Token
+	tests := map[string]struct {
+		input string
+		want  []lexer.Token
 	}{
-		{
-			name:  "a newline separates the lines it sits between",
+		"a newline separates the lines it sits between": {
 			input: "recall anna\ntopic:job",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.LITERAL, Literal: "anna"},
@@ -786,10 +739,9 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "consecutive newlines are consecutive tokens",
+		"consecutive newlines are consecutive tokens": {
 			input: "recall\n\n\nanna",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.NEWLINE, Literal: "\n"},
 				{Type: lexer.NEWLINE, Literal: "\n"},
@@ -798,10 +750,9 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "spaces and tabs around a newline stay blank",
+		"spaces and tabs around a newline stay blank": {
 			input: "recall  \n\t  anna",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: "  "},
 				{Type: lexer.NEWLINE, Literal: "\n"},
@@ -810,10 +761,9 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "a CRLF is one newline, the CR being blank",
+		"a CRLF is one newline, the CR being blank": {
 			input: "recall\r\nanna",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.RECALL, Literal: "recall"},
 				{Type: lexer.WHITESPACE, Literal: "\r"},
 				{Type: lexer.NEWLINE, Literal: "\n"},
@@ -821,10 +771,9 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
-		{
-			name:  "a newline inside a phrase is data, not a separator",
+		"a newline inside a phrase is data, not a separator": {
 			input: "remember 'line one\nline two'",
-			expected: []lexer.Token{
+			want: []lexer.Token{
 				{Type: lexer.REMEMBER, Literal: "remember"},
 				{Type: lexer.WHITESPACE, Literal: " "},
 				{Type: lexer.PHRASE, Literal: "line one\nline two"},
@@ -833,15 +782,15 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.New(tt.input)
-			for i, expected := range tt.expected {
-				token := l.Next()
-				if token.Type != expected.Type || token.Literal != expected.Literal {
-					t.Errorf("Token %d: expected {Type: %v, Literal: %q}, got {Type: %v, Literal: %q}",
-						i, expected.Type, expected.Literal, token.Type, token.Literal)
-				}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			l := lexer.New(tc.input)
+			got := make([]lexer.Token, len(tc.want))
+			for i := range got {
+				got[i] = l.Next()
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", tc.input, diff)
 			}
 		})
 	}
@@ -853,38 +802,35 @@ func Test_NewlineIsItsOwnToken(t *testing.T) {
 // unclosed quote yields an ILLEGAL token so the parser can report an
 // unterminated phrase.
 func TestScanPhrase(t *testing.T) {
-	cases := []struct {
-		name    string
-		input   string
-		wantTyp lexer.TokenType
-		wantLit string
+	cases := map[string]struct {
+		input string
+		want  lexer.Token
 	}{
-		{"reserved words inside", "'remember the topic since'", lexer.PHRASE, "remember the topic since"},
-		{"colon / time", "'meeting at 3:30pm'", lexer.PHRASE, "meeting at 3:30pm"},
-		{"symbols inside", "'$ @ ( ) :'", lexer.PHRASE, "$ @ ( ) :"},
-		{"escaped apostrophe", "'alice''s laptop'", lexer.PHRASE, "alice's laptop"},
-		{"empty phrase", "''", lexer.PHRASE, ""},
-		{"only an escaped quote", "''''", lexer.PHRASE, "'"},
-		{"interior spacing preserved", "'a   b'", lexer.PHRASE, "a   b"},
-		{"unterminated", "'oops no close", lexer.ILLEGAL, "oops no close"},
+		"reserved words inside":      {"'remember the topic since'", lexer.Token{Type: lexer.PHRASE, Literal: "remember the topic since"}},
+		"colon / time":               {"'meeting at 3:30pm'", lexer.Token{Type: lexer.PHRASE, Literal: "meeting at 3:30pm"}},
+		"symbols inside":             {"'$ @ ( ) :'", lexer.Token{Type: lexer.PHRASE, Literal: "$ @ ( ) :"}},
+		"escaped apostrophe":         {"'alice''s laptop'", lexer.Token{Type: lexer.PHRASE, Literal: "alice's laptop"}},
+		"empty phrase":               {"''", lexer.Token{Type: lexer.PHRASE, Literal: ""}},
+		"only an escaped quote":      {"''''", lexer.Token{Type: lexer.PHRASE, Literal: "'"}},
+		"interior spacing preserved": {"'a   b'", lexer.Token{Type: lexer.PHRASE, Literal: "a   b"}},
+		"unterminated":               {"'oops no close", lexer.Token{Type: lexer.ILLEGAL, Literal: "oops no close"}},
 		// Free-flowing text: ingestion feeds phrases arbitrary prose, so every
 		// JSON-transportable character is data between the quotes.
-		{"newline inside", "'line one\nline two'", lexer.PHRASE, "line one\nline two"},
-		{"crlf and tab inside", "'a\r\n\tb'", lexer.PHRASE, "a\r\n\tb"},
-		{"emoji and cjk", "'déjà vu 😀 東京'", lexer.PHRASE, "déjà vu 😀 東京"},
-		{"backslashes stay literal", `'C:\temp\new'`, lexer.PHRASE, `C:\temp\new`},
-		{"double quotes stay literal", `'she said "hi"'`, lexer.PHRASE, `she said "hi"`},
-		{"nul is data, not end of input", "'a\x00b'", lexer.PHRASE, "a\x00b"},
-		{"apostrophe at both edges", "'''wow'''", lexer.PHRASE, "'wow'"},
-		{"apostrophe cluster", "'it''s ''fine'''", lexer.PHRASE, "it's 'fine'"},
+		"newline inside":                {"'line one\nline two'", lexer.Token{Type: lexer.PHRASE, Literal: "line one\nline two"}},
+		"crlf and tab inside":           {"'a\r\n\tb'", lexer.Token{Type: lexer.PHRASE, Literal: "a\r\n\tb"}},
+		"emoji and cjk":                 {"'déjà vu 😀 東京'", lexer.Token{Type: lexer.PHRASE, Literal: "déjà vu 😀 東京"}},
+		"backslashes stay literal":      {`'C:\temp\new'`, lexer.Token{Type: lexer.PHRASE, Literal: `C:\temp\new`}},
+		"double quotes stay literal":    {`'she said "hi"'`, lexer.Token{Type: lexer.PHRASE, Literal: `she said "hi"`}},
+		"nul is data, not end of input": {"'a\x00b'", lexer.Token{Type: lexer.PHRASE, Literal: "a\x00b"}},
+		"apostrophe at both edges":      {"'''wow'''", lexer.Token{Type: lexer.PHRASE, Literal: "'wow'"}},
+		"apostrophe cluster":            {"'it''s ''fine'''", lexer.Token{Type: lexer.PHRASE, Literal: "it's 'fine'"}},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			got := lexer.New(tc.input).Next()
-			if got.Type != tc.wantTyp || got.Literal != tc.wantLit {
-				t.Errorf("Next(true) = {%v %q}, want {%v %q}",
-					got.Type, got.Literal, tc.wantTyp, tc.wantLit)
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+				t.Errorf("lexing %q mismatch (-want +got):\n%s", tc.input, diff)
 			}
 		})
 	}
@@ -896,8 +842,9 @@ func TestScanPhrase(t *testing.T) {
 func TestScanPhraseUnterminatedRecordsPosition(t *testing.T) {
 	// opening quote is the 5th rune (0-indexed column 4): "foo <'>bar"
 	got := lexer.New("foo 'bar").Next() // first token is the bare word "foo"
-	if got.Type != lexer.LITERAL || got.Literal != "foo" {
-		t.Fatalf("first token = {%v %q}, want LITERAL \"foo\"", got.Type, got.Literal)
+	want := lexer.Token{Type: lexer.LITERAL, Literal: "foo"}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(lexer.Token{}, "Pos")); diff != "" {
+		t.Errorf("first token mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -907,9 +854,11 @@ func TestScanPhraseUnterminatedRecordsPosition(t *testing.T) {
 func TestWhitespaceRunIsOneToken(t *testing.T) {
 	l := lexer.New("recall  \t \r zebras")
 	want := []lexer.TokenType{lexer.RECALL, lexer.WHITESPACE, lexer.LITERAL, lexer.EOL}
-	for i, typ := range want {
-		if got := l.Next(); got.Type != typ {
-			t.Fatalf("token %d = {%v %q}, want type %v", i, got.Type, got.Literal, typ)
-		}
+	got := make([]lexer.TokenType, len(want))
+	for i := range got {
+		got[i] = l.Next().Type
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("token types mismatch (-want +got):\n%s", diff)
 	}
 }

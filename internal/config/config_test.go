@@ -244,50 +244,49 @@ max-vector-dimension = 128
 	}
 }
 
-// TestConfigSet_ScoreCutoff pins the score cutoff's resting state and its
-// decoding. Off is the contract: a config that never mentions it must leave
-// every recall filling to top.
-func TestConfigSet_ScoreCutoff(t *testing.T) {
+// TestConfigSet_Aggregate pins the spread's two settings: by default a pool
+// of 60 and a cap of 1, the recall setting that was benchmarked, so a config
+// that never mentions them runs the engine that was measured; a 0 means the
+// default, as for the other counts; and the file and the flags reach the
+// same fields, an unset one keeping its default.
+func TestConfigSet_Aggregate(t *testing.T) {
 	c := config.New()
-	if c.DB.MinScoreRatio != 0 {
-		t.Errorf("DB.MinScoreRatio default: got %v, want 0 (off)", c.DB.MinScoreRatio)
+	want := config.Aggregate{Pool: 60, Cap: 1}
+	if c.DB.Aggregate != want {
+		t.Errorf("DB.Aggregate default: got %+v, want %+v", c.DB.Aggregate, want)
+	}
+
+	zero := config.New()
+	if err := zero.Parse([]string{"-config", missingConfig(t), "-aggregate-pool", "0", "-aggregate-cap", "0"}); !errors.Is(err, config.ErrMissingFile) {
+		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
+	}
+	if zero.DB.Aggregate != want {
+		t.Errorf("DB.Aggregate from explicit zeros: got %+v, want the defaults %+v", zero.DB.Aggregate, want)
 	}
 
 	const contents = `
-[db]
-min-score-ratio = 0.3
+[db.aggregate]
+pool = 40
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, config.DefaultConfigFile)
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("writing config file: %v", err)
 	}
-
 	f := config.New()
-	if _, err := f.FromFile(path); err != nil {
-		t.Fatalf("FromFile returned error: %v", err)
+	if err := f.Parse([]string{"-config", path}); err != nil {
+		t.Fatalf("Parse() error = %v, want nil", err)
 	}
-	if f.DB.MinScoreRatio != 0.3 {
-		t.Errorf("DB.MinScoreRatio: got %v, want 0.3", f.DB.MinScoreRatio)
-	}
-
-	// Parse with no file and no flags is the operator who never heard of the
-	// knob: adjust must leave the cutoff off.
-	p := config.New()
-	if err := p.Parse([]string{"-config", missingConfig(t)}); !errors.Is(err, config.ErrMissingFile) {
-		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
-	}
-	if p.DB.MinScoreRatio != 0 {
-		t.Errorf("DB.MinScoreRatio after Parse: got %v, want 0 (off)", p.DB.MinScoreRatio)
+	if want := (config.Aggregate{Pool: 40, Cap: 1}); f.DB.Aggregate != want {
+		t.Errorf("DB.Aggregate from file: got %+v, want %+v (the unset cap keeps its default)", f.DB.Aggregate, want)
 	}
 
-	// The flag reaches the same field.
 	fl := config.New()
-	if err := fl.Parse([]string{"-config", missingConfig(t), "-min-score-ratio", "0.1"}); !errors.Is(err, config.ErrMissingFile) {
+	if err := fl.Parse([]string{"-config", missingConfig(t), "-aggregate-cap", "2"}); !errors.Is(err, config.ErrMissingFile) {
 		t.Fatalf("Parse() error = %v, want ErrMissingFile", err)
 	}
-	if fl.DB.MinScoreRatio != 0.1 {
-		t.Errorf("DB.MinScoreRatio from flag: got %v, want 0.1", fl.DB.MinScoreRatio)
+	if want := (config.Aggregate{Pool: 60, Cap: 2}); fl.DB.Aggregate != want {
+		t.Errorf("DB.Aggregate from flags: got %+v, want %+v", fl.DB.Aggregate, want)
 	}
 }
 
@@ -382,7 +381,6 @@ func TestParseRejectsUnknownDBFlags(t *testing.T) {
 		{"-precision", "float16"},
 		{"-hashing-function", "murmur"},
 		{"-search-algorithm", "dfs"},
-		{"-ranking-algorithm", "hits"},
 		{"-scoring-algorithm", "tfidf"},
 		{"-relevance-model", "tfidf"},
 	} {
@@ -409,7 +407,6 @@ func TestParseCanonicalisesDBFlags(t *testing.T) {
 		"-precision", "Float64",
 		"-hashing-function", "T1ha",
 		"-search-algorithm", "EXCESS",
-		"-ranking-algorithm", "PAGERANK",
 	}
 
 	if err := c.Parse(args); errors.Is(err, config.ErrInvalidValue) {
@@ -424,9 +421,6 @@ func TestParseCanonicalisesDBFlags(t *testing.T) {
 	}
 	if c.DB.SearchAlgorithm.Name != config.SearchExcess {
 		t.Errorf("DB.SearchAlgorithm.Name = %q, want %q", c.DB.SearchAlgorithm.Name, config.SearchExcess)
-	}
-	if c.DB.RankingAlgorithm.Name != config.RankingPageRank {
-		t.Errorf("DB.RankingAlgorithm.Name = %q, want %q", c.DB.RankingAlgorithm.Name, config.RankingPageRank)
 	}
 }
 

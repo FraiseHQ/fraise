@@ -113,20 +113,6 @@ const (
 	// available for comparison runs.
 	DefaultRelevanceModel string = RelevanceBM25
 
-	// DefaultRankingAlgorithm is the global ranking boost applied to relevance
-	// scores; "none" disables it (the alternative is "pagerank").
-	DefaultRankingAlgorithm string = RankingNone
-
-	// DefaultPageRankDamping is the PageRank damping factor (used when ranking is
-	// "pagerank").
-	DefaultPageRankDamping float64 = 0.85
-
-	// DefaultPageRankMaxIter caps the number of PageRank power-iteration steps.
-	DefaultPageRankMaxIter int = 100
-
-	// DefaultPageRankTol is the convergence threshold that stops PageRank early.
-	DefaultPageRankTol float64 = 1e-6
-
 	// DefaultTop is how many ranked results a recall returns when no top clause
 	// is given.
 	DefaultTop int = 10
@@ -155,17 +141,29 @@ const (
 	// index insert or search can be asked to do.
 	DefaultMaxVectorDimension int = 4096
 
-	// DefaultHalflife is the time-decay half-life applied to fact scores.
-	DefaultHalflife time.Duration = 7 * 24 * time.Hour
+	// DefaultHalflife is the time-decay half-life applied to fact scores. Decay
+	// multiplies the whole score, so the half-life bounds how far recency
+	// overrides relevance. A long-term memory measures it in months: the newer
+	// of two equal facts still ranks first, and a strong match from last
+	// quarter still outranks a weak one from today.
+	DefaultHalflife time.Duration = 90 * 24 * time.Hour
 
 	// DefaultSeedSize is the minimum candidate budget each source (text and
 	// vector index) contributes to a search; the effective budget is
 	// max(seed-size, top), so a large recall is never starved of candidates.
 	DefaultSeedSize uint = 10
 
-	// DefaultMinScoreRatio leaves the score cutoff (DBConfig.MinScoreRatio)
-	// off.
-	DefaultMinScoreRatio float64 = 0
+	// DefaultAggregatePool is how many ranked candidates a recall's slots are
+	// spread from.
+	DefaultAggregatePool int = 60
+
+	// DefaultAggregateCap is how many fact hits one facet takes before the
+	// next facet gets its first: one, so the slots cover as many facets as the
+	// pool offers, the recall setting. Measured on the ten LoCoMo
+	// conversations, one graph each: session recall@10 0.932, multi-hop 0.757
+	// and open-domain 0.712, against 0.908, 0.679 and 0.664 with the ranking
+	// taken as it is, for precision 0.117 against 0.177.
+	DefaultAggregateCap int = 1
 
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000

@@ -33,7 +33,7 @@ import pytest
     data={"FRAISE_LOCOMO": "data/locomo-conv-26.json"},
 )
 @pytest.mark.parametrize("unit", ["f1@10", "p@1", "recall@10"])
-def test_retrieval_does_not_drop(comparison, unit):
+def test_retrieval_does_not_drop(comparison, fail_regressed, unit):
     """No retrieval metric drops by more than 0.001, over all questions or in any category.
 
     The metrics are exact, the same server ranking the same facts the same
@@ -43,7 +43,7 @@ def test_retrieval_does_not_drop(comparison, unit):
     dropped = [
         row for row in comparison if row.unit == unit and row.base - row.head > 0.001
     ]
-    assert not dropped
+    fail_regressed(dropped)
 
 
 @pytest.mark.nightly
