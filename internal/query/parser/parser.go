@@ -276,13 +276,23 @@ func (p *parser[K, P]) errMissingColon(key lexer.Token, value string) error {
 // placeholder (see clausePlaceholder). A caller who wrote "since 7d" is offered
 // since:7d. vec always gets its placeholder: it takes a parameter reference,
 // never a value written inline, so "vec 3" spelled back as vec:3 sent the
-// caller to another rejection.
+// caller to another rejection. A quoted duration after since or until loses
+// its quotes for the same reason: since:'7d' is rejected as a quoted duration,
+// so "since '7d'" is offered since:7d, the one spelling a duration has.
 func (p *parser[K, P]) clauseValue(key, tok lexer.Token) string {
+	kind := lexer.KeywordsMap[strings.ToLower(key.Literal)]
 	switch {
-	case lexer.KeywordsMap[strings.ToLower(key.Literal)] == lexer.VEC:
+	case kind == lexer.VEC:
 		return p.clausePlaceholder(key)
 	case tok.Type == lexer.LITERAL:
 		return tok.Literal
+	case tok.Type == lexer.PHRASE && (kind == lexer.SINCE || kind == lexer.UNTIL):
+		if t, err := containers.ParseTimeValue[K](tok.Literal); err == nil {
+			if _, relative := t.(containers.RelativeTime[K]); relative {
+				return tok.Literal
+			}
+		}
+		return quote(tok.Literal)
 	case tok.Type == lexer.PHRASE:
 		return quote(tok.Literal)
 	default:

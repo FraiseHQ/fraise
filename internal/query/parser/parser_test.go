@@ -460,6 +460,14 @@ func TestFieldRequiresColonSeparator(t *testing.T) {
 		"recall zebras since 7d 30d":           {"write since:7d"},
 		"recall zebras until 7d 30d":           {"write until:7d"},
 		"recall zebras since:7d until 30d 60d": {"write until:30d"},
+		// A quoted duration is spelled back bare: since:'7d' is itself
+		// rejected as a quoted duration, so repairing to it sends the caller
+		// from one error to the next. A quoted date keeps its quotes.
+		"recall x topic:y since'7d'":          {`"since" is missing its ':': write since:7d`},
+		"recall x topic:y since '7d'":         {`"since" is missing its ':': write since:7d`},
+		"recall x since '7d'":                 {`term "since" is also a keyword: write since:7d if a filter was meant, or quote it ('since') to search the word`},
+		"recall x topic:y until '3h'":         {`"until" is missing its ':': write until:3h`},
+		"recall x topic:y since '2026-01-15'": {`"since" is missing its ':': write since:'2026-01-15'`},
 	}
 
 	for query, tc := range cases {
