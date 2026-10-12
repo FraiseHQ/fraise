@@ -36,7 +36,4 @@ var (
 	// ErrSourceNotFound is returned by traversal algorithms (e.g. BFS) when the
 	// requested source vertex is absent from the graph.
 	ErrSourceNotFound = errors.New("graph: source vertex not found")
-	// ErrEmptyGraph is returned by ranking algorithms (e.g. PageRank) when the
-	// graph has no edges to rank over.
-	ErrEmptyGraph = errors.New("graph: no edges to rank")
 )

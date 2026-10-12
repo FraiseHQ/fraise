@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import warnings
+from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Sequence
 
 import requests
@@ -35,6 +36,8 @@ from fraise_sdk.constants import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT_SECONDS,
     EXPLAIN_PATH,
+    MAX_RECENT,
+    MAX_VOCABULARY,
     NO_CONTENT,
     QUERY_PATH,
     SDK_FILES,
@@ -46,6 +49,8 @@ from fraise_sdk.constants import (
 from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
 from fraise_sdk.models import GraphStats, RecallResult
 from fraise_sdk.providers.base import (
+    Anchor,
+    Context,
     Embedder,
     EmbedderLike,
     Extractor,
@@ -118,10 +123,15 @@ class FraiseClient:
     both operate on text alone, and any call can still pass an explicit
     ``vector`` or opt out with ``embed=False``.
 
-    Pass ``extractor`` (an object with an ``extract(text)`` method, or a plain
-    ``callable(text) -> Sequence[Anchor]``) to have :meth:`remember` file each
-    fact under the topics and entities it finds in the text, beside any given
-    ones. The text itself is stored verbatim; ``extract=False`` opts a call out.
+    Pass ``extractor`` (an object with an ``extract(text, context)`` method, or
+    a plain ``callable(text, context) -> Sequence[Anchor]``) to have
+    :meth:`remember` file each fact under the topics and entities it finds in
+    the text, beside any given ones. The text itself is stored verbatim;
+    ``extract=False`` opts a call out. Each message is read in its graph's
+    :class:`~fraise_sdk.providers.base.Context`: the latest facts stored in
+    that graph and the anchors extraction filed them under, which the client
+    keeps per graph, in this process only. A new client starts every graph's
+    context empty.
     """
 
     def __init__(
@@ -140,6 +150,14 @@ class FraiseClient:
         self._session = session or requests.Session()
         self._embed_fn = resolve_embedder(embedder)
         self._extract_fn = resolve_extractor(extractor)
+        # Each graph's context, as the facts this client stored there left it:
+        # the latest values, and on how many facts each extracted anchor was
+        # filed. The counts are kept whole, so an anchor outside the
+        # vocabulary's cap can still grow into it.
+        self._recent: defaultdict[int, deque[str]] = defaultdict(
+            lambda: deque(maxlen=MAX_RECENT)
+        )
+        self._vocabulary: defaultdict[int, Counter[Anchor]] = defaultdict(Counter)
 
     def close(self) -> None:
         """Close the session the client created; a passed-in session is left open."""
@@ -262,7 +280,10 @@ class FraiseClient:
         that default per call: ``True`` forces extraction (and errors if no
         extractor is set), ``False`` skips it. A failed extraction costs the
         extracted anchors, never the fact: it is stored under the given ones,
-        and a :class:`FraiseWarning` names the failure.
+        and a :class:`FraiseWarning` names the failure. The extractor reads
+        ``value`` in ``graph``'s context, and once the server has stored the
+        fact, the fact joins that context, extracted or not; its vocabulary
+        counts only the anchors the extractor returned.
 
         A vector is attached when one is available: an explicit ``vector`` always
         wins; otherwise, if the client has an embedder, ``value`` is encoded
@@ -274,7 +295,9 @@ class FraiseClient:
         Returns nothing on success and raises :class:`FraiseAPIError` if the
         server rejects the write.
         """
-        topics, entities = self._resolve_anchors(value, topics, entities, extract)
+        topics, entities, found = self._resolve_anchors(
+            value, graph, topics, entities, extract
+        )
         resolved = self._resolve_vector(vector, value, embed)
         text = _query.build_remember(
             value,
@@ -285,6 +308,8 @@ class FraiseClient:
         )
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
         self._post(text, parameters=parameters, timeout=timeout)
+        if self._extract_fn is not None:
+            self._learn(graph, value, found)
 
     def recall(
         self,
@@ -589,34 +614,46 @@ class FraiseClient:
     def _resolve_anchors(
         self,
         value: str,
+        graph: int,
         topics: Sequence[str] | None,
         entities: Sequence[str] | None,
         extract: bool | None,
-    ) -> tuple[Sequence[str] | None, Sequence[str] | None]:
-        """Return the anchors to file ``value`` under: the given ones, plus extracted.
+    ) -> tuple[Sequence[str] | None, Sequence[str] | None, list[Anchor]]:
+        """Return the anchors to file ``value`` under, and those extracted for it.
 
         ``extract`` is the same three-way switch as ``embed``: ``True`` requires
         an extractor, ``False`` never extracts, ``None`` extracts only if one is
-        configured. Any failure of the extractor (a raised error, or an answer
-        that is not a list of anchors) costs the extracted anchors and nothing
-        else: the given ones are returned, and a :class:`FraiseWarning` says
-        why, so the fact is never lost to its tagging.
+        configured. The extractor reads ``value`` in ``graph``'s context. Any
+        failure of the extractor (a raised error, or an answer that is not a
+        list of anchors) costs the extracted anchors and nothing else: the
+        given ones are returned, and a :class:`FraiseWarning` says why, so the
+        fact is never lost to its tagging.
+
+        Returns:
+            The topics and the entities to file ``value`` under, the given
+            ones followed by the extracted ones, then the extracted anchors
+            alone, empty when nothing was extracted.
 
         Raises:
             FraiseError: if ``extract`` is ``True`` and the client has no
                 extractor.
         """
         if extract is False:
-            return topics, entities
+            return topics, entities, []
         if extract is True and self._extract_fn is None:
             raise FraiseError(
                 "extract=True but this client has no extractor; construct it with "
                 "FraiseClient(..., extractor=...)"
             )
         if self._extract_fn is None:
-            return topics, entities
+            return topics, entities, []
         try:
-            found = [(anchor.type, anchor.value) for anchor in self._extract_fn(value)]
+            # Each anchor's fields are read here, inside the try, so an answer
+            # that is not a list of anchors fails as an extraction.
+            found = [
+                Anchor(value=anchor.value, type=anchor.type)
+                for anchor in self._extract_fn(value, self._context(graph))
+            ]
         except Exception as exc:
             warn(
                 f"anchor extraction failed ({exc!r}); the fact is stored without "
@@ -624,8 +661,35 @@ class FraiseClient:
                 FraiseWarning,
                 skip_file_prefixes=SDK_FILES,
             )
-            return topics, entities
+            return topics, entities, []
         return (
-            _with_extracted(topics, [v for kind, v in found if kind == "topic"]),
-            _with_extracted(entities, [v for kind, v in found if kind == "entity"]),
+            _with_extracted(topics, [a.value for a in found if a.type == "topic"]),
+            _with_extracted(entities, [a.value for a in found if a.type == "entity"]),
+            found,
         )
+
+    def _context(self, graph: int) -> Context:
+        """Return ``graph``'s context, as the facts stored there so far left it."""
+        return Context(
+            recent=tuple(self._recent[graph]),
+            vocabulary=tuple(
+                anchor
+                for anchor, _ in self._vocabulary[graph].most_common(MAX_VOCABULARY)
+            ),
+        )
+
+    def _learn(self, graph: int, value: str, found: Sequence[Anchor]) -> None:
+        """Add a stored fact, and the anchors extracted for it, to ``graph``'s context.
+
+        An anchor is counted as the server stores it, trimmed and in lower
+        case, and once per fact, so the most used anchor is the one filed on
+        the most facts. A tie keeps the order of first use, which keeps the
+        prompt a graph's history produces the same from run to run.
+        """
+        self._recent[graph].append(value)
+        filed = dict.fromkeys(
+            Anchor(value=anchor.value.strip().lower(), type=anchor.type)
+            for anchor in found
+            if anchor.value.strip()
+        )
+        self._vocabulary[graph].update(filed.keys())

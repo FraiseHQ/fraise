@@ -33,6 +33,7 @@ this package is what keeps ``import fraise_sdk`` free of vendor SDKs.
 
 from fraise_sdk.providers.base import (
     Anchor,
+    Context,
     Embedder,
     EmbedderLike,
     Extractor,
@@ -43,6 +44,7 @@ from fraise_sdk.providers.base import (
 
 __all__ = [
     "Anchor",
+    "Context",
     "Embedder",
     "EmbedderLike",
     "Extractor",

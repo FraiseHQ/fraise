@@ -45,32 +45,23 @@ type GraphStats struct {
 
 // Hit is one entry of a search result: a fact and its final score, after
 // boost and recency decay, with the contributions the score was folded from.
-// A group hit stands for several facts that matched the query by the same
-// rare term: Node and Score are its best member's, Members holds every
-// member best first (Node among them) with MemberScores parallel to it, and
-// Key is the term they share. A fact hit has no Members and no Key.
 type Hit[K comparable, P float32 | float64] struct {
 	Node          Node[K]
 	Score         P
 	Contributions []scoring.Contribution[K, P]
-	Members       []Node[K]
-	MemberScores  []P
-	Key           string
 }
 
-// Result is what Search returns: the hits best first, the query's background
-// rate ρ₀, which explain serializes so a client can recompute each hit's
-// relevance, and Spread, the number of facets the top of the ranking spanned
-// (the statistic the aggregation gate read; 0 when the aggregation is off).
+// Result is what Search returns: the hits best first, and the query's
+// background rate ρ₀, which explain serializes so a client can recompute each
+// hit's relevance.
 type Result[K comparable, P float32 | float64] struct {
 	Hits       []Hit[K, P]
 	Background P
-	Spread     int
 }
 
-// Nodes returns the hits' facts in order, a group hit represented by its
-// best member; nil when there are no hits, so a caller can tell an empty
-// result from a populated one as it could when Search returned slices.
+// Nodes returns the hits' facts in order; nil when there are no hits, so a
+// caller can tell an empty result from a populated one as it could when
+// Search returned slices.
 func (r Result[K, P]) Nodes() []Node[K] {
 	if len(r.Hits) == 0 {
 		return nil
@@ -173,11 +164,8 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Search runs a hybrid query over the graph. It returns the hits best
 	// first, at most top of them, each with the contributions its score was
 	// folded from, and the query's background rate (see Result). An
-	// implementation may return fewer than top hits when its own retrieval
-	// policy, such as a score cutoff, drops the tail, may spend the top slots
-	// across the facets a flat ranking spans rather than down the ranking,
-	// and may fold several facts into one group hit (see Hit) when the query
-	// reads as an aggregation.
+	// implementation may spend the top slots across the facets the ranking
+	// spans rather than down it.
 	//
 	// The criteria combine to narrow the result:
 	//   - keywords: full-text terms matched against the text index

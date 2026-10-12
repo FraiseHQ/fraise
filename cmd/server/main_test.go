@@ -62,11 +62,6 @@ func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 		{"-precision", "floast32", "db.precision"},
 		{"-hashing-function", "murmur", "db.hashing-function.name"},
 		{"-search-algorithm", "dfs", "db.search-algorithm.name"},
-		{"-ranking-algorithm", "hits", "db.ranking-algorithm.name"},
-		{"-min-score-ratio", "30", "db.min-score-ratio"},
-		{"-window-gamma", "2", "db.window-gamma"},
-		{"-aggregate", "cluster", "db.aggregate.name"},
-		{"-aggregate-min-size", "1", "db.aggregate.min-size"},
 		{"-workers", "-1", "scheduler.workers"},
 		{"-max-depth", "3", "db.max-depth"},
 	}
@@ -102,7 +97,6 @@ func TestRunAcceptsAnyCasingOfAValueThatIsAccepted(t *testing.T) {
 		{"-precision", "Float64"},
 		{"-hashing-function", "T1ha"},
 		{"-search-algorithm", "EXCESS"},
-		{"-ranking-algorithm", "PageRank"},
 	}
 
 	for _, tc := range cases {

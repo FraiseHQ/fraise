@@ -223,20 +223,13 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		Hits:  make([]Hit[K, P], n),
 	}
 	if s.Explain {
-		// The background rate and the spread are query-level, so they ride
-		// on the result rather than on each hit (see QueryResult.Background).
+		// The background rate is query-level, so it rides on the result
+		// rather than on each hit (see QueryResult.Background).
 		r.Background = result.Background
-		r.Spread = result.Spread
 	}
 	for i, hit := range result.Hits {
 		r.Hits[i].Node = hit.Node
 		r.Hits[i].Score = hit.Score
-		r.Hits[i].Key = hit.Key
-		// A group hit carries its members as hits of their own, so the wire
-		// form of a member is the wire form of a fact.
-		for j, member := range hit.Members {
-			r.Hits[i].Members = append(r.Hits[i].Members, Hit[K, P]{Node: member, Score: hit.MemberScores[j]})
-		}
 		// Contributions are attached only in explain mode; a nil slice keeps
 		// them out of the ordinary response (see Hit.MarshalJSON). They are
 		// resolved to wire form here, under the graph lock, because a graph

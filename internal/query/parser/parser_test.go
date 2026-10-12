@@ -25,12 +25,14 @@ package parser_test
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/google/go-cmp/cmp"
+
+	"github.com/FraiseHQ/fraise/internal/query/lexer"
 	"github.com/FraiseHQ/fraise/internal/query/parser"
 )
 
@@ -122,27 +124,26 @@ func FuzzParseNeverPanics(f *testing.F) {
 // error naming the largest one allowed, never a silent wrap into a future
 // bound, and the largest count still parses.
 func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string // "" when the query must parse
+	cases := map[string]struct {
+		want string // "" when the query must parse
 	}{
-		{"recall x since:106751d", ""},
-		{"recall x since:106752d", "invalid since value \"106752d\": out of range (at most 106751d)"},
-		{"recall x until:15251w", "invalid until value \"15251w\": out of range (at most 15250w)"},
-		{"recall x since:99999999999999999999d", "out of range (at most 106751d)"},
+		"recall x since:106751d":               {""},
+		"recall x since:106752d":               {"invalid since value \"106752d\": out of range (at most 106751d)"},
+		"recall x until:15251w":                {"invalid until value \"15251w\": out of range (at most 15250w)"},
+		"recall x since:99999999999999999999d": {"out of range (at most 106751d)"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if tc.want == "" {
 				if err != nil {
-					t.Fatalf("Parse(%q) = %v, want it to parse", tc.query, err)
+					t.Fatalf("Parse(%q) = %v, want it to parse", query, err)
 				}
 				return
 			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("Parse(%q) = %v, want an error containing %q", tc.query, err, tc.want)
+				t.Fatalf("Parse(%q) = %v, want an error containing %q", query, err, tc.want)
 			}
 		})
 	}
@@ -153,28 +154,27 @@ func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
 // word. A quoted duration is an error naming the unquoted spelling, so one
 // clause has one spelling and the quote keeps telling a date from a duration.
 func TestTimeValuesAreQuotedOnlyWhenAbsolute(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string // "" when the query must parse
+	cases := map[string]struct {
+		want string // "" when the query must parse
 	}{
-		{"recall x since:7d", ""},
-		{"recall x since:'2026-01-15'", ""},
-		{"recall x until:'2026-01-15T10:00:00Z'", ""},
-		{"recall x since:'7d'", `invalid since value "7d": a duration is not quoted — write since:7d`},
-		{"recall x until:'3h'", `invalid until value "3h": a duration is not quoted — write until:3h`},
+		"recall x since:7d":                     {""},
+		"recall x since:'2026-01-15'":           {""},
+		"recall x until:'2026-01-15T10:00:00Z'": {""},
+		"recall x since:'7d'":                   {`invalid since value "7d": a duration is not quoted — write since:7d`},
+		"recall x until:'3h'":                   {`invalid until value "3h": a duration is not quoted — write until:3h`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if tc.want == "" {
 				if err != nil {
-					t.Fatalf("Parse(%q) = %v, want it to parse", tc.query, err)
+					t.Fatalf("Parse(%q) = %v, want it to parse", query, err)
 				}
 				return
 			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("Parse(%q) = %v, want an error containing %q", tc.query, err, tc.want)
+				t.Fatalf("Parse(%q) = %v, want an error containing %q", query, err, tc.want)
 			}
 		})
 	}
@@ -185,36 +185,35 @@ func TestTimeValuesAreQuotedOnlyWhenAbsolute(t *testing.T) {
 // format verb into `&{%!e(string=...)}`, which would destroy the message an
 // agent needs to correct itself.
 func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string // substring of the inner, positioned error
+	cases := map[string]struct {
+		want string // substring of the inner, positioned error
 	}{
-		{"recall x since:soon", "invalid since value"},
-		{"recall x until:later", "invalid until value"},
-		{"recall x depth:abc", "invalid depth value"},
-		{"recall x top:abc", "invalid top value"},
-		{"recall x topic:", "expected a word or quoted phrase"},
+		"recall x since:soon":  {"invalid since value"},
+		"recall x until:later": {"invalid until value"},
+		"recall x depth:abc":   {"invalid depth value"},
+		"recall x top:abc":     {"invalid top value"},
+		"recall x topic:":      {"expected a word or quoted phrase"},
 		// vec: on both commands: parseVecField's positioned error must reach
 		// the caller unwrapped, like every other clause's.
-		{"recall x vec:v", "expected param field operator $"},
-		{"remember 'a fact' vec$:v", "is missing its ':'"}, // a remember: among a recall's terms a bare vec is a keyword term
-		{"recall x vec:$", "expected literal"},
-		{"remember 'a fact' vec:v", "expected param field operator $"},
-		{"remember 'a fact' vec:$", "expected literal"},
+		"recall x vec:v":           {"expected param field operator $"},
+		"remember 'a fact' vec$:v": {"is missing its ':'"}, // a remember: among a recall's terms a bare vec is a keyword term
+		"recall x vec:$":           {"expected literal"},
+		"remember 'a fact' vec:v":  {"expected param field operator $"},
+		"remember 'a fact' vec:$":  {"expected literal"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a parse error", query)
 			}
-			msg := err.Error()
-			if !strings.Contains(msg, tc.want) {
-				t.Errorf("error %q does not contain the inner message %q", msg, tc.want)
+			got := err.Error()
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("error %q does not contain the inner message %q", got, tc.want)
 			}
-			if strings.Contains(msg, "%!e") || strings.Contains(msg, "Error while parsing") {
-				t.Errorf("error %q is re-wrapped/mangled, want the inner error as-is", msg)
+			if strings.Contains(got, "%!e") || strings.Contains(got, "Error while parsing") {
+				t.Errorf("error %q is re-wrapped/mangled, want the inner error as-is", got)
 			}
 		})
 	}
@@ -224,13 +223,12 @@ func TestRememberParser(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne vec:$v"
 
 	qo, _, err := parser.Parse[uint64, float32](q, nil)
-
 	if err != nil {
-		t.Error("Expected no error while parsing this query.")
+		t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 	}
 
-	if qo.String() != q {
-		t.Error("Reconstructed string query should equal original query.")
+	if got, want := qo.String(), q; got != want {
+		t.Errorf("round-trip mismatch: String() = %q, want %q", got, want)
 	}
 }
 
@@ -240,24 +238,24 @@ func TestRememberParser(t *testing.T) {
 // reconstruction matches. A value that was quoted comes back quoted: printed
 // bare, 'e-mail' or '2026-01-15' would not parse.
 func TestRecallParser(t *testing.T) {
-	queries := []string{
-		"recall anna",
-		"recall anna bob charlie",
-		"recall@2 anna",
-		"recall@2 anna bob entity:alice topic:job top:10 depth:5",
-		"recall 'e-mail' entity:'o''brien' topic:'machine-learning'",
-		"recall@2 anna since:7d until:'2026-01-15'",
-		"recall anna since:'2026-01-15T10:00:00Z'",
+	queries := map[string]struct{}{
+		"recall anna":             {},
+		"recall anna bob charlie": {},
+		"recall@2 anna":           {},
+		"recall@2 anna bob entity:alice topic:job top:10 depth:5":    {},
+		"recall 'e-mail' entity:'o''brien' topic:'machine-learning'": {},
+		"recall@2 anna since:7d until:'2026-01-15'":                  {},
+		"recall anna since:'2026-01-15T10:00:00Z'":                   {},
 	}
 
-	for _, q := range queries {
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			qo, _, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
 			}
-			if qo.String() != q {
-				t.Errorf("round-trip mismatch: String() = %q, want %q", qo.String(), q)
+			if got := qo.String(); got != q {
+				t.Errorf("round-trip mismatch: String() = %q, want %q", got, q)
 			}
 		})
 	}
@@ -267,22 +265,21 @@ func TestRecallParser(t *testing.T) {
 // that the message says what the recall is missing.
 func TestRecallParserErrors(t *testing.T) {
 	const noSeed = "a recall needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>"
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"recall", "expected a space after the command, found end of input"},
+		"recall": {"expected a space after the command, found end of input"},
 		// Modifiers scope a search; they cannot start one.
-		{"recall top:3", noSeed},
-		{"recall since:7d", noSeed}, // ditto for a time bound
-		{"recall depth:2 top:5", noSeed},
+		"recall top:3":         {noSeed},
+		"recall since:7d":      {noSeed}, // ditto for a time bound
+		"recall depth:2 top:5": {noSeed},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want an error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want an error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -297,17 +294,17 @@ func TestRecallParserErrors(t *testing.T) {
 // a keyword to get past the parser, seeding the search with a word they did
 // not mean.
 func TestAnchorSeededRecallParses(t *testing.T) {
-	queries := []string{
-		"recall topic:job",
-		"recall entity:alice",
-		"recall topic:job entity:alice",
-		"recall@2 topic:job",
-		"recall topic:job top:5 depth:2",
-		"recall topic:job since:7d",
-		"recall vec:$v",
+	queries := map[string]struct{}{
+		"recall topic:job":               {},
+		"recall entity:alice":            {},
+		"recall topic:job entity:alice":  {},
+		"recall@2 topic:job":             {},
+		"recall topic:job top:5 depth:2": {},
+		"recall topic:job since:7d":      {},
+		"recall vec:$v":                  {},
 	}
 
-	for _, q := range queries {
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			if _, _, err := parser.Parse[uint64, float32](q, nil); err != nil {
 				t.Errorf("Parse(%q) = %v, want it to parse", q, err)
@@ -324,23 +321,22 @@ func TestAnchorSeededRecallParses(t *testing.T) {
 // message names the selector and the range, so the caller knows which graph
 // id to fix and what it may be.
 func TestGraphSelectorRejectsOutOfRange(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"recall@256 secret", "graph selector 256 out of range (0-255)"},
-		{"recall@300 secret", "graph selector 300 out of range (0-255)"},
-		{"recall@-1 secret", `invalid graph selector "-": expected a whole number`},
-		{"recall@abc secret", `invalid graph selector "abc": expected a whole number`},
-		{"remember@256 'secret plan' topic:x", "graph selector 256 out of range (0-255)"},
-		{"remember@300 'secret plan' topic:x", "graph selector 300 out of range (0-255)"},
+		"recall@256 secret":                  {"graph selector 256 out of range (0-255)"},
+		"recall@300 secret":                  {"graph selector 300 out of range (0-255)"},
+		"recall@-1 secret":                   {`invalid graph selector "-": expected a whole number`},
+		"recall@abc secret":                  {`invalid graph selector "abc": expected a whole number`},
+		"remember@256 'secret plan' topic:x": {"graph selector 256 out of range (0-255)"},
+		"remember@300 'secret plan' topic:x": {"graph selector 300 out of range (0-255)"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want an out-of-range/parse error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want an out-of-range/parse error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -359,22 +355,21 @@ func TestGraphSelectorRejectsOutOfRange(t *testing.T) {
 // symbols (: $ @ ( )) inside it are stored verbatim, and a doubled single quote
 // is an escaped apostrophe.
 func TestRememberPhrase(t *testing.T) {
-	cases := []struct {
-		name  string
+	cases := map[string]struct {
 		query string
 		want  string // the fact that should be stored (RememberCommandNode.Value)
 	}{
-		{"colon in phrase", "remember 'meeting at 3:30pm with anna' topic:meetings", "meeting at 3:30pm with anna"},
-		{"reserved word in phrase", "remember 'remind me about this topic later' topic:reminders", "remind me about this topic later"},
-		{"multiple reserved words", "remember 'recall the top since until depth vec entity' topic:x", "recall the top since until depth vec entity"},
-		{"symbols in phrase", "remember 'email $bill @ (acme)' topic:contacts", "email $bill @ (acme)"},
-		{"escaped apostrophe", "remember 'alice''s laptop' topic:devices", "alice's laptop"},
-		{"apostrophe at edges", "remember '''quoted''' topic:x", "'quoted'"},
-		{"interior spacing preserved", "remember 'a   b' topic:x", "a   b"},
+		"colon in phrase":            {"remember 'meeting at 3:30pm with anna' topic:meetings", "meeting at 3:30pm with anna"},
+		"reserved word in phrase":    {"remember 'remind me about this topic later' topic:reminders", "remind me about this topic later"},
+		"multiple reserved words":    {"remember 'recall the top since until depth vec entity' topic:x", "recall the top since until depth vec entity"},
+		"symbols in phrase":          {"remember 'email $bill @ (acme)' topic:contacts", "email $bill @ (acme)"},
+		"escaped apostrophe":         {"remember 'alice''s laptop' topic:devices", "alice's laptop"},
+		"apostrophe at edges":        {"remember '''quoted''' topic:x", "'quoted'"},
+		"interior spacing preserved": {"remember 'a   b' topic:x", "a   b"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
@@ -396,13 +391,13 @@ func TestRememberPhrase(t *testing.T) {
 // when it was written, as a recall's is.
 func TestRememberPhraseRoundTrip(t *testing.T) {
 	// The selector is printed as written: absent when the query has none.
-	queries := []string{
-		"remember 'alice''s laptop' topic:devices",
-		"remember@0 'alice''s laptop' topic:devices",
-		"remember@0 'a fact' topic:'machine-learning' entity:'o''brien'",
+	queries := map[string]struct{}{
+		"remember 'alice''s laptop' topic:devices":                       {},
+		"remember@0 'alice''s laptop' topic:devices":                     {},
+		"remember@0 'a fact' topic:'machine-learning' entity:'o''brien'": {},
 	}
 
-	for _, q := range queries {
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			cmd, _, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
@@ -418,19 +413,18 @@ func TestRememberPhraseRoundTrip(t *testing.T) {
 // TestRememberPhraseErrors checks phrases that must be rejected, and that the
 // message names what is wrong with the fact.
 func TestRememberPhraseErrors(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember 'unterminated phrase topic:x", "unterminated quoted phrase"}, // no closing quote
-		{"remember topic:x", `expected a quoted phrase, but found "topic"`},     // missing the quoted fact
+		"remember 'unterminated phrase topic:x": {"unterminated quoted phrase"},                  // no closing quote
+		"remember topic:x":                      {`expected a quoted phrase, but found "topic"`}, // missing the quoted fact
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want an error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want an error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -446,34 +440,33 @@ func TestRememberPhraseErrors(t *testing.T) {
 // correct from. The whole family (topic, entity, since, until, top, depth) is
 // listed so no field can regress alone.
 func TestFieldRequiresColonSeparator(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
 		// The fix names the clause the caller would write, with the word they
 		// wrote after the keyword as its value: that is the query they meant.
-		{"recall zebras topic food", "write topic:food"},
-		{"recall zebras topic food extra", "write topic:food"},
-		{"recall zebras entity alice", "write entity:alice"},
-		{"recall zebras since 7d", "write since:7d"},
-		{"recall zebras until 30d", "write until:30d"},
-		{"recall zebras top 5", "write top:5"},
-		{"recall zebras depth 2", "write depth:2"},
-		{"recall zebras topic:food entity alice", "write entity:alice"},
-		{"remember 'zebras eat grass' topic food", "write topic:food"},
-		{"remember 'zebras eat grass' entity zebras", "write entity:zebras"},
+		"recall zebras topic food":                  {"write topic:food"},
+		"recall zebras topic food extra":            {"write topic:food"},
+		"recall zebras entity alice":                {"write entity:alice"},
+		"recall zebras since 7d":                    {"write since:7d"},
+		"recall zebras until 30d":                   {"write until:30d"},
+		"recall zebras top 5":                       {"write top:5"},
+		"recall zebras depth 2":                     {"write depth:2"},
+		"recall zebras topic:food entity alice":     {"write entity:alice"},
+		"remember 'zebras eat grass' topic food":    {"write topic:food"},
+		"remember 'zebras eat grass' entity zebras": {"write entity:zebras"},
 		// The token-shifting shapes: without the check, the second value would
 		// silently win the field and the first would be swallowed.
-		{"recall zebras since 7d 30d", "write since:7d"},
-		{"recall zebras until 7d 30d", "write until:7d"},
-		{"recall zebras since:7d until 30d 60d", "write until:30d"},
+		"recall zebras since 7d 30d":           {"write since:7d"},
+		"recall zebras until 7d 30d":           {"write until:7d"},
+		"recall zebras since:7d until 30d 60d": {"write until:30d"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not name the missing ':' separator: want %q", err, tc.want)
@@ -494,33 +487,32 @@ func TestFieldRequiresColonSeparator(t *testing.T) {
 // look right while the pair disagrees, and it is the pair an agent or a human
 // uses to find the mistake.
 func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
-	cases := []struct {
-		query string
+	cases := map[string]struct {
 		blame string // the token the error must quote and point at
 	}{
 		// Missing ':' — the whole keyed-field family. Among the terms the
 		// keyword itself is blamed: it is the word to write as a filter or quote.
-		{"recall zebras topic food extra", "topic"},
-		{"recall zebras entity alice extra", "entity"},
-		{"recall zebras since 7d 30d", "since"},
-		{"recall zebras until 7d 30d", "until"},
-		{"recall zebras top 5 depth:2", "top"},
-		{"recall zebras depth 2 top:3", "depth"},
+		"recall zebras topic food extra":   {"topic"},
+		"recall zebras entity alice extra": {"entity"},
+		"recall zebras since 7d 30d":       {"since"},
+		"recall zebras until 7d 30d":       {"until"},
+		"recall zebras top 5 depth:2":      {"top"},
+		"recall zebras depth 2 top:3":      {"depth"},
 		// Unparseable values: the blamed token is the value, not the key.
-		{"recall zebras since:soon top:3", "soon"},
-		{"recall zebras until:later top:3", "later"},
-		{"recall zebras depth:abc top:3", "abc"},
-		{"recall zebras top:abc depth:2", "abc"},
-		{"recall@abc zebras top:3", "abc"},
+		"recall zebras since:soon top:3":  {"soon"},
+		"recall zebras until:later top:3": {"later"},
+		"recall zebras depth:abc top:3":   {"abc"},
+		"recall zebras top:abc depth:2":   {"abc"},
+		"recall@abc zebras top:3":         {"abc"},
 		// A token in a position no clause can start.
-		{"recall zebras : topic:food", ":"},
+		"recall zebras : topic:food": {":"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a parse error", query)
 			}
 
 			var perr *parser.Error
@@ -529,15 +521,15 @@ func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
 			}
 
 			// 1-based column of the offending token's last character.
-			want := strings.Index(tc.query, tc.blame) + len(tc.blame)
-			if perr.Pos.Column != want {
+			want := strings.Index(query, tc.blame) + len(tc.blame)
+			if got := perr.Pos.Column; got != want {
 				t.Errorf("%q: column %d, want %d (the end of %q)\n  %s\n  %*s\n  %v",
-					tc.query, perr.Pos.Column, want, tc.blame,
-					tc.query, perr.Pos.Column, "^", err)
+					query, got, want, tc.blame,
+					query, got, "^", err)
 			}
 			if !strings.Contains(perr.Msg, strconv.Quote(tc.blame)) {
 				t.Errorf("%q: message %q does not quote the offending token %q",
-					tc.query, perr.Msg, tc.blame)
+					query, perr.Msg, tc.blame)
 			}
 		})
 	}
@@ -553,9 +545,8 @@ func TestQuotedValues(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		rc := cmd.(*parser.RememberCommandNode[float32])
-		got := rc.Topics()
-		if len(got) != 1 || got[0] != "my project" {
-			t.Errorf("Topics() = %v, want [\"my project\"]", got)
+		if diff := cmp.Diff([]string{"my project"}, rc.Topics()); diff != "" {
+			t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -565,9 +556,8 @@ func TestQuotedValues(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		rc := cmd.(*parser.RecallCommandNode[uint64, float32])
-		terms := rc.Terms()
-		if len(terms) != 1 || terms[0] != "meeting at 3:30pm" {
-			t.Errorf("Terms() = %v, want [\"meeting at 3:30pm\"]", terms)
+		if diff := cmp.Diff([]string{"meeting at 3:30pm"}, rc.Terms()); diff != "" {
+			t.Errorf("Terms() mismatch (-want +got):\n%s", diff)
 		}
 	})
 }
@@ -577,28 +567,27 @@ func TestQuotedValues(t *testing.T) {
 // value needs is written inside quotes, where it is data. Rejecting "e-mail"
 // bare is only safe while its quoted form reaches the same value.
 func TestBareWordIsLettersAndDigits(t *testing.T) {
-	cases := []struct {
-		query  string
+	cases := map[string]struct {
 		terms  []string
 		topics []string
 	}{
-		{"recall café 東京 42", []string{"café", "東京", "42"}, nil},
-		{"recall 'e-mail' topic:'machine-learning' since:'2026-01-15'", []string{"e-mail"}, []string{"machine-learning"}},
-		{"recall 'ferry;' 'recall bridge'", []string{"ferry;", "recall bridge"}, nil},
+		"recall café 東京 42": {[]string{"café", "東京", "42"}, nil},
+		"recall 'e-mail' topic:'machine-learning' since:'2026-01-15'": {[]string{"e-mail"}, []string{"machine-learning"}},
+		"recall 'ferry;' 'recall bridge'":                             {[]string{"ferry;", "recall bridge"}, nil},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
 			}
 			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
-			if got := rc.Terms(); !slices.Equal(got, tc.terms) {
-				t.Errorf("Terms() = %q, want %q", got, tc.terms)
+			if diff := cmp.Diff(tc.terms, rc.Terms()); diff != "" {
+				t.Errorf("Terms() mismatch (-want +got):\n%s", diff)
 			}
-			if got := rc.Topics(); !slices.Equal(got, tc.topics) {
-				t.Errorf("Topics() = %q, want %q", got, tc.topics)
+			if diff := cmp.Diff(tc.topics, rc.Topics()); diff != "" {
+				t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -611,52 +600,45 @@ func TestBareWordIsLettersAndDigits(t *testing.T) {
 // anticipate. As a recall term a reserved word is written quoted, as in the
 // last two cases.
 func TestKeywordAsValue(t *testing.T) {
-	cases := []struct {
-		name     string
+	cases := map[string]struct {
 		query    string
 		entities []string
 		topics   []string
 		terms    []string
 	}{
-		{
-			name:     "entity top on remember",
+		"entity top on remember": {
 			query:    "remember 'a neutral test value.' topic:'some-topic' entity:top",
 			entities: []string{"top"},
 			topics:   []string{"some-topic"},
 		},
-		{
-			name:   "topic top on remember",
+		"topic top on remember": {
 			query:  "remember 'a neutral test value.' topic:'some-topic' topic:top",
 			topics: []string{"some-topic", "top"},
 		},
-		{
-			name:     "every field keyword as an anchor value",
+		"every field keyword as an anchor value": {
 			query:    "remember 'x' entity:recall entity:since entity:until entity:depth entity:vec entity:entity topic:topic",
 			entities: []string{"recall", "since", "until", "depth", "vec", "entity"},
 			topics:   []string{"topic"},
 		},
-		{
-			name:     "keyword anchors on recall",
+		"keyword anchors on recall": {
 			query:    "recall shelf entity:top topic:top",
 			entities: []string{"top"},
 			topics:   []string{"top"},
 			terms:    []string{"shelf"},
 		},
-		{
-			name:  "keyword as the leading recall term",
+		"keyword as the leading recall term": {
 			query: "recall 'top'",
 			terms: []string{"top"},
 		},
-		{
-			name:     "keyword value followed by a real top clause",
+		"keyword value followed by a real top clause": {
 			query:    "recall 'top' entity:top top:3",
 			entities: []string{"top"},
 			terms:    []string{"top"},
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
@@ -672,14 +654,14 @@ func TestKeywordAsValue(t *testing.T) {
 				t.Fatalf("Parse(%q) returned %T", tc.query, cmd)
 			}
 
-			if got, want := entities, tc.entities; !slices.Equal(got, want) {
-				t.Errorf("Entities() = %v, want %v", got, want)
+			if diff := cmp.Diff(tc.entities, entities); diff != "" {
+				t.Errorf("Entities() mismatch (-want +got):\n%s", diff)
 			}
-			if got, want := topics, tc.topics; !slices.Equal(got, want) {
-				t.Errorf("Topics() = %v, want %v", got, want)
+			if diff := cmp.Diff(tc.topics, topics); diff != "" {
+				t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 			}
-			if got, want := terms, tc.terms; !slices.Equal(got, want) {
-				t.Errorf("Terms() = %v, want %v", got, want)
+			if diff := cmp.Diff(tc.terms, terms); diff != "" {
+				t.Errorf("Terms() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -691,14 +673,14 @@ func TestKeywordAsValue(t *testing.T) {
 // silently consumed as data (the failure mode TestFieldRequiresColonSeparator
 // exists to prevent). A bare keyword among a recall's terms is an error too.
 func TestKeywordAsValueDisambiguation(t *testing.T) {
-	queries := []string{
-		"recall top:3",                         // a modifier is not a seed
-		"recall shelf top",                     // clause position: a bare keyword is not a term
-		"remember 'x' entity:top:3",            // keyword-colon after the anchor's ':' is a field, not a value
-		"remember 'x' entity:since:7d topic:x", // ditto for a time field
+	queries := map[string]struct{}{
+		"recall top:3":                         {}, // a modifier is not a seed
+		"recall shelf top":                     {}, // clause position: a bare keyword is not a term
+		"remember 'x' entity:top:3":            {}, // keyword-colon after the anchor's ':' is a field, not a value
+		"remember 'x' entity:since:7d topic:x": {}, // ditto for a time field
 	}
 
-	for _, q := range queries {
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			if _, _, err := parser.Parse[uint64, float32](q, nil); err == nil {
 				t.Errorf("Parse(%q) = nil error, want an error", q)
@@ -717,26 +699,25 @@ func TestKeywordAsValueDisambiguation(t *testing.T) {
 // colon leaves nothing for it to be mistaken for, so there the clause runs and
 // its casing earns a warning rather than an error.
 func TestMiscasedKeywordIsRejected(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string // substring the error must carry
+	cases := map[string]struct {
+		want string // substring the error must carry
 	}{
 		// Clause position in the term stream.
-		{"recall zebras Since 7d", "lower case"},
-		{"recall zebras Since 7d 30d", "lower case"},
-		{"recall zebras Until 2026-01-15", "lower case"},
-		{"recall zebras Depth 2", "lower case"},
+		"recall zebras Since 7d":         {"lower case"},
+		"recall zebras Since 7d 30d":     {"lower case"},
+		"recall zebras Until 2026-01-15": {"lower case"},
+		"recall zebras Depth 2":          {"lower case"},
 		// Command position: a command is never inferred from a mis-spelling,
 		// because the verb decides whether the query writes.
-		{"Recall zebras", "expected a command"},
-		{"REMEMBER 'x' topic:y", "expected a command"},
+		"Recall zebras":        {"expected a command"},
+		"REMEMBER 'x' topic:y": {"expected a command"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a mis-cased-keyword error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a mis-cased-keyword error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -756,62 +737,60 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 // "Recall x" is not a command and "recall x Since 7d" is not a time bound (see
 // TestMiscasedKeywordIsRejected).
 func TestMiscasedKeywordBeforeColonIsTheClause(t *testing.T) {
-	recalls := []struct {
-		query string
+	recalls := map[string]struct {
 		check func(*testing.T, *parser.RecallCommandNode[uint64, float32])
 	}{
-		{"recall zebras TOP:3", func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
-			if got := r.Top(0); got != 3 {
-				t.Errorf("Top() = %d, want 3", got)
+		"recall zebras TOP:3": {func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
+			if got, want := r.Top(0), 3; got != want {
+				t.Errorf("Top() = %d, want %d", got, want)
 			}
 		}},
-		{"recall zebras Depth:2", func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
+		"recall zebras Depth:2": {func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
 			if !r.HasDepth() || r.Depth(0) != 2 {
 				t.Errorf("Depth() = %d (has %v), want 2", r.Depth(0), r.HasDepth())
 			}
 		}},
-		{"recall zebras Topic:food", func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
-			if got := r.Topics(); !slices.Equal(got, []string{"food"}) {
-				t.Errorf("Topics() = %v, want [food]", got)
+		"recall zebras Topic:food": {func(t *testing.T, r *parser.RecallCommandNode[uint64, float32]) {
+			if diff := cmp.Diff([]string{"food"}, r.Topics()); diff != "" {
+				t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 			}
 		}},
 	}
 
-	for _, tc := range recalls {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range recalls {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) = %v, want the clause it spells", tc.query, err)
+				t.Fatalf("Parse(%q) = %v, want the clause it spells", query, err)
 			}
 			r, ok := cmd.(*parser.RecallCommandNode[uint64, float32])
 			if !ok {
-				t.Fatalf("Parse(%q) returned %T, want *RecallCommandNode", tc.query, cmd)
+				t.Fatalf("Parse(%q) returned %T, want *RecallCommandNode", query, cmd)
 			}
 			tc.check(t, r)
 		})
 	}
 
-	remembers := []struct {
-		query string
-		want  []string
-		got   func(*parser.RememberCommandNode[float32]) []string
+	remembers := map[string]struct {
+		want []string
+		got  func(*parser.RememberCommandNode[float32]) []string
 	}{
-		{"remember 'x' Entity:bob", []string{"bob"}, (*parser.RememberCommandNode[float32]).Entities},
-		{"remember 'x' Topic:food", []string{"food"}, (*parser.RememberCommandNode[float32]).Topics},
+		"remember 'x' Entity:bob": {[]string{"bob"}, (*parser.RememberCommandNode[float32]).Entities},
+		"remember 'x' Topic:food": {[]string{"food"}, (*parser.RememberCommandNode[float32]).Topics},
 	}
 
-	for _, tc := range remembers {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range remembers {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) = %v, want the clause it spells", tc.query, err)
+				t.Fatalf("Parse(%q) = %v, want the clause it spells", query, err)
 			}
 			r, ok := cmd.(*parser.RememberCommandNode[float32])
 			if !ok {
-				t.Fatalf("Parse(%q) returned %T, want *RememberCommandNode", tc.query, cmd)
+				t.Fatalf("Parse(%q) returned %T, want *RememberCommandNode", query, cmd)
 			}
-			if got := tc.got(r); !slices.Equal(got, tc.want) {
-				t.Errorf("anchors = %v, want %v", got, tc.want)
+			if diff := cmp.Diff(tc.want, tc.got(r)); diff != "" {
+				t.Errorf("anchors mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -824,18 +803,18 @@ func TestMiscasedKeywordBeforeColonIsTheClause(t *testing.T) {
 // repeated topic:/entity: is a list by design, and the last two cases pin that
 // the stricter rule did not swallow them.
 func TestDuplicateModifierIsRejected(t *testing.T) {
-	rejected := []string{
-		"recall zebras depth:1 depth:2",
-		"recall zebras top:3 top:10",
-		"recall zebras since:7d since:30d",
-		"recall zebras until:1d until:2d",
-		"recall zebras since:7d until:30d since:1d",
-		"recall zebras vec:$a vec:$b",
-		"recall zebras depth:2 DEPTH:5",
-		"remember 'x' vec:$a vec:$b",
+	rejected := map[string]struct{}{
+		"recall zebras depth:1 depth:2":             {},
+		"recall zebras top:3 top:10":                {},
+		"recall zebras since:7d since:30d":          {},
+		"recall zebras until:1d until:2d":           {},
+		"recall zebras since:7d until:30d since:1d": {},
+		"recall zebras vec:$a vec:$b":               {},
+		"recall zebras depth:2 DEPTH:5":             {},
+		"remember 'x' vec:$a vec:$b":                {},
 	}
 
-	for _, q := range rejected {
+	for q := range rejected {
 		t.Run(q, func(t *testing.T) {
 			_, _, err := parser.Parse[uint64, float32](q, nil)
 			if err == nil {
@@ -847,12 +826,12 @@ func TestDuplicateModifierIsRejected(t *testing.T) {
 		})
 	}
 
-	accepted := []string{
-		"recall zebras topic:food topic:drink",
-		"recall zebras entity:alice entity:bob",
+	accepted := map[string]struct{}{
+		"recall zebras topic:food topic:drink":  {},
+		"recall zebras entity:alice entity:bob": {},
 	}
 
-	for _, q := range accepted {
+	for q := range accepted {
 		t.Run(q, func(t *testing.T) {
 			if _, _, err := parser.Parse[uint64, float32](q, nil); err != nil {
 				t.Errorf("Parse(%q) = %v, want repeated anchors to parse", q, err)
@@ -873,8 +852,8 @@ func TestMiscasedKeywordStaysDataInValuePosition(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		rc := cmd.(*parser.RecallCommandNode[uint64, float32])
-		if got := rc.Terms(); !slices.Equal(got, []string{"zebras", "since"}) {
-			t.Errorf("Terms() = %v, want [zebras, since]", got)
+		if diff := cmp.Diff([]string{"zebras", "since"}, rc.Terms()); diff != "" {
+			t.Errorf("Terms() mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -894,14 +873,14 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		rc := cmd.(*parser.RememberCommandNode[float32])
-		if got := rc.Value(); got != "MiXeD Case" {
-			t.Errorf("Value() = %q, want the fact stored exactly as written", got)
+		if got, want := rc.Value(), "MiXeD Case"; got != want {
+			t.Errorf("Value() = %q, want %q, the fact stored exactly as written", got, want)
 		}
-		if got := rc.Topics(); !slices.Equal(got, []string{"billing"}) {
-			t.Errorf("Topics() = %v, want [billing]", got)
+		if diff := cmp.Diff([]string{"billing"}, rc.Topics()); diff != "" {
+			t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 		}
-		if got := rc.Entities(); !slices.Equal(got, []string{"anna"}) {
-			t.Errorf("Entities() = %v, want [anna]", got)
+		if diff := cmp.Diff([]string{"anna"}, rc.Entities()); diff != "" {
+			t.Errorf("Entities() mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -911,8 +890,8 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		rc := cmd.(*parser.RememberCommandNode[float32])
-		if got := rc.Topics(); !slices.Equal(got, []string{"my project"}) {
-			t.Errorf("Topics() = %v, want [my project]", got)
+		if diff := cmp.Diff([]string{"my project"}, rc.Topics()); diff != "" {
+			t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -922,11 +901,11 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		rc := cmd.(*parser.RecallCommandNode[uint64, float32])
-		if got := rc.Terms(); !slices.Equal(got, []string{"anna", "bob marley"}) {
-			t.Errorf("Terms() = %v, want [anna, bob marley]", got)
+		if diff := cmp.Diff([]string{"anna", "bob marley"}, rc.Terms()); diff != "" {
+			t.Errorf("Terms() mismatch (-want +got):\n%s", diff)
 		}
-		if got := rc.Topics(); !slices.Equal(got, []string{"music"}) {
-			t.Errorf("Topics() = %v, want [music]", got)
+		if diff := cmp.Diff([]string{"music"}, rc.Topics()); diff != "" {
+			t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -939,8 +918,8 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		rc := cmd.(*parser.RememberCommandNode[float32])
-		if got := rc.Entities(); !slices.Equal(got, []string{"top"}) {
-			t.Errorf("Entities() = %v, want [top]", got)
+		if diff := cmp.Diff([]string{"top"}, rc.Entities()); diff != "" {
+			t.Errorf("Entities() mismatch (-want +got):\n%s", diff)
 		}
 	})
 }
@@ -955,21 +934,20 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 // rejection lives in query.Parse; what is pinned here is that the parser keeps
 // the clause visible for it.
 func TestExplicitTopIsVisibleIncludingZero(t *testing.T) {
-	cases := []struct {
-		query    string
+	cases := map[string]struct {
 		explicit bool
 		want     int // Top(7) — 7 stands in for the configured default
 	}{
-		{"recall x top:0", true, 0},
-		{"recall x top:5", true, 5},
-		{"recall x", false, 7},
+		"recall x top:0": {true, 0},
+		"recall x top:5": {true, 5},
+		"recall x":       {false, 7},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
 			}
 			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
 
@@ -992,22 +970,21 @@ func TestExplicitTopIsVisibleIncludingZero(t *testing.T) {
 // the resolved value are asserted, because Depth's fallback is what a caller
 // actually receives.
 func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
-	cases := []struct {
-		query    string
+	cases := map[string]struct {
 		explicit bool
 		want     int // Depth(7) — 7 stands in for the configured default
 	}{
-		{"recall x depth:0", true, 0},
-		{"recall x depth:1", true, 1},
-		{"recall x depth:2", true, 2},
-		{"recall x", false, 7},
+		"recall x depth:0": {true, 0},
+		"recall x depth:1": {true, 1},
+		"recall x depth:2": {true, 2},
+		"recall x":         {false, 7},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
 			}
 			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
 
@@ -1029,40 +1006,40 @@ func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
 func TestVectorIsTheBoundParameter(t *testing.T) {
 	params := map[string][]float32{"q": {0.1, 0.2, 0.3}}
 
-	cases := []struct {
-		query  string
+	cases := map[string]struct {
 		vector func(parser.CommandNode) []float32
 		want   []float32
 	}{
-		{"recall x", func(c parser.CommandNode) []float32 {
+		"recall x": {func(c parser.CommandNode) []float32 {
 			return c.(*parser.RecallCommandNode[uint64, float32]).Vector()
 		}, nil},
-		{"recall x vec:$q", func(c parser.CommandNode) []float32 {
+		"recall x vec:$q": {func(c parser.CommandNode) []float32 {
 			return c.(*parser.RecallCommandNode[uint64, float32]).Vector()
 		}, []float32{0.1, 0.2, 0.3}},
-		{"recall x vec:$missing", func(c parser.CommandNode) []float32 {
+		"recall x vec:$missing": {func(c parser.CommandNode) []float32 {
 			return c.(*parser.RecallCommandNode[uint64, float32]).Vector()
 		}, nil},
-		{"remember 'x'", func(c parser.CommandNode) []float32 {
+		"remember 'x'": {func(c parser.CommandNode) []float32 {
 			return c.(*parser.RememberCommandNode[float32]).Vector()
 		}, nil},
-		{"remember 'x' vec:$q", func(c parser.CommandNode) []float32 {
+		"remember 'x' vec:$q": {func(c parser.CommandNode) []float32 {
 			return c.(*parser.RememberCommandNode[float32]).Vector()
 		}, []float32{0.1, 0.2, 0.3}},
-		{"remember 'x' vec:$missing", func(c parser.CommandNode) []float32 {
+		"remember 'x' vec:$missing": {func(c parser.CommandNode) []float32 {
 			return c.(*parser.RememberCommandNode[float32]).Vector()
 		}, nil},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query, params)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, params)
 			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
 			}
-			got := tc.vector(cmd)
-			if (got == nil) != (tc.want == nil) || !slices.Equal(got, tc.want) {
-				t.Errorf("Vector() = %v, want %v", got, tc.want)
+			// cmp tells a nil vector from an empty one, which is the
+			// distinction this test exists to keep.
+			if diff := cmp.Diff(tc.want, tc.vector(cmd)); diff != "" {
+				t.Errorf("Vector() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1072,25 +1049,24 @@ func TestVectorIsTheBoundParameter(t *testing.T) {
 // refused wherever it can be written (see errEmpty for why), and that the
 // message names which value was empty, so the caller knows which one to fill.
 func TestEmptyDataIsRejected(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember ''", "a remembered fact must not be empty"},
-		{"remember '' topic:harbour", "a remembered fact must not be empty"},
-		{"remember '   '", "a remembered fact must not be empty"},
-		{"recall ''", "a search term must not be empty"},
-		{"recall '   '", "a search term must not be empty"},
-		{"recall ferry ''", "a search term must not be empty"}, // blank second term, past the leading position
-		{"recall ferry topic:''", "an anchor value must not be empty"},
-		{"recall ferry entity:'   '", "an anchor value must not be empty"},
+		"remember ''":               {"a remembered fact must not be empty"},
+		"remember '' topic:harbour": {"a remembered fact must not be empty"},
+		"remember '   '":            {"a remembered fact must not be empty"},
+		"recall ''":                 {"a search term must not be empty"},
+		"recall '   '":              {"a search term must not be empty"},
+		"recall ferry ''":           {"a search term must not be empty"}, // blank second term, past the leading position
+		"recall ferry topic:''":     {"an anchor value must not be empty"},
+		"recall ferry entity:'   '": {"an anchor value must not be empty"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want an empty-value error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want an empty-value error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1105,65 +1081,64 @@ func TestEmptyDataIsRejected(t *testing.T) {
 // produces has to arrive with its own repair instruction rather than a shared
 // "unexpected token".
 func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
 		// Grouping: the tokens lex but no rule accepts them, so the message
 		// says the feature is absent rather than blaming the character.
-		{"recall (zebras)", "grouping is not supported"},
-		{"recall zebras (food)", "grouping is not supported"},
-		{"recall zebras topic:(food)", "grouping is not supported"},
-		{"recall zebras )food(", "grouping is not supported"},
+		"recall (zebras)":            {"grouping is not supported"},
+		"recall zebras (food)":       {"grouping is not supported"},
+		"recall zebras topic:(food)": {"grouping is not supported"},
+		"recall zebras )food(":       {"grouping is not supported"},
 		// A second command is one instruction too many, not a stray word.
-		{"remember 'a' remember 'b'", "one command per instruction"},
+		"remember 'a' remember 'b'": {"one command per instruction"},
 		// Among a recall's terms a command word is the word the caller forgot
 		// to quote.
-		{"recall zebras recall food", `term "recall" is also a command: quote it ('recall')`},
-		{"recall zebras remember 'x'", `term "remember" is also a command: quote it ('remember')`},
+		"recall zebras recall food":  {`term "recall" is also a command: quote it ('recall')`},
+		"recall zebras remember 'x'": {`term "remember" is also a command: quote it ('remember')`},
 		// A prefix has no ':' form either, so its message names only the
 		// quote: explain:<value> would itself be rejected.
-		{"recall ferry explain", `term "explain" is also a prefix: quote it ('explain') to search for the word`},
-		{"recall describe ferry", `term "describe" is also a prefix: quote it ('describe') to search for the word`},
-		{"recall ferry explain:ferry", `"explain" is a prefix and starts no clause here: quote it ('explain') to search for the word`},
-		{"remember 'a' describe", `"describe" is a prefix and starts no clause here: quote it ('describe') to search for the word`},
+		"recall ferry explain":       {`term "explain" is also a prefix: quote it ('explain') to search for the word`},
+		"recall describe ferry":      {`term "describe" is also a prefix: quote it ('describe') to search for the word`},
+		"recall ferry explain:ferry": {`"explain" is a prefix and starts no clause here: quote it ('explain') to search for the word`},
+		"remember 'a' describe":      {`"describe" is a prefix and starts no clause here: quote it ('describe') to search for the word`},
 		// A keyword with nothing after it can never finish a clause, so it is
 		// the word the caller forgot to quote.
-		{"recall zebras top", "write top:<value> if a filter was meant, or quote it ('top')"},
-		{"recall zebras since", "write since:<value> if a filter was meant, or quote it ('since')"},
-		{"remember 'a' topic", `"topic" is a keyword and starts no clause here: write topic:<value> if a clause was meant, or quote it ('topic') to search for the word`},
+		"recall zebras top":   {"write top:<value> if a filter was meant, or quote it ('top')"},
+		"recall zebras since": {"write since:<value> if a filter was meant, or quote it ('since')"},
+		"remember 'a' topic":  {`"topic" is a keyword and starts no clause here: write topic:<value> if a clause was meant, or quote it ('topic') to search for the word`},
 		// Casing still matters where a clause could start.
-		{"recall zebras Depth 2", "lower case"},
+		"recall zebras Depth 2": {"lower case"},
 		// A modifier is a recall clause: the message names the command it was
 		// given to and the clauses a remember takes, rather than telling the
 		// caller to write since:<value>, which is what they wrote.
-		{"remember 'a fact' top:3", "top: is a recall clause: a remember takes only topic:, entity: and vec:"},
-		{"remember 'a fact' since:7d", "since: is a recall clause"},
-		{"remember 'a fact' depth:1", "depth: is a recall clause"},
+		"remember 'a fact' top:3":    {"top: is a recall clause: a remember takes only topic:, entity: and vec:"},
+		"remember 'a fact' since:7d": {"since: is a recall clause"},
+		"remember 'a fact' depth:1":  {"depth: is a recall clause"},
 		// An unclosed quote is reported as one, not as whatever it swallowed.
-		{"recall 'unclosed phrase", "unterminated quoted phrase"},
+		"recall 'unclosed phrase": {"unterminated quoted phrase"},
 		// A NUL outside a phrase is rejected, not read as the end of the query
 		// with everything after it dropped.
-		{"recall zebras\x00food", "NUL character is only allowed inside a quoted phrase"},
+		"recall zebras\x00food": {"NUL character is only allowed inside a quoted phrase"},
 		// Outside a phrase a word is letters and digits only. Any other
 		// character is rejected for itself: absorbed into a word, "ferry;" would
 		// be a term and the recall after it a search for the word "recall".
-		{"recall ferry; recall bridge", `";" is only allowed inside a quoted phrase`},
-		{"recall e-mail", `"-" is only allowed inside a quoted phrase`},
-		{"recall zebras topic:machine-learning", `"-" is only allowed inside a quoted phrase`},
-		{"recall zebras vec:$my_vec", `"_" is only allowed inside a quoted phrase`},
-		{"recall zebras since:2026-01-15", "a quoted date like '2026-01-15'"},
+		"recall ferry; recall bridge":          {`";" is only allowed inside a quoted phrase`},
+		"recall e-mail":                        {`"-" is only allowed inside a quoted phrase`},
+		"recall zebras topic:machine-learning": {`"-" is only allowed inside a quoted phrase`},
+		"recall zebras vec:$my_vec":            {`"_" is only allowed inside a quoted phrase`},
+		"recall zebras since:2026-01-15":       {"a quoted date like '2026-01-15'"},
 		// A newline in a value slot is a second instruction starting early.
-		{"recall zebras topic:\nfood", "one command per instruction"},
+		"recall zebras topic:\nfood": {"one command per instruction"},
 		// A second '@' is named as a second selector.
-		{"recall@3@5 zebras", "one selector"},
+		"recall@3@5 zebras": {"one selector"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a parse error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a parse error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1181,27 +1156,27 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 // clause is spelled with a command. Whether the word is the first term or a
 // later one, the message says only what works.
 func TestCommandWordsAreNeverOfferedAsClauses(t *testing.T) {
-	cases := []struct {
-		query, word string
+	cases := map[string]struct {
+		word string
 	}{
-		{"recall recall", "recall"},
-		{"recall forget", "forget"},
-		{"recall zebras recall", "recall"},
-		{"recall zebras remember", "remember"},
+		"recall recall":          {"recall"},
+		"recall forget":          {"forget"},
+		"recall zebras recall":   {"recall"},
+		"recall zebras remember": {"remember"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
-			msg := fmt.Sprint(err, warns)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, warns, err := parser.Parse[uint64, float32](query, nil)
+			got := fmt.Sprint(err, warns)
 			if err == nil && len(warns) == 0 {
-				t.Fatalf("Parse(%q) was silent, want a warning or an error naming the command word", tc.query)
+				t.Fatalf("Parse(%q) was silent, want a warning or an error naming the command word", query)
 			}
-			if !strings.Contains(msg, "quote it ('"+tc.word+"')") {
-				t.Errorf("%s does not tell the caller to quote %q", msg, tc.word)
+			if !strings.Contains(got, "quote it ('"+tc.word+"')") {
+				t.Errorf("%s does not tell the caller to quote %q", got, tc.word)
 			}
-			if strings.Contains(msg, tc.word+":<value>") {
-				t.Errorf("%s offers %s:<value>, which is itself an error", msg, tc.word)
+			if strings.Contains(got, tc.word+":<value>") {
+				t.Errorf("%s offers %s:<value>, which is itself an error", got, tc.word)
 			}
 		})
 	}
@@ -1213,20 +1188,19 @@ func TestCommandWordsAreNeverOfferedAsClauses(t *testing.T) {
 // either a clause whose ':' went missing or a word the caller forgot to quote —
 // and the message offers both.
 func TestDanglingKeywordAfterAClauseIsAWordToQuote(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"recall x topic:y top", `"top" is a keyword and starts no clause here: write top:<value> if a clause was meant, or quote it ('top') to search for the word`},
-		{"recall x topic:y since", `"since" is a keyword and starts no clause here: write since:<value> if a clause was meant, or quote it ('since') to search for the word`},
-		{"recall x vec:$v depth", `"depth" is a keyword and starts no clause here: write depth:<value> if a clause was meant, or quote it ('depth') to search for the word`},
+		"recall x topic:y top":   {`"top" is a keyword and starts no clause here: write top:<value> if a clause was meant, or quote it ('top') to search for the word`},
+		"recall x topic:y since": {`"since" is a keyword and starts no clause here: write since:<value> if a clause was meant, or quote it ('since') to search for the word`},
+		"recall x vec:$v depth":  {`"depth" is a keyword and starts no clause here: write depth:<value> if a clause was meant, or quote it ('depth') to search for the word`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a dangling-keyword error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a dangling-keyword error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1241,20 +1215,19 @@ func TestDanglingKeywordAfterAClauseIsAWordToQuote(t *testing.T) {
 // error, so a message offering it would send the caller from one rejection to
 // the next.
 func TestDanglingCommandWordStartsASecondCommand(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember 'a' recall", `"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
-		{"remember 'a' remember", `"remember" starts a second command: one command per instruction — quote it ('remember') to search for the word`},
-		{"recall x topic:y recall", `"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"remember 'a' recall":     {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"remember 'a' remember":   {`"remember" starts a second command: one command per instruction — quote it ('remember') to search for the word`},
+		"recall x topic:y recall": {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a second-command error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a second-command error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1268,21 +1241,20 @@ func TestDanglingCommandWordStartsASecondCommand(t *testing.T) {
 // as an unexpected token. A remember has no terms, so the word cannot be data
 // there: it is a clause missing its ':' or a word that belongs inside quotes.
 func TestBareModifierOnARememberIsRejected(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember 'a' since 7d", `"since" is a keyword and starts no clause here: write since:<value> if a clause was meant, or quote it ('since') to search for the word`},
-		{"remember 'a' until 1d", `"until" is a keyword and starts no clause here: write until:<value> if a clause was meant, or quote it ('until') to search for the word`},
-		{"remember 'a' top 3", `"top" is a keyword and starts no clause here: write top:<value> if a clause was meant, or quote it ('top') to search for the word`},
-		{"remember 'a' depth 2", `"depth" is a keyword and starts no clause here: write depth:<value> if a clause was meant, or quote it ('depth') to search for the word`},
+		"remember 'a' since 7d": {`"since" is a keyword and starts no clause here: write since:<value> if a clause was meant, or quote it ('since') to search for the word`},
+		"remember 'a' until 1d": {`"until" is a keyword and starts no clause here: write until:<value> if a clause was meant, or quote it ('until') to search for the word`},
+		"remember 'a' top 3":    {`"top" is a keyword and starts no clause here: write top:<value> if a clause was meant, or quote it ('top') to search for the word`},
+		"remember 'a' depth 2":  {`"depth" is a keyword and starts no clause here: write depth:<value> if a clause was meant, or quote it ('depth') to search for the word`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a keyword error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a keyword error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1296,19 +1268,18 @@ func TestBareModifierOnARememberIsRejected(t *testing.T) {
 // bare vec is a keyword term, so these cases put it where only a clause can
 // start: after a remember's fact, or after a recall's first clause.
 func TestVecWithoutColonIsRejected(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember 'a' vec$:v", `"vec" is missing its ':': write vec:$<name>`},
-		{"recall x topic:y vec$:v", `"vec" is missing its ':': write vec:$<name>`},
+		"remember 'a' vec$:v":     {`"vec" is missing its ':': write vec:$<name>`},
+		"recall x topic:y vec$:v": {`"vec" is missing its ':': write vec:$<name>`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a missing-separator error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1324,24 +1295,23 @@ func TestVecWithoutColonIsRejected(t *testing.T) {
 // vec:<value> sent the caller to "expected param field operator $", one
 // rejection to the next.
 func TestBareVecRepairNamesTheParameterForm(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"recall x vec 3", `term "vec" is also a keyword: write vec:$<name> if a filter was meant, or quote it ('vec') to search the word`},
-		{"recall x vec$:v", `term "vec" is also a keyword: write vec:$<name> if a filter was meant, or quote it ('vec') to search the word`},
-		{"recall x topic:y vec", `"vec" is a keyword and starts no clause here: write vec:$<name> if a clause was meant, or quote it ('vec') to search for the word`},
-		{"remember 'a' vec", `"vec" is a keyword and starts no clause here: write vec:$<name> if a clause was meant, or quote it ('vec') to search for the word`},
-		{"recall x topic:y vec q", `"vec" is missing its ':': write vec:$<name>`},
-		{"remember 'a' vec $q", `"vec" is missing its ':': write vec:$<name>`},
-		{"recall x topic:y Vec", `mis-cased keyword "Vec": keywords are lower case — write vec:$<name> if a clause was meant, or quote it ('Vec') to search for the word`},
+		"recall x vec 3":         {`term "vec" is also a keyword: write vec:$<name> if a filter was meant, or quote it ('vec') to search the word`},
+		"recall x vec$:v":        {`term "vec" is also a keyword: write vec:$<name> if a filter was meant, or quote it ('vec') to search the word`},
+		"recall x topic:y vec":   {`"vec" is a keyword and starts no clause here: write vec:$<name> if a clause was meant, or quote it ('vec') to search for the word`},
+		"remember 'a' vec":       {`"vec" is a keyword and starts no clause here: write vec:$<name> if a clause was meant, or quote it ('vec') to search for the word`},
+		"recall x topic:y vec q": {`"vec" is missing its ':': write vec:$<name>`},
+		"remember 'a' vec $q":    {`"vec" is missing its ':': write vec:$<name>`},
+		"recall x topic:y Vec":   {`mis-cased keyword "Vec": keywords are lower case — write vec:$<name> if a clause was meant, or quote it ('Vec') to search for the word`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a keyword error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a keyword error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1355,20 +1325,19 @@ func TestBareVecRepairNamesTheParameterForm(t *testing.T) {
 // that a remember with nothing after it says what is missing rather than
 // reporting a phrase that was never started.
 func TestRememberNeedsASpaceAfterTheCommand(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember", "expected a space after the command, found end of input"},
-		{"remember@2", "expected a space after the command, found end of input"},
-		{"remember'a fact'", `expected a space after the command, found "a fact"`},
+		"remember":         {"expected a space after the command, found end of input"},
+		"remember@2":       {"expected a space after the command, found end of input"},
+		"remember'a fact'": {`expected a space after the command, found "a fact"`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a missing-space error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a missing-space error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1382,19 +1351,18 @@ func TestRememberNeedsASpaceAfterTheCommand(t *testing.T) {
 // reported as a missing phrase: the caller needs to know the character is the
 // problem, not that the fact is absent.
 func TestNulWhereTheFactShouldStartIsRejected(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember \x00'a'", "a NUL character is only allowed inside a quoted phrase"},
-		{"remember@1 \x00", "a NUL character is only allowed inside a quoted phrase"},
+		"remember \x00'a'": {"a NUL character is only allowed inside a quoted phrase"},
+		"remember@1 \x00":  {"a NUL character is only allowed inside a quoted phrase"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a NUL error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a NUL error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1409,14 +1377,14 @@ func TestNulWhereTheFactShouldStartIsRejected(t *testing.T) {
 // Trailing blank lines are not a second instruction and must still parse, or
 // every client that ends its payload with a newline would break.
 func TestNewlineEndsTheInstruction(t *testing.T) {
-	accepted := []string{
-		"recall zebras\n",
-		"recall zebras\n\n",
-		"recall zebras \n  \n\t",
-		"remember 'a fact'\n",
+	accepted := map[string]struct{}{
+		"recall zebras\n":        {},
+		"recall zebras\n\n":      {},
+		"recall zebras \n  \n\t": {},
+		"remember 'a fact'\n":    {},
 	}
 
-	for _, q := range accepted {
+	for q := range accepted {
 		t.Run("accepted:"+strconv.Quote(q), func(t *testing.T) {
 			if _, _, err := parser.Parse[uint64, float32](q, nil); err != nil {
 				t.Errorf("Parse(%q) = %v, want a trailing newline to be ignored", q, err)
@@ -1424,13 +1392,13 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 		})
 	}
 
-	rejected := []string{
-		"recall zebras\nfood",
-		"recall zebras\nrecall food",
-		"remember 'a'\nremember 'b'",
+	rejected := map[string]struct{}{
+		"recall zebras\nfood":        {},
+		"recall zebras\nrecall food": {},
+		"remember 'a'\nremember 'b'": {},
 	}
 
-	for _, q := range rejected {
+	for q := range rejected {
 		t.Run("rejected:"+strconv.Quote(q), func(t *testing.T) {
 			_, _, err := parser.Parse[uint64, float32](q, nil)
 			if err == nil {
@@ -1448,27 +1416,26 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 // only "invalid" retries with another huge number; one told the value is out of
 // range knows to shrink it. Both messages still name the clause that rejected it.
 func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want []string
 	}{
-		{"recall zebras depth:99999999999999999999", "invalid depth value"},
-		{"recall zebras depth:99999999999999999999", "out of range"},
-		{"recall zebras top:99999999999999999999", "invalid top value"},
-		{"recall zebras top:99999999999999999999", "out of range"},
+		"recall zebras depth:99999999999999999999": {[]string{"invalid depth value", "out of range"}},
+		"recall zebras top:99999999999999999999":   {[]string{"invalid top value", "out of range"}},
 		// Not a number at all: named, but not as a range problem.
-		{"recall zebras depth:abc", "expected a non-negative whole number"},
-		{"recall zebras top:top", "invalid top value"},
+		"recall zebras depth:abc": {[]string{"expected a non-negative whole number"}},
+		"recall zebras top:top":   {[]string{"invalid top value"}},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query+"/"+tc.want, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a value error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a value error", query)
 			}
-			if !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("error %q does not contain %q", err, tc.want)
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not contain %q", err, want)
+				}
 			}
 		})
 	}
@@ -1492,23 +1459,22 @@ func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
 // as `entity:top`, and an agent never has to remember how it capitalised
 // something.
 func TestMiscasedClauseWarns(t *testing.T) {
-	cases := []struct {
-		name  string
+	cases := map[string]struct {
 		query string
 		warns bool
 	}{
-		{"mis-cased modifier", "recall zebras TOP:3", true},
-		{"mis-cased anchor key", "recall zebras Topic:food", true},
-		{"mis-cased time bound", "recall zebras Since:7d", true},
-		{"mis-cased on a write", "remember 'a fact' Entity:bob", true},
-		{"one warning per mis-cased clause", "recall zebras Topic:food Depth:2", true},
-		{"lower case is silent", "recall zebras top:3 topic:food", false},
-		{"an anchor value is data, not syntax", "recall zebras entity:Top", false},
-		{"a mis-cased value on a write is data too", "remember 'a fact' topic:Food", false},
+		"mis-cased modifier":                       {"recall zebras TOP:3", true},
+		"mis-cased anchor key":                     {"recall zebras Topic:food", true},
+		"mis-cased time bound":                     {"recall zebras Since:7d", true},
+		"mis-cased on a write":                     {"remember 'a fact' Entity:bob", true},
+		"one warning per mis-cased clause":         {"recall zebras Topic:food Depth:2", true},
+		"lower case is silent":                     {"recall zebras top:3 topic:food", false},
+		"an anchor value is data, not syntax":      {"recall zebras entity:Top", false},
+		"a mis-cased value on a write is data too": {"remember 'a fact' topic:Food", false},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
@@ -1528,10 +1494,10 @@ func TestMiscasedClauseWarns(t *testing.T) {
 	if len(warns) != 2 {
 		t.Fatalf("got %d warnings %v, want one per mis-cased clause", len(warns), warns)
 	}
-	joined := warns[0].String() + " " + warns[1].String()
+	got := warns[0].String() + " " + warns[1].String()
 	for _, want := range []string{`"Topic"`, "topic clause", `"Depth"`, "depth clause", "lower case"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("warnings %q do not mention %q", joined, want)
+		if !strings.Contains(got, want) {
+			t.Errorf("warnings %q do not mention %q", got, want)
 		}
 	}
 }
@@ -1543,22 +1509,21 @@ func TestMiscasedClauseWarns(t *testing.T) {
 // (it asks for nothing the recall cannot do), or when the clause is omitted
 // (the operator's default, not the caller's choice).
 func TestDepthWithoutAnchorWarns(t *testing.T) {
-	cases := []struct {
-		name  string
+	cases := map[string]struct {
 		query string
 		warns bool
 	}{
-		{"depth on a term-only recall", "recall ferry depth:2", true},
-		{"depth on a vector-only recall", "recall vec:$v depth:1", true},
-		{"depth beside an anchor alone", "recall topic:harbour depth:2", false},
-		{"depth beside a term and an anchor", "recall ferry topic:harbour depth:2", false},
-		{"depth beside a vector and an anchor", "recall vec:$v entity:acme depth:1", false},
-		{"the floor never warns", "recall ferry depth:0", false},
-		{"no depth clause never warns", "recall ferry", false},
+		"depth on a term-only recall":         {"recall ferry depth:2", true},
+		"depth on a vector-only recall":       {"recall vec:$v depth:1", true},
+		"depth beside an anchor alone":        {"recall topic:harbour depth:2", false},
+		"depth beside a term and an anchor":   {"recall ferry topic:harbour depth:2", false},
+		"depth beside a vector and an anchor": {"recall vec:$v entity:acme depth:1", false},
+		"the floor never warns":               {"recall ferry depth:0", false},
+		"no depth clause never warns":         {"recall ferry", false},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
@@ -1584,15 +1549,15 @@ func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 		t.Fatalf("Parse(%q) warnings = %v, want exactly one", q, warns)
 	}
 
-	msg := warns[0].String()
+	got := warns[0].String()
 	for _, want := range []string{
 		"depth:2 has no effect",   // the clause that did nothing
 		"topic:/entity:",          // what opens the graph
 		"names none",              // why this recall could not
 		"parse warning at column", // positioned like an error
 	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("warning %q does not contain %q", msg, want)
+		if !strings.Contains(got, want) {
+			t.Errorf("warning %q does not contain %q", got, want)
 		}
 	}
 }
@@ -1601,20 +1566,19 @@ func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 // selector is a query error that says so: the selector is glued to the verb,
 // and a message that only blames the "@" leaves the caller to guess the fix.
 func TestSelectorWithSpace(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember @2 signal", "no space allowed between remember and @"},
-		{"recall @3 'car park'", "no space allowed between recall and @"},
-		{"recall  @5 'names of'", "no space allowed between recall and @"},
+		"remember @2 signal":    {"no space allowed between remember and @"},
+		"recall @3 'car park'":  {"no space allowed between recall and @"},
+		"recall  @5 'names of'": {"no space allowed between recall and @"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a selector-spacing error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a selector-spacing error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1627,25 +1591,24 @@ func TestSelectorWithSpace(t *testing.T) {
 // return separates the words of a query, wherever it falls, and that a NUL
 // inside quotes is data like any other character.
 func TestWhitespaceSeparatesWords(t *testing.T) {
-	cases := []struct {
-		query string
+	cases := map[string]struct {
 		terms []string
 	}{
-		{"recall  zebras", []string{"zebras"}},
-		{"recall\tzebras", []string{"zebras"}},
-		{"recall zebras ", []string{"zebras"}},
-		{"recall 'zebras\x00food'", []string{"zebras\x00food"}},
+		"recall  zebras":          {[]string{"zebras"}},
+		"recall\tzebras":          {[]string{"zebras"}},
+		"recall zebras ":          {[]string{"zebras"}},
+		"recall 'zebras\x00food'": {[]string{"zebras\x00food"}},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
 			}
 			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
-			if got := rc.Terms(); !slices.Equal(got, tc.terms) {
-				t.Errorf("Terms() = %q, want %q", got, tc.terms)
+			if diff := cmp.Diff(tc.terms, rc.Terms()); diff != "" {
+				t.Errorf("Terms() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1657,36 +1620,35 @@ func TestWhitespaceSeparatesWords(t *testing.T) {
 // it is not allowed, since "unexpected" leaves the caller to guess the fix.
 // want is empty for a query that must parse.
 func TestNoSpaceInsideACommandOrClause(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"remember@2 'x'", ""},
-		{"remember @2 'x'", "no space allowed between remember and @"},
-		{"remember@ 2 'x'", "no space allowed between @ and the selector"},
-		{"recall@3@5 zebras", "one selector"},
-		{"recall zebras topic:food", ""},
-		{"recall zebras topic :food", "no space allowed before :"},
-		{"recall zebras topic: food", "no space allowed after :"},
-		{"recall zebras : topic:food", "stray"},
-		{"recall zebras vec:$v", ""},
-		{"recall zebras vec: $v", "no space allowed after :"},
-		{"recall zebras vec:$ v", "no space allowed after $"},
-		{"recall zebras since:7d until:'2026-01-15' depth:2 top:5", ""},
-		{"recall zebras since :7d", "no space allowed before :"},
+		"remember@2 'x'":             {""},
+		"remember @2 'x'":            {"no space allowed between remember and @"},
+		"remember@ 2 'x'":            {"no space allowed between @ and the selector"},
+		"recall@3@5 zebras":          {"one selector"},
+		"recall zebras topic:food":   {""},
+		"recall zebras topic :food":  {"no space allowed before :"},
+		"recall zebras topic: food":  {"no space allowed after :"},
+		"recall zebras : topic:food": {"stray"},
+		"recall zebras vec:$v":       {""},
+		"recall zebras vec: $v":      {"no space allowed after :"},
+		"recall zebras vec:$ v":      {"no space allowed after $"},
+		"recall zebras since:7d until:'2026-01-15' depth:2 top:5": {""},
+		"recall zebras since :7d":                                 {"no space allowed before :"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if tc.want == "" {
 				if err != nil {
-					t.Fatalf("Parse(%q) = %v, want it to parse", tc.query, err)
+					t.Fatalf("Parse(%q) = %v, want it to parse", query, err)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want an error containing %q", tc.query, tc.want)
+				t.Fatalf("Parse(%q) = nil error, want an error containing %q", query, tc.want)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1701,28 +1663,27 @@ func TestNoSpaceInsideACommandOrClause(t *testing.T) {
 // is one, and the quote that searches the word. The error points at the
 // keyword itself, the word the caller has to change.
 func TestReservedWordAsATermNamesBothFixes(t *testing.T) {
-	cases := []struct {
-		query  string
+	cases := map[string]struct {
 		column int
 		want   []string
 	}{
-		{"recall top", 10, []string{"write top:<value>", "quote it ('top')"}},
-		{"recall Top", 10, []string{"write top:<value>", "quote it ('Top')"}},
-		{"recall zebras top", 17, []string{"write top:<value>", "quote it ('top')"}},
-		{"recall zebras topic food", 19, []string{"write topic:food", "quote it ('topic')"}},
-		{"recall since 7d", 12, []string{"write since:7d", "quote it ('since')"}},
-		{"recall zebras entity alice extra", 20, []string{"write entity:alice", "quote it ('entity')"}},
+		"recall top":                       {10, []string{"write top:<value>", "quote it ('top')"}},
+		"recall Top":                       {10, []string{"write top:<value>", "quote it ('Top')"}},
+		"recall zebras top":                {17, []string{"write top:<value>", "quote it ('top')"}},
+		"recall zebras topic food":         {19, []string{"write topic:food", "quote it ('topic')"}},
+		"recall since 7d":                  {12, []string{"write since:7d", "quote it ('since')"}},
+		"recall zebras entity alice extra": {20, []string{"write entity:alice", "quote it ('entity')"}},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			var perr *parser.Error
 			if !errors.As(err, &perr) {
-				t.Fatalf("Parse(%q) = %v, want a positioned parse error", tc.query, err)
+				t.Fatalf("Parse(%q) = %v, want a positioned parse error", query, err)
 			}
-			if perr.Pos.Column != tc.column {
-				t.Errorf("Parse(%q) error at column %d, want %d", tc.query, perr.Pos.Column, tc.column)
+			if got := perr.Pos.Column; got != tc.column {
+				t.Errorf("Parse(%q) error at column %d, want %d", query, got, tc.column)
 			}
 			for _, want := range tc.want {
 				if !strings.Contains(perr.Msg, want) {
@@ -1737,28 +1698,27 @@ func TestReservedWordAsATermNamesBothFixes(t *testing.T) {
 // to: quoted, a reserved word in any casing is an ordinary search term, and
 // the query runs without a warning.
 func TestQuotedReservedWordIsATerm(t *testing.T) {
-	cases := []struct {
-		query string
+	cases := map[string]struct {
 		terms []string
 	}{
-		{"recall 'top'", []string{"top"}},
-		{"recall 'Top' 'since'", []string{"top", "since"}},
-		{"recall zebras 'topic' food", []string{"zebras", "topic", "food"}},
-		{"recall 'since' 7d", []string{"since", "7d"}},
+		"recall 'top'":               {[]string{"top"}},
+		"recall 'Top' 'since'":       {[]string{"top", "since"}},
+		"recall zebras 'topic' food": {[]string{"zebras", "topic", "food"}},
+		"recall 'since' 7d":          {[]string{"since", "7d"}},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, warns, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, warns, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
 			}
 			if len(warns) != 0 {
-				t.Errorf("Parse(%q) warnings = %v, want none", tc.query, warns)
+				t.Errorf("Parse(%q) warnings = %v, want none", query, warns)
 			}
 			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
-			if got := rc.Terms(); !slices.Equal(got, tc.terms) {
-				t.Errorf("Terms() = %q, want %q", got, tc.terms)
+			if diff := cmp.Diff(tc.terms, rc.Terms()); diff != "" {
+				t.Errorf("Terms() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1769,21 +1729,20 @@ func TestQuotedReservedWordIsATerm(t *testing.T) {
 // quote, and the message names only the clause the caller meant, with the
 // next word as its value.
 func TestKeywordAfterAClauseIsAMissingColon(t *testing.T) {
-	cases := []struct {
-		query string
-		want  string
+	cases := map[string]struct {
+		want string
 	}{
-		{"recall zebras since:7d topic food", "write topic:food"},
-		{"recall zebras top:5 depth 2", "write depth:2"},
-		{"remember 'zebras eat grass' topic food entity:x", "write topic:food"},
-		{"recall x topic:y top 5", "write top:5"},
+		"recall zebras since:7d topic food":               {"write topic:food"},
+		"recall zebras top:5 depth 2":                     {"write depth:2"},
+		"remember 'zebras eat grass' topic food entity:x": {"write topic:food"},
+		"recall x topic:y top 5":                          {"write top:5"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, _, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
 			if err == nil {
-				t.Fatalf("Parse(%q) = nil error, want a missing-colon error", tc.query)
+				t.Fatalf("Parse(%q) = nil error, want a missing-colon error", query)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
@@ -1799,34 +1758,33 @@ func TestKeywordAfterAClauseIsAMissingColon(t *testing.T) {
 // reserved word, any casing and a quoted phrase with spaces or an apostrophe
 // all name an anchor, folded to lower case, and none of them warns.
 func TestAnchorValueIsData(t *testing.T) {
-	cases := []struct {
-		query    string
+	cases := map[string]struct {
 		topics   []string
 		entities []string
 	}{
-		{"recall x topic:top", []string{"top"}, nil},
-		{"recall x entity:Top", nil, []string{"top"}},
-		{"recall x topic:'US elections'", []string{"us elections"}, nil},
-		{"recall x topic:'My Project'", []string{"my project"}, nil},
-		{"recall x entity:'O''Brien'", nil, []string{"o'brien"}},
-		{"recall x topic:'since'", []string{"since"}, nil},
+		"recall x topic:top":            {[]string{"top"}, nil},
+		"recall x entity:Top":           {nil, []string{"top"}},
+		"recall x topic:'US elections'": {[]string{"us elections"}, nil},
+		"recall x topic:'My Project'":   {[]string{"my project"}, nil},
+		"recall x entity:'O''Brien'":    {nil, []string{"o'brien"}},
+		"recall x topic:'since'":        {[]string{"since"}, nil},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			cmd, warns, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, warns, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
 			}
 			if len(warns) != 0 {
-				t.Errorf("Parse(%q) warnings = %v, want none", tc.query, warns)
+				t.Errorf("Parse(%q) warnings = %v, want none", query, warns)
 			}
 			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
-			if got := rc.Topics(); !slices.Equal(got, tc.topics) {
-				t.Errorf("Topics() = %q, want %q", got, tc.topics)
+			if diff := cmp.Diff(tc.topics, rc.Topics()); diff != "" {
+				t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 			}
-			if got := rc.Entities(); !slices.Equal(got, tc.entities) {
-				t.Errorf("Entities() = %q, want %q", got, tc.entities)
+			if diff := cmp.Diff(tc.entities, rc.Entities()); diff != "" {
+				t.Errorf("Entities() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1841,33 +1799,30 @@ func TestStopWordTermWarns(t *testing.T) {
 		term   string
 		column int
 	}
-	cases := []struct {
-		query string
+	cases := map[string]struct {
 		warns []warning
 	}{
-		{"recall the parrot", []warning{{"the", 10}}},
-		{"recall parrot and the zebra", []warning{{"and", 17}, {"the", 21}}},
-		{"recall the 'parrot'", []warning{{"the", 10}}},
-		{"recall the vec:$v", []warning{{"the", 10}}},
+		"recall the parrot":           {[]warning{{"the", 10}}},
+		"recall parrot and the zebra": {[]warning{{"and", 17}, {"the", 21}}},
+		"recall the 'parrot'":         {[]warning{{"the", 10}}},
+		"recall the vec:$v":           {[]warning{{"the", 10}}},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.query, func(t *testing.T) {
-			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, got, err := parser.Parse[uint64, float32](query, nil)
 			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
 			}
-			if len(warns) != len(tc.warns) {
-				t.Fatalf("Parse(%q) warnings = %v, want %d", tc.query, warns, len(tc.warns))
+			want := make([]parser.Warning, len(tc.warns))
+			for i, w := range tc.warns {
+				want[i] = parser.Warning{
+					Msg: fmt.Sprintf("term %q is a stop word: stored facts never contain it, so it cannot match", w.term),
+					Pos: lexer.Position{Column: w.column},
+				}
 			}
-			for i, want := range tc.warns {
-				msg := fmt.Sprintf("term %q is a stop word: stored facts never contain it, so it cannot match", want.term)
-				if warns[i].Msg != msg {
-					t.Errorf("warning %d = %q, want %q", i, warns[i].Msg, msg)
-				}
-				if warns[i].Pos.Column != want.column {
-					t.Errorf("warning %d at column %d, want %d", i, warns[i].Pos.Column, want.column)
-				}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Parse(%q) warnings mismatch (-want +got):\n%s", query, diff)
 			}
 		})
 	}
@@ -1878,11 +1833,13 @@ func TestStopWordTermWarns(t *testing.T) {
 // result that looks like a miss. Anchors do not rescue it: the query that was
 // meant is the anchor alone.
 func TestStopWordOnlyRecallIsAnError(t *testing.T) {
-	for _, q := range []string{
-		"recall the",
-		"recall the and",
-		"recall the topic:birds",
-	} {
+	queries := map[string]struct{}{
+		"recall the":             {},
+		"recall the and":         {},
+		"recall the topic:birds": {},
+	}
+
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			_, _, err := parser.Parse[uint64, float32](q, nil)
 			if err == nil {
@@ -1905,13 +1862,15 @@ func TestStopWordOnlyRecallIsAnError(t *testing.T) {
 // content is only stop words, and a recall seeded by an anchor alone. A
 // warning there is noise the caller learns to ignore.
 func TestUnambiguousQueriesRunSilently(t *testing.T) {
-	for _, q := range []string{
-		"recall x since:7d",
-		"recall parrot topic:birds depth:2",
-		"recall 'the parrot'",
-		"recall 'the'",
-		"recall topic:birds",
-	} {
+	queries := map[string]struct{}{
+		"recall x since:7d":                 {},
+		"recall parrot topic:birds depth:2": {},
+		"recall 'the parrot'":               {},
+		"recall 'the'":                      {},
+		"recall topic:birds":                {},
+	}
+
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			_, warns, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
@@ -1930,53 +1889,60 @@ func TestUnambiguousQueriesRunSilently(t *testing.T) {
 // is here, plus a quoted form of each reserved word, since a bare one would
 // not parse.
 func TestStringRoundTripsToTheSameCommand(t *testing.T) {
-	for _, q := range []string{
-		"recall zebras",
-		"recall  zebras",
-		"recall\tzebras",
-		"recall zebras ",
-		"recall zebras \n  \n\t",
-		"recall 'zebras\x00food'",
-		"remember@2 'x'",
-		"recall zebras topic:food",
-		"recall zebras vec:$v",
-		"recall zebras since:7d until:'2026-01-15' depth:2 top:5",
-		"recall 'top'",
-		"recall 'Top' 'since'",
-		"recall zebras 'topic' food",
-		"recall x topic:top",
-		"recall x entity:Top",
-		"recall x topic:'US elections'",
-		"recall x topic:'My Project'",
-		"recall x entity:'O''Brien'",
-		"recall x topic:'since'",
-		"recall x TOP:3",
-		"recall x Topic:food",
-		"recall the parrot",
-		"recall parrot and the zebra",
-		"recall 'the parrot'",
-		"recall 'the'",
-		"recall the 'parrot'",
-		"recall the vec:$v",
-		"recall topic:birds",
-		"recall 'since' 7d",
-		"recall x since:7d",
-		"recall parrot topic:birds depth:2",
-		"recall parrot depth:2",
-		"recall 'top' topic:'US elections' since:'2026-01-15' top:5",
-		"remember@2 'a fact' topic:'my project' entity:'O''Brien'",
-		"recall 'recall'",
-		"recall 'remember'",
-		"recall 'forget'",
-		"recall 'update'",
-		"recall 'topic'",
-		"recall 'entity'",
-		"recall 'since'",
-		"recall 'until'",
-		"recall 'top'",
-		"recall 'depth'",
-		"recall 'vec'",
-	} {
+	// command holds what a round trip must not change.
+	type command struct {
+		Value                   string
+		Terms, Topics, Entities []string
+	}
+
+	queries := map[string]struct{}{
+		"recall zebras":            {},
+		"recall  zebras":           {},
+		"recall\tzebras":           {},
+		"recall zebras ":           {},
+		"recall zebras \n  \n\t":   {},
+		"recall 'zebras\x00food'":  {},
+		"remember@2 'x'":           {},
+		"recall zebras topic:food": {},
+		"recall zebras vec:$v":     {},
+		"recall zebras since:7d until:'2026-01-15' depth:2 top:5": {},
+		"recall 'top'":                      {},
+		"recall 'Top' 'since'":              {},
+		"recall zebras 'topic' food":        {},
+		"recall x topic:top":                {},
+		"recall x entity:Top":               {},
+		"recall x topic:'US elections'":     {},
+		"recall x topic:'My Project'":       {},
+		"recall x entity:'O''Brien'":        {},
+		"recall x topic:'since'":            {},
+		"recall x TOP:3":                    {},
+		"recall x Topic:food":               {},
+		"recall the parrot":                 {},
+		"recall parrot and the zebra":       {},
+		"recall 'the parrot'":               {},
+		"recall 'the'":                      {},
+		"recall the 'parrot'":               {},
+		"recall the vec:$v":                 {},
+		"recall topic:birds":                {},
+		"recall 'since' 7d":                 {},
+		"recall x since:7d":                 {},
+		"recall parrot topic:birds depth:2": {},
+		"recall parrot depth:2":             {},
+		"recall 'top' topic:'US elections' since:'2026-01-15' top:5": {},
+		"remember@2 'a fact' topic:'my project' entity:'O''Brien'":   {},
+		"recall 'recall'":   {},
+		"recall 'remember'": {},
+		"recall 'forget'":   {},
+		"recall 'update'":   {},
+		"recall 'topic'":    {},
+		"recall 'entity'":   {},
+		"recall 'since'":    {},
+		"recall 'until'":    {},
+		"recall 'depth'":    {},
+		"recall 'vec'":      {},
+	}
+
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			cmd, _, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
@@ -1986,22 +1952,23 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse(String() = %q) = %v, want the reconstruction to parse", cmd.String(), err)
 			}
-			if again.String() != cmd.String() {
-				t.Errorf("String() after a round trip = %q, want %q", again.String(), cmd.String())
+			if got, want := again.String(), cmd.String(); got != want {
+				t.Errorf("String() after a round trip = %q, want %q", got, want)
 			}
+
+			var got, want command
 			switch c := cmd.(type) {
 			case *parser.RecallCommandNode[uint64, float32]:
 				a := again.(*parser.RecallCommandNode[uint64, float32])
-				if !slices.Equal(a.Terms(), c.Terms()) || !slices.Equal(a.Topics(), c.Topics()) || !slices.Equal(a.Entities(), c.Entities()) {
-					t.Errorf("round trip changed the recall: terms %q topics %q entities %q, want %q %q %q",
-						a.Terms(), a.Topics(), a.Entities(), c.Terms(), c.Topics(), c.Entities())
-				}
+				want = command{Terms: c.Terms(), Topics: c.Topics(), Entities: c.Entities()}
+				got = command{Terms: a.Terms(), Topics: a.Topics(), Entities: a.Entities()}
 			case *parser.RememberCommandNode[float32]:
 				a := again.(*parser.RememberCommandNode[float32])
-				if a.Value() != c.Value() || !slices.Equal(a.Topics(), c.Topics()) || !slices.Equal(a.Entities(), c.Entities()) {
-					t.Errorf("round trip changed the remember: value %q topics %q entities %q, want %q %q %q",
-						a.Value(), a.Topics(), a.Entities(), c.Value(), c.Topics(), c.Entities())
-				}
+				want = command{Value: c.Value(), Topics: c.Topics(), Entities: c.Entities()}
+				got = command{Value: a.Value(), Topics: a.Topics(), Entities: a.Entities()}
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("round trip changed the command: mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -2011,10 +1978,12 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 // adding the test as it's an unwanted behaviour and failing to raising an error
 // should be flagged.
 func TestTokenGluedToPhrase(t *testing.T) {
-	for _, q := range []string{
-		"remember 'a fact'x",
-		"remember 'a fact'zzz topic:x",
-	} {
+	queries := map[string]struct{}{
+		"remember 'a fact'x":           {},
+		"remember 'a fact'zzz topic:x": {},
+	}
+
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			_, _, err := parser.Parse[uint64, float32](q, nil)
 			if err == nil {

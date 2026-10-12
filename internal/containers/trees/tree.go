@@ -71,8 +71,11 @@ type SpatialTree[K comparable, T any, P float32 | float64] interface {
 	Tree[K, T, P]
 
 	// Nearest returns up to k nodes closest to p, ordered from nearest to
-	// farthest.
-	Nearest(p Point[K, P], k int) []TreeNode[K, T, P]
+	// farthest. A non-nil keep restricts the search to the nodes whose key
+	// it accepts, before the k nearest are chosen: a caller filtering the
+	// result afterwards would lose every accepted node that ranked below k
+	// among all of them. A nil keep accepts every node.
+	Nearest(p Point[K, P], k int, keep func(K) bool) []TreeNode[K, T, P]
 
 	// Range returns every node whose Point falls within the axis-aligned box
 	// bounded by the min and max corners (inclusive).

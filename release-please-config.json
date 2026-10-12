@@ -63,6 +63,7 @@
       "component": "python",
       "tag-separator": "/",
       "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true,
       "versioning": "prerelease",
       "prerelease": false,
       "extra-files": [
