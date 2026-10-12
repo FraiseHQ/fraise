@@ -25,7 +25,8 @@
 // ranked (BTreeIndex.Search, RPTreeIndex.Search and the graph's Search tail),
 // so the central contract is equivalence with that baseline: for any k, Drain
 // must match sorting every offer by (score descending, compare(key) ascending)
-// and truncating to k, regardless of offer order.
+// and truncating to k, extended through any tie at the k-th, regardless of
+// offer order.
 package containers_test
 
 import (
@@ -35,10 +36,12 @@ import (
 
 	"github.com/FraiseHQ/fraise/internal/comparator"
 	"github.com/FraiseHQ/fraise/internal/containers"
+	"github.com/google/go-cmp/cmp"
 )
 
 // sortThenTruncate is the reference model TopK replaces: sort every (key,
-// score) pair by the total order and keep the first k (all of them if k <= 0).
+// score) pair by the total order and keep the first k (all of them if k <= 0)
+// and every pair tied with the k-th.
 func sortThenTruncate(keys []string, scores []float64, k int) ([]string, []float64) {
 	type pair struct {
 		key   string
@@ -55,7 +58,11 @@ func sortThenTruncate(keys []string, scores []float64, k int) ([]string, []float
 		return pairs[i].key < pairs[j].key
 	})
 	if k > 0 && len(pairs) > k {
-		pairs = pairs[:k]
+		cut := k
+		for cut < len(pairs) && pairs[cut].score == pairs[k-1].score {
+			cut++
+		}
+		pairs = pairs[:cut]
 	}
 	outKeys := make([]string, len(pairs))
 	outScores := make([]float64, len(pairs))
@@ -127,19 +134,53 @@ func TestOffer_BoundsToK(t *testing.T) {
 	}
 }
 
-// TestOffer_TieBrokenByKeyEvenWhenBounded checks that among equal scores at
-// capacity, the smaller key wins admission — the tiebreak the unbounded path
-// already applies at Drain must also govern which entries survive eviction.
-func TestOffer_TieBrokenByKeyEvenWhenBounded(t *testing.T) {
-	top := newTopK(2)
-	top.Offer("z", 5)
-	top.Offer("m", 5)
-	top.Offer("a", 5) // must displace "z", the worst of the three equal scores
-
-	keys, _ := top.Drain()
-	want := []string{"a", "m"}
-	if len(keys) != 2 || keys[0] != want[0] || keys[1] != want[1] {
-		t.Fatalf("Drain() = %v, want %v", keys, want)
+// TestOffer_KeepsTheTieAtTheCutWhole pins that the key orders a tie but
+// never cuts one: a tie straddling the k-th place is retained whole, in key
+// order, so the caller rather than the key decides which tied entries it
+// keeps. A displaced k-th joins the tie while the new k-th scores level with
+// it, and the whole tie is dropped once the k-th score rises above it.
+func TestOffer_KeepsTheTieAtTheCutWhole(t *testing.T) {
+	type offer struct {
+		key   string
+		score float64
+	}
+	tests := map[string]struct {
+		k      int
+		offers []offer
+		want   []string
+	}{
+		"a tie past capacity is kept": {
+			k:      2,
+			offers: []offer{{"z", 5}, {"m", 5}, {"a", 5}},
+			want:   []string{"a", "m", "z"},
+		},
+		"a displaced k-th joins the tie": {
+			k:      2,
+			offers: []offer{{"a", 5}, {"b", 5}, {"c", 5}, {"d", 9}},
+			want:   []string{"d", "a", "b", "c"},
+		},
+		"a rising k-th drops the tie": {
+			k:      2,
+			offers: []offer{{"a", 5}, {"b", 5}, {"c", 5}, {"d", 9}, {"e", 9}},
+			want:   []string{"d", "e"},
+		},
+		"a lower score stays out": {
+			k:      2,
+			offers: []offer{{"a", 5}, {"b", 9}, {"c", 1}, {"d", 5}},
+			want:   []string{"b", "a", "d"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			top := newTopK(tc.k)
+			for _, o := range tc.offers {
+				top.Offer(o.key, o.score)
+			}
+			got, _ := top.Drain()
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("Drain() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
