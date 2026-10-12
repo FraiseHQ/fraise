@@ -57,13 +57,16 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	Flush() error
 
 	// Search returns the keys most relevant to query, best match first, with a
-	// parallel slice of their scores. k bounds the number of results; k <= 0
-	// returns all matches. Score direction is index-specific (see the aliases).
+	// parallel slice of their scores. k bounds the number of results, save
+	// for a tie at the k-th place, which is returned whole; k <= 0 returns all
+	// matches. Score direction is index-specific (see the aliases).
 	//
 	// The ranking is a total order: keys of equal score are ordered by the
 	// index's key comparator. Candidates are pooled from maps, so without that
-	// tiebreak the k kept by truncation would be an arbitrary subset of a tied
-	// group and two identical queries could rank the same matches differently.
+	// tiebreak two identical queries could rank the same matches differently.
+	// The comparator orders a tie but never cuts one: the index cannot tell
+	// tied keys apart, so which of them a caller keeps is the caller's to
+	// decide, by what it knows of them and the index does not.
 	Search(query V, k int) ([]K, []P, error)
 }
 

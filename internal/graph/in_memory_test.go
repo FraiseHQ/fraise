@@ -685,31 +685,31 @@ func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
 	}
 }
 
-// TestInMemoryGraphSearchOrdersTiesNewestFirst pins that the clock never
-// reaches the ranking. Twenty facts filed under one topic, a millisecond
-// apart, match the query term identically, so their relevance ties to the
-// bit and only decay separates them; the seed budget is raised to twenty so
-// every one of them is a candidate. At float32, the precision the server
-// ships with, a millisecond over the default half-life is below one ulp: the
-// facts decay to one of two adjacent values, and the boundary between them
-// moves with time.Now on every call. Ordering ties by key let that boundary
-// pick which five facts top kept; ordering them newest first gives the same
+// TestInMemoryGraphSearchOrdersTiesNewestFirst pins that neither the clock
+// nor the keys reach the ranking. Two hundred facts filed under one topic, a
+// millisecond apart, match the query term identically, so their relevance
+// ties to the bit and only decay separates them. The tie runs deeper than
+// the text index is read under the default configuration, so the index's
+// cut must pass it on whole: cut by key, it would keep whichever facts hash
+// lowest, whatever their age. At float32, the precision the server ships
+// with, a millisecond over the default half-life is below one ulp: the facts
+// decay to one of two adjacent values, and the boundary between them moves
+// with time.Now on every call. Ordering ties by key let that boundary pick
+// which five facts top kept; ordering them newest first gives the same
 // ranking wherever it falls. The query runs 50 times with the clock moving
 // between calls, and every run must return the five newest facts in order.
 func TestInMemoryGraphSearchOrdersTiesNewestFirst(t *testing.T) {
-	cfg := testConfig()
-	cfg.DB.SeedSize = 20
-	g := graph.NewGraph[uint64, float32](cfg)
+	g := graph.NewGraph[uint64, float32](testConfig())
 	stored := time.Now()
 	topic := mkTopic(g, "t", stored)
 	mustSet(t, g, topic)
-	for n := 1; n <= 20; n++ {
+	for n := 1; n <= 200; n++ {
 		fact := mkFact(g, "fact number "+strconv.Itoa(n), stored.Add(time.Duration(n)*time.Millisecond))
 		mustSet(t, g, fact)
 		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: stored}, Hasher: g.GetHasher()})
 	}
 
-	want := []string{"fact number 20", "fact number 19", "fact number 18", "fact number 17", "fact number 16"}
+	want := []string{"fact number 200", "fact number 199", "fact number 198", "fact number 197", "fact number 196"}
 	for i := 0; i < 50; i++ {
 		nodes, _, _, _, _ := search(g, []string{"fact"}, containers.Vector[uint64, float32]{}, []string{"t"}, nil, 1, 5, time.Time{}, time.Time{})
 		if got := values(nodes); !reflect.DeepEqual(got, want) {

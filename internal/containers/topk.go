@@ -36,29 +36,40 @@ type topKEntry[K comparable, P float32 | float64] struct {
 }
 
 // TopK retains the k best (key, score) pairs under the total order (score
-// descending, then compare(key) ascending) and drains them in that order.
-// Offer order never affects the retained set or the drain order — the total
-// order is the contract, exactly as SearchIndex promises. k <= 0 retains
-// every offer. It is not safe for concurrent use.
+// descending, then compare(key) ascending) and drains them in that order,
+// together with every pair tied with the k-th: a tie straddling the cut is
+// kept whole. compare is the order a ranker can always fall back on, not the
+// order its caller ranks ties by, so letting it pick which tied pairs survive
+// would let the key, not the score, decide membership; kept whole, the tie
+// reaches the caller, which can order it by what it knows. Offer order never
+// affects the retained set or the drain order — the total order is the
+// contract, exactly as SearchIndex promises. k <= 0 retains every offer. It
+// is not safe for concurrent use.
 type TopK[K comparable, P float32 | float64] struct {
 	k       int
 	compare comparator.Comparator[K]
-	entries []topKEntry[K, P]
+	entries []topKEntry[K, P] // bounded heap of the k best, worst at the root
+	tied    []topKEntry[K, P] // offers outside the heap scoring level with its root
 }
 
-// NewTopK returns a TopK retaining the k best offers, breaking ties among
-// equal scores by compare(key) ascending. k <= 0 retains every offer.
+// NewTopK returns a TopK retaining the k best offers and any tied with the
+// k-th, ordering equal scores by compare(key) ascending. k <= 0 retains every
+// offer.
 func NewTopK[K comparable, P float32 | float64](k int, compare comparator.Comparator[K]) *TopK[K, P] {
 	return &TopK[K, P]{k: k, compare: compare}
 }
 
 // Offer considers (key, score) for retention. When k <= 0, or while still
-// under capacity, the offer is always kept; once at capacity, it replaces
-// the current worst kept pair iff it ranks strictly better under the total
-// order, so the k best survive regardless of offer order.
+// under capacity, the offer is always kept; once at capacity, a lower score
+// than the k-th is dropped, an equal one joins the tie, and a higher one
+// takes the k-th place. The displaced pair stays in the tie while the new
+// k-th scores level with it; once the k-th score rises, the whole tie falls
+// below the cut and is dropped. So the k best and their tie survive
+// regardless of offer order.
 func (t *TopK[K, P]) Offer(key K, score P) {
+	entry := topKEntry[K, P]{key: key, score: score}
 	if t.k <= 0 || len(t.entries) < t.k {
-		t.entries = append(t.entries, topKEntry[K, P]{key: key, score: score})
+		t.entries = append(t.entries, entry)
 		if t.k > 0 {
 			t.percolateUp(len(t.entries) - 1)
 		}
@@ -66,18 +77,28 @@ func (t *TopK[K, P]) Offer(key K, score P) {
 	}
 
 	root := t.entries[0]
-	better := score > root.score || (score == root.score && t.compare(key, root.key) < 0)
-	if !better {
+	switch {
+	case score < root.score:
+		return
+	case score == root.score:
+		t.tied = append(t.tied, entry)
 		return
 	}
-	t.entries[0] = topKEntry[K, P]{key: key, score: score}
+	t.entries[0] = entry
 	t.percolateDown(0)
+	if t.entries[0].score == root.score {
+		t.tied = append(t.tied, root)
+	} else {
+		t.tied = t.tied[:0]
+	}
 }
 
-// Drain empties the TopK and returns its retained keys and scores as
-// parallel slices ordered best first: score descending, then compare(key)
-// ascending.
+// Drain empties the TopK and returns its retained keys and scores, the k
+// best and the tie at the k-th, as parallel slices ordered best first: score
+// descending, then compare(key) ascending.
 func (t *TopK[K, P]) Drain() ([]K, []P) {
+	t.entries = append(t.entries, t.tied...)
+	t.tied = nil
 	sort.Slice(t.entries, func(i, j int) bool {
 		a, b := t.entries[i], t.entries[j]
 		if a.score != b.score {

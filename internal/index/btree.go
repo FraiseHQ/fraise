@@ -166,7 +166,8 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 // relevance.
 //
 // Documents of equal score are ordered by key, the total order SearchIndex
-// promises. k bounds the number of results; k <= 0 returns every match.
+// promises. k bounds the number of results, save for the documents tied with
+// the k-th, which are returned with it; k <= 0 returns every match.
 func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 	if len(idx.documents) == 0 {
 		return nil, nil, ErrEmptyIndex
