@@ -166,8 +166,7 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 // relevance.
 //
 // Documents of equal score are ordered by key, the total order SearchIndex
-// promises. k bounds the number of results, save for the documents tied with
-// the k-th, which are returned with it; k <= 0 returns every match. A
+// promises. k bounds the number of results; k <= 0 returns every match. A
 // posting whose key keep rejects is skipped in the same pass, while the term
 // weights stay those of the whole index: a filter narrows which documents
 // compete, not what a term is worth.
