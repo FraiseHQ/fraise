@@ -427,7 +427,8 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		keys = append(keys, key)
 	}
 
-	// C. Time window and recency decay.
+	// C. Time window and recency decay. The seeds are already inside the
+	// window; the traversal and the anchor members are not.
 	kept, ranked := g.timeFilter(keys, scores, since, until)
 
 	// D. Rank and truncate to the pool. Map iteration order is random, so
@@ -535,19 +536,24 @@ func (g *InMemoryGraph[K, P]) facet(key K, named map[K]struct{}) K {
 // collect runs the retrieval stages and pools their observations into one
 // candidate map: text and vector seeding, then the traversal from every seed,
 // then the topic and entity filters. It also returns the background rate the
-// scorer needs. Stages only record Contributions; the hinge, the null model
-// and the attenuation belong to the Scorer. The error is a vector dimension
-// mismatch.
+// scorer needs.
+//
+// The named anchors and the [since, until) window restrict what the seeding
+// searches, not what it keeps: each index is handed a keep that rejects a fact
+// outside them, so the seeds are the best matches among the facts the query
+// can return. Seeding globally and filtering afterwards would lose a fact that
+// ranks below the seed budget across the whole graph but first under its
+// anchor, and on a graph shared by many topics the recall would come back
+// short or empty while matching facts exist.
+//
+// Stages only record Contributions; the hinge, the null model and the
+// attenuation belong to the Scorer. The error is a vector dimension mismatch.
 //
 // top is how many hits the recall asks for and pool how many candidates the
 // ranking will consider, top itself or deeper under db.aggregate: each index
 // is read pool deep, and the traversal expands from the first max(seed-size,
 // top) of each reading, so an aggregation that reads deeper does not
 // traverse deeper (see gatherSeeds).
-//
-// since and until are the recall's time range; collect does not filter by
-// them, Search does, but the vector weight is read off the best text hit the
-// recall keeps, so gatherSeeds needs them with the anchor filters.
 //
 // With no keywords and no vector, the named anchors' members are the seeds
 // instead (see Graph.Search). No traversal runs, since expanding from every
@@ -563,7 +569,16 @@ func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vecto
 		g.gatherMembers(topicKeys, entityKeys, candidates)
 		return candidates, 0, nil
 	}
-	seeds, err := g.gatherSeeds(keywords, vector, candidates, topicKeys, entityKeys, since, until, top, pool)
+	// An unrestricted query hands the indexes a nil keep, so it pays nothing
+	// per posting.
+	var keep func(K) bool
+	if len(topicKeys) > 0 || len(entityKeys) > 0 || !since.IsZero() || !until.IsZero() {
+		keep = func(key K) bool {
+			node, ok := g.Nodes()[key]
+			return ok && within(node.GetTimestamp(), since, until) && g.matchesFilter(key, topicKeys) && g.matchesFilter(key, entityKeys)
+		}
+	}
+	seeds, err := g.gatherSeeds(keywords, vector, keep, candidates, top, pool)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -636,31 +651,31 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // information in the query's words and I_hit the part of it the best text
 // hit holds (see [index.BTreeIndex.Information]), so the embedding is
 // credited with the bits the text missed per bit it found. The best hit is
-// the best the recall keeps, filed under every named anchor and inside
-// [since, until): the embedding competes with the text hits that survive
-// the filters, and a full match elsewhere in the graph says nothing about
-// what the text found for this recall. A query whose words the best hit
-// holds outright weighs the embedding at 1, as it always has, and the text
-// leads; a hit holding half the query's information doubles it; one holding
-// a quarter quadruples it, and the embedding, which does not need the words,
-// carries the ranking. The weight is a ratio of
-// information, so it reads the same for a long question as for a short one,
-// and it has no constant to tune. With no text hit the recall keeps, the
-// embedding's weight is 1. The weight is one number per query, applied to
-// every vector sighting, so the vector ranking's order is kept and only its
-// mass against the text's moves.
+// the best the recall keeps, the first text hit keep accepts: the embedding
+// competes with the text hits that survive the filters, and a full match
+// elsewhere in the graph says nothing about what the text found for this
+// recall. A query whose words the best hit holds outright weighs the
+// embedding at 1, as it always has, and the text leads; a hit holding half
+// the query's information doubles it; one holding a quarter quadruples it,
+// and the embedding, which does not need the words, carries the ranking. The
+// weight is a ratio of information, so it reads the same for a long question
+// as for a short one, and it has no constant to tune. With no text hit the
+// recall keeps, the embedding's weight is 1. The weight is one number per
+// query, applied to every vector sighting, so the vector ranking's order is
+// kept and only its mass against the text's moves.
 //
-// Each source is asked for pool candidates, at least max(seed-size, top), so
-// the text ranking is never cut off before top, and every candidate read is
-// pooled on its own evidence. The seeds, the keys the traversal expands from,
-// are the first max(seed-size, top) of each source's reading: what an
-// aggregation reads below that stands on its text or vector match alone, so
-// reading deeper for it costs index lookups, not traversals. The seed keys
-// are returned in ascending order: the traversal folds floats, and a fixed
-// order keeps identical queries scoring identically. An empty index seeds
-// nothing; a vector of the wrong dimension is an error, since it comes from
-// a different embedding model than the graph's.
-func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], candidates scoring.Candidates[K, P], topicKeys []K, entityKeys []K, since time.Time, until time.Time, top int, pool int) ([]K, error) {
+// Each source is asked for pool candidates among the keys keep accepts, at
+// least max(seed-size, top), so the text ranking is never cut off before top,
+// and every candidate read is pooled on its own evidence. The seeds, the keys
+// the traversal expands from, are the first max(seed-size, top) of each
+// source's reading: what an aggregation reads below that stands on its text or
+// vector match alone, so reading deeper for it costs index lookups, not
+// traversals. The seed keys are returned in ascending order: the traversal
+// folds floats, and a fixed order keeps identical queries scoring
+// identically. An empty index seeds nothing; a vector of the wrong dimension
+// is an error, since it comes from a different embedding model than the
+// graph's.
+func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], keep func(K) bool, candidates scoring.Candidates[K, P], top int, pool int) ([]K, error) {
 	seedK := g.config.DB.SeedSize
 	if top > seedK {
 		seedK = top
@@ -675,18 +690,11 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
 		query := stopwords.CleanContent(strings.Join(keywords, " "), textLanguage)
-		if keys, scores, err := g.GetTextIndex().Search(query, pool); err == nil {
+		if keys, scores, err := g.GetTextIndex().Search(query, pool, keep); err == nil {
 			textSeeds = len(keys)
-			if !vector.Empty() {
-				for _, key := range keys {
-					node, ok := g.Nodes()[key]
-					if !ok || !within(node.GetTimestamp(), since, until) || !g.matchesFilter(key, topicKeys) || !g.matchesFilter(key, entityKeys) {
-						continue
-					}
-					if total, held := g.textIndex.Information(query, key); held > 0 {
-						weight = total / held
-					}
-					break
+			if !vector.Empty() && len(keys) > 0 {
+				if total, held := g.textIndex.Information(query, keys[0]); held > 0 {
+					weight = total / held
 				}
 			}
 			// The reading's sightings share one array, a candidate's first a
@@ -711,7 +719,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 
 	if !vector.Empty() {
-		keys, distances, err := g.vectorIndex.Search(vector, pool)
+		keys, distances, err := g.vectorIndex.Search(vector, pool, keep)
 		switch {
 		case errors.Is(err, index.ErrInvalidDimension):
 			return nil, err
@@ -951,8 +959,9 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 
 // within reports whether ts lies in [since, until), a zero bound being open:
 // the time range a recall keeps, read the same by timeFilter and by the
-// vector weight's choice of text hit, so the hit the weight reads is one the
-// recall can return.
+// seeding's keep, so a fact the indexes may seed is exactly a fact the window
+// keeps, and the text hit the vector weight reads is one the recall can
+// return.
 func within(ts time.Time, since time.Time, until time.Time) bool {
 	return (since.IsZero() || !ts.Before(since)) && (until.IsZero() || ts.Before(until))
 }
