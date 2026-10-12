@@ -1469,66 +1469,6 @@ func TestMiscasedClauseWarns(t *testing.T) {
 	}
 }
 
-// TestDepthWithoutAnchorWarns pins the depth warning: the graph is entered
-// only through an anchor the recall names, so a depth above 0 on a recall
-// naming no topic or entity has no effect. The query runs and the response
-// says so. Nothing warns when the recall names an anchor, when the depth is 0
-// (it asks for nothing the recall cannot do), or when the clause is omitted
-// (the operator's default, not the caller's choice).
-func TestDepthWithoutAnchorWarns(t *testing.T) {
-	cases := map[string]struct {
-		query string
-		warns bool
-	}{
-		"depth on a term-only recall":         {"recall ferry depth:2", true},
-		"depth on a vector-only recall":       {"recall vec:$v depth:1", true},
-		"depth beside an anchor alone":        {"recall topic:harbour depth:2", false},
-		"depth beside a term and an anchor":   {"recall ferry topic:harbour depth:2", false},
-		"depth beside a vector and an anchor": {"recall vec:$v entity:acme depth:1", false},
-		"the floor never warns":               {"recall ferry depth:0", false},
-		"no depth clause never warns":         {"recall ferry", false},
-	}
-
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			_, warns, err := parser.Parse[uint64, float32](tc.query, nil)
-			if err != nil {
-				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
-			}
-			if got := len(warns) > 0; got != tc.warns {
-				t.Fatalf("Parse(%q) warnings = %v, want warned=%v", tc.query, warns, tc.warns)
-			}
-		})
-	}
-}
-
-// TestDepthWithoutAnchorWarningIsActionable pins the message: it names the
-// clause that had no effect and what the graph needs, positioned at the
-// clause like every other warning, so a caller can fix the query from the
-// response alone — add an anchor, or drop the clause.
-func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
-	q := "recall ferry depth:2"
-	_, warns, err := parser.Parse[uint64, float32](q, nil)
-	if err != nil {
-		t.Fatalf("Parse(%q) unexpected error: %v", q, err)
-	}
-	if len(warns) != 1 {
-		t.Fatalf("Parse(%q) warnings = %v, want exactly one", q, warns)
-	}
-
-	got := warns[0].String()
-	for _, want := range []string{
-		"depth:2 has no effect",   // the clause that did nothing
-		"topic:/entity:",          // what opens the graph
-		"names none",              // why this recall could not
-		"parse warning at column", // positioned like an error
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("warning %q does not contain %q", got, want)
-		}
-	}
-}
-
 // TestSelectorWithSpace pins that whitespace between a command and its graph
 // selector is a query error that says so: the selector is glued to the verb,
 // and a message that only blames the "@" leaves the caller to guess the fix.
@@ -1832,15 +1772,17 @@ func TestStopWordOnlyRecallIsAnError(t *testing.T) {
 // the seeds are filed under, so the clause has something to act through and a
 // warning that it does not would be false.
 func TestUnambiguousQueriesRunSilently(t *testing.T) {
-	for _, q := range []string{
-		"recall x since:7d",
-		"recall parrot topic:birds depth:2",
-		"recall parrot depth:2",
-		"recall vec:$v depth:1",
-		"recall 'the parrot'",
-		"recall 'the'",
-		"recall topic:birds",
-	} {
+	queries := map[string]struct{}{
+		"recall x since:7d":                 {},
+		"recall parrot topic:birds depth:2": {},
+		"recall parrot depth:2":             {},
+		"recall vec:$v depth:1":             {},
+		"recall 'the parrot'":               {},
+		"recall 'the'":                      {},
+		"recall topic:birds":                {},
+	}
+
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			_, warns, err := parser.Parse[uint64, float32](q, nil)
 			if err != nil {
