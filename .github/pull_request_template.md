@@ -44,7 +44,7 @@
 
 ## Performance regression
 
-<!-- Only when the Benchmark gate fails on a regression worth what it costs: say what regressed and what it buys, then label the pull request `perf-regression-accepted`. The gate passes only with both. Leave it empty otherwise. -->
+<!-- Only when the Benchmark gate fails on a regression worth what it costs: say what regressed and what it buys, then label the pull request `perf-regression-accepted`, which is what passes the gate. Leave it empty otherwise. -->
 
 ## Checklist
 
