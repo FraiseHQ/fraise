@@ -167,8 +167,11 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 //
 // Documents of equal score are ordered by key, the total order SearchIndex
 // promises. k bounds the number of results, save for the documents tied with
-// the k-th, which are returned with it; k <= 0 returns every match.
-func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
+// the k-th, which are returned with it; k <= 0 returns every match. A
+// posting whose key keep rejects is skipped in the same pass, while the term
+// weights stay those of the whole index: a filter narrows which documents
+// compete, not what a term is worth.
+func (idx *BTreeIndex[K, P]) Search(query string, k int, keep func(K) bool) ([]K, []P, error) {
 	if len(idx.documents) == 0 {
 		return nil, nil, ErrEmptyIndex
 	}
@@ -200,7 +203,7 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int) ([]K, []P, error) {
 		weight := idx.relevance.Weight(list.live, len(idx.documents))
 		totalW += weight
 		for _, p := range list.entries {
-			if p.tf == 0 {
+			if p.tf == 0 || (keep != nil && !keep(p.key)) {
 				continue
 			}
 			scores[p.key] += idx.relevance.Increment(weight, p.key, p.tf, prepared)
