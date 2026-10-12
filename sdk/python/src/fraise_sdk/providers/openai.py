@@ -33,7 +33,7 @@ import json
 from collections.abc import Sequence
 
 from fraise_sdk.errors import FraiseError
-from fraise_sdk.providers.base import Anchor, Embedder, Extractor
+from fraise_sdk.providers.base import Anchor, Context, Embedder, Extractor
 
 try:
     import openai
@@ -44,13 +44,32 @@ except ImportError as exc:  # pragma: no cover - exercised only without the extr
     ) from exc
 
 # The instructions and output shape the published benchmark ingests with, word
-# for word, so an SDK user's write path is the one the numbers measure.
+# for word, so an SDK user's write path is the one the numbers measure. The
+# fields it describes are the ones extract sends: a field renamed on one side
+# alone reaches the model unexplained.
 _EXTRACTION_SYSTEM_PROMPT = """\
-You are tagging one conversation message for a memory database. Return
-the topics the message is about — short tags a later search could filter
-on (e.g. "travel", "health") — and the entities it names: the people,
-places, organizations, and things. Return empty lists when the message
-is pure filler."""
+You tag one message from a conversation so that a memory database can link
+it to other messages about the same things.
+
+You are given a JSON object with:
+- recent: the few messages just before it, for context only. Do not tag them.
+- vocabulary: the topics and entities already used in this conversation.
+- message: the message to tag.
+
+Return:
+- topics: 0 to 3 subjects someone might later ask about: an activity,
+  project, plan, event or area of life (for example "adoption", "painting",
+  "marathon training"). Lowercase, singular, no possessives. Not moods or
+  small talk ("feelings", "greeting", "chat").
+- entities: the specific people, pets, places, organizations, events and
+  named works the message refers to, including those it refers to by pronoun
+  or description ("she", "the agency") when recent makes clear who or what
+  they are. People by the name the conversation uses. Not generic objects
+  ("a car", "dinner") unless they are named or recur.
+
+Reuse an entry from vocabulary, spelled exactly as it appears there, whenever
+it names the same thing. Add a new entry only when nothing in vocabulary fits.
+Return empty lists when the message is pure filler."""
 
 _ANCHORS_SCHEMA = {
     "type": "object",
@@ -111,9 +130,12 @@ class OpenAIExtractor(Extractor):
 
     One chat completion per message, constrained to a strict JSON schema of
     ``topics`` and ``entities``, each value becoming one :class:`Anchor`. The
-    default model is ``gpt-5-mini``, with the prompt and output shape the
-    published benchmark ingests with. The message is only read, never
-    rewritten, so what is remembered is what was said.
+    model reads the message beside its graph's :class:`Context`, so a
+    reference resolves to what a nearby message named and a recurring subject
+    is filed under the anchor the graph already has. The default model is
+    ``gpt-5-mini``, with the prompt and output shape the published benchmark
+    ingests with. The message is only read, never rewritten, so what is
+    remembered is what was said.
 
     Pass your own configured ``openai.OpenAI`` client, or let one be built from
     the environment (``OPENAI_API_KEY``, optionally overridden by ``api_key``).
@@ -134,18 +156,35 @@ class OpenAIExtractor(Extractor):
         self._client = client
         self._model = model
 
-    def extract(self, text: str) -> list[Anchor]:
+    def extract(self, text: str, context: Context) -> list[Anchor]:
         """Return the topics and entities ``text`` is about, as anchors.
+
+        The message and its context reach the model as one JSON object, which
+        carries the text losslessly, quotes and line breaks included, and
+        splits the vocabulary into the topics and the entities an answer can
+        reuse.
+
+        Args:
+            text: the message to tag.
+            context: what the message's graph already holds.
 
         Raises:
             FraiseError: if the model's answer is empty or not the anchors
                 schema — a refusal, or JSON truncated by the completion budget.
         """
+        payload = {
+            "recent": list(context.recent),
+            "vocabulary": {
+                "topics": [a.value for a in context.vocabulary if a.type == "topic"],
+                "entities": [a.value for a in context.vocabulary if a.type == "entity"],
+            },
+            "message": text,
+        }
         response = self._client.chat.completions.create(
             model=self._model,
             messages=[
                 {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
-                {"role": "user", "content": text},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
             ],
             max_completion_tokens=_MAX_COMPLETION_TOKENS,
             response_format={

@@ -13,7 +13,7 @@ Every change to the server is measured against `main` as it stood the night befo
 | Every pull request | the head: the gates whose packages it changes, retrieval text only | the newest nightly baseline | the **Benchmark gate** check and a comment on the pull request; Discord on a regression |
 | The server's release pull request | the head: every gate, retrieval text only and seeded with embeddings | the newest nightly baseline | the **Benchmark gate** check and a comment on the pull request; Discord always |
 
-A pull request runs only the gates it can affect: a gate's packages are its benchmarks' package and every package of the module that one builds on, tests included, so a change in any of them runs the gate and a change outside them skips it, listed as not run in the report. A change to `go.mod`, `go.sum`, `tests/perf`, or to what runs the gates (the `Makefile`, the Python environment in `pyproject.toml` and `uv.lock`, `tools/embed_locomo.py`, the gate workflow) runs every gate, and so does the release gate.
+A pull request runs only the gates it can affect: a gate's packages are its benchmarks' package and every package of the module that one builds on, so a change to their source runs the gate and any other change skips it, listed as not run in the report. A test file counts only when it defines benchmarks; other tests, the gates in `tests/perf` and what runs them change no number a benchmark measures, so they run nothing. A change to what the benchmarks run or read outside a package's source runs every gate; the gate workflow lists those paths in `BENCH_ALWAYS`: the module's dependencies, the LoCoMo sample, the server configuration the benchmarks start with and the embeddings they seed with. The release gate runs every gate whatever changed.
 
 The nightly run is the reference. Its outputs are saved as the `benchmark-baseline` artifact, and every pull request until the next night is measured and compared with them; a pull request measures only its own head. When no baseline exists yet for a benchmark, the benchmark still runs and is reported, and its gate passes, since there is nothing to regress from.
 
@@ -43,13 +43,13 @@ Both start the server as the binary does, on `tests/perf/fraise.config.toml`, an
 
 ## The gates
 
-A gate is a pytest test in `tests/perf`, one file per Go package: `server_test.py` judges `pkg/server`'s benchmarks, `graph_test.py` those of `internal/graph`, and so on. Its marker names the benchmarks and how to run them, and the test asserts its limits on the comparison it is handed:
+A gate is a pytest test in `tests/perf`, one file per Go package: `server_test.py` judges `pkg/server`'s benchmarks, `graph_test.py` those of `internal/graph`, and so on. Its marker names the benchmarks and how to run them, and the test checks its limits on the comparison it is handed, failing with the rows that broke them:
 
 ```python
 @pytest.mark.bench("./internal/graph", "BenchmarkSearch")
-def test_allocations_do_not_grow(comparison):
+def test_allocations_do_not_grow(comparison, fail_regressed):
     grown = [row for row in comparison if row.unit == "allocs/op" and row.change >= 0.05]
-    assert not grown
+    fail_regressed(grown)
 ```
 
 Each row is one benchmark and unit of [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat)'s comparison of the baseline with this run: each side's median, and for a timed unit a Mann-Whitney U test, so a difference counts only at p < 0.05. A unit the benchmark declares exact counts any difference. benchstat names units in base units, so time per operation is `sec/op`.
@@ -65,7 +65,7 @@ Retrieval and allocations are counted, not timed, so they are the same on any ma
 
 ## Reading the report
 
-Every gate run posts one comment on its pull request, updated on every push, whatever the verdict. It opens with the verdict, lists the gates that failed and the regressions accepted, then has a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone. The raw `go test` output is attached to the run as the `benchmarks` artifact.
+Every gate run posts one comment on its pull request, updated on every push, whatever the verdict. It opens with the verdict, then a table per gate that failed, of the benchmarks that broke its limit, with how to [accept](#accepting-a-regression) what they caught, the same for the regressions accepted and the slowdowns, then a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone. The raw `go test` output is attached to the run as the `benchmarks` artifact.
 
 ## Accepting a regression
 

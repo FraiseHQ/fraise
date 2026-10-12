@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/FraiseHQ/fraise/compare/python/v0.1.1...python/v0.2.0) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **python:** extract anchors in the graph's context ([#531](https://github.com/FraiseHQ/fraise/issues/531))
+
+### Features
+
+* **python:** extract anchors in the graph's context ([#531](https://github.com/FraiseHQ/fraise/issues/531)) ([5787fcd](https://github.com/FraiseHQ/fraise/commit/5787fcd63718c0b12d275dbed158acf45c066ae2))
+
 ## [0.1.1](https://github.com/FraiseHQ/fraise/compare/python/v0.1.0...python/v0.1.1) (2026-10-04)
 
 

@@ -26,6 +26,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fraise_sdk.providers.base import (
+    Context,
     Embedder,
     Extractor,
     resolve_embedder,
@@ -95,8 +96,8 @@ def test_resolve_extractor_prefers_extract_method():
     extractor = MagicMock()
     resolved = resolve_extractor(extractor)
     assert resolved is extractor.extract
-    resolved("abc")
-    extractor.extract.assert_called_once_with("abc")
+    resolved("abc", Context(recent=("xyz",)))
+    extractor.extract.assert_called_once_with("abc", Context(recent=("xyz",)))
     extractor.assert_not_called()
 
 
@@ -115,5 +116,6 @@ def test_extractor_abc_cannot_be_instantiated():
 def test_calling_an_extractor_extracts():
     """``__call__`` is ``extract``, so an Extractor works wherever a callable does."""
     extractor = MagicMock()
-    Extractor.__call__(extractor, "the heron fishes at dawn")
-    extractor.extract.assert_called_once_with("the heron fishes at dawn")
+    context = Context(recent=("Anne: my flight is late",))
+    Extractor.__call__(extractor, "the heron fishes at dawn", context)
+    extractor.extract.assert_called_once_with("the heron fishes at dawn", context)
