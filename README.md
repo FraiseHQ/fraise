@@ -1,5 +1,5 @@
 <p align="center">
-  <img height="300px" style="height:300px;" src="assets/logo.png">
+  <img src="assets/logo.png">
 </p>
 
 # Fraise
