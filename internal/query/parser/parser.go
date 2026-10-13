@@ -113,7 +113,10 @@ func (p *parser[K, P]) next() {
 // so that any token there (a keyword, a '-', end of input) reaches the clause's
 // own converter, whose error names the clause and the text it could not read.
 // expect(LITERAL) would instead reject "top" as not a literal, which to the
-// caller it is, without naming the clause.
+// caller it is, without naming the clause. The one token a slot rejects before
+// converting is an unclosed quote: the lexer hands it over carrying the text
+// read so far, which a converter would accept as the value the quote never
+// finished (since:'7d as since:7d).
 func (p *parser[K, P]) take() lexer.Token {
 	tok := p.cur
 	p.next()
@@ -707,6 +710,9 @@ func (p *parser[K, P]) parseIntField() (lexer.Token, int, error) {
 	}
 
 	tok := p.take()
+	if tok.Type == lexer.ILLEGAL {
+		return lexer.Token{}, 0, p.errUnexpected(tok)
+	}
 
 	// A value too large to hold is reported apart from one that is not a number
 	// at all: an agent told only "invalid" retries with another huge number,
@@ -737,6 +743,9 @@ func (p *parser[K, P]) parseTimeValue() (lexer.Token, lexer.Token, containers.Ti
 	}
 
 	tok := p.take()
+	if tok.Type == lexer.ILLEGAL {
+		return lexer.Token{}, lexer.Token{}, nil, p.errUnexpected(tok)
+	}
 
 	t, err := containers.ParseTimeValue[K](tok.Literal)
 	var rangeErr *containers.DurationRangeError
