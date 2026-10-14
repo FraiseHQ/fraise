@@ -16,7 +16,7 @@ openai = [
     "openai-agents>=0.23.1",
 ]
 anthropic = [
-    "claude-agent-sdk>=0.2.163",
+    "claude-agent-sdk>=0.2.165",
 ]
 huggingface = [
     "huggingface-hub>=2.2.0",
