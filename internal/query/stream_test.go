@@ -50,7 +50,7 @@ type fakeGraph struct {
 	puts             int
 	searchCalled     bool
 
-	searchNodes      []*graph.Node[string]
+	searchNodes      []graph.Node[string]
 	searchScores     []float32
 	searchContribs   [][]scoring.Contribution[string, float32]
 	searchBackground float32
@@ -137,7 +137,7 @@ func TestStreamCommitReadSurfacesASearchError(t *testing.T) {
 
 func TestStreamCommitReadBuildsResult(t *testing.T) {
 	g := &fakeGraph{
-		searchNodes:  []*graph.Node[string]{nil, nil, nil},
+		searchNodes:  []graph.Node[string]{nil, nil, nil},
 		searchScores: []float32{0.9, 0.8, 0.7},
 	}
 	s := newStream(readQuery())
@@ -187,7 +187,7 @@ func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 	for _, explain := range []bool{true, false} {
 		t.Run(fmt.Sprintf("explain=%v", explain), func(t *testing.T) {
 			g := &fakeGraph{
-				searchNodes:      []*graph.Node[string]{nil, nil, nil},
+				searchNodes:      []graph.Node[string]{nil, nil, nil},
 				searchScores:     []float32{0.9, 0.8, 0.7},
 				searchContribs:   contributions,
 				searchBackground: 0.25,
@@ -403,7 +403,7 @@ func TestCommitStoresAnchorNodesForAnchoredRecall(t *testing.T) {
 			nodes := result.Nodes()
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
-				got = append(got, (*n).GetValue())
+				got = append(got, n.GetValue())
 			}
 			if len(nodes) != 1 || got[0] != "alice moved to paris" {
 				t.Errorf("Search(paris, topics=%v entities=%v) = %v, want [alice moved to paris]",
@@ -514,7 +514,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	hitValues := func(r *QueryResult[uint64, float32]) []string {
 		out := make([]string, len(r.Hits))
 		for i, h := range r.Hits {
-			out[i] = (*h.Node).GetValue()
+			out[i] = h.Node.GetValue()
 		}
 		return out
 	}
@@ -554,10 +554,10 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 		}
 		singleScore := make(map[string]float32, len(single.Hits))
 		for _, hit := range single.Hits {
-			singleScore[(*hit.Node).GetValue()] = hit.Score
+			singleScore[hit.Node.GetValue()] = hit.Score
 		}
 		for i, hit := range both.Hits {
-			value := (*hit.Node).GetValue()
+			value := hit.Node.GetValue()
 			if hit.Score <= singleScore[value] {
 				t.Errorf("%q scores %v under both anchors, not above its %v under one", value, hit.Score, singleScore[value])
 			}

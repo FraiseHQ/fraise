@@ -259,6 +259,7 @@ func TestParseTimeValueErrors(t *testing.T) {
 		{"garbage", "abc"},
 		{"unit suffix, non-numeric prefix", "xd"},
 		{"negative relative", "-5d"},
+		{"signed relative", "+7d"},
 		{"unknown unit", "7x"},
 		{"fractional not supported", "1.5h"},
 		{"invalid date", "2026-13-40"},

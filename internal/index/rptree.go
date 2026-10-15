@@ -223,8 +223,9 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 // The re-rank keeps only the k best as it goes: TopK retains the largest
 // scores, so each pooled candidate is offered with its distance negated, and
 // the pooled union is never sorted. Distances are measured against the live
-// vector, not the tree's copy.
-func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K, []P, error) {
+// vector, not the tree's copy. keep goes down to every tree, which probes
+// until it holds enough accepted candidates.
+func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int, keep func(K) bool) ([]K, []P, error) {
 	if len(idx.vectors) == 0 {
 		return nil, nil, ErrEmptyIndex
 	}
@@ -238,7 +239,7 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int) ([]K,
 	seen := make(map[K]bool)
 	nearest := containers.NewTopK[K, P](k, idx.compare)
 	for _, t := range idx.forest {
-		for _, node := range t.Nearest(q, k) {
+		for _, node := range t.Nearest(q, k, keep) {
 			key := node.Key()
 			if seen[key] {
 				continue

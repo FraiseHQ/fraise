@@ -441,7 +441,8 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		scores[key] = scorer.Score(candidates[key])
 	}
 
-	// C. Time window and recency decay.
+	// C. Time window and recency decay. The seeds are already inside the
+	// window; the traversal and the anchor members are not.
 	kept, ranked := g.timeFilter(keys, scores, since, until)
 
 	// D. Rank and truncate to the pool. Map iteration order is random, so
@@ -473,8 +474,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Candidates[K, P]) []Hit[K, P] {
 	out := make([]Hit[K, P], len(keys))
 	for i, key := range keys {
-		node := g.Nodes()[key]
-		out[i] = Hit[K, P]{Node: &node, Score: scores[i], Contributions: candidates[key]}
+		out[i] = Hit[K, P]{Node: g.Nodes()[key], Score: scores[i], Contributions: candidates[key]}
 	}
 	return out
 }
@@ -763,7 +763,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	if len(keywords) > 0 {
 		// Index errors (empty index) just mean no text seeds.
 		query := stopwords.CleanContent(strings.Join(keywords, " "), textLanguage)
-		if keys, scores, err := g.GetTextIndex().Search(query, pool); err == nil {
+		if keys, scores, err := g.GetTextIndex().Search(query, pool, keep); err == nil {
 			textSeeds = len(keys)
 			if !vector.Empty() {
 				for _, key := range keys {
@@ -799,7 +799,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 
 	if !vector.Empty() {
-		keys, distances, err := g.vectorIndex.Search(vector, pool)
+		keys, distances, err := g.vectorIndex.Search(vector, pool, keep)
 		switch {
 		case errors.Is(err, index.ErrInvalidDimension):
 			return nil, 0, err
@@ -884,8 +884,11 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, seedMass map[K]P, candid
 			t := g.traversal.Clone()
 			t.SetSource(seed)
 			result, err := t.Run(g)
+			if err != nil {
+				continue
+			}
 			r, ok := result.(TraversalResult[K])
-			if err != nil || !ok {
+			if !ok {
 				continue
 			}
 			// ExcessTraversal reports an anchor's full membership, the seed
@@ -1011,8 +1014,9 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 
 // within reports whether ts lies in [since, until), a zero bound being open:
 // the time range a recall keeps, read the same by timeFilter and by the
-// vector weight's choice of text hit, so the hit the weight reads is one the
-// recall can return.
+// seeding's keep, so a fact the indexes may seed is exactly a fact the window
+// keeps, and the text hit the vector weight reads is one the recall can
+// return.
 func within(ts time.Time, since time.Time, until time.Time) bool {
 	return (since.IsZero() || !ts.Before(since)) && (until.IsZero() || ts.Before(until))
 }
@@ -1020,6 +1024,6 @@ func within(ts time.Time, since time.Time, until time.Time) bool {
 // IsEmpty reports whether the graph holds no nodes. Callers ask it under the
 // graph lock, so it is O(1) rather than derived from Stats, which walks every
 // node.
-func (s *InMemoryGraph[K, P]) IsEmpty() bool {
-	return len(s.Nodes()) == 0
+func (g *InMemoryGraph[K, P]) IsEmpty() bool {
+	return len(g.Nodes()) == 0
 }

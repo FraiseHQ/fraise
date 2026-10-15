@@ -95,7 +95,9 @@ func FuzzRememberPhraseRoundTrip(f *testing.F) {
 
 // FuzzParseNeverPanics feeds the parser arbitrary wire input: raw queries come
 // from any HTTP client, not just the SDK, so on garbage the server's only
-// acceptable answers are a parsed query or a positioned error — never a panic.
+// acceptable answers are a parsed query or a positioned error — never a panic,
+// never both or neither, and never an error whose column points outside the
+// query, since the column is what an agent repairs the query from.
 func FuzzParseNeverPanics(f *testing.F) {
 	for _, seed := range []string{
 		"",
@@ -115,7 +117,59 @@ func FuzzParseNeverPanics(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
-		_, _, _ = parser.Parse[uint64, float32](raw, nil) // must return, not panic
+		cmd, _, err := parser.Parse[uint64, float32](raw, nil)
+		if err == nil {
+			if cmd == nil {
+				t.Fatalf("Parse(%q) = nil command and nil error, want one or the other", raw)
+			}
+			return
+		}
+		if cmd != nil {
+			t.Fatalf("Parse(%q) = %v alongside error %v, want no command on error", raw, cmd, err)
+		}
+		var perr *parser.Error
+		if !errors.As(err, &perr) {
+			t.Fatalf("Parse(%q) error %v is %T, want a *parser.Error carrying its position", raw, err, err)
+		}
+		// A column names the rune the error blames, end of input included,
+		// which blames the last rune; only an empty query has none to name.
+		if col, end := perr.Pos.Column, utf8.RuneCountInString(raw); col < 0 || col > end {
+			t.Fatalf("Parse(%q) error at column %d, want a column in [0, %d]", raw, col, end)
+		}
+	})
+}
+
+// FuzzRoundTripAllCommands pins that every command the parser accepts renders
+// back to a query that parses to the same command. String() is how a parsed
+// query is shown back to an agent, so a rendering that does not reparse hands
+// the agent a query it cannot send, and a rendering that drifts on a second
+// trip means two spellings of one query hash apart in the plan cache.
+func FuzzRoundTripAllCommands(f *testing.F) {
+	for _, seed := range []string{
+		"recall x",
+		"recall@2 x 'a phrase' topic:'y' entity:anne",
+		"recall x since:7d until:'2026-01-15' depth:2 top:5",
+		"recall x since:'2026-01-15T10:30:00.123456789Z'",
+		"recall topic:x vec:$v",
+		"remember 'a fact' topic:x entity:anne vec:$v",
+		"remember@1 'it''s got an apostrophe' topic:x",
+		"recall 'déjà vu 😀 東京'",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		cmd, _, err := parser.Parse[uint64, float32](raw, nil)
+		if err != nil {
+			t.Skip("only an accepted query has a rendering to read back")
+		}
+		rendered := cmd.String()
+		cmd2, _, err := parser.Parse[uint64, float32](rendered, nil)
+		if err != nil {
+			t.Fatalf("Parse(%q).String() = %q, which does not reparse: %v", raw, rendered, err)
+		}
+		if got := cmd2.String(); got != rendered {
+			t.Fatalf("Parse(%q) rendering is unstable: %q, then %q", raw, rendered, got)
+		}
 	})
 }
 
@@ -131,6 +185,37 @@ func TestDurationsAreBoundedWithTheRangeInTheMessage(t *testing.T) {
 		"recall x since:106752d":               {"invalid since value \"106752d\": out of range (at most 106751d)"},
 		"recall x until:15251w":                {"invalid until value \"15251w\": out of range (at most 15250w)"},
 		"recall x since:99999999999999999999d": {"out of range (at most 106751d)"},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("Parse(%q) = %v, want it to parse", query, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse(%q) = %v, want an error containing %q", query, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestTimeValuesAreQuotedOnlyWhenAbsolute pins the grammar's split between the
+// two time forms: a date carries a '-' and is quoted, a duration is a bare
+// word. A quoted duration is an error naming the unquoted spelling, so one
+// clause has one spelling and the quote keeps telling a date from a duration.
+func TestTimeValuesAreQuotedOnlyWhenAbsolute(t *testing.T) {
+	cases := map[string]struct {
+		want string // "" when the query must parse
+	}{
+		"recall x since:7d":                     {""},
+		"recall x since:'2026-01-15'":           {""},
+		"recall x until:'2026-01-15T10:00:00Z'": {""},
+		"recall x since:'7d'":                   {`invalid since value "7d": a duration is not quoted — write since:7d`},
+		"recall x until:'3h'":                   {`invalid until value "3h": a duration is not quoted — write until:3h`},
 	}
 
 	for query, tc := range cases {
@@ -165,7 +250,7 @@ func TestClauseErrorsSurfaceUnmangled(t *testing.T) {
 		// vec: on both commands: parseVecField's positioned error must reach
 		// the caller unwrapped, like every other clause's.
 		"recall x vec:v":           {"expected param field operator $"},
-		"remember 'a fact' vec$:v": {"Expected colon"}, // a remember: among a recall's terms a bare vec is a keyword term
+		"remember 'a fact' vec$:v": {"is missing its ':'"}, // a remember: among a recall's terms a bare vec is a keyword term
 		"recall x vec:$":           {"expected literal"},
 		"remember 'a fact' vec:v":  {"expected param field operator $"},
 		"remember 'a fact' vec:$":  {"expected literal"},
@@ -355,11 +440,13 @@ func TestRememberPhrase(t *testing.T) {
 }
 
 // TestRememberPhraseRoundTrip checks that a fact containing an apostrophe
-// survives String() reconstruction (the inner quote is doubled again), and
-// that a quoted anchor value comes back quoted.
+// survives String() reconstruction (the inner quote is doubled again), that a
+// quoted anchor value comes back quoted, and that the selector is printed only
+// when it was written, as a recall's is.
 func TestRememberPhraseRoundTrip(t *testing.T) {
-	// String() always renders the graph selector (@0 by default), so include it.
+	// The selector is printed as written: absent when the query has none.
 	queries := map[string]struct{}{
+		"remember 'alice''s laptop' topic:devices":                       {},
 		"remember@0 'alice''s laptop' topic:devices":                     {},
 		"remember@0 'a fact' topic:'machine-learning' entity:'o''brien'": {},
 	}
@@ -427,6 +514,16 @@ func TestFieldRequiresColonSeparator(t *testing.T) {
 		"recall zebras since 7d 30d":           {"write since:7d"},
 		"recall zebras until 7d 30d":           {"write until:7d"},
 		"recall zebras since:7d until 30d 60d": {"write until:30d"},
+		// A quoted duration is spelled back bare: since:'7d' is itself
+		// rejected as a quoted duration, so repairing to it sends the caller
+		// from one error to the next. A quoted date keeps its quotes, and so
+		// does a signed count, which is no duration.
+		"recall x topic:y since'7d'":          {`"since" is missing its ':': write since:7d`},
+		"recall x topic:y since '7d'":         {`"since" is missing its ':': write since:7d`},
+		"recall x since '7d'":                 {`term "since" is also a keyword: write since:7d if a filter was meant, or quote it ('since') to search the word`},
+		"recall x topic:y until '3h'":         {`"until" is missing its ':': write until:3h`},
+		"recall x topic:y since '2026-01-15'": {`"since" is missing its ':': write since:'2026-01-15'`},
+		"recall x topic:y since '+7d'":        {`"since" is missing its ':': write since:'+7d'`},
 	}
 
 	for query, tc := range cases {
@@ -1084,6 +1181,12 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		"remember 'a fact' depth:1":  {"depth: is a recall clause"},
 		// An unclosed quote is reported as one, not as whatever it swallowed.
 		"recall 'unclosed phrase": {"unterminated quoted phrase"},
+		// In a clause value too, where the text it swallowed would otherwise
+		// read as the value: until:'2026-01-15 as until:2026-01-15.
+		"recall x since:'7d":         {"unterminated quoted phrase"},
+		"recall x until:'2026-01-15": {"unterminated quoted phrase"},
+		"recall x top:'5":            {"unterminated quoted phrase"},
+		"recall x depth:'2":          {"unterminated quoted phrase"},
 		// A NUL outside a phrase is rejected, not read as the end of the query
 		// with everything after it dropped.
 		"recall zebras\x00food": {"NUL character is only allowed inside a quoted phrase"},
@@ -1231,15 +1334,15 @@ func TestBareModifierOnARememberIsRejected(t *testing.T) {
 }
 
 // TestVecWithoutColonIsRejected pins that vec followed by anything but ':' is
-// rejected with the token it found, on both commands. Among a recall's terms a
+// rejected with the clause repair, on both commands. Among a recall's terms a
 // bare vec is a keyword term, so these cases put it where only a clause can
 // start: after a remember's fact, or after a recall's first clause.
 func TestVecWithoutColonIsRejected(t *testing.T) {
 	cases := map[string]struct {
 		want string
 	}{
-		"remember 'a' vec$:v":     {`Expected colon, but found "$"`},
-		"recall x topic:y vec$:v": {`Expected colon, but found "$"`},
+		"remember 'a' vec$:v":     {`"vec" is missing its ':': write vec:$<name>`},
+		"recall x topic:y vec$:v": {`"vec" is missing its ':': write vec:$<name>`},
 	}
 
 	for query, tc := range cases {

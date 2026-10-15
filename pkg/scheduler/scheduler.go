@@ -190,7 +190,7 @@ func (s *Scheduler[K, P]) execute(stream *query.Stream[K, P]) error {
 	// Done() never blocks forever (e.g. a request for an out-of-range graph).
 	defer stream.Finish()
 
-	g, err := s.DB.Select(stream.Query.GetGraphID())
+	g, err := s.DB.Select(stream.GraphID())
 
 	if err != nil {
 		stream.Err = err

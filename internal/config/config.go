@@ -255,7 +255,7 @@ type MCPConfig struct {
 func New() *ConfigSet {
 	config := &ConfigSet{}
 
-	config.FlagSet = flag.NewFlagSet("flags", flag.ContinueOnError)
+	config.FlagSet = flag.NewFlagSet("fraise", flag.ContinueOnError)
 
 	flagSet := config.FlagSet
 
@@ -264,8 +264,8 @@ func New() *ConfigSet {
 
 	// scheduler
 	defaultWorkers := max(MinWorkersCount, runtime.GOMAXPROCS(0))
-	flagSet.IntVar(&config.Scheduler.Workers, "workers", defaultWorkers, "Default worker count.")
-	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Default Buffer size")
+	flagSet.IntVar(&config.Scheduler.Workers, "workers", defaultWorkers, "Worker goroutines executing streams")
+	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Queue depth: streams waiting for a worker")
 	flagSet.DurationVar(&config.Scheduler.EnqueueTimeout, "enqueue-timeout", DefaultEnqueueTimeout, "Max wait for queue space before rejecting a query")
 
 	// server
@@ -278,35 +278,35 @@ func New() *ConfigSet {
 	flagSet.Int64Var(&config.Server.MaxBodyBytes, "max-body-bytes", DefaultMaxBodyBytes, "Max request body size in bytes")
 
 	// log
-	flagSet.StringVar(&config.Log.Level, "log-level", DefaultLogLevel, "Log level")
-	flagSet.StringVar(&config.Log.Format, "log-format", DefaultLogFormat, "Log Format")
+	flagSet.StringVar(&config.Log.Level, "log-level", DefaultLogLevel, "Log level (debug, info, warn, error)")
+	flagSet.StringVar(&config.Log.Format, "log-format", DefaultLogFormat, "Log format (text, json)")
 	flagSet.BoolVar(&config.Log.DisableTimestamp, "log-disable-timestamp", DefaultLogDisableTimestamp, "Omit the timestamp from every log line")
 
 	// engine
-	flagSet.DurationVar(&config.Engine.Halflife, "half-life", DefaultHalflife, "Half life for time decay")
-	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Query cache size")
+	flagSet.DurationVar(&config.Engine.Halflife, "half-life", DefaultHalflife, "Time-decay half-life applied to fact scores")
+	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Size of the LRU of optimised query plans")
 
 	// db
 	flagSet.IntVar(&config.DB.NumGraphs, "num-graphs", DefaultNumGraph, "Number of independent graphs the store allocates")
-	flagSet.IntVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Default Top")
-	flagSet.IntVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Default Depth")
+	flagSet.IntVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Results returned when a recall omits top:")
+	flagSet.IntVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Retrieval lane when a recall omits depth: (0 = floor)")
 	flagSet.IntVar(&config.DB.MaxTop, "max-top", DefaultMaxTop, "Ceiling on a recall's top clause")
 	flagSet.IntVar(&config.DB.MaxDepth, "max-depth", DefaultMaxDepth, "Ceiling on a recall's depth clause")
 	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
-	flagSet.IntVar(&config.DB.SeedSize, "seed-size", int(DefaultSeedSize), "Minimum candidate budget per source (search widens it to top)")
+	flagSet.IntVar(&config.DB.SeedSize, "seed-size", DefaultSeedSize, "Minimum candidate budget per source (search widens it to top)")
 	flagSet.IntVar(&config.DB.Aggregate.Pool, "aggregate-pool", DefaultAggregatePool, "Ranked candidates the slots are spread from")
 	flagSet.IntVar(&config.DB.Aggregate.Cap, "aggregate-cap", DefaultAggregateCap, "Fact hits one facet takes before the next facet gets its first")
-	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Default Hashing function")
-	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Hashing function seed")
+	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Node-key hashing function (xxhash, t1ha)")
+	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Seed of the node-key hashing function")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
 	flagSet.StringVar(&config.DB.ScoringAlgorithm.Name, "scoring-algorithm", DefaultScoringAlgorithm, "Relevance fold (information, excess, rrf)")
 	flagSet.StringVar(&config.DB.RelevanceModel.Name, "relevance-model", DefaultRelevanceModel, "Text-index relevance model (bm25, matchcount)")
 
 	// vector search
-	flagSet.IntVar(&config.DB.VectorSearch.ProjectionDimension, "rptree-projection-dimension", DefaultProjectionDimention, "RP Tree Projection dimension")
-	flagSet.IntVar(&config.DB.VectorSearch.NumberTrees, "rptree-n-trees", DefaultNumberTrees, "RP Tree Number Trees")
-	flagSet.Uint64Var(&config.DB.VectorSearch.Seed, "rptree-seed", DefaultRPSeed, "RP Tree seed")
+	flagSet.IntVar(&config.DB.VectorSearch.ProjectionDimension, "rptree-projection-dimension", DefaultProjectionDimension, "Dimension each RP-tree projects vectors down to")
+	flagSet.IntVar(&config.DB.VectorSearch.NumberTrees, "rptree-n-trees", DefaultNumberTrees, "Trees in the vector index forest")
+	flagSet.Uint64Var(&config.DB.VectorSearch.Seed, "rptree-seed", DefaultRPSeed, "Seed of the RP-trees' random projections")
 	flagSet.IntVar(&config.DB.VectorSearch.FlushFactor, "rptree-flush-factor", DefaultFlushFactor, "RP forest compaction threshold (entries per live vector)")
 	flagSet.IntVar(&config.DB.VectorSearch.LeafSize, "rptree-leaf-size", DefaultLeafSize, "Points an RP-tree leaf holds before it splits")
 	flagSet.IntVar(&config.DB.VectorSearch.Overfetch, "rptree-overfetch", DefaultOverfetch, "Candidates gathered per result before a vector search stops probing")
@@ -427,22 +427,24 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	// db
 	Adjust(&c.DB.NumGraphs, DefaultNumGraph)
 	Adjust(&c.DB.DefaultTop, DefaultTop)
-	Adjust(&c.DB.DefaultDepth, DefaultDepth)
+	// DB.DefaultDepth needs no Adjust: its default, 0, is the zero value and
+	// the floor lane, so an absent key and an explicit 0 already agree.
 	Adjust(&c.DB.MaxTop, DefaultMaxTop)
 	Adjust(&c.DB.MaxDepth, DefaultMaxDepth)
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
-	Adjust(&c.DB.SeedSize, int(DefaultSeedSize))
+	Adjust(&c.DB.SeedSize, DefaultSeedSize)
 	Adjust(&c.DB.Aggregate.Pool, DefaultAggregatePool)
 	Adjust(&c.DB.Aggregate.Cap, DefaultAggregateCap)
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
-	Adjust(&c.DB.HashingFunction.Seed, DefaultHashingFunctionSeed)
+	// DB.HashingFunction.Seed needs no Adjust: its default, 0, is the zero
+	// value, so an absent key and an explicit 0 already agree.
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)
 	Adjust(&c.DB.ScoringAlgorithm.Name, DefaultScoringAlgorithm)
 	Adjust(&c.DB.RelevanceModel.Name, DefaultRelevanceModel)
 
 	// vector search
-	Adjust(&c.DB.VectorSearch.ProjectionDimension, DefaultProjectionDimention)
+	Adjust(&c.DB.VectorSearch.ProjectionDimension, DefaultProjectionDimension)
 	Adjust(&c.DB.VectorSearch.NumberTrees, DefaultNumberTrees)
 	Adjust(&c.DB.VectorSearch.Seed, DefaultRPSeed)
 	Adjust(&c.DB.VectorSearch.FlushFactor, DefaultFlushFactor)
