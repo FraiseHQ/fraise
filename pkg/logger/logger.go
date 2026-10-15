@@ -33,7 +33,6 @@ import (
 // Logger writes structured log lines to stdout, filtered to the configured
 // level and in the configured format (text or JSON).
 type Logger struct {
-	config *config.ConfigSet
 	logger *slog.Logger
 }
 
@@ -89,12 +88,7 @@ func NewLogger(cfg *config.ConfigSet) *Logger {
 		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 
-	l := &Logger{
-		config: cfg,
-		logger: slog.New(handler),
-	}
-
-	return l
+	return &Logger{logger: slog.New(handler)}
 }
 
 // Default returns the logger the package-level functions write through, or nil
@@ -138,32 +132,28 @@ func (l *Logger) Error(msg string, attrs ...any) {
 
 // Debug logs through the default logger at debug level.
 func Debug(msg string, attrs ...any) {
-	if defaultLogger == nil {
-		return
+	if l := Default(); l != nil {
+		l.Debug(msg, attrs...)
 	}
-	defaultLogger.Debug(msg, attrs...)
 }
 
 // Info logs through the default logger at info level.
 func Info(msg string, attrs ...any) {
-	if defaultLogger == nil {
-		return
+	if l := Default(); l != nil {
+		l.Info(msg, attrs...)
 	}
-	defaultLogger.Info(msg, attrs...)
 }
 
 // Warn logs through the default logger at warn level.
 func Warn(msg string, attrs ...any) {
-	if defaultLogger == nil {
-		return
+	if l := Default(); l != nil {
+		l.Warn(msg, attrs...)
 	}
-	defaultLogger.Warn(msg, attrs...)
 }
 
 // Error logs through the default logger at error level.
 func Error(msg string, attrs ...any) {
-	if defaultLogger == nil {
-		return
+	if l := Default(); l != nil {
+		l.Error(msg, attrs...)
 	}
-	defaultLogger.Error(msg, attrs...)
 }

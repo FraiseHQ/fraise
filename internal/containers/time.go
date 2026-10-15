@@ -117,8 +117,11 @@ func ParseTimeValue[K comparable](s string) (TimeValue[K], error) {
 		return nil, fmt.Errorf("%w: empty string", ErrInvalidTime)
 	}
 
-	// Relative: <int><unit>. A date never ends in a unit letter.
-	if mult, ok := unitDuration(s[len(s)-1]); ok {
+	// Relative: <digits><unit>. A date never ends in a unit letter. The count
+	// carries no sign: a duration is written bare, and a bare +7d does not
+	// lex as one word, so a signed count would be a duration no query can
+	// spell.
+	if mult, ok := unitDuration(s[len(s)-1]); ok && s[0] >= '0' && s[0] <= '9' {
 		n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
 		// A count past what a time.Duration holds would wrap negative and
 		// resolve to a bound in the future, emptying the window (since:106752d),

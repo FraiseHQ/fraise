@@ -15,4 +15,6 @@ examples
 !examples/openai-agents/agent.py
 !examples/claude-agent-sdk/agent.py
 coverage.txt
+coverage-py.xml
+.coverage
 *.md

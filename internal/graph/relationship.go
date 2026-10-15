@@ -34,7 +34,7 @@ type Mentions[K comparable] struct {
 	NamedEntity *NamedEntity[K]
 	NodeAttributes
 
-	Hasher hash.Hasher[K, string]
+	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
 // Key implements [Node]: the edge's Hash under its own Hasher, the key the
@@ -86,7 +86,7 @@ type IsAbout[K comparable] struct {
 	Topic *Topic[K]
 	NodeAttributes
 
-	Hasher hash.Hasher[K, string]
+	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
 // Key implements [Node]: the edge's Hash under its own Hasher, the key the

@@ -449,11 +449,7 @@ func (n RecallCommandNode[K, P]) String() string {
 	var s []string
 
 	// command + selector
-	cmd := n.key.Literal
-	if n.selector.key.Type == lexer.AT {
-		cmd += n.selector.String()
-	}
-	s = append(s, cmd)
+	s = append(s, n.key.Literal+n.selector.String())
 
 	// terms
 	for _, t := range n.terms {
@@ -510,7 +506,12 @@ func (n RecallCommandNode[K, P]) End() lexer.Position {
 
 // graph selector node impl
 
+// String prints the selector as written, and nothing for a command written
+// without one, so a command's String parses back to the query it came from.
 func (n GraphSelectorNode) String() string {
+	if n.key.Type != lexer.AT {
+		return ""
+	}
 	return fmt.Sprintf("@%d", n.value)
 }
 
