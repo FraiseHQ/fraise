@@ -94,19 +94,22 @@ func (e *Engine[K, P]) Stop() {
 }
 
 // Plan returns an executable stream for q. A cached query with the same Hash
-// stands in for q; on a miss q is optimised and the result cached, so each
-// distinct query goes through the optimisation pipeline once. The stream is
+// stands in for q; on a miss q is optimised and the result cached under q's
+// own Hash, the parsed query's rather than the optimised one's, since that is
+// the key the next request for it looks up. Each distinct query therefore goes
+// through the optimisation pipeline once. The stream is
 // built fresh on every call because it carries per-execution state (its
 // results, error and completion signal). It returns [ErrQueryPlan] if the
 // query cannot be planned.
 func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
-	if cached, ok := e.Cache.Get(q.Hash(e.Hasher)); ok {
+	key := q.Hash(e.Hasher)
+	if cached, ok := e.Cache.Get(key); ok {
 		q = cached
 	} else {
 		// Only optimised queries are cached, so a hit skips optimisation.
 		optimised := e.Optimisations.Optimise(q)
-		e.Cache.Put(q.Hash(e.Hasher), optimised)
+		e.Cache.Put(key, optimised)
 		q = optimised
 	}
 

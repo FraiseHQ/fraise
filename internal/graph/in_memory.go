@@ -459,8 +459,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Candidates[K, P]) []Hit[K, P] {
 	out := make([]Hit[K, P], len(keys))
 	for i, key := range keys {
-		node := g.Nodes()[key]
-		out[i] = Hit[K, P]{Node: &node, Score: scores[i], Contributions: candidates[key]}
+		out[i] = Hit[K, P]{Node: g.Nodes()[key], Score: scores[i], Contributions: candidates[key]}
 	}
 	return out
 }
@@ -806,8 +805,11 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 			t := g.traversal.Clone()
 			t.SetSource(seed)
 			result, err := t.Run(g)
+			if err != nil {
+				continue
+			}
 			r, ok := result.(TraversalResult[K])
-			if err != nil || !ok {
+			if !ok {
 				continue
 			}
 			// ExcessTraversal reports an anchor's full membership, the seed
@@ -968,6 +970,6 @@ func within(ts time.Time, since time.Time, until time.Time) bool {
 // IsEmpty reports whether the graph holds no nodes. Callers ask it under the
 // graph lock, so it is O(1) rather than derived from Stats, which walks every
 // node.
-func (s *InMemoryGraph[K, P]) IsEmpty() bool {
-	return len(s.Nodes()) == 0
+func (g *InMemoryGraph[K, P]) IsEmpty() bool {
+	return len(g.Nodes()) == 0
 }

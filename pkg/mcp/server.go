@@ -44,7 +44,6 @@ const defaultTimeout = 30 * time.Second
 // which defaults to the daemon its config describes, so 'fraise mcp -config x'
 // finds whatever 'fraise -config x' serves; -addr points it anywhere else.
 type MCPServer struct {
-	Config *config.ConfigSet
 	Server *mcp.Server
 
 	client  *http.Client
@@ -61,7 +60,6 @@ func New(c *config.ConfigSet) *MCPServer {
 	server := mcp.NewServer(&mcp.Implementation{Name: "fraise", Version: version.Version}, nil)
 
 	s := &MCPServer{
-		Config:  c,
 		Server:  server,
 		client:  &http.Client{Timeout: defaultTimeout},
 		baseURL: strings.TrimSuffix(c.MCP.Address, "/"),

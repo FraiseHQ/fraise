@@ -46,7 +46,7 @@ type GraphStats struct {
 // Hit is one entry of a search result: a fact and its final score, after
 // boost and recency decay, with the contributions the score was folded from.
 type Hit[K comparable, P float32 | float64] struct {
-	Node          *Node[K]
+	Node          Node[K]
 	Score         P
 	Contributions []scoring.Contribution[K, P]
 }
@@ -62,11 +62,11 @@ type Result[K comparable, P float32 | float64] struct {
 // Nodes returns the hits' facts in order; nil when there are no hits, so a
 // caller can tell an empty result from a populated one as it could when
 // Search returned slices.
-func (r Result[K, P]) Nodes() []*Node[K] {
+func (r Result[K, P]) Nodes() []Node[K] {
 	if len(r.Hits) == 0 {
 		return nil
 	}
-	out := make([]*Node[K], len(r.Hits))
+	out := make([]Node[K], len(r.Hits))
 	for i, hit := range r.Hits {
 		out[i] = hit.Node
 	}
