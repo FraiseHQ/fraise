@@ -63,6 +63,7 @@ populated graph returns when nothing matched, and the only way to test that is
 a graph no test ever writes to. Do not write to graph 8.
 """
 
+import math
 import os
 import time
 
@@ -617,10 +618,11 @@ def bird_facts():
 # The explain probes, both on graph 2.
 #
 # Two facts sharing a keyword and an entity. Both are text seeds for "pulsar";
-# their shared entity is the query's only touched anchor, so it sits exactly
-# at the background rate and transmits nothing — every hit's breakdown is a
-# single text contribution. (Anchors are heard only when their members matched
-# better than their size predicts; the storm probe below is the funded case.)
+# left to the round, their shared entity is the query's only touched anchor,
+# so it sits exactly at the background rate and transmits nothing — every
+# hit's breakdown is a single text contribution. (Anchors are heard only when
+# their members matched better than their size predicts; the storm probe below
+# is the funded case.)
 _EXPLAIN_GRAPH = 2
 _PULSAR_FACTS = (
     "the pulsar spins thirty times a second",
@@ -631,10 +633,8 @@ _PULSAR_ENTITY = "vela"
 # The surplus probe: a small "weather" cluster concentrates the query's mass
 # while a larger "archive" hub holds no more than its fair share of it, so
 # exactly one anchor speaks and its silent member is funded by transmission
-# alone. The explain recalls name both topics because the graph is entered
-# only through an anchor the recall names; naming the hub keeps its memos in
-# the candidate set, so their absence is its silence and not the filter's
-# doing.
+# alone. Left to the round, the hub stays silent; named, it is evidence the
+# query asked for, owes no fair share, and raises its memos.
 _STORM_CLUSTER_TOPIC = "weather"
 _STORM_HUB_TOPIC = "archive"
 # No query term: funded or invisible.
@@ -648,7 +648,11 @@ _STORM_HUB = ("a storm of paperwork",) + tuple(
     f"unrelated archive memo {i}" for i in range(7)
 )
 
-_ALPHA = 0.5  # the server's per-edge attenuation; α² on the two-edge path
+# A topic nothing in any graph is filed under. The anchor round runs only once
+# a recall names an anchor, and a named anchor leaves the round for its own
+# named observation, so naming this one opens the round and leaves every
+# anchor under test to it.
+_UNFILED_TOPIC = "unfiledprobe"
 
 
 @pytest.fixture
@@ -718,9 +722,76 @@ def storm_hub():
 
 
 @pytest.fixture(scope="session")
-def alpha():
-    """The server's per-edge attenuation α, applied as α² on the two-edge path."""
-    return _ALPHA
+def unfiled_topic():
+    """A topic nothing is filed under: naming it opens the round alone."""
+    return _UNFILED_TOPIC
+
+
+def _information_scores(hits, background, missed=0.0):
+    """Recompute every hit's score from an explain payload under the
+    information fold, the server's default scorer.
+
+    The pool is the hits themselves, so the recall must return every
+    candidate. Each hit's channels are read off its contributions: text its
+    text mass, vector its similarity above the reading's floor (the smallest
+    similarity among the hits), graph the hinged per-edge surpluses with no
+    attenuation, a named anchor owing no fair share. The seed mass the
+    surpluses exclude is text plus (1 + missed) times the similarity. A fact
+    then scores Σ w · log₂(1 + n·c/Σc), the weights being each channel's
+    information Σ p · log₂(n·p), the vector's multiplied by 1 + missed.
+    """
+    values = []
+    for hit in hits:
+        contributions = hit["contributions"]
+        text = sum(c["score"] for c in contributions if c["source"] == "text")
+        vector = sum(c["score"] for c in contributions if c["source"] == "vector")
+        mass = text + (1 + missed) * vector
+        graph = 0.0
+        for c in contributions:
+            if c["source"] not in ("graph", "named"):
+                continue
+            degree = max(c["degree"], 1)
+            share = 0.0 if c["source"] == "named" else degree * background
+            graph += max(0.0, (c["score"] - mass - share) / degree)
+        values.append([text, vector, graph])
+    similarities = [v[1] for v in values if v[1] > 0]
+    floor = min(similarities) if similarities else 0.0
+    for v in values:
+        v[1] = v[1] - floor if v[1] > floor else 0.0
+    n = len(values)
+    totals = [sum(v[c] for v in values) for c in range(3)]
+    information = [
+        sum(
+            v[c] / totals[c] * math.log2(n * v[c] / totals[c])
+            for v in values
+            if v[c] > 0
+        )
+        for c in range(3)
+    ]
+    information[1] *= 1 + missed
+    whole = sum(information)
+    weights = [i / whole for i in information] if whole > 0 else [1.0, 1.0, 1.0]
+    return [
+        sum(
+            weights[c] * math.log2(1 + n * v[c] / totals[c])
+            for c in range(3)
+            if totals[c] > 0
+        )
+        for v in values
+    ]
+
+
+@pytest.fixture(scope="session")
+def information_scores():
+    """Callable recomputing an explain payload's scores under the information
+    fold.
+
+    Returns:
+        ``callable(hits, background, missed=0.0) -> list[float]``, one score
+        per hit in the order given; ``missed`` is the text's weakness,
+        (I_q − I_hit) / I_hit, 0 when the best text hit holds the question.
+    """
+    return _information_scores
 
 
 # Documents on three clearly distinct subjects. A real sentence embedding places

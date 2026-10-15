@@ -74,13 +74,16 @@ class Contribution:
     """One retrieval source's sighting of a hit, as ``explain`` reports it.
 
     ``source`` names the stage that saw the fact (``text``, ``vector``,
-    ``graph`` or ``anchor``) and ``score`` is that stage's raw mass, not a share
-    of the hit's score: the hit's score is the final value, after transmission
-    and recency decay, so its contributions are its ingredients and do not sum
-    to it. ``rank`` is the hit's place in that source's own list, 0 first, and
-    ``count`` how many seeds funded the sighting. A ``graph`` or ``anchor``
-    sighting also names the anchor it came through (``via``) and that anchor's
-    ``degree``; a ``text`` or ``vector`` one has neither.
+    ``graph``, ``anchor`` or ``named``) and ``score`` is that stage's raw
+    observation, not a share of the hit's score: the hit's score is the final
+    value, after the fold and recency decay, so its contributions are its
+    ingredients and do not sum to it. A ``vector`` score is the similarity as
+    measured, and a ``named`` one the seed mass filed under an anchor the
+    recall named. ``rank`` is the hit's place in that source's own list, 0
+    first, and ``count`` how many seeds funded the sighting. A ``graph``,
+    ``anchor`` or ``named`` sighting also names the anchor it came through
+    (``via``) and that anchor's ``degree``; a ``text`` or ``vector`` one has
+    neither.
     """
 
     source: str
@@ -145,8 +148,13 @@ class RecallResult:
 
     ``background`` is the query's background rate, the seed mass per unit of
     anchor degree the search observed. With each hit's contributions it is
-    every input of the scoring fold, so a caller can see why a fact ranked
-    where it did. It is set by ``explain`` and ``None`` on a plain recall.
+    what the graph evidence is folded from, so a caller can see why a fact
+    ranked where it did. The information fold, the server's default, also
+    measures each hit against the recall's whole pool, so the contributions
+    explain a score exactly only when the recall returns every candidate, and
+    it weighs the vector by how much of the question the best text hit
+    missed, which the payload does not carry. It is set by ``explain`` and
+    ``None`` on a plain recall.
     """
 
     count: int

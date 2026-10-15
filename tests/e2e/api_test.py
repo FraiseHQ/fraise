@@ -165,10 +165,10 @@ def test_query_rejects_invalid_modifier_value(query, text):
 # A keyed field is `key:value`, and the ':' is checked, never skipped. Skipping
 # it would shift every following token one role to the left: "recall x since
 # 7d 30d" would answer with a 30d bound and no error at all, and "recall x
-# topic food extra" would filter by nothing. The tests below cover the whole
-# keyed-field family together, because each clause is parsed by its own helper
-# (parseIntField, parseAnchorField, parseTimeValue) and the contract has to
-# hold across all of them.
+# topic food extra" would name an anchor nothing is filed under. The tests
+# below cover the whole keyed-field family together, because each clause is
+# parsed by its own helper (parseIntField, parseAnchorField, parseTimeValue)
+# and the contract has to hold across all of them.
 
 
 @pytest.mark.parametrize(

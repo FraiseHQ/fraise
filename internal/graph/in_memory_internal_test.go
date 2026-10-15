@@ -111,12 +111,24 @@ func newCollectFixture(t *testing.T) *collectFixture {
 		fx.h[0]: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	fx.seeds = []uint64{fx.f1, fx.f2, fx.h[0]}
-	// The fixture's topics are named: the traversal runs only through an
-	// anchor the query names, and naming all three keeps the filter from
-	// narrowing anything.
-	topicKeys, entityKeys := fx.g.anchorKeys([]string{"cluster", "hub", "giant"}, nil)
-	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, topicKeys, entityKeys, 2)
+	// The round runs only when the query names an anchor, and a named anchor
+	// shares its mass through gatherNamed rather than the round, so the
+	// fixture names a topic nothing is filed under: it opens the round and
+	// leaves every anchor under test to it.
+	topicKeys, entityKeys := fx.g.anchorKeys([]string{"scope"}, nil)
+	fx.background = fx.g.findNeighbours(fx.seeds, seedMasses(fx.g, fx.candidates, fx.seeds), fx.candidates, topicKeys, entityKeys, 2)
 	return fx
+}
+
+// seedMasses folds each seed's own contributions as collect does before the
+// traversal, with nothing observed about the query yet.
+func seedMasses(g *InMemoryGraph[uint64, float64], candidates scoring.Candidates[uint64, float64], seeds []uint64) map[uint64]float64 {
+	seeding := g.scorer.Observe(scoring.Observation[uint64, float64]{})
+	masses := make(map[uint64]float64, len(seeds))
+	for _, seed := range seeds {
+		masses[seed] = seeding.Score(candidates[seed])
+	}
+	return masses
 }
 
 // graphContributions returns the SrcGraph entries pooled for key.
@@ -176,8 +188,9 @@ func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
 		facts[0].Key(): {{Src: scoring.SrcText, Score: 0.1, Rank: 0, Count: 1}},
 		facts[1].Key(): {{Src: scoring.SrcText, Score: 0.8, Rank: 1, Count: 1}},
 	}
-	topicKeys, entityKeys := g.anchorKeys([]string{"lone"}, nil)
-	g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, candidates, topicKeys, entityKeys, 2)
+	topicKeys, entityKeys := g.anchorKeys([]string{"scope"}, nil)
+	seeds := []uint64{facts[0].Key(), facts[1].Key()}
+	g.findNeighbours(seeds, seedMasses(g, candidates, seeds), candidates, topicKeys, entityKeys, 2)
 
 	for i, f := range facts {
 		if got := graphContributions(candidates, f.Key()); len(got) != 0 {
@@ -281,8 +294,9 @@ func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 		s2: {{Src: scoring.SrcText, Score: 16, Rank: 1, Count: 1}},
 		s3: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
-	topicKeys, entityKeys := g.anchorKeys([]string{"left", "right", "hub"}, nil)
-	g.findNeighbours([]uint64{s1, s2, s3}, candidates, topicKeys, entityKeys, 2)
+	topicKeys, entityKeys := g.anchorKeys([]string{"scope"}, nil)
+	seeds := []uint64{s1, s2, s3}
+	g.findNeighbours(seeds, seedMasses(g, candidates, seeds), candidates, topicKeys, entityKeys, 2)
 
 	got := graphContributions(candidates, shared)
 	if len(got) != 2 {
