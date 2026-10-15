@@ -41,6 +41,10 @@ type GraphStats struct {
 	// plus garbage awaiting compaction); bounded by the index's flush factor
 	// times Vectors. 0 for index implementations without a forest.
 	ForestEntries int `json:"forest_entries"`
+	// Relevance is the db.relevance-model.name of the model the text index
+	// ranks with: the model that took effect, read back from the index, not
+	// the configured name. Empty for implementations without a text index.
+	Relevance string `json:"relevance"`
 }
 
 // Hit is one entry of a search result: a fact and its final score, after

@@ -27,7 +27,8 @@ into storage invariants that queries alone cannot observe.
 
 def test_stats_reports_per_graph_snapshots(get):
     """GET /api/v1/stats returns one snapshot per graph with the shape gauges
-    (nodes, edges, vectors, forest entries).
+    (nodes, edges, vectors, forest entries) and the relevance model the text
+    index ranks with, BM25 under the image's default configuration.
     """
     response = get("/api/v1/stats")
 
@@ -39,6 +40,7 @@ def test_stats_reports_per_graph_snapshots(get):
         assert g["id"] == i
         for key in ("order", "size", "nodes", "vectors", "forest_entries"):
             assert key in g, f"graphs[{i}] missing {key!r}"
+        assert g["relevance"] == "bm25", f"graphs[{i}] ranks with {g['relevance']!r}"
 
 
 def test_vector_forest_stays_bounded_under_writes(get, query, vector):
