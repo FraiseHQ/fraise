@@ -11,16 +11,16 @@ updates:
       prefix: "deps: "
       prefix-development: "deps: "
 
-  # NOTE: The Python SDK is a member of the root uv workspace, which resolves every
-  # member against the single top-level uv.lock — so this is rooted at / rather
-  # than sdk/python.
+  # The Python SDK is a member of the root uv workspace. Every member resolves
+  # against the one top-level uv.lock, so this entry is rooted at /, not at
+  # sdk/python.
   - package-ecosystem: uv
     directory: /
     schedule:
       interval: daily
-    # NOTE: the uv binary itself is pinned by `required-version` in the root
-    # pyproject.toml, which must keep admitting the uv release Dependabot runs;
-    # it is bumped by hand, never by an update PR.
+    # The uv binary is pinned by `required-version` in the root pyproject.toml.
+    # The pin must keep admitting the uv release Dependabot runs. It is bumped
+    # by hand, never by an update PR.
     ignore:
       - dependency-name: uv
     commit-message:
@@ -35,8 +35,8 @@ updates:
       prefix: "deps: "
       prefix-development: "deps: "
 
-  # NOTE: Dockerfiles are not discovered recursively, so every directory holding
-  # one is listed: Dockerfile.fraise at the root, plus the example images.
+  # Dependabot does not find Dockerfiles recursively, so each directory that
+  # holds one is listed: Dockerfile.fraise at the root, and the example images.
   - package-ecosystem: docker
     directories:
       - /

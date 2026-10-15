@@ -120,9 +120,9 @@ func TestSubmitExecutesReadStream(t *testing.T) {
 	}
 }
 
-// TestSubmitOutOfRangeGraph checks that a stream targeting a graph past the
-// allocated range still signals completion (Done closes) and records the error,
-// so a caller waiting on Done never blocks forever.
+// TestSubmitOutOfRangeGraph checks that a stream for a graph past the
+// allocated range still closes Done and records the error. A caller waiting
+// on Done must never block forever.
 func TestSubmitOutOfRangeGraph(t *testing.T) {
 	cfg := config.New()
 	s := scheduler.NewScheduler[uint64, float32](cfg)
@@ -152,9 +152,9 @@ func TestSubmitOutOfRangeGraph(t *testing.T) {
 }
 
 // TestSubmitCommitErrorPreservesCause checks that a failed commit records both
-// the scheduler's own sentinel and the underlying cause on the stream: the HTTP
-// boundary classifies errors with errors.Is, so if the scheduler collapsed the
-// chain to a bare ErrStreamCommit a client fault (here a vector-dimension
+// the scheduler's own sentinel and the underlying cause on the stream. The
+// HTTP boundary classifies errors with errors.Is. If the scheduler collapsed
+// the chain to a bare ErrStreamCommit, a client fault (here a vector-dimension
 // mismatch) would surface as an internal 500.
 func TestSubmitCommitErrorPreservesCause(t *testing.T) {
 	cfg := config.New()
@@ -166,7 +166,7 @@ func TestSubmitCommitErrorPreservesCause(t *testing.T) {
 	}
 	defer s.Stop()
 
-	// The first vector fixes graph 0's dimension at 3; the second, at 4, can
+	// The first vector fixes graph 0's dimension at 3. The second, at 4, can
 	// only fail at commit time.
 	for i, q := range []struct {
 		query  string
@@ -231,9 +231,9 @@ func TestSubmitAfterStopReturnsShutdown(t *testing.T) {
 	}
 }
 
-// TestSubmitCancelledContextDoesNotBlock checks that Submit is context-aware:
-// with no worker to drain a full queue, a submit whose context is already
-// cancelled returns promptly with an error rather than blocking forever.
+// TestSubmitCancelledContextDoesNotBlock checks that Submit honours its
+// context. With no worker to drain a full queue, a submit whose context is
+// already cancelled returns an error promptly instead of blocking forever.
 func TestSubmitCancelledContextDoesNotBlock(t *testing.T) {
 	cfg := config.New()
 	cfg.Scheduler.Workers = 0 // no drain, so the buffer stays full
@@ -251,7 +251,7 @@ func TestSubmitCancelledContextDoesNotBlock(t *testing.T) {
 		t.Fatalf("first Submit returned error: %v", err)
 	}
 
-	// The queue is now full; a cancelled context must unblock the send.
+	// The queue is full. A cancelled context must unblock the send.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -269,8 +269,8 @@ func TestSubmitCancelledContextDoesNotBlock(t *testing.T) {
 }
 
 // TestSubmitFullQueueTimesOut checks that Submit sheds load instead of blocking
-// without bound: with no worker to drain a full queue and a live context, the
-// send gives up after the configured enqueue timeout and reports ErrQueueFull.
+// without bound. With no worker to drain a full queue and a live context, the
+// send gives up after the enqueue timeout and reports ErrQueueFull.
 func TestSubmitFullQueueTimesOut(t *testing.T) {
 	cfg := config.New()
 	cfg.Scheduler.Workers = 0 // no drain, so the buffer stays full
@@ -303,8 +303,8 @@ func TestSubmitFullQueueTimesOut(t *testing.T) {
 }
 
 // TestStopDrainsBufferedWrite checks that a graceful Stop executes work already
-// accepted into the buffer rather than dropping it: with no worker running, the
-// only chance for the buffered write to run is Stop's drain.
+// accepted into the buffer rather than dropping it. With no worker running,
+// Stop's drain is the only chance for the buffered write to run.
 func TestStopDrainsBufferedWrite(t *testing.T) {
 	cfg := config.New()
 	cfg.Scheduler.Workers = 0
@@ -332,8 +332,8 @@ func TestStopDrainsBufferedWrite(t *testing.T) {
 		t.Errorf("stream.Err = %v, want nil", stream.Err)
 	}
 
-	// The write must have landed in the live graph: commits run in place, not
-	// on a copy.
+	// The write must land in the live graph. Commits run in place, not on a
+	// copy.
 	g, err := s.DB.Select(0)
 	if err != nil {
 		t.Fatalf("Select(0) returned error: %v", err)
@@ -346,12 +346,60 @@ func TestStopDrainsBufferedWrite(t *testing.T) {
 	}
 }
 
-// TestConcurrentSubmitStop is a race-detector guard: many submits racing a Stop
-// must never panic (send on a closed queue) or hang (send on a nil queue). Any
-// per-submit outcome is acceptable; the invariant is that the scheduler tears
-// down cleanly. Run with -race.
+// TestConcurrentSubmitStop races many submits against a Stop. None may panic
+// (send on a closed queue) or hang (send on a nil queue). A submit may be
+// refused, but a stream it accepted must have run once Stop returns, or its
+// caller waits on a Done that never closes. The race is narrow, so the test
+// runs it many times. Run with -race.
 func TestConcurrentSubmitStop(t *testing.T) {
 	cfg := config.New()
+	for round := range 1000 {
+		s := scheduler.NewScheduler[uint64, float32](cfg)
+		s.DB = newStartedDB(t, cfg)
+
+		if err := s.Start(); err != nil {
+			t.Fatalf("Start returned error: %v", err)
+		}
+
+		const n = 64
+		streams := make([]*query.Stream[uint64, float32], n)
+		for i := range streams {
+			streams[i] = planStream(t, cfg, "recall@0 anna", nil)
+		}
+		errs := make([]error, n)
+
+		var wg sync.WaitGroup
+		for i := range streams {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs[i] = s.Submit(context.Background(), streams[i])
+			}()
+		}
+
+		s.Stop()
+		wg.Wait()
+
+		for i, err := range errs {
+			if err != nil {
+				continue
+			}
+			select {
+			case <-streams[i].Done():
+			default:
+				t.Fatalf("round %d: Submit accepted stream %d, but Stop returned without running it", round, i)
+			}
+		}
+	}
+}
+
+// TestConcurrentStops checks that Stop is safe to call from several goroutines
+// at once. None closes the shutdown signal a second time, and each returns
+// only once the accepted stream has run. With no worker, only Stop's drain can
+// run it.
+func TestConcurrentStops(t *testing.T) {
+	cfg := config.New()
+	cfg.Scheduler.Workers = 0
 	s := scheduler.NewScheduler[uint64, float32](cfg)
 	s.DB = newStartedDB(t, cfg)
 
@@ -359,21 +407,23 @@ func TestConcurrentSubmitStop(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 
-	const n = 64
-	streams := make([]*query.Stream[uint64, float32], n)
-	for i := range streams {
-		streams[i] = planStream(t, cfg, "recall@0 anna", nil)
+	stream := planStream(t, cfg, "remember@0 'the tide turns at noon'", nil)
+	if err := s.Submit(context.Background(), stream); err != nil {
+		t.Fatalf("Submit returned error: %v", err)
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
+	for range 8 {
 		wg.Add(1)
-		go func(st *query.Stream[uint64, float32]) {
+		go func() {
 			defer wg.Done()
-			_ = s.Submit(context.Background(), st)
-		}(streams[i])
+			s.Stop()
+			select {
+			case <-stream.Done():
+			default:
+				t.Error("Stop returned before the accepted stream ran")
+			}
+		}()
 	}
-
-	s.Stop()
 	wg.Wait()
 }

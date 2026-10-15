@@ -34,15 +34,15 @@ import (
 )
 
 // call posts in as the /api/v1/q request body and decodes the response into
-// Out, returning the status alongside it. Every failure is returned as an
-// error, which the SDK turns into an in-band tool error: the model reads the
+// Out. It also returns the status. Every failure is returned as an error,
+// which the SDK turns into an in-band tool error. The model reads the
 // daemon's own message ("top:0 out of range (1-1000)") and can correct its
-// query. Nothing here is a protocol error; even an unreachable daemon is
+// query. Nothing here is a protocol error. Even an unreachable daemon is
 // something the model should relay, not something that ends the call.
 //
-// The status is returned because a 204 carries its meaning there: it answers
-// a recall of a graph that holds nothing, has no body to decode, and leaves
-// Out zero-valued.
+// The status is returned because a 204 carries its meaning in the status
+// alone. It answers a recall of a graph that holds nothing. It has no body to
+// decode, so Out stays zero-valued.
 func call[Out any](ctx context.Context, s *MCPServer, in any) (Out, int, error) {
 	var out Out
 
@@ -67,9 +67,9 @@ func call[Out any](ctx context.Context, s *MCPServer, in any) (Out, int, error) 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		// The error body's "error" field is the message an agent can act on;
-		// fall back to the status line when the body is not the API's JSON
-		// (a proxy page, a truncated response).
+		// The error body's "error" field is the message an agent can act on.
+		// Fall back to the status line when the body is not the API's JSON,
+		// such as a proxy page or a truncated response.
 		var e struct {
 			Error string `json:"error"`
 		}
@@ -85,18 +85,18 @@ func call[Out any](ctx context.Context, s *MCPServer, in any) (Out, int, error) 
 	return out, resp.StatusCode, nil
 }
 
-// recall forwards the tool input as a query and returns the response twice
-// over: as structured content for programmatic clients, and rendered to text
-// for the model.
+// recall forwards the tool input as a query and returns the response twice.
+// Programmatic clients get it as structured content, and the model gets it
+// rendered to text.
 func (s *MCPServer) recall(ctx context.Context, _ *mcp.CallToolRequest, in RecallInput) (*mcp.CallToolResult, RecallOutput, error) {
 	out, status, err := call[RecallOutput](ctx, s, in)
 	if err != nil {
 		return nil, RecallOutput{}, err
 	}
 	// A 204 is a read of a graph that holds nothing, and carries no body. The
-	// structured payload still has to satisfy the tool's output schema, which
-	// requires hits to be an array, so the empty result is materialised here
-	// rather than marshalled from a nil slice as null.
+	// structured payload must still satisfy the tool's output schema, which
+	// requires hits to be an array. So the empty result is built here, not
+	// marshalled from a nil slice as null.
 	graphEmpty := status == http.StatusNoContent
 	if graphEmpty {
 		out.Results.Hits = []Hit{}
@@ -106,8 +106,8 @@ func (s *MCPServer) recall(ctx context.Context, _ *mcp.CallToolRequest, in Recal
 	}, out, nil
 }
 
-// remember forwards the tool input as a query and confirms the write, with
-// any parse warnings the server attached rendered beside the confirmation.
+// remember forwards the tool input as a query and confirms the write. Any
+// parse warnings the server attached are rendered beside the confirmation.
 func (s *MCPServer) remember(ctx context.Context, _ *mcp.CallToolRequest, in RememberInput) (*mcp.CallToolResult, RememberOutput, error) {
 	out, _, err := call[RememberOutput](ctx, s, in)
 	if err != nil {

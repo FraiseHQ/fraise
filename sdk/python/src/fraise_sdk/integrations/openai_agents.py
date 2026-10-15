@@ -23,7 +23,7 @@
 """Built-in Fraise memory tools for the OpenAI Agents SDK.
 
 `recall_tool` and `remember_tool` wrap a :class:`~fraise_sdk.client.FraiseClient`
-as `FunctionTool`s an ``agents.Agent`` can call directly, and `memory_tools`
+as `FunctionTool`s that an ``agents.Agent`` can call directly. `memory_tools`
 returns both at once::
 
     from agents import Agent
@@ -37,8 +37,8 @@ returns both at once::
         tools=memory_tools(fraise),
     )
 
-The tools are bound to one graph (default 0), so the agent decides *what* to
-store and retrieve, never *where* — the memory partition is an application
+The tools are bound to one graph (default 0). So the agent decides *what* to
+store and retrieve, never *where*. The memory partition is an application
 concern, not something the model should pick.
 """
 
@@ -70,7 +70,7 @@ def recall_tool(
 ) -> FunctionTool:
     """Build a tool that searches long-term memory and returns matching facts.
 
-    Pass an ``embedder`` and the recall implicitly vectorises: it encodes its
+    Pass an ``embedder`` and the recall vectorises implicitly. It encodes its
     keywords through the embedder and searches by that vector too. Omit it and
     the recall is keyword-only.
     """
@@ -130,8 +130,9 @@ def remember_tool(
 ) -> FunctionTool:
     """Build a tool that stores a single fact in long-term memory.
 
-    Pass an ``embedder`` and the fact is implicitly vectorised: it is encoded
-    through the embedder and stored with its vector. Omit it to store text only.
+    Pass an ``embedder`` and the fact is vectorised implicitly. The embedder
+    encodes it, and the fact is stored with its vector. Omit it to store text
+    only.
     """
     encode = resolve_embedder(embedder)
 
@@ -183,9 +184,9 @@ def memory_tools(
 ) -> list[FunctionTool]:
     """Return both memory tools (recall + remember) bound to one graph.
 
-    Convenience for the common case: ``tools=memory_tools(fraise)``. Pass an
-    ``embedder`` to make the tools vectorise implicitly — recall and remember
-    then encode their text through it and carry the vector alongside.
+    It is a convenience for the common case: ``tools=memory_tools(fraise)``.
+    Pass an ``embedder`` to make the tools vectorise implicitly. Recall and
+    remember then encode their text through it and send the vector along.
     """
     return [
         recall_tool(client, graph=graph, embedder=embedder),

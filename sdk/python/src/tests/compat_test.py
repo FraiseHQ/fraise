@@ -22,7 +22,7 @@
 
 """Tests for the standard-library backports, run against the stdlib they copy.
 
-Setup lives in conftest.py; this file is assertions.
+Setup lives in conftest.py, and this file holds only assertions.
 """
 
 import sys
@@ -37,10 +37,10 @@ from fraise_sdk.compat import _warn
 def test_the_backport_names_the_callers_line(session):
     """On Python 3.11 a FraiseWarning still names the caller's line.
 
-    CI runs 3.12 and newer, where ``warn`` is the standard library's, so the
-    backport is swapped into the SDK's deepest warning path (``recall``,
+    CI runs 3.12 and newer, where ``warn`` is the standard library's. So the
+    test swaps the backport into the SDK's deepest warning path (``recall``,
     ``_recall``, ``build_recall``, ``_term``) to prove it on any interpreter.
-    A warning pointing into the SDK leaves the caller hunting for the line.
+    A warning that points into the SDK leaves the caller hunting for the line.
     """
     with (
         patch("fraise_sdk.query.warn", _warn),
@@ -56,8 +56,8 @@ def test_the_backport_names_the_callers_line(session):
 def test_the_backport_skips_the_prefixes_the_standard_library_skips(session):
     """The backport attributes a warning exactly where 3.12's ``warn`` does.
 
-    Both run the same SDK call from the same line, so a difference in file or
-    line can only be a difference in how they walk the stack past the SDK.
+    Both run the same SDK call from the same line. So a different file or line
+    can only come from how they walk the stack past the SDK.
     """
     seen = []
     for implementation in (_warn, warnings.warn):
@@ -76,7 +76,7 @@ def test_the_backport_counts_a_plain_stacklevel_as_the_standard_library_does(
 ):
     """Without prefixes the backport is ``warnings.warn``, frame for frame.
 
-    Its own frame must never be counted: an off-by-one here would move every
+    Its own frame must never be counted. An off-by-one here would move every
     warning the SDK raises one frame away from where it was aimed.
     """
     seen = []

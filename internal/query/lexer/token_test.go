@@ -57,6 +57,7 @@ func TestTokenTypeString(t *testing.T) {
 		"TOP":      {lexer.TOP, "top"},
 		"DEPTH":    {lexer.DEPTH, "depth"},
 		"VEC":      {lexer.VEC, "vec"},
+		"SPECIAL":  {lexer.SPECIAL, "special"},
 	}
 
 	for name, tc := range tests {
@@ -72,29 +73,35 @@ func TestTokenMapCompleteness(t *testing.T) {
 	tests := map[string]struct {
 		token lexer.TokenType
 	}{
-		"ILLEGAL":  {lexer.ILLEGAL},
-		"EOL":      {lexer.EOL},
-		"LITERAL":  {lexer.LITERAL},
-		"RECALL":   {lexer.RECALL},
-		"REMEMBER": {lexer.REMEMBER},
-		"FORGET":   {lexer.FORGET},
-		"UPDATE":   {lexer.UPDATE},
-		"PLUS":     {lexer.PLUS},
-		"TILDE":    {lexer.TILDE},
-		"MINUS":    {lexer.MINUS},
-		"COLON":    {lexer.COLON},
-		"PHRASE":   {lexer.PHRASE},
-		"LPAREN":   {lexer.LPAREN},
-		"RPAREN":   {lexer.RPAREN},
-		"DOLLAR":   {lexer.DOLLAR},
-		"TOPIC":    {lexer.TOPIC},
-		"SINCE":    {lexer.SINCE},
-		"UNTIL":    {lexer.UNTIL},
-		"TOP":      {lexer.TOP},
-		"DEPTH":    {lexer.DEPTH},
-		"VEC":      {lexer.VEC},
-		"EXPLAIN":  {lexer.EXPLAIN},
-		"DESCRIBE": {lexer.DESCRIBE},
+		"ILLEGAL":    {lexer.ILLEGAL},
+		"EOL":        {lexer.EOL},
+		"LITERAL":    {lexer.LITERAL},
+		"RECALL":     {lexer.RECALL},
+		"REMEMBER":   {lexer.REMEMBER},
+		"FORGET":     {lexer.FORGET},
+		"UPDATE":     {lexer.UPDATE},
+		"PLUS":       {lexer.PLUS},
+		"TILDE":      {lexer.TILDE},
+		"MINUS":      {lexer.MINUS},
+		"COLON":      {lexer.COLON},
+		"PHRASE":     {lexer.PHRASE},
+		"LPAREN":     {lexer.LPAREN},
+		"RPAREN":     {lexer.RPAREN},
+		"DOLLAR":     {lexer.DOLLAR},
+		"TOPIC":      {lexer.TOPIC},
+		"SINCE":      {lexer.SINCE},
+		"UNTIL":      {lexer.UNTIL},
+		"TOP":        {lexer.TOP},
+		"DEPTH":      {lexer.DEPTH},
+		"VEC":        {lexer.VEC},
+		"EXPLAIN":    {lexer.EXPLAIN},
+		"DESCRIBE":   {lexer.DESCRIBE},
+		"ENTITY":     {lexer.ENTITY},
+		"AT":         {lexer.AT},
+		"NUL":        {lexer.NUL},
+		"WHITESPACE": {lexer.WHITESPACE},
+		"NEWLINE":    {lexer.NEWLINE},
+		"SPECIAL":    {lexer.SPECIAL},
 	}
 
 	for name, tc := range tests {
@@ -159,11 +166,10 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 }
 
 // TestIsKeyword pins the reserved-word set IsKeyword reports. Every type in
-// KeywordsMap must answer true: the parser relies on this to read a reserved
-// word as data after a field's ':', so a keyword missing here would make
-// entity:top a parse error. Every other type must answer false; LITERAL
-// especially, since calling the bare-word type itself a keyword would
-// re-reserve every word.
+// KeywordsMap must answer true. The parser relies on this to read a reserved
+// word as data after a field's ':'. A keyword missing here would make
+// entity:top a parse error. Every other type must answer false, LITERAL above
+// all. Calling the bare-word type a keyword would re-reserve every word.
 func TestIsKeyword(t *testing.T) {
 	for literal, tokenType := range lexer.KeywordsMap {
 		t.Run(literal, func(t *testing.T) {
@@ -323,9 +329,9 @@ func TestRoundTripTokenTypeToStringToKeyLITERAL(t *testing.T) {
 }
 
 // TestIsCommand pins which tokens are command verbs. The parser asks this to
-// report a command word after the first position as a second command or a word
-// to quote, so a field wrongly reporting as a command would turn a repairable
-// typo into a misleading message.
+// report a command word after the first position as a second command or a
+// word to quote. A field wrongly reported as a command would turn a
+// repairable typo into a misleading message.
 func TestIsCommand(t *testing.T) {
 	commands := map[string]struct {
 		token lexer.TokenType
@@ -377,9 +383,9 @@ func TestIsCommand(t *testing.T) {
 }
 
 // TestIsPrefix pins which tokens stand in front of a command. The parser asks
-// this to keep a clause repair out of a prefix's message, so a field wrongly
-// reporting as a prefix would lose its filter repair, and a prefix wrongly
-// reporting as a field would be offered explain:<value>, itself an error.
+// this to keep a clause repair out of a prefix's message. A field wrongly
+// reported as a prefix would lose its filter repair. A prefix wrongly
+// reported as a field would be offered explain:<value>, itself an error.
 func TestIsPrefix(t *testing.T) {
 	prefixes := map[string]struct {
 		token lexer.TokenType
@@ -430,10 +436,10 @@ func TestIsPrefix(t *testing.T) {
 	}
 }
 
-// TestTokenDescribe pins how an error message names a token. The two tokens
-// with no literal are the whole point: %q renders them as `""`, an empty string
-// the caller never wrote and cannot act on, which is what turned "recall ferry
-// top" into a message that read like a parser bug.
+// TestTokenDescribe pins how an error message names a token. End of input and
+// a newline matter most. %q renders end of input as `""`, an empty string the
+// caller never wrote and cannot act on. The error for "recall ferry top"
+// would then read like a parser bug.
 func TestTokenDescribe(t *testing.T) {
 	cases := map[string]struct {
 		tok  lexer.Token
@@ -458,10 +464,10 @@ func TestTokenDescribe(t *testing.T) {
 }
 
 // TestIsMisCasedKeyword pins the parser's view of a mis-cased keyword. The
-// lexer types a keyword by spelling and forgives casing only before a ':', so
-// everywhere else one arrives as an ordinary literal — and wherever a clause
-// could have started, that literal is a mistake rather than a term. A correctly
-// cased keyword is not mis-cased, and neither is a phrase: quoting is how a
+// lexer types a keyword by spelling and forgives casing only before a ':'.
+// Everywhere else, one arrives as an ordinary literal. Wherever a clause could
+// have started, that literal is a mistake rather than a term. A correctly
+// cased keyword is not mis-cased, and neither is a phrase. Quoting is how a
 // caller says they meant the word.
 func TestIsMisCasedKeyword(t *testing.T) {
 	cases := map[string]struct {

@@ -32,24 +32,24 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
-// TimeValue is a time bound that can resolve itself against "now" and hash
-// itself with the same Hasher[K, string] its enclosing query uses, mirroring
-// the Recall/Remember pattern.
+// TimeValue is a time bound that resolves itself against now. It hashes itself
+// with the same Hasher[K, string] as its enclosing query, the way Recall and
+// Remember do.
 type TimeValue[K comparable] interface {
 	Resolve(now time.Time) time.Time
 	// Hash keys the bound through h and renders the key for folding into an
-	// enclosing query's hash material. The material is lossless (a duration as
-	// Duration.String renders it, an instant in RFC3339Nano) and each
-	// implementation prefixes it distinctly, so different bounds never share
-	// it; if two did, a recall would reuse the plan cached for another time
-	// window. String() cannot serve as material: AbsoluteTime's RFC822 form
-	// drops seconds.
+	// enclosing query's hash material. The material is lossless: a duration as
+	// Duration.String renders it, an instant in RFC3339Nano. Each type adds a
+	// distinct prefix, so different bounds never share material. If two did, a
+	// recall would reuse the plan cached for another time window. String()
+	// cannot serve as material, because AbsoluteTime's RFC822 form drops
+	// seconds.
 	Hash(h hash.Hasher[K, string]) string
 }
 
 // RelativeTime is a [TimeValue] a fixed span before now, as in since:7d. It
-// moves with the clock: the same query resolves to a later instant each time
-// it runs.
+// moves with the clock, so the same query resolves to a later instant each
+// time it runs.
 type RelativeTime[K comparable] struct{ Dur time.Duration }
 
 // AbsoluteTime is a [TimeValue] at a fixed instant, as in since:2026-01-15. It
@@ -70,21 +70,20 @@ func (r RelativeTime[K]) Resolve(now time.Time) time.Time { return now.Add(-r.Du
 // Resolve implements [TimeValue]: T, whatever now is.
 func (a AbsoluteTime[K]) Resolve(_ time.Time) time.Time { return a.T }
 
-// Hash implements [TimeValue]. The material is "r" and the duration, a prefix
-// no other bound's material starts with.
+// Hash implements [TimeValue]. The material is "r" and the duration. No other
+// bound's material starts with "r".
 func (r RelativeTime[K]) Hash(h hash.Hasher[K, string]) string {
 	return fmt.Sprint(h.Hash("r" + r.Dur.String()))
 }
 
 // Hash implements [TimeValue]. The material is "a" and T in RFC3339Nano,
-// exact to the nanosecond, so instants a second apart never share a cached
-// plan the way their RFC822 String forms would.
+// exact to the nanosecond.
 func (a AbsoluteTime[K]) Hash(h hash.Hasher[K, string]) string {
 	return fmt.Sprint(h.Hash("a" + a.T.Format(time.RFC3339Nano)))
 }
 
-// TimeFilter is a [TimeValue] held as one plain value: the fixed instant Abs
-// when IsAbs is set, otherwise the span Dur before now.
+// TimeFilter is a [TimeValue] held as one plain value. It is the fixed instant
+// Abs when IsAbs is set, otherwise the span Dur before now.
 type TimeFilter[K comparable] struct {
 	Dur   time.Duration
 	Abs   time.Time
@@ -100,9 +99,10 @@ func (tf TimeFilter[K]) Resolve(now time.Time) time.Time {
 	return now.Add(-tf.Dur)
 }
 
-// Hash implements [TimeValue]. The material is prefixed "fa" for an absolute
-// bound (RFC3339Nano) and "fr" for a relative one, so the two forms never
-// share it, and neither collides with a [RelativeTime] or [AbsoluteTime].
+// Hash implements [TimeValue]. The material is "fa" and Abs in RFC3339Nano for
+// an absolute bound, or "fr" and Dur for a relative one. So the two forms
+// never share material, and neither collides with a [RelativeTime] or an
+// [AbsoluteTime].
 func (tf TimeFilter[K]) Hash(h hash.Hasher[K, string]) string {
 	if tf.IsAbs {
 		return fmt.Sprint(h.Hash("fa" + tf.Abs.Format(time.RFC3339Nano)))
@@ -118,15 +118,14 @@ func ParseTimeValue[K comparable](s string) (TimeValue[K], error) {
 	}
 
 	// Relative: <digits><unit>. A date never ends in a unit letter. The count
-	// carries no sign: a duration is written bare, and a bare +7d does not
-	// lex as one word, so a signed count would be a duration no query can
-	// spell.
+	// has no sign. A duration is written bare, and a bare +7d does not lex as
+	// one word. So no query could spell a signed count.
 	if mult, ok := unitDuration(s[len(s)-1]); ok && s[0] >= '0' && s[0] <= '9' {
 		n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
-		// A count past what a time.Duration holds would wrap negative and
-		// resolve to a bound in the future, emptying the window (since:106752d),
-		// so it is refused with the unit's limit rather than wrapped or read as
-		// a date.
+		// A count past what a time.Duration holds would wrap negative. It
+		// would resolve to a bound in the future and empty the window
+		// (since:106752d). So it is refused with the unit's limit, not wrapped
+		// or read as a date.
 		limit := int64(math.MaxInt64 / mult)
 		if (err == nil && n > limit) || errors.Is(err, strconv.ErrRange) {
 			return nil, &DurationRangeError{Value: s, Max: limit, Unit: s[len(s)-1]}

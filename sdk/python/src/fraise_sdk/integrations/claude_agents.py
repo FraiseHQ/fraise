@@ -22,11 +22,11 @@
 
 """Built-in Fraise memory tools for the Claude Agent SDK.
 
-Where the OpenAI integration hands the framework loose ``FunctionTool``s, the Claude
-Agent SDK groups tools into an *in-process MCP server*. So the entry point here
-is `memory_server`, which returns a server ready to drop into
-``ClaudeAgentOptions.mcp_servers``; `recall_tool`/`remember_tool` expose the
-individual `SdkMcpTool`s for callers who assemble their own server::
+The OpenAI integration hands the framework loose ``FunctionTool``s. The Claude
+Agent SDK instead groups tools into an *in-process MCP server*. So the entry
+point here is `memory_server`, which returns a server ready to drop into
+``ClaudeAgentOptions.mcp_servers``. `recall_tool` and `remember_tool` expose
+the individual `SdkMcpTool`s, for callers who assemble their own server::
 
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
     from fraise_sdk import FraiseClient
@@ -39,8 +39,8 @@ individual `SdkMcpTool`s for callers who assemble their own server::
         allowed_tools=allowed_tools(),
     )
 
-As with the OpenAI integration, the tools are bound to one memory graph (default 0),
-so the model decides *what* to store and recall, never *where*.
+As with the OpenAI integration, the tools are bound to one memory graph
+(default 0). So the model decides *what* to store and recall, never *where*.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def recall_tool(
 ) -> SdkMcpTool[Any]:
     """Build the recall tool: search long-term memory and return matching facts.
 
-    Pass an ``embedder`` and the recall implicitly vectorises: it encodes its
+    Pass an ``embedder`` and the recall vectorises implicitly. It encodes its
     keywords through the embedder and searches by that vector too. Omit it and
     the recall is keyword-only.
     """
@@ -99,8 +99,8 @@ def recall_tool(
         "Search the assistant's long-term memory for facts related to some "
         "keywords and return them ranked by relevance. Call this before "
         "answering when the user refers to something they told you earlier.",
-        # Full JSON Schema (not the {name: type} shorthand) so top/depth stay
-        # optional — the shorthand marks every property required.
+        # Full JSON Schema, not the {name: type} shorthand, so top and depth
+        # stay optional. The shorthand marks every property required.
         {
             "type": "object",
             "properties": {
@@ -169,8 +169,9 @@ def remember_tool(
 ) -> SdkMcpTool[Any]:
     """Build the remember tool: store a single fact in long-term memory.
 
-    Pass an ``embedder`` and the fact is implicitly vectorised: it is encoded
-    through the embedder and stored with its vector. Omit it to store text only.
+    Pass an ``embedder`` and the fact is vectorised implicitly. The embedder
+    encodes it, and the fact is stored with its vector. Omit it to store text
+    only.
     """
     encode = resolve_embedder(embedder)
 
@@ -179,7 +180,7 @@ def remember_tool(
         "Store a single self-contained fact in the assistant's long-term memory "
         "for later recall. Use it when the user shares something durable worth "
         "remembering — a preference, a name, a decision.",
-        # Full JSON Schema so only `fact` is required; topics/entities are optional.
+        # Full JSON Schema, so `fact` is required and topics/entities are optional.
         {
             "type": "object",
             "properties": {
@@ -230,8 +231,8 @@ def memory_tools(
 ) -> list[SdkMcpTool[Any]]:
     """Return both memory tools (recall + remember) bound to one graph.
 
-    Pass an ``embedder`` to make the tools vectorise implicitly — recall and
-    remember then encode their text through it and carry the vector alongside.
+    Pass an ``embedder`` to make the tools vectorise implicitly. Recall and
+    remember then encode their text through it and send the vector along.
     """
     return [
         recall_tool(client, graph=graph, embedder=embedder),
@@ -263,8 +264,8 @@ def memory_server(
 def allowed_tools(server_name: str = DEFAULT_SERVER_NAME) -> list[str]:
     """The fully-qualified tool names to pass to ``ClaudeAgentOptions.allowed_tools``.
 
-    MCP tools are namespaced ``mcp__<server>__<tool>``; this returns both memory
-    tools under ``server_name`` so the two never drift apart.
+    MCP tools are namespaced ``mcp__<server>__<tool>``. This returns both
+    memory tools under ``server_name``, so the two never drift apart.
     """
     return [
         f"mcp__{server_name}__{RECALL_TOOL}",

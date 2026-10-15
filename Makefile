@@ -28,7 +28,6 @@ BUILD_VERSION  ?= $(shell git describe --always --tags)
 
 GOPATH         ?= $(shell go env GOPATH)
 
-# Tool commands
 GO_CMD         := go
 GO_BUILD       := $(GO_CMD) build
 GO_TEST        := $(GO_CMD) test
@@ -36,25 +35,22 @@ GO_CLEAN       := $(GO_CMD) clean
 GO_FMT         := $(GO_CMD) fmt
 GO_VET         := $(GO_CMD) vet
 
-# Directories
 BIN_DIR        := bin
 CMD_DIR        := ./cmd/server
 PY_DIR         := sdk/python
 
-# Binary name
 BINARY_NAME    := fraise
 
-# Package manager commands
 UV_CMD         := uv
 
-# Color output
 CYAN           := \033[0;36m
 GREEN          := \033[0;32m
 YELLOW         := \033[0;33m
 RESET          := \033[0m
 
-# Build flags for build-go: the same pkg/version symbols GoReleaser sets on a
-# release (see .goreleaser.yaml), so a local build reports its real version.
+# Build flags for build-go. They set the same pkg/version symbols GoReleaser
+# sets on a release (see .goreleaser.yaml), so a local build reports its real
+# version.
 VERSION_PKG    := github.com/FraiseHQ/fraise/pkg/version
 LDFLAGS        := -X '$(VERSION_PKG).Version=$(BUILD_VERSION)' \
                   -X '$(VERSION_PKG).Commit=$(BUILD)' \
@@ -72,7 +68,7 @@ help: ## Display this help message
 
 ##@ Build
 
-build: build-go ## Build all components (currently Go only)
+build: build-go ## Build the Go server
 
 build-all: build-go build-py ## Build Go server and all SDKs
 
@@ -124,9 +120,9 @@ FRAISE_E2E_PORT ?= 9877
 
 COMPOSE        := docker compose -f docker-compose.yaml
 
-# Dump the server's logs when a suite fails: pytest says which assertion broke,
-# the container says why (a panic, a rejected write, a bad config). They print
-# before the trap tears the container down, which discards them.
+# Dump the server's logs when a suite fails. pytest says which assertion broke,
+# and the container says why: a panic, a rejected write, a bad config. The logs
+# print before the trap tears the container down, which discards them.
 FRAISE_LOGS    = echo "$(YELLOW)--- fraise server logs ---$(RESET)"; \
                  $(COMPOSE) logs --no-color --tail=200 fraise
 
@@ -159,14 +155,15 @@ test-watch: ## Run Go tests in watch mode (requires reflex)
 
 ##@ Benchmarks
 
-# The benchmarks are Go benchmarks beside the code they measure; the gates on
-# them are pytest tests in tests/perf, which run them on the working tree and
-# compare them with a nightly run's outputs in BENCH_BASELINE through
-# benchstat. Each run leaves its own outputs in PERF_OUT under the same names,
-# so a nightly run's PERF_OUT is the next baseline.
-# BENCH_CHANGED_SINCE, a git ref, runs only the gates whose packages changed
-# since it; a pull request passes its base. BENCH_ALWAYS lists the paths whose
-# change since it runs every gate; the gate workflow names them.
+# The benchmarks are Go benchmarks beside the code they measure. The gates on
+# them are pytest tests in tests/perf. The gates run them on the working tree
+# and compare them, through benchstat, with a nightly run's outputs in
+# BENCH_BASELINE. Each run leaves its own outputs in PERF_OUT under the same
+# names, so a nightly run's PERF_OUT is the next baseline.
+# BENCH_CHANGED_SINCE is a git ref. When set, only the gates whose packages
+# changed since that ref run. A pull request passes its base. BENCH_ALWAYS
+# lists the paths whose change since that ref runs every gate. The gate
+# workflow names them.
 BENCH_BASELINE ?=
 BENCH_CHANGED_SINCE ?=
 BENCH_ALWAYS ?=
@@ -182,13 +179,12 @@ bench: ## Run the pull request gates, against the nightly run in BENCH_BASELINE 
 bench-nightly: ## Run every gate, HTTP latency included, against BENCH_BASELINE if one is given
 	$(GATES) tests/perf -m bench $(GATE_ARGS)
 
-# The history takes one sample per benchmark, a trend rather than a
-# comparison, and retrieval quality as {name, unit, value} JSON so it is
-# charted as bigger-is-better: github-action-benchmark's own go parser takes
-# every unit as smaller-is-better. A retrieval value is one whose unit is a
-# metric of the benchmark, with an @ in its name. Each series is shaped from
-# the outputs the night has: a gate that failed wrote none, and leaves its
-# series out rather than costing the others theirs.
+# The history takes one sample per benchmark, as a trend, not a comparison.
+# It takes retrieval quality as {name, unit, value} JSON, so it is charted as
+# bigger-is-better. github-action-benchmark's own go parser treats every unit
+# as smaller-is-better. A retrieval value is a benchmark metric whose unit has
+# an @ in its name. Each series is built from the outputs the night has. A gate
+# that failed wrote none, so only its own series is left out.
 HISTORY_LATENCY   = $(wildcard $(PERF_OUT)/internal-*.txt $(PERF_OUT)/pkg-server-BenchmarkHTTP.txt)
 HISTORY_RETRIEVAL = $(wildcard $(PERF_OUT)/pkg-server-BenchmarkRetrievalQuality.txt)
 
@@ -238,8 +234,9 @@ fmt-py: ## Format Python code with ruff
 	@echo "$(CYAN)Formatting Python code...$(RESET)"
 	@cd $(PY_DIR) && $(UV_CMD) run ruff format 2>/dev/null || echo "$(YELLOW)⚠ Ruff not configured$(RESET)"
 
-# All linting flows through pre-commit (config: .pre-commit-config.yaml) so local
-# and CI run identical hooks. Each target runs one slice; CI calls these directly.
+# All linting runs through pre-commit (.pre-commit-config.yaml), so local runs
+# and CI run the same hooks. Each target runs one slice, and CI calls these
+# targets directly.
 PRECOMMIT     := uvx pre-commit run --all-files --show-diff-on-failure
 
 lint: ## Lint all code via pre-commit (every hook)

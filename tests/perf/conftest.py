@@ -22,26 +22,27 @@
 
 """Fixtures and hooks of the benchmark gates.
 
-A gate is a test marked ``bench(package, pattern, ...)``: the marker names the
-Go benchmarks it judges and how to run them, and the ``comparison`` fixture
-runs them on the working tree and hands the test one row per benchmark and
-unit of benchstat's comparison with the baseline, which the test asserts its
-limits on. The baseline is the newest nightly run on main, whose outputs CI
-downloads into ``--bench-baseline``; every run leaves its own in
-``--bench-out`` under the same names, which is how a nightly run becomes the
-next baseline. Without a baseline for a gate there is nothing to compare
-against yet: the benchmarks still run and are reported, and the gate passes.
-A baseline measured on another machine is one benchstat does not compare
-with: the gate could not measure, and the report names both machines and
-shows this run's numbers.
-Gates sharing a marker share one measurement.
+A gate is a test marked ``bench(package, pattern, ...)``. The marker names the
+Go benchmarks the gate judges and how to run them. The ``comparison`` fixture
+runs them on the working tree and compares them with the baseline through
+benchstat. It hands the test one row per benchmark and unit, and the test
+asserts its limits on those rows. Gates that share a marker share one
+measurement.
 
-A pull request labelled perf-regression-accepted marks every gate xfail, with
-its description's Performance regression section as the reason when filled
-in: its regressions still show, as accepted. A gate fails through ``fail_regressed``
-with the rows that broke its limit, so the report shows them as a table. The
-session ends by writing report.md, the verdict, those tables and benchstat's,
-which CI posts.
+The baseline is the newest nightly run on main. CI downloads its outputs into
+``--bench-baseline``. Every run leaves its own outputs in ``--bench-out`` under
+the same names, which is how a nightly run becomes the next baseline. Without
+a baseline for a gate there is nothing to compare against yet. The benchmarks
+still run and are reported, and the gate passes. benchstat does not compare
+with a baseline measured on another machine. Then the gate could not measure,
+and the report names both machines and shows this run's numbers.
+
+A pull request labelled perf-regression-accepted marks every gate xfail. The
+reason is its description's Performance regression section, when filled in.
+Its regressions still show, as accepted. A gate fails through
+``fail_regressed`` with the rows that broke its limit, so the report shows
+them as a table. The session ends by writing report.md, which CI posts. It
+holds the verdict, those tables and benchstat's.
 """
 
 import csv
@@ -75,8 +76,8 @@ class _Row:
     """One benchmark's unit as a row of benchstat's comparison.
 
     benchstat names units in base units (ns/op is sec/op) and drops the
-    Benchmark prefix; the GOMAXPROCS suffix is dropped here. delta is its
-    verdict, ``~`` for noise; p is None for an exact unit.
+    Benchmark prefix. The GOMAXPROCS suffix is dropped here. delta is
+    benchstat's verdict, ``~`` for noise. p is None for an exact unit.
     """
 
     benchmark: str
@@ -88,7 +89,7 @@ class _Row:
 
     @property
     def change(self):
-        """The head's change relative to the base; growing from zero is infinite."""
+        """The head's change relative to the base. Growth from zero is infinite."""
         if self.base == 0:
             return 0.0 if self.head == 0 else float("inf")
         return (self.head - self.base) / abs(self.base)
@@ -186,7 +187,7 @@ def _compared(rows):
 
 
 def _table(base, head):
-    """benchstat's comparison of base with head as a markdown table, or head's own numbers when nothing of it compares."""
+    """benchstat's comparison of base with head as a markdown table, or head's own numbers when nothing compares."""
     rows = (
         _rows(_run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"]))
         if base
@@ -263,17 +264,17 @@ def _benchmarked(path):
 
 
 def _unchanged(items, since, always):
-    """The gates none of whose benchmarks' packages changed since the ref, with why.
+    """The gates whose benchmarks' packages did not change since the ref, with why.
 
     A gate's packages are its package and every package of this module it
-    builds on, its tests' imports included (``go list -deps -test``): a
-    benchmark measures all the code it runs, so a change anywhere in that set
-    is a change it can see, and a change outside it is one it cannot. A test
-    file counts only when it defines benchmarks, and the gates and what runs
-    them not at all: neither changes a number a benchmark measures, and the
-    release gate runs every gate whatever changed. What a benchmark runs or
-    reads that no package's source shows is in always, which the gate
-    workflow names: a change to one of those runs every gate.
+    builds on, its tests' imports included (``go list -deps -test``). A
+    benchmark measures all the code it runs. So a change anywhere in that set
+    is one it can see, and a change outside it is one it cannot. A test file
+    counts only when it defines benchmarks. The gates and what runs them do
+    not count at all. Neither changes a number a benchmark measures, and the
+    release gate runs every gate whatever changed. always lists what a
+    benchmark runs or reads that no package's source shows. The gate workflow
+    names those paths, and a change to one of them runs every gate.
     """
     changed = _run(["git", "diff", "--name-only", since, "HEAD"]).split()
     if any(path.startswith(tuple(always)) for path in changed):
@@ -313,10 +314,10 @@ def _acceptance(pr):
     """Why the pull request accepts its regressions, or None when it does not.
 
     The label accepts them. The reason is the description's Performance
-    regression section, from the pull request template, when it is filled in,
-    and the label otherwise. The section runs to the next heading of its level
-    or above and is read as one line, the way the report shows it beside each
-    gate.
+    regression section from the pull request template, when it is filled in.
+    Otherwise the reason is the label. The section runs to the next heading of
+    its level or above. It is read as one line, the way the report shows it
+    beside each gate.
     """
     if not pr or _ACCEPT_LABEL not in {label["name"] for label in pr.get("labels", [])}:
         return None
@@ -361,9 +362,9 @@ def pytest_runtest_makereport(item, call):
             reason = rep.longrepr[2].removeprefix("Skipped: ")
             outcomes.append(("Not run", item, reason, []))
         elif rep.failed:
-            # Failing at its call is a limit broken; failing at setup is a
-            # run that never got its numbers (a build, a benchmark that
-            # crashed), which says nothing about a regression.
+            # A failure at the call is a broken limit. A failure at setup is
+            # a run that never got its numbers, such as a failed build or a
+            # crashed benchmark. That says nothing about a regression.
             kind = "Failed" if rep.when == "call" else "Could not measure"
             message = call.excinfo.exconly()[:1000] if call.excinfo else ""
             outcomes.append((kind, item, message, regressed))
@@ -387,11 +388,11 @@ def _gate(item):
 def _gates(outcomes):
     """Each gate's outcome as a paragraph naming it, then the rows that broke its limit as a table.
 
-    An accepted gate names the pull request's reason beside it. A gate with
-    no rows to show, one that failed on something other than its limit, gives
-    its message instead. A slowdown is reported row by row, and a gate's rows
-    share one table under its package alone: the heading already says what
-    the gate checks.
+    An accepted gate names the pull request's reason beside it. A gate with no
+    rows to show gives its message instead. That is a gate that failed on
+    something other than its limit. A slowdown is reported row by row, and a
+    gate's slowdown rows share one table. The table sits under the package
+    alone, because the heading already says what the gate checks.
     """
     grouped = {}
     for kind, item, message, rows in outcomes:
@@ -412,9 +413,10 @@ def _gates(outcomes):
 def pytest_sessionfinish(session, exitstatus):
     runs = session.config.stash[_RUNS]
     outcomes = session.config.stash[_OUTCOMES]
-    # A session that selected no gate has nothing to report; one whose gates
-    # were all skipped still reports, so the comment on the pull request says
-    # why nothing was measured rather than keeping an older run's numbers.
+    # A session that selected no gate has nothing to report. A session whose
+    # gates were all skipped still reports. Then the comment on the pull
+    # request says why nothing was measured, instead of keeping an older
+    # run's numbers.
     if not runs and not outcomes:
         return
     out = Path(session.config.getoption("bench_out")).resolve()
@@ -464,8 +466,9 @@ def pytest_sessionfinish(session, exitstatus):
         ]
 
     for kind in ("Failed", "Could not measure", "Accepted", "Slower"):
-        # A gate whose baseline ran on another machine could not measure for
-        # the reason the sentence above gives once for all of them.
+        # A gate whose baseline ran on another machine could not measure. It
+        # is not listed, because the sentence above gives the reason once for
+        # all of them.
         listed = [
             outcome
             for outcome in outcomes
@@ -484,8 +487,8 @@ def pytest_sessionfinish(session, exitstatus):
                 "",
             ]
         lines += _gates(listed)
-        # A broken limit says how to accept it, so the way out is on the
-        # pull request that needs it rather than only in the docs.
+        # A broken limit says how to accept it. So the way out is on the pull
+        # request that needs it, not only in the docs.
         if kind == "Failed":
             lines += [
                 "> [!TIP]",
@@ -522,13 +525,15 @@ def pytest_sessionfinish(session, exitstatus):
 def comparison(request, pytestconfig):
     """The marked benchmarks run on the working tree and compared with the baseline, one row per benchmark and unit.
 
-    With no baseline for them yet the rows are empty: there is nothing to
+    With no baseline for them yet, the rows are empty. There is nothing to
     regress from, so every limit holds, and the report shows what was
-    measured. With a baseline the rows are never empty: a comparison that
-    matched nothing would hold every limit without checking one, so a
-    baseline measured on another machine, which benchstat does not compare
-    with this run, fails the gate as a run that could not measure, and so
-    does one that has none of this run's benchmarks.
+    measured. With a baseline, the rows are never empty. A comparison that
+    matched nothing would hold every limit without checking one. So the gate
+    fails as a run that could not measure in two cases:
+
+    - the baseline was measured on another machine, which benchstat does not
+      compare with this run;
+    - the baseline has none of this run's benchmarks.
     """
     marker = request.node.get_closest_marker("bench")
     package, pattern = marker.args
@@ -570,11 +575,11 @@ def comparison(request, pytestconfig):
 
 @pytest.fixture
 def fail_regressed(request):
-    """Fails the gate on the rows that broke its limit; with none, the gate passes.
+    """Fails the gate on the rows that broke its limit. With none, the gate passes.
 
     The rows go into the report as a table under Failed, or under Accepted
-    when the pull request accepts its regressions, so a reviewer reads each
-    benchmark's baseline and change rather than an assertion's repr.
+    when the pull request accepts its regressions. So a reviewer reads each
+    benchmark's baseline and change, not an assertion's repr.
     """
 
     def fail(rows):
@@ -590,7 +595,7 @@ def warn_slower(request, pytestconfig):
     """Reports a significant slowdown for a reviewer to judge, without failing the gate.
 
     The slowdown goes into the report under Slower, where the pull request and
-    Discord see it, as well as into pytest's warnings summary.
+    Discord see it. It also goes into pytest's warnings summary.
     """
 
     def warn(row):

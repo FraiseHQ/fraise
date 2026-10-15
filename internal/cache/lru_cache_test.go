@@ -105,6 +105,6 @@ func TestLRUCache_Concurrent(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-	// No assertion — just confirms no race or panic under concurrency.
+	// No assertion: the test checks only for a race or panic under concurrency.
 	// Run with: go test -race ./internal/cache/
 }

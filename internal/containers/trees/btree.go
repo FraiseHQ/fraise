@@ -39,15 +39,13 @@ type BTreeNode[K comparable, T any, P float32 | float64] struct {
 	children []*BTreeNode[K, T, P] // child pointers (len(values)+1 when internal)
 }
 
-// isLeaf reports whether n has no children.
 func (n *BTreeNode[K, T, P]) isLeaf() bool {
 	return len(n.children) == 0
 }
 
-// find returns the index of value within n.values and true if present;
-// otherwise it returns the index of the first value greater than value
-// (either the insertion point in a leaf, or the child to descend into) and
-// false.
+// find returns the index of value in n.values and true if it is present.
+// Otherwise it returns the index of the first greater value and false. That
+// index is the insertion point in a leaf, or the child to descend into.
 func (n *BTreeNode[K, T, P]) find(compare comparator.Comparator[T], value T) (int, bool) {
 	lo, hi := 0, len(n.values)
 	for lo < hi {
@@ -64,19 +62,18 @@ func (n *BTreeNode[K, T, P]) find(compare comparator.Comparator[T], value T) (in
 	return lo, false
 }
 
-// BTree is a self-balancing ordered search tree in which every node but the
-// root holds between degree-1 and 2*degree-1 values, kept sorted by the tree's
-// comparator. It does not index by K, and P is unused.
+// BTree is a self-balancing ordered search tree. Its values are kept sorted by
+// the tree's comparator. Every node but the root holds between degree-1 and
+// 2*degree-1 values. It does not index by K, and P is unused.
 type BTree[K comparable, T any, P float32 | float64] struct {
 	root    *BTreeNode[K, T, P]
-	degree  int                      // minimum degree (t >= 2)
+	degree  int                      // minimum degree, at least 2
 	length  int                      // number of stored values
 	compare comparator.Comparator[T] // values ordering
 }
 
 // NewBTree returns an empty BTree with the given minimum degree and value
-// ordering. degree is clamped to 2 (the smallest valid minimum degree) if
-// lower.
+// ordering. A degree below 2, the smallest valid one, is raised to 2.
 func NewBTree[K comparable, T any, P float32 | float64](degree int, compare comparator.Comparator[T]) *BTree[K, T, P] {
 	if degree < 2 {
 		degree = 2
@@ -88,7 +85,7 @@ func NewBTree[K comparable, T any, P float32 | float64](degree int, compare comp
 	}
 }
 
-// Len reports the number of values currently stored in the tree.
+// Len reports the number of values stored in the tree.
 func (t *BTree[K, T, P]) Len() int { return t.length }
 
 // maxValues is the maximum number of values a node may hold before it must
@@ -98,8 +95,8 @@ func (t *BTree[K, T, P]) maxValues() int { return 2*t.degree - 1 }
 // minValues is the fewest values a non-root node may hold.
 func (t *BTree[K, T, P]) minValues() int { return t.degree - 1 }
 
-// Find reports whether value is stored in the tree (per the tree's
-// comparator), returning the stored copy if so.
+// Find reports whether the tree holds value, by the tree's comparator. If so,
+// it also returns the stored copy.
 func (t *BTree[K, T, P]) Find(value T) (T, bool) {
 	n := t.root
 	for {
@@ -115,9 +112,8 @@ func (t *BTree[K, T, P]) Find(value T) (T, bool) {
 	}
 }
 
-// Insert adds value to the tree, splitting nodes as needed to preserve the
-// BTree invariants. It returns ErrDuplicateValue if an equal value is already
-// stored.
+// Insert adds value to the tree. It returns ErrDuplicateValue if an equal
+// value is already stored.
 func (t *BTree[K, T, P]) Insert(value T) error {
 	root := t.root
 	if len(root.values) == t.maxValues() {
@@ -184,7 +180,7 @@ func (t *BTree[K, T, P]) splitChild(parent *BTreeNode[K, T, P], i int) {
 	parent.values[i] = mid
 }
 
-// Delete removes value from the tree (per the tree's comparator), reporting
+// Delete removes value from the tree, by the tree's comparator, and reports
 // whether a value was removed.
 func (t *BTree[K, T, P]) Delete(value T) bool {
 	if !t.delete(t.root, value) {
@@ -197,8 +193,8 @@ func (t *BTree[K, T, P]) Delete(value T) bool {
 	return true
 }
 
-// delete removes value from the subtree rooted at n, rebalancing along the
-// way so every non-root node keeps at least minValues() values.
+// delete removes value from the subtree rooted at n. It rebalances on the way
+// down, so every non-root node keeps at least minValues() values.
 func (t *BTree[K, T, P]) delete(n *BTreeNode[K, T, P], value T) bool {
 	i, found := n.find(t.compare, value)
 
@@ -264,10 +260,10 @@ func (t *BTree[K, T, P]) mergeChildren(n *BTreeNode[K, T, P], i int) {
 	n.children = append(n.children[:i+1], n.children[i+2:]...)
 }
 
-// fill ensures n.children[i] holds more than minValues() values before a
-// value is removed from it, borrowing from a sibling or merging as needed. It
+// fill makes sure n.children[i] holds more than minValues() values before a
+// value is removed from it. It borrows from a sibling or merges as needed. It
 // returns the node the descent continues into: n.children[i], or
-// n.children[i-1] when the last child is merged into its left sibling.
+// n.children[i-1] when the last child merges into its left sibling.
 func (t *BTree[K, T, P]) fill(n *BTreeNode[K, T, P], i int) *BTreeNode[K, T, P] {
 	switch {
 	case i > 0 && len(n.children[i-1].values) > t.minValues():

@@ -20,19 +20,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Black-box tests (package containers_test) for the growable max-priority queue.
-// The backing slice and capacity hint are unexported, so the contract is verified
-// through the public API only:
+// Black-box tests for the growable max-priority queue. The backing slice and
+// capacity hint are unexported, so the tests check the contract through the
+// public API only:
 //
-//   - NewPriorityQueue rejects a zero capacity and otherwise yields an empty queue.
-//   - Dequeue always surfaces the highest-Priority item; draining is non-increasing.
-//   - Peek observes the max without removing it.
-//   - The queue is growable: `capacity` is an initial size hint, not a bound, so
-//     enqueuing past it grows the queue rather than evicting anything.
-//
-// The implementation orders by Item.Priority as a MAX-priority queue (largest
-// first), matching the Item docs and the sibling Heap. Flip `less` below if the
-// intended ordering is ever inverted.
+//   - NewPriorityQueue rejects a zero capacity and otherwise yields an empty
+//     queue.
+//   - Dequeue always returns the highest-Priority item, so draining is
+//     non-increasing.
+//   - Peek returns the max without removing it.
+//   - The queue grows. capacity is an initial size hint, not a bound, so
+//     enqueuing past it evicts nothing.
 package containers_test
 
 import (
@@ -42,8 +40,8 @@ import (
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
-// newPQ builds a queue of the given capacity and fails the test if construction
-// errors, so callers can use the queue directly.
+// newPQ builds a queue of the given capacity. It fails the test if
+// construction fails, so callers can use the queue directly.
 func newPQ(t *testing.T, capacity uint) *containers.PriorityQueue[uint32, int] {
 	t.Helper()
 	pq, err := containers.NewPriorityQueue[uint32, int](capacity)
@@ -56,7 +54,6 @@ func newPQ(t *testing.T, capacity uint) *containers.PriorityQueue[uint32, int] {
 	return pq
 }
 
-// item is a terse constructor for queue entries.
 func item(key uint32, pri uint64) containers.Item[uint32, int] {
 	return containers.Item[uint32, int]{Key: key, Value: int(key), Priority: pri}
 }
@@ -164,9 +161,9 @@ func TestDequeue_PreservesValue(t *testing.T) {
 	}
 }
 
-// TestEnqueue_GrowsPastCapacity checks the growable contract: `capacity` is only
-// an initial hint, so enqueuing past it retains every item rather than evicting
-// the lowest, and the max ordering is preserved across the growth boundary.
+// TestEnqueue_GrowsPastCapacity checks that the queue grows. capacity is only
+// an initial hint, so enqueuing past it keeps every item and evicts nothing.
+// The max ordering holds across the growth boundary.
 func TestEnqueue_GrowsPastCapacity(t *testing.T) {
 	pq := newPQ(t, 3)
 	pq.Enqueue(item(1, 10))
@@ -212,8 +209,8 @@ func TestEnqueue_KeepsSmallItems(t *testing.T) {
 	}
 }
 
-// TestEnqueue_CapacityIsHintNotBound enqueues well past the initial hint and
-// checks that Len tracks every insert while Cap only ever grows to accommodate.
+// TestEnqueue_CapacityIsHintNotBound enqueues well past the initial hint. Len
+// must count every insert, and Cap must grow to fit them.
 func TestEnqueue_CapacityIsHintNotBound(t *testing.T) {
 	const hint = 4
 	pq := newPQ(t, hint)
@@ -241,13 +238,13 @@ func TestEnqueue_CapacityIsHintNotBound(t *testing.T) {
 // Invert it if the queue ever becomes a min-priority queue.
 func less(a, b uint64) bool { return a < b }
 
-// TestFuzz_PQAgainstReferenceModel drives a long random sequence of Enqueue
-// and Dequeue against a plain slice used as an oracle. The queue is growable,
-// so the model tracks every live item; after each step Len and Peek must agree
-// and Dequeue must surface a true maximum priority.
+// TestFuzz_PQAgainstReferenceModel runs a long random sequence of Enqueue and
+// Dequeue and checks the queue against a plain slice as oracle. The queue
+// grows, so the model tracks every live item. After each step, Len and Peek
+// must agree, and Dequeue must return a true maximum priority.
 func TestFuzz_PQAgainstReferenceModel(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
-	const capacity = 32 // initial hint only; the queue grows past it
+	const capacity = 32 // an initial hint, not a bound
 	pq := newPQ(t, capacity)
 	model := make([]uint64, 0, capacity) // multiset of live priorities
 
@@ -274,9 +271,9 @@ func TestFuzz_PQAgainstReferenceModel(t *testing.T) {
 		switch rng.Intn(3) {
 		case 0, 1: // Enqueue (weighted so the queue tends to grow)
 			pri := uint64(rng.Intn(1000))
-			// Unique key per enqueue: the heap dedups by key (keeping the higher
-			// priority), but the oracle is a plain priority multiset, so distinct
-			// keys keep the two in agreement. Dedup is covered by the heap tests.
+			// Use a unique key per enqueue. The heap dedups by key, but the
+			// oracle is a plain priority multiset, so distinct keys keep the
+			// two in agreement. The heap tests cover dedup.
 			pq.Enqueue(item(uint32(i), pri))
 			model = append(model, pri)
 		case 2: // Dequeue

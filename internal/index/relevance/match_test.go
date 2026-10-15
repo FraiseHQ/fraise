@@ -20,10 +20,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// External pins of MatchCount, the relevance model a BTreeIndex starts with:
-// one point per query-term occurrence, repeats included, spelled out method
-// by method. The randomized equivalence pin against an independent oracle
-// lives with the index, which owns the drive loop.
+// External pins of MatchCount, the relevance model a BTreeIndex starts with,
+// spelled out method by method. The randomized equivalence pin against an
+// independent oracle lives with the index, which owns the drive loop.
 
 package relevance_test
 
@@ -44,8 +43,8 @@ func TestMatchCountNameIsTheConfigName(t *testing.T) {
 }
 
 // TestMatchCountTermsKeepsRepeats pins the query-side stream as the
-// identity: a repeated query term stays in the stream, in order, and earns
-// its own point, unlike under BM25's distinct-first-occurrence dedup.
+// identity. A repeated query term stays in the stream, in order, and earns
+// its own point. BM25 instead keeps only the first occurrence.
 func TestMatchCountTermsKeepsRepeats(t *testing.T) {
 	model := relevance.MatchCount[int, float32]{}
 	tokens := []string{"tide", "moon", "tide", "wave", "moon"}
@@ -54,9 +53,9 @@ func TestMatchCountTermsKeepsRepeats(t *testing.T) {
 	}
 }
 
-// TestMatchCountWeightPricesEveryTermAtOne pins Weight to the constant 1:
-// document frequency and corpus size never move a match count, so a rare
-// term buys no more than a ubiquitous one.
+// TestMatchCountWeightPricesEveryTermAtOne pins Weight to the constant 1.
+// Document frequency and corpus size never move a match count, so a rare
+// term earns no more than one that every document holds.
 func TestMatchCountWeightPricesEveryTermAtOne(t *testing.T) {
 	model := relevance.MatchCount[int, float32]{}
 	for _, c := range []struct{ df, docs int }{{1, 1}, {1, 1000}, {999, 1000}} {
@@ -66,10 +65,10 @@ func TestMatchCountWeightPricesEveryTermAtOne(t *testing.T) {
 	}
 }
 
-// TestMatchCountIncrementIgnoresTermFrequency pins the binary match: a
-// document repeating a term ten times gains exactly what one occurrence
-// gains — the term's weight, passed through whole — with Prepare's zero
-// threaded in, since a match count has no corpus statistic to fold.
+// TestMatchCountIncrementIgnoresTermFrequency pins the binary match. A
+// document that repeats a term ten times gains exactly what one occurrence
+// gains: the term's whole weight. Prepare's zero is passed in, since a match
+// count has no corpus statistic to fold.
 func TestMatchCountIncrementIgnoresTermFrequency(t *testing.T) {
 	model := relevance.MatchCount[int, float32]{}
 	prepared := model.Prepare()
@@ -87,9 +86,9 @@ func TestMatchCountIncrementIgnoresTermFrequency(t *testing.T) {
 	}
 }
 
-// TestMatchCountFinalizeIgnoresCoverage pins Finalize as the identity: the
-// count is the relevance, and match breadth never scales it — the contrast
-// with BM25's coverage multiplier.
+// TestMatchCountFinalizeIgnoresCoverage pins Finalize as the identity. The
+// count is the relevance, and match breadth never scales it, unlike BM25's
+// coverage multiplier.
 func TestMatchCountFinalizeIgnoresCoverage(t *testing.T) {
 	model := relevance.MatchCount[int, float32]{}
 	if got := model.Finalize(3, 3, 3); got != 3 {
@@ -100,10 +99,10 @@ func TestMatchCountFinalizeIgnoresCoverage(t *testing.T) {
 	}
 }
 
-// TestMatchCountLifecycleKeepsNoStatistics pins the no-op hooks: a corpus
-// churning through inserts and deletes leaves every query-side answer where
-// it was, because a match count consults no statistics — which is what makes
-// the model safe to install on an already-populated index.
+// TestMatchCountLifecycleKeepsNoStatistics pins the no-op hooks. Inserts and
+// deletes leave every query-side answer where it was, because a match count
+// consults no statistics. That makes the model safe to install on an index
+// that already holds documents.
 func TestMatchCountLifecycleKeepsNoStatistics(t *testing.T) {
 	model := relevance.MatchCount[int, float32]{}
 	model.Indexed(1, []string{"tide", "moon"})

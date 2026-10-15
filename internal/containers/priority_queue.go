@@ -26,11 +26,10 @@ import (
 	"sync"
 )
 
-// PriorityQueue is a growable max-priority queue: Dequeue and Peek surface the
+// PriorityQueue is a growable max-priority queue. Dequeue and Peek return the
 // highest-Priority item. capacity is only a size hint for pre-allocating the
-// backing store: the queue grows past it rather than evicting (Cap reports the
-// live capacity). Keys are unique, as in Heap: enqueueing a key already queued
-// keeps whichever item has the higher Priority.
+// backing store. The queue grows past it and never evicts. Keys are unique, as
+// in Heap: enqueueing a queued key keeps the item with the higher Priority.
 type PriorityQueue[K comparable, T any] struct {
 	h        *Heap[K, T]
 	capacity uint
@@ -49,9 +48,8 @@ func NewPriorityQueue[K comparable, T any](capacity uint, items ...Item[K, T]) (
 	}, nil
 }
 
-// Cap reports the current capacity of the backing store: how many items the queue
-// can hold before its next reallocation. It starts at the constructor hint and
-// grows as the queue grows past it.
+// Cap reports how many items the queue can hold before it next reallocates. It
+// starts at the constructor's hint and grows as the queue grows past it.
 func (p *PriorityQueue[K, T]) Cap() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -81,7 +79,7 @@ func (p *PriorityQueue[K, T]) Peek() *Item[K, T] {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	// Return a copy: h.Peek() points into the backing array, which a later
+	// Return a copy. h.Peek() points into the backing array, which a later
 	// Enqueue or Dequeue rewrites once the read lock is released.
 	top := p.h.Peek()
 	if top == nil {

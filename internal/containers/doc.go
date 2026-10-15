@@ -24,16 +24,16 @@
 // the query, graph and index layers share.
 //
 // [Vector] and [TimeValue] are query values. Each carries the key type K of
-// the query holding it, so it hashes itself through that query's
-// [hash.Hasher] with lossless material: exact hex floats, RFC3339Nano
-// instants. A component that hashed lossily would let two different queries
-// share one cached plan. [ParseTimeValue] reads the since: and until: bounds,
-// refusing a duration a time.Duration cannot hold rather than letting it wrap
-// into the future.
+// the query that holds it, so it hashes itself through that query's
+// [hash.Hasher]. The material is lossless: exact hex floats and RFC3339Nano
+// instants. Lossy material would let two different queries share one cached
+// plan. [ParseTimeValue] reads the since: and until: bounds. It refuses a
+// duration too long for a time.Duration rather than letting it wrap into the
+// future.
 //
 // [Heap], [PriorityQueue] and [TopK] rank keys by score. Heap is a max-heap
-// holding one item per key, so an item can be found and removed by key;
-// PriorityQueue wraps it in a lock for concurrent callers. TopK keeps the k
-// best pairs under a total order, score then key, so the pairs it keeps never
-// depend on the order they were offered.
+// with one item per key, so an item can be found and removed by key.
+// PriorityQueue wraps a Heap in a lock for concurrent callers. TopK keeps the
+// k best pairs under a total order, score then key. So the pairs it keeps
+// never depend on the order they were offered.
 package containers

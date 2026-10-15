@@ -22,35 +22,35 @@
 
 package containers
 
-// Item is a single entry in the Heap. Ordering is by Priority: the Heap is a
-// max-heap, so the item with the largest Priority is surfaced first.
+// Item is one entry in a Heap. The Heap is a max-heap ordered by Priority, so
+// the item with the largest Priority comes out first.
 type Item[K comparable, T any] struct {
 	Key      K
 	Value    T
 	Priority uint64
 }
 
-// Heap is a max-heap keyed by Item.Priority with O(1) key lookup, allowing
-// Remove and duplicate-key handling by Key. It is not safe for concurrent use.
+// Heap is a max-heap ordered by Item.Priority. It finds items by Key in O(1),
+// which Remove and duplicate-key handling rely on. It is not safe for
+// concurrent use.
 type Heap[K comparable, T any] struct {
 	items  []Item[K, T]
 	lookup map[K]int
 }
 
-// NewHeap builds a heap from the given items. The items are copied (the caller's
-// slice is never retained or mutated), the key lookup is populated, and the heap
-// invariant is established in O(n) via Floyd's bottom-up heapify.
+// NewHeap builds a heap from items in O(n), with Floyd's bottom-up heapify. It
+// copies items, so it never keeps or changes the caller's slice.
 //
-// If two items share a Key, both are inserted; behaviour of subsequent lookups
-// on that Key is undefined, so callers should pass distinct keys.
+// Callers should pass distinct keys. If two items share a Key, both are
+// inserted, and later lookups on that Key are undefined.
 func NewHeap[K comparable, T any](items ...Item[K, T]) *Heap[K, T] {
 	return NewHeapCap(len(items), items...)
 }
 
-// NewHeapCap behaves like NewHeap but pre-allocates the backing slice and lookup
-// map to hold at least capacity items, so pushes up to that size do not trigger a
-// reallocation. The heap stays growable: it is a hint, not a bound, and capacity
-// is silently raised to len(items) when the initial items already exceed it.
+// NewHeapCap is like NewHeap but pre-allocates room for at least capacity
+// items, so pushes up to that size do not reallocate. The heap still grows
+// past capacity, which is a hint, not a bound. A capacity below len(items) is
+// raised to len(items).
 func NewHeapCap[K comparable, T any](capacity int, items ...Item[K, T]) *Heap[K, T] {
 	n := len(items)
 	if capacity < n {
@@ -71,8 +71,8 @@ func NewHeapCap[K comparable, T any](capacity int, items ...Item[K, T]) *Heap[K,
 	return h
 }
 
-// Cap reports the current capacity of the backing slice: the number of items the
-// heap can hold before its next reallocation. It grows as the heap grows.
+// Cap reports how many items the heap can hold before it next reallocates. It
+// grows as the heap grows.
 func (h *Heap[K, T]) Cap() int {
 	return cap(h.items)
 }
@@ -90,10 +90,9 @@ func (h *Heap[K, T]) Swap(i, j int) {
 	h.lookup[h.items[j].Key] = j
 }
 
-// Push inserts item, maintaining the heap invariant. If an item with the same
-// Key already exists, Push keeps whichever has the higher Priority: the existing
-// item is retained when its Priority is greater, otherwise it is replaced by the
-// new item. Priorities are therefore monotonically non-decreasing per key.
+// Push inserts item. If an item with the same Key exists, the one with the
+// higher Priority stays. On a tie, the new item replaces the old one. So a
+// key's Priority never decreases.
 func (h *Heap[K, T]) Push(item Item[K, T]) {
 	if i, ok := h.lookup[item.Key]; ok {
 		if h.items[i].Priority > item.Priority {
@@ -126,8 +125,7 @@ func (h *Heap[K, T]) Peek() *Item[K, T] {
 	return &h.items[0]
 }
 
-// Has reports whether an item is stored under key, in O(1) through the key
-// lookup rather than a scan of the heap.
+// Has reports whether an item is stored under key. It runs in O(1).
 func (h *Heap[K, T]) Has(key K) bool {
 	_, ok := h.lookup[key]
 	return ok
@@ -153,10 +151,10 @@ func (h *Heap[K, T]) Remove(key K) bool {
 		return true
 	}
 
-	// replace item at index with last element of the heap
 	h.remove(index, size)
 
-	// and ensure the max-heap property (parent >= children) is respected
+	// The moved item may break the max-heap property (parent >= children) in
+	// either direction.
 	parent := (index - 1) / 2
 	if h.items[index].Priority > h.items[parent].Priority {
 		h.percolateUp(index)
@@ -167,8 +165,8 @@ func (h *Heap[K, T]) Remove(key K) bool {
 	return true
 }
 
-// remove moves the last item into index, which must not be the last slot, and
-// shrinks the heap by one. The caller drops the removed key from lookup and
+// remove moves the last item into index and shrinks the heap by one. index
+// must not be the last slot. The caller drops the removed key from lookup and
 // restores the heap property.
 func (h *Heap[K, T]) remove(index int, size int) {
 	h.items[index] = h.items[size-1]

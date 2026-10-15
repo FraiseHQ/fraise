@@ -20,20 +20,22 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""The explain endpoint: /api/v1/explain runs a recall through the ordinary
-pipeline and attaches each hit's per-source contribution breakdown, while /q
-responses stay free of it.
+"""The explain endpoint.
+
+/api/v1/explain runs a recall through the ordinary pipeline and attaches each
+hit's per-source contribution breakdown. /q responses stay free of it.
 """
 
 import pytest
 
 
 def test_explain_breaks_down_each_hit_by_source(explain, pulsar_graph, pulsar_entity):
-    """Every explained hit carries its contribution records: here each hit is
-    a pure text seed — source name, raw BM25 mass, rank in the text list, and
-    count (1 for a seed sighting). The shared entity is the only touched
-    anchor, so it holds no surplus and no graph contribution appears; no
-    contribution carries a hop field.
+    """Every explained hit carries its contribution records.
+
+    Here each hit is a pure text seed. Its record has the source name, the raw
+    BM25 mass, the rank in the text list, and a count (1 for a seed sighting).
+    The shared entity is the only touched anchor, so it holds no surplus and no
+    graph contribution appears. No contribution carries a hop field.
     """
     status, body = explain(
         f"recall@{pulsar_graph} pulsar entity:{pulsar_entity} depth:2"
@@ -65,11 +67,13 @@ def test_explain_shows_transmitted_surplus(
     storm_silent_member,
     storm_hub,
 ):
-    """The funded case: the cluster's silent member surfaces carrying a graph
-    contribution that names its funding anchor — via the cluster's topic, the
-    anchor's degree, its observed mass and funding-seed count — proving
-    surplus, not reachability, is what an anchor passes on. The archive hub's
-    memos stay out: holding no more than its fair share, it transmits nothing.
+    """Funded case: the cluster's silent member carries a graph contribution.
+
+    The contribution names its funding anchor: the cluster's topic as via, the
+    anchor's degree, its observed mass and its funding-seed count. This proves
+    that an anchor passes on surplus, not reachability. The archive hub's memos
+    stay out. The hub holds no more than its fair share, so it transmits
+    nothing.
     """
     status, body = explain(
         f"recall@{storm_graph} barometer storm "
@@ -96,11 +100,16 @@ def test_explain_shows_transmitted_surplus(
 def test_explain_score_recomputes_from_payload(
     explain, storm_graph, storm_cluster_topic, storm_hub_topic, alpha
 ):
-    """The recompute pin: with the query-level background rate, every hit's
-    score equals the formula applied to its own payload — S = m + α²·Σ max(0,
-    M_A − m − d_A·ρ₀)/d_A, each anchor's surplus arriving as its per-edge
-    share — within a tolerance that absorbs the recency decay between write
-    and read. The payload is therefore a complete explanation, not a summary.
+    """Every hit's score recomputes from its own payload.
+
+    With the query-level background rate, each score equals the formula applied
+    to the hit's contributions:
+
+        S = m + α²·Σ max(0, M_A − m − d_A·ρ₀)/d_A
+
+    Each anchor's surplus arrives as its per-edge share. The tolerance absorbs
+    the recency decay between write and read. So the payload is a complete
+    explanation, not a summary.
     """
     status, body = explain(
         f"recall@{storm_graph} barometer storm "
@@ -126,9 +135,10 @@ def test_explain_score_recomputes_from_payload(
 
 
 def test_plain_query_carries_no_contributions(query, pulsar_graph, pulsar_entity):
-    """The /q response is unchanged by explain existing: no hit exposes a
-    contributions key. Guards against the breakdown leaking into every recall
-    and bloating agent token budgets.
+    """No /q hit carries a contributions key.
+
+    This guards against the breakdown leaking into every recall and bloating
+    agent token budgets.
     """
     status, body = query(f"recall@{pulsar_graph} pulsar entity:{pulsar_entity} depth:2")
     assert status == 200, body.get("error")
@@ -141,8 +151,10 @@ def test_plain_query_carries_no_contributions(query, pulsar_graph, pulsar_entity
 
 
 def test_explain_rejects_remember(explain):
-    """A write has no ranking to explain: /api/v1/explain refuses it with 400
-    so probing a ranking can never mutate a graph.
+    """/api/v1/explain refuses a remember with a 400.
+
+    A write has no ranking to explain, and probing a ranking must never mutate
+    a graph.
     """
     status, body = explain("remember@2 'should never land' topic:explainprobe")
     assert status == 400
@@ -157,8 +169,9 @@ def test_explain_rejects_remember(explain):
     ],
 )
 def test_explain_rejects_unparsable_queries(explain, bad_query):
-    """Parse errors surface as 400 on /explain exactly as they do on /q — the
-    two routes share one pipeline.
+    """Parse errors are a 400 on /explain, exactly as on /q.
+
+    The two routes share one pipeline.
     """
     status, body = explain(bad_query)
     assert status == 400

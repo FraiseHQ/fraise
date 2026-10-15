@@ -24,9 +24,9 @@ package scoring
 
 import "math"
 
-// ClampRank bounds a source position to Contribution.Rank's range: a result
-// list longer than the field would otherwise wrap, ranking overflow positions
-// as if they were the best.
+// ClampRank bounds a source position to Contribution.Rank's range. A longer
+// result list would otherwise wrap and rank overflow positions as if they were
+// the best.
 func ClampRank(rank int) uint16 {
 	if rank > math.MaxUint16 {
 		return math.MaxUint16
@@ -34,9 +34,8 @@ func ClampRank(rank int) uint16 {
 	return uint16(rank)
 }
 
-// ClampCount bounds a funding-seed count to Contribution.Count's range, for
-// the same reason as ClampRank: a wrapped count would misreport a heavily
-// funded anchor as barely funded.
+// ClampCount bounds a funding-seed count to Contribution.Count's range. A
+// wrapped count would misreport a heavily funded anchor as barely funded.
 func ClampCount(count int) uint16 {
 	if count > math.MaxUint16 {
 		return math.MaxUint16

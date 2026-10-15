@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""OpenAI provider tests against a mocked openai client — no vendor calls."""
+"""OpenAI provider tests against a mocked openai client, with no vendor calls."""
 
 import json
 from unittest.mock import MagicMock, patch
@@ -71,8 +71,8 @@ def test_openai_embedder_is_an_embedder(embeddings_client):
 def test_openai_embedder_builds_its_own_client_from_the_api_key(embeddings_client):
     """Without an injected client the embedder builds its own OpenAI client.
 
-    The vendor module is patched where the provider imported it, so the test
-    pins what the provider builds without a real client or an API key.
+    The vendor module is patched where the provider imported it. So the test
+    pins what the provider builds, with no real client or API key.
     """
     openai = MagicMock()
     openai.OpenAI.return_value = embeddings_client()
@@ -102,13 +102,13 @@ def test_openai_extractor_turns_the_answer_into_anchors(chat_client):
 def test_openai_extractor_sends_the_message_beside_its_context(chat_client):
     """The message and its graph's context reach the model as one JSON object.
 
-    JSON carries the text losslessly, quotes included, and splits the
-    vocabulary into the topics and the entities an answer can reuse. Text
-    outside ASCII travels as itself, not as escapes a model reads less well and
-    pays more tokens for. The completion cap keeps a reasoning model's hidden
-    tokens from truncating the JSON answer mid-string; the strict schema is
-    what makes the answer parseable at all. All of it is part of the request
-    the benchmark makes.
+    JSON carries the text losslessly, quotes included. It splits the vocabulary
+    into the topics and the entities an answer can reuse. Text outside ASCII
+    travels as itself, not as escapes, which a model reads less well and pays
+    more tokens for. The completion cap keeps a reasoning model's hidden tokens
+    from truncating the JSON answer mid-string. The strict schema is what makes
+    the answer parseable at all. All of it is part of the request the benchmark
+    makes.
     """
     client = chat_client('{"topics": [], "entities": []}')
     text = 'Anne: elle atterrit à Lisbonne — "enfin"'
@@ -155,9 +155,9 @@ def test_openai_extractor_instructions_describe_every_field_it_sends(chat_client
 def test_openai_extractor_raises_on_an_answer_it_cannot_read(chat_client, content):
     """A refusal, truncated JSON or the wrong shape raises, naming finish_reason.
 
-    The extractor does not pretend it found nothing: the client is what turns
-    the failure into a warning and stores the fact anyway, and finish_reason
-    is what tells a truncated answer from a refusal.
+    The extractor does not pretend it found nothing. The client turns the
+    failure into a warning and stores the fact anyway. finish_reason tells a
+    truncated answer from a refusal.
     """
     client = chat_client(content, finish_reason="length")
 
@@ -173,8 +173,8 @@ def test_openai_extractor_is_an_extractor(chat_client):
 def test_openai_extractor_builds_its_own_client_from_the_api_key(chat_client):
     """Without an injected client the extractor builds its own OpenAI client.
 
-    The vendor module is patched where the provider imported it, so the test
-    pins what the provider builds without a real client or an API key.
+    The vendor module is patched where the provider imported it. So the test
+    pins what the provider builds, with no real client or API key.
     """
     openai = MagicMock()
     openai.OpenAI.return_value = chat_client('{"topics": ["birds"], "entities": []}')
@@ -193,10 +193,10 @@ def test_openai_anchors_file_the_fact_on_the_live_server(
 ):
     """What the model answers is what the live server files the fact under.
 
-    The model is scripted — the suite makes no vendor calls — so this pins
-    the rest of the path: the answer's JSON, parsed into anchors, carried by
-    the client into a remember, and recalled by those anchors, multi-word
-    values included.
+    The suite makes no vendor calls, so the model is scripted. This pins the
+    rest of the path. The answer's JSON is parsed into anchors, and the client
+    carries them into a remember. The fact is then recalled by those anchors,
+    multi-word values included.
     """
     answer = '{"topics": ["bird migration"], "entities": ["Ptolemy the swallow"]}'
     fact = "Ptolemy the swallow crossed the Sahara in 40 hours"

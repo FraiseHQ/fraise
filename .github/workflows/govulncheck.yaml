@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC — new CVEs land without commits
+    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC, since new CVEs land without commits
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

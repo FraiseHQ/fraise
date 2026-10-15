@@ -40,12 +40,12 @@ import (
 )
 
 // benchConfig is the configuration every server benchmark runs on. It lives
-// with the rest of the benchmark harness, so the server measured is set in one
-// place for every suite.
+// with the rest of the benchmark harness, so one file sets the measured server
+// for every suite.
 const benchConfig = "../../tests/perf/fraise.config.toml"
 
-// recallResponse is the part of a read's answer the benchmarks score: the
-// stored values in rank order, which is all a client gets to judge.
+// recallResponse is the part of a read's answer the benchmarks score. It holds
+// the stored values in rank order, which is all a client gets to judge.
 type recallResponse struct {
 	Results struct {
 		Hits []struct {
@@ -54,10 +54,11 @@ type recallResponse struct {
 	} `json:"results"`
 }
 
-// startServer starts a fresh server on benchConfig and a free port, the way
-// the binary does, and returns its base URL once it answers its health check.
-// Each benchmark gets its own, so no fact from an earlier run or -count is in
-// its graphs. The server is shut down as on SIGTERM when the benchmark ends.
+// startServer starts a fresh server on benchConfig and a free port, the way the
+// binary does. It returns the base URL once the server answers its health
+// check. Each benchmark gets its own server, so its graphs hold no fact from an
+// earlier run or -count. The server shuts down as on SIGTERM when the benchmark
+// ends.
 func startServer(b *testing.B) string {
 	b.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -127,19 +128,19 @@ func requestBody(b *testing.B, fql string, vec []float64) []byte {
 	return raw
 }
 
-// query sends one FQL query to the server at url and returns the values of
-// the hits, in rank order. A write and a read of an empty graph both answer
-// with no hits; any status other than 200 and 204 fails the benchmark, since
-// a number measured over rejected queries describes the error path.
+// query sends one FQL query to the server at url and returns the values of the
+// hits, in rank order. A write and a read of an empty graph both answer with no
+// hits. Any status other than 200 and 204 fails the benchmark, since a number
+// measured over rejected queries describes the error path.
 func query(b *testing.B, url, fql string, vec []float64) []string {
 	b.Helper()
 	resp, err := http.Post(url+"/api/v1/q", "application/json", bytes.NewReader(requestBody(b, fql, vec)))
 	if err != nil {
 		b.Fatalf("POST %q: %v", fql, err)
 	}
-	// Read to the end before closing, or the connection is not reused: a new
-	// one per request runs out of local ports long before a hundred thousand
-	// facts are in.
+	// Read to the end before closing, or the connection is not reused. A new
+	// connection per request runs out of local ports long before a hundred
+	// thousand facts are in.
 	defer func() {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()

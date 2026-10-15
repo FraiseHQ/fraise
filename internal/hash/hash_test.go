@@ -38,8 +38,8 @@ func hasher(name string, seed uint64) hash.Hasher[uint64, string] {
 	return hash.NewHasher[uint64](cfg)
 }
 
-// TestXXH64KnownVectors pins the implementation to the values the reference
-// implementation produces at seed 0, so it proves correctness, not just
+// TestXXH64KnownVectors pins the implementation to the reference
+// implementation's values at seed 0. So it proves correctness, not just
 // stability.
 func TestXXH64KnownVectors(t *testing.T) {
 	cases := []struct {
@@ -58,11 +58,10 @@ func TestXXH64KnownVectors(t *testing.T) {
 	}
 }
 
-// TestT1haRegressionVectors locks the t1ha1 little-endian output for a set of
-// fixed inputs (seed 0). There is no widely-published short-string vector
-// table for t1ha1, so these are regression anchors captured from the
-// implementation: a change to any of them signals an accidental behavioural
-// change.
+// TestT1haRegressionVectors locks the t1ha1 little-endian output for fixed
+// inputs at seed 0. t1ha1 has no widely published short-string vector table. So
+// these values are regression anchors captured from the implementation. A
+// change to any of them signals an accidental change in behaviour.
 func TestT1haRegressionVectors(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -83,9 +82,9 @@ func TestT1haRegressionVectors(t *testing.T) {
 }
 
 // TestT1haCoversAllTailLengths exercises the 32-byte block loop and every tail
-// branch by covering lengths that straddle the block boundary and each
-// remainder. Distinct hashes across a run of increasing lengths confirm each
-// tail branch actually mixes the trailing bytes.
+// branch. Its lengths straddle the block boundary and cover each remainder.
+// Distinct hashes across a run of increasing lengths confirm each tail branch
+// mixes in the trailing bytes.
 func TestT1haCoversAllTailLengths(t *testing.T) {
 	seen := make(map[uint64]int)
 	h := hash.T1haHash[uint64]{}
@@ -102,11 +101,11 @@ func TestT1haCoversAllTailLengths(t *testing.T) {
 	}
 }
 
-// TestNewHasherPinsTheConfiguredFunctionAndSeed pins NewHasher's selection to
+// TestNewHasherPinsTheConfiguredFunctionAndSeed pins NewHasher's choice to
 // exact digests: the t1ha arm with its seed, and xxhash for its own name and
-// for an unset one. Every node key a server derives comes from this hasher, so
-// a wrong arm or a dropped seed would key the store with a hash the operator
-// never chose, and no key written before the change would be found after it.
+// for an unset one. Every node key a server derives comes from this hasher. A
+// wrong arm or a dropped seed would key the store with a hash the operator
+// never chose. No key written before the change would be found after it.
 func TestNewHasherPinsTheConfiguredFunctionAndSeed(t *testing.T) {
 	cases := []struct {
 		name string
@@ -128,8 +127,8 @@ func TestNewHasherPinsTheConfiguredFunctionAndSeed(t *testing.T) {
 	}
 }
 
-// TestSeedChangesOutput verifies the configured seed actually perturbs the
-// digest for both hashers, so two servers seeded apart never share keys.
+// TestSeedChangesOutput checks that the configured seed changes the digest for
+// both hashers, so two servers seeded apart never share keys.
 func TestSeedChangesOutput(t *testing.T) {
 	const in = "the same input"
 	for _, name := range []string{config.HashingT1ha, config.HashingXxhash} {
@@ -151,8 +150,8 @@ func TestHashDeterminism(t *testing.T) {
 	}
 }
 
-// TestHashNoCollisionsOverCorpus is a distribution sanity check: a large set
-// of distinct short strings should hash without collision for either hasher.
+// TestHashNoCollisionsOverCorpus is a distribution sanity check. A large set of
+// distinct short strings should hash without collision for either hasher.
 func TestHashNoCollisionsOverCorpus(t *testing.T) {
 	const n = 50000
 	t1seen := make(map[uint64]string, n)

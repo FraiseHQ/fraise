@@ -13,19 +13,19 @@ dependencies = [
     "requests>=2.32.5",
 ]
 
-# Optional: only needed for the `embeddings`-marked test, which loads a real
-# HuggingFace model through the vanilla transformers API. Kept out of the base
-# deps so the default e2e run stays torch-free; install with
-# `uv sync --extra embeddings`.
+# Optional. Only the `embeddings`-marked test and `make perf-vectors` need it.
+# Both load a real HuggingFace model through the vanilla transformers API. It
+# stays out of the base deps so the default e2e run stays torch-free. Install
+# it with `uv sync --extra embeddings`.
 [project.optional-dependencies]
 embeddings = [
     "transformers>=5.19.0",
     "torch>=2.14.1",
 ]
 
-# Pull torch from PyTorch's CPU wheel index on Linux so an install gets the
-# ~200MB CPU build instead of the default PyPI wheel, which drags in ~2GB of
-# CUDA libraries. macOS torch is already CPU-only, so it stays on PyPI there.
+# On Linux, pull torch from PyTorch's CPU wheel index. An install then gets the
+# ~200MB CPU build, not the default PyPI wheel with ~2GB of CUDA libraries.
+# macOS torch is already CPU-only, so it stays on PyPI there.
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 

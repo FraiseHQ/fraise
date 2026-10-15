@@ -23,12 +23,11 @@
 // Package scheduler runs planned query streams against the database on a
 // bounded worker pool.
 //
-// [Scheduler.Submit] enqueues a stream and fails fast rather than blocking
-// without bound: [ErrQueueFull] when the queue stays saturated past the
-// enqueue timeout, [ErrShutdown] once the scheduler is stopping, so the
-// server can shed load. A worker runs each stream under its graph's lock,
-// shared for a read and exclusive for a write, so writes to one graph are
-// serialised while reads proceed together. [Scheduler.Stop] drains every
-// stream already accepted before returning, so a graceful shutdown never
-// drops an acknowledged write.
+// [Scheduler.Submit] enqueues a stream. It never blocks without bound, so the
+// server can shed load. It fails with [ErrQueueFull] when the queue stays full
+// past the enqueue timeout, and with [ErrShutdown] once the scheduler is
+// stopping. A worker runs each stream under its graph's lock: shared for a
+// read, exclusive for a write. So writes to one graph are serialised, while
+// reads run together. [Scheduler.Stop] drains every stream already accepted
+// before it returns, so a graceful shutdown never drops an acknowledged write.
 package scheduler

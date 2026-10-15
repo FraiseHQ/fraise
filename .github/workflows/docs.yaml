@@ -1,9 +1,9 @@
 name: Docs
 
 # Mirror docs/ into the website repository. FraiseHQ/www renders the
-# documentation from contents/docs and this repository is the source of truth
-# for it: a change to docs/ on main is committed there as-is, so the two trees
-# never drift and a docs fix never needs a second pull request. The changelog
+# documentation from contents/docs, and this repository is its source of
+# truth. A change to docs/ on main is committed there as is. So the two trees
+# never drift, and a docs fix never needs a second pull request. The changelog
 # release-please maintains lives in docs/ too, so a release syncs it the same
 # way.
 
@@ -15,8 +15,8 @@ on:
       - ".github/workflows/docs.yaml"
   workflow_dispatch:
 
-# One sync at a time and none cancelled: every push to main must land in www in
-# order, or a cancelled run leaves the site one docs change behind.
+# One sync at a time, none cancelled. Every push to main must land in www in
+# order. A cancelled run would leave the site one docs change behind.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -31,8 +31,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      # GITHUB_TOKEN cannot write across repositories, hence fraise-bot: a
-      # token minted for FraiseHQ/www alone, with nothing but contents:write.
+      # GITHUB_TOKEN cannot write across repositories. So fraise-bot mints a
+      # token for FraiseHQ/www alone, with nothing but contents:write.
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: fraise-bot
         with:
@@ -42,8 +42,8 @@ jobs:
           repositories: www
           permission-contents: write
 
-      # The sync commit is authored by the bot that pushes it, so www's history
-      # names fraise-bot rather than a workflow it cannot see.
+      # The bot that pushes the sync commit also authors it. So www's history
+      # names fraise-bot, not a workflow www cannot see.
       - name: Resolve fraise-bot's commit identity
         id: fraise-bot-user
         env:
@@ -51,8 +51,8 @@ jobs:
           SLUG: ${{ steps.fraise-bot.outputs.app-slug }}
         run: echo "id=$(gh api "/users/${SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
 
-      # checkout keeps the token in the clone's git config, which is what the
-      # push below authenticates with.
+      # checkout keeps the token in the clone's git config. The push below
+      # authenticates with it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: FraiseHQ/www
@@ -60,13 +60,13 @@ jobs:
           token: ${{ steps.fraise-bot.outputs.token }}
           path: www
 
-      # A mirror, not a merge: a page deleted here disappears there, so
+      # A mirror, not a merge. A page deleted here disappears there, so
       # contents/docs is exactly docs/ at this commit.
       - name: Mirror docs/ into contents/docs
         run: rsync --archive --delete docs/ www/contents/docs/
 
-      # Stages contents/docs (deletions included), commits only when that
-      # changed anything, and pushes to www's main.
+      # Stages contents/docs, deletions included. Commits only when something
+      # changed, and pushes to www's main.
       - uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d
         with:
           repository: www

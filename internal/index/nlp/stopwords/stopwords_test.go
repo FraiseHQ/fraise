@@ -30,11 +30,11 @@ import (
 	"github.com/FraiseHQ/fraise/internal/index/nlp/stopwords"
 )
 
-// TestCleanContentRemovesEnglishStopWords pins the cleaning contract:
-// matching is case-insensitive, surviving words keep their spelling and
-// order, and words are delimited the tokenizer's way — punctuation splits, a
-// symbol such as an emoji is a word — so punctuation never shields a stop
-// word from removal and a symbol survives it as a term.
+// TestCleanContentRemovesEnglishStopWords pins the cleaning contract.
+// Matching is case-insensitive, and surviving words keep their spelling and
+// order. Words are delimited the tokenizers' way: punctuation splits, and a
+// symbol such as an emoji is a word. So punctuation never shields a stop word
+// from removal, and a symbol survives as a term.
 func TestCleanContentRemovesEnglishStopWords(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -60,12 +60,12 @@ func TestCleanContentRemovesEnglishStopWords(t *testing.T) {
 }
 
 // TestCleanContentKeepsContentWordsAndNegations pins what the English list
-// must never hold. A stop word is a word no stored fact can be found by, so a
-// content word on the list (scikit-learn's English list holds "bill", "fire",
-// "system" and "name") makes every fact about it unretrievable, and a
-// negation on it makes "Ana is not vegetarian" index the same as "Ana is
-// vegetarian". The apostrophe pieces stay terms too: the negative heads are
-// negations, and the clitic tails are also letters facts name.
+// must never hold. No stored fact can be found by a stop word. A content word
+// on the list would make every fact about it unretrievable, and
+// scikit-learn's English list holds "bill", "fire", "system" and "name". A
+// negation on the list would make "Ana is not vegetarian" index the same as
+// "Ana is vegetarian". The apostrophe pieces stay terms too. The negative
+// heads are negations, and the clitic tails are also letters that facts name.
 func TestCleanContentKeepsContentWordsAndNegations(t *testing.T) {
 	for _, word := range []string{
 		"bill", "fire", "system", "name", "names", "show", "call", "back", "full", "interest",
@@ -78,10 +78,10 @@ func TestCleanContentKeepsContentWordsAndNegations(t *testing.T) {
 	}
 }
 
-// TestCleanContentDispatchesOnBaseLanguage pins the language contract: every
-// English variant shares the one English list, and a language without a list
-// returns content verbatim — with no list to consult, dropping nothing is
-// the only safe behaviour.
+// TestCleanContentDispatchesOnBaseLanguage pins the language contract. Every
+// English variant shares the one English list. A language without a list gets
+// content back verbatim: with no list to consult, dropping nothing is the
+// only safe behaviour.
 func TestCleanContentDispatchesOnBaseLanguage(t *testing.T) {
 	tests := []struct {
 		name    string

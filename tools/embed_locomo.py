@@ -22,15 +22,21 @@
 
 """Embed every text the retrieval gate stores or asks, once.
 
-BenchmarkRetrievalQuality (pkg/server/locomo_bench_test.go) reads the
-result through FRAISE_LOCOMO_VECTORS and stops on any text it finds no vector
-for, so the values built here must be the ones it builds: the amb adapter's
-raw path, one fact per turn, valued ``[session N @ <date>] <speaker>: <text>``
-with any shared image's caption appended and the ASCII apostrophe swapped for
-a typographic one, and each question as written. A vector is the model's
-attention-masked mean over tokens, L2-normalized, the pooling the e2e suite
-uses. Base and head always read the same file, so they are compared on
-identical vectors.
+BenchmarkRetrievalQuality (pkg/server/locomo_bench_test.go) reads the result
+through FRAISE_LOCOMO_VECTORS. It stops on any text it finds no vector for. So
+the values built here must be the ones it builds, following the amb adapter's
+raw path.
+
+Each turn is one fact, valued ``[session N @ <date>] <speaker>: <text>``. Any
+shared image's caption is appended to the text, and the ASCII apostrophe is
+swapped for a typographic one. Each question is taken as written.
+
+A vector is the model's attention-masked mean over tokens, L2-normalized, as in
+the e2e suite. The gates cache the file under a hash of the LoCoMo sample and
+this script. So base and head read the same file, and are compared on
+identical vectors, unless a pull request changes one of the two. That pull
+request embeds anew, while the nightly baseline it is compared with used the
+old vectors.
 
 Run with the tests member's ``embeddings`` extra (``make perf-vectors``):
 
@@ -56,7 +62,7 @@ def texts(conversations: list[dict]) -> Iterator[str]:
         conversations: LoCoMo conversations, in the dataset's own format.
 
     Yields:
-        The texts the benchmark looks a vector up for.
+        The texts the benchmark needs a vector for.
     """
     for conv in conversations:
         sessions = conv["conversation"]

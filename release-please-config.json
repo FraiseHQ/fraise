@@ -10,7 +10,8 @@
     { "type": "ci", "section": "Maintenance" },
     { "type": "chore", "section": "Maintenance" },
     { "type": "docs", "section": "Documentation", "hidden": true },
-    { "type": "test", "section": "Tests", "hidden": true }
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "deps", "section": "Dependencies", "hidden": true }
   ],
   "packages": {
     ".": {

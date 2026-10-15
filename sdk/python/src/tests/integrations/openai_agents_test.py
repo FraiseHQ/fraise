@@ -20,11 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""OpenAI Agents tool tests against a mocked client — no server, no model calls.
+"""OpenAI Agents tool tests against a mocked client: no server, no model calls.
 
-The tools are exercised the way the framework invokes them, through
-``FunctionTool.on_invoke_tool`` with a JSON argument string, so the assertions
-cover the real wrapping rather than the undecorated closures.
+The tools run the way the framework invokes them, through
+``FunctionTool.on_invoke_tool`` with a JSON argument string. So the assertions
+cover the real wrapping, not the undecorated closures.
 """
 
 import pytest
@@ -75,8 +75,8 @@ def test_recall_without_hits_says_so_rather_than_returning_empty(
 ):
     """A recall that matched nothing says so in words.
 
-    An empty string would read to the model as a broken tool; the sentence is
-    what tells it to answer from its own context instead.
+    An empty string would read to the model as a broken tool. The sentence
+    tells it to answer from its own context instead.
     """
     result = invoke_function_tool(recall_tool(mock_client()), keywords=["nothing"])
     assert result == "No stored facts matched those keywords."
@@ -107,10 +107,12 @@ def test_recall_passes_graph_and_budgets_through(mock_client, invoke_function_to
 def test_recall_defaults_top_and_leaves_depth_to_the_server(
     mock_client, invoke_function_tool
 ):
-    """An omitted top takes the tool's default; an omitted depth is passed as
-    None so no clause is emitted and the server's configured lane applies. A
-    tool-side depth would be a lane the tool cannot use, since it names no
-    topic or entity, and any value above the floor draws a warning per call.
+    """An omitted top takes the tool's default. An omitted depth is passed as None.
+
+    With no depth, no clause is emitted and the server's configured lane
+    applies. A tool-side depth would be a lane the tool cannot use, since it
+    names no topic or entity. Any value above the floor would draw a warning
+    on every call.
     """
     client = mock_client()
     invoke_function_tool(recall_tool(client), keywords=["a"])
@@ -122,8 +124,8 @@ def test_recall_defaults_top_and_leaves_depth_to_the_server(
 def test_recall_schema_bounds_depth_to_the_lanes(mock_client):
     """The generated schema carries the lanes' range on depth's integer branch.
 
-    The bound rides on the parameter's annotation; this pins that the framework
-    surfaces it to the model rather than dropping it on the way to JSON Schema.
+    The bound rides on the parameter's annotation. This pins that the framework
+    passes it to the model, rather than dropping it on the way to JSON Schema.
     """
     depth = recall_tool(mock_client()).params_json_schema["properties"]["depth"]
     integer = next(branch for branch in depth["anyOf"] if branch["type"] == "integer")
@@ -137,7 +139,7 @@ def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(
     """An out-of-range depth fails the framework's argument validation.
 
     The runtime answers the model with its standard tool error instead of
-    raising into the agent loop, and the server is never called: the schema
+    raising into the agent loop. The server is never called. The schema
     already told the model the range, so the correction is one retry away.
     """
     client = mock_client()
@@ -151,7 +153,7 @@ def test_recall_vectorises_through_the_embedder(
 ):
     """The keywords, joined into one text, are encoded once and sent as the vector.
 
-    The tool passes ``embed=False``: it has already encoded, so the client must
+    The tool passes ``embed=False``. It has already encoded, so the client must
     not encode again.
     """
     client = mock_client()

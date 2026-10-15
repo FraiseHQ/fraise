@@ -30,6 +30,6 @@ var ErrIndexOutOfBounds = errors.New("db: graph index out of bounds")
 
 // ErrRelevanceModelMismatch is returned by Start when a graph's text index
 // ranks with a relevance model other than the configured one. The wiring from
-// configuration to index can sever without any query failing, only ranking
-// worse, so startup refuses to serve rather than degrade silently.
+// configuration to index can break without any query failing. Queries only
+// rank worse. So startup refuses to serve rather than degrade silently.
 var ErrRelevanceModelMismatch = errors.New("db: relevance model mismatch")

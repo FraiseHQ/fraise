@@ -24,17 +24,18 @@ package mcp
 
 import "testing"
 
-// TestRenderRecall pins the model-facing text exactly: one line per hit in
-// response order, relevance to three decimals, an empty result said in words
-// (an empty string reads as failure to a model), warnings one per line after
-// the hits. The wording matches the Python integrations' voice on purpose —
-// an agent switching transports should not meet a second dialect.
+// TestRenderRecall pins the model-facing text exactly. Each hit gets one line,
+// in response order, with relevance to three decimals. An empty result is said
+// in words, since an empty string reads as failure to a model. Warnings follow
+// the hits, one per line. The wording matches the Python integrations' voice
+// on purpose. An agent that switches transports should not meet a second
+// dialect.
 func TestRenderRecall(t *testing.T) {
 	cases := []struct {
 		name string
 		out  RecallOutput
 		// graphEmpty is the daemon's 204, which the bridge reads off the
-		// status line: the recall found nothing because the graph holds
+		// status line. The recall found nothing because the graph holds
 		// nothing, not because the query missed.
 		graphEmpty bool
 		want       string
@@ -79,9 +80,9 @@ func TestRenderRecall(t *testing.T) {
 	}
 }
 
-// TestRenderRemember pins the write confirmation: fixed text, since a write is
-// acknowledged with a status token rather than a payload, with warnings
-// appended when the parse had something to say.
+// TestRenderRemember pins the write confirmation. It is fixed text, since a
+// write is acknowledged with a status token rather than a payload. Warnings
+// are appended when the parse had something to say.
 func TestRenderRemember(t *testing.T) {
 	cases := []struct {
 		name string

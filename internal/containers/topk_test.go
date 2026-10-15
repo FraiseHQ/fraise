@@ -20,12 +20,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Black-box tests (package containers_test) for the bounded top-k ranker.
-// TopK stands in for sort-everything-then-truncate wherever search results are
+// Black-box tests for the bounded top-k ranker. Wherever search results are
 // ranked (BTreeIndex.Search, RPTreeIndex.Search and the graph's Search tail),
-// so the central contract is equivalence with that baseline: for any k, Drain
-// must match sorting every offer by (score descending, compare(key) ascending)
-// and truncating to k, regardless of offer order.
+// TopK replaces sort-everything-then-truncate. So the main contract is
+// equivalence with that baseline. For any k and any offer order, Drain must
+// match sorting every offer by score descending, then compare(key) ascending,
+// and truncating to k.
 package containers_test
 
 import (
@@ -37,8 +37,8 @@ import (
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
-// sortThenTruncate is the reference model TopK replaces: sort every (key,
-// score) pair by the total order and keep the first k (all of them if k <= 0).
+// sortThenTruncate is the reference model TopK replaces. It sorts every (key,
+// score) pair by the total order and keeps the first k, or all if k <= 0.
 func sortThenTruncate(keys []string, scores []float64, k int) ([]string, []float64) {
 	type pair struct {
 		key   string
@@ -128,8 +128,8 @@ func TestOffer_BoundsToK(t *testing.T) {
 }
 
 // TestOffer_TieBrokenByKeyEvenWhenBounded checks that among equal scores at
-// capacity, the smaller key wins admission — the tiebreak the unbounded path
-// already applies at Drain must also govern which entries survive eviction.
+// capacity, the smaller key wins admission. The unbounded path applies this
+// tiebreak at Drain. It must also decide which entries survive eviction.
 func TestOffer_TieBrokenByKeyEvenWhenBounded(t *testing.T) {
 	top := newTopK(2)
 	top.Offer("z", 5)
@@ -143,10 +143,10 @@ func TestOffer_TieBrokenByKeyEvenWhenBounded(t *testing.T) {
 	}
 }
 
-// TestEquivalence_RandomizedAgainstBaseline drives randomized offer sets
-// through TopK and the plain sort-then-truncate reference, across several k
-// values and offer orderings, and requires an exact match: TopK is meant to
-// be invisible to callers, only faster.
+// TestEquivalence_RandomizedAgainstBaseline feeds random offer sets through
+// TopK and the sort-then-truncate reference. It tries several k values and
+// offer orders and requires an exact match. TopK must be invisible to callers,
+// only faster.
 func TestEquivalence_RandomizedAgainstBaseline(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 
@@ -155,8 +155,8 @@ func TestEquivalence_RandomizedAgainstBaseline(t *testing.T) {
 		keys := make([]string, n)
 		scores := make([]float64, n)
 		for i := 0; i < n; i++ {
-			// A small score alphabet forces frequent ties, exercising the
-			// key tiebreak alongside the score ordering.
+			// A small score alphabet forces frequent ties, so the key tiebreak
+			// is tested along with the score order.
 			keys[i] = string(rune('a'+i%26)) + string(rune('A'+i/26))
 			scores[i] = float64(rng.Intn(5))
 		}
@@ -185,9 +185,8 @@ func TestEquivalence_RandomizedAgainstBaseline(t *testing.T) {
 }
 
 // TestEquivalence_OfferOrderIndependent feeds the same offers through TopK in
-// several distinct orders and requires an identical Drain every time: the
-// retained set and its order must depend only on the offers, never on the
-// sequence they arrived in.
+// several orders and requires the same Drain every time. What is kept, and in
+// what order, must depend only on the offers, never on their arrival order.
 func TestEquivalence_OfferOrderIndependent(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	n := 40
@@ -222,8 +221,7 @@ func TestEquivalence_OfferOrderIndependent(t *testing.T) {
 	}
 }
 
-// TestDrain_EmptiesTheTopK checks that a second Drain after offers have
-// already been drained returns nothing, matching the "drains" name.
+// TestDrain_EmptiesTheTopK checks that a second Drain returns nothing.
 func TestDrain_EmptiesTheTopK(t *testing.T) {
 	top := newTopK(0)
 	top.Offer("a", 1)

@@ -22,18 +22,18 @@
 
 """Fixtures for the server + MCP bridge integration suite.
 
-This suite exercises the one binary in both of its roles at once: the daemon
-serving the HTTP query API, and ``fraise mcp`` bridging it over stdio. Both
-processes are the real, freshly built binary — nothing is mocked — so what
-passes here is exactly what `claude mcp add fraise -- fraise mcp` runs. Like
-``tests/e2e``, this suite mirrors what it drives (``pkg/mcp``), not the SDK.
+This suite runs the one binary in both of its roles at once. The daemon serves
+the HTTP query API, and ``fraise mcp`` bridges it over stdio. Both processes
+are the real, freshly built binary, and nothing is mocked. So what passes here
+is exactly what `claude mcp add fraise -- fraise mcp` runs. Like ``tests/e2e``,
+this suite mirrors what it drives (``pkg/mcp``), not the SDK.
 
-The daemon is started fresh on a free port for the session, so graph contents
-are deterministic without the e2e suite's graph-allocation map; tests keep
-their facts distinguishable by writing unique keywords.
+The session starts a fresh daemon on a free port. So graph contents are
+deterministic without the e2e suite's graph-allocation map. Tests keep their
+facts apart by writing unique keywords.
 
-Everything a test needs is a fixture here, and fixtures are the only way a
-test gets it: a test module never imports from this file.
+Everything a test needs is a fixture here. Fixtures are the only way a test
+gets it, and a test module never imports from this file.
 """
 
 import json
@@ -54,13 +54,13 @@ _REPO_ROOT = _SUITE_DIR.parents[1]
 _DAEMON_WAIT_SECONDS = 30
 _READ_TIMEOUT_SECONDS = 15
 
-# The protocol revision this client speaks; the server negotiates from it.
+# The protocol revision this client speaks. The server negotiates from it.
 _PROTOCOL_VERSION = "2025-06-18"
 
 
 def pytest_configure(config):
-    # Register the marker so `-m integration` / `-m "not integration"` work
-    # and pytest doesn't warn about an unknown mark.
+    # Register the marker so `-m integration` and `-m "not integration"` work,
+    # and pytest does not warn about an unknown mark.
     config.addinivalue_line(
         "markers",
         "integration: drives the built fraise binary end to end; needs Go or FRAISE_BIN",
@@ -68,10 +68,10 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(items):
-    # Every test under this directory drives real processes, so the mark is
-    # applied here, once, instead of as a line to forget in each new module.
-    # The hook sees every collected item, not only this directory's, so the
-    # path check keeps the mark off e2e tests collected in the same run.
+    # Every test under this directory drives real processes. So the mark is
+    # applied here once, not as a line to forget in each new module. The hook
+    # sees every collected item, not only this directory's. The path check
+    # keeps the mark off e2e tests collected in the same run.
     for item in items:
         if item.path.resolve().is_relative_to(_SUITE_DIR):
             item.add_marker(pytest.mark.integration)
@@ -86,10 +86,10 @@ def _free_port() -> int:
 class _MCPClient:
     """A newline-delimited JSON-RPC client over a ``fraise mcp`` subprocess.
 
-    A real client for a real server — the stdio twin of the e2e suite's HTTP
-    ``query`` fixture, not a mock. Reads happen on a pumping thread feeding a
-    queue, so a response that arrives buffered together with another message
-    can never deadlock a timeout-guarded read.
+    It is a real client for a real server, not a mock. It is the stdio twin of
+    the e2e suite's HTTP ``query`` fixture. A thread pumps reads into a queue.
+    So a response that arrives in one buffer with another message can never
+    deadlock a read that has a timeout.
     """
 
     def __init__(self, binary: str, port: int):
@@ -104,8 +104,8 @@ class _MCPClient:
         self._lines: queue.Queue[str] = queue.Queue()
         self._reader = threading.Thread(target=self._pump, daemon=True)
         self._reader.start()
-        # The server's initialize result, kept for assertions on identity:
-        # populated by handshake(), which every fixture-provided client has run.
+        # The server's initialize result, for assertions on identity.
+        # handshake() fills it, and every client a fixture provides has run it.
         self.handshake_result: dict | None = None
 
     def _pump(self):
@@ -129,18 +129,18 @@ class _MCPClient:
     def request(self, method: str, params: dict | None = None) -> dict:
         """Send one request and return its response.
 
-        Interleaved messages with other ids (notifications) are skipped: a
+        Messages with other ids, such as notifications, are skipped. A
         request's answer is matched by id, not by arrival order.
 
         Args:
             method: the JSON-RPC method name.
-            params: the request params; an empty object when omitted.
+            params: the request params. An empty object when omitted.
 
         Returns:
             The response's ``result`` payload.
 
         Raises:
-            AssertionError: on a protocol-level error response — a tool-level
+            AssertionError: on a protocol-level error response. A tool-level
                 failure travels inside the result as ``isError``, so an error
                 here means the conversation itself broke.
         """
@@ -162,8 +162,11 @@ class _MCPClient:
         self._send({"jsonrpc": "2.0", "method": method, "params": params or {}})
 
     def handshake(self) -> dict:
-        """Run initialize + initialized and return the server's initialize
-        result — every conversation's mandatory opening."""
+        """Open the conversation and return the server's initialize result.
+
+        It sends initialize, then the initialized notification. Every
+        conversation must open this way.
+        """
         result = self.request(
             "initialize",
             {
@@ -190,8 +193,11 @@ class _MCPClient:
 
 @pytest.fixture(scope="session")
 def fraise_binary(tmp_path_factory):
-    """Path to the fraise binary: FRAISE_BIN when set (CI builds it once via
-    make build-go), else a fresh `go build` into a session temp dir."""
+    """Path to the fraise binary.
+
+    It is FRAISE_BIN when set, which CI builds once with make build-go.
+    Otherwise it is a fresh `go build` into a session temp dir.
+    """
     prebuilt = os.environ.get("FRAISE_BIN")
     if prebuilt:
         return prebuilt
@@ -208,16 +214,16 @@ def fraise_binary(tmp_path_factory):
 def daemon_port(fraise_binary, tmp_path_factory):
     """A fresh daemon on a free port for the whole session.
 
-    Health-checked before the first test and torn down after the last; the
-    log rides in a temp file that surfaces on startup failure instead of
-    scrolling by.
+    It is health-checked before the first test and torn down after the last.
+    Its log goes to a temp file, which shows up on a startup failure instead
+    of scrolling by.
 
     Yields:
         The port the daemon listens on.
 
     Raises:
         RuntimeError: when the daemon exits early or never answers its
-            health check, carrying the tail of its log.
+            health check. The error carries the tail of its log.
     """
     port = _free_port()
     log_path = tmp_path_factory.mktemp("daemon") / "daemon.log"
@@ -253,7 +259,7 @@ def mcp(fraise_binary, daemon_port):
     """A handshaken MCP client over a bridge aimed at the live daemon.
 
     Yields:
-        The client, initialize/initialized already exchanged.
+        The client, with the handshake already done.
     """
     client = _MCPClient(fraise_binary, daemon_port)
     client.handshake()
@@ -265,7 +271,8 @@ def mcp(fraise_binary, daemon_port):
 def mcp_without_daemon(fraise_binary):
     """A handshaken MCP client whose daemon port has nothing listening.
 
-    The bridge must still converse; only tool calls may fail, in band.
+    The bridge must still converse. Only tool calls may fail, and they fail in
+    band.
 
     Yields:
         The client, handshaken against the daemonless bridge.

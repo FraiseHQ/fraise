@@ -26,6 +26,6 @@ import "errors"
 
 var (
 	// ErrCacheCapacity is returned when a cache is created with a capacity
-	// that is not strictly positive.
+	// below 1.
 	ErrCacheCapacity = errors.New("cache: invalid capacity")
 )

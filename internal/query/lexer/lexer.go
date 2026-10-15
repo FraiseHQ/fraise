@@ -34,9 +34,9 @@ type Position struct {
 }
 
 // Lexer scans one query into tokens on demand. Input holds the query as runes,
-// so a multi-byte character is one column; Character is the last rune
-// consumed and CurrentPos its 1-based column, which is also the index of the
-// next rune to read.
+// so a multi-byte character is one column. Character is the last rune
+// consumed, and CurrentPos is its 1-based column. CurrentPos is also the index
+// of the next rune to read.
 type Lexer struct {
 	Input      []rune
 	Character  rune
@@ -50,7 +50,6 @@ func New(input string) *Lexer {
 		Input: []rune(input),
 	}
 	l.readCharacter()
-	// initialise positions
 	l.CurrentPos = Position{
 		Column: 0,
 	}
@@ -80,15 +79,15 @@ func (l *Lexer) readCharacter() {
 }
 
 // isBlank reports whether ch is a space, tab or carriage return. A newline is
-// not blank: it ends an instruction, so "recall ferry\nbridge" is two lines
+// not blank. It ends an instruction, so "recall ferry\nbridge" is two lines
 // rather than one two-term recall.
 func isBlank(ch rune) bool {
 	return ch == rune(' ') || ch == rune('\t') || ch == rune('\r')
 }
 
-// isWordCharacter reports whether ch can appear in a bare word: a letter, in any
-// script, or a digit. Every other character outside a phrase is syntax or
-// special, so a word that needs one — "e-mail", "2026-01-15" — is quoted.
+// isWordCharacter reports whether ch can appear in a bare word: a letter, in
+// any script, or a digit. Every other character outside a phrase is syntax or
+// special, so words like "e-mail" and "2026-01-15" must be quoted.
 func isWordCharacter(ch rune) bool {
 	return unicode.IsLetter(ch) || unicode.IsDigit(ch)
 }
@@ -134,7 +133,7 @@ func (l *Lexer) Next() Token {
 		literal := l.scanWhitespace()
 		tok = Token{Type: WHITESPACE, Literal: literal}
 	case rune(0):
-		// peek returns 0 both past the end and at a NUL in the input; only the
+		// peek returns 0 both past the end and at a NUL in the input. Only the
 		// first is the end. A NUL is its own token, so the parser rejects it
 		// instead of dropping the rest of the query.
 		if l.CurrentPos.Column < len(l.Input) {
@@ -153,11 +152,11 @@ func (l *Lexer) Next() Token {
 		tokType, reserved := KeywordsMap[tokLiteral]
 		if !reserved {
 			// A mis-cased keyword lexes as a LITERAL, except immediately
-			// before a ':': no production puts a bare word in front of a colon,
-			// so "DEPTH:5" can only be the depth clause, and lexing it as one
-			// lets a repeated clause be reported as a duplicate rather than as
-			// a casing mistake. Away from a ':' the spelling must match, so
-			// "RECALL x" is not a command.
+			// before a ':'. No production puts a bare word in front of a
+			// colon, so "DEPTH:5" can only be the depth clause. Lexing it as
+			// one lets a repeated clause be reported as a duplicate rather
+			// than as a casing mistake. Away from a ':' the spelling must
+			// match, so "RECALL x" is not a command.
 			if l.peek() == rune(':') {
 				tokType, reserved = KeywordsMap[strings.ToLower(tokLiteral)]
 			}
@@ -200,19 +199,18 @@ func (l *Lexer) scanString() string {
 	return string(res)
 }
 
-// scanPhrase reads an opaque single-quoted phrase: every character between the
+// scanPhrase reads an opaque single-quoted phrase. Every character between the
 // quotes is data, reserved words and symbols included, so a fact is stored
-// verbatim. A doubled single quote is an escaped quote; the first single quote
+// verbatim. A doubled single quote is an escaped quote. The first single quote
 // that is not doubled closes the phrase.
 //
-// The opening quote is at the current position. On success a PHRASE token with
-// the decoded (unquoted, unescaped) text is returned. If the input ends before
-// a closing quote, an ILLEGAL token carrying the partial text is returned so the
-// parser can report an unterminated phrase.
+// The opening quote is at the current position. On success it returns a
+// PHRASE token with the decoded text, unquoted and unescaped. If the input
+// ends before a closing quote, it returns an ILLEGAL token with the partial
+// text, so the parser can report an unterminated phrase.
 //
-// End of input is detected by position, not by peek returning 0, because a NUL
-// inside a phrase (JSON can carry one as \u0000) is data like any other
-// character.
+// End of input is detected by position, not by peek returning 0. A NUL inside
+// a phrase is data like any other character. JSON can carry one as \u0000.
 func (l *Lexer) scanPhrase() Token {
 	l.readCharacter() // consume the opening quote
 

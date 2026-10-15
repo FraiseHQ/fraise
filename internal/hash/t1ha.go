@@ -78,9 +78,9 @@ func (t T1haHash[K]) finalWeakAvalanche(a, b uint64) uint64 {
 	return t.mux64(t.rot64(a+b, 17), t1p4) + t.mix64(a^b, t1p0)
 }
 
-// tail64LE reads the input's last, possibly partial, 8-byte word from the
-// start of p, little-endian. tail is the length of the input left after the
-// 32-byte blocks; the word holds tail mod 8 bytes, or 8 when that is 0.
+// tail64LE reads the input's last 8-byte word, which may be partial, from the
+// start of p, little-endian. tail is the length of input left after the 32-byte
+// blocks. The word holds tail mod 8 bytes, or 8 when that is 0.
 func (t T1haHash[K]) tail64LE(p []byte, tail int) uint64 {
 	var r uint64
 	switch tail & 7 {
@@ -141,9 +141,9 @@ func (t T1haHash[K]) t1ha1LE(data []byte, seed uint64) uint64 {
 		b ^= t1p5 * (c + t.rot64(d, 17))
 	}
 
-	// Remaining 0..32 bytes (32 only for a 32-byte input, which skips the
-	// loop); each block below falls through to the next, mirroring the switch
-	// in the reference implementation.
+	// 0..32 bytes remain. 32 remain only for a 32-byte input, which skips the
+	// loop. Each block below falls through to the next, like the switch in the
+	// reference implementation.
 	rl := len(data)
 	v := data
 	if rl > 24 {

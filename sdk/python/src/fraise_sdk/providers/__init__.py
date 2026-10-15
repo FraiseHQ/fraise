@@ -20,15 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Providers — backends that embed text into vectors or find its anchors.
+"""Providers: backends that embed text into vectors or find its anchors.
 
-The contracts live in :mod:`fraise_sdk.providers.base` and are re-exported here.
-Concrete providers live in their own modules, each depending on its own optional
-extra, and are imported from those modules rather than from this package:
-:mod:`fraise_sdk.providers.openai` (``OpenAIEmbedder``, ``OpenAIExtractor``;
-``fraise-sdk[openai]``) and :mod:`fraise_sdk.providers.huggingface`
-(``HuggingFaceEmbedder``; ``fraise-sdk[huggingface]``). Keeping them out of
-this package is what keeps ``import fraise_sdk`` free of vendor SDKs.
+The contracts live in :mod:`fraise_sdk.providers.base` and are re-exported
+here. Concrete providers live in their own modules, each with its own optional
+extra. Import them from those modules, not from this package.
+:mod:`fraise_sdk.providers.openai` has ``OpenAIEmbedder`` and
+``OpenAIExtractor``, and needs ``fraise-sdk[openai]``.
+:mod:`fraise_sdk.providers.huggingface` has ``HuggingFaceEmbedder``, and needs
+``fraise-sdk[huggingface]``. Keeping them out of this package keeps
+``import fraise_sdk`` free of vendor SDKs.
 """
 
 from fraise_sdk.providers.base import (

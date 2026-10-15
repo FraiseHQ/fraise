@@ -28,18 +28,18 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// The tool schemas and types mirror the HTTP query API (POST /api/v1/q): the
+// The tool schemas and types mirror the HTTP query API (POST /api/v1/q). The
 // bridge forwards its input as the request body and returns the response body
-// as its output. The wire contract is the one pkg/server and internal/query
-// define: HandleQueryRequest in, and out {"results": QueryResult} for a recall
-// or {"status": "ok"} for a write, either with optional warnings. Explain-mode
-// fields (background, per-hit contributions) belong to /api/v1/explain, which
-// the bridge does not call. If either wire shape moves, these move in the same
-// change.
+// as its output. pkg/server and internal/query define the wire contract. The
+// request is a HandleQueryRequest. A recall answers {"results": QueryResult}
+// and a write answers {"status": "ok"}, each with optional warnings.
+// Explain-mode fields (background, per-hit contributions) belong to
+// /api/v1/explain, which the bridge does not call. If either wire shape
+// moves, these move with it in the same change.
 
-// parametersSchema mirrors HandleQueryRequest.Parameters: vector
-// placeholders (vec:$name) are bound out of band by name, so large vector
-// literals never ride inline in the query text.
+// parametersSchema mirrors HandleQueryRequest.Parameters. Vector placeholders
+// (vec:$name) are bound out of band by name, so large vector literals never
+// ride inline in the query text.
 var parametersSchema = &jsonschema.Schema{
 	Type:        "object",
 	Description: "Out-of-band vector bindings: one array of numbers per vec:$name placeholder the query references.",
@@ -49,10 +49,9 @@ var parametersSchema = &jsonschema.Schema{
 	},
 }
 
-// hitSchema mirrors Hit.MarshalJSON: the stored fact, when it was written,
-// and its score (relevance after recency decay). The
-// score is on the scorer's own scale, an ordering rather than a probability,
-// and nothing caps it at 1.0.
+// hitSchema mirrors Hit.MarshalJSON: the stored fact, when it was written, and
+// its score (relevance after recency decay). The score is on the scorer's own
+// scale. It is an ordering, not a probability, and nothing caps it at 1.0.
 var hitSchema = &jsonschema.Schema{
 	Type: "object",
 	Properties: map[string]*jsonschema.Schema{
@@ -73,9 +72,9 @@ var hitSchema = &jsonschema.Schema{
 	Required: []string{"value", "timestamp", "score"},
 }
 
-// warningsSchema mirrors the response's optional warnings key: parse
-// warnings the server attached. The query still ran and the results beside
-// them stand.
+// warningsSchema mirrors the response's optional warnings key, which holds
+// the parse warnings the server attached. The query still ran, and the
+// results beside them stand.
 var warningsSchema = &jsonschema.Schema{
 	Type:        "array",
 	Description: "Parse warnings the server attached; the query still ran and the results stand.",
@@ -138,10 +137,9 @@ var (
 )
 
 // Hit is one recalled fact as the query endpoint serializes it
-// (Hit.MarshalJSON in internal/query): the stored value, its write time, and
-// its raw score. Scores are float64 regardless of the daemon's precision —
-// that is what JSON numbers decode to, and the bridge never does arithmetic
-// on them.
+// (Hit.MarshalJSON in internal/query): the stored value, its write time and
+// its raw score. Scores are float64 whatever the daemon's precision. JSON
+// numbers decode to float64, and the bridge never does arithmetic on them.
 type Hit struct {
 	Value     string    `json:"value"`
 	Timestamp time.Time `json:"timestamp"`
@@ -149,15 +147,15 @@ type Hit struct {
 }
 
 // Result is the results envelope of a recall response: the hit count and the
-// ranked hits, best first. Only reads carry one — a write is acknowledged with
+// ranked hits, best first. Only reads carry one. A write is acknowledged with
 // a status token instead (RememberOutput).
 type Result struct {
 	Count int   `json:"count"`
 	Hits  []Hit `json:"hits"`
 }
 
-// RecallInput is the recall tool's argument payload, forwarded verbatim as
-// the /api/v1/q request body (HandleQueryRequest): the raw FQL query plus
+// RecallInput is the recall tool's argument payload, forwarded verbatim as the
+// /api/v1/q request body (HandleQueryRequest). It holds the raw FQL query and
 // any out-of-band vector bindings its vec:$name placeholders reference.
 type RecallInput struct {
 	Query      string               `json:"query"`
@@ -165,8 +163,8 @@ type RecallInput struct {
 }
 
 // RecallOutput is the recall tool's result payload, the /api/v1/q response
-// body verbatim: the results envelope plus any parse warnings the server
-// attached — the query still ran and the results beside them stand.
+// body verbatim. It holds the results envelope and any parse warnings the
+// server attached. The query still ran, and the results beside them stand.
 type RecallOutput struct {
 	Results  Result   `json:"results"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -180,10 +178,10 @@ type RememberInput struct {
 }
 
 // RememberOutput is the remember tool's result payload, the /api/v1/q write
-// response verbatim: the acknowledgement token, and any parse warnings the
-// server attached (the write still committed). It is deliberately not a
-// recall's envelope, so a write cannot be mistaken for a recall that matched
-// nothing.
+// response verbatim. It holds the acknowledgement token and any parse warnings
+// the server attached (the write still committed). It is not a recall's
+// envelope on purpose, so a write cannot be mistaken for a recall that
+// matched nothing.
 type RememberOutput struct {
 	Status   string   `json:"status"`
 	Warnings []string `json:"warnings,omitempty"`

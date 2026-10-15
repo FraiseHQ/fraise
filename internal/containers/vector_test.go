@@ -22,10 +22,13 @@
 
 package containers
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
-// fakeHasher returns a deterministic, inspectable key for the hash tests,
-// mirroring the fake in the query package's tests.
+// fakeHasher returns a deterministic, readable key for the hash tests, like
+// the fake in the query package's tests.
 type fakeHasher struct{}
 
 func (fakeHasher) Hash(s string) string { return "H(" + s + ")" }
@@ -42,9 +45,10 @@ func TestVectorHash(t *testing.T) {
 	}
 }
 
-// TestVectorHashDistinguishesVectors is the contract the plan cache relies on:
-// two vectors with different coordinates must not share a hash, or a recall
-// bound to vector B would silently reuse the cached query for vector A.
+// TestVectorHashDistinguishesVectors pins the contract the plan cache relies
+// on. Two vectors with different coordinates must not share a hash. If they
+// did, a recall bound to vector B would silently reuse the cached query for
+// vector A.
 func TestVectorHashDistinguishesVectors(t *testing.T) {
 	a := NewVector[string]([]float64{1, 0}).Hash(fakeHasher{})
 	b := NewVector[string]([]float64{0, 1}).Hash(fakeHasher{})
@@ -54,17 +58,29 @@ func TestVectorHashDistinguishesVectors(t *testing.T) {
 }
 
 // TestVectorDistance pins the metric as Euclidean: the 3-4-5 triangle, zero
-// for a vector against itself, and symmetric.
+// for a vector against itself, and symmetric. Vectors of different dimensions
+// have no distance, whichever one is shorter.
 func TestVectorDistance(t *testing.T) {
-	a := NewVector[string]([]float64{0, 0})
-	b := NewVector[string]([]float64{3, 4})
-	if got := a.Distance(b); got != 5 {
-		t.Errorf("Distance([0,0],[3,4]) = %v, want 5", got)
+	cases := map[string]struct {
+		a, b []float64
+		want float64
+		err  error
+	}{
+		"3-4-5 triangle": {[]float64{0, 0}, []float64{3, 4}, 5, nil},
+		"symmetric":      {[]float64{3, 4}, []float64{0, 0}, 5, nil},
+		"itself":         {[]float64{3, 4}, []float64{3, 4}, 0, nil},
+		"shorter other":  {[]float64{3, 4}, []float64{3}, 0, ErrDimMismatch},
+		"longer other":   {[]float64{3, 4}, []float64{3, 4, 5}, 0, ErrDimMismatch},
 	}
-	if got := b.Distance(a); got != 5 {
-		t.Errorf("Distance([3,4],[0,0]) = %v, want 5 (symmetric)", got)
-	}
-	if got := b.Distance(b); got != 0 {
-		t.Errorf("Distance(v, v) = %v, want 0", got)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, err := NewVector[string](tc.a).Distance(NewVector[string](tc.b))
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("Distance(%v, %v) error = %v, want %v", tc.a, tc.b, err, tc.err)
+			}
+			if got != tc.want {
+				t.Errorf("Distance(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
 	}
 }

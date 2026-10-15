@@ -47,8 +47,8 @@ func (MatchCount[K, P]) Weight(int, int) P { return 1 }
 // Prepare returns 0: a match count has no per-query statistic to fold.
 func (MatchCount[K, P]) Prepare() P { return 0 }
 
-// Increment awards the term's weight regardless of term frequency: matching
-// is binary per (document, term-occurrence). prepared is unused.
+// Increment awards the term's weight whatever the term frequency. Matching is
+// binary per document and query-term occurrence. prepared is unused.
 func (MatchCount[K, P]) Increment(weight P, _ K, _ int, _ P) P { return weight }
 
 // Finalize is the identity: the count is the relevance.

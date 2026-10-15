@@ -24,10 +24,10 @@ package index
 
 import "github.com/FraiseHQ/fraise/internal/containers"
 
-// SearchIndex maps keys of type K to values of type V and ranks those keys by
-// relevance to a query. The query has the same type V the index stores — a
-// keyword string for a text index, a vector for a vector index — because in
-// both cases you search with an example of what you stored.
+// SearchIndex maps keys of type K to values of type V and ranks the keys by
+// relevance to a query. The query has the same type V as the stored values:
+// a keyword string for a text index, a vector for a vector index. In both
+// cases you search with an example of what you stored.
 type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// Insert adds value under key.
 	Insert(key K, value V) error
@@ -41,39 +41,39 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// Delete removes the entry stored under key.
 	Delete(key K) error
 
-	// Count reports the number of live entries currently held.
+	// Count reports the number of live entries.
 	Count() int
 
-	// Entries reports the number of entries the underlying structure
-	// physically holds: the live entries plus any garbage awaiting Flush
-	// (stale copies from updates, tombstoned deletes). For structures that
-	// compact eagerly it equals Count. The gap between Entries and Count is
-	// the compaction debt; the stats endpoint reports the vector index's
-	// Entries as forest_entries.
+	// Entries reports how many entries the structure physically holds: the
+	// live ones plus the garbage awaiting Flush, such as stale copies from
+	// updates and tombstoned deletes. An index that compacts eagerly reports
+	// Count. Entries minus Count is the compaction debt. The stats endpoint
+	// reports the vector index's Entries as forest_entries.
 	Entries() int
 
 	// Flush compacts the index, discarding the garbage Entries counts beyond
 	// Count.
 	Flush() error
 
-	// Search returns the keys most relevant to query, best match first, with a
-	// parallel slice of their scores. k bounds the number of results; k <= 0
-	// returns all matches. Score direction is index-specific (see the aliases).
+	// Search returns the keys most relevant to query, best first, with their
+	// scores in a parallel slice. k bounds the number of results, and k <= 0
+	// returns all matches. Score direction depends on the index (see the
+	// aliases).
 	//
 	// The ranking is a total order: keys of equal score are ordered by the
-	// index's key comparator. Candidates are pooled from maps, so without that
-	// tiebreak the k kept by truncation would be an arbitrary subset of a tied
-	// group and two identical queries could rank the same matches differently.
+	// index's key comparator. Candidates are pooled from maps. Without the
+	// tiebreak, truncation would keep an arbitrary subset of a tied group, and
+	// two identical queries could rank the same matches differently.
 	//
-	// A non-nil keep restricts the search to the keys it accepts: a rejected
+	// A non-nil keep restricts the search to the keys it accepts. A rejected
 	// key is never ranked, so it never takes one of the k places. Filtering
-	// after truncation instead would drop every accepted key ranked below k
-	// across the whole index, and a selective filter would return short or
-	// empty while accepted matches exist. A nil keep accepts every key.
+	// after truncation would instead drop every accepted key ranked below k in
+	// the whole index. A selective filter would then return short or empty
+	// results while accepted matches exist. A nil keep accepts every key.
 	Search(query V, k int, keep func(K) bool) ([]K, []P, error)
 }
 
-// TextIndex is a full-text index: it tokenizes string documents on insert and
+// TextIndex is a full-text index. It tokenizes string documents on insert and
 // answers keyword queries. Its score comes from a relevance model (see
 // relevance.Relevance), so higher is a better match.
 type TextIndex[K comparable, P float32 | float64] = SearchIndex[K, string, P]

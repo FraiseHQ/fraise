@@ -24,10 +24,10 @@
 // containers and indexes are parameterised on.
 //
 // A [Comparator] returns a negative number, zero or a positive number as its
-// first argument sorts before, equal to or after its second, the same shape as
+// first argument sorts before, equal to or after its second, like
 // [cmp.Compare]. The B-tree, the top-k selection and the text and vector
-// indexes take one at construction instead of constraining their element type
-// to [cmp.Ordered], so the ordering is chosen by the caller and also covers
-// types with no built-in order, such as [time.Time] through [TimeComparator].
-// [OrderedComparator] supplies the natural order of any [cmp.Ordered] type.
+// indexes take one at construction, rather than constrain their element type to
+// [cmp.Ordered]. So the caller chooses the ordering. It can also cover types
+// with no built-in order, such as [time.Time] through [TimeComparator].
+// [OrderedComparator] gives the natural order of any [cmp.Ordered] type.
 package comparator

@@ -28,30 +28,30 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 )
 
-// BM25 constants: the standard Robertson–Walker defaults, deliberately not
-// configurable. The retrieval methodology needs raw, untuned BM25 units: the
-// anchor-level excess statistic sums seed masses across documents, and a
-// per-dataset knob here would break the commensurability that keeps the text
-// channel and those sums on one scale. The model is documented at
+// BM25 constants are the standard Robertson–Walker defaults, and they are not
+// configurable on purpose. The retrieval methodology needs raw, untuned BM25
+// units. The anchor-level excess statistic sums seed masses across documents.
+// A per-dataset knob here would put the text channel and those sums on
+// different scales. The model is documented at
 // https://docs.getfraise.dev/docs/retrieval/ranking/hybrid-retrieval.
 const (
-	// bm25K1 saturates term frequency: repetitions of a term add ever less.
+	// bm25K1 saturates term frequency: each repeat of a term adds less.
 	bm25K1 = 1.2
-	// bm25B is document-length normalization: 0 ignores length, 1 fully
-	// penalizes long documents; 0.75 is the standard operating point.
+	// bm25B sets document-length normalization. 0 ignores length, and 1
+	// fully penalizes long documents. 0.75 is the standard operating point.
 	bm25B = 0.75
-	// bm25N1 is the length-norm term's corpus-independent half,
-	// bm25K1*(1-bm25B). It needs no per-query recomputation, unlike the
-	// avgdl-dependent half Prepare folds into n2.
+	// bm25N1 is the corpus-independent half of the length norm,
+	// bm25K1*(1-bm25B). Unlike the avgdl-dependent half that Prepare folds
+	// into n2, it needs no per-query recomputation.
 	bm25N1 = bm25K1 * (1 - bm25B)
 )
 
-// BM25 is the Robertson–Walker relevance model scaled by query coverage:
-// idf-weighted, length-normalized term frequency, times the share of the
-// query's idf mass the document matched, so a document matching more of the
-// query, and its rarer terms, outranks one repeating a single term. It owns
-// the length statistics its normalization needs and maintains them through
-// the lifecycle hooks.
+// BM25 is the Robertson–Walker relevance model scaled by query coverage. The
+// score is idf-weighted, length-normalized term frequency, times the share of
+// the query's idf mass the document matched. So a document that matches more
+// of the query, and its rarer terms, outranks one that repeats a single term.
+// BM25 keeps the length statistics its normalization needs and updates them
+// through the lifecycle hooks.
 type BM25[K comparable, P float32 | float64] struct {
 	lengths  map[K]int // key -> document length in tokens
 	totalLen int       // sum of lengths (avgdl = totalLen / len(lengths))
@@ -71,18 +71,16 @@ func (b *BM25[K, P]) Indexed(key K, tokens []string) {
 	b.totalLen += len(tokens)
 }
 
-// Removed retires the document's length. The recorded length is used, not
-// len(tokens): the tokenizer may have changed since the insert, and the
+// Removed retires the document's recorded length, not len(tokens). The
 // statistics must retire exactly what they admitted.
 func (b *BM25[K, P]) Removed(key K, _ []string) {
 	b.totalLen -= b.Lengths()[key]
 	delete(b.lengths, key)
 }
 
-// Terms deduplicates to distinct query terms, first occurrence order: idf
-// already prices a term's informativeness, so a term repeated in the query
-// must not count twice — and coverage is a share of the distinct terms' idf
-// mass.
+// Terms keeps the distinct query terms, in first-occurrence order. A term's
+// idf already prices how informative it is, so a repeated term must not count
+// twice. Coverage is also a share of the distinct terms' idf mass.
 func (b *BM25[K, P]) Terms(tokens []string) []string {
 	seen := make(map[string]struct{}, len(tokens))
 	terms := make([]string, 0, len(tokens))
@@ -103,10 +101,8 @@ func (b *BM25[K, P]) Weight(df, docs int) P {
 }
 
 // Prepare returns n2 = bm25K1*bm25B/avgdl, the avgdl-dependent half of the
-// length norm, from the corpus's current statistics. Computing it per query
-// rather than caching it on the model keeps the shared instance safe under
-// concurrent queries, and it leaves Increment one multiply per posting entry
-// instead of a division.
+// length norm, from the current statistics. It leaves Increment one multiply
+// per posting entry instead of a division.
 func (b *BM25[K, P]) Prepare() P {
 	lengths, totalLen := b.Lengths(), b.TotalLen()
 	if len(lengths) == 0 || totalLen == 0 {
@@ -123,10 +119,10 @@ func (b *BM25[K, P]) Increment(weight P, key K, tf int, n2 P) P {
 	return weight * freq * (bm25K1 + 1) / (freq + bm25N1 + n2*P(b.Lengths()[key]))
 }
 
-// Finalize scales by coverage, matched over total: the share of the query's
-// idf mass the document matched, in the fixed point Relevance.Finalize
-// describes. A full match scales by just under 1, and a rare term covers more
-// of the query than a common one.
+// Finalize scales score by coverage, matched over total. Coverage is the
+// share of the query's idf mass the document matched, in the fixed point that
+// Relevance.Finalize describes. A full match scales by just under 1. A rare
+// term covers more of the query than a common one.
 func (b *BM25[K, P]) Finalize(score P, matched, total int) P {
 	return score * P(matched) / P(total)
 }
