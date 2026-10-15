@@ -200,9 +200,33 @@ _ANCHOR_EXPLAIN_RESPONSE = {
 # dropped or reordered it would misplace graph 2's row.
 _STATS_RESPONSE = {
     "graphs": [
-        {"id": 0, "order": 4, "size": 3, "nodes": 7, "vectors": 0, "forest_entries": 0},
-        {"id": 1, "order": 0, "size": 0, "nodes": 0, "vectors": 0, "forest_entries": 0},
-        {"id": 2, "order": 1, "size": 0, "nodes": 1, "vectors": 1, "forest_entries": 1},
+        {
+            "id": 0,
+            "order": 4,
+            "size": 3,
+            "nodes": 7,
+            "vectors": 0,
+            "forest_entries": 0,
+            "relevance": "bm25",
+        },
+        {
+            "id": 1,
+            "order": 0,
+            "size": 0,
+            "nodes": 0,
+            "vectors": 0,
+            "forest_entries": 0,
+            "relevance": "bm25",
+        },
+        {
+            "id": 2,
+            "order": 1,
+            "size": 0,
+            "nodes": 1,
+            "vectors": 1,
+            "forest_entries": 1,
+            "relevance": "bm25",
+        },
     ]
 }
 

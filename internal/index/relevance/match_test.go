@@ -31,8 +31,17 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/index/relevance"
 )
+
+// TestMatchCountNameIsTheConfigName pins the name startup compares with
+// db.relevance-model.name: any other spelling fails every matchcount startup.
+func TestMatchCountNameIsTheConfigName(t *testing.T) {
+	if got := (relevance.MatchCount[int, float32]{}).Name(); got != config.RelevanceMatchCount {
+		t.Errorf("Name = %q, want %q", got, config.RelevanceMatchCount)
+	}
+}
 
 // TestMatchCountTermsKeepsRepeats pins the query-side stream as the
 // identity: a repeated query term stays in the stream, in order, and earns

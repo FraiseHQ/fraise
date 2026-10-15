@@ -399,7 +399,8 @@ func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
 
 // TestStatsEndpoint checks that GET /api/v1/stats returns one snapshot per
 // graph and that a committed write with a vector is reflected in the counts,
-// including the forest_entries gauge the end-to-end forest-bloat test reads.
+// including the forest_entries gauge the end-to-end forest-bloat test reads,
+// and names the relevance model each graph ranks with.
 func TestStatsEndpoint(t *testing.T) {
 	s := newTestServer(t)
 
@@ -410,10 +411,11 @@ func TestStatsEndpoint(t *testing.T) {
 
 	var stats struct {
 		Graphs []struct {
-			ID            int `json:"id"`
-			Nodes         int `json:"nodes"`
-			Vectors       int `json:"vectors"`
-			ForestEntries int `json:"forest_entries"`
+			ID            int    `json:"id"`
+			Nodes         int    `json:"nodes"`
+			Vectors       int    `json:"vectors"`
+			ForestEntries int    `json:"forest_entries"`
+			Relevance     string `json:"relevance"`
 		} `json:"graphs"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &stats); err != nil {
@@ -421,6 +423,11 @@ func TestStatsEndpoint(t *testing.T) {
 	}
 	if got, want := len(stats.Graphs), s.DB.NumGraphs(); got != want {
 		t.Fatalf("len(graphs) = %d, want %d", got, want)
+	}
+	for _, g := range stats.Graphs {
+		if g.Relevance != s.Config.DB.RelevanceModel.Name {
+			t.Errorf("graphs[%d].relevance = %q, want %q", g.ID, g.Relevance, s.Config.DB.RelevanceModel.Name)
+		}
 	}
 
 	// Commit a fact with a vector, then confirm the write shows up in stats.

@@ -41,8 +41,25 @@ def test_graph_stats_names_the_counts_for_what_they_count(stats_response):
     row = GraphStats.from_json(stats_response["graphs"][0])
 
     assert row == GraphStats(
-        id=0, vertices=4, edges=3, nodes=7, vectors=0, forest_entries=0
+        id=0,
+        vertices=4,
+        edges=3,
+        nodes=7,
+        vectors=0,
+        forest_entries=0,
+        relevance="bm25",
     )
+
+
+def test_graph_stats_without_relevance_is_none(stats_response):
+    """A row from a server that predates ``relevance`` still parses.
+
+    The SDK supports servers that never send the field; reading it as required
+    would turn every ``stats()`` against them into a ``KeyError``.
+    """
+    row = {k: v for k, v in stats_response["graphs"][0].items() if k != "relevance"}
+
+    assert GraphStats.from_json(row).relevance is None
 
 
 def test_from_json_defaults_to_no_warnings():

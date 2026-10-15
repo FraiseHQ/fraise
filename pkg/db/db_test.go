@@ -23,6 +23,7 @@
 package db_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/config"
@@ -60,6 +61,40 @@ func TestStartPopulatesGraphs(t *testing.T) {
 		if g == nil {
 			t.Errorf("Select(%d) returned nil graph after Start", i)
 		}
+	}
+}
+
+// TestStartInstallsConfiguredRelevanceModel checks that every graph Start
+// builds ranks with the configured relevance model, read back from its stats.
+func TestStartInstallsConfiguredRelevanceModel(t *testing.T) {
+	d, err := db.NewDB[uint64, float32](config.New())
+	if err != nil {
+		t.Fatalf("NewDB returned error: %v", err)
+	}
+	if err := d.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	for _, g := range d.Stats().Graphs {
+		if g.Relevance != config.RelevanceBM25 {
+			t.Errorf("Graphs[%d].Relevance = %q, want %q", g.ID, g.Relevance, config.RelevanceBM25)
+		}
+	}
+}
+
+// TestStartRejectsUnresolvedRelevanceModel checks that Start refuses to serve
+// when the configured relevance model did not take effect. "BM25" is the
+// spelling Parse would have canonicalised: handed to the graph unparsed it
+// matches no model, the index keeps its MatchCount default, and without the
+// check every query would answer with worse ranking and no error.
+func TestStartRejectsUnresolvedRelevanceModel(t *testing.T) {
+	cfg := config.New()
+	cfg.DB.RelevanceModel.Name = "BM25"
+	d, err := db.NewDB[uint64, float32](cfg)
+	if err != nil {
+		t.Fatalf("NewDB returned error: %v", err)
+	}
+	if err := d.Start(); !errors.Is(err, db.ErrRelevanceModelMismatch) {
+		t.Fatalf("Start error = %v, want ErrRelevanceModelMismatch", err)
 	}
 }
 
