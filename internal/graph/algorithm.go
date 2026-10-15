@@ -37,14 +37,14 @@ const (
 )
 
 // Algorithm is the common root of the graph algorithms. Run executes the
-// algorithm on g; the result is a TraversalResult for a Traversal.
+// algorithm on g.
 type Algorithm[K comparable, P float32 | float64] interface {
 	Run(g Graph[K, P]) (AlgorithmResult, error)
 }
 
-// AlgorithmResult is what [Algorithm.Run] returns: a [TraversalResult] for a
-// [Traversal]. It has no methods, so the caller type-asserts to the result its
-// algorithm produces.
+// AlgorithmResult is what [Algorithm.Run] returns, a [TraversalResult] for a
+// [Traversal]. It has no methods, so the caller type-asserts it to the result
+// its algorithm produces.
 type AlgorithmResult interface {
 }
 
@@ -60,20 +60,20 @@ type TraversalResult[K comparable] struct {
 	Parent map[K]K
 
 	// Parents maps each visited vertex to every vertex it was reached through
-	// at the previous depth. Parent keeps the canonical (first-in-Order) entry
-	// for tree-shaped consumers; Parents carries the full incidence, because a
-	// member reached through two of the source's anchors is two observations,
-	// not one. Tree-shaped traversals may leave it nil.
+	// at the previous depth. Parent keeps one canonical entry, the first in
+	// Order, for tree-shaped consumers. Parents carries the full incidence,
+	// because a member reached through two of the source's anchors is two
+	// observations, not one. Tree-shaped traversals may leave it nil.
 	Parents map[K][]K
 
 	// Depth maps each visited vertex to its hop distance from the source.
 	Depth map[K]int
 }
 
-// Traversal explores a graph from a source vertex, in an order defined by the
-// implementation: BFS visits every reachable vertex breadth-first, and
-// ExcessTraversal only the source's anchors and their members. K is the vertex
-// key type and P the graph's score precision.
+// Traversal explores a graph from a source vertex, in an order the
+// implementation defines. BFS visits every reachable vertex breadth-first.
+// ExcessTraversal visits only the source's anchors and their members. K is the
+// vertex key type and P the graph's score precision.
 type Traversal[K comparable, P float32 | float64] interface {
 	Algorithm[K, P]
 
@@ -85,7 +85,7 @@ type Traversal[K comparable, P float32 | float64] interface {
 	SetSource(source K)
 
 	// Clone returns a fresh traversal with the same configuration but no
-	// per-run state, so each walk can set its own source and run on its own
-	// instance instead of mutating a shared one.
+	// per-run state. Each walk can then set its own source and run on its own
+	// instance, instead of mutating a shared one.
 	Clone() Traversal[K, P]
 }

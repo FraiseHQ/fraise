@@ -51,28 +51,24 @@ type Server[K ~uint64, P float32 | float64] struct {
 	// Engine executes queries against the data store.
 	Engine *engine.Engine[K, P]
 
-	// router dispatches incoming HTTP requests to their handlers.
 	router *gin.Engine
 
-	// httpServer is the explicit HTTP server carrying the request timeouts and
-	// enabling a graceful shutdown that router.Run cannot provide.
+	// httpServer carries the request timeouts and allows the graceful shutdown
+	// that router.Run cannot provide.
 	httpServer *http.Server
 }
 
 // New constructs a Server wired up with a database, an engine, and the HTTP
-// routes. The hasher keys the engine's plan cache; each graph derives its node
-// keys with its own.
+// routes. The hasher keys the engine's plan cache. Each graph derives its node
+// keys with its own hasher.
 func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.Hasher[K, string]) (*Server[K, P], error) {
 
-	// Initialise the data store from the configuration.
 	db, err := db.NewDB[K, P](config)
 	if err != nil {
 		return nil, err
 	}
-	// Initialise the query engine with the same configuration and hasher.
 	engine := engine.NewEngine[K, P](config, hasher)
 
-	// The scheduler executes streams against the data store.
 	engine.Scheduler.DB = db
 
 	if gin.Mode() == gin.DebugMode {
@@ -80,9 +76,9 @@ func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.H
 	}
 
 	r := gin.New()
-	// Every failure answers in the documented {"error": ...} shape. A
-	// recovered panic is an internal failure like any other: a generic body,
-	// with the detail in the log (gin's own recovery answers 500 with no body).
+	// Every failure answers in the documented {"error": ...} shape. A recovered
+	// panic is an internal failure like any other. It gets a generic body, with
+	// the detail in the log. gin's own recovery answers 500 with no body.
 	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		logger.Error("Recovered from panic in handler", "path", c.Request.URL.Path, "panic", recovered)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, ErrorResponse{Error: "internal server error"})
@@ -95,18 +91,15 @@ func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.H
 		router: r,
 	}
 
-	// The service terminates TLS/proxying elsewhere; it never trusts client
-	// address headers, so no proxies are trusted (this also silences gin's
-	// default-trust-all startup warning).
+	// The service never trusts client address headers, so no proxy is trusted.
+	// TLS and proxying are handled elsewhere. This also silences gin's startup
+	// warning about trusting every proxy by default.
 	if err := s.router.SetTrustedProxies(nil); err != nil {
 		return nil, err
 	}
 
-	// Register the HTTP routes before the server is returned.
 	s.setupRoutes()
 
-	// Build an explicit HTTP server so the connection has read/write/idle
-	// timeouts and can be shut down gracefully (router.Run offers neither).
 	s.httpServer = &http.Server{
 		Addr:              ":" + strconv.Itoa(config.Server.Port),
 		Handler:           s.router,
@@ -120,10 +113,10 @@ func New[K ~uint64, P float32 | float64](config *config.ConfigSet, hasher hash.H
 
 // Start brings up the database and engine, then serves HTTP requests on the
 // configured port. It blocks until ctx is cancelled (e.g. SIGTERM) or the HTTP
-// server stops on its own, then tears the stack down gracefully: in-flight
-// requests are given ShutdownGrace to finish before the engine and database are
-// stopped. It returns an error if any component fails to start or the HTTP
-// server fails for a reason other than a clean shutdown.
+// server stops on its own. It then tears the stack down gracefully. In-flight
+// requests get ShutdownGrace to finish before the engine and database stop. It
+// returns an error if any component fails to start, or if the HTTP server fails
+// for a reason other than a clean shutdown.
 func (s *Server[K, P]) Start(ctx context.Context) error {
 	logger.Info("Starting database")
 	if err := s.DB.Start(); err != nil {
@@ -136,8 +129,8 @@ func (s *Server[K, P]) Start(ctx context.Context) error {
 		return ErrUnableToStartEngine
 	}
 
-	// Serve in the background so we can react to ctx cancellation. A clean
-	// shutdown surfaces as http.ErrServerClosed, which is not a failure.
+	// Serve in the background so Start can react to ctx cancellation. A clean
+	// shutdown returns http.ErrServerClosed, which is not a failure.
 	serveErr := make(chan error, 1)
 	go func() {
 		logger.Info("Serving HTTP", "port", s.Config.Server.Port)
@@ -174,10 +167,10 @@ func (s *Server[K, P]) Start(ctx context.Context) error {
 	}
 }
 
-// Stop gracefully shuts down the engine and then the database. The engine is
-// stopped first so its workers have drained before DB.Stop reallocates the
-// graph slice; the reverse order would let a running worker dereference a nil
-// graph. It returns an error if the database fails to stop.
+// Stop gracefully shuts down the engine and then the database. The engine stops
+// first so its workers have drained before DB.Stop reallocates the graph slice.
+// The reverse order would let a running worker dereference a nil graph. It
+// returns an error if the database fails to stop.
 func (s *Server[K, P]) Stop() error {
 	logger.Info("Stopping engine")
 	s.Engine.Stop()
@@ -194,34 +187,29 @@ func (s *Server[K, P]) Stop() error {
 // versioned API under /api/v1.
 func (s *Server[K, P]) setupRoutes() {
 
-	// Group versioned API endpoints under /api/v1.
 	v1 := s.router.Group("/api/v1")
 
-	// Root health check endpoint.
 	s.router.GET("/", s.handleHealthCheck())
 
-	// Query endpoint: /q for queries. The body-size cap runs before the handler
-	// so an over-large body is rejected before it is buffered.
+	// The body-size cap runs before the handler, so an over-large body is
+	// rejected before it is buffered.
 	v1.POST("/q", limitBody(s.Config.Server.MaxBodyBytes), s.handleQuery(false))
 
-	// Explain endpoint: the same body and pipeline as /q, recall-only, with
-	// each hit carrying its per-source contribution breakdown.
 	v1.POST("/explain", limitBody(s.Config.Server.MaxBodyBytes), s.handleQuery(true))
 
-	// Stats endpoint: per-graph snapshots (nodes, edges, vectors, forest).
 	v1.GET("/stats", s.handleStats())
 
-	// Anything else, an unknown path or a known one with the wrong method, is
-	// a 404 in the same {"error": ...} shape as every other failure, naming
-	// the method and path (gin's default answers in plain text).
+	// An unknown path, or a known one with the wrong method, is a 404. It
+	// answers in the same {"error": ...} shape as every other failure, naming
+	// the method and path. gin's default answers in plain text.
 	s.router.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("no endpoint %s %s", c.Request.Method, c.Request.URL.Path)})
 	})
 }
 
-// limitBody caps how much of a request body a handler will read: it wraps the
-// body in an http.MaxBytesReader, so reading past the limit fails and the
-// binding handler returns 400 rather than buffering an unbounded body.
+// limitBody caps how much of a request body a handler reads. Reading past max
+// fails, so the binding handler answers 400 instead of buffering an unbounded
+// body.
 func limitBody(max int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, max)

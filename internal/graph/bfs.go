@@ -24,9 +24,9 @@ package graph
 
 import "fmt"
 
-// BFS is a breadth-first traversal: it explores the graph frontier by frontier
-// (nearest vertices first) using a FIFO queue. It implements Traversal, and
-// Run starts from the source set by NewBFS or SetSource.
+// BFS is a breadth-first traversal. It explores the graph frontier by
+// frontier, nearest vertices first, using a FIFO queue. It implements
+// Traversal, and Run starts from the source set by NewBFS or SetSource.
 type BFS[K comparable, P float32 | float64] struct {
 	dir    Direction // which edges to follow
 	source K         // vertex Run starts the traversal from
@@ -38,9 +38,9 @@ func NewBFS[K comparable, P float32 | float64](source K, dir Direction) *BFS[K, 
 	return &BFS[K, P]{dir: dir, source: source}
 }
 
-// NewBFSTraversal returns a breadth-first Traversal following edges in the
-// given direction, with no source set, for use as a graph's search traversal:
-// the graph clones it and sets each seed as the clone's source.
+// NewBFSTraversal returns a breadth-first Traversal that follows edges in the
+// given direction, with no source set. It serves as a graph's search
+// traversal. The graph clones it and sets each seed as the clone's source.
 func NewBFSTraversal[K comparable, P float32 | float64](dir Direction) *BFS[K, P] {
 	return &BFS[K, P]{dir: dir}
 }
@@ -55,21 +55,19 @@ func (b *BFS[K, P]) Run(g Graph[K, P]) (AlgorithmResult, error) {
 	return result, nil
 }
 
-// SetSource configures the vertex the next Run starts from.
+// SetSource sets the vertex the next Run starts from.
 func (b *BFS[K, P]) SetSource(source K) {
 	b.source = source
 }
 
-// Clone returns a new BFS with the same direction and no source set, so one
-// configured traversal can serve many concurrent walks without sharing the
-// mutable source.
+// Clone implements [Traversal]. The clone keeps the direction and has no
+// source set.
 func (b *BFS[K, P]) Clone() Traversal[K, P] {
 	return &BFS[K, P]{dir: b.dir}
 }
 
 // traverse walks g breadth-first from source, following edges in the
-// configured direction, and records the visit order, the traversal tree and
-// each vertex's hop distance from source.
+// configured direction.
 func (b *BFS[K, P]) traverse(g Graph[K, P], source K) (TraversalResult[K], error) {
 	if g.Get(source) == nil {
 		return TraversalResult[K]{}, ErrSourceNotFound

@@ -30,7 +30,7 @@ import (
 )
 
 // TestCanonicalAcceptsAnyCasing pins the half of the contract an operator
-// notices: whatever casing they type is accepted and rewritten to the one
+// notices. Whatever casing they type is accepted and rewritten to the one
 // spelling everything downstream compares against.
 func TestCanonicalAcceptsAnyCasing(t *testing.T) {
 	cases := []struct {
@@ -61,10 +61,10 @@ func TestCanonicalAcceptsAnyCasing(t *testing.T) {
 	}
 }
 
-// TestCanonicalRejectsUnknownValue pins the other half: an unrecognised value
-// is an error naming the setting and listing what it accepts, not a silent
-// fallback, and the value is left as typed. Each part of the message is
-// asserted because the message is the operator's only remedy: an error that
+// TestCanonicalRejectsUnknownValue pins the other half. An unrecognised value
+// is an error, not a silent fallback. The error names the setting and lists
+// what it accepts, and the value is left as typed. Each part of the message is
+// asserted, because the message is the operator's only remedy. An error that
 // says only "invalid value" leaves them guessing at the spelling.
 func TestCanonicalRejectsUnknownValue(t *testing.T) {
 	value := "verbose"
@@ -86,7 +86,7 @@ func TestCanonicalRejectsUnknownValue(t *testing.T) {
 	}
 }
 
-// TestValidateAcceptsTheDefaults is the floor: the configuration the server
+// TestValidateAcceptsTheDefaults is the floor. The configuration the server
 // runs with when nothing is set must itself be valid. A default that its own
 // validator rejects would make the binary refuse to start out of the box.
 func TestValidateAcceptsTheDefaults(t *testing.T) {
@@ -99,12 +99,12 @@ func TestValidateAcceptsTheDefaults(t *testing.T) {
 // TestValidateChecksEverySetting guards against a setting being validated in
 // one place and forgotten in another. Each case poisons exactly one setting of
 // an otherwise-default config, so a setting left out of validate fails its
-// case: no setting may keep a silent fallback while its neighbours are
+// case. No setting may keep a silent fallback while its neighbours are
 // checked.
 //
-// The setting's dotted name is asserted too: with this many settings checked in
-// one function, "invalid value" alone would not tell an operator which line to
-// fix.
+// The setting's dotted name is asserted too. With this many settings checked
+// in one function, "invalid value" alone would not tell an operator which line
+// to fix.
 func TestValidateChecksEverySetting(t *testing.T) {
 	cases := []struct {
 		name   string // the dotted path the error must name
@@ -143,10 +143,10 @@ func TestValidateChecksEverySetting(t *testing.T) {
 
 // TestValidateBoundsWorkers pins the floor of scheduler.workers. Adjust only
 // replaces a zero with the default, so a negative count would otherwise reach
-// Scheduler.Start, whose loop starts no worker: the server would accept
-// queries into its queue and never answer them, then 429 once the queue
-// filled. validate runs after Adjust, so a zero has already become the default
-// by then and the check never sees one.
+// Scheduler.Start, whose loop would start no worker. The server would accept
+// queries into its queue and never answer them, then return 429 once the
+// queue filled. validate runs after Adjust, so in Parse a zero has already
+// become the default and the check never sees one.
 func TestValidateBoundsWorkers(t *testing.T) {
 	for _, workers := range []int{1, 4} {
 		c := New()
@@ -171,12 +171,12 @@ func TestValidateBoundsWorkers(t *testing.T) {
 	}
 }
 
-// TestValidateBoundsMaxDepth pins the domain of db.max-depth: the lanes are
+// TestValidateBoundsMaxDepth pins the domain of db.max-depth. The lanes are
 // depth 0, 1 and 2, and search has nothing past 2. A ceiling of 3 or more
-// would let depth:3 through the parser's range check to be answered exactly
-// as depth 2, the silent substitution the ceiling exists to refuse; a
-// negative ceiling would reject every recall that names a depth. Lowering
-// the ceiling stays allowed: 1 keeps recalls off the max-recall lane.
+// would let depth:3 through the parser's range check, to be answered exactly
+// as depth 2. The ceiling exists to refuse that silent substitution. A
+// negative ceiling would reject every recall that names a depth. Lowering the
+// ceiling stays allowed: 1 keeps recalls off the max-recall lane.
 func TestValidateBoundsMaxDepth(t *testing.T) {
 	for _, depth := range []int{0, 1, 2} {
 		c := New()
@@ -201,10 +201,10 @@ func TestValidateBoundsMaxDepth(t *testing.T) {
 	}
 }
 
-// TestValidateBoundsMaxTop pins the floor of db.max-top: query.Parse rejects
+// TestValidateBoundsMaxTop pins the floor of db.max-top. query.Parse rejects
 // a top: past the ceiling, so a ceiling below 1 would reject every recall that
-// names a top, while recalls that omit one kept working. There is no upper
-// bound: a large ceiling is a resource decision the operator owns, and the
+// names a top. Recalls that omit one would keep working. There is no upper
+// bound. A large ceiling is a resource decision the operator owns, and the
 // search sizes its allocations on candidates rather than on top.
 func TestValidateBoundsMaxTop(t *testing.T) {
 	for _, m := range []int{1, DefaultMaxTop, 1 << 20} {
@@ -232,9 +232,9 @@ func TestValidateBoundsMaxTop(t *testing.T) {
 
 // TestValidateBoundsNumGraphs pins the domain of db.num-graphs to what a
 // selector can address. Selectors are uint8, so 256 graphs (@0 to @255) is the
-// most a query can reach: 300 would start a server holding 44 graphs no
-// selector can name, and a negative count would quietly get the default. Both
-// endpoints are kept: one graph is a single-tenant store, 256 is every
+// most a query can reach. 300 would start a server holding 44 graphs no
+// selector can name. A negative count would quietly get the default. Both
+// endpoints are kept: one graph is a single-tenant store, and 256 is every
 // selector in use.
 func TestValidateBoundsNumGraphs(t *testing.T) {
 	for _, n := range []int{1, DefaultNumGraph, 256} {
@@ -260,9 +260,9 @@ func TestValidateBoundsNumGraphs(t *testing.T) {
 	}
 }
 
-// TestValidateCanonicalisesEverySetting pins the rewrite half for all eight: a
-// value typed in any casing lands on the canonical spelling, which is what the
-// consumers' switches compare against.
+// TestValidateCanonicalisesEverySetting pins the rewrite half for every
+// fixed-vocabulary setting. A value typed in any casing lands on the canonical
+// spelling, which the consumers' switches compare against.
 func TestValidateCanonicalisesEverySetting(t *testing.T) {
 	c := New()
 	c.Log.Level = "error"

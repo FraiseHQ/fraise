@@ -62,9 +62,9 @@ func TestRememberHash(t *testing.T) {
 	}
 	h := &fakeHasher{}
 
-	// Hash folds in graph, value, the delimited entity/topic lists and the
-	// bound vector so writes that differ in any of those get distinct cache
-	// keys.
+	// Hash folds in the graph, the value, the delimited entity and topic lists
+	// and the bound vector. Writes that differ in any of these get distinct
+	// cache keys.
 	const want = "g=2|v=hello world|en=alice|to=greeting|vec=H(0x1p-01)"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
@@ -74,10 +74,10 @@ func TestRememberHash(t *testing.T) {
 	}
 }
 
-// TestRememberHashDistinguishesGraphAndTags is the real contract: writes that
+// TestRememberHashDistinguishesGraphAndTags pins the contract. Writes that
 // differ only in graph, entities, topics or the bound vector must not share a
-// cache key, or the engine reuses a stale plan and writes to the wrong
-// graph/tags (or with the wrong embedding).
+// cache key. Otherwise the engine reuses another write's plan and writes to the
+// wrong graph or tags, or with the wrong embedding.
 func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 	base := func() Remember[string, float32] {
 		return Remember[string, float32]{Value: "the parrot is turquoise"}

@@ -22,9 +22,10 @@
 
 """A Hugging Face feature-extraction provider.
 
-Optional: the ``huggingface_hub`` client ships with the ``huggingface`` extra
-(``pip install 'fraise-sdk[huggingface]'``). The package does not import this
-module, so the core SDK does not depend on it; import the provider from here.
+The ``huggingface_hub`` client is optional. It ships with the ``huggingface``
+extra (``pip install 'fraise-sdk[huggingface]'``). The package does not import
+this module, so the core SDK does not depend on it. Import the provider from
+here.
 """
 
 from __future__ import annotations
@@ -45,11 +46,11 @@ except ImportError as exc:  # pragma: no cover - exercised only without the extr
 class HuggingFaceEmbedder(Embedder):
     """Text embeddings from Hugging Face's feature-extraction inference API.
 
-    Wraps ``client.feature_extraction`` for one text at a time. The default model
-    is ``sentence-transformers/all-MiniLM-L6-v2`` (384 dimensions); ``dimensions``
-    optionally truncates the vector so it can match a graph's fixed embedding
-    size, and ``normalize`` asks for unit-length vectors, which makes cosine
-    similarity and dot product agree.
+    It wraps ``client.feature_extraction`` for one text at a time. The default
+    model is ``sentence-transformers/all-MiniLM-L6-v2``, with 384 dimensions.
+    ``dimensions`` optionally truncates the vector to match a graph's fixed
+    embedding size. ``normalize`` asks for unit-length vectors, which makes
+    cosine similarity and dot product agree.
 
     Pass your own configured ``huggingface_hub.InferenceClient``, or let one be
     built from the environment (``HF_TOKEN``, optionally overridden by
@@ -58,8 +59,8 @@ class HuggingFaceEmbedder(Embedder):
         pip install 'fraise-sdk[huggingface]'
 
     Only sentence-level models belong here. A model that emits one vector per
-    token has no single embedding to return, and :meth:`embed` rejects it rather
-    than pick a pooling strategy on your behalf.
+    token has no single embedding to return. :meth:`embed` rejects it rather
+    than pick a pooling strategy for you.
     """
 
     def __init__(
@@ -94,7 +95,7 @@ class HuggingFaceEmbedder(Embedder):
         if self._normalize is not None:
             kwargs["normalize"] = self._normalize
         vector = self._client.feature_extraction(text, **kwargs)
-        # feature_extraction returns a numpy array; tolist() also converts its
+        # feature_extraction returns a numpy array. tolist() also converts its
         # numpy scalars to plain floats, which json.dumps can serialize.
         to_list = getattr(vector, "tolist", None)
         if to_list is not None:

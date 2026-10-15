@@ -1,18 +1,18 @@
-# Build context is the repository root (see docker-compose.yaml) so this image
-# can install fraise-sdk from this checkout alongside the example.
+# The build context is the repository root (see docker-compose.yaml), so this
+# image can install fraise-sdk from this checkout, along with the example.
 #
-# The base is a plain minimal Ubuntu, not a python image: uv supplies both the
+# The base is a plain minimal Ubuntu, not a python image. uv supplies both the
 # interpreter and the resolver, so nothing here needs a preinstalled Python or
 # pip. The Claude Agent SDK drives Claude through the Claude Code CLI, so this
-# image additionally needs Node.js and the `claude` binary.
+# image also needs Node.js and the `claude` binary.
 FROM ubuntu@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /uvx /usr/local/bin/
 
-# Node.js (for the Claude Code CLI) from the distro repos, then the CLI itself.
-# ca-certificates also lets uv fetch the standalone interpreter over TLS.
-# DL3008/DL3016: this is a demo image that should track the current CLI and
-# distro packages; pinning them here would go stale silently.
+# Node.js for the Claude Code CLI comes from the distro repos, then the CLI
+# itself. ca-certificates also lets uv fetch the standalone interpreter over
+# TLS. DL3008/DL3016: this demo image should track the current CLI and distro
+# packages. Pinned versions here would go stale silently.
 # hadolint ignore=DL3008,DL3016
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm ca-certificates \
@@ -21,9 +21,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# UV_LINK_MODE=copy: the cache and the venv are on different layers, where
-# uv's default hardlinking cannot work. VIRTUAL_ENV + PATH put the venv's
-# interpreter first, so a bare `python` resolves to it.
+# UV_LINK_MODE=copy, because the cache and the venv are on different layers,
+# where uv's default hardlinking cannot work. VIRTUAL_ENV and PATH put the
+# venv's interpreter first, so a bare `python` resolves to it.
 ENV UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \

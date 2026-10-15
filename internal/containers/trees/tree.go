@@ -22,8 +22,8 @@
 
 package trees
 
-// Point is a position in a multi-dimensional space, with coordinates of
-// precision P, that spatial trees can index and query.
+// Point is a position in a multi-dimensional space that spatial trees can
+// index and query. Its coordinates have precision P.
 type Point[K comparable, P float32 | float64] interface {
 	// Dim reports the number of dimensions of the point.
 	Dim() int
@@ -31,14 +31,16 @@ type Point[K comparable, P float32 | float64] interface {
 	// GetValue returns the coordinate of the point along the given dimension.
 	GetValue(dim int) P
 
-	// Distance returns the distance between this point and p.
-	Distance(p Point[K, P]) P
+	// Distance returns the distance between this point and p. Points of
+	// different dimensions have no distance, and Distance returns
+	// containers.ErrDimMismatch.
+	Distance(p Point[K, P]) (P, error)
 
 	Key() K
 }
 
-// TreeNode is a single element stored in a tree: a node exposing its key, its
-// payload and, for spatial trees, its Point coordinates.
+// TreeNode is one element stored in a tree. It exposes its key, its payload
+// and, for spatial trees, its Point.
 //
 //	K is the comparable lookup key.
 //	T is the stored payload.
@@ -50,32 +52,33 @@ type TreeNode[K comparable, T any, P float32 | float64] interface {
 	// Value returns the payload carried by the node.
 	Value() T
 
-	// Point returns the spatial coordinates of the node, or nil if it has
-	// none, which a spatial tree rejects with ErrMissingPoint.
+	// Point returns the node's spatial coordinates, or nil if it has none. A
+	// spatial tree rejects a node without a Point with ErrMissingPoint.
 	Point() Point[K, P]
 }
 
-// Tree is the contract common to spatial trees; their lookups live on the
-// SpatialTree extension below.
+// Tree is the contract common to spatial trees. SpatialTree adds their
+// lookups.
 type Tree[K comparable, T any, P float32 | float64] interface {
-	// Len reports the number of nodes currently stored in the tree.
+	// Len reports the number of nodes stored in the tree.
 	Len() int
 
 	// Insert adds node to the tree, returning an error if it cannot be stored.
 	Insert(node TreeNode[K, T, P]) error
 }
 
-// SpatialTree is a Point-addressable Tree: nodes are located by proximity in
-// coordinate space rather than by an exact key.
+// SpatialTree is a Tree searched by Point. It finds nodes by proximity in
+// coordinate space, not by exact key.
 type SpatialTree[K comparable, T any, P float32 | float64] interface {
 	Tree[K, T, P]
 
-	// Nearest returns up to k nodes closest to p, ordered from nearest to
-	// farthest. A non-nil keep restricts the search to the nodes whose key
-	// it accepts, before the k nearest are chosen: a caller filtering the
-	// result afterwards would lose every accepted node that ranked below k
-	// among all of them. A nil keep accepts every node.
-	Nearest(p Point[K, P], k int, keep func(K) bool) []TreeNode[K, T, P]
+	// Nearest returns up to k nodes closest to p, nearest first. A non-nil
+	// keep limits the search to nodes whose key it accepts, before the k
+	// nearest are chosen. A caller that filtered the result afterwards would
+	// lose every accepted node ranked below k among all nodes. A nil keep
+	// accepts every node. A p whose dimension differs from the tree's returns
+	// ErrDimensionMismatch, as Insert does for such a point.
+	Nearest(p Point[K, P], k int, keep func(K) bool) ([]TreeNode[K, T, P], error)
 
 	// Range returns every node whose Point falls within the axis-aligned box
 	// bounded by the min and max corners (inclusive).

@@ -22,8 +22,8 @@
 
 """An OpenAI Agents agent that uses Fraise for long-term memory.
 
-Two turns run as *separate* agent runs with no shared chat history, so the second
-turn can only answer by recalling what the first turn stored in Fraise.
+Two turns run as *separate* agent runs with no shared chat history. So the
+second turn can only answer by recalling what the first turn stored in Fraise.
 
 Environment:
     FRAISE_URL       base URL of the Fraise server (default http://localhost:9876)
@@ -45,8 +45,8 @@ def main() -> None:
     """Run the two-turn demo."""
     fraise = FraiseClient(os.environ.get("FRAISE_URL", "http://localhost:9876"))
 
-    # Passing an embedder makes the memory tools vectorise implicitly: remember
-    # stores each fact with its embedding and recall searches by vector too.
+    # Passing an embedder makes the memory tools vectorise implicitly. Remember
+    # stores each fact with its embedding, and recall searches by vector too.
     # Drop the `embedder=...` argument for plain keyword memory.
     embedder = OpenAIEmbedder(dimensions=256)
 
@@ -65,7 +65,7 @@ def main() -> None:
     first = Runner.run_sync(agent, "My favourite colour is orange.")
     print("assistant:", first.final_output)
 
-    # Fresh run — no chat history carried over — so memory is the only source.
+    # A fresh run carries no chat history over, so memory is the only source.
     print("\nturn 2 > What is my favourite colour?")
     second = Runner.run_sync(agent, "What is my favourite colour?")
     print("assistant:", second.final_output)

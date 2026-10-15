@@ -36,11 +36,11 @@ import (
 )
 
 // Query is an executable Fraise query: a parsed command bound to the graph it
-// targets. Hash keys it in the engine's plan cache, which shares one query
+// targets. Hash keys it in the engine's plan cache. The cache shares one query
 // object across every request that hashes alike, so a Query carries no
-// per-request state; Plan builds the [Stream] that runs it for one request.
+// per-request state. Plan builds the [Stream] that runs it for one request.
 // IsWrite tells the scheduler which lock [Stream.Commit] needs on the graph
-// GetGraphID selects.
+// that GetGraphID selects.
 type Query[K comparable, P float32 | float64] interface {
 	Plan(config *config.ConfigSet) (*Stream[K, P], error)
 	GetGraphID() uint8
@@ -49,10 +49,10 @@ type Query[K comparable, P float32 | float64] interface {
 	SetGraphID(id uint8)
 }
 
-// QueryParameters bounds a recall's search: Top caps the number of hits, Depth
-// selects the retrieval lane (see [graph.Graph]), and Since and Until restrict
-// it to a time window, nil meaning unbounded. [Parse] has already checked an
-// explicit Top and Depth against the configured ceilings.
+// QueryParameters bounds a recall's search. Top caps the number of hits. Depth
+// selects the retrieval lane (see [graph.Graph]). Since and Until restrict the
+// search to a time window, and nil means unbounded. [Parse] has already checked
+// an explicit Top and Depth against the configured ceilings.
 type QueryParameters[K comparable] struct {
 	Top   int
 	Depth int
@@ -60,9 +60,9 @@ type QueryParameters[K comparable] struct {
 	Until containers.TimeValue[K]
 }
 
-// QueryContext holds where a query runs rather than what it asks: GraphID is
-// the graph its selector names. It is unexported on [Recall] and [Remember] so
-// it changes only through SetGraphID.
+// QueryContext holds where a query runs, not what it asks. GraphID is the graph
+// its selector names. [Recall] and [Remember] hold it in an unexported field,
+// so it changes only through SetGraphID.
 type QueryContext struct {
 	GraphID uint8
 }
@@ -74,40 +74,40 @@ type QueryResult[K comparable, P float32 | float64] struct {
 	Count int         `json:"count"`
 	Hits  []Hit[K, P] `json:"hits"`
 
-	// Background is the query's background rate ρ₀, the observed mass per unit
-	// of degree over the anchors the traversal touched, attached only in
-	// explain mode (omitempty keeps it off a plain response). With each hit's
-	// contributions it lets a client recompute the hit's relevance (its score
-	// before boost and recency decay):
+	// Background is the query's background rate ρ₀: the observed mass per unit
+	// of degree over the anchors the traversal touched. It is set only in
+	// explain mode. The omitempty tag keeps it off a plain response. With each
+	// hit's contributions, it lets a client recompute the hit's relevance, its
+	// score before recency decay:
 	// S = m + α²·Σ max(0, (M_A − m − d_A·ρ₀)/d_A).
 	Background P `json:"background,omitempty"`
 }
 
 // Hit is one fact in a recall's result: the stored node and its final score,
-// after boost and recency decay. It marshals flat (see [Hit.MarshalJSON])
-// because a client needs the fact's value, timestamp and score, not the graph
-// node.
+// after recency decay. It marshals flat (see [Hit.MarshalJSON]), because a
+// client needs the fact's value, timestamp and score, not the graph node.
 type Hit[K comparable, P float32 | float64] struct {
 	Node  graph.Node[K]
 	Score P
 
 	// Contributions is the hit's per-source breakdown, set only in explain
-	// mode. nil keeps it off the wire, and is unambiguous because a recall hit
-	// always has at least one contribution. The entries are already in wire
-	// form, anchors resolved to their values, because resolving them needs the
+	// mode. nil keeps it off the wire. That is unambiguous, because a recall
+	// hit always has at least one contribution. The entries are already in wire
+	// form, with anchors resolved to their values. Resolving them needs the
 	// graph, which only Commit holds.
 	Contributions []HitContribution[P]
 }
 
-// HitContribution is the wire form of one contribution, with the source
-// serialized by name because clients never see the Go constants. A text or
-// vector entry carries its raw mass and list position. A graph entry, one per
-// funding anchor, carries the anchor's full observed mass, its value under
-// via, its degree and how many seeds funded it. An anchor entry, one per
-// named anchor an anchor-seeded fact is filed under, carries a unit mass and
-// the anchor's value and degree. With the query's background rate these are
-// the scorer's whole input, so a client can recompute the hit's relevance
-// from its own payload.
+// HitContribution is the wire form of one contribution. The source is
+// serialised by name, because clients never see the Go constants.
+//   - A text or vector entry carries its raw mass and list position.
+//   - A graph entry, one per funding anchor, carries the anchor's full observed
+//     mass, its value under via, its degree and how many seeds funded it.
+//   - An anchor entry, one per named anchor an anchor-seeded fact is filed
+//     under, carries a unit mass and the anchor's value and degree.
+//
+// With the query's background rate, these are the scorer's whole input. So a
+// client can recompute the hit's relevance from its own payload.
 type HitContribution[P float32 | float64] struct {
 	Source string `json:"source"`
 	Score  P      `json:"score"`
@@ -117,9 +117,9 @@ type HitContribution[P float32 | float64] struct {
 	Count  uint16 `json:"count"`
 }
 
-// MarshalJSON flattens the node into the hit so the response carries only the
-// value, timestamp and score, with no nested Node object. The contributions
-// appear only when the hit carries them (explain mode), so an ordinary query
+// MarshalJSON flattens the node into the hit, so the response carries the
+// value, timestamp and score with no nested Node object. The contributions
+// appear only when the hit carries them, in explain mode. So an ordinary
 // response has no contributions key.
 func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
@@ -136,9 +136,9 @@ func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 }
 
 // checkVector vets the vector the parser bound to placeholder name. The parser
-// leaves it nil when no parameter has that name, which is ErrMissingParameter;
-// a vector longer than maxDim is ErrLimitExceeded. Both are client errors
-// (400); checking the length here keeps an oversized vector from reaching the
+// leaves it nil when no parameter has that name, which is ErrMissingParameter.
+// A vector longer than maxDim is ErrLimitExceeded. Both are client errors
+// (400). Checking the length here keeps an oversized vector from reaching the
 // index.
 func checkVector[P float32 | float64](name string, data []P, maxDim int) error {
 	if data == nil {
@@ -150,15 +150,14 @@ func checkVector[P float32 | float64](name string, data []P, maxDim int) error {
 	return nil
 }
 
-// Parse turns a raw query string into an executable Query. Vector arguments are
-// passed out-of-band in params, keyed by the placeholder name used in the query
-// (e.g. 'vec:$v' binds to params["v"]): the parser binds the vector, and the
-// bound vector is checked here against the configured limits.
+// Parse turns a raw query string into an executable Query. Vector arguments
+// travel out of band in params, keyed by the placeholder name in the query:
+// 'vec:$v' binds to params["v"]. The parser binds the vector, and Parse checks
+// it against the configured limits.
 //
-// Warnings flag a reading of a valid query the client may not have meant (see
-// parser.Warning). They are returned beside the query, never stored on it,
-// because the plan cache substitutes query objects on a hash hit and state on
-// the query would leak between requests.
+// Warnings flag a reading of a valid query that the client may not have meant
+// (see parser.Warning). They are returned beside the query, never stored on it,
+// because a Query carries no per-request state.
 func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c *config.ConfigSet) (Query[K, P], []parser.Warning, error) {
 	cmd, warns, err := parser.Parse[K, P](q, params)
 	if err != nil {
@@ -175,8 +174,6 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		}
 		qo.SetGraphID(n.Selector())
 
-		// Take the vector the parser bound to the placeholder (if any),
-		// rejecting a missing or over-long vector.
 		if name, ok := n.VecParam(); ok {
 			if err := checkVector(name, n.Vector(), c.DB.MaxVectorDimension); err != nil {
 				logger.Warn("Rejecting vector parameter for remember", "parameter", name, "error", err)
@@ -190,9 +187,9 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		return qo, warns, nil
 
 	case *parser.RecallCommandNode[K, P]:
-		// Enforce the top and depth ranges: an out-of-range value is a client
+		// Enforce the top and depth ranges. An out-of-range value is a client
 		// error, rejected rather than clamped. Only an explicit clause is
-		// checked; the configured default is the operator's and is trusted,
+		// checked. The configured default is the operator's and is trusted,
 		// even above the ceiling.
 		top := n.Top(c.DB.DefaultTop)
 		if n.HasTop() && (top < 1 || top > c.DB.MaxTop) {
@@ -215,8 +212,6 @@ func Parse[K comparable, P float32 | float64](q string, params map[string][]P, c
 		}
 		qo.SetGraphID(n.Selector())
 
-		// Take the vector the parser bound to the placeholder (if any),
-		// rejecting a missing or over-long vector.
 		if name, ok := n.VecParam(); ok {
 			if err := checkVector(name, n.Vector(), c.DB.MaxVectorDimension); err != nil {
 				logger.Warn("Rejecting vector parameter for recall", "parameter", name, "error", err)

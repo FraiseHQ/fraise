@@ -22,10 +22,10 @@
 
 """Standard-library APIs the SDK uses, on every Python it supports.
 
-The SDK is written against the newest spelling of an API, and this module
-supplies that spelling on the older interpreters the package still supports.
-Call sites read as they will once the floor moves, and a backport is deleted
-rather than migrated when it does.
+The SDK is written against the newest spelling of an API. This module supplies
+that spelling on the older interpreters the package still supports. Call sites
+read as they will once the oldest supported Python moves up. A backport is then
+deleted, not migrated.
 """
 
 from __future__ import annotations
@@ -44,12 +44,12 @@ def _warn(
 ) -> None:
     """Warn as :func:`warnings.warn` does from Python 3.12, on Python 3.11.
 
-    Frames whose file starts with one of ``skip_file_prefixes`` are not counted
-    toward ``stacklevel``, so a warning lands on the first line outside those
-    files however deep the call that raised it — a fixed ``stacklevel`` is right
-    for one call path only. The walk is translated into the plain
-    ``stacklevel`` 3.11 understands, by 3.12's rules: counting starts at the
-    caller, and any prefix raises ``stacklevel`` to at least 2.
+    Frames whose file starts with one of ``skip_file_prefixes`` do not count
+    toward ``stacklevel``. So a warning lands on the first line outside those
+    files, however deep the call that raised it. A fixed ``stacklevel`` is
+    right for one call path only. The walk is turned into the plain
+    ``stacklevel`` that 3.11 understands, by 3.12's rules. Counting starts at
+    the caller, and any prefix raises ``stacklevel`` to at least 2.
 
     Args:
         message: The warning text, or a warning instance.

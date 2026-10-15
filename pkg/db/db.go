@@ -32,16 +32,16 @@ import (
 )
 
 // DB holds the store's graphs, addressed by selector. Start builds each graph
-// with the search algorithms the configuration names; streams then run against
+// with the search algorithms the configuration names. Streams then run against
 // the graph Select returns.
 type DB[K ~uint64, P float32 | float64] struct {
 	Config *config.ConfigSet
 	Graphs []graph.Graph[K, P]
 }
 
-// Stats is a point-in-time snapshot of the store: one entry per graph, in
-// selector order. It is computed on demand from the live graphs (never cached)
-// and serialised as-is by the server's stats endpoint.
+// Stats is a point-in-time snapshot of the store, with one entry per graph in
+// selector order. It is computed on demand from the live graphs, never cached.
+// The server's stats endpoint serialises it as is.
 type Stats struct {
 	Graphs []GraphStats `json:"graphs"`
 }
@@ -52,8 +52,8 @@ type GraphStats struct {
 	graph.GraphStats
 }
 
-// numGraphs resolves the configured graph count, falling back to the default
-// for hand-built configs that never went through Parse/adjust.
+// numGraphs returns the configured graph count. A hand-built config that never
+// went through Parse gets the default.
 func numGraphs(cfg *config.ConfigSet) int {
 	if cfg.DB.NumGraphs <= 0 {
 		return config.DefaultNumGraph
@@ -61,9 +61,9 @@ func numGraphs(cfg *config.ConfigSet) int {
 	return cfg.DB.NumGraphs
 }
 
-// NewDB returns a store with one empty slot per configured graph. It does
-// not build the graphs; [DB.Start] does, so the store can be wired into the
-// scheduler before any graph memory is allocated.
+// NewDB returns a store with one empty slot per configured graph. [DB.Start]
+// builds the graphs, so the store can be wired into the scheduler before any
+// graph memory is allocated.
 func NewDB[K ~uint64, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P], error) {
 	d := &DB[K, P]{
 		Config: cfg,
@@ -73,12 +73,12 @@ func NewDB[K ~uint64, P float32 | float64](cfg *config.ConfigSet) (*DB[K, P], er
 }
 
 // Start builds a fresh graph in every slot, with the traversal and scorer the
-// configuration names. The store is in-memory, so a Start after
-// [DB.Stop] begins from empty graphs.
+// configuration names. The store is in-memory, so a Start after [DB.Stop]
+// begins from empty graphs.
 //
 // Start fails with [ErrRelevanceModelMismatch] when a graph's text index does
 // not rank with the configured relevance model. Nothing downstream would
-// notice: a wrong model still answers every query, only worse.
+// notice, because a wrong model still answers every query, only worse.
 func (d *DB[K, P]) Start() error {
 	want := d.Config.DB.RelevanceModel.Name
 	for i := range d.Graphs {
@@ -87,10 +87,9 @@ func (d *DB[K, P]) Start() error {
 			return fmt.Errorf("%w: graph %d ranks with %q, configured %q", ErrRelevanceModelMismatch, i, got, want)
 		}
 
-		// The search algorithms come from configuration. Startup rejects any
-		// name outside config's accepted lists, so a stage left at the graph's
-		// built-in default (no traversal, the excess scorer) is
-		// what was configured, not an unrecognised name.
+		// Startup rejects any algorithm name outside config's accepted lists.
+		// So a stage left at the graph's built-in default (no traversal, the
+		// excess scorer) is what was configured, not an unrecognised name.
 		switch d.Config.DB.SearchAlgorithm.Name {
 		case config.SearchExcess:
 			g.SetTraversal(graph.NewExcessTraversal[K, P]())
@@ -110,15 +109,14 @@ func (d *DB[K, P]) Start() error {
 // Stop drops every graph and their contents, leaving empty slots for the next
 // [DB.Start].
 func (d *DB[K, P]) Stop() error {
-	// Drop the graphs, leaving empty slots for the next Start.
 	d.Graphs = make([]graph.Graph[K, P], numGraphs(d.Config))
 	return nil
 }
 
-// Stats snapshots every graph in selector order. Graphs not yet populated
-// (before Start, or after Stop) contribute zero-valued entries, so the method
-// is safe to call at any point in the store's lifecycle. Each live graph is
-// read-locked for its snapshot, so a snapshot never sees a write in progress.
+// Stats snapshots every graph in selector order. An empty slot, before Start
+// or after Stop, gives a zero-valued entry. So Stats is safe to call at any
+// point in the store's lifecycle. Each live graph is read-locked for its
+// snapshot, so a snapshot never sees a write in progress.
 func (d *DB[K, P]) Stats() Stats {
 	stats := Stats{Graphs: make([]GraphStats, len(d.Graphs))}
 	for i, g := range d.Graphs {
@@ -139,9 +137,9 @@ func (d *DB[K, P]) NumGraphs() int {
 	return len(d.Graphs)
 }
 
-// Select returns the graph at selector index, or an error wrapping
-// [ErrIndexOutOfBounds] when index is outside [0, NumGraphs), so a bad
-// selector surfaces as an error rather than a panic.
+// Select returns the graph at selector index. When index is outside
+// [0, NumGraphs), it returns an error wrapping [ErrIndexOutOfBounds], so a bad
+// selector is an error, not a panic.
 func (d *DB[K, P]) Select(index uint8) (graph.Graph[K, P], error) {
 	if int(index) >= len(d.Graphs) {
 		return nil, fmt.Errorf("%w: index %d for %d graphs", ErrIndexOutOfBounds, index, len(d.Graphs))

@@ -20,20 +20,20 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package hash is the one hashing contract in fraise: every plan-cache key and
-// every graph node key is produced through it.
+// Package hash is the one hashing contract in fraise. Every plan-cache key and
+// every graph node key comes from it.
 //
-// A [Hasher] maps a value to a comparable key under a fixed algorithm and seed;
+// A [Hasher] maps a value to a comparable key under a fixed algorithm and seed.
 // [XxHash] (XXH64) and [T1haHash] (t1ha1) implement it, and [NewHasher] picks
-// one from the db.hashing-function configuration. A [Hashable] type keys itself
-// by building its own key material and hashing it once through the Hasher it
-// is handed, so a composite passes that hasher straight down to its parts
-// rather than inventing a second serialization beside it.
+// one from the db.hashing-function configuration. A [Hashable] type builds its
+// own key material and hashes it once through the Hasher it is given. So a
+// composite passes that hasher down to its parts rather than invent a second
+// serialisation beside it.
 //
-// The engine's plan cache depends on that material never colliding: it looks
-// an optimised query up by its Hash, so two queries that differ in anything
-// that changes the result must yield different material, or a lookup hands
-// back another query's plan. Graph nodes carry the same burden, since they are
-// stored under their Hash: a fact and a topic reading the same text stay
-// distinct only because each tags its material with its type.
+// The engine's plan cache depends on that material never colliding. It looks up
+// an optimised query by its Hash. Two queries that differ in anything that
+// changes the result must yield different material, or a lookup returns another
+// query's plan. Graph nodes carry the same burden, since they are stored under
+// their Hash. A fact and a topic with the same text stay distinct only because
+// each tags its material with its type.
 package hash

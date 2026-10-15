@@ -25,16 +25,16 @@ package query
 import "errors"
 
 var (
-	// ErrParsingFailed is returned when a raw query string cannot be parsed into
-	// an executable query. When the parser rejected it, the returned error also
-	// wraps the *parser.Error, so callers can errors.As it out for the position.
+	// ErrParsingFailed is returned when a raw query string cannot be parsed
+	// into an executable query. When the parser rejected it, the error also
+	// wraps the *parser.Error, so callers can get the position with errors.As.
 	ErrParsingFailed = errors.New("query: parsing error")
-	// ErrMissingParameter is returned when a query references a placeholder
-	// (e.g. vec:$v) that has no matching entry in the supplied parameters.
+	// ErrMissingParameter is returned when a query references a placeholder,
+	// such as vec:$v, that has no entry in the supplied parameters.
 	ErrMissingParameter = errors.New("query: missing parameter")
 	// ErrLimitExceeded is returned when top:, depth: or the length of a bound
 	// vector is out of range: above its configured ceiling, or top:0. It is a
-	// client error: the request is rejected rather than clamped, so the caller
+	// client error. The request is rejected rather than clamped, so the caller
 	// learns the value was out of range.
 	ErrLimitExceeded = errors.New("query: request limit exceeded")
 )

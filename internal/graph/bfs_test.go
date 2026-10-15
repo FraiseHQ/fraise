@@ -146,12 +146,12 @@ func TestBFSTraverse(t *testing.T) {
 	}
 }
 
-// TestSearchWithConfiguredTraversal shows the traversal seam changing what
-// Search returns. BFS is a tree-shaped traversal: it observes the same anchors
-// as ExcessTraversal but reaches each member through a single parent, and the
-// collection layer accepts both shapes, so the storm fixture's silent cluster
-// member is funded with BFS installed. With no traversal the graph channel is
-// off and only text matches surface.
+// TestSearchWithConfiguredTraversal shows the installed traversal changing
+// what Search returns. BFS is tree-shaped: it observes the same anchors as
+// ExcessTraversal, but reaches each member through a single parent. The
+// collection layer accepts both shapes, so with BFS installed the storm
+// fixture's silent cluster member is funded. With no traversal the graph
+// channel is off and only text matches surface.
 func TestSearchWithConfiguredTraversal(t *testing.T) {
 	find := func(values []string, want string) bool {
 		for _, v := range values {
@@ -162,10 +162,10 @@ func TestSearchWithConfiguredTraversal(t *testing.T) {
 		return false
 	}
 
-	// No traversal: NewGraph installs none (db.Start installs one from
+	// No traversal. NewGraph installs none (db.Start installs one from
 	// configuration), so on a bare graph the graph channel is off and the
 	// silent member cannot surface. Both searches name the fixture's topics,
-	// because the traversal runs only through a named anchor; only the
+	// because the traversal runs only through a named anchor. Only the
 	// traversal differs between them.
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -176,7 +176,7 @@ func TestSearchWithConfiguredTraversal(t *testing.T) {
 		t.Errorf("Search with no traversal surfaced %q — the graph channel should be off", calm)
 	}
 
-	// BFS installed: tree-shaped incidence still observes the weather
+	// BFS installed. Tree-shaped incidence still observes the weather
 	// cluster and funds its silent member.
 	g := noDecayGraph()
 	g.SetTraversal(graph.NewBFSTraversal[uint64, float64](graph.Both))

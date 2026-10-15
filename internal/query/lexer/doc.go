@@ -24,13 +24,13 @@
 //
 // [Lexer.Next] returns one [Token] per call, typed by a [TokenType], and an
 // EOL token once the input is exhausted. A bare word is a keyword only in its
-// exact lower-case spelling ([KeywordsMap]), except immediately before a ':',
-// where casing is forgiven; a single-quoted phrase is scanned verbatim, with a
-// doubled quote as an escaped one, so a fact is stored exactly as written.
+// exact lower-case spelling ([KeywordsMap]). Immediately before a ':', casing
+// is forgiven. A single-quoted phrase is scanned verbatim, with a doubled
+// quote as an escaped one, so a fact is stored exactly as written.
 //
-// Every character outside a phrase becomes part of some token: a symbol that
-// is not syntax is its own SPECIAL or NUL token rather than being absorbed into
-// a word or ending the input, so the parser can reject it by name instead of
-// silently searching for or dropping it. Positions count runes, not bytes, so
-// an error points at the right column of a query with non-ASCII text.
+// Every character outside a phrase becomes part of some token. A symbol that
+// is not syntax is its own SPECIAL or NUL token. It is not absorbed into a
+// word, and it does not end the input. So the parser can reject it by name
+// instead of silently searching for it or dropping it. Positions count runes,
+// not bytes, so an error points at the right column in non-ASCII text.
 package lexer

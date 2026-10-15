@@ -24,7 +24,7 @@
 // behind the engine's plan cache.
 //
 // [Cache] is the contract: a bounded map whose implementation chooses which
-// entry to evict when an insertion would exceed the capacity. [LRUCache]
-// implements it by evicting the least recently used entry, so the plans of
-// queries that keep arriving stay resident while one-off queries age out.
+// entry to evict when it is full. [LRUCache] evicts the least recently used
+// entry. So the plans of queries that keep arriving stay resident, while
+// one-off queries age out.
 package cache

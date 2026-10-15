@@ -48,7 +48,7 @@ select = [
     "PT"
 ]
 ignore = [
-    "E501", # over-length lines, formatter should handle it
+    "E501", # line too long, left to the formatter
     "E741", # ambiguous variable name
     "ANN401",
     "D401",

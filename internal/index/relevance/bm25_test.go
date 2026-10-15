@@ -21,8 +21,8 @@
 // SOFTWARE.
 
 // External pins of BM25's query-side methods. The randomized MatchCount
-// equivalence pin and the BM25 lifecycle pins live with the index
-// (internal/index/btree_test.go), which drives both.
+// equivalence pin and the BM25 lifecycle pins live with the index, which
+// drives both (internal/index/btree_test.go).
 
 package relevance_test
 
@@ -43,9 +43,10 @@ func TestBM25NameIsTheConfigName(t *testing.T) {
 	}
 }
 
-// TestBM25TermsDedupsFirstOccurrence pins the query-side stream: distinct
-// terms only — idf must not double-count a repeated term — in first
-// occurrence order, which is what keeps score accumulation deterministic.
+// TestBM25TermsDedupsFirstOccurrence pins the query-side stream. It holds
+// distinct terms only, because idf must not double-count a repeated term. The
+// terms keep first-occurrence order, which keeps score accumulation
+// deterministic.
 func TestBM25TermsDedupsFirstOccurrence(t *testing.T) {
 	model := relevance.NewBM25[int, float32]()
 	got := model.Terms([]string{"tide", "moon", "tide", "wave", "moon"})
@@ -54,8 +55,8 @@ func TestBM25TermsDedupsFirstOccurrence(t *testing.T) {
 	}
 }
 
-// TestBM25CoverageScalesByMatchBreadth pins Finalize's slot: full coverage
-// leaves the accumulated score whole, half coverage halves it.
+// TestBM25CoverageScalesByMatchBreadth pins Finalize's coverage scaling. Full
+// coverage leaves the accumulated score whole, and half coverage halves it.
 func TestBM25CoverageScalesByMatchBreadth(t *testing.T) {
 	model := relevance.NewBM25[int, float32]()
 	if got := model.Finalize(4, 2, 2); got != 4 {

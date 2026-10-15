@@ -22,11 +22,9 @@
 
 // Package nlp turns text into the terms the text index stores and searches.
 //
-// [Words] is the one definition of where a term ends, shared by every
-// [Tokenizer] and by stop-word removal, so the words removed before indexing
-// are exactly terms the index would otherwise carry. [SimpleTokenizer]
-// lowercases and splits; [StemmingTokenizer] also reduces each term to its
-// Snowball English stem, so inflections of a word find each other. An index
-// runs one tokenizer over both documents and queries and never swaps it
-// mid-corpus: postings written under one scheme are unreachable under another.
+// [Words] is the one definition of where a term ends. Every [Tokenizer] and
+// stop-word removal share it. [SimpleTokenizer] lowercases and splits.
+// [StemmingTokenizer] also reduces each term to its Snowball English stem, so
+// inflections of a word find each other. An index runs one tokenizer over
+// both documents and queries and never swaps it mid-corpus.
 package nlp

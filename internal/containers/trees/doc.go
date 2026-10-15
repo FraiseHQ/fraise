@@ -23,11 +23,10 @@
 // Package trees provides the search trees behind the indexes: an ordered
 // B-tree and a random-projection tree for approximate nearest-neighbour search.
 //
-// [BTree] keeps values sorted by a caller-supplied comparator; the text index
-// uses one as its term dictionary. [RPTree] is a [SpatialTree] that partitions
-// points by their projection onto random directions. A single RPTree is a weak
-// approximator, so the vector index queries a forest of them built from
-// independent seeds. Nodes enter a spatial tree as [TreeNode] values exposing
-// a [Point]; [VectorNode] and [VectorPoint] fit a [containers.Vector] to those
-// contracts.
+// [BTree] keeps values sorted by a comparator the caller supplies. The text
+// index uses one as its term dictionary. [RPTree] is a [SpatialTree] that
+// partitions points by their projection onto random directions. The vector
+// index queries a forest of them, built from independent seeds. Nodes enter a
+// spatial tree as [TreeNode] values that expose a [Point]. [VectorNode] and
+// [VectorPoint] adapt a [containers.Vector] to those interfaces.
 package trees

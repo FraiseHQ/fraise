@@ -21,20 +21,22 @@
 // SOFTWARE.
 
 // Package index defines the search-index contract and its two in-memory
-// implementations, a full-text index and an approximate nearest-neighbour
+// implementations: a full-text index and an approximate nearest-neighbour
 // vector index.
 //
 // A [SearchIndex] maps keys to values and ranks keys against a query of the
-// same type as its values: a [TextIndex] searches strings, a [VectorIndex]
-// vectors. Search returns a total order, ties broken by the index's key
-// comparator, so truncating to k keeps the same keys for the same query every
-// time. [BTreeIndex] implements TextIndex with posting lists in a B-tree term
-// dictionary, leaving tokenization to an [nlp.Tokenizer] and scoring to a
-// [relevance.Relevance], so higher scores are better. [RPTreeIndex] implements
-// VectorIndex with a forest of random-projection trees and scores by distance,
-// so lower is nearer.
+// same type as its values. A [TextIndex] searches strings, and a
+// [VectorIndex] searches vectors. Search returns a total order, with ties
+// broken by the index's key comparator. Truncating to k then keeps the same
+// keys for the same query every time.
 //
-// Updates and deletes leave garbage in both structures; Flush compacts it, and
-// each index flushes itself once its garbage outgrows a bound tied to the live
-// set. Entries minus Count is the compaction debt outstanding.
+// [BTreeIndex] implements TextIndex with posting lists in a B-tree term
+// dictionary. It leaves tokenization to an [nlp.Tokenizer] and scoring to a
+// [relevance.Relevance], so higher scores are better. [RPTreeIndex]
+// implements VectorIndex with a forest of random-projection trees. It scores
+// by distance, so lower is nearer.
+//
+// Updates and deletes leave garbage in both structures, and Flush compacts it.
+// Each index flushes itself once its garbage outgrows a bound tied to the live
+// set. Entries minus Count is the compaction debt.
 package index

@@ -23,7 +23,6 @@
 package config
 
 // Adjust sets *v to defValue when *v holds the zero value of its type.
-// It works for any comparable type (string, numeric, bool, time.Duration, ...).
 func Adjust[T comparable](v *T, defValue T) {
 	var zero T
 	if *v == zero {

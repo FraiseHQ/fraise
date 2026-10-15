@@ -1,4 +1,4 @@
-# Config for actions/labeler — path-based area labels.
+# Area labels by changed path, for actions/labeler.
 # https://github.com/actions/labeler
 
 area:server:

@@ -65,8 +65,8 @@ func TestNewEngine(t *testing.T) {
 	}
 }
 
-// TestStartInitialisesCache checks that Start allocates the query cache so that
-// Plan can memoise optimised queries.
+// TestStartInitialisesCache checks that Start allocates the plan cache, so Plan
+// can memoise optimised queries.
 func TestStartInitialisesCache(t *testing.T) {
 	cfg := config.New()
 	e := newEngine(t, cfg)
@@ -80,8 +80,8 @@ func TestStartInitialisesCache(t *testing.T) {
 	}
 }
 
-// TestStartReturnsCacheError checks that a cache-init failure is propagated
-// rather than swallowed, and that no unusable cache is left behind — so a caller
+// TestStartReturnsCacheError checks that Start returns a cache-init failure
+// rather than swallowing it, and leaves no unusable cache behind. A caller then
 // never brings up a live server backed by a nil cache.
 func TestStartReturnsCacheError(t *testing.T) {
 	cfg := config.New()
@@ -96,8 +96,8 @@ func TestStartReturnsCacheError(t *testing.T) {
 	}
 }
 
-// TestApplyAfterStopReturnsShutdown checks that Apply surfaces the scheduler's
-// ErrShutdown once the engine has stopped, so a handler learns the stream was
+// TestApplyAfterStopReturnsShutdown checks that Apply returns the scheduler's
+// ErrShutdown once the engine has stopped. A handler then learns the stream was
 // never enqueued and does not wait on a completion that will never come.
 func TestApplyAfterStopReturnsShutdown(t *testing.T) {
 	cfg := config.New()
@@ -164,7 +164,6 @@ func TestPlanCachesQuery(t *testing.T) {
 	if _, err := e.Plan(q); err != nil {
 		t.Fatalf("first Plan returned error: %v", err)
 	}
-	// The key must now be present in the cache.
 	if _, ok := e.Cache.Get(q.Hash(e.Hasher)); !ok {
 		t.Fatal("Plan did not cache the query")
 	}
@@ -174,10 +173,10 @@ func TestPlanCachesQuery(t *testing.T) {
 }
 
 // TestPlanCachesUnderTheParsedQuerysHash pins the cache key to the query as
-// parsed, not as optimised. Dedupe rewrites a recall in place, so keying the
-// entry by the rewritten query's hash would store "anna anna" under the hash
-// of "anna", and the next request for "anna anna", which looks up its own
-// parsed hash, would miss and be optimised again on every call.
+// parsed, not as optimised. Dedupe rewrites a recall in place. Keyed by the
+// rewritten query's hash, "anna anna" would be stored under the hash of "anna".
+// The next request for "anna anna" looks up its own parsed hash, so it would
+// miss and be optimised again on every call.
 func TestPlanCachesUnderTheParsedQuerysHash(t *testing.T) {
 	cfg := config.New()
 	e := newEngine(t, cfg)

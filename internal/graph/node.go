@@ -29,7 +29,7 @@ import (
 )
 
 // NodeAttributes is the payload every node carries: its text and when it was
-// recorded. The timestamp is what Search's time window and recency decay read.
+// recorded. Search's time window and recency decay read the timestamp.
 type NodeAttributes struct {
 	Value     string
 	Timestamp time.Time
@@ -38,14 +38,15 @@ type NodeAttributes struct {
 // Node is anything the graph stores under a key: the entities (facts, topics,
 // named entities) and the relationships between them.
 //
-// A node's key is the hash of its own type tag followed by its material —
-// "fact:", "topic:", "entity:", "mentions:", "isabout:" — so identity is
+// A node's key is the hash of its type tag followed by its material. The tags
+// are "fact:", "topic:", "entity:", "mentions:" and "isabout:". So identity is
 // (type, value), never value alone: a fact and a topic that read the same are
 // two different nodes. Without the tag, the query
-// remember 'billing' topic:billing hashes both to one key, and then the topic
-// node is never stored (Set finds the fact already there) while its IsAbout
-// edge points from the fact back to itself. A new participant takes a tag
-// that no other one prefixes; the five above differ in their first byte.
+// remember 'billing' topic:billing would hash both to one key. The topic node
+// would never be stored, because Set finds the fact already there. Its
+// IsAbout edge would point from the fact back to itself. A new node type
+// takes a tag that no other tag prefixes. The five above differ in their
+// first byte.
 type Node[K comparable] interface {
 	hash.Hashable[K, string]
 
@@ -65,8 +66,8 @@ type Entity[K comparable] interface {
 }
 
 // Relationship is an edge, stored as a node under its own key. Source is the
-// fact the edge leaves and Target the topic or named entity it points to; the
-// graph records the edge's key between their two keys in its adjacency maps.
+// fact the edge leaves, and Target the topic or named entity it points to.
+// The graph's adjacency maps record the edge's key between their two keys.
 type Relationship[K comparable] interface {
 	Node[K]
 

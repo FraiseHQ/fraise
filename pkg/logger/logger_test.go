@@ -33,8 +33,7 @@ import (
 	"github.com/FraiseHQ/fraise/pkg/logger"
 )
 
-// newConfig returns a config whose log level/format can be overridden for a
-// single test case.
+// newConfig returns a default config with the given log level and format.
 func newConfig(level, format string) *config.ConfigSet {
 	c := config.New()
 	c.Log.Level = level
@@ -43,8 +42,8 @@ func newConfig(level, format string) *config.ConfigSet {
 }
 
 // captureStdout swaps os.Stdout for a pipe while fn runs and returns what was
-// written to it. The handler captures os.Stdout when it is built, so fn has to
-// construct the logger too, not just log through one.
+// written to it. The handler captures os.Stdout when it is built, so fn must
+// build the logger too, not just log through one.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
@@ -68,11 +67,11 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(out)
 }
 
-// TestNewLogger checks that a logger is constructed for every supported level
-// and format, and that a config which never went through config.Parse, and so
-// carries an unset or unrecognised value, still yields a working logger
-// instead of panicking. Startup rejects unrecognised values before they reach
-// here; these rows only pin that the fallback is a logger, not a crash.
+// TestNewLogger checks that a logger is built for every supported level and
+// format. A config that never went through config.Parse may carry an unset or
+// unrecognised value. It must still yield a working logger, not a panic.
+// Startup rejects unrecognised values before they reach here. These rows only
+// pin that the fallback is a logger, not a crash.
 func TestNewLogger(t *testing.T) {
 	cases := []struct {
 		level  string
@@ -82,8 +81,8 @@ func TestNewLogger(t *testing.T) {
 		{config.LogLevelInfo, config.LogFormatJSON},
 		{config.LogLevelWarn, config.LogFormatText},
 		{config.LogLevelError, config.LogFormatJSON},
-		{"", ""},               // zero-value config: the fallback's real audience
-		{"UNKNOWN", "UNKNOWN"}, // never reaches here via Parse; must not panic
+		{"", ""},               // zero-value config, the case the fallback is for
+		{"UNKNOWN", "UNKNOWN"}, // Parse rejects this, but it must not panic
 	}
 
 	for _, tc := range cases {
@@ -102,13 +101,12 @@ func TestNewLogger(t *testing.T) {
 }
 
 // TestLevelFiltersLowerSeverities checks that the configured level decides
-// what is emitted: at -log-level error, no INFO line comes out. A valid
-// *Logger for every input, which is all TestNewLogger checks, does not show
-// that.
+// what is emitted. At -log-level error, no INFO line comes out. TestNewLogger
+// only checks for a valid *Logger, which does not show this.
 //
-// Configs are built with the canonical constants because that is what
-// config.Parse hands NewLogger; the casing an operator types is the config
-// package's problem, and is pinned there.
+// Configs use the canonical constants, because config.Parse hands those to
+// NewLogger. The casing an operator types is the config package's concern,
+// and is pinned there.
 func TestLevelFiltersLowerSeverities(t *testing.T) {
 	cases := []struct {
 		level  string
@@ -171,7 +169,7 @@ func TestFormatSelectsHandler(t *testing.T) {
 }
 
 // TestDisableTimestampDropsTheTime pins log.disable-timestamp. Off, the
-// default, keeps the timestamp; on removes it in both encodings, for a
+// default, keeps the timestamp. On removes it in both encodings, for a
 // supervisor that stamps every line it collects.
 func TestDisableTimestampDropsTheTime(t *testing.T) {
 	cases := []struct {
@@ -212,7 +210,6 @@ func TestSetDefaultRoundTrip(t *testing.T) {
 // (and do not panic) when no default logger has been installed.
 func TestPackageFuncsNilDefault(t *testing.T) {
 	logger.SetDefault(nil)
-	// None of these should panic with a nil default logger.
 	logger.Debug("debug", "k", "v")
 	logger.Info("info", "k", "v")
 	logger.Warn("warn", "k", "v")

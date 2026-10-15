@@ -54,26 +54,26 @@
 
 package stopwords
 
-// English is the English stop-word list: Snowball's, the list written for the
-// Porter2 stemmer the text index runs (nlp.StemmingTokenizer), so the two
-// agree on what is a function word. It holds only function words (pronouns,
-// articles, prepositions, auxiliaries, conjunctions), because every entry is
-// a word no stored fact can be found by, and a content word here ("bill",
-// "system", "name") would make facts about it unretrievable.
+// English is the English stop-word list. It is Snowball's list, written for
+// the Porter2 stemmer the text index runs (nlp.StemmingTokenizer), so the two
+// agree on what a function word is. It holds only function words: pronouns,
+// articles, prepositions, auxiliaries and conjunctions. No stored fact can be
+// found by a word on the list. A content word here ("bill", "system", "name")
+// would make facts about it unretrievable.
 //
 // It departs from upstream in two ways:
-//   - The negations ("no", "nor", "not", "cannot") are kept as terms. A memory
-//     store must tell "Ana is not vegetarian" from "Ana is vegetarian"; with
-//     them removed the two index identically.
+//   - The negations ("no", "nor", "not", "cannot") stay terms. A memory store
+//     must tell "Ana is not vegetarian" from "Ana is vegetarian". Without the
+//     negations, the two index identically.
 //   - The apostrophe forms ("isn't", "you're", "let's") are left out.
 //     nlp.Words splits a word at the apostrophe, so an entry spelled with one
-//     could never match. Their pieces are judged as words in their own right:
-//     the heads other than "let" ("you", "it") are listed already, the
-//     negative heads ("isn", "don") stay terms like the other negations, and
-//     the clitic tails ("s", "t", "d", "ll", "m", "re", "ve") stay terms
-//     because they are also letters ("vitamin d", "size m") that facts name.
+//     could never match. Their pieces are judged as words in their own right.
+//     The heads other than "let" ("you", "it") are listed already. The
+//     negative heads ("isn", "don") stay terms, like the other negations. The
+//     clitic tails ("s", "t", "d", "ll", "m", "re", "ve") stay terms because
+//     they are also letters that facts name ("vitamin d", "size m").
 //
-// All entries are lowercase to support case-insensitive matching.
+// All entries are lowercase, for case-insensitive matching.
 var English = []string{
 	"a",
 	"about",

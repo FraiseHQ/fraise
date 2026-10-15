@@ -32,6 +32,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/comparator"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/index"
+	"github.com/google/go-cmp/cmp"
 )
 
 func randVector(rng *rand.Rand, dim int) containers.Vector[int, float64] {
@@ -96,9 +97,9 @@ func TestRPTreeIndexSearchRejectsWrongDimension(t *testing.T) {
 	}
 }
 
-// TestRPTreeIndexSearchFindsNearestCluster keeps the corpus small (under a
-// single tree leaf) and checks that querying near a tight cluster of vectors
-// returns that cluster's keys ahead of a far-away outlier.
+// TestRPTreeIndexSearchFindsNearestCluster checks that a query near a tight
+// cluster of vectors returns the cluster's keys ahead of a far outlier. The
+// corpus fits in a single tree leaf.
 func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 7, 2, 32, 8, comparator.OrderedComparator[int])
 
@@ -130,17 +131,17 @@ func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
 	}
 }
 
-// TestRPTreeIndexSearchOrdersTiesByKey pins the tiebreak that makes the ranking
-// a total order: vectors sitting at the same distance from the query are ranked
-// by key. Distance alone leaves them in the order the forest pooled them in —
-// an artefact of how each tree's priority queue happens to break ties — and
-// that order decides which of them survives truncation to k. The corpus stays
-// under a single leaf so every candidate reaches the re-rank.
+// TestRPTreeIndexSearchOrdersTiesByKey pins the tiebreak that makes the
+// ranking a total order: vectors at the same distance from the query are
+// ranked by key. Distance alone leaves them in the order the forest pooled
+// them, which depends on how each tree's priority queue breaks ties. That
+// order would decide which of them survives truncation to k. The corpus fits
+// in a single leaf, so every candidate reaches the re-rank.
 func TestRPTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 7, 2, 32, 8, comparator.OrderedComparator[int])
 
-	// The four unit vectors are all exactly distance 1 from the origin query,
-	// and their keys are inserted out of order.
+	// The four unit vectors are exactly distance 1 from the origin query.
+	// Their keys go in out of order.
 	equidistant := []struct {
 		key   int
 		coord []float64
@@ -200,9 +201,9 @@ func TestRPTreeIndexUpdateAndDelete(t *testing.T) {
 	}
 }
 
-// TestRPTreeIndexSearchIgnoresDeletedVectors checks that a deleted vector,
-// even though it still physically sits inside the forest until Flush, is
-// filtered out of Search results by the vectors ground truth.
+// TestRPTreeIndexSearchIgnoresDeletedVectors checks that Search leaves out a
+// deleted vector. Its copy stays in the forest until Flush, but the vectors
+// map filters it out.
 func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 3, 2, 32, 8, comparator.OrderedComparator[int])
 	if err := idx.Insert(1, containers.NewVector[int]([]float64{0, 0})); err != nil {
@@ -226,10 +227,44 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexSearchNonPositiveKReturnsEveryVector pins the SearchIndex
+// contract for k <= 0: every live vector comes back, nearest first. The
+// deleted vector is the one nearest the query, and its copy stays in the
+// forest until Flush. A search that asked the trees for only as many keys as
+// are live would leave the farthest one out.
+func TestRPTreeIndexSearchNonPositiveKReturnsEveryVector(t *testing.T) {
+	idx := index.NewRPTreeIndex[int, float64](2, 2, 3, 5, 2, 4, 1, comparator.OrderedComparator[int])
+	for i := 1; i <= 10; i++ {
+		if err := idx.Insert(i, containers.NewVector[int]([]float64{float64(i), 0})); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	if err := idx.Delete(1); err != nil {
+		t.Fatalf("Delete(1) = %v, want nil", err)
+	}
+
+	want := []int{2, 3, 4, 5, 6, 7, 8, 9, 10}
+	cases := map[string]struct{ k int }{
+		"zero":     {0},
+		"negative": {-1},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), tc.k, nil)
+			if err != nil {
+				t.Fatalf("Search(k=%d) = %v, want nil", tc.k, err)
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Search(k=%d) mismatch (-want +got):\n%s", tc.k, diff)
+			}
+		})
+	}
+}
+
 // TestRPTreeIndexSearchKeepFiltersBeforeTruncation pins that keep reaches the
-// forest: with one vector in forty accepted and no over-fetch, a search that
-// filtered the global k nearest would come back short or empty, where Search
-// must return k accepted keys, nearest first.
+// forest. One vector in forty is accepted, and there is no over-fetch. A
+// search that filtered the global k nearest would come back short or empty.
+// Search must return k accepted keys, nearest first.
 func TestRPTreeIndexSearchKeepFiltersBeforeTruncation(t *testing.T) {
 	rng := rand.New(rand.NewSource(41))
 	const dim = 4
@@ -260,11 +295,11 @@ func TestRPTreeIndexSearchKeepFiltersBeforeTruncation(t *testing.T) {
 }
 
 // TestRPTreeIndexSearchFindsKeyBehindStaleCopy pins that a key whose live
-// vector is nearest is returned whatever stale copies the forest still holds.
-// "a" moves onto the query point but its old copy at (2, 0) stays in the single
-// tree until Flush; with no over-fetch the tree's pool is exactly k, so if the
-// stale copy wins the pool, "a" never reaches the re-rank and Search answers
-// [b e].
+// vector is nearest is returned, whatever stale copies the forest holds. "a"
+// moves onto the query point, but its old copy at (2, 0) stays in the single
+// tree until Flush. With no over-fetch, the tree's pool is exactly k. If the
+// stale copy won the pool, "a" would never reach the re-rank, and Search
+// would answer [b e].
 func TestRPTreeIndexSearchFindsKeyBehindStaleCopy(t *testing.T) {
 	idx := index.NewRPTreeIndex[string, float64](0, 2, 1, 0, 2, 100, 1, comparator.OrderedComparator[string])
 	for _, w := range []struct {
@@ -292,12 +327,12 @@ func TestRPTreeIndexSearchFindsKeyBehindStaleCopy(t *testing.T) {
 }
 
 // TestRPTreeIndexFlushIsReproducible pins that a fixed seed reproduces the
-// index across a rebuild: two indexes fed the same writes, both flushed, must
+// index across a rebuild. Two indexes fed the same writes, both flushed, must
 // answer every query identically. A tree's splits depend on arrival order, so
-// a rebuild replaying the live set in Go map order would give the two indexes
-// different forests. The settings keep the search approximate (small leaves,
-// two trees, no over-fetch), so a different forest shows up as a different
-// answer rather than being hidden by an exhaustive scan.
+// a rebuild that replayed the live set in Go map order would give the two
+// indexes different forests. The settings keep the search approximate: small
+// leaves, two trees, no over-fetch. A different forest then shows up as a
+// different answer instead of being hidden by an exhaustive scan.
 func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 	build := func() *index.RPTreeIndex[int, float64] {
 		rng := rand.New(rand.NewSource(7))
@@ -328,15 +363,15 @@ func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 	}
 }
 
-// TestRPTreeIndexFlushRebuildsForest pins that Flush rebuilds every tree of
-// the forest from the live vectors alone: afterwards the index answers every
-// query exactly as one built from the live vectors only does. Search filters
-// deleted keys against the live map, so their absence from its answers proves
-// nothing; but a stale copy left in any tree shapes that tree's splits, and
-// with small leaves and no over-fetch a different tree shows up as a different
-// answer. Entries() is checked on both sides of Flush as well, and the
-// deletions stop two short of the automatic Flush (50 entries against a bound
-// of 2 × 26 live), so the explicit Flush is the one that compacts.
+// TestRPTreeIndexFlushRebuildsForest pins that Flush rebuilds every tree from
+// the live vectors alone. Afterwards the index answers every query exactly as
+// an index built from the live vectors only. Search filters deleted keys
+// against the live map, so their absence from its answers proves nothing. But
+// a stale copy left in a tree shapes that tree's splits. With small leaves
+// and no over-fetch, a different tree shows up as a different answer.
+// Entries() is checked on both sides of Flush. The deletions stop two short
+// of the automatic Flush (50 entries against a bound of 2 × 26 live), so the
+// explicit Flush is the one that compacts.
 func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 	const n, deleted, dim = 50, 24, 16
 	newIndex := func() *index.RPTreeIndex[int, float64] {
@@ -379,9 +414,14 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 		}
 	}
 	// Search over the whole remaining corpus must never surface a deleted key.
-	_, _, err := idx.Search(randVector(rng, 16), n, nil)
+	keys, _, err := idx.Search(randVector(rng, dim), n, nil)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
+	}
+	for _, key := range keys {
+		if key < deleted {
+			t.Errorf("Search surfaced deleted key %d", key)
+		}
 	}
 	queries := rand.New(rand.NewSource(22))
 	for q := 0; q < 50; q++ {
@@ -400,18 +440,18 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 	}
 }
 
-// ranksTenByDistance indexes ten vectors whose distances to the query are all
-// distinct and known ahead of time, then checks that Search returns them
-// nearest-first and that the returned scores are exactly those distances.
+// ranksTenByDistance indexes ten vectors whose distances to the query are
+// distinct and known ahead of time. It checks that Search returns them
+// nearest first, with scores exactly equal to those distances.
 //
-// It is generic over P so the identical assertions run for both float32 and
-// float64: key i sits at (i, 0) and the query is the origin, so key i is exactly
-// distance i away — a small integer representable exactly in either precision,
-// which is what lets the score equality hold at both.
+// It is generic over P, so the same assertions run at float32 and float64.
+// Key i sits at (i, 0) and the query is the origin, so key i is exactly
+// distance i away. A small integer is exact in either precision, which lets
+// the score equality hold at both.
 //
-// Ten points sit well under a single leaf (these indexes are built at 32), so every
-// tree in the forest holds the whole corpus and Search re-ranks the pooled
-// candidates by true distance: the result is exact, not approximate.
+// Ten points sit well under a single leaf (these indexes use a leaf size of
+// 32). So every tree holds the whole corpus, and Search re-ranks the pooled
+// candidates by true distance. The result is exact, not approximate.
 func ranksTenByDistance[P float32 | float64](t *testing.T) {
 	t.Helper()
 	idx := index.NewRPTreeIndex[int, P](2, 2, 5, 7, 2, 32, 8, comparator.OrderedComparator[int])
@@ -427,7 +467,6 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 
 	query := containers.NewVector[int]([]P{0, 0})
 
-	// Full search returns every key, nearest first: 1, 2, ..., 10.
 	got, scores, err := idx.Search(query, 10, nil)
 	if err != nil {
 		t.Fatalf("Search(k=10) = %v, want nil", err)
@@ -440,8 +479,6 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 		t.Fatalf("Search returned %d keys but %d scores; slices must be parallel", len(got), len(scores))
 	}
 
-	// Each returned score is the actual distance driving the ranking: key i is
-	// exactly distance i from the origin, and scores strictly increase.
 	var prev P = -1
 	for rank, key := range got {
 		if want := P(key); scores[rank] != want {
@@ -453,7 +490,6 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 		prev = scores[rank]
 	}
 
-	// A smaller k truncates to exactly the k nearest, with their distances.
 	got3, scores3, err := idx.Search(query, 3, nil)
 	if err != nil {
 		t.Fatalf("Search(k=3) = %v, want nil", err)
@@ -489,10 +525,10 @@ func nearestKeys[P float32 | float64](pts [][]int, query []int, k int) []int {
 }
 
 // TestRPTreeSearchIdenticalAcrossPrecision indexes the same well-separated
-// corpus at float32 and float64 and asserts both return the identical
-// nearest-neighbour ordering. Precision changes the stored coordinate width,
-// not which neighbours a search finds for a cleanly separated corpus — this is
-// the "results are the same at both precisions" guarantee.
+// corpus at float32 and float64 and asserts the same nearest-neighbour order.
+// Precision changes the stored coordinate width, not which neighbours a
+// search finds in a cleanly separated corpus. This is the "results are the
+// same at both precisions" guarantee.
 func TestRPTreeSearchIdenticalAcrossPrecision(t *testing.T) {
 	pts := [][]int{{0, 0}, {3, 1}, {1, 4}, {8, 8}, {2, 2}, {9, 1}, {5, 7}, {6, 3}}
 	k := len(pts)
@@ -525,7 +561,6 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 		t.Fatalf("Entries() after %d inserts = %d, want %d", n, got, n)
 	}
 
-	// Replay the full set 50 times. Forest must not grow.
 	for round := 0; round < 50; round++ {
 		for i := 0; i < n; i++ {
 			if err := idx.Insert(i, vecs[i]); err != nil {
@@ -541,9 +576,9 @@ func TestRPTreeIndexInsertIdempotent(t *testing.T) {
 	}
 }
 
-// TestRPTreeIndexForestBounded checks the automatic compaction: sustained
+// TestRPTreeIndexForestBounded checks the automatic compaction. Sustained
 // updates and deletes leave garbage in the forest, but Entries must stay
-// within the flushFactor bound of the live count instead of growing forever.
+// within flushFactor times the live count instead of growing forever.
 func TestRPTreeIndexForestBounded(t *testing.T) {
 	rng := rand.New(rand.NewSource(11))
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 5, 2, 32, 8, comparator.OrderedComparator[int])
@@ -555,7 +590,7 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 		}
 	}
 
-	// 500 in-place updates with fresh vectors: each appends one garbage entry.
+	// Each update with a fresh vector appends one garbage entry.
 	for round := 0; round < 500; round++ {
 		key := round % n
 		if err := idx.Update(key, randVector(rng, 3)); err != nil {
@@ -566,7 +601,7 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 		t.Errorf("Entries() after 500 updates = %d, want <= %d (auto-flush bound)", got, bound)
 	}
 
-	// Delete everything: compaction must reclaim the forest as well.
+	// Compaction must also reclaim the forest once every vector is deleted.
 	for i := 0; i < n; i++ {
 		if err := idx.Delete(i); err != nil {
 			t.Fatalf("Delete(%d) = %v, want nil", i, err)
@@ -587,9 +622,9 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 }
 
 // TestRPTreeIndexSearchExactMatchIsDistanceZero pins that a vector identical
-// to the query reports a distance of plain zero: the re-rank carries
-// distances negated through the retained set, and a negative zero coming
-// back out would print as "-0" while comparing equal to zero.
+// to the query reports a distance of +0. The re-rank holds distances negated.
+// A negative zero coming back out would print as "-0", even though it
+// compares equal to zero.
 func TestRPTreeIndexSearchExactMatchIsDistanceZero(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 3, 1, 2, 32, 8, comparator.OrderedComparator[int])
 	if err := idx.Insert(1, containers.NewVector[int]([]float64{2, 3})); err != nil {

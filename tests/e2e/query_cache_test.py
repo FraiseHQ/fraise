@@ -20,16 +20,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Plan-cache keying end to end.
+"""Plan-cache keying, end to end.
 
-The engine substitutes a cached query object on a hash hit (engine.Plan), so
-the cache key must fold in everything that changes the result set, including
-the bound vector and the since/until bounds. If Recall.Hash omitted them, two
-recalls differing only in those fields would share a key, and the second
-would silently execute with the first one's values.
+On a hash hit, the engine uses the cached query object (engine.Plan). So the
+cache key must fold in everything that changes the result set, including the
+bound vector and the since/until bounds. If Recall.Hash left them out, two
+recalls that differ only in those fields would share a key. The second would
+silently run with the first one's values.
 
-Both tests issue the colliding pair back to back so the first response is the
-cached entry the second would wrongly reuse.
+Both tests send the colliding pair back to back. The first query's cached entry
+is then the one the second would wrongly reuse.
 """
 
 
@@ -37,11 +37,12 @@ def test_identical_recall_text_rebinds_vector(query, vector):
     """Two recalls with byte-identical query text but different `vec:$v`
     bindings must each search with their own vector.
 
-    Each fact is stored with its own embedding; the recall term matches no
-    stored text, so only the vector seeds the search and the top hit names
+    Each fact is stored with its own embedding. The recall term matches no
+    stored text, so only the vector seeds the search. The top hit then shows
     which vector was used. With a stale cached plan, the second recall would
-    surface the alpha fact: the cached query object would still carry the
-    alpha vector."""
+    surface the alpha fact, because the cached query object would still carry
+    the alpha vector.
+    """
     graph = 6
     fact_a = "the cache probe fact alpha"
     fact_b = "the cache probe fact bravo"
@@ -55,7 +56,6 @@ def test_identical_recall_text_rebinds_vector(query, vector):
         )
         assert status == 200, body.get("error")
 
-    # Identical text both times — only the bound parameter differs.
     text = f"recall@{graph} zzzcacheprobe vec:$v"
 
     status, body = query(text, parameters={"v": vec_a})
@@ -76,13 +76,14 @@ def test_identical_recall_text_rebinds_vector(query, vector):
 
 
 def test_recall_time_bound_not_reused_across_queries(query):
-    """Two recalls differing only in their `until:` literal must each apply
+    """Two recalls that differ only in their `until:` literal must each apply
     their own bound.
 
-    The fact is written now, so `until:0s` (bound = now) includes it and
-    `until:1w` (bound = a week ago) excludes it. If both queries shared a
-    cache key, the second would run with the first's bound and return the
-    fact anyway."""
+    The fact is written now. So `until:0s` (bound = now) includes it, and
+    `until:1w` (bound = a week ago) excludes it. If both queries shared a cache
+    key, the second would run with the first's bound and return the fact
+    anyway.
+    """
     graph = 6
     fact = "the cache probe fact charlie"
 

@@ -33,18 +33,16 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// bridge builds an MCPServer aimed at a test daemon. Tests construct the
-// struct directly rather than going through New: New derives the address
-// from config, and what these tests pin is the transport behaviour, not the
-// wiring.
+// bridge builds an MCPServer aimed at a test daemon. It builds the struct
+// directly rather than through New. New derives the address from config, and
+// these tests pin the transport behaviour, not the wiring.
 func bridge(ts *httptest.Server) *MCPServer {
 	return &MCPServer{client: ts.Client(), baseURL: ts.URL}
 }
 
-// TestRecallForwardsTheQueryAndRendersTheResponse pins the round trip: the
-// tool input marshals into the /api/v1/q request body verbatim, and the
-// response body comes back as the structured output with its text rendering
-// beside it.
+// TestRecallForwardsTheQueryAndRendersTheResponse pins the round trip. The
+// tool input marshals into the /api/v1/q request body verbatim. The response
+// body comes back as the structured output, with its text rendering beside it.
 func TestRecallForwardsTheQueryAndRendersTheResponse(t *testing.T) {
 	var posted string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +70,7 @@ func TestRecallForwardsTheQueryAndRendersTheResponse(t *testing.T) {
 }
 
 // TestRecallForwardsVectorParameters pins that out-of-band vector bindings
-// survive the bridge: parameters marshal beside the query, name and values
+// survive the bridge. Parameters marshal beside the query with name and values
 // intact, so vec:$name placeholders resolve at the daemon.
 func TestRecallForwardsVectorParameters(t *testing.T) {
 	var posted string
@@ -93,10 +91,10 @@ func TestRecallForwardsVectorParameters(t *testing.T) {
 	}
 }
 
-// TestDaemonErrorsSurfaceInBand pins the self-correction contract: a non-200
-// from the daemon becomes an error carrying the body's own message — the
-// text an agent needs to fix its query — and a body that is not the API's
-// JSON falls back to the status line rather than surfacing garbage.
+// TestDaemonErrorsSurfaceInBand pins the self-correction contract. A non-200
+// from the daemon becomes an error that carries the body's own message, the
+// text an agent needs to fix its query. A body that is not the API's JSON
+// falls back to the status line rather than surfacing garbage.
 func TestDaemonErrorsSurfaceInBand(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -125,9 +123,9 @@ func TestDaemonErrorsSurfaceInBand(t *testing.T) {
 }
 
 // TestUnreachableDaemonNamesTheAddressAndTheFix pins the error a model
-// relays when nothing is listening: it names the address it tried and the
-// service commands that start the daemon, because "connection refused" alone
-// sends an agent guessing.
+// relays when nothing is listening. It names the address it tried and the
+// service commands that start the daemon. "connection refused" alone sends an
+// agent guessing.
 func TestUnreachableDaemonNamesTheAddressAndTheFix(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	url := ts.URL
@@ -140,13 +138,16 @@ func TestUnreachableDaemonNamesTheAddressAndTheFix(t *testing.T) {
 	}
 }
 
-// TestRememberConfirmsTheWrite pins the write path: the input forwards
+// TestRememberConfirmsTheWrite pins the write path. The input forwards
 // verbatim, the acknowledgement decodes, and the model sees the confirmation
 // with the server's parse warnings beside it. The daemon answers a write with
-// its own shape rather than a recall's envelope, so the structured output the
-// bridge hands a programmatic client carries the status token and no results.
+// its own shape, not a recall's envelope. So the structured output a
+// programmatic client gets carries the status token and no results.
 func TestRememberConfirmsTheWrite(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var posted string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		posted = r.URL.Path + " " + string(body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok","warnings":["parse warning at column 15"]}`))
 	}))
@@ -155,6 +156,9 @@ func TestRememberConfirmsTheWrite(t *testing.T) {
 	res, out, err := bridge(ts).remember(context.Background(), nil, RememberInput{Query: "remember 'a fact' topic:x"})
 	if err != nil {
 		t.Fatalf("remember = %v, want nil", err)
+	}
+	if want := `/api/v1/q {"query":"remember 'a fact' topic:x"}`; posted != want {
+		t.Errorf("daemon received %q, want %q (the input is the request body, verbatim)", posted, want)
 	}
 	if out.Status != "ok" {
 		t.Errorf("structured output = %+v, want the write acknowledgement", out)
@@ -166,13 +170,13 @@ func TestRememberConfirmsTheWrite(t *testing.T) {
 }
 
 // TestRecallOnEmptyGraphTellsTheModelToWrite pins the bridge's handling of the
-// daemon's 204: a success with no body, so the distinction survives only if
-// the bridge reads the status, and the model is told the graph is empty rather
-// than that its query missed (see renderRecall).
+// daemon's 204. A 204 is a success with no body, so the distinction survives
+// only if the bridge reads the status. The model is then told the graph is
+// empty, not that its query missed (see renderRecall).
 //
-// The structured half still has to satisfy the recall tool's output schema,
-// which requires hits to be an array, so the empty result is materialised
-// rather than left nil and marshalled as null.
+// The structured half must still satisfy the recall tool's output schema,
+// which requires hits to be an array. So the empty result is built, not left
+// nil and marshalled as null.
 func TestRecallOnEmptyGraphTellsTheModelToWrite(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

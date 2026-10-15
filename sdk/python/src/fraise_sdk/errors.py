@@ -32,14 +32,16 @@ class FraiseError(Exception):
 class FraiseWarning(UserWarning):
     """A warning about a query that ran, from the server or from the SDK.
 
-    The query ran and its results are valid; something in it may not be what
-    the caller meant. The server attaches one to a successful response, e.g.
-    for a stop-word term that can never match. The typed helpers emit one
-    before sending, e.g. for ``recall("since", "7d")``, which searches the word
-    "since" though it is one ``:`` away from a ``since:7d`` bound, or when an
-    extractor fails and the fact is stored without the extracted anchors.
-    Emitted through :mod:`warnings` so it is visible by default and silenceable
-    by category::
+    The query ran and its results are valid, but something in it may not be
+    what the caller meant. The server attaches one to a successful response,
+    for example for a stop-word term that can never match. The typed helpers
+    emit one before sending. ``recall("since", "7d")`` warns, because it
+    searches the word "since", one ``:`` away from a ``since:7d`` bound. A
+    failed extraction warns too, because the fact is stored without the
+    extracted anchors.
+
+    It is emitted through :mod:`warnings`, so it is visible by default and can
+    be silenced by category::
 
         warnings.filterwarnings("ignore", category=FraiseWarning)
 
@@ -50,9 +52,9 @@ class FraiseWarning(UserWarning):
 class FraiseQueryError(FraiseError):
     """A query could not be built from the given arguments.
 
-    Raised before any request leaves the client — e.g. an empty fact value or
-    anchor, or a graph id outside 0–255, none of which the server's query
-    grammar can represent.
+    It is raised before any request leaves the client. Examples are an empty
+    fact value or anchor, or a graph id outside 0–255. The server's query
+    grammar can represent none of these.
     """
 
 

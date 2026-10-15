@@ -20,19 +20,18 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""The provider contracts — embedder and extractor — and their resolvers.
+"""The provider contracts (embedder and extractor) and their resolvers.
 
-:class:`Embedder` is the abstract base an embedding provider subclasses:
-implement ``embed(text) -> Sequence[float]`` and instances are usable directly
-and as a callable. :class:`Extractor` is its counterpart for anchors:
-implement ``extract(text, context) -> list[Anchor]``, where the
-:class:`Context` is what the message's graph already holds.
-:class:`~fraise_sdk.client.FraiseClient` accepts either, or for convenience any
-bare callable of the same shape.
+:class:`Embedder` is the abstract base an embedding provider subclasses.
+Implement ``embed(text) -> Sequence[float]``, and an instance works directly
+and as a callable. :class:`Extractor` is its counterpart for anchors. Implement
+``extract(text, context) -> list[Anchor]``, where the :class:`Context` is what
+the message's graph already holds. :class:`~fraise_sdk.client.FraiseClient`
+accepts either, or any bare callable of the same shape.
 
 Concrete providers live in sibling modules and import from here, never from the
-package root — that keeps ``providers/__init__.py`` a pure re-export and avoids
-a cycle between the package and its own submodules.
+package root. That keeps ``providers/__init__.py`` a pure re-export. It also
+avoids an import cycle between the package and its own submodules.
 """
 
 from __future__ import annotations
@@ -50,9 +49,9 @@ EmbedderLike = Callable[[str], Sequence[float]]
 class Anchor:
     """One anchor a message is filed under: a topic or an entity.
 
-    ``type`` says which clause it becomes on ``remember`` — ``topic:`` or
-    ``entity:`` — and ``value`` is what follows the ``:``. Anchors drive the
-    server's filtering and transmission; the message text itself is never
+    ``type`` says which clause it becomes on ``remember``: ``topic:`` or
+    ``entity:``. ``value`` is what follows the ``:``. Anchors drive the
+    server's filtering and transmission. The message text itself is never
     rewritten to carry them.
     """
 
@@ -64,14 +63,14 @@ class Anchor:
 class Context:
     """What a graph already holds when its next message is tagged.
 
-    Facts reach one another through the graph only by sharing an anchor. A
-    message tagged in isolation loses that twice: "she signed the papers"
-    names nobody, and a subject that recurs sessions apart comes back under a
-    new spelling each time, so the walk has no anchor to cross. ``recent``
-    lets the extractor resolve a reference to what a nearby message named;
+    Facts reach one another through the graph only by sharing an anchor.
+    Tagging a message in isolation breaks this in two ways. "She signed the
+    papers" names nobody. A subject that recurs sessions apart comes back under
+    a new spelling each time, so the walk has no anchor to cross. ``recent``
+    lets the extractor resolve a reference to what a nearby message named.
     ``vocabulary`` lets it file a recurring subject under the anchor the graph
-    already has. The client keeps one per graph; an empty one is a graph that
-    holds nothing yet.
+    already has. The client keeps one context per graph. An empty one stands
+    for a graph that holds nothing yet.
 
     Attributes:
         recent: the messages stored in the graph just before this one, oldest
@@ -92,8 +91,8 @@ ExtractorLike = Callable[[str, Context], Sequence[Anchor]]
 class Embedder(ABC):
     """Abstract base for anything that encodes text into a vector.
 
-    Subclasses implement :meth:`embed`; :meth:`__call__` then comes for free, so
-    an instance works anywhere a plain ``callable(text)`` is expected.
+    Subclasses implement :meth:`embed` and get :meth:`__call__` for free. So an
+    instance works anywhere a plain ``callable(text)`` is expected.
     """
 
     @abstractmethod
@@ -109,9 +108,9 @@ class Embedder(ABC):
 class Extractor(ABC):
     """Abstract base for anything that finds the anchors a message belongs under.
 
-    Subclasses implement :meth:`extract`; :meth:`__call__` then comes for free,
-    so an instance works anywhere a plain ``callable(text, context)`` is
-    expected. An extractor may raise when it cannot read a message: the client
+    Subclasses implement :meth:`extract` and get :meth:`__call__` for free. So
+    an instance works anywhere a plain ``callable(text, context)`` is expected.
+    An extractor may raise when it cannot read a message. The client then
     stores the message anyway, without the extracted anchors, and warns.
     """
 
@@ -134,11 +133,12 @@ class Extractor(ABC):
 def resolve_embedder(embedder: Embedder | EmbedderLike | None) -> EmbedderLike | None:
     """Normalize an :class:`Embedder`, a bare callable, or None to one function.
 
-    Prefers an ``.embed`` method (an :class:`Embedder`) over calling the object
-    directly, so an embedder exposing both stays on its named method.
+    It prefers an ``.embed`` method, as on an :class:`Embedder`, over calling
+    the object directly. So an embedder that exposes both stays on its named
+    method.
 
     Raises:
-        TypeError: if embedder is neither an Embedder nor a callable
+        TypeError: if embedder is neither an Embedder nor a callable.
     """
     if embedder is None:
         return None
@@ -158,11 +158,12 @@ def resolve_extractor(
 ) -> ExtractorLike | None:
     """Normalize an :class:`Extractor`, a bare callable, or None to one function.
 
-    Prefers an ``.extract`` method (an :class:`Extractor`) over calling the
-    object directly, so an extractor exposing both stays on its named method.
+    It prefers an ``.extract`` method, as on an :class:`Extractor`, over
+    calling the object directly. So an extractor that exposes both stays on its
+    named method.
 
     Raises:
-        TypeError: if extractor is neither an Extractor nor a callable
+        TypeError: if extractor is neither an Extractor nor a callable.
     """
     if extractor is None:
         return None

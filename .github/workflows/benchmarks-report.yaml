@@ -1,13 +1,15 @@
 name: Benchmarks report
 
-# Posts what the benchmark workflows measured: a Discord message for a pull
-# request that regressed, for every release gate and for every nightly run,
-# and the sticky comment on a pull request from a fork (any other gets it from
-# the gate job itself). It runs on workflow_run, in this repository's context
-# with its secrets, because the run it reports on may come from a fork, where
-# neither the webhook nor a token that can comment is available. The report it posts was written by that run's code, so it is only
-# ever posted as text; which pull request it goes to, and what the Discord
-# message says, come from GitHub's record of the run, never from the artifact.
+# Posts what the benchmark workflows measured:
+#   - a Discord message for a pull request that regressed, for every release
+#     gate and for every nightly run.
+#   - the sticky comment on a pull request from a fork. Any other pull request
+#     gets it from the gate job itself.
+# It runs on workflow_run, in this repository's context with its secrets. The
+# run it reports on may come from a fork, which has neither the webhook nor a
+# token that can comment. That run's code wrote the report, so the report is
+# only ever posted as text. The target pull request and the Discord message
+# come from GitHub's record of the run, never from the artifact.
 
 on:
   workflow_run:
@@ -46,8 +48,8 @@ jobs:
           number: ${{ steps.pr.outputs.number }}
           path: benchmarks/report.md
 
-      # A pull request is announced only when its gate failed; the release
-      # gate and the nightly run always.
+      # A pull request is announced only when its gate failed. The release
+      # gate and the nightly run are always announced.
       - name: Post to Discord
         if: >-
           github.event.workflow_run.name == 'Benchmarks nightly' ||

@@ -22,16 +22,16 @@
 
 """A Claude Agent SDK agent that uses Fraise for long-term memory.
 
-Fraise's memory tools are exposed as an in-process MCP server. The two turns run
-as *separate* client sessions with no shared history, so the second turn can only
-answer by recalling what the first turn stored in Fraise.
+Fraise's memory tools are exposed as an in-process MCP server. The two turns
+run as *separate* client sessions with no shared history. So the second turn
+can only answer by recalling what the first turn stored in Fraise.
 
 Environment:
     FRAISE_URL          base URL of the Fraise server (default http://localhost:9876)
     ANTHROPIC_API_KEY   required by the Claude Agent SDK
 
 The Claude Agent SDK drives Claude through the Claude Code CLI, so the `claude`
-binary must be on PATH (the Docker image installs it). Run with Docker:
+binary must be on PATH. The Docker image installs it. Run with Docker:
     ANTHROPIC_API_KEY=sk-ant-... docker compose run --rm agent
 """
 
@@ -65,8 +65,8 @@ async def main() -> None:
 
     # This example is keyword-only. To vectorise, pass an embedder to
     # memory_server(fraise, embedder=...). Anthropic has no embeddings API, so
-    # you'd use OpenAIEmbedder (from fraise_sdk.providers.openai, which needs
-    # the openai extra) with an OPENAI_API_KEY set alongside ANTHROPIC_API_KEY.
+    # you'd use OpenAIEmbedder from fraise_sdk.providers.openai. It needs the
+    # openai extra, and an OPENAI_API_KEY set alongside ANTHROPIC_API_KEY.
     options = ClaudeAgentOptions(
         system_prompt=(
             "You have a long-term memory. When the user shares a durable fact "
@@ -80,7 +80,7 @@ async def main() -> None:
     print("turn 1 > My favourite colour is orange.")
     await ask(options, "My favourite colour is orange.")
 
-    # Fresh session — no history carried over — so memory is the only source.
+    # A fresh session carries no history over, so memory is the only source.
     print("\nturn 2 > What is my favourite colour?")
     await ask(options, "What is my favourite colour?")
 

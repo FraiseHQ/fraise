@@ -159,8 +159,8 @@ func TestTimeValueInterface(t *testing.T) {
 	}
 }
 
-// TestTimeValueHash pins the cache-key forms: each implementation carries a
-// distinct prefix so no two kinds of bound can render alike.
+// TestTimeValueHash pins the cache-key forms. Each implementation has a
+// distinct prefix, so no two kinds of bound can render alike.
 func TestTimeValueHash(t *testing.T) {
 	abs := time.Date(2022, time.July, 8, 9, 10, 11, 0, time.UTC)
 
@@ -183,8 +183,8 @@ func TestTimeValueHash(t *testing.T) {
 		})
 	}
 
-	// Unlike String() (RFC822, minute precision), the hash material keeps full
-	// precision: two absolute bounds a second apart must not collide.
+	// String() is RFC822, with minute precision. The hash material keeps full
+	// precision, so two absolute bounds a second apart must not collide.
 	a := AbsoluteTime[string]{T: abs}
 	b := AbsoluteTime[string]{T: abs.Add(time.Second)}
 	if a.Hash(fakeHasher{}) == b.Hash(fakeHasher{}) {
@@ -279,10 +279,10 @@ func TestParseTimeValueErrors(t *testing.T) {
 }
 
 // TestParseTimeValueBoundsRelativeDurations pins the range of a relative
-// duration: up to the largest count a time.Duration holds for its unit, and
-// no further. Past it the product would wrap negative, and since:106752d would
-// resolve to a bound in the future that empties every window. The error names
-// the unit's limit and still reads as ErrInvalidTime.
+// duration. The count may reach the largest a time.Duration holds for its
+// unit, and no further. Past it the product would wrap negative, and
+// since:106752d would resolve to a bound in the future that empties every
+// window. The error names the unit's limit and still reads as ErrInvalidTime.
 func TestParseTimeValueBoundsRelativeDurations(t *testing.T) {
 	tests := []struct {
 		in  string

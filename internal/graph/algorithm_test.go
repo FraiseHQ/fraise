@@ -32,9 +32,9 @@ import (
 	"github.com/FraiseHQ/fraise/internal/index"
 )
 
-// testConfig returns a ConfigSet carrying the flag defaults (applied by
-// config.New) with a smaller vector forest than the default: 8 projection
-// dimensions and 4 trees. NewGraph reads these to size its RPTree index.
+// testConfig returns the flag defaults from config.New with a smaller vector
+// forest: 8 projection dimensions and 4 trees. NewGraph reads these to size
+// its RPTree index.
 func testConfig() *config.ConfigSet {
 	cfg := config.New()
 	cfg.DB.VectorSearch.ProjectionDimension = 8
@@ -43,19 +43,18 @@ func testConfig() *config.ConfigSet {
 	return cfg
 }
 
-// fakeGraph is a minimal Graph implementation used to unit-test the graph
-// algorithms (BFS) against arbitrary topologies that the typed
-// Fact->Entity relationships cannot express (cycles, chains). Get, the edge
-// views (AdjacencyMap, PredecessorMap, Neighbours) and the counts carry real
-// behaviour; the rest are inert stubs.
+// fakeGraph is a minimal Graph for testing the graph algorithms (BFS) on
+// topologies the typed Fact->Entity relationships cannot express, such as
+// cycles and chains. Get, the edge views (AdjacencyMap, PredecessorMap,
+// Neighbours) and the counts carry real behaviour. The rest are inert stubs.
 type fakeGraph struct {
 	vertices map[uint64]bool
 	adj      map[uint64]map[uint64]uint64
 	pred     map[uint64]map[uint64]uint64
 }
 
-// newFakeGraph builds a graph from directed edges (each [from, to]); every
-// endpoint becomes a vertex, and extra isolated vertices can be added too.
+// newFakeGraph builds a graph from directed edges, each [from, to]. Every
+// endpoint becomes a vertex. isolated adds vertices with no edges.
 func newFakeGraph(edges [][2]uint64, isolated ...uint64) *fakeGraph {
 	g := &fakeGraph{
 		vertices: make(map[uint64]bool),
