@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0](https://github.com/FraiseHQ/fraise/compare/v0.3.3...v0.4.0) (2026-10-17)
+
+
+### Features
+
+* assert and log the relevance model at startup ([#516](https://github.com/FraiseHQ/fraise/issues/516)) ([9932dc1](https://github.com/FraiseHQ/fraise/commit/9932dc11dd3d2ff7563b31a58adc56ce1038bb62))
+
+
+### Bug fixes
+
+* **graph:** filter anchors and since/until before seeding ([#515](https://github.com/FraiseHQ/fraise/issues/515)) ([004c64f](https://github.com/FraiseHQ/fraise/commit/004c64f064c89089a312837a662dbfea89fbf01a))
+* plan cache key and low-priority cleanups ([#518](https://github.com/FraiseHQ/fraise/issues/518)) ([fab2a69](https://github.com/FraiseHQ/fraise/commit/fab2a692abfb5119182ab953e60b109cb23313b5))
+* **query:** reject an unterminated quote in a clause value ([#542](https://github.com/FraiseHQ/fraise/issues/542)) ([5f8487e](https://github.com/FraiseHQ/fraise/commit/5f8487efdda5c28fa5eaac01027fca2f2463591d))
+* rank equal-score hits newest first, then by key ([#517](https://github.com/FraiseHQ/fraise/issues/517)) ([f5ee0cf](https://github.com/FraiseHQ/fraise/commit/f5ee0cf218f04eee56770961d19b08608be37651))
+* simplify comments and fix the mismatches they hid ([#555](https://github.com/FraiseHQ/fraise/issues/555)) ([868aeeb](https://github.com/FraiseHQ/fraise/commit/868aeebbc5ae5714c564ee8d9f8bbfd216742b1a))
+
+
+### Maintenance
+
+* accept a benchmark regression in a pull request section ([#538](https://github.com/FraiseHQ/fraise/issues/538)) ([a227cd0](https://github.com/FraiseHQ/fraise/commit/a227cd093f92260d3e3c5887f5a3bd3dfe5519ff))
+* accept a benchmark regression on the label alone ([#541](https://github.com/FraiseHQ/fraise/issues/541)) ([7497c52](https://github.com/FraiseHQ/fraise/commit/7497c52e27e5ba2a2b1db89501cdb697897f1a3c))
+* replace logo ([#543](https://github.com/FraiseHQ/fraise/issues/543)) ([62ea6ce](https://github.com/FraiseHQ/fraise/commit/62ea6ce03fc86e5406d0bf93c4769053dd4d004e))
+
 ## [0.3.3](https://github.com/FraiseHQ/fraise/compare/v0.3.2...v0.3.3) (2026-10-11)
 
 
