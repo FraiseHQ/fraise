@@ -32,10 +32,10 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
-// Recall is a read query: it searches the selected graph for the facts that
-// best match its Keywords and Vector, narrowed or seeded by its Entities and
-// Topics, and ranked and bounded by Parameters. [Parse] builds one from a
-// recall command, and the engine's optimisation pipeline may rewrite its lists
+// Recall is a read query. It searches the selected graph for the facts that
+// best match its Keywords and Vector. Its Entities and Topics narrow or seed
+// the search, and its Parameters rank and bound it. [Parse] builds one from a
+// recall command. The engine's optimisation pipeline may rewrite its lists
 // before it is cached.
 type Recall[K comparable, P float32 | float64] struct {
 	Keywords []string
@@ -48,9 +48,9 @@ type Recall[K comparable, P float32 | float64] struct {
 	context QueryContext
 }
 
-// Plan implements [Query]. A recall needs nothing prepared ahead of the
-// search, which runs in [Stream.Commit] under the graph's shared lock, so the
-// plan is a fresh stream.
+// Plan implements [Query]. A recall needs nothing prepared before the search,
+// which runs in [Stream.Commit] under the graph's shared lock. So the plan is a
+// fresh stream.
 func (r *Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
 	return NewStream(r), nil
 }
@@ -67,10 +67,10 @@ func (r *Recall[K, P]) SetGraphID(id uint8) {
 }
 
 // Hash keys the query for the plan cache. It must fold in everything that
-// changes the result set: two recalls that differ only in graph, depth, top,
-// time bounds or the bound vector must not collide, or the cache would hand
-// back a stale plan. The lists are delimited so ["ab"] and ["a","b"] do not
-// hash alike.
+// changes the result set. Two recalls that differ only in graph, depth, top,
+// time bounds or the bound vector must not collide. Otherwise the cache would
+// hand back another query's plan. The lists are delimited so ["ab"] and
+// ["a","b"] do not hash alike.
 func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")
@@ -104,8 +104,8 @@ func (r Recall[K, P]) IsWrite() bool {
 	return false
 }
 
-// Since resolves the query's lower time bound; the zero time (no bound) is
-// returned when the query has no since clause.
+// Since resolves the query's lower time bound. It returns the zero time,
+// meaning no bound, when the query has no since clause.
 func (r Recall[K, P]) Since(now time.Time) time.Time {
 	if r.Parameters.Since == nil {
 		return time.Time{}
@@ -113,8 +113,8 @@ func (r Recall[K, P]) Since(now time.Time) time.Time {
 	return r.Parameters.Since.Resolve(now)
 }
 
-// Until resolves the query's upper time bound; the zero time (no bound) is
-// returned when the query has no until clause.
+// Until resolves the query's upper time bound. It returns the zero time,
+// meaning no bound, when the query has no until clause.
 func (r Recall[K, P]) Until(now time.Time) time.Time {
 	if r.Parameters.Until == nil {
 		return time.Time{}

@@ -155,10 +155,10 @@ func TestBTreeDeleteMissing(t *testing.T) {
 	}
 }
 
-// TestBTreeDeleteAll inserts a shuffled range and deletes every value in a
-// different shuffled order, checking Find/Len/Values invariants after each
-// deletion. This exercises leaf deletion, predecessor/successor swaps at
-// internal nodes, and the borrow/merge rebalancing paths.
+// TestBTreeDeleteAll inserts a shuffled range, then deletes every value in
+// another shuffled order. It checks Find, Len and Values after each deletion.
+// This covers leaf deletion, predecessor and successor swaps at internal
+// nodes, and the borrow and merge paths.
 func TestBTreeDeleteAll(t *testing.T) {
 	const n = 300
 	rng := rand.New(rand.NewSource(2))
@@ -208,9 +208,8 @@ func TestBTreeDeleteAll(t *testing.T) {
 	}
 }
 
-// TestBTreeAgainstReferenceMap performs a randomized sequence of inserts and
-// deletes, cross-checking BTree's membership and size against a plain Go map
-// used as the reference model.
+// TestBTreeAgainstReferenceMap runs a random sequence of inserts and deletes.
+// It checks the tree's membership and size against a plain Go map.
 func TestBTreeAgainstReferenceMap(t *testing.T) {
 	rng := rand.New(rand.NewSource(3))
 	bt := newIntBTree(2)

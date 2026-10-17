@@ -27,7 +27,6 @@ import (
 	"time"
 )
 
-// adjustCase verifies Adjust for a single type T.
 func adjustCase[T comparable](t *testing.T, name string, value, defValue, want T) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {

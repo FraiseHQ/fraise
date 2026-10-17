@@ -53,9 +53,9 @@ jobs:
   integration:
     name: Server + MCP bridge integration
     needs: lint
-    # The suite drives the freshly built binary in both of its roles, the
-    # daemon over HTTP and `fraise mcp` over stdio, so it needs Go, not docker.
-    # It runs on the same native two-arch matrix as e2e, since the bridge is
+    # The suite drives the freshly built binary in both of its roles: the
+    # daemon over HTTP and `fraise mcp` over stdio. So it needs Go, not docker.
+    # It runs on the same native two-arch matrix as e2e, because the bridge is
     # the same per-arch binary.
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -75,8 +75,8 @@ jobs:
   e2e:
     name: E2E tests
     needs: integration
-    # Native amd64 + arm64 runners: exercises the image (and its per-arch build)
-    # on both architectures every run, no QEMU emulation.
+    # Native amd64 and arm64 runners. Every run tests the image and its
+    # per-arch build on both architectures, without QEMU emulation.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false

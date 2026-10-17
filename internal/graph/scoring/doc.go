@@ -20,19 +20,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package scoring folds the observations a search collects for a candidate
-// into its relevance score.
+// Package scoring folds the observations a search collects for a candidate into
+// its relevance score.
 //
 // Collection records each observation as a [Contribution], tagged with the
-// [Source] that made it (text, vector, graph traversal or anchor seeding) and
-// carrying that source's raw mass, rank and anchor statistics, with no policy
-// applied. A [Scorer] owns the policy: [ExcessScorer], the default, sums the
-// seed mass and adds each anchor's attenuated surplus over its fair share
-// under the query's background rate, while [RRFScorer] fuses ranks alone for
-// comparison runs. Keeping policy out of collection means changing how
-// ranking works never touches the retrieval sites.
+// [Source] that made it: text, vector, graph traversal or anchor seeding. A
+// contribution carries that source's raw mass, rank and anchor statistics, with
+// no policy applied. A [Scorer] owns the policy. [ExcessScorer], the default,
+// sums the seed mass. It adds each anchor's attenuated surplus over its fair
+// share under the query's background rate. [RRFScorer] fuses ranks alone, for
+// comparison runs. Keeping policy out of collection means a change to ranking
+// never touches the retrieval sites.
 //
-// One Scorer instance is shared by every concurrent search on a graph, so a
-// Scorer is pure, and the background rate is bound per query through
-// [Scorer.WithBackground] rather than written into the shared instance.
+// Every concurrent search on a graph shares one Scorer instance. So a Scorer is
+// pure, and [Scorer.WithBackground] binds the background rate per query rather
+// than writing it into the shared instance.
 package scoring

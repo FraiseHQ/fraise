@@ -27,8 +27,8 @@ import (
 	"time"
 )
 
-// Comparator orders two values of type T, returning a negative number if a < b,
-// zero if a == b, and a positive number if a > b.
+// Comparator orders two values of type T. It returns a negative number if
+// a < b, zero if a == b, and a positive number if a > b.
 type Comparator[T any] func(a, b T) int
 
 // TimeComparator orders time.Time values chronologically.
@@ -43,7 +43,8 @@ func TimeComparator(a, b time.Time) int {
 	}
 }
 
-// OrderedComparator provides a basic comparison on any cmp.Ordered type (e.g. int, string).
+// OrderedComparator orders any cmp.Ordered type, such as int or string, by its
+// natural order.
 func OrderedComparator[T cmp.Ordered](a, b T) int {
 	return cmp.Compare(a, b)
 }

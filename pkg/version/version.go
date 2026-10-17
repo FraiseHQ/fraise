@@ -27,14 +27,15 @@ import "strings"
 // Version is the release identity compiled into every binary, and the single
 // place the version number lives in the tree.
 //
-// The trailing annotation is release-please's marker: when it opens a release
-// PR it rewrites the literal on this line to the version being cut, in the same
-// commit that updates docs/changelog.md, and tags that commit on merge. The tag
-// and this constant therefore cannot drift — do not edit it by hand.
+// The trailing annotation is release-please's marker. When release-please
+// opens a release PR, it rewrites the literal on this line to the version
+// being cut. The same commit updates docs/changelog.md, and release-please
+// tags that commit on merge. So the tag and this constant cannot drift. Do
+// not edit it by hand.
 //
-// GoReleaser additionally overrides it via -ldflags -X on a release build. The
+// GoReleaser also overrides it with -ldflags -X on a release build. The
 // linker only rewrites string variables that are uninitialized or set to a
-// constant expression, so this must stay a plain literal — never computed.
+// constant expression. So this must stay a plain literal, never computed.
 var Version = "0.3.3" // x-release-please-version
 
 var (
@@ -47,9 +48,9 @@ var (
 // FullVersion returns the full version string, e.g. "1.2.3".
 func FullVersion() string { return Version }
 
-// ShortVersion returns just the "major.minor" prefix, e.g. "1.2", derived from
-// the resolved Version so it stays correct whether that came from GoReleaser or
-// the compiled defaults.
+// ShortVersion returns just the "major.minor" prefix, e.g. "1.2". It derives
+// from the resolved Version, so it stays correct whether that came from
+// GoReleaser or the compiled default.
 func ShortVersion() string {
 	v := strings.TrimPrefix(Version, "v")
 	if i := strings.IndexByte(v, '-'); i >= 0 {

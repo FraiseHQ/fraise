@@ -20,8 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""The two tools (pkg/mcp/tools.go) end to end: real daemon, real bridge,
-real stdio. What passes here is what an agent's tool call actually does.
+"""The two tools (pkg/mcp/tools.go) end to end.
+
+The daemon, the bridge and stdio are all real. What passes here is what an
+agent's tool call does.
 """
 
 from datetime import datetime
@@ -30,9 +32,9 @@ from datetime import datetime
 def test_remember_then_recall_round_trips_a_fact(mcp):
     """A fact stored through the bridge is found through the bridge.
 
-    Both faces of the result are pinned: the rendered text an agent reads,
-    and the structured content a programmatic client parses — count, value,
-    score, and a timestamp that is a real RFC 3339 instant.
+    Both faces of the result are pinned. One is the rendered text an agent
+    reads. The other is the structured content a programmatic client parses:
+    count, value, score, and a timestamp that is a real RFC 3339 instant.
     """
     stored = mcp.call(
         "remember",
@@ -57,9 +59,10 @@ def test_remember_then_recall_round_trips_a_fact(mcp):
 
 
 def test_vector_parameters_bind_through_the_bridge(mcp):
-    """Out-of-band vector bindings survive the stdio hop: a fact stored with
-    vec:$v is recallable by vector seed alone, which can only work if the
-    parameters travelled beside both queries intact.
+    """Out-of-band vector bindings survive the stdio hop.
+
+    A fact stored with vec:$v is recallable by vector seed alone. That works
+    only if the parameters travelled beside both queries intact.
     """
     vector = [0.5, 0.25, 0.125, 0.0625]
     stored = mcp.call(
@@ -80,9 +83,11 @@ def test_vector_parameters_bind_through_the_bridge(mcp):
 
 
 def test_daemon_rejections_surface_in_band(mcp):
-    """A query the daemon rejects comes back as a tool error carrying the
-    daemon's own message — the text a model needs to correct itself — never
-    as a protocol failure that would end the conversation.
+    """A query the daemon rejects comes back as a tool error.
+
+    The error carries the daemon's own message, the text a model needs to
+    correct itself. It is never a protocol failure, which would end the
+    conversation.
     """
     result = mcp.call("recall", {"query": "recall@1 zebras top:0"})
     assert result.get("isError") is True
@@ -90,16 +95,16 @@ def test_daemon_rejections_surface_in_band(mcp):
 
 
 def test_a_recall_of_an_empty_graph_tells_the_model_to_write(mcp):
-    """Graph 7 is never written to, so the daemon answers its recall 204.
+    """Graph 7 is never written to, so the daemon answers its recall with 204.
 
-    That status is the only carrier of the distinction (204 has no body), so a
-    bridge that read the body alone would relay "no stored facts matched", the
-    same words it uses for a query that missed facts that do exist. The model
-    needs them apart: the first is answered by remembering something, the
-    second by asking differently.
+    Only the status carries the distinction, because a 204 has no body. A
+    bridge that read the body alone would relay "no stored facts matched". It
+    uses the same words for a query that missed facts that do exist. The model
+    needs to tell them apart. The first calls for remembering something, the
+    second for asking differently.
 
-    The structured half still satisfies the recall tool's output schema, which
-    requires hits to be an array: a 204 must not leave it null.
+    The structured half still satisfies the recall tool's output schema. The
+    schema requires hits to be an array, so a 204 must not leave it null.
     """
     result = mcp.call("recall", {"query": "recall@7 zebras"})
     assert not result.get("isError", False), result
@@ -126,8 +131,10 @@ def test_a_write_is_acknowledged_with_its_own_shape(mcp):
 
 
 def test_parse_warnings_ride_beside_the_results(mcp):
-    """A query that runs with a parse warning delivers the warning on both
-    faces: in the structured payload and rendered for the model.
+    """A query that runs with a parse warning delivers it on both faces.
+
+    The warning is in the structured payload, and in the text rendered for the
+    model.
     """
     result = mcp.call("recall", {"query": "recall@1 opera Since:7d"})
     assert not result.get("isError", False), result
@@ -138,9 +145,11 @@ def test_parse_warnings_ride_beside_the_results(mcp):
 
 
 def test_an_unreachable_daemon_is_an_in_band_error(mcp_without_daemon):
-    """With nothing listening, the bridge still converses: the handshake ran
-    (the fixture proves it) and a tool call fails in band, naming the address
-    it tried and the service commands that start the daemon.
+    """With nothing listening, the bridge still converses.
+
+    The handshake ran, as the fixture proves. A tool call fails in band. Its
+    error names the address it tried and the service commands that start the
+    daemon.
     """
     result = mcp_without_daemon.call("recall", {"query": "recall@1 anything"})
     assert result.get("isError") is True
@@ -149,13 +158,12 @@ def test_an_unreachable_daemon_is_an_in_band_error(mcp_without_daemon):
 
 
 def test_anchor_only_recall_returns_what_is_filed_under_the_anchor(mcp):
-    """Anchors alone seed the search with what is filed under them, so an
-    agent can see what it knows about a topic before it knows what to search
-    for.
+    """Anchors alone seed the search with what is filed under them.
 
-    Two facts filed under one topic, and nothing else on graph 3, both come
-    back from `recall@3 topic:cormorants`, each scored like any recall hit:
-    the unit of mass its anchor lends, decayed by age.
+    So an agent can see what it knows about a topic before it knows what to
+    search for. Two facts filed under one topic, and nothing else on graph 3,
+    both come back from `recall@3 topic:cormorants`. Each is scored like any
+    recall hit: the unit of mass its anchor lends, decayed by age.
     """
     facts = (
         "the cormorant dries its wings on the post",

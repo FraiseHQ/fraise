@@ -1,7 +1,7 @@
 # The fraise server as it ships, for the test suites to drive.
 #
-# Both `make test-e2e` and `make test-integration-py` bring this up detached and
-# run their pytest locally against the published port, so neither suite needs a
+# `make test-e2e` and `make test-integration-py` both start it detached. They
+# run pytest locally against the published port, so neither suite needs a
 # test-runner image of its own.
 services:
   fraise:

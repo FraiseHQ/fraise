@@ -23,16 +23,14 @@
 // Package relevance holds the pluggable scoring models of the text index.
 //
 // A [Relevance] model owns every number between a term match and a
-// document's final score, and the corpus statistics those numbers need, which
-// the index keeps current through the Indexed and Removed hooks. Keeping it
-// apart from the index lets the scoring change without touching tokenization,
-// postings or the ranking order. [BM25] is the model the server installs by
-// default: Robertson–Walker BM25 with fixed, untuned constants, scaled by the
-// share of the query's idf mass a document matched. [MatchCount] counts
-// matching query terms and keeps no statistics; it is the index's own default
-// and stays selectable for comparison runs.
+// document's final score. It also owns the corpus statistics those numbers
+// need, and the index keeps them current through the Indexed and Removed
+// hooks. Keeping the model apart from the index lets scoring change without
+// touching tokenization, postings or the ranking order.
 //
-// A model is installed before the first insert and never swapped, and its
-// query-side methods only read its state, because concurrent searches share
-// it under the graph's read lock.
+// [BM25] is the model the server installs by default. It is Robertson–Walker
+// BM25 with fixed, untuned constants, scaled by the share of the query's idf
+// mass a document matched. [MatchCount] counts matching query terms and keeps
+// no statistics. It is the index's own default and stays selectable for
+// comparison runs.
 package relevance

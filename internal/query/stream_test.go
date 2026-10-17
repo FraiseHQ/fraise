@@ -38,11 +38,10 @@ import (
 	"github.com/FraiseHQ/fraise/internal/index"
 )
 
-// fakeGraph is a controllable graph.Graph used to observe how Stream drives the
-// graph: which lock Acquire/Release take, whether the write path writes and the
-// read path searches, and what Search returns. The methods that record calls
-// or return configured results carry the behaviour; the rest return fixed
-// answers.
+// fakeGraph is a graph.Graph that shows how Stream drives the graph. It records
+// which lock Acquire and Release take, and whether the write path writes and
+// the read path searches. It also controls what Search returns. The other
+// methods return fixed answers.
 type fakeGraph struct {
 	locks, unlocks   int
 	rlocks, runlocks int
@@ -80,7 +79,7 @@ func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, f
 	return result, nil
 }
 
-// GetHasher returns a real (fake) hasher rather than nil: the write path
+// GetHasher returns a fakeHasher rather than nil, because the write path
 // derives the fact's key (fact.Key() -> Hash) before storing it.
 func (g *fakeGraph) GetHasher() hash.Hasher[string, string]             { return &fakeHasher{} }
 func (g *fakeGraph) Get(key string) graph.Node[string]                  { return nil }
@@ -101,9 +100,9 @@ func newStream(q Query[string, float32]) *Stream[string, float32] {
 }
 
 // readQuery builds a Recall. Its nil time bounds resolve to the zero time, so
-// the read path in Commit can call Since/Until safely. It returns a *Recall
-// because Plan and SetGraphID have pointer receivers, so only *Recall
-// satisfies Query (and Commit's read path asserts *Recall).
+// Commit's read path can call Since and Until safely. It returns a *Recall
+// because Plan and SetGraphID have pointer receivers. So only *Recall satisfies
+// Query, and Commit's read path asserts *Recall.
 func readQuery() *Recall[string, float32] {
 	return &Recall[string, float32]{Keywords: []string{"x"}}
 }
@@ -118,9 +117,9 @@ func isClosed(ch <-chan struct{}) bool {
 }
 
 // TestStreamCommitReadSurfacesASearchError pins that a read fails the way a
-// write does: a search the graph cannot answer as asked (its vector's
-// dimension disagrees with the graph's) is returned from Commit, wrapped so
-// the cause survives to the HTTP boundary, and no result is built from it.
+// write does. A search the graph cannot answer as asked, here a vector of the
+// wrong dimension, fails Commit. The error is wrapped so the cause survives to
+// the HTTP boundary, and no result is built from it.
 func TestStreamCommitReadSurfacesASearchError(t *testing.T) {
 	g := &fakeGraph{searchErr: fmt.Errorf("%w: index expects 3, got 2", index.ErrInvalidDimension)}
 	s := newStream(readQuery())
@@ -163,21 +162,19 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 }
 
 // TestStreamCommitExplainAttachesContributions pins the explain switch on the
-// read path: run with Explain set, the same commit attaches each hit's
-// contributions in wire form and the background rate; without it the hits
-// stay bare, since nil is what keeps contributions out of the ordinary
-// response. The flag lives on the stream rather than the query because the
-// plan cache shares query objects across requests; this test sets it where
-// the handler does.
+// read path. With Explain set, the commit attaches each hit's contributions in
+// wire form and the background rate. Without it the hits stay bare, since nil
+// keeps contributions out of the ordinary response. The flag lives on the
+// stream, so this test sets it where the handler does.
 func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 	contributions := [][]scoring.Contribution[string, float32]{
 		{{Src: scoring.SrcText, Score: 1, Rank: 0, Count: 1}},
 		{{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2}},
 		{{Src: scoring.SrcAnchor, Score: 1, Via: "harbour-key", Degree: 4, Count: 1}},
 	}
-	// The wire form: sources by name, the graph and anchor entries' anchor
-	// keys resolved via Get — the fake stores no nodes, so via falls back to
-	// empty, which is the contract for a vanished anchor.
+	// The wire form names each source, and resolves the graph and anchor
+	// entries' anchor keys through Get. The fake stores no nodes, so via falls
+	// back to empty, as the contract says for a vanished anchor.
 	want := [][]HitContribution[float32]{
 		{{Source: "text", Score: 1, Rank: 0, Count: 1}},
 		{{Source: "vector", Score: 0.5, Rank: 1, Count: 1}, {Source: "graph", Score: 2, Degree: 3, Count: 2}},
@@ -239,12 +236,12 @@ func TestStreamCommitWriteInPlace(t *testing.T) {
 	}
 }
 
-// TestStreamCommitReassertRefreshesRecency pins the temporal "touch"
-// semantics: re-remembering an identical fact replaces the stored node with a
-// fresh timestamp (no duplicate node), so recency decay restarts and a
-// since:-window covering only the re-assertion finds the fact. Keeping the
-// first write would leave a memory an agent reinforces decaying from its
-// original write.
+// TestStreamCommitReassertRefreshesRecency pins the temporal touch.
+// Re-remembering an identical fact replaces the stored node with a fresh
+// timestamp, with no duplicate node. So recency decay restarts, and a since:
+// window that covers only the re-assertion finds the fact. Keeping the first
+// write would leave a memory an agent reinforces decaying from its original
+// write.
 func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	g := graph.NewGraph[uint64, float32](config.New())
 	remember := func() *Remember[uint64, float32] {
@@ -261,7 +258,7 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	ts1 := g.Get(key).GetTimestamp()
 	nodesBefore := g.Stats().Nodes
 
-	// A window opening strictly after the first write: only a refreshed
+	// The window opens strictly after the first write, so only a refreshed
 	// timestamp can land inside it.
 	windowStart := ts1.Add(time.Nanosecond)
 
@@ -284,10 +281,10 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	}
 }
 
-// TestStreamCommitVectorMismatchLeavesGraphClean pins the failure ordering of
-// the in-place write: the vector insert runs before any graph mutation, so the
-// one realistic commit failure — a vector-dimension mismatch — rejects the
-// write with the graph untouched (no fact node, no index entry).
+// TestStreamCommitVectorMismatchLeavesGraphClean pins the failure order of the
+// in-place write. The vector insert runs before any graph mutation. So the one
+// realistic commit failure, a vector-dimension mismatch, rejects the write with
+// the graph untouched: no fact node, no index entry.
 func TestStreamCommitVectorMismatchLeavesGraphClean(t *testing.T) {
 	g := graph.NewGraph[uint64, float32](config.New())
 
@@ -301,7 +298,7 @@ func TestStreamCommitVectorMismatchLeavesGraphClean(t *testing.T) {
 	}
 	before := g.Stats()
 
-	// Second write carries a dim-4 vector: must fail and change nothing.
+	// The second write carries a dim-4 vector. It must fail and change nothing.
 	second := &Remember[uint64, float32]{
 		Value:  "second fact",
 		Vector: containers.NewVector[uint64]([]float32{1, 2, 3, 4}),
@@ -363,8 +360,8 @@ func TestStreamFinishIsIdempotent(t *testing.T) {
 }
 
 // TestCommitStoresAnchorNodesForFilteredRecall drives the production write
-// path (an in-place Commit against a real graph) and checks the written fact
-// is recallable with its topic: and entity: anchors as filters.
+// path, an in-place Commit against a real graph. It checks that the written
+// fact is recallable with its topic: and entity: anchors as filters.
 func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	g := graph.NewGraph[uint64, float32](config.New())
 
@@ -413,10 +410,10 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 }
 
-// BenchmarkRememberCommit measures a single-fact write commit against graphs
-// of different sizes. The in-place write touches only what it stores, so
-// ns/op must not scale with the size subtest the way a staging copy of the
-// graph, O(graph) per write, would.
+// BenchmarkRememberCommit measures a single-fact write commit against graphs of
+// different sizes. The in-place write touches only what it stores. So ns/op
+// must not grow with the size subtest, as it would with an O(graph) staging
+// copy per write.
 func BenchmarkRememberCommit(b *testing.B) {
 	for _, size := range []int{100, 10_000} {
 		b.Run(fmt.Sprintf("size-%d", size), func(b *testing.B) {
@@ -445,7 +442,7 @@ func BenchmarkRememberCommit(b *testing.B) {
 }
 
 // BenchmarkRecallCommit measures a two-keyword read commit against graphs of
-// different sizes. The search grows with the postings it scores, but a read
+// different sizes. The search grows with the postings it scores. But a read
 // that returned hits must not also walk the whole graph, as an emptiness check
 // derived from Stats would.
 func BenchmarkRecallCommit(b *testing.B) {
@@ -479,15 +476,15 @@ func BenchmarkRecallCommit(b *testing.B) {
 	}
 }
 
-// TestCommitSeedsFromAnchorsStoredByCommit drives the production write path
-// and then the anchor-only read it makes possible. A Recall naming a topic
-// and no term reaches Search with nil keywords and an empty vector, and the
-// seeding must resolve the topic to the node Commit stored: under any other
-// key it would seed nothing. Every fact filed under the topic comes back and
-// nothing else, each scored from its unit anchor mass, and in explain mode
-// each breakdown names the topic it was found under. Naming the entity as
-// well doubles the mass of every fact filed under both, and a term beside the
-// anchor seeds from the text index with the anchor as a filter.
+// TestCommitSeedsFromAnchorsStoredByCommit drives the production write path,
+// then the anchor-only read it makes possible. A Recall that names a topic and
+// no term reaches Search with nil keywords and an empty vector. The seeding
+// must resolve the topic to the node Commit stored. Under any other key it
+// would seed nothing. Every fact filed under the topic comes back, and nothing
+// else. Each is scored from its unit anchor mass, and in explain mode each
+// breakdown names the topic it was found under. Naming the entity as well
+// doubles the mass of every fact filed under both. A term beside the anchor
+// seeds from the text index, with the anchor as a filter.
 func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	g := graph.NewGraph[uint64, float32](config.New())
 	facts := []string{"the deploy runs at noon", "the deploy key lives in vault", "the deploy log is archived weekly"}

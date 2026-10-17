@@ -20,11 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Black-box tests (package containers_test) for the indexed max-heap. Since the
-// items slice and lookup map are unexported, correctness is verified through the
-// public API only: the item with the largest Priority is always surfaced first,
-// draining yields a non-increasing sequence, and Len/Has/Remove stay consistent
-// with an independent reference model.
+// Black-box tests for the indexed max-heap. The items slice and lookup map are
+// unexported, so the tests use the public API only. The item with the largest
+// Priority must always come out first. Draining must yield a non-increasing
+// sequence. Len, Has and Remove must agree with an independent reference
+// model.
 package containers_test
 
 import (
@@ -35,7 +35,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
-// newHeap returns an empty max-heap of uint32 keys and int values.
 func newHeap() *containers.Heap[uint32, int] {
 	return containers.NewHeap[uint32, int]()
 }
@@ -97,8 +96,8 @@ func TestPush(t *testing.T) {
 	}
 }
 
-// TestPushDedup covers the keep-best semantics: pushing an existing key only
-// replaces its value when the new priority wins the comparison.
+// TestPushDedup covers the keep-best rule. Pushing an existing key replaces
+// its item only when the new priority wins.
 func TestPushDedup(t *testing.T) {
 	h := newHeap()
 
@@ -213,7 +212,7 @@ func TestNewHeap_EmptyAndSingle(t *testing.T) {
 }
 
 // TestNewHeap_Heapifies checks that NewHeap builds both the heap order and the
-// key lookup from unsorted input, so Peek, Pop and Has read it correctly.
+// key lookup from unsorted input. Peek, Pop and Has rely on both.
 func TestNewHeap_Heapifies(t *testing.T) {
 	h := containers.NewHeap(
 		sItem("a", 9), sItem("b", 3), sItem("c", 7),
@@ -241,8 +240,8 @@ func TestNewHeap_Heapifies(t *testing.T) {
 }
 
 // TestNewHeap_DoesNotAliasInput checks that the heap does not share the
-// caller's slice: mutating it after construction must not disturb the heap,
-// and heap operations must not write back into it.
+// caller's slice. Changing the slice after construction must not disturb the
+// heap, and heap operations must not write back into it.
 func TestNewHeap_DoesNotAliasInput(t *testing.T) {
 	src := []containers.Item[string, string]{sItem("a", 5), sItem("b", 2), sItem("c", 8)}
 	h := containers.NewHeap(src...)
@@ -262,9 +261,9 @@ func TestNewHeap_DoesNotAliasInput(t *testing.T) {
 	}
 }
 
-// TestRemove_MiddleReheapifies removes interior nodes from a larger heap so the
-// replacement element must sometimes sift up and sometimes sift down, verifying
-// the heap stays ordered (observed via a non-increasing drain) after removal.
+// TestRemove_MiddleReheapifies removes interior nodes from a larger heap, so
+// the replacement item must sometimes sift up and sometimes sift down. A
+// non-increasing drain shows the heap stays ordered after each removal.
 func TestRemove_MiddleReheapifies(t *testing.T) {
 	build := func() *containers.Heap[uint32, int] {
 		h := newHeap()
@@ -302,11 +301,11 @@ func TestClear_ThenReuse(t *testing.T) {
 	}
 }
 
-// TestFuzz_AgainstReferenceModel drives a long random sequence of operations
-// and cross-checks the heap against a plain map used as an oracle, verifying
-// after every step that Len/Peek stay consistent and that Pop always surfaces a
-// true maximum-priority key. Because Push, Pop and Remove all read or update
-// the internal lookup map, agreement with the model exercises its consistency.
+// TestFuzz_AgainstReferenceModel runs a long random sequence of operations and
+// checks the heap against a plain map as oracle. After every step, Len and
+// Peek must agree with the model, and Pop must return a true maximum-priority
+// key. Push, Pop and Remove all use the internal lookup map, so agreement with
+// the model also tests that map.
 func TestFuzz_AgainstReferenceModel(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	h := containers.NewHeap[int, int]()
@@ -366,9 +365,9 @@ func TestFuzz_AgainstReferenceModel(t *testing.T) {
 	}
 }
 
-// TestFuzz_HeapSort verifies the classic property: pushing arbitrary items and
-// popping them all yields a non-increasing priority sequence. Keys are unique
-// so no dedup interferes with the count.
+// TestFuzz_HeapSort checks the classic property. Pushing arbitrary items and
+// popping them all yields a non-increasing priority sequence. Keys are unique,
+// so dedup does not change the count.
 func TestFuzz_HeapSort(t *testing.T) {
 	rng := rand.New(rand.NewSource(2))
 	for trial := 0; trial < 200; trial++ {

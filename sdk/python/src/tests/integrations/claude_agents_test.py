@@ -20,11 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Claude Agent SDK tool tests against a mocked client — no server, no model calls.
+"""Claude Agent SDK tool tests against a mocked client: no server, no model calls.
 
-Unlike the OpenAI tools, these return MCP content payloads rather than plain
-strings and flag a failure with ``is_error``, so the assertions check that
-envelope as well as the text.
+Unlike the OpenAI tools, these return MCP content payloads, not plain strings.
+They flag a failure with ``is_error``. So the assertions check that envelope as
+well as the text.
 """
 
 from unittest.mock import patch
@@ -77,9 +77,9 @@ def test_allowed_tools_follows_a_custom_server_name():
 def test_memory_server_builds_with_both_tools(mock_client):
     """The server is built under the default name with both memory tools.
 
-    The name is what ``allowed_tools`` namespaces the tools under, so a server
-    registered under any other name leaves both tools uncallable; and a server
-    missing either tool loses that half of the memory.
+    ``allowed_tools`` namespaces the tools under this name. A server registered
+    under any other name leaves both tools uncallable. A server missing either
+    tool loses that half of the memory.
     """
     with patch("fraise_sdk.integrations.claude_agents.create_sdk_mcp_server") as create:
         server = memory_server(mock_client())
@@ -104,7 +104,7 @@ def test_recall_schema_requires_only_keywords(mock_client):
 
 
 def test_remember_schema_requires_only_fact(mock_client):
-    """Only the fact is required; topics and entities are optional."""
+    """Only the fact is required. Topics and entities are optional."""
     schema = remember_tool(mock_client()).input_schema
     assert schema["required"] == ["fact"]
 
@@ -144,10 +144,12 @@ def test_recall_flags_server_errors_with_is_error(
 def test_recall_defaults_top_and_leaves_depth_to_the_server(
     mock_client, invoke_mcp_tool
 ):
-    """An omitted top takes the tool's default; an omitted depth is passed as
-    None so no clause is emitted and the server's configured lane applies. A
-    tool-side depth would be a lane the tool cannot use, since it names no
-    topic or entity, and any value above the floor draws a warning per call.
+    """An omitted top takes the tool's default. An omitted depth is passed as None.
+
+    With no depth, no clause is emitted and the server's configured lane
+    applies. A tool-side depth would be a lane the tool cannot use, since it
+    names no topic or entity. Any value above the floor would draw a warning
+    on every call.
     """
     client = mock_client()
     invoke_mcp_tool(recall_tool(client), keywords=["a"])
@@ -159,9 +161,9 @@ def test_recall_defaults_top_and_leaves_depth_to_the_server(
 def test_recall_schema_bounds_depth_to_the_lanes(mock_client):
     """The schema states the lanes' range so the model never has to guess it.
 
-    A depth past 2 is not a deeper search but a request the server rejects,
-    so the bound belongs in the contract the model reads, not only in the
-    check behind it.
+    A depth past 2 is not a deeper search but a request the server rejects. So
+    the bound belongs in the contract the model reads, not only in the check
+    behind it.
     """
     depth = recall_tool(mock_client()).input_schema["properties"]["depth"]
     assert (depth["minimum"], depth["maximum"]) == (0, 2)
@@ -173,8 +175,8 @@ def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(
 ):
     """An out-of-range depth is answered with a correction and never sent.
 
-    Sent on, it would fail anyway, in the query builder or at the server; the
-    tool error names the range up front so the retry can be right.
+    Sent on, it would fail anyway, in the query builder or at the server. The
+    tool error names the range up front, so the retry can be right.
     """
     client = mock_client()
     payload = invoke_mcp_tool(recall_tool(client), keywords=["a"], depth=depth)

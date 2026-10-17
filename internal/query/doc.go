@@ -20,19 +20,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package query defines the executable form of a Fraise query: the Recall
-// and Remember commands, and the Stream that runs one of them for a request.
+// Package query defines the executable form of a Fraise query: the Recall and
+// Remember commands, and the Stream that runs one of them for a request.
 //
-// [Parse] turns FQL text into a [Query] through the parser, binds the vector
-// parameters supplied out of band, and rejects a top:, depth: or vector length
-// outside its configured range. A Query hashes itself for the engine's plan
-// cache, through the [hash.Hashable] contract, and plans into a Stream that
-// the scheduler commits against the selected graph, under the shared lock for
-// a read and the exclusive lock for a write.
+// [Parse] turns FQL text into a [Query] through the parser, which binds the
+// vector parameters supplied out of band. Parse rejects a top:, depth: or
+// vector length outside its configured range. A Query hashes itself for the
+// engine's plan cache, through the [hash.Hashable] contract. It plans into a
+// Stream, which the scheduler commits against the selected graph. A read runs
+// under the shared lock, and a write under the exclusive lock.
 //
 // The plan cache hands the same query object to every request that hashes
-// alike, so a Query carries nothing per request: the explain flag and the
-// result live on the Stream, and parse warnings are returned beside the
-// query. For the same reason Hash must fold in every field that changes what a
-// query reads or writes, or a cache hit would run another query's plan.
+// alike. So a Query carries nothing per request. The explain flag and the
+// result live on the Stream, and parse warnings are returned beside the query.
+// For the same reason, Hash must fold in every field that changes what a query
+// reads or writes. Otherwise a cache hit would run another query's plan.
 package query

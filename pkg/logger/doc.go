@@ -20,12 +20,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package logger is the process-wide structured logger, a thin layer over
-// slog configured from the log settings.
+// Package logger is the process-wide structured logger. It is a thin layer
+// over slog, configured from the log settings.
 //
 // [NewLogger] builds a [Logger] from the configured level, format and
-// timestamp settings; [SetDefault] installs it, and the package-level [Debug],
-// [Info], [Warn] and [Error] write through it. Until a default is installed
-// those functions are no-ops: the mcp command never installs one, because
+// timestamp settings. [SetDefault] installs it, and the package-level [Debug],
+// [Info], [Warn] and [Error] write through it. Until a default is installed,
+// those functions do nothing. The mcp command never installs one, because
 // stdout carries the MCP protocol there and a stray log line would corrupt it.
 package logger

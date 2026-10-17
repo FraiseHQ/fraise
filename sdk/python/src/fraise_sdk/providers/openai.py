@@ -22,9 +22,9 @@
 
 """OpenAI providers: an embedder and an anchor extractor.
 
-Optional: the ``openai`` client ships with the ``openai`` extra
-(``pip install 'fraise-sdk[openai]'``). The package does not import this module,
-so the core SDK does not depend on it; import the providers from here.
+The ``openai`` client is optional. It ships with the ``openai`` extra
+(``pip install 'fraise-sdk[openai]'``). The package does not import this
+module, so the core SDK does not depend on it. Import the providers from here.
 """
 
 from __future__ import annotations
@@ -43,10 +43,10 @@ except ImportError as exc:  # pragma: no cover - exercised only without the extr
         "Install it with:  pip install 'fraise-sdk[openai]'"
     ) from exc
 
-# The instructions and output shape the published benchmark ingests with, word
-# for word, so an SDK user's write path is the one the numbers measure. The
-# fields it describes are the ones extract sends: a field renamed on one side
-# alone reaches the model unexplained.
+# The published benchmark ingests with these instructions and this output
+# shape, word for word. So an SDK user's write path is the one the numbers
+# measure. The prompt describes the fields extract sends. A field renamed on
+# one side alone reaches the model unexplained.
 _EXTRACTION_SYSTEM_PROMPT = """\
 You tag one message from a conversation so that a memory database can link
 it to other messages about the same things.
@@ -82,7 +82,7 @@ _ANCHORS_SCHEMA = {
 }
 
 # A reasoning model's hidden reasoning tokens share the completion budget and
-# vary from call to call, and a budget they exhaust truncates the JSON
+# vary from call to call. If they exhaust the budget, the JSON is cut off
 # mid-string. 16k is generous headroom for one message's anchors.
 _MAX_COMPLETION_TOKENS = 16000
 
@@ -90,10 +90,10 @@ _MAX_COMPLETION_TOKENS = 16000
 class OpenAIEmbedder(Embedder):
     """Text embeddings from OpenAI's embeddings API.
 
-    Wraps ``client.embeddings.create`` for one text at a time. The default model
-    is ``text-embedding-3-small``; ``dimensions`` optionally truncates the vector
-    (supported by the ``text-embedding-3-*`` models) so it can match a graph's
-    fixed embedding size.
+    It wraps ``client.embeddings.create`` for one text at a time. The default
+    model is ``text-embedding-3-small``. ``dimensions`` optionally truncates
+    the vector to match a graph's fixed embedding size. The
+    ``text-embedding-3-*`` models support it.
 
     Pass your own configured ``openai.OpenAI`` client, or let one be built from
     the environment (``OPENAI_API_KEY``, optionally overridden by ``api_key``).
@@ -128,11 +128,11 @@ class OpenAIEmbedder(Embedder):
 class OpenAIExtractor(Extractor):
     """The topic and entity anchors of one message, from an OpenAI chat model.
 
-    One chat completion per message, constrained to a strict JSON schema of
-    ``topics`` and ``entities``, each value becoming one :class:`Anchor`. The
-    model reads the message beside its graph's :class:`Context`, so a
-    reference resolves to what a nearby message named and a recurring subject
-    is filed under the anchor the graph already has. The default model is
+    It makes one chat completion per message, held to a strict JSON schema of
+    ``topics`` and ``entities``. Each value becomes one :class:`Anchor`. The
+    model reads the message with its graph's :class:`Context`. So a reference
+    resolves to what a nearby message named, and a recurring subject is filed
+    under the anchor the graph already has. The default model is
     ``gpt-5-mini``, with the prompt and output shape the published benchmark
     ingests with. The message is only read, never rewritten, so what is
     remembered is what was said.
@@ -159,8 +159,8 @@ class OpenAIExtractor(Extractor):
     def extract(self, text: str, context: Context) -> list[Anchor]:
         """Return the topics and entities ``text`` is about, as anchors.
 
-        The message and its context reach the model as one JSON object, which
-        carries the text losslessly, quotes and line breaks included, and
+        The message and its context reach the model as one JSON object. JSON
+        carries the text losslessly, quotes and line breaks included. It also
         splits the vocabulary into the topics and the entities an answer can
         reuse.
 
@@ -170,7 +170,8 @@ class OpenAIExtractor(Extractor):
 
         Raises:
             FraiseError: if the model's answer is empty or not the anchors
-                schema — a refusal, or JSON truncated by the completion budget.
+                schema, such as a refusal or JSON cut off by the completion
+                budget.
         """
         payload = {
             "recent": list(context.recent),

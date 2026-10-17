@@ -24,6 +24,7 @@ package trees
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -40,9 +41,9 @@ var ErrDimensionMismatch = errors.New("trees: point dimension does not match tre
 var ErrMissingPoint = errors.New("trees: node has no point")
 
 // Projection holds the random basis for one RPTree. Each row is a unit vector
-// in the input space; internal tree nodes pick one row as their split direction.
+// in the input space. Each internal node picks one row as its split direction.
 type Projection[K comparable, P float32 | float64] struct {
-	rows [][]P // random unit vectors; one per projected coordinate
+	rows [][]P // random unit vectors, one per projected coordinate
 }
 
 // newProjection draws projDim random unit vectors in dim-dimensional space
@@ -69,10 +70,10 @@ func newProjection[K comparable, P float32 | float64](dim, projDim int, rng *ran
 	return Projection[K, P]{rows: rows}
 }
 
-// Apply computes the dot product of p with every row, returning p's
-// coordinates in the projected space. Nearest needs all of them, since a
-// descent cannot know which rows the splits below will name; code that needs
-// one row uses ApplyRow.
+// Apply computes the dot product of p with every row, giving p's coordinates
+// in the projected space. Nearest needs all of them, since a descent cannot
+// know which rows the splits below will use. Code that needs one row uses
+// ApplyRow.
 func (pr Projection[K, P]) Apply(p Point[K, P]) []P {
 	out := make([]P, len(pr.rows))
 	for i, row := range pr.rows {
@@ -86,8 +87,8 @@ func (pr Projection[K, P]) Apply(p Point[K, P]) []P {
 }
 
 // ApplyRow computes p's coordinate along a single projection row. The write
-// path needs no more: a split divides on one row, and routing a point past an
-// internal node reads only that node's row, so ingest cost does not grow with
+// path needs no more. A split divides on one row, and routing a point past an
+// internal node reads only that node's row. So ingest cost does not grow with
 // projDim.
 func (pr Projection[K, P]) ApplyRow(p Point[K, P], row int) P {
 	var sum P
@@ -98,7 +99,7 @@ func (pr Projection[K, P]) ApplyRow(p Point[K, P], row int) P {
 }
 
 // RPTreeNode is a node in an RPTree's binary space partition. Internal nodes
-// split on a random direction; leaves hold the data.
+// split on a random direction. Leaves hold the data.
 type RPTreeNode[K comparable, T any, P float32 | float64] struct {
 	// internal-node fields (unused when leaf)
 	splitRow    int // index into Projection.rows
@@ -108,17 +109,16 @@ type RPTreeNode[K comparable, T any, P float32 | float64] struct {
 	data []TreeNode[K, T, P]
 }
 
-// isLeaf reports whether n has no children.
 func (n *RPTreeNode[K, T, P]) isLeaf() bool {
 	return n.left == nil && n.right == nil
 }
 
-// RPTree is a random-projection tree: a binary space partition where each
-// internal node splits points by their projection onto one random direction
-// drawn from the tree's Projection. Nearest results are approximate.
+// RPTree is a random-projection tree, a binary space partition. Each internal
+// node splits points by their projection onto one random direction from the
+// tree's Projection. Nearest results are approximate.
 //
-// A single RPTree is a weak approximator; recall improves by querying a forest
-// of them with independent projections, assembled at the index layer.
+// A single RPTree is a weak approximator. Recall improves by querying a forest
+// of them with independent projections, built at the index layer.
 type RPTree[K comparable, T any, P float32 | float64] struct {
 	proj      Projection[K, P] // random basis for all splits in this tree
 	root      *RPTreeNode[K, T, P]
@@ -131,19 +131,19 @@ type RPTree[K comparable, T any, P float32 | float64] struct {
 }
 
 // NewRPTree returns an empty RPTree that indexes dim-dimensional points using
-// projDim random split directions. seed makes the projection and the split
-// choices reproducible, leafSize is how many points a leaf holds before it
-// splits, and overfetch is how many candidates Nearest gathers per result
-// asked for.
+// projDim random split directions. The other parameters:
+//   - seed makes the projection and the split choices reproducible.
+//   - leafSize is how many points a leaf holds before it splits.
+//   - overfetch is how many candidates Nearest gathers per result asked for.
 //
-// The projection and the split choices are drawn in turn from one generator
-// seeded with seed, so a tree's randomness is a function of its seed alone: a
-// forest that seeds its trees consecutively gets trees whose draws are
-// independent of each other's, which is what its recall rests on.
+// One generator, seeded with seed, draws the projection and then the split
+// choices. So a tree's randomness depends on its seed alone. A forest that
+// seeds its trees consecutively gets trees with independent draws, and its
+// recall rests on that.
 //
-// The tree has no defaults of its own: they are configuration, applied where
-// the index is built. The clamps below are validity floors, the smallest value
-// each parameter is meaningful at, not defaults.
+// The tree has no defaults of its own. Defaults are configuration, applied
+// where the index is built. The clamps below are not defaults. They are
+// validity floors, the smallest value at which each parameter means something.
 func NewRPTree[K comparable, T any, P float32 | float64](dim, projDim int, seed uint64, leafSize, overfetch int) *RPTree[K, T, P] {
 	if projDim < 1 {
 		projDim = 1
@@ -206,11 +206,10 @@ func (t *RPTree[K, T, P]) goesLeft(n *RPTreeNode[K, T, P], p Point[K, P]) bool {
 	return t.proj.ApplyRow(p, n.splitRow) < n.splitVal
 }
 
-// split turns the overflowing leaf n into an internal node: it projects every
-// point onto a random direction, sorts by that coordinate and divides the
-// points evenly between two new leaves. Splitting on the sorted order (rather
-// than a fixed threshold) keeps the tree balanced regardless of duplicate
-// projected values.
+// split turns the overflowing leaf n into an internal node. It projects every
+// point onto a random direction, sorts by that coordinate, and divides the
+// points evenly between two new leaves. Splitting on the sorted order, not a
+// fixed threshold, keeps the tree balanced even when projected values repeat.
 func (t *RPTree[K, T, P]) split(n *RPTreeNode[K, T, P]) {
 	row := t.rng.Intn(t.projDim)
 
@@ -242,30 +241,31 @@ func (t *RPTree[K, T, P]) split(n *RPTreeNode[K, T, P]) {
 	n.data = nil
 }
 
-// probe is a subtree the descent passed over, kept for a later visit. deviation
-// is |proj[splitRow] − splitVal| at the node that turned away from it: how
-// close the query came to being routed here instead, and therefore how likely
-// this side is to hold a true neighbour that the taken side does not.
+// probe is a subtree the descent passed over, kept for a later visit.
+// deviation is |proj[splitRow] − splitVal| at the node that turned away from
+// it. It measures how close the query came to being routed here instead. The
+// smaller it is, the more likely this side holds a true neighbour that the
+// taken side lacks.
 type probe[K comparable, T any, P float32 | float64] struct {
 	node      *RPTreeNode[K, T, P]
 	deviation P
 }
 
-// Nearest returns up to k nodes near p, nearest first. The search is
-// multi-probe: it descends the partition on projected coordinates, deferring
-// every subtree it turns away from, then repeatedly descends the deferred
-// subtree whose split the query came closest to, until it holds overfetch × k
-// candidates or the tree is exhausted. Candidates are re-ranked by true
-// distance in the original space.
+// Nearest implements [SpatialTree] with a multi-probe search. It descends the
+// partition on projected coordinates and defers every subtree it turns away
+// from. It then descends the deferred subtree whose split the query came
+// closest to. It repeats until it holds overfetch × k candidates or the tree
+// is exhausted. It re-ranks the candidates by true distance in the original
+// space.
 //
-// Probing lets a result span more than one leaf: a single descent sees one
-// leaf, so it would return at most leafSize nodes however large k is, with
-// nothing to tell the caller the index holds more. Probing also reaches true
+// Probing lets a result span more than one leaf. A single descent sees one
+// leaf, so it would return at most leafSize nodes however large k is. Nothing
+// would tell the caller that the index holds more. Probing also reaches true
 // neighbours on the far side of a split near the query, which a single
 // descent never sees.
 //
 // The overfetch factor turns probing into recall. A pool of only k candidates
-// leaves the re-ranking nothing to choose between; a larger pool lets the true
+// leaves the re-ranking nothing to choose between. A larger pool lets the true
 // distance overrule the projection, and probing the whole tree gives the exact
 // answer. Measured at the shipped defaults (50k uniform 128-d vectors, k=10,
 // 16 trees, recall@10 against brute force):
@@ -274,24 +274,27 @@ type probe[K comparable, T any, P float32 | float64] struct {
 //	recall  0.05  0.09  0.12  0.24  0.42  0.53   1.00
 //	query   1.4ms 1.7ms 2.1ms 3.1ms 4.6ms 8.4ms  19.6ms
 //
-// Recall per unit of query time is flat to slightly rising across that range,
-// so there is no knee and no value right for every corpus: it is configuration
-// (db.vector-search.overfetch), not a constant. Uniform vectors are the
-// adversarial case for a projection index; clustered embeddings do better at
-// every factor.
+// Recall per unit of query time is flat to slightly rising across that range.
+// So there is no knee and no value right for every corpus. The factor is
+// configuration (db.vector-search.overfetch), not a constant. Uniform vectors
+// are the adversarial case for a projection index. Clustered embeddings do
+// better at every factor.
 //
-// A non-nil keep admits only the leaf nodes whose key it accepts, and the
-// budget counts admitted nodes, so a selective keep probes further instead of
-// returning short; when too few nodes pass, the walk exhausts the tree.
+// The walk applies keep to each leaf as it reads it, and the budget counts
+// only the nodes keep accepts. So a selective keep probes further instead of
+// returning short. When too few nodes pass, the walk exhausts the tree.
 //
-// Ties between equally deviating probes resolve by the order they were deferred,
-// so the walk is a function of the tree and the query alone.
-func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) []TreeNode[K, T, P] {
+// Ties between equally deviating probes resolve by the order they were
+// deferred. So the walk depends only on the tree and the query.
+func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) ([]TreeNode[K, T, P], error) {
+	if p.Dim() != t.dim {
+		return nil, ErrDimensionMismatch
+	}
 	if k <= 0 || t.length == 0 {
-		return nil
+		return nil, nil
 	}
 
-	// Project the query once: every level of every probe then reads its split
+	// Project the query once. Every level of every probe then reads its split
 	// coordinate in O(1), where goesLeft would recompute it in O(dim).
 	proj := t.proj.Apply(p)
 
@@ -315,8 +318,8 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) []Tre
 	}
 
 	// admit appends the leaf's nodes that keep accepts. It copies even when
-	// keep is nil: the pool must never share a leaf's backing array, or
-	// appending to it would write into the leaf's spare capacity.
+	// keep is nil. The pool must never share a leaf's backing array, or
+	// appending to the pool would write into the leaf's spare capacity.
 	admit := func(candidates, leaf []TreeNode[K, T, P]) []TreeNode[K, T, P] {
 		for _, node := range leaf {
 			if keep == nil || keep(node.Key()) {
@@ -328,8 +331,8 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) []Tre
 
 	budget := k * t.overfetch
 	candidates := admit(nil, descend(t.root))
-	// The deferred set stays small — one entry per level per probe — so the
-	// closest is found by scan rather than by carrying a second heap.
+	// The deferred set stays small, one entry per level per probe. So a scan
+	// finds the closest, and no second heap is needed.
 	for len(candidates) < budget && len(deferred) > 0 {
 		best := 0
 		for i, d := range deferred[1:] {
@@ -339,29 +342,33 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) []Tre
 		}
 		next := deferred[best]
 		deferred = append(deferred[:best], deferred[best+1:]...)
-		// Probes are subtrees the descent turned away from, so they partition
-		// what has not been visited: no leaf is reached twice.
+		// Probes are subtrees the descent turned away from. They partition
+		// what is not yet visited, so no leaf is reached twice.
 		candidates = admit(candidates, descend(next.node))
 	}
 	if len(candidates) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	// Leaves are disjoint but keys need not be: an owner that replaces a key's
+	// Leaves are disjoint but keys need not be. An owner that replaces a key's
 	// point (RPTreeIndex) leaves the old copy in the tree until it rebuilds.
-	// The pool is keyed by node key and, on a collision, keeps the higher
-	// priority — the farther copy — so a stale copy could displace the nearer
-	// one and then be evicted as the farthest, losing the key; and a colliding
-	// enqueue on a full pool would dequeue without adding, leaving k-1. Each
-	// key therefore enters the pool once, at its nearest copy, in candidate
-	// order so that ties still resolve by the walk.
+	// The pool is keyed by node key, and on a collision it keeps the higher
+	// priority, which is the farther copy. A stale copy could then displace
+	// the nearer one and be evicted as the farthest, losing the key. And a
+	// colliding enqueue on a full pool would dequeue without adding, leaving
+	// k-1. So each key enters the pool once, at its nearest copy. Keys enter
+	// in candidate order, so ties still resolve by the walk.
 	items := make([]containers.Item[K, TreeNode[K, T, P]], 0, len(candidates))
 	at := make(map[K]int, len(candidates))
 	for _, node := range candidates {
+		d, err := p.Distance(node.Point())
+		if err != nil {
+			return nil, err
+		}
 		item := containers.Item[K, TreeNode[K, T, P]]{
 			Key:      node.Key(),
 			Value:    node,
-			Priority: distancePriority(p.Distance(node.Point())),
+			Priority: distancePriority(d),
 		}
 		if i, ok := at[item.Key]; ok {
 			if item.Priority < items[i].Priority {
@@ -373,8 +380,8 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) []Tre
 		items = append(items, item)
 	}
 
-	// The pool is sized on the candidates, not on k: k is a recall's top:,
-	// which a client chooses, so a large top: against a small tree must not
+	// The pool is sized on the candidates, not on k. k is a recall's top:,
+	// which a client chooses. A large top: against a small tree must not
 	// reserve memory for hits the tree cannot return.
 	pq, _ := containers.NewPriorityQueue[K, TreeNode[K, T, P]](uint(min(k, len(items))))
 	for _, item := range items {
@@ -393,18 +400,18 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) []Tre
 		item, _ := pq.Dequeue()
 		out[i] = item.Value
 	}
-	return out
+	return out, nil
 }
 
-// distancePriority maps a non-negative distance to a uint64 that preserves
-// ordering, for use as a containers.Item Priority (smaller distance ⇒ smaller
-// priority).
+// distancePriority maps a non-negative distance to an order-preserving uint64,
+// for use as a containers.Item Priority. A smaller distance gives a smaller
+// priority.
 func distancePriority[P float32 | float64](d P) uint64 {
 	return math.Float64bits(float64(d))
 }
 
-// Range returns every node whose point falls within the axis-aligned box bounded
-// by min and max, evaluated in the original (unprojected) space.
+// Range implements [SpatialTree]. It tests points in the original space, not
+// the projected one.
 func (t *RPTree[K, T, P]) Range(min, max Point[K, P]) []TreeNode[K, T, P] {
 	var out []TreeNode[K, T, P]
 	var walk func(n *RPTreeNode[K, T, P])
@@ -439,8 +446,8 @@ func withinBox[K comparable, P float32 | float64](p, min, max Point[K, P]) bool 
 	return true
 }
 
-// VectorPoint adapts a containers.Vector into a Point[K, P], pairing its
-// coordinates with a comparable key so RPTree can index and query it.
+// VectorPoint adapts a containers.Vector to Point[K, P]. It pairs the
+// coordinates with a key, so RPTree can index and query them.
 type VectorPoint[K comparable, P float32 | float64] struct {
 	key    K
 	vector containers.Vector[K, P]
@@ -463,23 +470,25 @@ func (v VectorPoint[K, P]) GetValue(d int) P { return v.vector.Data[d] }
 func (v VectorPoint[K, P]) Key() K { return v.key }
 
 // Distance returns the Euclidean distance between v and p. Against another
-// VectorPoint it uses containers.Vector.Distance; any other Point is read
+// VectorPoint it uses containers.Vector.Distance. It reads any other Point
 // coordinate by coordinate through the interface.
-func (v VectorPoint[K, P]) Distance(p Point[K, P]) P {
+func (v VectorPoint[K, P]) Distance(p Point[K, P]) (P, error) {
 	if o, ok := p.(VectorPoint[K, P]); ok {
 		return v.vector.Distance(o.vector)
+	}
+	if p.Dim() != v.Dim() {
+		return 0, fmt.Errorf("%w: %d and %d", containers.ErrDimMismatch, v.Dim(), p.Dim())
 	}
 	var sum P
 	for d := 0; d < v.Dim(); d++ {
 		diff := v.GetValue(d) - p.GetValue(d)
 		sum += diff * diff
 	}
-	return P(math.Sqrt(float64(sum)))
+	return P(math.Sqrt(float64(sum))), nil
 }
 
 // VectorNode bundles a key and a containers.Vector into a
-// TreeNode[K, containers.Vector[K, P], P], ready to hand to RPTree.Insert. Its
-// Point is a VectorPoint over the same vector.
+// TreeNode[K, containers.Vector[K, P], P], ready to hand to RPTree.Insert.
 type VectorNode[K comparable, P float32 | float64] struct {
 	key   K
 	value containers.Vector[K, P]

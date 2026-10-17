@@ -24,28 +24,27 @@ package hash
 
 import "github.com/FraiseHQ/fraise/internal/config"
 
-// Hasher maps a value of type T to a comparable key of type K. Implementations
-// such as XxHash provide a concrete hashing algorithm.
+// Hasher maps a value of type T to a comparable key of type K. [XxHash] and
+// [T1haHash] implement it.
 type Hasher[K comparable, T any] interface {
 	Hash(T) K
 	Seed() uint64
 }
 
-// Hashable is implemented by types that know how to hash themselves using a
-// provided Hasher, returning the resulting comparable key of type K.
+// Hashable is implemented by types that hash themselves through a given Hasher
+// and return the resulting key.
 type Hashable[K comparable, T any] interface {
 	Hash(h Hasher[K, T]) K
 }
 
-// NewHasher returns the Hasher the db.hashing-function configuration selects,
-// seeded with its seed: [T1haHash] for "t1ha", [XxHash] otherwise. Every key
-// a running server derives must come from this one hasher, since keys from two
+// NewHasher returns the Hasher that the db.hashing-function configuration
+// selects, with its seed: [T1haHash] for "t1ha", [XxHash] otherwise. Every key
+// a running server derives must come from this one hasher. Keys from two
 // algorithms or seeds would never match each other.
 func NewHasher[K ~uint64](cfg *config.ConfigSet) Hasher[K, string] {
-	// Startup rejects any name outside config.HashingFunctions, so the default
-	// arm serves only "xxhash" and an unset (hand-built) config: a mistyped
-	// name never silently keys the store with a hash the operator did not
-	// choose.
+	// Startup rejects any name outside config.HashingFunctions. So the default
+	// arm serves only "xxhash" and an unset, hand-built config. A mistyped name
+	// never silently keys the store with a hash the operator did not choose.
 	switch cfg.DB.HashingFunction.Name {
 	case config.HashingT1ha:
 		return T1haHash[K]{seed: cfg.DB.HashingFunction.Seed}

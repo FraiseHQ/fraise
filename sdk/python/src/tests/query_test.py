@@ -22,9 +22,8 @@
 
 """Tests for the pure query-string builders.
 
-The unit tests pin the strings they build; the tests marked ``integration``
-send those strings to a live server, whose parser is the judge of whether
-they parse.
+The unit tests pin the strings they build. The tests marked ``integration``
+send those strings to a live server, whose parser judges whether they parse.
 """
 
 import warnings
@@ -61,7 +60,7 @@ def test_remember_with_vector_appends_placeholder():
 
 
 def test_remember_escapes_apostrophes():
-    """An apostrophe is doubled — the grammar's phrase escape — not rejected."""
+    """An apostrophe is doubled (the grammar's phrase escape), not rejected."""
     assert build_remember("it's turquoise") == "remember@0 'it''s turquoise'"
 
 
@@ -72,8 +71,9 @@ def test_remember_rejects_empty_value():
 
 
 def test_remember_keeps_free_text_verbatim_inside_the_quotes():
-    """Ingestion feeds phrases arbitrary prose: newlines, tabs, emoji and
-    backslashes travel inside the quotes untouched — only apostrophes are
+    """Ingestion feeds phrases arbitrary prose, which travels inside the quotes.
+
+    Newlines, tabs, emoji and backslashes are untouched. Only apostrophes are
     rewritten, by doubling.
     """
     value = 'line one\nline two\t— déjà vu 😀 C:\\temp "quoted"'
@@ -81,8 +81,9 @@ def test_remember_keeps_free_text_verbatim_inside_the_quotes():
 
 
 def test_recall_query_phrase_is_one_quoted_term():
-    """A whole question travels as a single quoted phrase term, so natural
-    language never collides with the grammar's reserved keywords.
+    """A whole question travels as one quoted phrase term.
+
+    Natural language then never collides with the grammar's reserved keywords.
     """
     got = build_recall(
         query="What topic has John been blogging about recently",
@@ -96,7 +97,7 @@ def test_recall_query_phrase_is_one_quoted_term():
 
 
 def test_recall_query_phrase_escapes_apostrophes():
-    """The phrase escape covers the query too: John's travels as John''s."""
+    """The phrase escape covers the query too, so John's travels as John''s."""
     assert (
         build_recall(query="what is John's blog about")
         == "recall@0 'what is John''s blog about'"
@@ -139,10 +140,10 @@ def test_a_bare_string_where_a_sequence_is_wanted_is_rejected(build, args, param
     """``topics="billing"`` is refused by name, never expanded letter by letter.
 
     ``str`` satisfies ``Sequence[str]``, so the bare string type-checks.
-    Iterated, it would file the fact under ``topic:b topic:i topic:l ...``,
-    one anchor per letter, and a recall by ``billing`` would find nothing. The
-    five cases are every path that takes a sequence, each reaching the check
-    independently, and the message names the fix.
+    Iterated, it would file the fact under ``topic:b topic:i topic:l ...``, one
+    anchor per letter. A recall by ``billing`` would then find nothing. The
+    five cases are every path that takes a sequence, and each reaches the check
+    on its own. The message names the fix.
     """
     with pytest.raises(FraiseQueryError) as exc_info:
         build(*args, **{param: "billing"})
@@ -154,14 +155,14 @@ def test_a_bare_string_where_a_sequence_is_wanted_is_rejected(build, args, param
 
 @pytest.mark.parametrize("bad", [0, -1])
 def test_recall_rejects_non_positive_top(bad):
-    """top must be positive — a recall that can return nothing is a caller bug."""
+    """top must be positive. A recall that can return nothing is a caller bug."""
     with pytest.raises(FraiseQueryError):
         build_recall(["x"], top=bad)
 
 
 @pytest.mark.parametrize("bad", [-1, -2])
 def test_recall_rejects_negative_depth(bad):
-    """depth must be non-negative; there is no lane below the floor."""
+    """depth must be non-negative. There is no lane below the floor."""
     with pytest.raises(FraiseQueryError):
         build_recall(["x"], depth=bad)
 
@@ -181,9 +182,9 @@ def test_negative_graph_is_rejected():
 def test_graph_above_the_uint8_range_is_rejected(bad):
     """A selector travels as a uint8, so no graph above 255 can be named.
 
-    Narrowed to a uint8, 256 would be graph 0: somebody else's memory. The
-    builder refuses it before any request, so a mistyped graph id fails in the
-    caller's own stack trace.
+    Narrowed to a uint8, 256 would be graph 0, which is somebody else's memory.
+    The builder refuses it before any request, so a mistyped graph id fails in
+    the caller's own stack trace.
     """
     with pytest.raises(FraiseQueryError, match="at most 255"):
         build_remember("x", graph=bad)
@@ -204,11 +205,11 @@ def test_graph_above_the_uint8_range_is_rejected(bad):
 def test_a_keyword_spelled_search_word_is_quoted_and_warns(kwargs, expected):
     """A search word that spells a reserved word is quoted and warns, anywhere.
 
-    The server reads a bare reserved word as syntax in every position and in
-    any casing, and rejects it as a term; the caller passed a search word, so
-    the builder writes the quoted form that means the word. It warns because
-    the caller may have meant the clause instead, which only ``client.query``
-    can send, and the warning names the caller's line, not the SDK's.
+    The server reads a bare reserved word as syntax, in any position and any
+    casing, and rejects it as a term. The caller passed a search word, so the
+    builder writes the quoted form that means the word. It warns because the
+    caller may have meant the clause, which only ``client.query`` can send.
+    The warning names the caller's line, not the SDK's.
     """
     with pytest.warns(FraiseWarning, match="is a reserved word") as record:
         assert build_recall(**kwargs) == expected
@@ -228,7 +229,7 @@ def test_a_search_word_that_is_not_one_plain_word_is_quoted(keywords, expected):
     """Outside quotes a word is letters and digits only, so anything else is quoted.
 
     The server rejects ``recall e-mail`` at the ``-`` rather than guess where
-    the word ends; the caller passed one search word, and the quoted form
+    the word ends. The caller passed one search word, and the quoted form
     carries it whole. Letters in any script are plain and stay bare. None of
     these can be read as syntax, so none of them warns.
     """
@@ -254,10 +255,10 @@ def test_an_anchor_value_is_quoted_only_when_a_bare_word_cannot_hold_it(
 ):
     """A topic or entity is bare when it is one plain word, quoted otherwise.
 
-    A space, a colon, an apostrophe or a hyphen cannot stand in a bare word,
-    so those values are quoted and travel whole. A reserved word stays bare:
-    after the ``:`` only a value can appear, so ``topic:top`` is data and does
-    not warn. The rule is the same on a read and on a write.
+    A space, a colon, an apostrophe or a hyphen cannot stand in a bare word, so
+    those values are quoted and travel whole. A reserved word stays bare. After
+    the ``:`` only a value can appear, so ``topic:top`` is data and does not
+    warn. The rule is the same on a read and on a write.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("error", FraiseWarning)
@@ -359,10 +360,10 @@ def test_a_query_phrase_recall_parses(client, query_graph):
 def test_awkward_values_still_parse(value, client, query_graph):
     """Values that stress the quoting are still one phrase to the parser.
 
-    Quoting is the builder's job and finding the phrase boundary is the
-    server's; a value that makes the parser stumble means the two disagree
-    about where the phrase ends — including over the doubled-quote escape
-    the builder applies to apostrophes.
+    Quoting is the builder's job, and finding the phrase boundary is the
+    server's. A value that makes the parser stumble means the two disagree
+    about where the phrase ends. That includes the doubled-quote escape the
+    builder applies to apostrophes.
     """
     client.query(build_remember(value, graph=query_graph, topics=["quoting"]))
 
@@ -373,8 +374,8 @@ def test_the_vector_placeholder_binds_to_the_parameter_the_builder_names(
 ):
     """The name in ``vec:$v`` is the name the client sends the vector under.
 
-    VECTOR_PARAM is a two-sided contract: the builder writes the placeholder
-    into the string and the client sends ``{"v": [...]}`` beside it. Nothing
+    VECTOR_PARAM is a two-sided contract. The builder writes the placeholder
+    into the string, and the client sends ``{"v": [...]}`` beside it. Nothing
     else in the suite would notice if those two names drifted apart.
     """
     text = build_remember("a vector bound by name", graph=query_graph, with_vector=True)
@@ -385,7 +386,7 @@ def test_the_vector_placeholder_binds_to_the_parameter_the_builder_names(
 def test_the_vector_placeholder_is_really_bound_not_ignored(client, query_graph):
     """A placeholder sent without its parameter is rejected for the unbound name.
 
-    The mirror of the test above: if the server ignored the placeholder rather
+    This mirrors the test above. If the server ignored the placeholder rather
     than binding it, that test would prove nothing.
     """
     text = build_recall(["barometer"], graph=query_graph, with_vector=True)
@@ -410,10 +411,9 @@ def test_a_recall_seeded_without_keywords_parses(kwargs, client, query_graph, en
 
     ``build_recall`` takes a topic, an entity or a vector as a recall's only
     seed, and builds ``recall@2 topic:weather`` (or ``vec:$v``, or
-    ``entity:...``) accordingly. If the grammar disagreed,
-    ``client.recall(topics=[...])`` and ``client.recall(vector=[...])``, pure
-    anchor and pure semantic search, could not be asked without a keyword the
-    caller does not mean.
+    ``entity:...``). If the grammar disagreed, ``client.recall(topics=[...])``
+    and ``client.recall(vector=[...])`` would need a keyword the caller does
+    not mean. Those are pure anchor search and pure semantic search.
     """
     text = build_recall(graph=query_graph, **kwargs)
     parameters = (
@@ -440,8 +440,8 @@ def test_a_keyword_spelled_search_word_survives_the_grammar(
 ):
     """A search word that spells a keyword reaches the engine as a word.
 
-    The builder quotes these because a bare reserved word is syntax in every
-    position and in any casing — ``recall@2 since 7d`` is a parse error. Only a
+    The builder quotes these because a bare reserved word is syntax, in any
+    position and any casing. ``recall@2 since 7d`` is a parse error. Only a
     live parser can prove the quoting is the right escape.
     """
     with pytest.warns(FraiseWarning, match="is a reserved word"):
@@ -465,11 +465,12 @@ def test_a_keyword_spelled_search_word_survives_the_grammar(
 def test_a_quoted_anchor_is_the_anchor_fql_names(value, anchor, client, query_graph):
     """A topic written through the builder is the anchor hand-written FQL names.
 
-    The builder writes an anchor bare or quoted depending on what it holds, so
-    this pins that either form lands on the same anchor a caller writing FQL
-    would name — folded to lower case — that a reserved word is an ordinary
-    anchor after the ``:``, and that a space, a colon or an apostrophe survives
-    the trip.
+    The builder writes an anchor bare or quoted, depending on what it holds.
+    This pins three things:
+    - Either form lands on the anchor a caller writing FQL would name, folded
+      to lower case.
+    - A reserved word is an ordinary anchor after the ``:``.
+    - A space, a colon or an apostrophe survives the trip.
     """
     fact = f"the anchor probe for {value}"
     client.query(build_remember(fact, graph=query_graph, topics=[value]))
@@ -491,11 +492,11 @@ def test_a_bound_past_the_servers_ceiling_names_the_range(
 ):
     """The builder's floor and the server's ceiling are different jobs.
 
-    ``build_recall`` refuses a negative depth or a non-positive top because
-    those are meaningless at any configuration; how deep or how many a *server*
-    will go is operator-set, so only the server can refuse these — and its
-    message has to carry the range, or an agent retries with another large
-    number.
+    ``build_recall`` refuses a negative depth or a non-positive top, because
+    those are meaningless under any configuration. How deep or how many a
+    *server* will go is set by its operator, so only the server can refuse
+    these. Its message must carry the range, or an agent retries with another
+    large number.
     """
     with pytest.raises(FraiseAPIError) as excinfo:
         client.query(build_recall(graph=query_graph, **kwargs))
@@ -509,12 +510,11 @@ def test_the_builders_agree_with_the_graphs_vector_dimension(
 ):
     """A vector of the wrong width reaches the index and is refused there.
 
-    The first vector a graph stores fixes its width, so the test stores one at
-    the suite's width itself rather than relying on an earlier test to have
-    done it: run alone, the mis-sized vector would otherwise be the first, be
-    accepted, and fix the graph at the wrong width for every test after it.
-    Incidentally proof that the vector is bound and used, rather than parsed
-    and dropped on the floor.
+    The first vector a graph stores fixes its width. So the test first stores
+    one at the suite's width, rather than rely on an earlier test to have done
+    it. Run alone, the mis-sized vector would otherwise be the first. It would
+    be accepted and fix the graph at the wrong width for every later test. The
+    test also proves that the vector is bound and used, not parsed and dropped.
     """
     sized = build_remember("a well-sized vector", graph=query_graph, with_vector=True)
     client.query(sized, parameters={VECTOR_PARAM: encode("a well-sized vector")})

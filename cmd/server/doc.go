@@ -27,20 +27,20 @@
 //
 //	fraise [serve|mcp|version] [flags]
 //
-// The first argument selects the subcommand; when it is absent or is a flag,
+// The first argument selects the subcommand. When it is absent or is a flag,
 // the subcommand is serve, so 'fraise -config fraise.config.toml' starts the
 // server. The subcommands are:
 //
-//   - serve starts the HTTP daemon at the configured precision and runs until
-//     SIGINT or SIGTERM, then drains in-flight requests before exiting.
-//   - mcp serves the Model Context Protocol over stdio, forwarding the recall
-//     and remember tools to the daemon at -addr (by default the one the same
-//     config describes, on 127.0.0.1 at -port).
+//   - serve starts the HTTP daemon at the configured precision. It runs until
+//     SIGINT or SIGTERM, then drains in-flight requests before it exits.
+//   - mcp serves the Model Context Protocol over stdio. It forwards the recall
+//     and remember tools to the daemon at -addr. By default that is the daemon
+//     the same config describes, on 127.0.0.1 at -port.
 //   - version prints the release version.
 //
-// Every setting has a flag; -config names the TOML file read first (default
+// Every setting has a flag. -config names the TOML file read first (default
 // fraise.config.toml), and flags override it. A missing config file falls
-// back to the built-in defaults; an invalid value, an unknown flag or an
-// unusable file stops startup. The process exits non-zero on any failure, so a
-// supervisor's restart policy can see it.
+// back to the built-in defaults. An invalid value, an unknown flag or an
+// unusable file stops startup. The process exits non-zero on any failure, so
+// a supervisor's restart policy can see it.
 package main

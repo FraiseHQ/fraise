@@ -31,11 +31,11 @@ import (
 type Token struct {
 	Type    TokenType
 	Literal string
-	// Pos is the 1-based column of the token's last character, for every token
-	// type (a phrase's closing quote; for EOL, the end of input), and is where
-	// a parse error blaming the token is reported. The parser cannot use the
-	// lexer's CurrentPos instead: its one-token lookahead has already moved it
-	// past the following token.
+	// Pos is the 1-based column of the token's last character, for every
+	// token type. For a phrase it is the closing quote, and for EOL the end
+	// of input. A parse error that blames the token is reported there. The
+	// parser cannot use the lexer's CurrentPos instead, because its one-token
+	// lookahead has already moved it past the following token.
 	Pos Position
 }
 
@@ -46,15 +46,15 @@ type TokenType int
 // The token types, grouped by the role they play in the grammar.
 const (
 	// ILLEGAL is a token the lexer could not complete: a phrase whose closing
-	// quote is missing, carrying the text read before the input ended. It is
+	// quote is missing. It carries the text read before the input ended. It is
 	// the zero value, so an unset type is never mistaken for a real token.
 	ILLEGAL TokenType = iota
 
 	// LITERAL is a bare word that is not reserved where it stands.
 	LITERAL
-	// PHRASE is an opaque single-quoted string, scanned verbatim: reserved
-	// words and symbols inside it carry no special meaning, and a doubled
-	// quote ('') is an escaped literal quote.
+	// PHRASE is an opaque single-quoted string, scanned verbatim. Reserved
+	// words and symbols inside it carry no special meaning. A doubled quote
+	// ('') is an escaped literal quote.
 	PHRASE
 
 	// DESCRIBE and EXPLAIN are the prefixes.
@@ -84,14 +84,13 @@ const (
 
 	// WHITESPACE is a run of blank characters.
 	WHITESPACE
-	// NUL is a NUL character outside a phrase. It is its own token, rather
-	// than read as the end of input, so the rest of the query cannot be
-	// silently dropped after it.
+	// NUL is a NUL character outside a phrase. It is its own token, not the
+	// end of input, so the query after it is never silently dropped.
 	NUL
 	// SPECIAL is any other character outside a phrase that is not a letter, a
-	// digit, whitespace or punctuation. It is its own token so a word ends at
-	// it and the parser can name it; absorbed into a word, "ferry;" would be
-	// a search term.
+	// digit, whitespace or punctuation. It is its own token, so a word ends at
+	// it and the parser can name it. Absorbed into a word, "ferry;" would be a
+	// search term.
 	SPECIAL
 
 	// EOL is the end of input, and NEWLINE the newline that ends an
@@ -107,7 +106,7 @@ const (
 	TOP
 	DEPTH
 
-	// VEC is the vector field, whose value is a parameter reference ($name)
+	// VEC is the vector field. Its value is a parameter reference ($name).
 	VEC
 )
 
@@ -141,6 +140,7 @@ var TokenMap = map[TokenType]string{
 	EOL:        "eol",
 	AT:         "@",
 	WHITESPACE: "whitespace",
+	SPECIAL:    "special",
 }
 
 // KeywordsMap maps each reserved word, in its exact lower-case spelling, to
@@ -162,10 +162,10 @@ var KeywordsMap = map[string]TokenType{
 	"vec":      VEC,
 }
 
-// IsKeyword reports whether t is a reserved word: a type the lexer assigns by
-// spelling alone. Whether the word is syntax depends on where it stands, which
-// the parser decides: after a field's ':' it is data (entity:top names the
-// anchor "top"), while among a recall's terms it is an error.
+// IsKeyword reports whether t is a reserved word, a type the lexer assigns by
+// spelling alone. Whether the word is syntax depends on where it stands, and
+// the parser decides that. After a field's ':' it is data, so entity:top
+// names the anchor "top". Among a recall's terms it is an error.
 func (t TokenType) IsKeyword() bool {
 	switch t {
 	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC, EXPLAIN, DESCRIBE:
@@ -176,9 +176,9 @@ func (t TokenType) IsKeyword() bool {
 }
 
 // IsCommand reports whether t is a command verb: recall, remember, forget or
-// update. A query is one instruction, so the parser reports a command word
-// after the first position as a second command or a word to quote, never as a
-// stray token or the start of a clause.
+// update. A query is one instruction. So the parser reports a command word
+// after the first position as a second command or a word to quote. It never
+// reports one as a stray token or the start of a clause.
 func (t TokenType) IsCommand() bool {
 	switch t {
 	case RECALL, REMEMBER, FORGET, UPDATE:
@@ -189,9 +189,9 @@ func (t TokenType) IsCommand() bool {
 }
 
 // IsPrefix reports whether t is one of the words that stand in front of a
-// command. A prefix is reserved like a command and has no ':' form either, so
-// the parser asks this to keep a clause repair out of its message: offering
-// explain:<value> sent the caller to a query that is itself an error.
+// command. A prefix is reserved like a command, and has no ':' form either.
+// The parser asks this to keep a clause repair out of its message. Offering
+// explain:<value> would send the caller to a query that is itself an error.
 func (t TokenType) IsPrefix() bool {
 	switch t {
 	case EXPLAIN, DESCRIBE:
@@ -205,11 +205,11 @@ func (t TokenType) String() string {
 	return TokenMap[t]
 }
 
-// Describe names the token as an error message should: end of input and a
-// newline by name, anything else quoted. End of input has no literal, and
-// quoted it would read as an empty pair of double quotes, a string the caller
-// never wrote. Naming tokens here keeps error messages agreeing on what to
-// call one, as Pos keeps them agreeing on where it is.
+// Describe names the token as an error message should. End of input and a
+// newline are named, and anything else is quoted. End of input has no
+// literal. Quoted, it would read as an empty pair of double quotes, a string
+// the caller never wrote. Naming tokens here keeps error messages agreeing on
+// what to call one, as Pos keeps them agreeing on where it is.
 func (t Token) Describe() string {
 	switch t.Type {
 	case EOL:
@@ -251,11 +251,11 @@ func (t TokenType) IsSeparator() bool {
 	}
 }
 
-// IsMisCasedKeyword reports whether the token is a bare word spelling a reserved
-// word in the wrong case. The lexer types a keyword by spelling and forgives
-// casing only immediately before a ':' (see Lexer.Next), so everywhere else a
-// mis-cased keyword arrives as a LITERAL, which the parser rejects wherever a
-// clause could start.
+// IsMisCasedKeyword reports whether the token is a bare word that spells a
+// reserved word in the wrong case. The lexer types a keyword by spelling. It
+// forgives casing only immediately before a ':' (see Lexer.Next). Everywhere
+// else a mis-cased keyword arrives as a LITERAL, which the parser rejects
+// wherever a clause could start.
 func (t Token) IsMisCasedKeyword() bool {
 	if t.Type != LITERAL {
 		return false

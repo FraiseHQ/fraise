@@ -28,15 +28,14 @@ import (
 	"strings"
 )
 
-// The blocks below are the canonical spellings each setting with a fixed
-// vocabulary accepts, one block per setting. They are a vocabulary, not
-// defaults: they say what a setting may name, while constants.go says which of
-// them applies when nothing is configured. A value is matched against them
-// case-insensitively and rewritten to the spelling here, so everything
-// downstream compares against one form and an operator can write "error" or
-// "ERROR" without the difference deciding anything.
+// The blocks below hold the canonical spellings each fixed-vocabulary setting
+// accepts, one block per setting. They are a vocabulary, not defaults. They
+// say what a setting may name, and constants.go says which one applies when
+// nothing is configured. A value is matched against them case-insensitively
+// and rewritten to the spelling here. So everything downstream compares
+// against one form, and an operator can write "error" or "ERROR" alike.
 
-// log.level — the minimum severity emitted.
+// log.level sets the minimum severity emitted.
 const (
 	LogLevelDebug string = "DEBUG"
 	LogLevelInfo  string = "INFO"
@@ -44,51 +43,52 @@ const (
 	LogLevelError string = "ERROR"
 )
 
-// log.format — the encoding each line is written in.
+// log.format sets the encoding each line is written in.
 const (
 	LogFormatText string = "text"
 	LogFormatJSON string = "json"
 )
 
-// db.precision — the float width embeddings and scores are held at, and so
+// db.precision sets the float width of embeddings and scores. It also picks
 // which generic instantiation of the server is built.
 const (
 	PrecisionFloat32 string = "float32"
 	PrecisionFloat64 string = "float64"
 )
 
-// db.hashing-function.name — the hash that derives node keys from values.
+// db.hashing-function.name names the hash that derives node keys from values.
 const (
 	HashingXxhash string = "xxhash"
 	HashingT1ha   string = "t1ha"
 )
 
-// db.search-algorithm.name — the traversal moving seed evidence through the
-// graph; "none" turns the graph channel off (text/vector search only).
+// db.search-algorithm.name names the traversal that moves seed evidence
+// through the graph. "none" turns the graph channel off, leaving text and
+// vector search only.
 const (
 	SearchNone   string = "none"
 	SearchBFS    string = "bfs"
 	SearchExcess string = "excess"
 )
 
-// db.scoring-algorithm.name — the fold deriving relevance from pooled
+// db.scoring-algorithm.name names the fold that derives relevance from pooled
 // contributions.
 const (
 	ScoringExcess string = "excess"
 	ScoringRRF    string = "rrf"
 )
 
-// db.relevance-model.name — the text index's relevance model.
+// db.relevance-model.name names the text index's relevance model.
 const (
 	RelevanceBM25       string = "bm25"
 	RelevanceMatchCount string = "matchcount"
 )
 
 // The values each setting accepts, in the order the error message lists them.
-// They are the single source of truth for the accepted set, and consumers
-// switch on the same constants. A value added here needs a case in each of
-// them: a missing case still compiles, and the value silently gets that
-// consumer's fallback.
+// They are the single source of truth for the accepted set. Consumers switch
+// on the same constants, so a value added here needs a case in each consumer.
+// A missing case still compiles, and the value silently gets that consumer's
+// fallback.
 var (
 	LogLevels = []string{LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError}
 
@@ -109,10 +109,10 @@ var (
 // case-insensitively. If none does, it leaves *v as typed and returns
 // ErrInvalidValue listing the accepted values.
 //
-// Matching case-insensitively accepts whatever casing an operator types, such
-// as '-log-level error'; rewriting to the canonical spelling lets every
-// consumer downstream compare with ==. name is the setting's dotted config
-// path, so the message points at the line to edit rather than at a bare value.
+// The match accepts any casing an operator types, such as '-log-level error'.
+// The rewrite lets every consumer downstream compare with ==. name is the
+// setting's dotted config path, so the message points at the line to edit
+// rather than at a bare value.
 func Canonical(v *string, name string, accepted []string) error {
 	for _, want := range accepted {
 		if strings.EqualFold(*v, want) {
@@ -126,20 +126,20 @@ func Canonical(v *string, name string, accepted []string) error {
 // validate rejects settings whose value the server cannot honour, so startup
 // fails instead of the server quietly doing something else.
 //
-// Every setting with a fixed vocabulary belongs here: one left out gets its
-// consumer's silent fallback, and nothing makes that visible from the
-// outside. The same holds for a numeric setting with a bounded domain:
-// db.max-depth caps a recall's depth clause,
-// and search has no lane past 2: a higher ceiling would let depth:3 through
-// to be silently answered as depth 2, and a negative one would reject every
-// recall that names a depth. db.max-top has a floor for the same reason: a
-// ceiling below 1 would reject every recall that names a top. It has no
-// upper bound, since how many hits one recall may ask for is the operator's
-// call. scheduler.workers has a floor: Adjust only
-// replaces a zero, so a negative count would reach the scheduler, which would
-// start no worker and leave every accepted query waiting forever.
-// db.num-graphs is bounded by the selector: a selector is a uint8, so a graph
-// past 256 is allocated but no query can ever address it.
+// Every setting with a fixed vocabulary belongs here. A setting left out
+// falls back silently in its consumer, and nothing shows it from outside.
+// Numeric settings with a bounded domain belong here too:
+//   - db.max-depth caps a recall's depth clause. Search has no lane past 2.
+//     A higher ceiling would let depth:3 through, to be answered as depth 2.
+//     A negative one would reject every recall that names a depth.
+//   - db.max-top must be at least 1. A lower ceiling would reject every
+//     recall that names a top. It has no upper bound, because how many hits
+//     one recall may ask for is the operator's call.
+//   - scheduler.workers must be at least 1. Adjust only replaces a zero, so a
+//     negative count would reach the scheduler. The scheduler would start no
+//     worker, and every accepted query would wait forever.
+//   - db.num-graphs is bounded by the selector. A selector is a uint8, so a
+//     graph past 256 is allocated but no query can ever address it.
 func (c *ConfigSet) validate() error {
 	settings := []struct {
 		value    *string
@@ -161,8 +161,8 @@ func (c *ConfigSet) validate() error {
 		}
 	}
 
-	// The pool and the cap each have a floor below which no slot could be
-	// drawn or no fact taken for a facet.
+	// The pool and the cap must each be at least 1. Below that, no slot could
+	// be drawn, or no fact taken for a facet.
 	if p := c.DB.Aggregate.Pool; p < 1 {
 		return fmt.Errorf("%w: db.aggregate.pool = %d (accepted: 1 or more)", ErrInvalidValue, p)
 	}

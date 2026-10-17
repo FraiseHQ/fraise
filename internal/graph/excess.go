@@ -27,18 +27,18 @@ import (
 	"sort"
 )
 
-// ExcessTraversal is the excess methodology's traversal. From a source fact it
-// visits the source's anchors (its Topic and NamedEntity neighbours, in either
-// edge direction) at depth 1, then every member of those anchors at depth 2.
-// Order lists the anchors, then the members, each band in ascending key order
-// so the collection layer folds floats in a fixed order; that sort is why K is
-// cmp.Ordered rather than comparable.
+// ExcessTraversal is the excess methodology's traversal. From a source fact,
+// it visits the source's anchors at depth 1. These are its Topic and
+// NamedEntity neighbours, in either edge direction. It then visits every
+// member of those anchors at depth 2. Order lists the anchors, then the
+// members, each band in ascending key order. So the collection layer folds
+// floats in a fixed order. That sort is why K is cmp.Ordered rather than
+// comparable.
 //
-// Parents carries the full member-to-anchors incidence: a member reached
-// through two of the source's anchors is two observations, not one. The source
-// itself appears among its anchors' members, so an anchor's members are the
-// same whichever seed reaches it, and self-exclusion happens once, in the
-// scorer, where the member's own mass is at hand.
+// Parents carries the full member-to-anchors incidence. The source itself
+// appears among its anchors' members, so an anchor's members are the same
+// whichever seed reaches it. Self-exclusion then happens once, in the scorer,
+// where the member's own mass is at hand.
 type ExcessTraversal[K cmp.Ordered, P float32 | float64] struct {
 	source K
 }
@@ -54,7 +54,7 @@ func (t *ExcessTraversal[K, P]) Run(g Graph[K, P]) (AlgorithmResult, error) {
 	return t.traverse(g, t.source)
 }
 
-// SetSource configures the vertex the next Run starts from.
+// SetSource sets the vertex the next Run starts from.
 func (t *ExcessTraversal[K, P]) SetSource(source K) {
 	t.source = source
 }
@@ -72,8 +72,7 @@ func (t *ExcessTraversal[K, P]) traverse(g Graph[K, P], source K) (TraversalResu
 	}
 
 	// traverse runs once per seed, so it reads one node's neighbours at a time
-	// through Neighbours: AdjacencyMap and PredecessorMap copy every edge in
-	// the graph on each call.
+	// (see Graph.Neighbours).
 	neighbours := func(key K) []K {
 		out := g.Neighbours(key)
 		sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
@@ -126,8 +125,8 @@ func (t *ExcessTraversal[K, P]) traverse(g Graph[K, P], source K) (TraversalResu
 	return result, nil
 }
 
-// isAnchor reports whether the node under key is an anchor — a Topic or
-// NamedEntity vertex. Anchors mediate transmission between facts; they carry
+// isAnchor reports whether the node under key is an anchor: a Topic or
+// NamedEntity vertex. Anchors mediate transmission between facts. They carry
 // no seed mass of their own and are never returned as hits.
 func isAnchor[K comparable, P float32 | float64](g Graph[K, P], key K) bool {
 	switch g.Get(key).(type) {

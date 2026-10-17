@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// This is a white-box test: it lives in package server so it can drive the
+// This is a white-box test. It lives in package server so it can drive the
 // unexported router directly, without binding a real TCP port via Start.
 package server
 
@@ -41,16 +41,17 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-// newTestServer builds a fully wired server on the default config with a started
-// database and engine, ready to serve requests through its router.
+// newTestServer builds a fully wired server on the default config, with a
+// started database and engine. Tests send requests through its router.
 func newTestServer(t *testing.T) *Server[uint64, float32] {
 	t.Helper()
 	return newTestServerCfg(t, config.New())
 }
 
-// newTestServerCfg is newTestServer with a caller-supplied config, so a test can
-// exercise a specific limit (body size, top/depth ceiling, vector dimension). It
-// registers cleanup so the engine's workers are stopped when the test ends.
+// newTestServerCfg is newTestServer with a caller-supplied config, so a test
+// can exercise a specific limit: body size, top or depth ceiling, or vector
+// dimension. It registers cleanup that stops the engine's workers when the test
+// ends.
 func newTestServerCfg(t *testing.T, cfg *config.ConfigSet) *Server[uint64, float32] {
 	t.Helper()
 	s, err := New[uint64, float32](cfg, hash.NewHasher[uint64](cfg))
@@ -91,11 +92,11 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
-// TestFailuresOutsideTheHandlersKeepTheErrorShape pins that the two failures
-// gin answers itself, an unknown route (or a known path with the wrong method)
-// and a recovered panic, use the same {"error": ...} shape a client decodes
-// every other failure with. A panic's detail stays in the log, never in the
-// body.
+// TestFailuresOutsideTheHandlersKeepTheErrorShape pins the shape of the two
+// failures gin answers itself. One is an unknown route, or a known path with
+// the wrong method. The other is a recovered panic. Both use the {"error": ...}
+// shape a client decodes every other failure with. A panic's detail stays in
+// the log, never in the body.
 func TestFailuresOutsideTheHandlersKeepTheErrorShape(t *testing.T) {
 	s := newTestServer(t)
 	s.router.GET("/panics", func(*gin.Context) { panic("boom") })
@@ -252,10 +253,10 @@ func TestQueryVectorTooLarge(t *testing.T) {
 }
 
 // TestQueryVectorDimensionMismatch checks that a write whose vector does not
-// match the graph's established dimension is a client error: 400 with the
-// expected and supplied dimensions, not an opaque 500. The mismatch is only
-// detectable at commit time (the first vector fixes the dimension), so this
-// pins the commit error surviving the scheduler intact.
+// match the graph's established dimension is a client error. It answers 400
+// with the expected and supplied dimensions, not an opaque 500. The first
+// vector fixes the dimension, so the mismatch is only detectable at commit
+// time. The test pins the commit error surviving the scheduler intact.
 func TestQueryVectorDimensionMismatch(t *testing.T) {
 	s := newTestServer(t)
 
@@ -276,10 +277,10 @@ func TestQueryVectorDimensionMismatch(t *testing.T) {
 	}
 }
 
-// TestRecallVectorDimensionMismatch is the read half of the dimension rule:
-// a recall carrying a vector of the wrong width is rejected with 400 naming
-// both dimensions, as a write is. A 200 from the text index alone would drop
-// the semantic half of the question without a word.
+// TestRecallVectorDimensionMismatch is the read half of the dimension rule. A
+// recall carrying a vector of the wrong width is rejected with 400 naming both
+// dimensions, as a write is. A 200 from the text index alone would drop the
+// semantic half of the question without a word.
 func TestRecallVectorDimensionMismatch(t *testing.T) {
 	s := newTestServer(t)
 
@@ -300,7 +301,7 @@ func TestRecallVectorDimensionMismatch(t *testing.T) {
 }
 
 // TestQuerySuccess checks that a well-formed recall query is planned, executed,
-// and returns 200 with a results payload. The graph is seeded first: a recall
+// and returns 200 with a results payload. The graph is seeded first. A recall
 // of a graph that holds nothing is answered 204, so an unseeded graph would
 // exercise that path instead of this one.
 func TestQuerySuccess(t *testing.T) {
@@ -322,9 +323,9 @@ func TestQuerySuccess(t *testing.T) {
 
 // TestQueryWriteIsAcknowledged pins the write response apart from a read's.
 // With a recall's empty envelope, {"count":0,"hits":[]} would mean both
-// "stored" and "matched nothing". The status token is what tells them apart,
-// and the MCP bridge returns it as its remember tool's output: if this test
-// has to change, the bridge changes with it.
+// "stored" and "matched nothing". The status token is what tells them apart.
+// The MCP bridge returns it as its remember tool's output, so if this test has
+// to change, the bridge changes with it.
 func TestQueryWriteIsAcknowledged(t *testing.T) {
 	s := newTestServer(t)
 
@@ -338,11 +339,11 @@ func TestQueryWriteIsAcknowledged(t *testing.T) {
 	}
 }
 
-// TestQueryEmptyGraphIsNoContent checks the third answer a query can give: a
+// TestQueryEmptyGraphIsNoContent checks the third answer a query can give. A
 // recall of a graph holding nothing comes back 204 with no body at all. It is
-// not an error and not a miss — the caller has yet to write anything here, so
-// no rephrasing of the query would have helped, and that is what separates it
-// from TestQueryNoMatchOnPopulatedGraphIsEmptyResults below.
+// neither an error nor a miss. The caller has yet to write anything here, so no
+// rephrasing of the query would have helped. That is what separates it from
+// TestQueryNoMatchOnPopulatedGraphIsEmptyResults below.
 func TestQueryEmptyGraphIsNoContent(t *testing.T) {
 	s := newTestServer(t)
 
@@ -356,10 +357,10 @@ func TestQueryEmptyGraphIsNoContent(t *testing.T) {
 	}
 }
 
-// TestQueryNoMatchOnPopulatedGraphIsEmptyResults is the other half of the pair:
-// the graph holds facts and none of them matched, which stays 200 with an empty
-// result set. A caller that cannot tell this from the 204 debugs its query when
-// it should be checking whether it ever wrote.
+// TestQueryNoMatchOnPopulatedGraphIsEmptyResults is the other half of the pair.
+// The graph holds facts and none of them matched, so the answer stays 200 with
+// an empty result set. A caller that cannot tell this from the 204 debugs its
+// query when it should be checking whether it ever wrote.
 func TestQueryNoMatchOnPopulatedGraphIsEmptyResults(t *testing.T) {
 	s := newTestServer(t)
 
@@ -378,18 +379,16 @@ func TestQueryNoMatchOnPopulatedGraphIsEmptyResults(t *testing.T) {
 }
 
 // TestQueryEmptyGraphIsPerGraph checks that emptiness is read off the graph the
-// query selected, not the store as a whole: writing to graph 0 must not stop
+// query selected, not the store as a whole. Writing to graph 0 must not stop
 // graph 1 from answering 204. The selector is the unit of isolation everywhere
-// else in the API, and a store-wide check would silently make the 204 mean
-// "nothing has ever been written anywhere".
+// else in the API. A store-wide check would silently make the 204 mean "nothing
+// has ever been written anywhere".
 func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
 	s := newTestServer(t)
-	// saves content in graph 0
 	if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna sent the invoice'"}`); w.Code != http.StatusOK {
 		t.Fatalf("seeding write: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	// Graph 1 should be empty
 	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@1 anna"}`)
 
 	if w.Code != http.StatusNoContent {
@@ -398,9 +397,9 @@ func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
 }
 
 // TestStatsEndpoint checks that GET /api/v1/stats returns one snapshot per
-// graph and that a committed write with a vector is reflected in the counts,
-// including the forest_entries gauge the end-to-end forest-bloat test reads,
-// and names the relevance model each graph ranks with.
+// graph, naming the relevance model each graph ranks with. A committed write
+// with a vector shows in the counts. That includes the forest_entries gauge the
+// end-to-end forest-bloat test reads.
 func TestStatsEndpoint(t *testing.T) {
 	s := newTestServer(t)
 
@@ -430,7 +429,6 @@ func TestStatsEndpoint(t *testing.T) {
 		}
 	}
 
-	// Commit a fact with a vector, then confirm the write shows up in stats.
 	w = s.do(http.MethodPost, "/api/v1/q",
 		`{"query":"remember@0 'stats probe fact' vec:$v topic:probe","parameters":{"v":[1,2,3]}}`)
 	if w.Code != http.StatusOK {

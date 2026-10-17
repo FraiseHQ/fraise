@@ -31,9 +31,8 @@ import (
 )
 
 // sets maps a base language to its lowercase stop-word set. Keying on the
-// base rather than the full tag is what lets regional variants ("en-US",
-// "en-GB") share one list: stop words are a property of the language, not
-// the locale.
+// base rather than the full tag lets regional variants ("en-US", "en-GB")
+// share one list. Stop words belong to the language, not the locale.
 var sets = map[language.Base]map[string]struct{}{
 	language.MustParseBase("en"): toSet(English),
 }
@@ -46,16 +45,16 @@ func toSet(words []string) map[string]struct{} {
 	return set
 }
 
-// CleanContent removes tag's stop words from content and returns the words
-// that survive, in their original spelling and order, joined by single
-// spaces. Matching is case-insensitive, and words are split by nlp.Words, the
-// tokenizer's own boundary, so punctuation never shields a stop word and the
-// words removed here are exactly terms the index would otherwise carry.
+// CleanContent removes tag's stop words from content. It returns the
+// surviving words in their original spelling and order, joined by single
+// spaces. Matching is case-insensitive. Words are split by nlp.Words, the
+// tokenizers' own boundary, so punctuation never shields a stop word.
 //
-// A tag that does not state its language (Base infers "en" for language.Und,
-// at low confidence), or states one with no stop-word list, gets content back
-// verbatim: a stop word is noise only in its own language, so removing words
-// on a guess would drop meaning.
+// A tag that does not state its language exactly gets content back verbatim.
+// Base infers "en" for language.Und, but only at low confidence. A language
+// with no stop-word list also gets content back verbatim. A stop word is
+// noise only in its own language, so removing words on a guess would drop
+// meaning.
 func CleanContent(content string, tag language.Tag) string {
 	base, conf := tag.Base()
 	if conf < language.Exact {

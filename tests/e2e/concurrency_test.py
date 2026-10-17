@@ -20,8 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Parallel reads and writes against the request path, hunting scheduler
-deadlocks, races, and data corruption that single-threaded round trips hide.
+"""Parallel reads and writes against the request path.
+
+They hunt scheduler deadlocks, races and data corruption that single-threaded
+round trips hide.
 """
 
 import random
@@ -48,23 +50,21 @@ def test_concurrent_queries(query):
 
 
 def test_many_writes_then_concurrent_reads(query, bird_facts):
-    """Store a batch of distinct facts, then read them back under heavy
-    parallelism and verify every reader still gets its own fact intact.
+    """Store distinct facts, then read them back under heavy parallelism.
 
-    This stresses the read/write path together: it should surface data races
-    or corruption in the scheduler/graph (missing hits, wrong values, 5xx, or
-    a server that stops responding) that a single-threaded round trip hides.
+    Every reader must still get its own fact intact. This stresses the read and
+    write paths together. It should surface data races or corruption in the
+    scheduler or graph that a single-threaded round trip hides. They show as
+    missing hits, wrong values, 5xx, or a server that stops responding.
     """
     graph = 5
 
-    # 1. Write every fact. Writes are serialized server-side, so do them
-    #    sequentially and confirm each is accepted before reading.
+    # Writes are serialised server-side, so they go one at a time, each
+    # confirmed before any read.
     for keyword, phrase in bird_facts.items():
         status, body = query(f"remember@{graph} '{phrase}' topic:birds")
         assert status == 200, body.get("error")
 
-    # 2. Build a shuffled workload where each keyword is recalled several times,
-    #    then fire them all concurrently.
     workload = [kw for kw in bird_facts for _ in range(8)]
     random.shuffle(workload)
 
@@ -75,7 +75,6 @@ def test_many_writes_then_concurrent_reads(query, bird_facts):
     with ThreadPoolExecutor(max_workers=16) as pool:
         results = list(pool.map(recall, workload))
 
-    # 3. Every concurrent read must succeed and return its own fact.
     for keyword, status, body in results:
         assert status == 200, f"recall {keyword!r} failed: {body}"
         hits = body["results"]["hits"]
@@ -84,8 +83,7 @@ def test_many_writes_then_concurrent_reads(query, bird_facts):
             f"recall {keyword!r} lost its fact under load; got {values}"
         )
 
-    # 4. After the storm the graph must be intact: each fact still retrievable
-    #    on its own.
+    # After the storm, each fact must still be retrievable on its own.
     for keyword, phrase in bird_facts.items():
         status, body = query(f"recall@{graph} {keyword}")
         assert status == 200, body.get("error")

@@ -31,8 +31,8 @@ func TestT1haSeededVector(t *testing.T) {
 	}
 }
 
-// TestXXH64InternalMatchesMethod ensures the internal function and the exported
-// Hash method agree, and re-checks a canonical seed-0 vector at the function level.
+// TestXXH64InternalMatchesMethod checks that xxh64 and the exported Hash method
+// agree. It also re-checks a canonical seed-0 vector at the function level.
 func TestXXH64InternalMatchesMethod(t *testing.T) {
 	const in = "The quick brown fox jumps over the lazy dog"
 	if got := (XxHash[uint64]{}).xxh64([]byte(in), 0); got != 0x0b242d361fda71bc {

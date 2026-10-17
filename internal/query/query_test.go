@@ -34,12 +34,8 @@ import (
 	"github.com/FraiseHQ/fraise/internal/query"
 )
 
-// These tests exercise Parse, which turns a query string into the concrete
-// *Remember/*Recall command it dispatches to.
-
-// TestParseRemember checks that a remember query is dispatched to a
-// *query.Remember carrying the phrase value and the graph selector,
-// and reporting as a write.
+// TestParseRemember checks that a remember query parses to a *query.Remember.
+// It carries the phrase value and the graph selector, and reports as a write.
 func TestParseRemember(t *testing.T) {
 	q := "remember@1 'anne loves the color orange' topic:color topic:preference entity:anne"
 
@@ -71,8 +67,8 @@ func TestParseRemember(t *testing.T) {
 	}
 }
 
-// TestParseRecall checks that a recall query is dispatched to a *query.Recall
-// carrying its terms, entities, topics and graph selector, and reporting as a
+// TestParseRecall checks that a recall query parses to a *query.Recall. It
+// carries its terms, entities, topics and graph selector, and reports as a
 // read.
 func TestParseRecall(t *testing.T) {
 	q := "recall@2 anna bob entity:alice topic:job"
@@ -127,9 +123,8 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
-// TestParseRecallBindsVector checks that a vec:$v placeholder is bound from the
-// supplied parameters into the resulting *query.Recall, and that the parser
-// itself never touches the vector data.
+// TestParseRecallBindsVector checks that a vec:$v placeholder binds the
+// supplied vector into the resulting *query.Recall.
 func TestParseRecallBindsVector(t *testing.T) {
 	q := "recall@0 amelia entity:amelia topic:preferences vec:$v"
 	params := map[string][]float32{"v": {0.1, 0.2, 0.3}}
@@ -163,11 +158,11 @@ func TestParseRecallMissingParameter(t *testing.T) {
 	}
 }
 
-// TestParseRejectsOverLimits checks that the configured ranges are enforced at
-// parse time: a recall outside the top/depth range, or a bound vector longer
-// than the dimension ceiling, is rejected with ErrLimitExceeded and no query.
-// top:0 is the floor case — presence-keyed parsing keeps it visible, so it is
-// rejected with the range error instead of silently answering with the default.
+// TestParseRejectsOverLimits checks that Parse enforces the configured ranges.
+// A recall outside the top or depth range is rejected with ErrLimitExceeded and
+// no query. So is a bound vector longer than the dimension ceiling. top:0 is
+// the floor case. Presence-keyed parsing keeps it visible, so it is rejected
+// with the range error instead of silently answering with the default.
 func TestParseRejectsOverLimits(t *testing.T) {
 	cfg := config.New()
 	cfg.DB.MaxTop = 10
@@ -220,9 +215,9 @@ func marshalHit(t *testing.T, contributions []query.HitContribution[float32]) st
 	return string(out)
 }
 
-// TestHitMarshalOmitsContributionsByDefault pins the ordinary wire shape: a
-// hit without contributions serializes as its value, timestamp and score
-// alone, with no "contributions" key.
+// TestHitMarshalOmitsContributionsByDefault pins the ordinary wire shape. A hit
+// without contributions serialises as its value, timestamp and score alone,
+// with no "contributions" key.
 func TestHitMarshalOmitsContributionsByDefault(t *testing.T) {
 	got := marshalHit(t, nil)
 	want := `{"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5}`
@@ -231,9 +226,9 @@ func TestHitMarshalOmitsContributionsByDefault(t *testing.T) {
 	}
 }
 
-// TestHitMarshalSerializesContributions pins the explain wire shape: each
-// contribution carries its source by name, its raw score, rank and seed
-// count, and, for a graph entry, the funding anchor's value under via and its
+// TestHitMarshalSerializesContributions pins the explain wire shape. Each
+// contribution carries its source by name, its raw score, rank and seed count.
+// A graph entry also carries the funding anchor's value under via, and its
 // degree. via and degree are omitted for text and vector entries, where they
 // mean nothing.
 func TestHitMarshalSerializesContributions(t *testing.T) {

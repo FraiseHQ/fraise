@@ -30,8 +30,9 @@ import (
 	"github.com/FraiseHQ/fraise/internal/config"
 )
 
-// parsed builds a config the way `fraise mcp` does — through Parse, with no
-// config file — so the bridge sees the address Parse derives, not a zero value.
+// parsed builds a config the way `fraise mcp` does, through Parse with no
+// config file. The bridge then sees the address Parse derives, not a zero
+// value.
 func parsed(t *testing.T, args ...string) *config.ConfigSet {
 	t.Helper()
 	c := config.New()
@@ -42,10 +43,10 @@ func parsed(t *testing.T, args ...string) *config.ConfigSet {
 	return c
 }
 
-// TestNewWiresTheBridgeFromConfig pins New's wiring: with no -addr the daemon
+// TestNewWiresTheBridgeFromConfig pins New's wiring. With no -addr, the daemon
 // address derives from the config's port, so `fraise mcp -config x` finds
-// whatever `fraise -config x` serves. Construction doubles as the schema smoke
-// test: the SDK's AddTool panics on a tool schema that fails to resolve, so a
+// whatever `fraise -config x` serves. Construction is also the schema smoke
+// test. The SDK's AddTool panics on a tool schema that fails to resolve. So a
 // schema edit that breaks registration fails here, at unit speed, rather than
 // at the first live handshake.
 func TestNewWiresTheBridgeFromConfig(t *testing.T) {
@@ -62,7 +63,7 @@ func TestNewWiresTheBridgeFromConfig(t *testing.T) {
 	}
 }
 
-// TestNewForwardsToAddr pins -addr: the bridge forwards to the daemon it
+// TestNewForwardsToAddr pins -addr. The bridge forwards to the daemon it
 // names, remote or on another port, rather than to the local one the config
 // describes. A trailing slash is dropped, since the query path is appended to
 // it and a doubled slash is a 404.

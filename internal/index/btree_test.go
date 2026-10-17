@@ -38,9 +38,9 @@ import (
 	"github.com/FraiseHQ/fraise/internal/index/relevance"
 )
 
-// TestBTreeIndexRelevanceReadsBackTheInstalledModel pins the read-back startup
-// relies on: a fresh index reports MatchCount, and after SetRelevance the
-// model it ranks with is the one installed — not a copy, not the default.
+// TestBTreeIndexRelevanceReadsBackTheInstalledModel pins the read-back that
+// startup relies on. A fresh index reports MatchCount. After SetRelevance, it
+// ranks with the installed model itself, not a copy or the default.
 func TestBTreeIndexRelevanceReadsBackTheInstalledModel(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	if got := idx.Relevance().Name(); got != "matchcount" {
@@ -90,10 +90,10 @@ func TestBTreeIndexSearchEmpty(t *testing.T) {
 	}
 }
 
-// TestBTreeIndexSearchRanksByRelevance pins the BM25 ranking behaviours a
-// match count cannot express: of two documents matching every query term, the
-// shorter one ranks first (length normalization — the long document dilutes
-// its terms), and a document matching nothing is not a result at all.
+// TestBTreeIndexSearchRanksByRelevance pins BM25 behaviours a match count
+// cannot express. Of two documents that match every query term, length
+// normalization ranks the shorter first, because the long one dilutes its
+// terms. A document that matches nothing is not a result at all.
 func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	idx.SetRelevance(relevance.NewBM25[int, float64]())
@@ -112,7 +112,6 @@ func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
-	// Both matching documents cover the whole query; the shorter one wins.
 	if want := []int{2, 1}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Search() = %v, want %v (shorter full match first)", got, want)
 	}
@@ -121,16 +120,16 @@ func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 	}
 }
 
-// TestBTreeIndexSearchOrdersTiesByKey pins the tiebreak that makes the ranking a
-// total order: documents with equal scores are ranked by key, not in the order
-// the score map happens to yield them. The search is repeated because map
-// order changes between calls, so one pass can agree with the expected order
-// by luck, and truncation to k makes the difference user-visible.
+// TestBTreeIndexSearchOrdersTiesByKey pins the tiebreak that makes the
+// ranking a total order. Documents with equal scores are ranked by key, not
+// in the order the score map yields them. Map order changes between calls, so
+// one pass could match the expected order by luck. The search is repeated for
+// that reason. Truncation to k makes the difference visible to users.
 func TestBTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	// Every document contains "sky" once, so the match count never separates
-	// them; the keys are inserted out of order so ascending order cannot come
-	// from insertion order.
+	// them. The keys go in out of order, so ascending order cannot come from
+	// insertion order.
 	for _, key := range []int{7, 3, 9, 1, 5} {
 		if err := idx.Insert(key, "sky"); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", key, err)
@@ -220,8 +219,7 @@ func TestBTreeIndexDelete(t *testing.T) {
 		t.Errorf("Retrieve(1) after delete = %v, want ErrIndexNotFound", err)
 	}
 
-	// Term "shared" is still referenced by doc 2, so it must still be
-	// searchable.
+	// Doc 2 still holds "shared", so the term must stay searchable.
 	got, _, err := idx.Search("shared", 0, nil)
 	if err != nil || len(got) != 1 || got[0] != 2 {
 		t.Errorf("Search(shared) after deleting doc 1 = (%v, %v), want ([2], nil)", got, err)
@@ -230,7 +228,7 @@ func TestBTreeIndexDelete(t *testing.T) {
 	if err := idx.Delete(2); err != nil {
 		t.Fatalf("Delete = %v, want nil", err)
 	}
-	// The index itself is now empty, which is a distinct condition from "no
+	// The index is now empty. That is a different condition from "no
 	// document matched the query".
 	if _, _, err := idx.Search("shared", 0, nil); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search(shared) after deleting all docs = %v, want ErrEmptyIndex", err)
@@ -264,19 +262,24 @@ func TestBTreeIndexInsertOverwritesExistingKey(t *testing.T) {
 	}
 }
 
-// textScoresAreBM25TimesCoverage pins the exact score formula at precision P:
-// BM25 (idf-weighted, length-normalized term frequency) scaled by the
-// coverage Search hands Finalize in 1/1024 fixed point — ⌊matchedW·1024⌋ over
-// ⌊totalW·1024⌋+1, where matchedW is the idf mass of the query terms the
-// document matched and totalW that of every query term found in the corpus.
-// The two-document fixture is small enough to derive by hand — both
-// documents have length 2, exactly the corpus average, so every length norm
-// is exactly 1 and the score reduces to the idf sum times that coverage:
-// totalW = ln 2 + ln 1.2 gives denominator 897, doc 1 matches "red" (df 1)
-// and "green" (df 2), all of the query's idf mass, and scales by 896/897;
-// doc 2 matches only the common "green" and scales by 186/897. A share of
-// matched terms would give doc 2 half the query for its commonest term alone,
-// and a term count over the idf total would scale doc 1 by 2048/897, above 1.
+// textScoresAreBM25TimesCoverage pins the exact score formula at precision P.
+// The score is BM25 (idf-weighted, length-normalized term frequency) scaled
+// by the coverage Search hands Finalize in 1/1024 fixed point:
+// ⌊matchedW·1024⌋ over ⌊totalW·1024⌋+1. matchedW is the idf mass of the
+// query terms the document matched. totalW is that of every query term found
+// in the corpus.
+//
+// The two-document fixture is small enough to derive by hand. Both documents
+// have length 2, the corpus average, so every length norm is exactly 1. The
+// score reduces to the idf sum times the coverage:
+//   - totalW = ln 2 + ln 1.2, which gives the denominator 897.
+//   - Doc 1 matches "red" (df 1) and "green" (df 2), all of the query's idf
+//     mass, and scales by 896/897.
+//   - Doc 2 matches only the common "green" and scales by 186/897.
+//
+// A share of matched terms would give doc 2 half the query for its commonest
+// term alone. A term count over the idf total would scale doc 1 by 2048/897,
+// above 1.
 func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 	t.Helper()
 	idx := index.NewBTreeIndex[int, P](comparator.OrderedComparator[int])
@@ -295,12 +298,13 @@ func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 	if want := []int{1, 2}; !reflect.DeepEqual(keys, want) {
 		t.Errorf("Search keys = %v, want %v (doc 1 covers the query, doc 2 its common term)", keys, want)
 	}
-	// idf(red) = ln(1 + (2-1+0.5)/(1+0.5)) = ln 2; idf(green) = ln(1 + 0.5/2.5).
-	// The wants are derived through a twin model rather than float64 closed
-	// forms: at float32 the length norm is an ulp off 1, so closed forms
-	// cannot pin exactly. What this test pins is Search's orchestration — the
-	// per-term accumulation order and the 1/1024 fixed-point coverage handoff
-	// — while bm25_test.go pins the model's formulas.
+	// idf(red) = ln(1 + (2-1+0.5)/(1+0.5)) = ln 2.
+	// idf(green) = ln(1 + 0.5/2.5).
+	// The wants come from a twin model, not float64 closed forms. At float32
+	// the length norm is an ulp off 1, so closed forms cannot pin exactly.
+	// This test pins Search's orchestration: the per-term accumulation order
+	// and the 1/1024 fixed-point coverage handoff. bm25_test.go pins the
+	// model's formulas.
 	model := relevance.NewBM25[int, P]()
 	model.Indexed(1, []string{"red", "green"})
 	model.Indexed(2, []string{"green", "blue"})
@@ -325,15 +329,14 @@ func TestBTreeIndexScoresAreBM25TimesCoverage_float32(t *testing.T) {
 	textScoresAreBM25TimesCoverage[float32](t)
 }
 
-// TestBTreeIndexSearchTopKBounds checks the k parameter: k <= 0 returns every
-// match, a positive k caps the result to the top-k best matches. The graph
-// bounds its text and vector seeds alike this way, at max(db.seed-size, top).
+// TestBTreeIndexSearchTopKBounds checks the k parameter. k <= 0 returns every
+// match, and a positive k keeps only the k best. The graph bounds its text
+// and vector searches this way, at least max(db.seed-size, top) deep.
 func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
-	// Four documents, all matching "sky".
 	docs := map[int]string{
 		1: "sky",
-		2: "sky sky blue", // "sky" appears once as a term set, still count 1
+		2: "sky sky blue", // tf 2, but a match count still scores 1
 		3: "clear sky",
 		4: "sky at night",
 	}
@@ -343,7 +346,6 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 		}
 	}
 
-	// k <= 0 returns all four matches.
 	all, _, err := idx.Search("sky", 0, nil)
 	if err != nil {
 		t.Fatalf("Search(sky, 0) = %v, want nil", err)
@@ -352,7 +354,6 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 		t.Errorf("Search(sky, 0) returned %d keys, want all 4: %v", len(all), all)
 	}
 
-	// A positive k caps the results.
 	for _, k := range []int{1, 2, 3} {
 		got, scores, err := idx.Search("sky", k, nil)
 		if err != nil {
@@ -368,10 +369,9 @@ func TestBTreeIndexSearchTopKBounds(t *testing.T) {
 }
 
 // TestBTreeIndexSearchKeepFiltersBeforeTruncation pins that keep narrows which
-// documents compete for the k places rather than filtering the global top k:
-// the two accepted documents rank last on "sky" and must still both return.
-// Their scores are those of the unfiltered search, since a filter changes no
-// term weight.
+// documents compete for the k places. It does not filter the global top k.
+// The two accepted documents rank last on "sky" and must both return. Their
+// scores match the unfiltered search, since a filter changes no term weight.
 func TestBTreeIndexSearchKeepFiltersBeforeTruncation(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	// Each key pads "sky" with one more filler word, so BM25's length norm
@@ -406,10 +406,10 @@ func TestBTreeIndexSearchKeepFiltersBeforeTruncation(t *testing.T) {
 	}
 }
 
-// TestBTreeIndexStemmingUnifiesInflections pins the one-tokenizer contract
-// end to end: with the stemming tokenizer installed, a document indexed as
-// "running" is found by the query "runs", because both sides pass through
-// the same stemmer. This is what SetTokenizer exists for.
+// TestBTreeIndexStemmingUnifiesInflections pins the one-tokenizer contract end
+// to end. With the stemming tokenizer installed, the query "runs" finds a
+// document indexed as "running", because both pass through the same stemmer.
+// This is what SetTokenizer exists for.
 func TestBTreeIndexStemmingUnifiesInflections(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	idx.SetTokenizer(nlp.StemmingTokenizer{})
@@ -429,11 +429,13 @@ func TestBTreeIndexStemmingUnifiesInflections(t *testing.T) {
 	}
 }
 
-// TestBM25LifecycleBookkeeping pins the statistics across the whole document
-// lifecycle: insert admits a length, update retires the old length before
-// admitting the new (Removed precedes Indexed, so the key is never counted
-// twice), and delete returns the statistics to zero — using the recorded
-// length, not a re-tokenization that a tokenizer swap could skew.
+// TestBM25LifecycleBookkeeping pins the statistics across a document's
+// lifecycle:
+//   - Insert admits a length.
+//   - Update retires the old length before it admits the new one. Removed
+//     precedes Indexed, so the key is never counted twice.
+//   - Delete returns the statistics to zero. It uses the recorded length, not
+//     a re-tokenization that a tokenizer swap could skew.
 func TestBM25LifecycleBookkeeping(t *testing.T) {
 	model := relevance.NewBM25[int, float32]()
 	idx := index.NewBTreeIndex[int, float32](comparator.OrderedComparator[int])
@@ -461,9 +463,9 @@ func TestBM25LifecycleBookkeeping(t *testing.T) {
 	}
 }
 
-// TestSearchPurity pins the query side of the Relevance contract: the same
-// query twice against an untouched corpus is byte-identical — no query
-// mutates the model's statistics.
+// TestSearchPurity pins the query side of the Relevance contract. Repeating a
+// query against an untouched corpus gives byte-identical results, because no
+// query mutates the model's statistics.
 func TestSearchPurity(t *testing.T) {
 	for name, model := range map[string]relevance.Relevance[int, float32]{
 		"match count": relevance.MatchCount[int, float32]{},
@@ -494,11 +496,10 @@ func TestSearchPurity(t *testing.T) {
 
 // TestMatchCountEquivalentToPrePluginRanking pins MatchCount, the model the
 // index starts with, against an independent oracle on randomized corpora and
-// queries: identical keys, scores and order, including the double count a
-// repeated query term earns. The oracle recomputes the match-count ranking
-// from the raw documents (per-document term sets, one point per query-term
-// occurrence, count descending with the key tiebreak), so the pin cannot
-// drift with the index's internals.
+// queries. Keys, scores and order must be identical, including the double
+// count a repeated query term earns. The oracle recomputes the match-count
+// ranking from the raw documents, so the pin cannot drift with the index's
+// internals.
 func TestMatchCountEquivalentToPrePluginRanking(t *testing.T) {
 	rng := rand.New(rand.NewSource(7)) // deterministic corpora across runs
 	vocabulary := []string{"ash", "brine", "coral", "drift", "eddy", "fjord", "gull", "harbour"}
@@ -530,8 +531,8 @@ func TestMatchCountEquivalentToPrePluginRanking(t *testing.T) {
 				t.Fatalf("Search(%q) = %v, want nil", query, err)
 			}
 
-			// The oracle: membership per document, one point per query-term
-			// occurrence, count desc then key asc.
+			// The oracle: per-document term sets, one point per query-term
+			// occurrence, then count descending with the key tiebreak.
 			counts := make(map[int]int)
 			for _, term := range queryTokens {
 				for key, tokens := range docs {
@@ -566,12 +567,12 @@ func TestMatchCountEquivalentToPrePluginRanking(t *testing.T) {
 	}
 }
 
-// TestBTreeIndexDeleteTombstonesUntilFlush pins the compaction contract:
-// a delete leaves its postings in place as garbage — Entries counts the dead
-// document until Flush reclaims it — and the garbage is invisible to
-// ranking, so the results and scores before and after the Flush are
-// identical. If a tombstone ever leaked into a score, a deleted memory would
-// still be shaping what its neighbours are worth.
+// TestBTreeIndexDeleteTombstonesUntilFlush pins the compaction contract. A
+// delete leaves its postings in place as garbage, and Entries counts the dead
+// document until Flush reclaims it. The garbage is invisible to ranking, so
+// results and scores are identical before and after the Flush. If a
+// tombstone leaked into a score, a deleted memory would still shape what its
+// neighbours are worth.
 func TestBTreeIndexDeleteTombstonesUntilFlush(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	idx.SetRelevance(relevance.NewBM25[int, float64]())
@@ -616,11 +617,11 @@ func TestBTreeIndexDeleteTombstonesUntilFlush(t *testing.T) {
 	}
 }
 
-// TestBTreeIndexCompactsWhenDeadOutnumberLive pins the automatic bound: the
-// index compacts itself once it holds more dead documents than live ones,
-// so a long run of deletes and updates cannot grow the postings without
-// limit even if nothing ever calls Flush. Three documents in, two out: the
-// second delete tips dead (2) over live (1) and the garbage is gone.
+// TestBTreeIndexCompactsWhenDeadOutnumberLive pins the automatic bound. The
+// index compacts itself once it holds more dead documents than live ones. So
+// deletes and updates cannot grow the postings without limit, even if
+// nothing calls Flush. Three documents go in and two come out. The second
+// delete tips dead (2) over live (1), and the garbage is gone.
 func TestBTreeIndexCompactsWhenDeadOutnumberLive(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
 	for key, doc := range map[int]string{1: "one shared", 2: "two shared", 3: "three shared"} {
@@ -646,10 +647,10 @@ func TestBTreeIndexCompactsWhenDeadOutnumberLive(t *testing.T) {
 	}
 }
 
-// benchmarkCorpus returns n synthetic documents of eight to twelve words drawn
-// from a Zipf-distributed vocabulary, so a few terms carry long posting lists
-// and most carry short ones, as in prose. The generator is seeded, so every
-// run indexes the same corpus.
+// benchmarkCorpus returns n synthetic documents of eight to twelve words. The
+// words come from a Zipf-distributed vocabulary, so a few terms have long
+// posting lists and most have short ones, as in prose. The generator is
+// seeded, so every run indexes the same corpus.
 func benchmarkCorpus(n int) []string {
 	rng := rand.New(rand.NewSource(1))
 	zipf := rand.NewZipf(rng, 1.1, 1, 4999)
@@ -665,8 +666,8 @@ func benchmarkCorpus(n int) []string {
 }
 
 // BenchmarkBTreeIndexSearch measures a BM25 search over ten thousand
-// documents for a three-term query whose terms are the corpus's most
-// frequent, so every posting list the loop walks is long.
+// documents. The three query terms are the corpus's most frequent, so every
+// posting list the loop walks is long.
 func BenchmarkBTreeIndexSearch(b *testing.B) {
 	idx := index.NewBTreeIndex[uint64, float64](comparator.OrderedComparator[uint64])
 	idx.SetRelevance(relevance.NewBM25[uint64, float64]())
@@ -684,12 +685,12 @@ func BenchmarkBTreeIndexSearch(b *testing.B) {
 	}
 }
 
-// TestBTreeIndexInformation pins the information a recall's vector weight is
-// read from, in bits: a term held by df of the N live documents carries
-// −log₂(df/N), the query carries the sum over its distinct known terms, and a
+// TestBTreeIndexInformation pins, in bits, the information a recall's vector
+// weight is read from. A term held by df of the N live documents carries
+// −log₂(df/N). The query carries the sum over its distinct known terms, and a
 // document holds the sum over those it holds. Of four documents, "deploy" is
 // in three (0.415 bits) and "friday" in two (1 bit). A key not indexed holds
-// nothing, a repeated query term counts once, and a term no document holds
+// nothing, and a repeated query term counts once. A term no document holds
 // adds nothing to either side.
 func TestBTreeIndexInformation(t *testing.T) {
 	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])

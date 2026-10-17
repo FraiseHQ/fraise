@@ -1,8 +1,9 @@
 name: CLA gate
 
 on:
-  # pull_request_target: the gate needs a write token to set the status and
-  # comment on PRs from forks. It checks out nothing and runs no PR code.
+  # pull_request_target, because the gate needs a write token to set the
+  # status and comment on PRs from forks. It checks out nothing and runs no PR
+  # code.
   pull_request_target:
     types: [opened, reopened, synchronize]
   issue_comment:
@@ -16,17 +17,17 @@ permissions:
 jobs:
   cla:
     runs-on: ubuntu-latest
-    # Pull request events, and every comment on a pull request. Whether a
-    # comment is a signature is decided inside the action, so this condition
-    # and the phrase cannot drift apart. Release and dependency PRs are not
-    # skipped: bots are exempt, and a skipped job leaves cla/signed unset.
+    # Pull request events, and every comment on a pull request. The action
+    # decides whether a comment is a signature, so this condition and the
+    # phrase cannot drift apart. Release and dependency PRs are not skipped.
+    # Bots are exempt, and a skipped job would leave cla/signed unset.
     if: github.event_name == 'pull_request_target' || github.event.issue.pull_request != null
     steps:
-      # GITHUB_TOKEN cannot write across repositories, so signatures are
-      # committed to FraiseHQ/cla by fraise-bot, with a token scoped to that
-      # repository and contents:write alone. fraise-bot[bot] is itself exempt
-      # from the gate through the action's default `*[bot]` allowlist.
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      # GITHUB_TOKEN cannot write across repositories. So fraise-bot commits
+      # signatures to FraiseHQ/cla, with a token scoped to that repository and
+      # contents:write alone. fraise-bot[bot] is itself exempt from the gate,
+      # through the action's default `*[bot]` allowlist.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: fraise-bot
         with:
           client-id: ${{ secrets.FRAISE_BOT_CLIENT_ID }}

@@ -22,22 +22,22 @@
 
 """Builders that turn structured arguments into Fraise query strings.
 
-These functions do no I/O: the wire format lives here, and
-:mod:`fraise_sdk.client` only concerns itself with transport. The grammar they
-target:
+These functions do no I/O. The wire format lives here, and
+:mod:`fraise_sdk.client` handles only transport. The grammar they target:
 
     remember@<graph> '<value>' [topic:<t>]... [entity:<e>]... [vec:$<name>]
     recall@<graph> ['<query>'] [<keyword>]... [topic:<t>]... [entity:<e>]...
                    [top:<n>] [depth:<n>] [vec:$<name>]
 
-A topic, entity or keyword is written bare when it is one plain word — letters
-and digits only — and quoted otherwise; a keyword that spells a reserved word
-is quoted too, since a bare one is syntax, and warns. So the builders take any
-value. A query they do not cover — a ``since:``/``until:`` bound, say — is
-written as FQL and sent with :meth:`fraise_sdk.client.FraiseClient.query`.
+A topic, entity or keyword is written bare when it is one plain word, letters
+and digits only. Otherwise it is quoted. A keyword that spells a reserved word
+is quoted too, because a bare one is syntax, and the builder warns. So the
+builders take any value. A query they do not cover, such as a
+``since:``/``until:`` bound, is written as FQL and sent with
+:meth:`fraise_sdk.client.FraiseClient.query`.
 
-The vector itself never appears in the string — the caller sends it out of band
-in the request ``parameters`` map, and only the ``vec:$<name>`` placeholder is
+The vector itself never appears in the string. The caller sends it out of band
+in the request ``parameters`` map. Only the ``vec:$<name>`` placeholder is
 emitted here.
 """
 
@@ -53,9 +53,9 @@ from fraise_sdk.errors import FraiseQueryError, FraiseWarning
 def _token(kind: str, value: str) -> str:
     """Validate and return a keyword, topic or entity value, trimmed.
 
-    Whitespace inside the value is data, not a reason to refuse it: a value
+    Whitespace inside the value is data, not a reason to refuse it. A value
     that is not one plain word is quoted on the way out (see
-    :func:`_bare_or_quoted`), so ``my project`` travels whole as
+    :func:`_bare_or_quoted`). So ``my project`` travels whole as
     ``'my project'``. Only an empty value has no encoding the server accepts.
 
     Raises:
@@ -71,10 +71,10 @@ def _sequence(kind: str, values: Iterable[str] | None) -> Iterable[str]:
     """Return ``values``, or an empty list for ``None``, refusing a bare string.
 
     ``str`` satisfies ``Sequence[str]``, so ``topics="billing"`` passes the
-    type hint and would iterate into one token per character: the write
-    succeeds, the fact is filed under ``b``, ``i``, ``l``... and a recall by the
-    anchor the caller named finds nothing. The caller meant one value, so the
-    string is refused by name.
+    type hint. It would then iterate into one token per character. The write
+    would succeed and file the fact under ``b``, ``i``, ``l``... A recall by
+    the anchor the caller named would find nothing. The caller meant one value,
+    so the string is refused by name.
 
     Raises:
         FraiseQueryError: if ``values`` is a string rather than a sequence.
@@ -90,11 +90,11 @@ def _sequence(kind: str, values: Iterable[str] | None) -> Iterable[str]:
 def _clauses(prefix: str, values: Iterable[str] | None) -> list[str]:
     """Render ``topic:``/``entity:`` clauses, quoting a value only when it must.
 
-    A reserved word needs no quoting here: after the ``:`` only a value can
-    appear, so ``topic:top`` is the anchor ``top``. A space, a colon or an
-    apostrophe does, and the quoted form carries it whole —
-    ``topic:'us elections'``, ``entity:'o''brien'`` — while the server folds
-    it to the same anchor a bare spelling would name.
+    A reserved word needs no quoting here. Only a value can follow the ``:``,
+    so ``topic:top`` is the anchor ``top``. A space, a colon or an apostrophe
+    does need quoting. The quoted form carries it whole, as in
+    ``topic:'us elections'`` or ``entity:'o''brien'``. The server folds it to
+    the same anchor a bare spelling would name.
     """
     return [
         f"{prefix}:{_bare_or_quoted(_token(prefix, v))}"
@@ -105,11 +105,11 @@ def _clauses(prefix: str, values: Iterable[str] | None) -> list[str]:
 def _bare_or_quoted(token: str) -> str:
     """Return ``token`` bare when the grammar reads it as one word, else quoted.
 
-    Outside quotes a word is letters and digits only: the server rejects any
-    other character, such as the ``-`` of ``machine-learning``, and a space
-    ends the word, so bare ``new york`` would be two. The caller passed one
+    Outside quotes, a word is letters and digits only. The server rejects any
+    other character, such as the ``-`` of ``machine-learning``. A space ends
+    the word, so bare ``new york`` would be two words. The caller passed one
     value, so the builder writes the form that carries it whole.
-    ``str.isalpha`` and ``str.isdecimal`` are the server's letter and digit
+    ``str.isalpha`` and ``str.isdecimal`` match the server's letter and digit
     classes, so letters in any script stay bare.
     """
     if all(ch.isalpha() or ch.isdecimal() for ch in token):
@@ -120,10 +120,10 @@ def _bare_or_quoted(token: str) -> str:
 def _quote_value(value: str) -> str:
     """Wrap a value in the grammar's quotes.
 
-    Inside a quoted phrase every character is literal and an apostrophe is
-    escaped by doubling it (``''``), so any text travels verbatim:
-    ``it's blue`` goes over the wire as ``'it''s blue'`` and comes back with
-    its apostrophe intact.
+    Inside a quoted phrase every character is literal. An apostrophe is escaped
+    by doubling it (``''``), so any text travels verbatim. ``it's blue`` goes
+    over the wire as ``'it''s blue'`` and comes back with its apostrophe
+    intact.
 
     Raises:
         FraiseQueryError: if the value is empty or only whitespace.
@@ -137,12 +137,12 @@ def _quote_value(value: str) -> str:
 def _term(value: str) -> str:
     """Render a recall search word so the server reads it as that word.
 
-    A term follows the anchor rule (see :func:`_bare_or_quoted`) plus one more:
-    a reserved word is syntax wherever a term stands, in any casing, and the
+    A term follows the anchor rule (see :func:`_bare_or_quoted`), plus one
+    more. A reserved word is syntax wherever a term stands, in any casing. The
     server rejects ``top`` or ``Since`` as a bare term rather than guess
     whether a clause was meant. The builder quotes it, so the call runs as the
-    search the caller wrote, and warns: ``recall("since", "7d")`` may as well
-    have meant a ``since:7d`` bound, and only the caller can say which.
+    search the caller wrote. It also warns, because ``recall("since", "7d")``
+    may have meant a ``since:7d`` bound. Only the caller can say which.
 
     Warns:
         FraiseWarning: when the keyword spells a reserved word.
@@ -180,8 +180,8 @@ def build_remember(
 ) -> str:
     """Build a ``remember`` query string that stores ``value`` in ``graph``.
 
-    Set ``with_vector`` when a vector is being sent in the request parameters, so
-    the ``vec:$v`` placeholder is appended for the server to bind.
+    Set ``with_vector`` when the request parameters carry a vector. The builder
+    then appends the ``vec:$v`` placeholder for the server to bind.
     """
     parts = [f"remember{_selector(graph)}", _quote_value(value)]
     parts += _clauses("topic", topics)
@@ -204,23 +204,23 @@ def build_recall(
 ) -> str:
     """Build a ``recall`` query string over ``graph``.
 
-    ``query`` is a whole question sent as one quoted phrase term. The grammar
-    keeps every character inside the quotes literal, so natural language
-    ("What topic has John been blogging about recently?") travels verbatim
-    instead of as bare words that would collide with the grammar's reserved
-    keywords. ``keywords`` accompany it as individual terms, each quoted when a
-    bare one would not read back as that word (see :func:`_term`).
+    ``query`` is a whole question, sent as one quoted phrase term. The grammar
+    keeps every character inside the quotes literal. So natural language
+    ("What topic has John been blogging about recently?") travels verbatim, not
+    as bare words that would collide with the grammar's reserved keywords.
+    ``keywords`` go with it as separate terms. Each is quoted when a bare one
+    would not read back as that word (see :func:`_term`).
 
     A recall needs at least one seed: a query phrase, keywords, a vector, or a
     topic or entity anchor. A call given nothing but ``graph`` is rejected
-    here; one given only ``top`` or ``depth`` is built as written, and the
+    here. A call given only ``top`` or ``depth`` is built as written, and the
     server rejects it for the missing seed.
 
     Raises:
         FraiseQueryError: if nothing but ``graph`` is given, ``top`` is not
-            positive or ``depth`` is negative, or a value cannot be written as
-            FQL (an empty value, a bare string where a sequence is wanted, a
-            graph outside 0–255).
+            positive, or ``depth`` is negative. Also raised when a value cannot
+            be written as FQL: an empty value, a bare string where a sequence
+            is wanted, or a graph outside 0–255.
     """
     parts = [f"recall{_selector(graph)}"]
     if query is not None:

@@ -34,13 +34,13 @@ import (
 	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
 
-// locomoCategories names LoCoMo's question categories by the number the
-// dataset files them under; the sub-benchmarks are named after them.
+// locomoCategories names LoCoMo's question categories by the number the dataset
+// files them under. The sub-benchmarks are named after them.
 var locomoCategories = []string{1: "multi-hop", 2: "temporal", 3: "open-domain", 4: "single-hop", 5: "adversarial"}
 
-// locomoConversation is one LoCoMo conversation in the dataset's own shape:
-// session_N holds the turns of session N, from 1, and session_N_date_time
-// when it took place.
+// locomoConversation is one LoCoMo conversation in the dataset's own shape. In
+// Conversation, session_N holds the turns of session N, counting from 1, and
+// session_N_date_time holds when it took place.
 type locomoConversation struct {
 	SampleID     string                     `json:"sample_id"`
 	Conversation map[string]json.RawMessage `json:"conversation"`
@@ -61,9 +61,9 @@ type locomoQuestion struct {
 	Category int      `json:"category"`
 }
 
-// question is one LoCoMo question ready to send: its recall, the vector bound
-// to it, the sessions its evidence lies in, and the session each value of its
-// conversation was said in.
+// question is one LoCoMo question ready to send. It holds the recall, the
+// vector bound to it and the sessions its evidence lies in. It also maps each
+// value of its conversation to the session it was said in.
 type question struct {
 	category int
 	fql      string
@@ -72,21 +72,22 @@ type question struct {
 	sessions map[string]string
 }
 
-// evidenceSession reads a session number out of a dia_id ("D8:6"). A handful
-// of evidence strings join several ids ("D8:6; D9:17") or are malformed
-// ("D:11:26"), so every well-formed id in a string counts and nothing else.
+// evidenceSession reads a session number out of a dia_id ("D8:6"). A handful of
+// evidence strings join several ids ("D8:6; D9:17") or are malformed
+// ("D:11:26"). So every well-formed id in a string counts, and nothing else
+// does.
 var evidenceSession = regexp.MustCompile(`D(\d+):\d+`)
 
-// plainWord is the bare-word alphabet of the grammar and of the amb adapter,
-// which builds a recall from the question's runs of letters and digits.
+// plainWord matches the words the amb adapter builds a recall from: runs of
+// ASCII letters and digits. Each one is also a bare word in the grammar.
 var plainWord = regexp.MustCompile(`[A-Za-z0-9]+`)
 
 // anchorBreak is what the amb adapter folds to a hyphen in an anchor name.
 var anchorBreak = regexp.MustCompile(`[^A-Za-z0-9]+`)
 
-// fqlValue writes an anchor or a term bare when it is one plain word and
-// quoted otherwise. A term that spells a reserved word is quoted as well:
-// bare, it is syntax.
+// fqlValue writes an anchor or a term bare when it is one plain word, and
+// quoted otherwise. A term that spells a reserved word is quoted too, since a
+// bare one is syntax.
 func fqlValue(v string) string {
 	_, reserved := lexer.KeywordsMap[strings.ToLower(v)]
 	if !reserved && plainWord.FindString(v) == v {
@@ -119,7 +120,8 @@ func loadLoCoMo(b *testing.B, path string) []locomoConversation {
 }
 
 // loadVectors reads the embeddings FRAISE_LOCOMO_VECTORS names, one vector per
-// embedded text, or returns nil when it is unset and the run is text only.
+// embedded text. It returns nil when the variable is unset and the run is text
+// only.
 func loadVectors(b *testing.B) map[string][]float64 {
 	b.Helper()
 	path := os.Getenv("FRAISE_LOCOMO_VECTORS")
@@ -138,9 +140,9 @@ func loadVectors(b *testing.B) map[string][]float64 {
 }
 
 // vectorOf returns the cached embedding of text. A text missing from a cache
-// that exists means the cache was built from other values than the ones
-// stored, and every vector score measured with it would be wrong, so the run
-// stops rather than fall back to text only for some facts.
+// that exists means the cache was built from other values than the ones stored.
+// Every vector score measured with it would be wrong, so the run stops rather
+// than fall back to text only for some facts.
 func vectorOf(b *testing.B, vectors map[string][]float64, text string) []float64 {
 	b.Helper()
 	if vectors == nil {
@@ -153,11 +155,12 @@ func vectorOf(b *testing.B, vectors map[string][]float64, text string) []float64
 	return v
 }
 
-// ingest stores conv the way the amb adapter's raw path does: one fact per
-// turn, in order, valued "[session N @ <date>] <speaker>: <text>" with any
-// shared image's caption appended, filed under the conversation and session
-// topics and the speaker's entity, all in graph 0. It returns the session each
-// stored value belongs to, which is how a hit is traced back to evidence.
+// ingest stores conv the way the amb adapter's raw path does. Each turn becomes
+// one fact, in order, valued "[session N @ <date>] <speaker>: <text>". Any
+// shared image's caption is appended. Each fact is filed in graph 0 under the
+// conversation and session topics and the speaker's entity. The returned map
+// gives the session each stored value belongs to, which is how a hit is traced
+// back to evidence.
 func ingest(b *testing.B, url string, conv locomoConversation, vectors map[string][]float64) map[string]string {
 	b.Helper()
 	sessions := map[string]string{}
@@ -182,8 +185,8 @@ func ingest(b *testing.B, url string, conv locomoConversation, vectors map[strin
 				text += " [shared image: " + t.BlipCaption + "]"
 			}
 			// The adapter swaps the ASCII apostrophe for a typographic one
-			// before storing, so the stored value, and the text its vector was
-			// computed from, carry the swap.
+			// before storing. The stored value and the text its vector was
+			// computed from both carry the swap.
 			value := strings.ReplaceAll(fmt.Sprintf("[session %s @ %s] %s: %s", n, date, t.Speaker, text), "'", "’")
 			sessions[value] = n
 
@@ -196,11 +199,11 @@ func ingest(b *testing.B, url string, conv locomoConversation, vectors map[strin
 	}
 }
 
-// questions turns conv's QA into recalls the way the amb adapter does: the
-// question's plain words as terms, scoped to the conversation's topic, ten
-// results at the server's default depth, and the question's own embedding as
-// the vector seed. A question whose evidence names no session cannot be
-// scored and is left out.
+// questions turns conv's QA into recalls the way the amb adapter does. Each
+// recall takes the question's plain words as terms and is scoped to the
+// conversation's topic. It asks for ten results at the server's default depth,
+// with the question's own embedding as the vector seed. A question whose
+// evidence names no session cannot be scored and is left out.
 func questions(b *testing.B, conv locomoConversation, sessions map[string]string, vectors map[string][]float64) []question {
 	b.Helper()
 	out := make([]question, 0, len(conv.QA))
@@ -226,9 +229,9 @@ func questions(b *testing.B, conv locomoConversation, sessions map[string]string
 	return out
 }
 
-// scores are the session-level retrieval metrics of one question: a hit
-// counts for the session its fact was said in, and a session retrieved twice
-// counts once, as the amb adapter scores them.
+// scores are the session-level retrieval metrics of one question. A hit counts
+// for the session its fact was said in. A session retrieved twice counts once,
+// as the amb adapter scores them.
 type scores struct {
 	f1, p1, recall float64
 }
@@ -261,26 +264,26 @@ func score(q question, hits []string) scores {
 }
 
 // BenchmarkRetrievalQuality ingests the LoCoMo conversations FRAISE_LOCOMO
-// names into a fresh server and reports how well its recalls find the
-// sessions each question's evidence lies in: f1@10, p@1 and recall@10,
+// names into a fresh server. It reports how well the recalls find the sessions
+// each question's evidence lies in: f1@10, p@1 and recall@10. Each metric is
 // macro-averaged over all questions and over each category's. Ingestion and
 // questions follow the amb adapter's raw path, so the numbers are comparable
 // with a LoCoMo run of the same server through amb.
 //
-// The data is not part of this package: tests/perf/data holds the sample the
-// benchmark gates run on, and the harness passes its path. Without one the
-// benchmark is skipped. The text set stores and asks with text only; the
-// vectors set, run when FRAISE_LOCOMO_VECTORS names an embeddings file, seeds
-// and stores with those vectors as well. Each gets its own server, and a run
-// with embeddings measures both, so text is always compared with text and
-// vectors with vectors whichever runs measured them. Run it with -benchtime
-// 1x: each sub-benchmark asks its questions once per iteration, and one is
-// the measurement.
+// The data is not part of this package. tests/perf/data holds the sample the
+// benchmark gates run on, and the harness passes its path. Without a path the
+// benchmark is skipped. The text set stores and asks with text only. The
+// vectors set runs when FRAISE_LOCOMO_VECTORS names an embeddings file, and
+// seeds and stores with those vectors as well. Each set gets its own server. A
+// run with embeddings measures both, so text is always compared with text and
+// vectors with vectors, whichever runs measured them. Run it with
+// -benchtime 1x. Each sub-benchmark asks its questions once per iteration, and
+// one iteration is the measurement.
 //
-// The metrics are exact: the same server given the same facts and questions
-// ranks them the same way, so a single run is a measurement and any change is
-// a change in retrieval. The Unit lines say so to whatever reads the output,
-// which otherwise waits for enough runs to test a difference that has no
+// The metrics are exact. The same server, given the same facts and questions,
+// ranks them the same way. So a single run is a measurement, and any change is
+// a change in retrieval. The Unit lines say so to whatever reads the output.
+// Otherwise it would wait for enough runs to test a difference that has no
 // noise.
 func BenchmarkRetrievalQuality(b *testing.B) {
 	path := os.Getenv("FRAISE_LOCOMO")

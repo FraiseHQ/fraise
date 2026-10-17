@@ -114,9 +114,9 @@ name = "xxhash"
 	}
 }
 
-// TestConfigSet_FromFile_Missing pins that a file that is not there is told
-// apart from one that is there and broken: only the first is survivable, so
-// it must not read as ErrParsingFailed.
+// TestConfigSet_FromFile_Missing pins that a missing file is told apart from
+// a broken one. Only a missing file is survivable, so it must not read as
+// ErrParsingFailed.
 func TestConfigSet_FromFile_Missing(t *testing.T) {
 	c := config.New()
 	_, err := c.FromFile(filepath.Join(t.TempDir(), "does-not-exist.toml"))
@@ -128,12 +128,11 @@ func TestConfigSet_FromFile_Missing(t *testing.T) {
 	}
 }
 
-// TestParseRejectsAnUnusableConfigFile pins the other side: a file that
-// exists but cannot be used stops Parse with ErrParsingFailed, and the error
+// TestParseRejectsAnUnusableConfigFile pins the other side. A file that
+// exists but cannot be used stops Parse with ErrParsingFailed. The error
 // names the file and what was wrong, so the operator can find the line.
 // Starting anyway would run on defaults the operator believes they overrode.
-// The unknown key is a removed setting, the kind of line an old config file
-// still carries.
+// The unknown key is a removed setting, a line old config files still carry.
 func TestParseRejectsAnUnusableConfigFile(t *testing.T) {
 	cases := []struct {
 		name, contents, detail string
@@ -165,9 +164,9 @@ func TestParseRejectsAnUnusableConfigFile(t *testing.T) {
 	}
 }
 
-// TestConfigSet_LimitsAndTimeouts checks that the robustness knobs (HTTP
-// timeouts, body cap, and the top/depth/vector ceilings) decode from the config
-// file, and that config.New seeds them with their documented defaults.
+// TestConfigSet_LimitsAndTimeouts checks the robustness settings: the HTTP
+// timeouts, the body cap, and the top, depth and vector ceilings. They decode
+// from the config file, and config.New seeds them with their defaults.
 func TestConfigSet_LimitsAndTimeouts(t *testing.T) {
 	// Defaults come from config.New (flag defaults are applied on definition).
 	c := config.New()
@@ -244,11 +243,12 @@ max-vector-dimension = 128
 	}
 }
 
-// TestConfigSet_Aggregate pins the spread's two settings: by default a pool
-// of 60 and a cap of 1, the recall setting that was benchmarked, so a config
-// that never mentions them runs the engine that was measured; a 0 means the
-// default, as for the other counts; and the file and the flags reach the
-// same fields, an unset one keeping its default.
+// TestConfigSet_Aggregate pins the spread's two settings:
+//   - The defaults are a pool of 60 and a cap of 1, the benchmarked recall
+//     setting. A config that never mentions them runs the measured engine.
+//   - A 0 means the default, as for the other counts.
+//   - The file and the flags reach the same fields, and an unset one keeps
+//     its default.
 func TestConfigSet_Aggregate(t *testing.T) {
 	c := config.New()
 	want := config.Aggregate{Pool: 60, Cap: 1}
@@ -290,17 +290,17 @@ pool = 40
 	}
 }
 
-// missingConfig returns a -config path that does not exist, so Parse takes the
-// no-config-file branch, the one an operator running the binary with nothing
-// but flags is on.
+// missingConfig returns a -config path that does not exist. Parse then takes
+// the no-config-file branch, as for an operator who runs the binary with
+// flags only.
 func missingConfig(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "does-not-exist.toml")
 }
 
 // TestParseCanonicalisesLogFlags pins that the log flags accept any casing and
-// land on the canonical spelling: `-log-level error` is what an operator
-// types, and it must set the level to ERROR rather than be ignored.
+// land on the canonical spelling. An operator types `-log-level error`, and it
+// must set the level to ERROR rather than be ignored.
 func TestParseCanonicalisesLogFlags(t *testing.T) {
 	cases := []struct {
 		args         []string
@@ -317,8 +317,8 @@ func TestParseCanonicalisesLogFlags(t *testing.T) {
 			c := config.New()
 			args := append([]string{"-config", missingConfig(t)}, tc.args...)
 
-			// The missing config file is reported, but it is not the failure
-			// under test — only that it did not stop the flags being validated.
+			// The missing config file is reported, but it is not under test.
+			// The test checks only that it did not stop flag validation.
 			if err := c.Parse(args); errors.Is(err, config.ErrInvalidValue) {
 				t.Fatalf("Parse(%v) rejected a valid value: %v", tc.args, err)
 			}
@@ -346,8 +346,8 @@ func TestParseKeepsTimestampsOnByDefault(t *testing.T) {
 }
 
 // TestParseRejectsUnknownLogFlags pins that an unusable value stops startup
-// even with no config file to read: validation that ran only when a config
-// file happened to exist would let a flag's value reach the logger unchecked.
+// even with no config file to read. If validation ran only when a config file
+// existed, a flag's value would reach the logger unchecked.
 func TestParseRejectsUnknownLogFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"-log-level", "verbose"},
@@ -370,11 +370,10 @@ func TestParseRejectsUnknownLogFlags(t *testing.T) {
 }
 
 // TestParseRejectsUnknownDBFlags extends the same guarantee to the settings
-// that pick an implementation rather than a log destination, where a silent
-// fallback is worse than a noisy one: a mistyped precision could hold every
-// score at a precision the operator did not ask for, and a mistyped hashing
-// function would key the store differently than asked, with nothing to show
-// for it.
+// that pick an implementation. For them, a silent fallback is worse than a
+// noisy one. A mistyped precision could hold every score at a precision the
+// operator did not ask for. A mistyped hashing function would key the store
+// differently than asked, with nothing to show for it.
 func TestParseRejectsUnknownDBFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"-precision", "floast32"},
@@ -398,8 +397,8 @@ func TestParseRejectsUnknownDBFlags(t *testing.T) {
 	}
 }
 
-// TestParseCanonicalisesDBFlags is the counterpart: the casing an operator
-// types is accepted, and lands on the spelling the consumers switch on.
+// TestParseCanonicalisesDBFlags is the counterpart. The casing an operator
+// types is accepted and lands on the spelling the consumers switch on.
 func TestParseCanonicalisesDBFlags(t *testing.T) {
 	c := config.New()
 	args := []string{
@@ -424,9 +423,9 @@ func TestParseCanonicalisesDBFlags(t *testing.T) {
 	}
 }
 
-// TestParseCanonicalisesConfigFileValues checks the file path gets the same
-// treatment as the flags: level = "error" in TOML is as reasonable a thing to
-// write as it is to type, and must land on the same canonical value.
+// TestParseCanonicalisesConfigFileValues checks that file values get the same
+// treatment as flags. level = "error" in TOML is as reasonable to write as it
+// is to type, and must land on the same canonical value.
 func TestParseCanonicalisesConfigFileValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), config.DefaultConfigFile)
 	contents := "[log]\nlevel = \"error\"\nformat = \"Json\"\n"
@@ -448,10 +447,9 @@ func TestParseCanonicalisesConfigFileValues(t *testing.T) {
 }
 
 // TestParseAppliesDefaultsWithoutAConfigFile guards the flip side of running
-// validation on the no-file path: a missing config file must still be
-// survivable, reported as ErrMissingFile and not as a parse failure or an
-// invalid value, with every default in place. The server keeps starting in
-// that case.
+// validation on the no-file path. A missing config file must stay survivable.
+// It is reported as ErrMissingFile, not as a parse failure or an invalid
+// value, and every default is in place. The server still starts.
 func TestParseAppliesDefaultsWithoutAConfigFile(t *testing.T) {
 	c := config.New()
 	err := c.Parse([]string{"-config", missingConfig(t)})
@@ -475,10 +473,10 @@ func TestParseAppliesDefaultsWithoutAConfigFile(t *testing.T) {
 	}
 }
 
-// TestParseDerivesTheMCPAddressFromThePort pins the bridge's default: with no
-// address configured it forwards to the daemon the same config describes, so
-// a port moved in the shared file moves the bridge with it — while an
-// explicit -addr wins over the derivation.
+// TestParseDerivesTheMCPAddressFromThePort pins the bridge's default. With no
+// address configured, it forwards to the daemon the same config describes. A
+// port moved in the shared file moves the bridge with it. An explicit -addr
+// wins over the derivation.
 func TestParseDerivesTheMCPAddressFromThePort(t *testing.T) {
 	cases := []struct {
 		args []string

@@ -1,20 +1,20 @@
 name: Benchmarks nightly
 
-# Measures main every night, every gate in tests/perf included: HTTP latency
-# at ten and a hundred thousand facts, and retrieval quality both text only
-# and seeded with embeddings. Its outputs are the baseline every pull request
-# and release gate compares with until the next night, and are appended to
-# the history. It is itself compared with the night before, so a regression
-# that was merged anyway still shows; that fails the run, which blocks
-# nothing, and benchmarks-report.yaml posts the report every night.
+# Measures main every night with every gate in tests/perf. That includes HTTP
+# latency at ten and a hundred thousand facts, and retrieval quality both text
+# only and seeded with embeddings. Its outputs are the baseline every pull
+# request and release gate compares with until the next night. They are also
+# appended to the history. The run is compared with the night before, so a
+# regression that was merged anyway still shows. That fails the run, which
+# blocks nothing. benchmarks-report.yaml posts the report every night.
 
 on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
-# One at a time, none cancelled: each reads the baseline and the history the
-# one before it saved.
+# One run at a time, none cancelled. Each run reads the baseline and the
+# history the run before it saved.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -25,9 +25,8 @@ permissions:
 jobs:
   nightly:
     name: Measure main
-    # The CPU of every pull request's gate in benchmarks.yaml, which benchstat
-    # needs to compare this night's outputs with it: every Arm runner is a
-    # Cobalt 100.
+    # The same CPU as every pull request's gate in benchmarks.yaml. benchstat
+    # compares only runs on one CPU, and every Arm runner is a Cobalt 100.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     permissions:
@@ -42,8 +41,8 @@ jobs:
         with:
           version-file: "pyproject.toml"
 
-      # No baseline is not an error: the gates then measure and pass, as on
-      # the first night.
+      # A missing baseline is not an error. The gates then measure and pass,
+      # as on the first night.
       - name: Download the previous baseline
         id: baseline
         continue-on-error: true
@@ -56,9 +55,9 @@ jobs:
           path: bin/perf/baseline
           search_artifacts: true
           if_no_artifact_found: warn
-      # The embeddings come from the cache, or are computed and cached on a
-      # miss, for this night and every release gate after it. If they cannot
-      # be computed, the night measures text only.
+      # The embeddings come from the cache. On a miss they are computed and
+      # cached, for this night and every gate after it. If they cannot be
+      # computed, the night measures text only.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: vectors
         with:
@@ -88,10 +87,11 @@ jobs:
           name: benchmarks
           path: bin/perf/report.md
 
-      # The history is one file, downloaded from the night before, appended
-      # to and uploaded again. It compares a night with the one before, on
-      # whichever runner each got, so an alert is a prompt to look, never a
-      # failure. Both suites append to the one file, each under its own name.
+      # The history is one file. Each night downloads it from the night
+      # before, appends to it and uploads it again. It compares a night with
+      # the one before, on whichever runner each got. So an alert is a prompt
+      # to look, never a failure. Both suites append to the same file, each
+      # under its own name.
       - uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
         if: always()
         continue-on-error: true # the first night starts the history

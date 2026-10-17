@@ -36,11 +36,11 @@ import (
 )
 
 const (
-	// httpRate and httpDuration fix the load at a constant arrival rate, so a
-	// slow response delays no later request and the percentiles keep the
-	// queueing a real client would see. The rate loads a four-core runner at
-	// a hundred thousand facts without saturating it: past saturation the
-	// server sheds load with 429s, and what is measured is then the shedding.
+	// httpRate and httpDuration fix the load at a constant arrival rate. A slow
+	// response then delays no later request, and the percentiles keep the
+	// queueing a real client would see. The rate loads a four-core runner at a
+	// hundred thousand facts without saturating it. Past saturation the server
+	// sheds load with 429s, and what is measured is then the shedding.
 	httpRate     = 50
 	httpDuration = 20 * time.Second
 
@@ -51,8 +51,9 @@ const (
 )
 
 // httpFact is one deterministic fact: twelve words drawn from a Zipf
-// distribution, so a few terms carry long posting lists as in real text, filed
-// under one of fifty topics and one of five hundred entities.
+// distribution, filed under one of fifty topics and one of five hundred
+// entities. The Zipf draw gives a few terms long posting lists, as in real
+// text.
 func httpFact(rng *rand.Rand, zipf *rand.Zipf) string {
 	words := make([]string, 12)
 	for w := range words {
@@ -61,10 +62,10 @@ func httpFact(rng *rand.Rand, zipf *rand.Zipf) string {
 	return fmt.Sprintf("remember@0 '%s' topic:t%d entity:e%d", strings.Join(words, " "), rng.Intn(50), rng.Intn(500))
 }
 
-// httpTargets is the request mix the load cycles through: recalls of two or
-// three corpus words, scoped to a topic and spread over the three depths, and
-// one new fact in every httpWriteEvery requests. The same seed yields the
-// same requests in the same order on every run.
+// httpTargets is the request mix the load cycles through. One request in every
+// httpWriteEvery stores a new fact. The others recall two or three corpus
+// words, scoped to a topic and spread over the three depths. The same seed
+// yields the same requests in the same order on every run.
 func httpTargets(b *testing.B, url string, rng *rand.Rand, zipf *rand.Zipf) []vegeta.Target {
 	header := http.Header{"Content-Type": []string{"application/json"}}
 	targets := make([]vegeta.Target, httpMix)
@@ -85,11 +86,11 @@ func httpTargets(b *testing.B, url string, rng *rand.Rand, zipf *rand.Zipf) []ve
 }
 
 // BenchmarkHTTP measures request latency through the whole server, HTTP and
-// scheduler included, at ten and a hundred thousand facts: a fresh server is
+// scheduler included, at ten and a hundred thousand facts. A fresh server is
 // filled with a deterministic corpus, then held at a constant rate of mixed
-// recalls and writes, and the p50, p95 and p99 of the responses are reported
-// in nanoseconds. The attack's duration, not b.N, sets how much it measures,
-// so run it with -benchtime 1x.
+// recalls and writes. The p50, p95 and p99 of the responses are reported in
+// nanoseconds. The attack's duration, not b.N, sets how much it measures, so
+// run it with -benchtime 1x.
 func BenchmarkHTTP(b *testing.B) {
 	for _, facts := range []int{10_000, 100_000} {
 		b.Run(fmt.Sprintf("facts-%d", facts), func(b *testing.B) {
@@ -100,8 +101,8 @@ func BenchmarkHTTP(b *testing.B) {
 				query(b, url, httpFact(rng, zipf), nil)
 			}
 			targeter := vegeta.NewStaticTargeter(httpTargets(b, url, rng, zipf)...)
-			// Bound to loopback, the one address the attack dials: vegeta's
-			// default source address, 0.0.0.0, is refused on some hosts.
+			// Bound to loopback, the one address the attack dials. Some hosts
+			// refuse vegeta's default source address, 0.0.0.0.
 			attacker := vegeta.NewAttacker(vegeta.KeepAlive(true), vegeta.LocalAddr(net.IPAddr{IP: net.IPv4(127, 0, 0, 1)}))
 
 			var m vegeta.Metrics

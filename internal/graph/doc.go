@@ -24,16 +24,16 @@
 // addresses, and the search that runs over it.
 //
 // A [Graph] holds [Node] values under their own keys. Facts, topics and named
-// entities are the vertices; [Mentions] and [IsAbout] are the relationships
-// from a fact to the entities it names and the topics it is filed under, and
+// entities are the vertices. [Mentions] and [IsAbout] are the relationships
+// from a fact to the entities it names and the topics it is filed under. They
 // are stored as nodes too. Every node key is its Hash, built from a type tag
-// and its text, so identity is (type, value): two nodes of different types
-// reading the same text never overwrite each other. [InMemoryGraph] is the
-// implementation, backing the graph with a full-text index and a vector index.
+// and its text. So identity is (type, value), and two nodes of different types
+// with the same text never overwrite each other. [InMemoryGraph] is the
+// implementation. It backs the graph with a full-text index and a vector index.
 //
 // [Graph.Search] seeds candidates from the text and vector indexes. When the
 // query names a topic or entity, a [Traversal] ([ExcessTraversal] or [BFS])
-// expands each seed through its anchors, and each candidate's contributions
-// are then folded by a [scoring.Scorer]. Graph methods take no lock: callers
-// hold the graph's read or write lock around the calls they compose.
+// expands each seed through its anchors. A [scoring.Scorer] then folds each
+// candidate's contributions. Graph methods take no lock. Callers hold the
+// graph's read or write lock around the calls they compose.
 package graph
