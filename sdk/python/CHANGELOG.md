@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/FraiseHQ/fraise/compare/python/v0.2.0...python/v0.3.0) (2026-10-17)
+
+
+### Features
+
+* assert and log the relevance model at startup ([#516](https://github.com/FraiseHQ/fraise/issues/516)) ([9932dc1](https://github.com/FraiseHQ/fraise/commit/9932dc11dd3d2ff7563b31a58adc56ce1038bb62))
+
+
+### Bug fixes
+
+* simplify comments and fix the mismatches they hid ([#555](https://github.com/FraiseHQ/fraise/issues/555)) ([868aeeb](https://github.com/FraiseHQ/fraise/commit/868aeebbc5ae5714c564ee8d9f8bbfd216742b1a))
+
 ## [0.2.0](https://github.com/FraiseHQ/fraise/compare/python/v0.1.1...python/v0.2.0) (2026-10-11)
 
 
