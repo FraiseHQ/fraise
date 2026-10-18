@@ -48,6 +48,7 @@
         "pyproject.toml",
         "release-please-config.json",
         "sdk",
+        "server.json",
         "tests",
         "uv.lock"
       ],

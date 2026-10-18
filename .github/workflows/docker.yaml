@@ -145,6 +145,11 @@ jobs:
             org.opencontainers.image.title=Fraise
             org.opencontainers.image.description=Working-memory database for AI agents
             org.opencontainers.image.licenses=MIT
+            # The MCP registry reads this label off the image to prove the
+            # server.json record at the repository root owns it. The value is
+            # the record's name, byte for byte: the org login in GitHub's
+            # casing, which is the namespace the registry grants the publisher.
+            io.modelcontextprotocol.server.name=io.github.FraiseHQ/fraise
 
       - name: Build and push
         id: build

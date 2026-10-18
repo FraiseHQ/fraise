@@ -1,0 +1,67 @@
+name: MCP Registry
+
+# Publishes the release's server.json record to the official MCP registry
+# (https://registry.modelcontextprotocol.io). The record pins the ghcr.io
+# image of the same version, and the registry proves ownership by reading the
+# io.modelcontextprotocol.server.name label off that image. So this chains on
+# the Docker workflow finishing, not on the tag: a publish racing the push
+# would find no image for the tag, and the registry rejects the record.
+#
+# Authentication is GitHub OIDC, which grants io.github.<repository owner>/*
+# to any job in this repository with id-token: write. No secret is involved.
+
+on:
+  workflow_run:
+    workflows: [Docker]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish server.json
+    # A successful Docker run for a tag push. workflow_run reports the pushed
+    # ref as head_branch, a tag name included. Docker publishes on main and on
+    # v* tags only, so a head_branch starting with v is a release tag.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mcp-publisher login github-oidc
+    steps:
+      # The tagged commit, so the record published is the one the release
+      # carries. A workflow_run job checks out the default branch otherwise.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+      # server.json in the tree carries the last release. The tag names this
+      # one, for both the record's version and the image tag it pins. The two
+      # agree by construction: docker.yaml derives the image tag from the same
+      # ref with type=semver,pattern={{version}}.
+      - name: Pin the release version
+        env:
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          version="${TAG#v}"
+          jq --arg v "$version" \
+            '.version = $v | (.packages[] | select(.registryType == "oci") | .identifier) |= sub(":[^:/]*$"; ":" + $v)' \
+            server.json > server.json.tmp
+          mv server.json.tmp server.json
+          cat server.json
+
+      - name: Validate
+        run: ./mcp-publisher validate
+
+      - name: Authenticate to the MCP registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish
