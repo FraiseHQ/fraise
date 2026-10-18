@@ -48,6 +48,7 @@
         "pyproject.toml",
         "release-please-config.json",
         "sdk",
+        "server.json",
         "tests",
         "uv.lock"
       ],
@@ -55,6 +56,11 @@
         {
           "type": "generic",
           "path": "pkg/version/version.go"
+        },
+        {
+          "type": "json",
+          "path": "server.json",
+          "jsonpath": "$.version"
         }
       ]
     },

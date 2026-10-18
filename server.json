@@ -1,0 +1,47 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.FraiseHQ/fraise",
+  "title": "Fraise",
+  "description": "Memory database for AI agents: remember and recall over a running Fraise daemon, in FQL.",
+  "websiteUrl": "https://docs.getfraise.dev",
+  "repository": {
+    "url": "https://github.com/FraiseHQ/fraise",
+    "source": "github",
+    "id": "1207409551"
+  },
+  "version": "0.3.3",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/fraisehq/fraise",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--add-host",
+          "value": "host.docker.internal:host-gateway",
+          "isRequired": true,
+          "description": "Resolves host.docker.internal to the host on Linux too, where Docker Desktop is not there to do it."
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "valueHint": "subcommand",
+          "value": "mcp",
+          "description": "Runs the stdio MCP bridge rather than the daemon the image starts by default."
+        },
+        {
+          "type": "named",
+          "name": "-addr",
+          "default": "http://host.docker.internal:9876",
+          "isRequired": true,
+          "description": "URL of the running Fraise daemon the bridge forwards to. The daemon runs separately, like a database behind a connection URL: on the host (brew services start fraise, or systemctl --user start fraise), or as its own container with port 9876 published. Inside this container 127.0.0.1 is the bridge itself, so the default names the host."
+        }
+      ]
+    }
+  ]
+}
