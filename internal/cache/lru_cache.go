@@ -117,11 +117,11 @@ func (c *LRUCache[K, T]) Len() int {
 	return c.order.Len()
 }
 
-// Capacity implements [Cache]. The capacity is fixed at construction, so
-// reading it takes no lock. Put and Clear call it while holding their own lock.
+// Capacity implements [Cache]. Resize writes the capacity under the lock, so
+// reading it takes the read lock, as Len does.
 func (c *LRUCache[K, T]) Capacity() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.capacity
 }
 
