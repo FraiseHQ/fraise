@@ -32,11 +32,17 @@ jobs:
       contents: read
       id-token: write # mcp-publisher login github-oidc
     steps:
-      # The tagged commit, so the record published is the one the release
-      # carries. A workflow_run job checks out the default branch otherwise.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+      # The record as the tagged commit carries it, fetched as one file. The
+      # job holds a credential that publishes under io.github.FraiseHQ/*, so
+      # it checks out nothing: the only thing it takes from the release is
+      # data, read by jq and mcp-publisher, never a script.
+      - name: Fetch server.json from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/$GITHUB_REPOSITORY/contents/server.json?ref=$SHA" > server.json
 
       - name: Install mcp-publisher
         run: |
