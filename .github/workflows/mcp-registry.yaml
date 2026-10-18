@@ -1,0 +1,93 @@
+name: MCP Registry
+
+# Publishes the release's server.json record to the official MCP registry
+# (https://registry.modelcontextprotocol.io). The record pins the ghcr.io
+# image of the same version, and the registry proves ownership by reading the
+# io.modelcontextprotocol.server.name label off that image. So this chains on
+# the Docker workflow finishing, not on the tag: a publish racing the push
+# would find no image for the tag, and the registry rejects the record.
+#
+# Authentication is GitHub OIDC, which grants io.github.<repository owner>/*
+# to any job in this repository with id-token: write. No secret is involved.
+
+on:
+  workflow_run:
+    workflows: [Docker]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish server.json
+    # A successful Docker run for a release tag push. workflow_run reports the
+    # pushed ref as head_branch, a tag name included. Docker publishes on main
+    # and on v* tags only, so a head_branch starting with v is a tag. The
+    # registry marks the highest semver published as latest, which is what a
+    # client installs by default, so pre-release tags (the ones containing -)
+    # are skipped, as docker.yaml skips them for the latest image tag.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v') &&
+      !contains(github.event.workflow_run.head_branch, '-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mcp-publisher login github-oidc
+    steps:
+      # The record as the tagged commit carries it, fetched as one file. The
+      # job holds a credential that publishes under io.github.FraiseHQ/*, so
+      # it checks out nothing: the only thing it takes from the release is
+      # data, read by jq and mcp-publisher, never a script.
+      - name: Fetch server.json from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/$GITHUB_REPOSITORY/contents/server.json?ref=$SHA" > server.json
+
+      # Pinned by digest, like every action above is pinned by commit. This
+      # binary runs with the credential that publishes under
+      # io.github.FraiseHQ/*, so a release asset swapped under the same tag
+      # must fail here rather than run. Bumping the version means bumping the
+      # digest with it; dependabot does not see this pin.
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSLo mcp-publisher.tgz "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz"
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher.tgz" | sha256sum -c
+          tar xzf mcp-publisher.tgz mcp-publisher
+
+      # release-please writes the record's version in the commit it tags, as
+      # an extra-file in release-please-config.json. So the version must
+      # already be the tag's: a mismatch means that bump broke, and the record
+      # would publish under a version no release carries. The record carries
+      # the version once, there: its image identifier has no tag in the tree,
+      # and the release's is appended here. It is the tag's version by
+      # construction, since docker.yaml derives it from the same ref with
+      # type=semver,pattern={{version}}.
+      - name: Pin the release image
+        env:
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          version="${TAG#v}"
+          recorded="$(jq -r .version server.json)"
+          if [ "$recorded" != "$version" ]; then
+            echo "::error::server.json declares version $recorded, tag $TAG names $version — check the release-please extra-files entry"
+            exit 1
+          fi
+          jq --arg v "$version" \
+            '(.packages[] | select(.registryType == "oci") | .identifier) |= . + ":" + $v' \
+            server.json > server.json.tmp
+          mv server.json.tmp server.json
+          cat server.json
+
+      - name: Validate
+        run: ./mcp-publisher validate
+
+      - name: Authenticate to the MCP registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish
