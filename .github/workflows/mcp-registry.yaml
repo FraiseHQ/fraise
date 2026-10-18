@@ -48,9 +48,16 @@ jobs:
           gh api -H "Accept: application/vnd.github.raw+json" \
             "repos/$GITHUB_REPOSITORY/contents/server.json?ref=$SHA" > server.json
 
+      # Pinned by digest, like every action above is pinned by commit. This
+      # binary runs with the credential that publishes under
+      # io.github.FraiseHQ/*, so a release asset swapped under the same tag
+      # must fail here rather than run. Bumping the version means bumping the
+      # digest with it; dependabot does not see this pin.
       - name: Install mcp-publisher
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          curl -fsSLo mcp-publisher.tgz "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz"
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher.tgz" | sha256sum -c
+          tar xzf mcp-publisher.tgz mcp-publisher
 
       # server.json in the tree carries the last release. The tag names this
       # one, for both the record's version and the image tag it pins. The two
