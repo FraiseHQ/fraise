@@ -73,7 +73,7 @@ Measured on [LoCoMo](https://github.com/snap-research/locomo) — 10 multi-sessi
 
 **Fraise comes within 0.003 of the best recall, 31× faster than the one system that reaches it.** Near enough the same evidence, in a fraction of the time. The token column is the price of that recall: the extractor (fraise-sdk 0.2.0) reads each message beside what the graph already holds, and that context is where the recall came from.
 
-These come from [agent-memory-benchmarks](https://github.com/RonsenbergVI/agent-memory-benchmarks), an open harness — precision, recall and F1 across `k` ∈ {1, 3, 5, 10}, per category, every run tagged and reproducible from the tag. The full tables are in its [RESULTS.md](https://github.com/RonsenbergVI/agent-memory-benchmarks/blob/main/RESULTS.md).
+These come from [agent-memory-benchmarks](https://github.com/RonsenbergVI/agent-memory-benchmarks), an open harness — precision, recall and F1 across `k` ∈ {1, 3, 5, 10}, per category, every run tagged and reproducible from the tag. The full tables are in its [RESULTS.md](https://github.com/RonsenbergVI/agent-memory-benchmarks/blob/b19b1ae/RESULTS.md).
 
 ## Why Fraise
 
