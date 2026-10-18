@@ -20,13 +20,17 @@ permissions: {}
 jobs:
   publish:
     name: Publish server.json
-    # A successful Docker run for a tag push. workflow_run reports the pushed
-    # ref as head_branch, a tag name included. Docker publishes on main and on
-    # v* tags only, so a head_branch starting with v is a release tag.
+    # A successful Docker run for a release tag push. workflow_run reports the
+    # pushed ref as head_branch, a tag name included. Docker publishes on main
+    # and on v* tags only, so a head_branch starting with v is a tag. The
+    # registry marks the highest semver published as latest, which is what a
+    # client installs by default, so pre-release tags (the ones containing -)
+    # are skipped, as docker.yaml skips them for the latest image tag.
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      startsWith(github.event.workflow_run.head_branch, 'v')
+      startsWith(github.event.workflow_run.head_branch, 'v') &&
+      !contains(github.event.workflow_run.head_branch, '-')
     runs-on: ubuntu-latest
     permissions:
       contents: read
