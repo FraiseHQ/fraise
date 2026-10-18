@@ -59,17 +59,25 @@ jobs:
           echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher.tgz" | sha256sum -c
           tar xzf mcp-publisher.tgz mcp-publisher
 
-      # server.json in the tree carries the last release. The tag names this
-      # one, for both the record's version and the image tag it pins. The two
-      # agree by construction: docker.yaml derives the image tag from the same
-      # ref with type=semver,pattern={{version}}.
-      - name: Pin the release version
+      # release-please writes the record's version in the commit it tags, as
+      # an extra-file in release-please-config.json. So the version must
+      # already be the tag's: a mismatch means that bump broke, and the record
+      # would publish under a version no release carries. The image tag is
+      # the one thing the record cannot know ahead of the release, and it is
+      # the tag's version by construction, since docker.yaml derives it from
+      # the same ref with type=semver,pattern={{version}}.
+      - name: Pin the release image
         env:
           TAG: ${{ github.event.workflow_run.head_branch }}
         run: |
           version="${TAG#v}"
+          recorded="$(jq -r .version server.json)"
+          if [ "$recorded" != "$version" ]; then
+            echo "::error::server.json declares version $recorded, tag $TAG names $version — check the release-please extra-files entry"
+            exit 1
+          fi
           jq --arg v "$version" \
-            '.version = $v | (.packages[] | select(.registryType == "oci") | .identifier) |= sub(":[^:/]*$"; ":" + $v)' \
+            '(.packages[] | select(.registryType == "oci") | .identifier) |= sub(":[^:/]*$"; ":" + $v)' \
             server.json > server.json.tmp
           mv server.json.tmp server.json
           cat server.json
