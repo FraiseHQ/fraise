@@ -85,7 +85,8 @@ func (c *LRUCache[K, T]) Put(key K, value T) {
 	elem := c.order.PushFront(e)
 	c.items[key] = elem
 
-	if c.order.Len() > c.Capacity() {
+	// Evict if over capacity
+	if c.order.Len() > c.capacity {
 		oldest := c.order.Back()
 		if oldest != nil {
 			c.order.Remove(oldest)
@@ -116,9 +117,11 @@ func (c *LRUCache[K, T]) Len() int {
 	return c.order.Len()
 }
 
-// Capacity implements [Cache]. The capacity is fixed at construction, so
-// reading it takes no lock. Put and Clear call it while holding their own lock.
+// Capacity implements [Cache]. Resize writes the capacity under the lock, so
+// reading it takes the read lock, as Len does.
 func (c *LRUCache[K, T]) Capacity() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.capacity
 }
 
@@ -127,6 +130,45 @@ func (c *LRUCache[K, T]) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.items = make(map[K]*list.Element, c.Capacity())
+	c.items = make(map[K]*list.Element, c.capacity)
 	c.order = list.New()
+}
+
+// Resize sets the cache's capacity, evicting least recently used entries until
+// the cache fits, and returns how many it evicted. For a capacity that is not
+// strictly positive it returns ErrCacheCapacity and leaves the cache unchanged.
+func (c *LRUCache[K, T]) Resize(capacity int) (int, error) {
+
+	if capacity <= 0 {
+		return 0, ErrCacheCapacity
+	}
+	entries := 0
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	switch {
+	// Growing: rebuild the map with the new capacity as its size hint. Not
+	// required for correctness, but it saves later Puts from growing the map.
+	case c.capacity < capacity:
+		n := make(map[K]*list.Element, capacity)
+		for k, v := range c.items {
+			n[k] = v
+		}
+		c.items = n
+	// Shrinking: evict least recently used entries down to the new capacity.
+	case c.capacity > capacity:
+		for c.order.Len() > capacity {
+			oldest := c.order.Back()
+			if oldest == nil {
+				break
+			}
+			c.order.Remove(oldest)
+			delete(c.items, oldest.Value.(*Entry[K, T]).Key)
+			entries++
+		}
+	}
+
+	c.capacity = capacity
+	return entries, nil
 }
