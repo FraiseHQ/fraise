@@ -89,6 +89,8 @@ func TestLRUCache_Update(t *testing.T) {
 	}
 }
 
+// No assertion: the test checks only for a race or panic under concurrency.
+// Run with: go test -race ./internal/cache/
 func TestLRUCache_Concurrent(t *testing.T) {
 	c, _ := cache.NewLRUCache[string, int](100)
 	done := make(chan struct{})
@@ -105,6 +107,20 @@ func TestLRUCache_Concurrent(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-	// No assertion: the test checks only for a race or panic under concurrency.
-	// Run with: go test -race ./internal/cache/
+}
+
+func TestLRCache_Clear(t *testing.T) {
+	c, _ := cache.NewLRUCache[string, int](10)
+	c.Put("a", 1)
+	c.Put("b", 1)
+	c.Put("c", 1)
+
+	if c.Len() != 3 {
+		t.Fatalf("got %v but expected %v", c.Len(), 3)
+	}
+	c.Clear()
+
+	if c.Len() != 0 {
+		t.Fatalf("got %v but expected %v", c.Len(), 0)
+	}
 }
