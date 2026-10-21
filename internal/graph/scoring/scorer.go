@@ -91,8 +91,8 @@ func (s Source) String() string {
 
 // Contribution records one observation of a candidate by one retrieval source.
 // Collection sites record what they saw: who, through which anchor, and how
-// much mass sat on it. They apply no policy of their own. The hinge, the null
-// model and the attenuation belong to the Scorer.
+// much mass sat on it. They apply no policy of their own. The hinge and the
+// null model belong to the Scorer.
 //
 // Score is oriented so that bigger is always better. So the vector site turns
 // the distance its index reports, where smaller is nearer, into a similarity.

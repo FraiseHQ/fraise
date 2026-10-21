@@ -16,7 +16,7 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
       {
         "value": "the parrot sleeps in the kitchen",
         "timestamp": "2026-09-23T17:52:22.836+01:00",
-        "score": 0.9773,
+        "score": 0.9806,
         "contributions": [
           { "source": "text",  "score": 0.9762, "rank": 1, "count": 1 },
           { "source": "graph", "score": 2.9682, "rank": 0, "via": "polly", "degree": 3, "count": 3 }
@@ -56,14 +56,14 @@ A `remember` on this endpoint is rejected with 400: a write has no ranking to ex
 
 ## Reading a breakdown
 
-A `text` or `vector` sighting is the fact's own match, its mass $m$. A `graph` sighting is an anchor the fact is filed under, carrying the mass $M_A$ the query's seeds put on it; it adds to the hit only the part of that mass above what the anchor's degree predicts at the `background` rate $\rho_0$, with the fact's own mass excluded, shared across the anchor's edges and attenuated twice:
+A `text` or `vector` sighting is the fact's own match, its mass $m$. A `graph` sighting is an anchor the fact is filed under, carrying the mass $M_A$ the query's seeds put on it; it adds to the hit only the part of that mass above what the anchor's degree predicts at the `background` rate $\rho_0$, with the fact's own mass excluded, shared across the anchor's edges:
 
 $$
-\alpha^2 \cdot \frac{\max(0,\; M_A - m - d_A \, \rho_0)}{d_A}, \qquad \alpha = 0.5
+\frac{\max(0,\; M_A - m - d_A \, \rho_0)}{d_A}
 $$
 
-A sighting marked `named` comes through an anchor the recall named, which owes no fair share: drop the $d_A \, \rho_0$ term, and it adds $\alpha^2 \max(0,\; M_A - m)/d_A$.
+A sighting marked `named` comes through an anchor the recall named, which owes no fair share: drop the $d_A \, \rho_0$ term, and it adds $\max(0,\; M_A - m)/d_A$.
 
-In the example, `polly` holds $2.9682 - 0.9762 - 3 \times 0.6596 \approx 0.013$ above background, which spread over its 3 edges and attenuated adds about $0.0011$ to the text mass — hence $0.9773$. A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score.
+In the example, `polly` holds $2.9682 - 0.9762 - 3 \times 0.6596 \approx 0.013$ above background, which spread over its 3 edges adds about $0.0044$ to the text mass — hence $0.9806$. A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score.
 
 A hit with only `graph` contributions matched nothing itself and was preempted in on transmitted surplus alone, which the model permits only when the surplus is above background. The formula and the lanes are introduced in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).

@@ -79,7 +79,7 @@ type QueryResult[K comparable, P float32 | float64] struct {
 	// explain mode. The omitempty tag keeps it off a plain response. With each
 	// hit's contributions, it lets a client recompute the hit's relevance, its
 	// score before recency decay:
-	// S = m + α²·Σ max(0, (M_A − m − d_A·ρ₀)/d_A).
+	// S = m + Σ max(0, (M_A − m − d_A·ρ₀)/d_A).
 	Background P `json:"background,omitempty"`
 }
 

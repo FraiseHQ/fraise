@@ -484,9 +484,14 @@ func BenchmarkRecallCommit(b *testing.B) {
 // else. Each is scored from its unit anchor mass, and in explain mode each
 // breakdown names the topic it was found under. Naming the entity as well
 // doubles the mass of every fact filed under both. A term beside the anchor
-// seeds from the text index, with the anchor as a filter.
+// seeds from the text index, and the anchor's members are not listed.
 func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
-	g := graph.NewGraph[uint64, float32](config.New())
+	// The window is off: the last case pins that a term beside an anchor
+	// does not list the anchor's members, and under the window the match's
+	// neighbours would be hits for a reason of their own.
+	cfg := config.New()
+	cfg.DB.WindowGamma = -1
+	g := graph.NewGraph[uint64, float32](cfg)
 	facts := []string{"the deploy runs at noon", "the deploy key lives in vault", "the deploy log is archived weekly"}
 	for _, value := range facts {
 		w := &Remember[uint64, float32]{Value: value, Topics: []string{"deploys"}, Entities: []string{"ops"}}
@@ -571,7 +576,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	t.Run("a term beside the anchor searches", func(t *testing.T) {
 		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
 		if got, want := hitValues(r), []string{"the deploy key lives in vault"}; !reflect.DeepEqual(got, want) {
-			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: the anchor filters, it does not list", got, want)
+			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: beside a term the anchor does not list", got, want)
 		}
 		for _, c := range r.Hits[0].Contributions {
 			if c.Source == "anchor" {

@@ -138,15 +138,13 @@ def test_explain_marks_a_named_hub(
     assert not any(c.get("named") for c in cluster), cluster
 
 
-def test_explain_score_recomputes_from_payload(
-    explain, storm_graph, storm_hub_topic, alpha
-):
+def test_explain_score_recomputes_from_payload(explain, storm_graph, storm_hub_topic):
     """Every hit's score recomputes from its own payload.
 
     With the query-level background rate, each score equals the formula applied
     to the hit's contributions:
 
-        S = m + α²·Σ max(0, M_A − m − d_A·ρ₀)/d_A
+        S = m + Σ max(0, M_A − m − d_A·ρ₀)/d_A
 
     A contribution marked named drops the d_A·ρ₀ term, since a named anchor
     owes no fair share. The recall names the hub and discovers the cluster, so
@@ -173,7 +171,7 @@ def test_explain_score_recomputes_from_payload(
             for c in contributions
             if c["source"] == "graph"
         )
-        want = m + alpha * alpha * surplus
+        want = m + surplus
         assert abs(hit["score"] - want) < 1e-3, (
             f"{hit['value']!r}: score {hit['score']} != recomputed {want} "
             f"from {contributions} at background {background}"

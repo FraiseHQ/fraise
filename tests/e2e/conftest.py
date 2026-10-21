@@ -664,8 +664,6 @@ _STORM_HUB = ("a storm of paperwork",) + tuple(
     f"unrelated archive memo {i}" for i in range(7)
 )
 
-_ALPHA = 0.5
-
 
 @pytest.fixture
 def pulsar_graph(query):
@@ -730,12 +728,6 @@ def storm_silent_member():
 def storm_hub():
     """The archive hub's facts; only the first contains a query term."""
     return tuple(_STORM_HUB)
-
-
-@pytest.fixture(scope="session")
-def alpha():
-    """The server's per-edge attenuation α, applied as α² on the two-edge path."""
-    return _ALPHA
 
 
 # Documents on three clearly distinct subjects. A real sentence embedding puts
