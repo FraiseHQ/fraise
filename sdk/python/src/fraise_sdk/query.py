@@ -243,6 +243,6 @@ def build_recall(
     if len(parts) == 1:
         raise FraiseQueryError(
             "recall needs at least one seed: keywords, a vector, or a "
-            "topic/entity filter"
+            "topic/entity anchor"
         )
     return " ".join(parts)

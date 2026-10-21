@@ -251,6 +251,7 @@ func resolveContributions[K comparable, P float32 | float64](g graph.Graph[K, P]
 			Rank:   c.Rank,
 			Degree: c.Degree,
 			Count:  c.Count,
+			Named:  c.Named,
 		}
 		if c.Src == scoring.SrcGraph || c.Src == scoring.SrcAnchor {
 			if node := g.Get(c.Via); node != nil {

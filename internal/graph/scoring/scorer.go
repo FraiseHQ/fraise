@@ -101,7 +101,10 @@ func (s Source) String() string {
 // observation or an anchor sighting has no list and leaves Rank zero. Via,
 // Degree and Count describe the anchor of a graph or anchor observation. Via is
 // the funding or filing anchor, Degree its degree at collection time, and Count
-// how many seeds funded it. A seed contribution's Count is 1.
+// how many seeds funded it. A seed contribution's Count is 1. Named marks a
+// graph observation whose anchor the query named. Naming an anchor asserts it
+// bears on the question, so the scorer does not test it against the fair
+// share a chance anchor must clear.
 type Contribution[K comparable, P float32 | float64] struct {
 	Src    Source
 	Score  P
@@ -109,6 +112,7 @@ type Contribution[K comparable, P float32 | float64] struct {
 	Via    K
 	Degree uint32
 	Count  uint16
+	Named  bool
 }
 
 // Candidates pools every contribution made during one search, keyed by

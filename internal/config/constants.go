@@ -118,8 +118,10 @@ const (
 
 	// DefaultDepth is the depth a recall uses when no depth clause is given.
 	// It is 0, the floor lane, which ranks by seed mass alone and skips the
-	// anchor traversal. A recall that names a topic or entity opts into the
-	// traversal with a higher depth:
+	// anchor traversal. A recall that names a topic or entity beside a term or
+	// vector runs at depth 1 at least, since its anchors take part only
+	// through the traversal. Its depth chooses the bar for the anchors the
+	// seeds discover:
 	//   - depth:1 is the precision lane. Only strongly above-chance anchors
 	//     transmit.
 	//   - depth:2 is max recall. Any anchor above its fair share transmits.

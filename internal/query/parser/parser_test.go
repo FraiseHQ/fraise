@@ -1061,6 +1061,37 @@ func TestExplicitDepthIsHonouredIncludingZero(t *testing.T) {
 	}
 }
 
+// TestAnchorBesideASeedRunsAtDepthOneAtLeast pins the depth floor of an
+// anchored search. An anchor beside a term or vector takes part only through
+// the excess it transmits over the graph, and depth 0 transmits nothing. So
+// such a recall resolves to depth 1 whether its depth:0 is written or is the
+// operator's default (0 here). A deeper depth is kept. Anchors alone seed the
+// search and keep whatever depth they are given.
+func TestAnchorBesideASeedRunsAtDepthOneAtLeast(t *testing.T) {
+	cases := map[string]int{
+		"recall ferry topic:harbour":         1,
+		"recall ferry topic:harbour depth:0": 1,
+		"recall vec:$v entity:acme depth:0":  1,
+		"recall ferry entity:acme depth:2":   2,
+		"recall topic:harbour depth:0":       0,
+		"recall topic:harbour":               0,
+		"recall ferry depth:0":               0,
+	}
+
+	params := map[string][]float32{"v": {1, 0}}
+	for query, want := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, params)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			if got := cmd.(*parser.RecallCommandNode[uint64, float32]).Depth(0); got != want {
+				t.Errorf("Depth(0) = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
 // TestVectorIsTheBoundParameter pins that a command's Vector is the parameter
 // its vec: clause names. It is nil when there is no clause or no such
 // parameter. Most queries have no vector, so a nil dereference on the absent
@@ -1629,6 +1660,50 @@ func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("warning %q does not contain %q", got, want)
 		}
+	}
+}
+
+// TestDepthZeroBesideAnAnchorWarns pins the other depth warning. An explicit
+// depth:0 on a recall naming an anchor beside a term or vector asks for a lane
+// in which the anchor means nothing, so the recall runs at depth 1 and the
+// response says so, at the clause. Nothing warns in these cases:
+//   - The clause is omitted. The operator's default is raised in silence,
+//     since the caller chose nothing.
+//   - The anchors stand alone. They seed the search at any depth.
+//   - The recall names no anchor. depth:0 asks for nothing it cannot do.
+func TestDepthZeroBesideAnAnchorWarns(t *testing.T) {
+	cases := map[string]bool{
+		"recall ferry topic:harbour depth:0": true,
+		"recall vec:$v entity:acme depth:0":  true,
+		"recall ferry topic:harbour":         false,
+		"recall ferry topic:harbour depth:1": false,
+		"recall topic:harbour depth:0":       false,
+		"recall ferry depth:0":               false,
+	}
+
+	for query, want := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, warns, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			if got := len(warns) > 0; got != want {
+				t.Fatalf("Parse(%q) warnings = %v, want warned=%v", query, warns, want)
+			}
+			if !want {
+				return
+			}
+			got := warns[0].String()
+			for _, part := range []string{
+				"depth:0 ran as depth:1",  // which depth ran
+				"topic:/entity: anchor",   // what needs the graph
+				"parse warning at column", // positioned like an error
+			} {
+				if !strings.Contains(got, part) {
+					t.Errorf("warning %q does not contain %q", got, part)
+				}
+			}
+		})
 	}
 }
 

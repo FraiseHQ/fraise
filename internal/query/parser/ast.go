@@ -165,11 +165,25 @@ func (r RecallCommandNode[K, P]) HasTop() bool {
 // Depth returns the recall's depth: value, or v when the recall has no depth
 // clause. As with Top, the default is operator configuration that the caller
 // supplies. See [RecallCommandNode.HasDepth].
+//
+// A recall that names an anchor beside a term or vector runs at depth 1 at
+// least. Its anchors take part only through the excess they transmit, and
+// depth 0 transmits nothing, so at depth 0 the anchors would mean nothing.
+// Anchors alone seed the search and run at any depth.
 func (r RecallCommandNode[K, P]) Depth(v int) int {
-	if !r.HasDepth() {
-		return v
+	if r.HasDepth() {
+		v = r.depth.value
 	}
-	return r.depth.value
+	if v < 1 && r.anchoredSearch() {
+		return 1
+	}
+	return v
+}
+
+// anchoredSearch reports whether the recall names an anchor beside something
+// to match, a term or a vector. Its anchors transmit excess rather than seed.
+func (r RecallCommandNode[K, P]) anchoredSearch() bool {
+	return (len(r.topics) > 0 || len(r.entities) > 0) && (len(r.terms) > 0 || r.vec != nil)
 }
 
 // HasDepth reports whether the recall has an explicit depth clause, rather than

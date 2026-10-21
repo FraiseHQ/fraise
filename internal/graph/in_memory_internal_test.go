@@ -111,10 +111,11 @@ func newCollectFixture(t *testing.T) *collectFixture {
 		fx.h[0]: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	fx.seeds = []uint64{fx.f1, fx.f2, fx.h[0]}
-	// The fixture's topics are named, because the traversal runs only through
-	// an anchor the query names. Naming all three keeps the filter from
-	// narrowing anything.
-	topicKeys, entityKeys := fx.g.anchorKeys([]string{"cluster", "hub", "giant"}, nil)
+	// The traversal runs only when the query names an anchor. A named anchor
+	// transmits whatever its share, so the fixture names one the seeds never
+	// reach, and every rule below is the one an anchor the seeds discover
+	// obeys.
+	topicKeys, entityKeys := fx.g.anchorKeys([]string{"door"}, nil)
 	fx.background = fx.g.findNeighbours(fx.seeds, fx.candidates, topicKeys, entityKeys, 2)
 	return fx
 }
@@ -176,7 +177,7 @@ func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
 		facts[0].Key(): {{Src: scoring.SrcText, Score: 0.1, Rank: 0, Count: 1}},
 		facts[1].Key(): {{Src: scoring.SrcText, Score: 0.8, Rank: 1, Count: 1}},
 	}
-	topicKeys, entityKeys := g.anchorKeys([]string{"lone"}, nil)
+	topicKeys, entityKeys := g.anchorKeys([]string{"door"}, nil)
 	g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, candidates, topicKeys, entityKeys, 2)
 
 	for i, f := range facts {
@@ -281,7 +282,7 @@ func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 		s2: {{Src: scoring.SrcText, Score: 16, Rank: 1, Count: 1}},
 		s3: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
-	topicKeys, entityKeys := g.anchorKeys([]string{"left", "right", "hub"}, nil)
+	topicKeys, entityKeys := g.anchorKeys([]string{"door"}, nil)
 	g.findNeighbours([]uint64{s1, s2, s3}, candidates, topicKeys, entityKeys, 2)
 
 	got := graphContributions(candidates, shared)
