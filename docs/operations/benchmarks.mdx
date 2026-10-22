@@ -33,8 +33,6 @@ They are Go benchmarks, beside the code they measure, and run as any other with 
 | `turn-p@1` | whether the first result is an evidence turn |
 | `turn-recall@10` | the share of the evidence turns among the ten results |
 
-The same three are reported over sessions as `f1@10`, `p@1` and `recall@10`, the amb adapter's scoring, where a result counts for the session it was said in. A session is found by any of its turns, the one holding the answer or not, so the session metrics credit results the reader cannot use, and a ranking that seats one result per session raises them while leaving the evidence out. They are shown in the report for comparison with amb runs and are not gated.
-
 Each is averaged over all questions and reported per category: single-hop, multi-hop, temporal, open-domain and adversarial. The `text` set stores and asks with text only; the `vectors` set, measured when embeddings are at hand, seeds and stores with them as well, so a run is always compared with a run of the same kind. These numbers are exact: the same server asked the same questions over the same facts ranks them the same way on any machine, so one run is a measurement and any difference is a change in retrieval.
 
 The sample is LoCoMo's conversation `conv-26`, in `tests/perf/data`: 199 questions across all five categories. LoCoMo is licensed CC BY-NC 4.0, not MIT like the rest of the repository; `tests/perf/data/NOTICE.md` gives the attribution.
@@ -58,7 +56,7 @@ Each row is one benchmark and unit of [benchstat](https://pkg.go.dev/golang.org/
 
 | Gate | Fails when |
 |---|---|
-| retrieval quality | any turn metric, overall or in any category, drops by more than 0.001 |
+| retrieval quality | any metric, overall or in any category, drops by more than 0.001 |
 | allocations | allocations per operation grow by 5% or more |
 | time | never: a significant slowdown of 10% or more is reported |
 | HTTP latency (nightly) | never: a significant rise of 10% or more in a percentile is reported |
@@ -67,7 +65,7 @@ Retrieval and allocations are counted, not timed, so they are the same on any ma
 
 ## Reading the report
 
-Every gate run posts one comment on its pull request, updated on every push, whatever the verdict. It opens with the verdict, then a table per gate that failed, of the benchmarks that broke its limit, with how to [accept](#accepting-a-regression) what they caught, the same for the regressions accepted and the slowdowns, then a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone. The raw `go test` output is attached to the run as the `benchmarks` artifact.
+Every gate run posts one comment on its pull request, updated on every push, whatever the verdict. It opens with the verdict, then a table per gate that failed, of the benchmarks that broke its limit, with how to [accept](#accepting-a-regression) what they caught, the same for the regressions accepted and the slowdowns, then a benchstat table per benchmark set with the baseline, this run and the change; `~` means the difference is within noise. A set with no baseline yet shows this run's numbers alone, and a unit the baseline does not measure yet shows this run's value marked *new*. The raw `go test` output is attached to the run as the `benchmarks` artifact.
 
 ## Accepting a regression
 
