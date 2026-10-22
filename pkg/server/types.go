@@ -41,17 +41,17 @@ type HandleQueryRequest[P float32 | float64] struct {
 	Parameters map[string][]P `json:"parameters,omitempty"`
 }
 
-// writeStatusOK is the value of a write acknowledgement's "status" key. It is
-// a fixed token, not a message: clients branch on it, so it must not be
-// reworded into prose.
+// writeStatusOK is the value of a write acknowledgement's "status" key. It is a
+// fixed token, not a message. Clients branch on it, so it must not be reworded
+// into prose.
 const writeStatusOK = "ok"
 
 // WriteResponse is the JSON body a successful write answers with. A write has
-// no result set, and a read's empty envelope would make a stored fact the same
+// no result set. A read's empty envelope would make a stored fact the same
 // bytes on the wire as a recall that matched nothing. The "status" key is the
-// acknowledgement, and its presence is what tells a write's 200 from a read's.
-// The MCP bridge returns this body as its remember tool's output, so the key
-// is part of the contract.
+// acknowledgement, and its presence tells a write's 200 from a read's. The MCP
+// bridge returns this body as its remember tool's output, so the key is part of
+// the contract.
 type WriteResponse struct {
 	Status   string   `json:"status"`
 	Warnings []string `json:"warnings,omitempty"`

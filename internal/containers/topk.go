@@ -28,34 +28,33 @@ import (
 	"github.com/FraiseHQ/fraise/internal/comparator"
 )
 
-// topKEntry pairs a key with its score so the two travel together through
-// heap swaps and the final sort, the same shape as Heap's Item.
+// topKEntry keeps a key and its score together through heap swaps and the
+// final sort.
 type topKEntry[K comparable, P float32 | float64] struct {
 	key   K
 	score P
 }
 
-// TopK retains the k best (key, score) pairs under the total order (score
-// descending, then compare(key) ascending) and drains them in that order.
-// Offer order never affects the retained set or the drain order — the total
-// order is the contract, exactly as SearchIndex promises. k <= 0 retains
-// every offer. It is not safe for concurrent use.
+// TopK keeps the k best (key, score) pairs and drains them best first. Pairs
+// rank by a total order, the one SearchIndex promises: score descending, then
+// compare(key) ascending. So the order of offers never changes which pairs are
+// kept or how they drain. k <= 0 keeps every offer. TopK is not safe for
+// concurrent use.
 type TopK[K comparable, P float32 | float64] struct {
 	k       int
 	compare comparator.Comparator[K]
 	entries []topKEntry[K, P]
 }
 
-// NewTopK returns a TopK retaining the k best offers, breaking ties among
-// equal scores by compare(key) ascending. k <= 0 retains every offer.
+// NewTopK returns a TopK that keeps the k best offers and breaks score ties by
+// compare(key) ascending. k <= 0 keeps every offer.
 func NewTopK[K comparable, P float32 | float64](k int, compare comparator.Comparator[K]) *TopK[K, P] {
 	return &TopK[K, P]{k: k, compare: compare}
 }
 
-// Offer considers (key, score) for retention. When k <= 0, or while still
-// under capacity, the offer is always kept; once at capacity, it replaces
-// the current worst kept pair iff it ranks strictly better under the total
-// order, so the k best survive regardless of offer order.
+// Offer considers (key, score) for retention. When k <= 0, or below capacity,
+// the offer is always kept. At capacity, it replaces the worst kept pair only
+// if it ranks strictly better. So the k best survive whatever the offer order.
 func (t *TopK[K, P]) Offer(key K, score P) {
 	if t.k <= 0 || len(t.entries) < t.k {
 		t.entries = append(t.entries, topKEntry[K, P]{key: key, score: score})
@@ -74,9 +73,8 @@ func (t *TopK[K, P]) Offer(key K, score P) {
 	t.percolateDown(0)
 }
 
-// Drain empties the TopK and returns its retained keys and scores as
-// parallel slices ordered best first: score descending, then compare(key)
-// ascending.
+// Drain empties the TopK and returns its kept keys and scores as parallel
+// slices, best first.
 func (t *TopK[K, P]) Drain() ([]K, []P) {
 	sort.Slice(t.entries, func(i, j int) bool {
 		a, b := t.entries[i], t.entries[j]
@@ -96,10 +94,9 @@ func (t *TopK[K, P]) Drain() ([]K, []P) {
 	return keys, scores
 }
 
-// worseThan reports whether entry i ranks worse than entry j under the total
-// order: a lower score is worse, and among equal scores the larger key is
-// worse (ascending key is the better tiebreak). The bounded heap keeps its
-// worst entry at the root under this ordering, so Offer can evict it in
+// worseThan reports whether entry i ranks worse than entry j. A lower score is
+// worse, and among equal scores the larger key is worse. The bounded heap
+// keeps its worst entry at the root by this order, so Offer can evict it in
 // O(log k).
 func (t *TopK[K, P]) worseThan(i, j int) bool {
 	a, b := t.entries[i], t.entries[j]

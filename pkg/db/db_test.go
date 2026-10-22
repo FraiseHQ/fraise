@@ -64,8 +64,8 @@ func TestStartPopulatesGraphs(t *testing.T) {
 	}
 }
 
-// TestStartInstallsConfiguredRelevanceModel checks that every graph Start
-// builds ranks with the configured relevance model, read back from its stats.
+// TestStartInstallsConfiguredRelevanceModel checks that Start gives every graph
+// the configured relevance model, read back from its stats.
 func TestStartInstallsConfiguredRelevanceModel(t *testing.T) {
 	d, err := db.NewDB[uint64, float32](config.New())
 	if err != nil {
@@ -82,10 +82,10 @@ func TestStartInstallsConfiguredRelevanceModel(t *testing.T) {
 }
 
 // TestStartRejectsUnresolvedRelevanceModel checks that Start refuses to serve
-// when the configured relevance model did not take effect. "BM25" is the
-// spelling Parse would have canonicalised: handed to the graph unparsed it
-// matches no model, the index keeps its MatchCount default, and without the
-// check every query would answer with worse ranking and no error.
+// when the configured relevance model did not take effect. Parse would have
+// canonicalised "BM25". Handed to the graph unparsed, it matches no model, so
+// the index keeps its MatchCount default. Without the check, every query
+// would rank worse and report no error.
 func TestStartRejectsUnresolvedRelevanceModel(t *testing.T) {
 	cfg := config.New()
 	cfg.DB.RelevanceModel.Name = "BM25"
@@ -136,16 +136,17 @@ func TestStopReinitialises(t *testing.T) {
 	}
 }
 
-// TestStatsSafeAcrossLifecycle checks that Stats can be called before Start,
-// after Start and after Stop without panicking on an empty slot, and reports
-// one entry per graph slot each time.
+// TestStatsSafeAcrossLifecycle checks that Stats works before Start, after
+// Start and after Stop. It must not panic on an empty slot, and it reports one
+// entry per graph slot each time.
 func TestStatsSafeAcrossLifecycle(t *testing.T) {
 	d, err := db.NewDB[uint64, float32](config.New())
 	if err != nil {
 		t.Fatalf("NewDB returned error: %v", err)
 	}
 
-	// Before Start: slots are nil — zero-valued entries, no panic.
+	// Before Start the slots are nil. Stats gives zero-valued entries and does
+	// not panic.
 	stats := d.Stats()
 	if got, want := len(stats.Graphs), d.NumGraphs(); got != want {
 		t.Fatalf("len(Stats().Graphs) = %d, want %d", got, want)
@@ -174,8 +175,8 @@ func TestStatsSafeAcrossLifecycle(t *testing.T) {
 	}
 }
 
-// TestNumGraphsConfigurable checks that NewDB honours db.num-graphs instead of
-// hardcoding the default, and that Stop preserves the configured count.
+// TestNumGraphsConfigurable checks that NewDB honours db.num-graphs, not a
+// hardcoded default, and that Stop keeps the configured count.
 func TestNumGraphsConfigurable(t *testing.T) {
 	cfg := config.New()
 	cfg.DB.NumGraphs = 3

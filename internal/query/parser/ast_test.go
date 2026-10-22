@@ -20,9 +20,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// These tests live in the internal `parser` package (not parser_test) because
-// the AST node structs expose their data only through unexported fields, which
-// an external test package could not populate.
+// These tests live in package parser, not parser_test. The AST node structs
+// keep their data in unexported fields, which an external test package could
+// not set.
 package parser
 
 import (

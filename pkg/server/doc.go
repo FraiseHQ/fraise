@@ -20,14 +20,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package server is the HTTP front end of the fraise daemon: it wires the
+// Package server is the HTTP front end of the fraise daemon. It wires the
 // database, the query engine and the routes into one Server.
 //
-// Handlers stay thin. A query request is bound and parsed into a query,
-// client errors are refused with 400, and the rest is the engine's: it plans
-// the query and submits the stream to the scheduler, which runs it against
-// the database while the handler waits for the result. Every failure answers
-// in the same [ErrorResponse] shape, and internal detail never reaches a
-// client. [Server.Start] blocks until its context is cancelled, then drains
-// in-flight requests before stopping the engine and the database.
+// Handlers stay thin. A handler binds and parses the query request and refuses
+// client errors with 400. The engine does the rest. It plans the query and
+// submits the stream to the scheduler. The scheduler runs it against the
+// database while the handler waits for the result. Every failure answers in the
+// same [ErrorResponse] shape, and internal detail never reaches a client.
+// [Server.Start] blocks until its context is cancelled. It then drains
+// in-flight requests before it stops the engine and the database.
 package server

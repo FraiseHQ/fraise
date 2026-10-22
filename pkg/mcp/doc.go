@@ -23,10 +23,10 @@
 // Package mcp is the stdio Model Context Protocol bridge to a running fraise
 // daemon, served by 'fraise mcp'.
 //
-// [MCPServer] exposes two tools, recall and remember, and forwards each call
-// as an FQL query to the daemon's HTTP query API (POST /api/v1/q). It is a thin
-// adapter, not a second engine: the daemon parses, plans and runs every query,
-// and its error messages come back to the model as in-band tool errors it can
-// read and correct. Stdout belongs to the protocol, so nothing on this path
-// may print to it.
+// [MCPServer] exposes two tools, recall and remember. It forwards each call as
+// an FQL query to the daemon's HTTP query API (POST /api/v1/q). It is a thin
+// adapter, not a second engine. The daemon parses, plans and runs every query.
+// Its error messages come back to the model as in-band tool errors, so the
+// model can read them and correct its query. Stdout belongs to the protocol,
+// so nothing on this path may print to it.
 package mcp

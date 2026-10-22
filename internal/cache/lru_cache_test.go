@@ -23,6 +23,7 @@
 package cache_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -89,6 +90,91 @@ func TestLRUCache_Update(t *testing.T) {
 	}
 }
 
+// TestLRUCache_ResizeShrink pins that shrinking evicts immediately, least
+// recently used first, rather than deferring eviction to later Puts. A cache
+// that only shrank lazily would report a Capacity it does not honour.
+func TestLRUCache_ResizeShrink(t *testing.T) {
+	c, _ := cache.NewLRUCache[int, int](10)
+	for i := 0; i < 10; i++ {
+		c.Put(i, i) // 0 is now least recently used, 9 most recently used
+	}
+
+	evicted, err := c.Resize(3)
+	if err != nil {
+		t.Fatalf("Resize returned error: %v", err)
+	}
+	if evicted != 7 {
+		t.Errorf("Resize evicted %d, want 7", evicted)
+	}
+	if got := c.Len(); got != 3 {
+		t.Fatalf("Len() after Resize(3) = %d, want 3", got)
+	}
+	if got := c.Capacity(); got != 3 {
+		t.Errorf("Capacity() after Resize(3) = %d, want 3", got)
+	}
+
+	// The 3 most recently used survive; the 7 oldest are gone.
+	for i := 0; i < 7; i++ {
+		if _, ok := c.Get(i); ok {
+			t.Errorf("key %d should have been evicted", i)
+		}
+	}
+	for i := 7; i < 10; i++ {
+		if _, ok := c.Get(i); !ok {
+			t.Errorf("key %d should have survived", i)
+		}
+	}
+}
+
+// TestLRUCache_ResizeGrow checks the grow path keeps every entry and lets the
+// cache hold more before evicting.
+func TestLRUCache_ResizeGrow(t *testing.T) {
+	c, _ := cache.NewLRUCache[int, int](2)
+	c.Put(1, 1)
+	c.Put(2, 2)
+
+	if evicted, err := c.Resize(4); err != nil || evicted != 0 {
+		t.Fatalf("Resize(4) = (%d, %v), want (0, nil)", evicted, err)
+	}
+	if got := c.Capacity(); got != 4 {
+		t.Errorf("Capacity() after Resize(4) = %d, want 4", got)
+	}
+	c.Put(3, 3)
+	c.Put(4, 4) // still within the grown capacity, nothing evicted
+	if got := c.Len(); got != 4 {
+		t.Fatalf("Len() = %d, want 4", got)
+	}
+	for i := 1; i <= 4; i++ {
+		if _, ok := c.Get(i); !ok {
+			t.Errorf("key %d should be present after growing", i)
+		}
+	}
+}
+
+// TestLRUCache_ResizeInvalid checks a non-positive capacity is rejected with
+// ErrCacheCapacity and the cache is left unchanged.
+func TestLRUCache_ResizeInvalid(t *testing.T) {
+	c, _ := cache.NewLRUCache[int, int](2)
+	c.Put(1, 1)
+	for _, capacity := range []int{0, -1} {
+		evicted, err := c.Resize(capacity)
+		if !errors.Is(err, cache.ErrCacheCapacity) {
+			t.Errorf("Resize(%d) error = %v, want ErrCacheCapacity", capacity, err)
+		}
+		if evicted != 0 {
+			t.Errorf("Resize(%d) evicted %d, want 0", capacity, evicted)
+		}
+	}
+	if got := c.Capacity(); got != 2 {
+		t.Errorf("Capacity() after rejected Resize = %d, want 2", got)
+	}
+	if _, ok := c.Get(1); !ok {
+		t.Error("key 1 should survive a rejected Resize")
+	}
+}
+
+// No assertion: the test checks only for a race or panic under concurrency.
+// Run with: go test -race ./internal/cache/
 func TestLRUCache_Concurrent(t *testing.T) {
 	c, _ := cache.NewLRUCache[string, int](100)
 	done := make(chan struct{})
@@ -105,6 +191,21 @@ func TestLRUCache_Concurrent(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-	// No assertion — just confirms no race or panic under concurrency.
-	// Run with: go test -race ./internal/cache/
+}
+
+// test Clear method (accesses capacity which is thread safe)
+func TestLRCache_Clear(t *testing.T) {
+	c, _ := cache.NewLRUCache[string, int](10)
+	c.Put("a", 1)
+	c.Put("b", 1)
+	c.Put("c", 1)
+
+	if c.Len() != 3 {
+		t.Fatalf("got %v but expected %v", c.Len(), 3)
+	}
+	c.Clear()
+
+	if c.Len() != 0 {
+		t.Fatalf("got %v but expected %v", c.Len(), 0)
+	}
 }

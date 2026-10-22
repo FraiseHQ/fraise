@@ -20,20 +20,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Fixtures for the Fraise Python SDK suite — unit and integration alike.
+"""Fixtures for the Fraise Python SDK suite, unit and integration alike.
 
-Every fixture the suite uses lives here, including the ones a single test file
-asks for: a test module is assertions, and a fixture defined among them hides
-setup where nobody looks for it. Test modules never import from this file —
-the only channel out is a fixture, injected through a test's arguments — so
-the values behind them are private, marked by a leading underscore.
+Every fixture the suite uses lives here, even one that a single test file asks
+for. A test module holds assertions only. A fixture defined there would hide
+setup where nobody looks for it. Test modules never import from this file. The
+only way out is a fixture, injected through a test's arguments, so the values
+behind the fixtures are private and start with an underscore.
 
 The file has two halves. The mocked half patches the client's own
-`requests.Session` at its import site, so unit tests run with no server and
-no daemon. The live half, which follows it, backs the
-tests marked ``integration``: a real client against the daemon named by
-FRAISE_URL, health-checked before first use. `-m "not integration"` is the
-unit run and touches nothing live; `-m integration` needs the daemon up.
+`requests.Session` at its import site, so unit tests need no server and no
+daemon. The live half follows it and backs the tests marked ``integration``.
+It gives a real client for the daemon named by FRAISE_URL, health-checked
+before first use. `-m "not integration"` is the unit run and touches nothing
+live. `-m integration` needs the daemon up.
 """
 
 import asyncio
@@ -52,8 +52,8 @@ from fraise_sdk.providers import Anchor
 
 
 def pytest_configure(config):
-    # Register the marker so `-m integration` / `-m "not integration"` work
-    # and pytest doesn't warn about an unknown mark.
+    # Register the marker for `-m integration` and `-m "not integration"`, so
+    # pytest does not warn about an unknown mark.
     config.addinivalue_line(
         "markers",
         "integration: drives the real SDK against a live server; needs the daemon",
@@ -66,12 +66,13 @@ _STATS_URL = f"{DEFAULT_BASE_URL}/api/v1/stats"
 _NO_HITS = {"results": {"count": 0, "hits": []}}
 
 # Recorded from a live server, not written by hand, so the parser is tested
-# against the shape the server really sends. The graph behind both: three facts
-# filed under entity:polly, two of them mentioning "polly".
+# against the shape the server really sends. The graph behind both explain
+# responses holds three facts filed under entity:polly. Two of them mention
+# "polly".
 #
-# `recall polly entity:polly depth:2` — two hits matched the text and were also
-# reached through the polly anchor, and the third matched nothing itself and
-# was reached through the anchor alone: a graph-only hit.
+# `recall polly entity:polly depth:2`: two hits matched the text and were also
+# reached through the polly anchor. The third matched nothing itself and was
+# reached through the anchor alone, so it is a graph-only hit.
 _EXPLAIN_RESPONSE = {
     "results": {
         "count": 3,
@@ -138,8 +139,8 @@ _EXPLAIN_RESPONSE = {
     }
 }
 
-# `recall entity:polly` — seeded by the anchor alone, so every hit is an anchor
-# sighting, and the background rate is zero, which the server omits.
+# `recall entity:polly`: the anchor alone seeds it, so every hit is an anchor
+# sighting. The background rate is zero, so the server omits it.
 _ANCHOR_EXPLAIN_RESPONSE = {
     "results": {
         "count": 3,
@@ -193,9 +194,9 @@ _ANCHOR_EXPLAIN_RESPONSE = {
     }
 }
 
-# `GET /api/v1/stats`, recorded from a live server allocating three graphs.
-# Graph 0 holds two facts filed under entity:polly, one also under topic:diet;
-# graph 1 was never written to; graph 2 holds one fact with a vector and no
+# `GET /api/v1/stats`, recorded from a live server with three graphs. Graph 0
+# holds two facts filed under entity:polly, and one is also under topic:diet.
+# Graph 1 was never written to. Graph 2 holds one fact with a vector and no
 # anchors. The empty graph sits between two populated ones, so a parser that
 # dropped or reordered it would misplace graph 2's row.
 _STATS_RESPONSE = {
@@ -230,9 +231,9 @@ _STATS_RESPONSE = {
     ]
 }
 
-# The shape the server sends for a query that ran with a term that cannot help
-# it: "the" in "recall@0 ferry the" is a stop word, which stored facts never
-# contain, and the warning says so at the term.
+# A warning as the server sends it for "recall@0 ferry the". The query ran, but
+# "the" is a stop word, which stored facts never contain. The warning points at
+# that term.
 _SERVER_WARNING = (
     'parse warning at column 18: term "the" is a stop word: stored facts '
     "never contain it, so it cannot match"
@@ -290,8 +291,8 @@ def server_warning():
 def _arm(session, body: dict, status_code: int = 200) -> MagicMock:
     """Arm ``session`` to answer POSTs with ``body``.
 
-    Private: tests reach this through the ``respond`` fixture, and the
-    ``session`` fixture calls it to arm its default answer.
+    Tests reach this through the ``respond`` fixture. The ``session`` fixture
+    calls it to arm its default answer.
     """
     response = MagicMock(
         status_code=status_code,
@@ -325,8 +326,8 @@ def respond():
     """Callable arming a session to answer POSTs with a given body.
 
     Returns:
-        ``callable(session, body, status_code=200) -> MagicMock`` — the mock
-        response, for tests that want to alter it directly.
+        ``callable(session, body, status_code=200) -> MagicMock``. It returns
+        the mock response, so a test can alter it directly.
     """
     return _arm
 
@@ -334,11 +335,11 @@ def respond():
 def _arm_no_content(session) -> MagicMock:
     """Arm ``session`` to answer POSTs with a bodiless 204.
 
-    Private: tests reach this through the ``respond_no_content`` fixture. It
-    is separate from ``_arm`` because a 204 is the one success with no body:
-    decoding it raises, as ``requests`` does on an empty payload, so a client
-    that decodes it unguarded fails here as it would against the server,
-    rather than passing against a mock that returns ``{}``.
+    Tests reach this through the ``respond_no_content`` fixture. It is separate
+    from ``_arm`` because a 204 is the one success with no body. Decoding it
+    raises, as ``requests`` does on an empty payload. So a client that decodes
+    it unguarded fails here as it would against the server. A mock that
+    returned ``{}`` would let it pass.
     """
     response = MagicMock(status_code=204, ok=True, text="")
     response.json.side_effect = ValueError("no JSON object could be decoded")
@@ -350,11 +351,11 @@ def _arm_no_content(session) -> MagicMock:
 def respond_no_content():
     """Callable arming a session to answer POSTs with a bodiless 204.
 
-    That is how the server reports a recall of a graph holding nothing, as
-    distinct from a populated graph none of whose facts matched.
+    The server answers 204 to a recall of a graph that holds nothing. A
+    populated graph where no fact matched answers 200 with an empty result.
 
     Returns:
-        ``callable(session) -> MagicMock`` — the mock response.
+        ``callable(session) -> MagicMock``, which returns the mock response.
     """
     return _arm_no_content
 
@@ -362,9 +363,8 @@ def respond_no_content():
 def _arm_get(session, body, status_code: int = 200) -> MagicMock:
     """Arm ``session`` to answer GETs with ``body``.
 
-    Private: tests reach this through the ``respond_get`` fixture. Mirrors
-    ``_arm``, which arms POST — the health and version probes are the
-    client's only GETs.
+    Tests reach this through the ``respond_get`` fixture. It mirrors ``_arm``,
+    which arms POST. The client sends GETs only for health, version and stats.
     """
     response = MagicMock(
         status_code=status_code,
@@ -380,12 +380,12 @@ def _arm_get(session, body, status_code: int = 200) -> MagicMock:
 def respond_get():
     """Callable arming a session to answer GETs with a given body.
 
-    The ``session`` fixture arms POST only; health/version/compatibility
-    tests arm the GET side through this.
+    The ``session`` fixture arms POST only. The health, version, compatibility
+    and stats tests arm GET through this.
 
     Returns:
-        ``callable(session, body, status_code=200) -> MagicMock`` — the mock
-        response, for tests that want to alter it directly.
+        ``callable(session, body, status_code=200) -> MagicMock``. It returns
+        the mock response, so a test can alter it directly.
     """
     return _arm_get
 
@@ -406,9 +406,9 @@ def sent():
     return _sent
 
 
-# The unit suite's embedder: len(text), 4 times, so a test can predict the
-# vector the client will send. Tests reach it through callable_embedder; the
-# `encode` fixture is the live half's embedder below.
+# The unit suite's embedder returns len(text) four times, so a test can predict
+# the vector the client sends. Tests reach it through callable_embedder. The
+# live half's embedder is the `encode` fixture below.
 def _len_encode(text: str) -> list[float]:
     return [float(len(text))] * 4
 
@@ -424,16 +424,16 @@ def callable_embedder():
 
     def _callable_embedder() -> MagicMock:
         embedder = MagicMock(side_effect=_len_encode)
-        # A plain callable has no .embed — deleting it is what sends
-        # resolve_embedder down the callable branch instead of the Embedder one.
+        # A plain callable has no .embed. Deleting it sends resolve_embedder
+        # down the callable branch instead of the Embedder one.
         del embedder.embed
         return embedder
 
     return _callable_embedder
 
 
-# The models the embedders default to, pinned as literals so a changed default
-# fails the provider tests instead of being followed by them.
+# The models the embedders default to, pinned as literals. A changed default
+# then fails the provider tests instead of being followed by them.
 _OPENAI_DEFAULT_MODEL = "text-embedding-3-small"
 _HUGGINGFACE_DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -473,8 +473,8 @@ def huggingface_default_model():
 def inference_client():
     """Callable building a mock ``huggingface_hub.InferenceClient``.
 
-    ``feature_extraction`` really returns a numpy array, of which the embedder
-    uses only ``tolist()``, so the mock answers with an object whose
+    The real ``feature_extraction`` returns a numpy array, and the embedder
+    uses only its ``tolist()``. So the mock answers with an object whose
     ``tolist()`` returns the values.
 
     Returns:
@@ -492,9 +492,9 @@ def inference_client():
 
 
 # What the suite's extractor finds in any text. "travel" repeats a topic a test
-# gives, "Anne" an entity it gives in another casing, and "Lisbon airport" is
-# not one plain word, so one remember shows the repeats dropped and the value
-# quoted.
+# gives. "Anne" repeats an entity it gives, in another casing. "Lisbon airport"
+# is not one plain word. So one remember shows the repeats dropped and the
+# value quoted.
 _EXTRACTED_ANCHORS = (
     Anchor(value="travel", type="topic"),
     Anchor(value="trips", type="topic"),
@@ -508,16 +508,16 @@ def callable_extractor():
     """Callable building a mock of the bare ``callable(text, context) -> anchors`` shape.
 
     Returns:
-        ``callable() -> MagicMock`` answering every text with the same four
-        anchors — two topics, two entities — whatever its context. A fresh
-        mock per call, so a test can assert on the text and the context its
-        own extractor was given.
+        ``callable() -> MagicMock``. The mock answers every text with the same
+        four anchors, two topics and two entities, whatever its context. Each
+        call builds a fresh mock, so a test can assert on the text and the
+        context its own extractor was given.
     """
 
     def _callable_extractor() -> MagicMock:
         extractor = MagicMock(return_value=list(_EXTRACTED_ANCHORS))
-        # A plain callable has no .extract — deleting it is what sends
-        # resolve_extractor down the callable branch instead of the Extractor one.
+        # A plain callable has no .extract. Deleting it sends resolve_extractor
+        # down the callable branch instead of the Extractor one.
         del extractor.extract
         return extractor
 
@@ -557,7 +557,7 @@ def mock_client():
 
     Returns:
         ``callable(hits=(), raises=None) -> MagicMock`` whose ``recall`` answers
-        with ``hits``; with ``raises`` set, ``recall`` and ``remember`` raise it.
+        with ``hits``. With ``raises`` set, ``recall`` and ``remember`` raise it.
     """
 
     def _mock_client(hits=(), raises=None) -> MagicMock:
@@ -575,10 +575,10 @@ def mock_client():
 def invoke_function_tool():
     """Callable running an OpenAI Agents ``FunctionTool`` as the runtime would.
 
-    The arguments reach ``on_invoke_tool`` as a JSON string, so a test covers
+    The arguments reach ``on_invoke_tool`` as a JSON string. So a test covers
     the framework's own argument parsing and validation, not just the function
-    the tool wraps. The framework is imported here, when a test asks for this,
-    so the suite still collects without the 'openai' extra.
+    the tool wraps. The framework is imported only when a test asks for this
+    fixture, so the suite still collects without the 'openai' extra.
 
     Returns:
         ``callable(tool, **arguments) -> str``, the tool's answer.
@@ -626,9 +626,9 @@ def mcp_text():
     return _text
 
 
-# Everything below backs the tests marked `integration`: a real client
-# against the daemon named by FRAISE_URL. Nothing here runs — no waiting,
-# no writes — unless an integration test actually requests a fixture.
+# Everything below backs the tests marked `integration`, with a real client
+# against the daemon named by FRAISE_URL. Nothing here waits or writes unless
+# an integration test requests a fixture.
 
 
 _FRAISE_URL = os.environ.get("FRAISE_URL", "http://localhost:9876")
@@ -639,22 +639,21 @@ _VECTOR_GRAPH = 1
 _QUERY_GRAPH = 2
 _MODELS_GRAPH = 3
 
-# Claimed for the stats counts, which are exact, so nothing else may write
-# here: any other fact would move them. The e2e suite's allocation map lists
-# it for the same reason.
+# Claimed for the exact stats counts. Nothing else may write here, because any
+# other fact would move them. The e2e suite's allocation map lists it for the
+# same reason.
 _STATS_GRAPH = 9
 
-# Claimed by staying empty: a recall of a graph holding nothing is answered
-# 204, which only a graph no test ever writes to can exercise. Both suites
-# drive the same daemon and only ever read this graph, so it is the one the
-# e2e suite's allocation map already reserves for its own empty-graph probe,
-# rather than a second graph that map knows nothing about. Do not write to
-# this graph.
+# Claimed by staying empty. A recall of a graph that holds nothing is answered
+# 204, and only a graph no test writes to can show that. Both suites drive the
+# same daemon and only read this graph. So this is the graph the e2e suite's
+# allocation map reserves for its own empty-graph probe. A second empty graph
+# would be one that map does not know about. Do not write to this graph.
 _EMPTY_GRAPH = 8
 
-# The dimension every vector in this suite is written with. The first vector
-# inserted into a graph fixes that graph's dimension, and more than one file
-# writes vectors, so they must agree.
+# The dimension of every vector this suite writes. The first vector inserted
+# into a graph fixes that graph's dimension. More than one file writes vectors,
+# so they must agree.
 _VECTOR_DIM = 8
 
 # A keyword no fact in any graph contains.
@@ -670,9 +669,9 @@ _UNFILED_TOPIC = "unfiledprobe"
 _DEAD_URL = "http://127.0.0.1:1"
 
 # Four facts on one topic hub, each with a unique keyword, so result counts are
-# exact: each keyword matches one fact, and the hub a single seed reaches holds
-# only its fair share, so it transmits nothing in either graph lane. Mirrors
-# the star the e2e suite uses, through the SDK instead of raw HTTP.
+# exact. Each keyword matches one fact. The hub a single seed reaches holds
+# only its fair share, so it transmits nothing in either graph lane. This
+# mirrors the e2e suite's star, written through the SDK instead of raw HTTP.
 _INSTRUMENT_TOPIC = "instruments"
 _INSTRUMENT_FACTS = {
     "cello": "the cello is bowed and tuned in fifths",
@@ -682,19 +681,19 @@ _INSTRUMENT_FACTS = {
 }
 
 # Two anchored facts and one anchorless fact with a vector, so a stats snapshot
-# of their graph is exact: three facts, one topic and two entities make six
-# vertices, and the facts' links to them five edges, which with the vertices are
-# eleven stored nodes. Rewriting a fact rewrites the same nodes, so the counts
-# hold across reruns against a long-lived server.
+# of their graph is exact. Three facts, one topic and two entities make six
+# vertices. The facts' links to the anchors make five edges. Vertices and edges
+# together make eleven stored nodes. Rewriting a fact rewrites the same nodes,
+# so the counts hold across reruns against a long-lived server.
 _STATS_FACTS = (
     ("the heron fishes at dusk", ["birds"], ["heron"]),
     ("the egret wades beside the heron", ["birds"], ["heron", "egret"]),
 )
 _STATS_VECTOR_FACT = "the marsh floods in spring"
 
-# Two facts sharing the word "tide" and a topic hub, so a single recall returns
-# more than one hit and the ordering and count assertions have something to
-# work with.
+# Two facts that share the word "tide" and a topic hub. A single recall then
+# returns more than one hit, so the ordering and count assertions have
+# something to check.
 _TIDE_TOPIC = "tides"
 _TIDE_FACTS = {
     "spring": "a spring tide follows the new moon",
@@ -705,11 +704,11 @@ _TIDE_FACTS = {
 def _encode(text: str) -> list[float]:
     """Encode ``text`` as a deterministic unit vector of _VECTOR_DIM floats.
 
-    A real implementation of the embedder contract (any
-    ``callable(text) -> Sequence[float]``), not a mock, so integration tests
-    drive the client's real embedding path. Deriving the components from a
-    digest keeps the vector stable across runs and processes, so a test can
-    store a fact and recall it by re-encoding the same text.
+    This is a real embedder (any ``callable(text) -> Sequence[float]``), not a
+    mock, so integration tests drive the client's real embedding path. The
+    components come from a digest, so the vector is the same across runs and
+    processes. A test can store a fact and recall it by encoding the same text
+    again.
 
     Args:
         text: the text to encode.
@@ -726,9 +725,9 @@ def _encode(text: str) -> list[float]:
 def _await_server(fraise: FraiseClient) -> None:
     """Block until the server answers its health check, or fail.
 
-    Fails through ``pytest.fail`` when the server never comes up, so every test
-    that needs it errors with one clear message rather than its own connection
-    error.
+    It calls ``pytest.fail`` when the server never comes up. Every test that
+    needs the server then errors with one clear message, not its own
+    connection error.
 
     Args:
         fraise: the client whose health check to poll.
@@ -840,9 +839,9 @@ def client():
 def embedding_client():
     """A FraiseClient that vectorises implicitly through the suite's embedder.
 
-    Separate from ``client`` on purpose: the plain client must keep proving that
-    the SDK works with no embedder configured at all, which is how most callers
-    start out.
+    It is kept apart from ``client`` on purpose. The plain client must keep
+    proving that the SDK works with no embedder at all, which is how most
+    callers start.
 
     Yields:
         The client, closed at the end of the session.
@@ -953,9 +952,9 @@ def instrument_graph(client):
 def vector_graph(embedding_client):
     """Fix the vector graph's embedding dimension with a real write, return its id.
 
-    The first vector into a graph decides that graph's dimension, so tests that
-    depend on it already being _VECTOR_DIM — the mismatch tests in particular —
-    must not race the write that establishes it.
+    The first vector into a graph decides that graph's dimension. Tests that
+    need it to be _VECTOR_DIM already, such as the mismatch tests, must not
+    race the write that sets it.
 
     Args:
         embedding_client: the client whose embedder sets the dimension.
@@ -971,8 +970,8 @@ def vector_graph(embedding_client):
 def tide_result(client):
     """Store the tide facts and return the RecallResult a two-hit recall parses.
 
-    Shared by every response-shape assertion so they all read the same live
-    response rather than each provoking their own.
+    Every response-shape assertion shares it, so they all read the same live
+    response instead of each sending its own recall.
 
     Args:
         client: the plain client to write and recall through.
@@ -989,8 +988,8 @@ def tide_result(client):
 def vector_tide_result(embedding_client, vector_graph):
     """Return a RecallResult that the vector index seeded alongside the text index.
 
-    Vector-seeded results travel a different path through the engine, so the
-    envelope they arrive in is worth parsing separately from the text one.
+    Vector-seeded results take a different path through the engine. So their
+    envelope is worth parsing apart from the text one.
 
     Args:
         embedding_client: the client that vectorises implicitly.

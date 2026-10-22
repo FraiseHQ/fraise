@@ -22,7 +22,7 @@
 
 """Parsing of the server's JSON envelope into the typed models.
 
-The unit tests parse recorded and hand-written bodies with no I/O; the tests
+The unit tests parse recorded and hand-written bodies with no I/O. The tests
 marked ``integration`` parse what a live server sends.
 """
 
@@ -35,8 +35,9 @@ from fraise_sdk.models import Contribution, GraphStats, Hit, RecallResult
 def test_graph_stats_names_the_counts_for_what_they_count(stats_response):
     """The wire's graph-theory names land on the fields named for their meaning.
 
-    ``order`` counts vertices and ``size`` edges; reading either into the
-    other, or into ``nodes``, would misreport a graph's shape without failing.
+    ``order`` counts vertices and ``size`` counts edges. Reading either into
+    the other, or into ``nodes``, would misreport a graph's shape without
+    failing.
     """
     row = GraphStats.from_json(stats_response["graphs"][0])
 
@@ -54,7 +55,7 @@ def test_graph_stats_names_the_counts_for_what_they_count(stats_response):
 def test_graph_stats_without_relevance_is_none(stats_response):
     """A row from a server that predates ``relevance`` still parses.
 
-    The SDK supports servers that never send the field; reading it as required
+    The SDK supports servers that never send the field. Reading it as required
     would turn every ``stats()`` against them into a ``KeyError``.
     """
     row = {k: v for k, v in stats_response["graphs"][0].items() if k != "relevance"}
@@ -65,10 +66,9 @@ def test_graph_stats_without_relevance_is_none(stats_response):
 def test_from_json_defaults_to_no_warnings():
     """Omitting warnings yields an empty list, never None.
 
-    This is the shape a clean response — or a pre-warnings server — produces,
-    and a caller iterating ``result.warnings`` must not have to guard it.
-    It is also the backward-compatible path for direct ``from_json`` callers
-    that still pass only the results dict.
+    A clean response, or a server that predates warnings, produces this shape.
+    A caller iterating ``result.warnings`` must not have to guard it. It also
+    keeps direct ``from_json`` callers that pass only the results dict working.
     """
     result = RecallResult.from_json({"count": 0, "hits": []})
 
@@ -76,8 +76,9 @@ def test_from_json_defaults_to_no_warnings():
 
 
 def test_from_json_carries_warnings_beside_the_hits():
-    """Warnings pass through as a plain list of strings, and the hits they
-    arrived beside parse exactly as they would without them.
+    """Warnings pass through as a plain list of strings.
+
+    The hits they arrived beside parse exactly as they would without them.
     """
     result = RecallResult.from_json(
         {"count": 1, "hits": [{"value": "since the storm", "score": 1.0}]},
@@ -92,9 +93,9 @@ def test_from_json_carries_warnings_beside_the_hits():
 def test_from_json_defaults_to_a_populated_graph():
     """``empty`` is False unless the caller says otherwise.
 
-    It rides the status line (204), not the body, so ``from_json`` cannot
-    infer it from the payload and must not try: an empty result set is the
-    ordinary miss until the response says the graph itself was empty.
+    It rides the status line (204), not the body. So ``from_json`` cannot infer
+    it from the payload and must not try. An empty result set is the ordinary
+    miss until the response says the graph itself was empty.
     """
     result = RecallResult.from_json({"count": 0, "hits": []})
 
@@ -104,8 +105,8 @@ def test_from_json_defaults_to_a_populated_graph():
 def test_from_json_carries_the_empty_graph_flag():
     """A 204 has no body, so the empty result is paired with the flag by hand.
 
-    The two halves of an empty answer come from different places — the body
-    (or its absence) and the status — and this is where they are joined.
+    The two halves of an empty answer come from different places: the body, or
+    its absence, and the status. This is where they are joined.
     """
     result = RecallResult.from_json({}, empty=True)
 
@@ -119,8 +120,8 @@ def test_an_explained_hit_carries_its_contributions(explain_response):
     """Each hit parses its breakdown into typed contributions, in the order sent.
 
     The first hit matched the text and was also reached through the polly
-    anchor; ``via`` and ``degree`` ride only on the graph sighting, and a text
-    sighting leaves them unset rather than zero, since no anchor was involved.
+    anchor. ``via`` and ``degree`` ride only on the graph sighting. A text
+    sighting involves no anchor, so it leaves them unset rather than zero.
     """
     result = RecallResult.from_json(explain_response["results"], explain=True)
 
@@ -138,10 +139,10 @@ def test_an_explained_hit_carries_its_contributions(explain_response):
 
 
 def test_a_hit_reached_through_the_graph_alone_says_so(explain_response):
-    """A graph-only hit matched nothing itself: its one sighting is the graph's.
+    """A graph-only hit matched nothing itself, so its one sighting is the graph's.
 
-    This is the case explain exists to separate — a fact the graph reached and
-    ranked low, rather than one the search never reached at all.
+    Explain exists to tell this case apart. Here the graph reached the fact and
+    ranked it low. In the other case, the search never reached it at all.
     """
     result = RecallResult.from_json(explain_response["results"], explain=True)
 
@@ -163,9 +164,9 @@ def test_an_omitted_background_is_zero_on_an_explained_result(
 ):
     """The server omits a background rate of zero, and explain reads it as 0.0.
 
-    An anchor-only recall runs no traversal, so its background rate is zero
-    and the key is absent. On an explained result that absence is a value, not
-    a missing one — ``None`` would read as "not asked for".
+    An anchor-only recall runs no traversal, so its background rate is zero and
+    the key is absent. On an explained result, the absence means zero, not a
+    missing value. ``None`` would read as "not asked for".
     """
     result = RecallResult.from_json(anchor_explain_response["results"], explain=True)
 
@@ -195,7 +196,7 @@ def test_the_response_parses_into_the_declared_types(tide_result):
     for hit in tide_result.hits:
         assert isinstance(hit, Hit)
         # from_json applies float() to `score`, so the score check below would
-        # pass on a numeric string too: it pins the parsed type, not the wire
+        # pass on a numeric string too. It pins the parsed type, not the wire
         # type.
         assert isinstance(hit.value, str)
         assert isinstance(hit.score, float)
@@ -205,8 +206,8 @@ def test_the_response_parses_into_the_declared_types(tide_result):
 def test_the_server_count_agrees_with_the_hits_it_sent(tide_result):
     """The reported count matches the hits beside it.
 
-    from_json prefers the server's count and only falls back to len(hits), so
-    the fallback would hide a disagreement between the two.
+    from_json uses the server's count when it sends one, and len(hits) only
+    when it does not. So this compares the server's own count with its hits.
     """
     assert tide_result.count == len(tide_result.hits)
 
@@ -215,8 +216,8 @@ def test_the_server_count_agrees_with_the_hits_it_sent(tide_result):
 def test_hits_arrive_ranked_by_descending_score(tide_result):
     """Hits come back in ranked order.
 
-    RecallResult documents "in ranked order" and nothing in the SDK sorts, so
-    this is a claim about the server that the SDK passes through unchanged.
+    RecallResult documents "in ranked order", and nothing in the SDK sorts. So
+    this checks the server's order, which the SDK passes through unchanged.
     """
     scores = [hit.score for hit in tide_result]
     assert scores == sorted(scores, reverse=True)
@@ -227,10 +228,10 @@ def test_timestamps_are_populated_and_rfc3339(tide_result):
     """Every hit carries a parseable RFC 3339 instant.
 
     ``timestamp`` is Optional on the dataclass, so every unit test would still
-    pass if the server stopped sending it. This is what notices. The server's
-    nanosecond precision is truncated to microseconds by fromisoformat rather
-    than rejected, and the trailing Z is accepted, so parsing checks that the
-    field is a real instant.
+    pass if the server stopped sending it. This test notices. fromisoformat
+    truncates the server's nanoseconds to microseconds rather than rejecting
+    them, and it accepts the trailing Z. So parsing checks that the field is a
+    real instant.
     """
     for hit in tide_result.hits:
         assert hit.timestamp is not None
@@ -260,9 +261,9 @@ def test_an_empty_result_set_parses(client, models_graph, no_match):
 def test_a_warned_response_carries_the_warning_verbatim(tide_result):
     """A recall the server ran with a warning surfaces it as a list of strings.
 
-    The fixture asks for depth:2 with no topic or entity, which the server
-    answers from the text and vector indices alone and flags. The exact text is
-    pinned so a client can show it unchanged; the empty-list shape of a clean
+    The fixture asks for depth:2 with no topic or entity. The server answers
+    from the text and vector indices alone, and flags it. The exact text is
+    pinned so a client can show it unchanged. The empty list of a clean
     response is a unit concern, covered by the ``from_json`` tests above.
     """
     assert tide_result.warnings == [
@@ -276,8 +277,8 @@ def test_a_warned_response_carries_the_warning_verbatim(tide_result):
 def test_a_vector_recall_parses_the_same_shape(vector_tide_result):
     """A vector-seeded result arrives in the envelope models.py knows to read.
 
-    Vector-seeded results travel a different path through the engine, so the
-    shape they come back in is worth parsing separately from the text one.
+    Vector-seeded results take a different path through the engine. So their
+    shape is worth parsing apart from the text one.
     """
     assert isinstance(vector_tide_result, RecallResult)
     assert all(isinstance(hit.score, float) for hit in vector_tide_result)
@@ -298,8 +299,8 @@ def test_scores_are_raw_fused_quantities(tide_result):
     """Scores are positive and arrive raw, on the scorer's own scale.
 
     The default excess scorer adds a hit's seed mass and any surplus its
-    anchors transmitted, in raw seed units, and nothing normalises the sum, so
-    a score at or above 1.0 is ordinary. A score is not a similarity in
-    [0, 1]: clients must treat scores as an ordering, not a probability.
+    anchors transmitted, in raw seed units. Nothing normalises the sum, so a
+    score at or above 1.0 is ordinary. A score is not a similarity in [0, 1].
+    Clients must treat scores as an ordering, not a probability.
     """
     assert all(hit.score > 0 for hit in tide_result)

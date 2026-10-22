@@ -22,15 +22,15 @@
 
 """Shared fixtures for the Fraise end-to-end suite.
 
-The suite targets the server named by FRAISE_URL (`make test-e2e` points it
-at the port docker compose publishes; unset, it is http://localhost:9876) and
-waits for its health check before any test runs.
+The suite targets the server named by FRAISE_URL, or http://localhost:9876 when
+it is unset. `make test-e2e` points it at the port docker compose publishes.
+The suite waits for the server's health check before any test runs.
 
-Graph allocation. Tests pin their writes to specific graphs so result counts
-stay deterministic, including across reruns against a long-lived server (a
-fact is keyed by its value, so rewrites are idempotent). Files run in any
-order, so tests sharing a graph must not depend on each other's facts. Keep
-this map current when claiming a graph:
+Graph allocation. Tests pin their writes to fixed graphs, so result counts stay
+exact. A fact is keyed by its value, so the counts also hold across reruns
+against a long-lived server. Files run in any order, so tests that share a
+graph must not depend on each other's facts. Keep this map current when you
+claim a graph:
 
     0  comet + quasar shared-keyword facts
        + monsoon/geyser ranking clusters   (recall_test.py, scoring_test.py)
@@ -51,16 +51,17 @@ this map current when claiming a graph:
     7  planet star
        + lantern/almanac depth-lane probe
        + tidepool + saltmarsh anchor probes (recall_test.py)
-       never given a vector: vectors_test.py recalls it with one
+       never given a vector: vectors_test.py and parser_test.py
+       recall the planet star with one
     8  never written: the empty-graph probes (api_test.py, and the
        SDK suite's empty_graph fixture)
     9  the SDK suite's exact stats counts (its stats_graph fixture);
        no e2e test writes here
 
-Graph 8 is claimed by staying empty. A recall of a graph holding nothing is
-answered 204 with no body, as distinct from the 200 and empty result set a
-populated graph returns when nothing matched, and the only way to test that is
-a graph no test ever writes to. Do not write to graph 8.
+Graph 8 stays empty on purpose. A recall of a graph holding nothing answers 204
+with no body. A populated graph where nothing matched answers 200 with an empty
+result set. Only a graph no test writes to can test the 204, so do not write to
+graph 8.
 """
 
 import math
@@ -77,9 +78,9 @@ WAIT_TIMEOUT_SECONDS = 30
 REQUEST_TIMEOUT_SECONDS = 15
 
 # The dimension every plain-vector test writes with. The first vector inserted
-# into a graph fixes that graph's index dimension, and graph 4 takes writes
-# from two files (see the map above), so they must agree on it — which is why
-# this lives here and not in a single test file.
+# into a graph fixes that graph's index dimension. Graphs 4 and 6 each take
+# vector writes from two files (see the map above), so the files must agree.
+# That is why it lives here and not in a test file.
 VECTOR_DIM = 128
 
 
@@ -109,9 +110,9 @@ def base_url():
     pytest.fail(f"fraise server not reachable at {BASE_URL}: {last_error}")
 
 
-# The value primed into every claimed graph. It shares no term with any fact
-# or keyword the suite searches for, so it can never be a hit and never shifts
-# a pinned count — it exists only to make the graph non-empty.
+# The fact primed into every claimed graph but 8. It only makes the graph
+# non-empty. It shares no term with any fact or keyword the suite searches for,
+# so it is never a hit and never shifts a pinned count.
 _PRIMER = "zzzprimerzzz marks this graph as written to"
 
 
@@ -119,13 +120,14 @@ _PRIMER = "zzzprimerzzz marks this graph as written to"
 def num_graphs(get):
     """How many graphs the running server allocated.
 
-    Read from /api/v1/stats, which reports one snapshot per graph, rather than
-    hardcoded: the suite's config sets the count (see tests/fraise.config.toml)
-    and a test naming an out-of-range selector must follow it, not a number
-    that silently becomes valid the next time the count changes.
+    The count comes from /api/v1/stats, which reports one snapshot per graph.
+    The suite's config sets it (see tests/fraise.config.toml), so it is not
+    hardcoded. A test that names an out-of-range selector must follow the
+    config. A hardcoded number would silently become valid the next time the
+    count changes.
 
     Returns:
-        The allocated graph count; valid selectors are 0..count-1.
+        The allocated graph count. Valid selectors are 0..count-1.
     """
     return len(get("/api/v1/stats").json()["graphs"])
 
@@ -134,14 +136,14 @@ def num_graphs(get):
 def primed_graphs(query):
     """Write one unsearchable fact into every graph the suite claims but 8.
 
-    A recall of a graph holding nothing is answered 204 with no body. Tests
-    about parsing, warnings or limits issue recalls that match nothing without
-    writing first, so their status would otherwise depend on whether another
-    file had already written to that graph, and files run in any order.
+    A recall of a graph holding nothing answers 204 with no body. Tests about
+    parsing, warnings or limits run recalls that match nothing, without writing
+    first. Files run in any order, so without priming their status would depend
+    on whether another file wrote to that graph first.
 
-    Priming makes "the graph is populated" true before any test runs, which is
-    also the state a real caller queries in. Graph 8 is left out: it is the one
-    graph the 204 itself is tested against.
+    Priming makes every graph populated before any test runs. A real caller
+    queries in that state too. Graph 8 is left out, because the 204 itself is
+    tested against it.
     """
     for graph in range(8):
         status, body = query(f"remember@{graph} '{_PRIMER}'")
@@ -165,11 +167,11 @@ def get(base_url):
 
 
 def _body(response) -> dict:
-    """Decode a response body, or {} when it carried none.
+    """Decode a response body, or return {} when it has none.
 
-    A 204 — a recall of a graph holding nothing — is a success with no body at
-    all, so the fixtures that return (status, body) would otherwise raise on
-    the one status a test most wants to assert about.
+    A recall of a graph holding nothing is a 204: a success with no body.
+    Without this, the fixtures that return (status, body) would raise on the
+    one status a test most wants to assert.
     """
     if not response.content:
         return {}
@@ -203,8 +205,8 @@ def query(base_url):
 def explain(base_url):
     """Callable posting a raw query string to /api/v1/explain.
 
-    Same request shape as the `query` fixture, different endpoint: the
-    response's hits carry a per-source contribution breakdown. Returns
+    It sends the same request as the `query` fixture, to a different endpoint.
+    The response's hits carry a per-source contribution breakdown. Returns
     (status_code, decoded JSON body).
     """
 
@@ -232,9 +234,7 @@ def vector_dim():
 
 @pytest.fixture(scope="session")
 def vector():
-    """Callable building a flat list of `dim` floats, the shape the API expects
-    for a vector parameter.
-    """
+    """Callable building a vector parameter: a flat list of `dim` floats."""
 
     def _vector(dim: int = VECTOR_DIM, value: float = 1.0) -> list[float]:
         return np.full(dim, value, dtype=float).tolist()
@@ -260,13 +260,12 @@ def recall_count(query):
 
 @pytest.fixture(scope="session")
 def recall_ranking(query):
-    """Callable running a recall that must succeed and returning its hit values,
-    best-ranked first.
+    """Callable returning the hit values of a recall that must succeed.
 
-    Values, not scores: a score decays with the fact's age at the instant the
-    search runs, so two identical recalls a millisecond apart legitimately score
-    the same fact differently. It is the ranking those scores produce that has to
-    be reproducible.
+    The values come best-ranked first. They are values, not scores, because a
+    score decays with the fact's age when the search runs. Two identical
+    recalls a millisecond apart score the same fact differently. Only the
+    ranking those scores produce has to be reproducible.
 
     Returns:
         ``callable(text) -> list[str]``.
@@ -282,8 +281,9 @@ def recall_ranking(query):
 
 @pytest.fixture(scope="session")
 def ranked_hits(query):
-    """Callable running a recall and checking the invariants every ranking keeps:
-    scores positive and non-increasing down the list.
+    """Callable running a recall and checking every ranking's invariants.
+
+    Scores must be positive and must not increase down the list.
 
     Returns:
         ``callable(text, parameters=None) -> (values, scores)``, both best first.
@@ -305,8 +305,9 @@ def ranked_hits(query):
 
 @pytest.fixture(scope="session")
 def assert_rejected():
-    """Callable asserting a 400 whose message contains ``expected``,
-    case-insensitively.
+    """Callable asserting a 400 whose message contains ``expected``.
+
+    The match ignores case.
 
     Returns:
         ``callable(status, body, expected, query_text)``.
@@ -341,11 +342,10 @@ def assert_accepted():
     return _assert_accepted
 
 
-# Four facts sharing a single topic, each with a unique keyword. This is a
-# star: every fact hangs off the same "planets" hub. A recall seeded from the
-# star touches no anchor but that hub, which then holds exactly its fair share
-# and transmits nothing (hub silence), so the exact result counts depend on
-# the keywords and top, never on depth.
+# The planet star: four facts on one "planets" topic hub, each with a unique
+# keyword. A recall seeded from the star touches no anchor but that hub. The
+# hub then holds exactly its fair share and transmits nothing (hub silence). So
+# the exact result counts depend on the keywords and top, never on depth.
 _PLANET_GRAPH = 7
 _PLANET_TOPIC = "planets"
 _PLANET_FACTS = {
@@ -356,16 +356,16 @@ _PLANET_FACTS = {
 }
 
 # The depth-lane probe. Transmission needs two touched anchors of different
-# concentration: a lone anchor's observed mass is the background, so it holds
-# no surplus and stays silent (which is what the planet star above shows). Here
-# a tight "lanterns" cluster holds two of the query's three seeds while a
-# larger "almanac" hub holds the third among its eight members, so the cluster
-# clears the background and the hub does not. The cluster's third fact carries
-# no query term at all: it can only be returned if an anchor transmitted to
-# it, which makes it the probe that tells the floor lane from the graph lanes.
+# concentration. A lone anchor's observed mass is the background, so it holds
+# no surplus and stays silent, as the planet star shows. Here a tight
+# "lanterns" cluster holds two of the query's three seeds. A larger "almanac"
+# hub holds the third among its eight members. So the cluster clears the
+# background and the hub does not. The cluster's third fact has no query term.
+# Only an anchor's transmission can return it, so it tells the floor lane from
+# the graph lanes.
 #
-# Shares graph 7 with the planet star: no fact here contains "mercury" or
-# "planet" and no planet fact contains "lantern", so neither set can appear in
+# It shares graph 7 with the planet star. No fact here contains "mercury" or
+# "planet", and no planet fact contains "lantern". So neither set can appear in
 # the other's recalls.
 _LANTERN_TOPIC = "lanterns"
 _LANTERN_SILENT = "the quay is silent at dawn"
@@ -379,13 +379,13 @@ _ALMANAC_HUB = ("a lantern in the old almanac",) + tuple(
     f"unrelated almanac entry {i}" for i in range(7)
 )
 
-# The anchor-seeding probe. A fact filed under a topic and an entity at once,
-# between a fact filed under the topic alone and one under the entity alone,
-# so a recall naming both anchors and nothing else has a union to assemble, a
-# duplicate to suppress and a fact to rank first — the one filed under both.
-# Written in this order, so newest first is the reverse of it. No fact here
-# contains "planet", "mercury" or "lantern", and nothing else on graph 7 is
-# filed under these anchors, so the results are exact.
+# The anchor-seeding probe: one fact under the topic alone, one under both the
+# topic and the entity, and one under the entity alone. A recall naming both
+# anchors and nothing else then has a union to build and a duplicate to drop.
+# The fact filed under both must rank first. The facts are written in this
+# order, so newest first is the reverse. No fact here contains "planet",
+# "mercury" or "lantern". Nothing else on graph 7 is filed under these anchors,
+# so the results are exact.
 _TIDEPOOL_TOPIC = "tidepool"
 _TIDEPOOL_ENTITY = "limpet"
 _TIDEPOOL_FACTS = {
@@ -400,9 +400,9 @@ _TIDEPOOL_ANCHORS = {
 }
 
 # The default-top probe: one anchor holding more facts than the daemon's
-# configured default-top (10 in tests/fraise.config.toml), so an anchor-only
-# recall with no top: clause is visibly capped. Shares graph 7 with the probes
-# above and contains none of their words.
+# configured default-top (10 in tests/fraise.config.toml). So an anchor-only
+# recall with no top: clause is visibly capped. It shares graph 7 with the
+# probes above and contains none of their words.
 DEFAULT_TOP = 10
 _SALTMARSH_TOPIC = "saltmarsh"
 _SALTMARSH_FACTS = tuple(f"saltmarsh channel {i} was surveyed" for i in range(12))
@@ -418,8 +418,8 @@ def planet_facts():
 def planets_graph(query):
     """Populate a graph with the planet star and return its id.
 
-    A fact is keyed by its value, so these writes are idempotent: re-running
-    the suite against a long-lived server leaves the counts unchanged.
+    A fact is keyed by its value, so these writes are idempotent. A rerun
+    against a long-lived server leaves the counts unchanged.
     """
     for phrase in _PLANET_FACTS.values():
         status, body = query(
@@ -433,18 +433,18 @@ def planets_graph(query):
 def lantern_silent():
     """The cluster fact containing no query term.
 
-    It can only be recalled if an anchor transmitted mass to it, so it is what
-    separates the floor lane from the excess lane in a result set.
+    Only an anchor's transmission can recall it, so it tells the floor lane
+    from the graph lanes in a result set.
     """
     return _LANTERN_SILENT
 
 
 @pytest.fixture(scope="module")
 def lantern_graph(query):
-    """Seed the depth-lane cluster and its diluting hub, returning the graph id.
+    """Write the depth-lane cluster and diluting hub, returning the graph id.
 
-    Idempotent for the same reason as the planet star: facts are keyed by
-    value.
+    Facts are keyed by value, so the writes are idempotent, as for the planet
+    star.
     """
     for phrase in _LANTERN_CLUSTER:
         status, body = query(
@@ -467,17 +467,19 @@ def tidepool_anchors():
 
 @pytest.fixture(scope="session")
 def tidepool_facts():
-    """The anchor-seeding probe's facts, keyed by what each is filed under
-    ("topic", "both", "entity"), in write order."""
+    """The anchor-seeding probe's facts, in write order.
+
+    Each is keyed by what it is filed under: "topic", "both" or "entity".
+    """
     return dict(_TIDEPOOL_FACTS)
 
 
 @pytest.fixture(scope="module")
 def tidepool_graph(query):
-    """Seed the anchor-seeding probe and return its graph id.
+    """Write the anchor-seeding probe and return its graph id.
 
-    Idempotent for the same reason as the planet star: facts are keyed by
-    value, and a rewrite refreshes the timestamp in the same order.
+    Facts are keyed by value, so the writes are idempotent. A rewrite refreshes
+    the timestamps in the same order.
     """
     for filed, phrase in _TIDEPOOL_FACTS.items():
         status, body = query(
@@ -501,8 +503,10 @@ def saltmarsh_facts():
 
 @pytest.fixture(scope="module")
 def saltmarsh_graph(query):
-    """Seed the default-top probe and return its graph id. Idempotent: facts
-    are keyed by value."""
+    """Write the default-top probe and return its graph id.
+
+    Facts are keyed by value, so the writes are idempotent.
+    """
     for phrase in _SALTMARSH_FACTS:
         status, body = query(
             f"remember@{_PLANET_GRAPH} '{phrase}' topic:{_SALTMARSH_TOPIC}"
@@ -511,21 +515,19 @@ def saltmarsh_graph(query):
     return _PLANET_GRAPH
 
 
-# Three facts that all contain the keyword "comet" but are otherwise unrelated:
-# each carries a *different* topic, so nothing connects them in the graph except
-# the shared word. A recall for that word must therefore surface all three
-# purely through the text index. No other fact on graph 0 contains "comet", so
-# the expected set is fully determined here.
+# Three facts that contain the keyword "comet" and are otherwise unrelated.
+# Each carries a different topic, so nothing links them in the graph. A recall
+# for "comet" must surface all three through the text index alone. No other
+# fact on graph 0 contains "comet", so the expected set is exact.
 _COMET_FACTS = {
     "the comet streaked past mars": "astronomy",
     "children watched the comet at dawn": "memory",
     "the comet will not return for centuries": "time",
 }
 
-# Five facts that all contain "quasar" once and carry no topic:/entity: anchor,
-# so each is an isolated node that no walk from another graph-0 fact can
-# reach: a recall for "quasar" is answered by the text index alone. They share
-# graph 0 with the comet facts above, which contain no "quasar".
+# Five facts that each contain "quasar" once and carry no topic: or entity:
+# anchor. No anchor links them to any other fact, so the text index alone
+# answers a recall for "quasar". No other fact on graph 0 contains "quasar".
 _QUASAR_FACTS = (
     "the quasar catalogue was revised",
     "a quasar outshines its host galaxy",
@@ -535,26 +537,26 @@ _QUASAR_FACTS = (
 )
 
 # A fact whose anchors are grammar keywords. "top" is also an ordinary English
-# word, and an LLM extracting entities from prose will eventually emit it bare
+# word. An LLM extracting entities from prose will eventually emit it bare
 # ("she reached the top" -> entities=["top"]). A parser that typed an anchor
-# value by spelling alone would fail that write with a 400 the client could
-# not anticipate. The invented marker "cairnprobe" is this fact's only link to
-# the recalls in recall_test.py, so each assertion is scoped to this fact
-# whatever else graph 5 holds.
+# value by spelling alone would reject that write with a 400 the client could
+# not foresee. The invented marker "cairnprobe" is this fact's only link to the
+# recalls in recall_test.py. So each assertion is scoped to this fact, whatever
+# else graph 5 holds.
 _CAIRN_FACT = "the cairnprobe marks the top of the pass"
 
-# Case folding. Terms and anchor values are identity, not prose: the parser
-# folds them to lower case on the way in, so however a client capitalises an
-# anchor, a single node accrues in the graph. The quoted fact is prose and is
-# the one exception — it comes back spelled exactly as written.
+# Case folding. Terms and anchor values are identity, not prose. The parser
+# folds them to lower case, so an anchor is one node in the graph however a
+# client capitalises it. The quoted fact is prose and the one exception. It
+# comes back spelled exactly as written.
 _CASEPROBE_FACT = "The Caseprobe Expedition Reached the Summit in April."
 
 # A fact whose whole text is also the name of its topic, plus a bystander fact
-# carrying the same topic. Keys derived from the value alone would give the
-# fact and the topic one key, so the topic node would never be stored and the
-# bystander's IsAbout edge would land on the fact instead of on a topic hub.
-# The bystander is what makes that visible: the two facts have no word in
-# common and belong together only through the topic.
+# with the same topic. If keys came from the value alone, the fact and the
+# topic would share one key. The topic node would never be stored, and the
+# bystander's IsAbout edge would land on the fact instead of a topic hub. The
+# bystander makes that visible: the two facts share no word and are linked only
+# through the topic.
 _LEDGER_TOPIC = "ledgerprobe"
 _LEDGER_FACTS = ("ledgerprobe", "acme settles invoices quarterly")
 
@@ -657,10 +659,10 @@ _UNFILED_TOPIC = "unfiledprobe"
 
 @pytest.fixture
 def pulsar_graph(query):
-    """Write the pulsar facts under the pulsar entity and return their graph id.
+    """Write the pulsar facts under their entity and return their graph id.
 
-    Rewritten for every test that asks, which refreshes their timestamps just
-    before the test reads them.
+    Every test that asks for it rewrites the facts. That refreshes their
+    timestamps just before the test reads them.
     """
     for phrase in _PULSAR_FACTS:
         status, body = query(
@@ -678,11 +680,10 @@ def pulsar_entity():
 
 @pytest.fixture
 def storm_graph(query):
-    """Write the storm cluster and the archive hub under their topics, and
-    return their graph id.
+    """Write the storm cluster and the archive hub, returning their graph id.
 
-    Rewritten for every test that asks, which refreshes their timestamps just
-    before the test reads them.
+    Every test that asks for it rewrites the facts. That refreshes their
+    timestamps just before the test reads them.
     """
     for phrase in _STORM_CLUSTER:
         status, body = query(
@@ -794,10 +795,10 @@ def information_scores():
     return _information_scores
 
 
-# Documents on three clearly distinct subjects. A real sentence embedding places
-# each far from the others, so a query close in meaning to one of them retrieves
-# that one by vector alone. Graph 3 carries no other vectors, so its embedding
-# dimension is fixed by the real-embeddings test.
+# Documents on three clearly distinct subjects. A real sentence embedding puts
+# each far from the others. So a query close in meaning to one of them
+# retrieves that one by vector alone. Graph 3 carries no other vectors, so the
+# real-embeddings test fixes its dimension.
 _EMBEDDING_DOCS = {
     "cat": "the tabby cat curled up and slept on the warm windowsill",
     "space": "the mars rover drilled into red rock to collect samples",
@@ -821,6 +822,8 @@ def embedding_docs():
 
 @pytest.fixture(scope="session")
 def krakatoa_facts():
-    """The fusion probe's facts, keyed by the channels that see each:
-    "text", "both" or "vector"."""
+    """The fusion probe's facts, keyed by the channels that see each.
+
+    The keys are "text", "both" and "vector".
+    """
     return dict(_KRAKATOA_FACTS)

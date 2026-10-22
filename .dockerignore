@@ -3,15 +3,14 @@
 bin
 node_modules
 sdk
-# The example images install the SDK from source, so this path stays in the
-# build context; the rest of sdk/ stays excluded.
+# The example images install the SDK from source, so sdk/python stays in the
+# build context. The rest of sdk/ stays out.
 !sdk/python
 docs
 assets
 examples
-# The example images build from the repo root and copy their agent script in,
-# so those two files must stay in the context (the rest of examples/ — configs,
-# __pycache__, compose files — stays excluded).
+# The example images build from the repo root and copy in their agent script,
+# so these two files stay in the context. The rest of examples/ stays out.
 !examples/openai-agents/agent.py
 !examples/claude-agent-sdk/agent.py
 coverage.txt

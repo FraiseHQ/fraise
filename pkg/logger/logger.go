@@ -43,14 +43,13 @@ var defaultLogger *Logger
 //
 // It switches on config's canonical spellings, never on literals. Parse has
 // already rewritten the settings to those spellings and rejected anything
-// else, so the default arms only serve the zero values of a hand-built config:
-// they stand in for "unset", never for "unrecognised".
+// else. So the default arms only serve the zero values of a hand-built
+// config. They stand for "unset", never for "unrecognised".
 func NewLogger(cfg *config.ConfigSet) *Logger {
 
 	var handler slog.Handler
 	var level slog.Level
 
-	// set logging level
 	switch cfg.Log.Level {
 	case config.LogLevelDebug:
 		level = slog.LevelDebug
@@ -66,9 +65,9 @@ func NewLogger(cfg *config.ConfigSet) *Logger {
 
 	opts := &slog.HandlerOptions{Level: level}
 
-	// Drop the top-level time attribute when asked: a supervisor that stamps
-	// every line it collects (journald, docker) would otherwise carry two
-	// clocks per line.
+	// Drop the top-level time attribute when asked. A supervisor that stamps
+	// every line it collects, such as journald or docker, would otherwise
+	// show two clocks per line.
 	if cfg.Log.DisableTimestamp {
 		opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
 			if len(groups) == 0 && a.Key == slog.TimeKey {
@@ -78,7 +77,6 @@ func NewLogger(cfg *config.ConfigSet) *Logger {
 		}
 	}
 
-	// set logging handler
 	switch cfg.Log.Format {
 	case config.LogFormatJSON:
 		handler = slog.NewJSONHandler(os.Stdout, opts)
@@ -106,26 +104,26 @@ func (l *Logger) log(level slog.Level, msg string, attrs ...any) {
 	l.logger.Log(context.Background(), level, msg, attrs...)
 }
 
-// Debug logs msg at debug level; attrs are alternating keys and values, as in
-// slog.
+// Debug logs msg at debug level. Its attrs are alternating keys and values, as
+// in slog.
 func (l *Logger) Debug(msg string, attrs ...any) {
 	l.log(slog.LevelDebug, msg, attrs...)
 }
 
-// Info logs msg at info level; attrs are alternating keys and values, as in
-// slog.
+// Info logs msg at info level. Its attrs are alternating keys and values, as
+// in slog.
 func (l *Logger) Info(msg string, attrs ...any) {
 	l.log(slog.LevelInfo, msg, attrs...)
 }
 
-// Warn logs msg at warn level; attrs are alternating keys and values, as in
-// slog.
+// Warn logs msg at warn level. Its attrs are alternating keys and values, as
+// in slog.
 func (l *Logger) Warn(msg string, attrs ...any) {
 	l.log(slog.LevelWarn, msg, attrs...)
 }
 
-// Error logs msg at error level; attrs are alternating keys and values, as in
-// slog.
+// Error logs msg at error level. Its attrs are alternating keys and values, as
+// in slog.
 func (l *Logger) Error(msg string, attrs ...any) {
 	l.log(slog.LevelError, msg, attrs...)
 }

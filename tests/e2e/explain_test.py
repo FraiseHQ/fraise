@@ -20,9 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""The explain endpoint: /api/v1/explain runs a recall through the ordinary
-pipeline and attaches each hit's per-source contribution breakdown, while /q
-responses stay free of it.
+"""The explain endpoint.
+
+/api/v1/explain runs a recall through the ordinary pipeline and attaches each
+hit's per-source contribution breakdown. /q responses stay free of it.
 """
 
 import pytest
@@ -128,9 +129,10 @@ def test_explain_score_recomputes_from_payload(
 
 
 def test_plain_query_carries_no_contributions(query, pulsar_graph, pulsar_entity):
-    """The /q response is unchanged by explain existing: no hit exposes a
-    contributions key. Guards against the breakdown leaking into every recall
-    and bloating agent token budgets.
+    """No /q hit carries a contributions key.
+
+    This guards against the breakdown leaking into every recall and bloating
+    agent token budgets.
     """
     status, body = query(f"recall@{pulsar_graph} pulsar entity:{pulsar_entity} depth:2")
     assert status == 200, body.get("error")
@@ -143,8 +145,10 @@ def test_plain_query_carries_no_contributions(query, pulsar_graph, pulsar_entity
 
 
 def test_explain_rejects_remember(explain):
-    """A write has no ranking to explain: /api/v1/explain refuses it with 400
-    so probing a ranking can never mutate a graph.
+    """/api/v1/explain refuses a remember with a 400.
+
+    A write has no ranking to explain, and probing a ranking must never mutate
+    a graph.
     """
     status, body = explain("remember@2 'should never land' topic:explainprobe")
     assert status == 400
@@ -159,8 +163,9 @@ def test_explain_rejects_remember(explain):
     ],
 )
 def test_explain_rejects_unparsable_queries(explain, bad_query):
-    """Parse errors surface as 400 on /explain exactly as they do on /q — the
-    two routes share one pipeline.
+    """Parse errors are a 400 on /explain, exactly as on /q.
+
+    The two routes share one pipeline.
     """
     status, body = explain(bad_query)
     assert status == 400

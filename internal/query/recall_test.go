@@ -31,9 +31,8 @@ import (
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
-// fakeHasher records the last value it was asked to hash and returns a
-// deterministic, inspectable key. Shared by the recall, remember and stream
-// tests.
+// fakeHasher records the last value it hashed and returns a deterministic,
+// readable key. The recall, remember and stream tests share it.
 type fakeHasher struct{ last string }
 
 func (h *fakeHasher) Hash(s string) string {
@@ -85,9 +84,9 @@ func TestRecallHash(t *testing.T) {
 	}
 	h := &fakeHasher{}
 
-	// Hash folds in graph, delimited keyword/entity/topic lists, depth, top,
-	// the time bounds and the bound vector so queries that differ in any of
-	// those get distinct cache keys.
+	// Hash folds in the graph, the delimited keyword, entity and topic lists,
+	// depth, top, the time bounds and the bound vector. Queries that differ in
+	// any of these get distinct cache keys.
 	const want = "g=3|kw=qu\x00ick|en=alice|to=weather|d=2|t=5" +
 		"|s=H(r1h0m0s)|u=H(a2026-06-18T12:00:00Z)|vec=H(0x1p-01\x000x1p-02)"
 	if got := r.Hash(h); got != "H("+want+")" {
@@ -107,11 +106,11 @@ func TestRecallHashEmpty(t *testing.T) {
 	}
 }
 
-// TestRecallHashDistinguishesParameters is the real contract: recalls that
-// differ only in graph, depth, top, time bounds or the bound vector must not
-// share a cache key, otherwise the engine hands back a stale plan (e.g. a
-// depth:1 result for a depth:2 query, or results seeded by another query's
-// vector).
+// TestRecallHashDistinguishesParameters pins the contract. Recalls that differ
+// only in graph, depth, top, time bounds or the bound vector must not share a
+// cache key. Otherwise the engine hands back another query's plan. A depth:2
+// query could get a depth:1 result, or results seeded by another query's
+// vector.
 func TestRecallHashDistinguishesParameters(t *testing.T) {
 	base := func() Recall[string, float32] {
 		return Recall[string, float32]{Keywords: []string{"mercury"}}

@@ -32,18 +32,20 @@ from dataclasses import dataclass, field
 class GraphStats:
     """One graph's shape, as ``GET /api/v1/stats`` reports it.
 
-    The fields are named for what they count, so two differ from the wire,
-    which uses the graph-theory names: ``vertices`` is the server's ``order``
-    (facts, topics and entities alike) and ``edges`` its ``size`` (a fact's
-    links to the topics and entities it is filed under). ``nodes``,
-    ``vectors`` and ``forest_entries`` keep their wire names: ``nodes`` is
-    every stored node, the vertices and the relationships between them;
-    ``vectors`` the vectors indexed; ``forest_entries`` the vector forest's
-    entries, live vectors plus garbage awaiting compaction, which stay within
-    the server's flush factor times ``vectors`` unless the index leaks.
-    ``relevance`` is the relevance model the graph's text index ranks with
-    (``bm25`` or ``matchcount``), read back from the index rather than echoed
-    from configuration; it is ``None`` from a server too old to report it.
+    The fields are named for what they count. Two differ from the wire, which
+    uses the graph-theory names. ``vertices`` is the server's ``order`` (facts,
+    topics and entities alike). ``edges`` is its ``size`` (a fact's links to
+    the topics and entities it is filed under).
+
+    The other fields keep their wire names. ``nodes`` is every stored node, the
+    vertices and the relationships between them. ``vectors`` counts the vectors
+    indexed. ``forest_entries`` counts the vector forest's entries: live
+    vectors plus garbage awaiting compaction. They stay within the server's
+    flush factor times ``vectors`` unless the index leaks.
+
+    ``relevance`` is the relevance model the graph's text index ranks with,
+    ``bm25`` or ``matchcount``. It is read back from the index, not echoed from
+    configuration. It is ``None`` from a server too old to report it.
 
     A graph nothing was written to is a row of zeros, not a missing row.
     """
@@ -109,9 +111,9 @@ class Contribution:
 class Hit:
     """One recalled fact and how strongly it matched the query.
 
-    ``contributions`` is the per-source breakdown of the score, filled by
-    :meth:`~fraise_sdk.client.FraiseClient.explain` and empty on a plain recall,
-    which does not ask the server for it.
+    ``contributions`` is the per-source breakdown of the score.
+    :meth:`~fraise_sdk.client.FraiseClient.explain` fills it. It is empty on a
+    plain recall, which does not ask the server for it.
     """
 
     value: str
@@ -175,25 +177,25 @@ class RecallResult:
         """Parse the server's ``results`` object, with any response warnings.
 
         Args:
-            results: the ``results`` member of the response body. Empty for a
-                204, which has no body to carry one.
-            warnings: the response's ``warnings`` list, which sits beside
-                ``results`` rather than inside it — the caller holding the
-                whole body passes it through here. ``None`` (a clean response,
-                or a pre-warnings server) parses to an empty list.
-            empty: whether the server answered 204, i.e. the graph searched
-                holds nothing. It rides the status line rather than the body,
-                so the caller that saw the response passes it in.
+            results: the ``results`` member of the response body. It is empty
+                for a 204, which has no body to carry one.
+            warnings: the response's ``warnings`` list. It sits beside
+                ``results``, not inside it, so the caller holding the whole
+                body passes it here. ``None`` (a clean response, or a
+                pre-warnings server) parses to an empty list.
+            empty: whether the server answered 204, meaning the graph searched
+                holds nothing. The status line carries it, not the body, so the
+                caller that saw the response passes it in.
             explain: whether the response came from the explain route. The
-                server omits a background rate of zero, so its absence reads
-                as 0.0 on an explained result and as ``None`` on a plain one.
+                server omits a background rate of zero. So a missing rate reads
+                as 0.0 on an explained result, and as ``None`` on a plain one.
 
         Returns:
             The typed result, warnings included.
         """
         hits = [Hit.from_json(h) for h in results.get("hits") or []]
-        # Prefer the server-reported count, falling back to the hit count so the
-        # two never disagree if the field is ever omitted.
+        # Prefer the server-reported count. Fall back to the hit count, so the
+        # two agree even when the field is omitted.
         return cls(
             count=results.get("count", len(hits)),
             hits=hits,

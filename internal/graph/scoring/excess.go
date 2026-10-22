@@ -23,9 +23,9 @@
 package scoring
 
 // alpha is the per-edge attenuation of transmitted excess. It is an internal
-// constant, not configuration: the BM25 floor and hub silence hold for any
-// 0 < α < 1. The seed → anchor → fact path has two edges, so the fold applies
-// α²; applying α once per path would double the graph channel's weight
+// constant, not configuration, because the BM25 floor and hub silence hold for
+// any 0 < α < 1. The seed → anchor → fact path has two edges, so the fold
+// applies α². Applying α once per path would double the graph channel's weight
 // against the text channel.
 const alpha = 0.5
 
@@ -53,10 +53,10 @@ const alpha = 0.5
 // weighs it at 1 and the text leads, and one the text half answers doubles
 // it.
 //
-// Scores stay in raw seed units: relevance is homogeneous of degree 1 in the
-// mass scale, so rescaling every mass leaves the ordering unchanged, and
-// normalizing a single channel would only break the channels'
-// commensurability (scale invariance).
+// Scores stay in raw seed units. Relevance is homogeneous of degree 1 in the
+// mass scale, so rescaling every mass leaves the ordering unchanged (scale
+// invariance). Normalising a single channel would only break the channels'
+// commensurability.
 type ExcessScorer[K comparable, P float32 | float64] struct {
 	// background is the query's bound null rate and missed its text's
 	// weakness. They are set only by Observe returning a fresh value — never

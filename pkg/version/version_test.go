@@ -30,11 +30,12 @@ import (
 )
 
 // semverPattern is MAJOR.MINOR.PATCH with an optional dot-numbered pre-release
-// suffix — the only shapes the release process produces (see RELEASE.md).
+// suffix. These are the only shapes the release process produces (see
+// RELEASE.md).
 var semverPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$`)
 
-// setVersion overrides version.Version for one test and restores it afterwards,
-// so tests that exercise the version-derived helpers don't leak into each other.
+// setVersion overrides version.Version for one test and restores it afterwards.
+// Tests of the version-derived helpers then don't leak into each other.
 func setVersion(t *testing.T, v string) {
 	t.Helper()
 	prev := version.Version
@@ -42,9 +43,9 @@ func setVersion(t *testing.T, v string) {
 	t.Cleanup(func() { version.Version = prev })
 }
 
-// TestCompiledVersionIsWellFormed covers the dev-build path: with no -ldflags
-// injection the compiled literal is reported verbatim, so a malformed value
-// ships as the reported version. It pins the shape, not the number — the number
+// TestCompiledVersionIsWellFormed covers the dev-build path. With no -ldflags
+// injection, the compiled literal is reported verbatim, so a malformed value
+// ships as the reported version. It pins the shape, not the number. The number
 // changes every release, and release-please owns it.
 func TestCompiledVersionIsWellFormed(t *testing.T) {
 	if version.Version == "" {
@@ -60,7 +61,7 @@ func TestCompiledVersionIsWellFormed(t *testing.T) {
 }
 
 // TestFullVersionReflectsInjection simulates GoReleaser setting version.Version
-// via -ldflags: FullVersion must report exactly what was injected.
+// via -ldflags. FullVersion must report exactly what was injected.
 func TestFullVersionReflectsInjection(t *testing.T) {
 	setVersion(t, "1.4.0")
 	if got := version.FullVersion(); got != "1.4.0" {
@@ -98,10 +99,10 @@ func TestShortVersion(t *testing.T) {
 // TestBuildIdentityDefaults documents the placeholder values used off a release,
 // so a change to them is a deliberate, reviewed edit.
 func TestBuildIdentityDefaults(t *testing.T) {
-	if version.Commit == "" {
-		t.Error("Commit should have a non-empty default (e.g. \"none\") for dev builds")
+	if got, want := version.Commit, "none"; got != want {
+		t.Errorf("Commit = %q, want the dev-build placeholder %q", got, want)
 	}
-	if version.Date == "" {
-		t.Error("Date should have a non-empty default (e.g. \"unknown\") for dev builds")
+	if got, want := version.Date, "unknown"; got != want {
+		t.Errorf("Date = %q, want the dev-build placeholder %q", got, want)
 	}
 }

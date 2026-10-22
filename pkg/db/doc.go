@@ -20,13 +20,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package db owns the store's graphs: a fixed number of independent graphs,
-// each addressed by a small integer selector.
+// Package db owns the store's graphs. It holds a fixed number of independent
+// graphs, each addressed by a small integer selector.
 //
 // [DB.Start] builds every graph with the search, scoring and ranking
-// algorithms the configuration names, and [DB.Select] hands the scheduler the
-// graph a stream runs against. The package takes no locks of its own: the
-// scheduler holds a graph's lock while a stream runs, and [DB.Stats] read-locks
-// each graph for its snapshot. It sits at the bottom of the serving stack:
-// the server parses a request, the engine plans it, the scheduler runs it here.
+// algorithms the configuration names. [DB.Select] hands the scheduler the
+// graph a stream runs against. The package has no lock of its own. The
+// scheduler holds a graph's lock while a stream runs, and [DB.Stats]
+// read-locks each graph for its snapshot. The package sits at the bottom of
+// the serving stack. The server parses a request, the engine plans it, and
+// the scheduler runs it here.
 package db

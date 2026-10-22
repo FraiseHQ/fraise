@@ -23,7 +23,7 @@
 // Package version holds the release identity compiled into the fraise binary.
 //
 // [Version] is the single place the version number lives in the tree, so the
-// binary, its release tag and the changelog cannot drift: release-please
+// binary, its release tag and the changelog cannot drift. release-please
 // rewrites it when it cuts a release, and GoReleaser can override it at link
 // time. The daemon reports it on its health check, which is the SDK's
 // compatibility handshake.

@@ -1,9 +1,9 @@
 name: PR checks
 
 on:
-  # The plain pull_request event, not pull_request_target: the lint job runs
-  # untrusted PR code, and on a PR from a fork every job here gets a
-  # read-only token.
+  # The plain pull_request event, not pull_request_target. The lint job runs
+  # untrusted PR code. On a PR from a fork, every job here gets a read-only
+  # token.
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
@@ -17,10 +17,10 @@ permissions:
 
 jobs:
   label:
-    # Labelling writes to the PR, and on the pull_request event a PR from a
-    # fork only gets a read-only token: both steps would fail with a 403 and
-    # mark the checks red for a contributor who did nothing wrong. Skip it
-    # there; a maintainer can label a fork PR by hand.
+    # Labelling writes to the PR. On the pull_request event, a PR from a fork
+    # gets only a read-only token. Both steps would fail with a 403 and mark
+    # the checks red for a contributor who did nothing wrong. So the job skips
+    # fork PRs, and a maintainer can label them by hand.
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -45,7 +45,7 @@ jobs:
     name: General pre-commit hooks
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    # Runs untrusted PR code — read-only, no token to write comments/contents.
+    # Runs untrusted PR code, so its token is read-only.
     permissions:
       contents: read
     steps:
@@ -71,32 +71,30 @@ jobs:
       - name: Validate PR title
         id: title
         # GitHub's Revert button titles its PR `Revert "<original title>"`,
-        # which carries no type; the reverted title already passed this check.
+        # which has no type. The reverted title already passed this check.
         if: "!startsWith(github.event.pull_request.head.ref, 'revert-')"
         uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Must match the changelog groups in .goreleaser.yaml
+          # The types release-please-config.json gives a changelog section.
+          # Keep the two lists the same.
           types: |
             feat
             fix
             perf
             refactor
-            chore
             build
-            deps
             ci
+            chore
             docs
             test
-            upgrade
-            release
+            deps
           requireScope: false
 
-     # https://github.com/finleyfamily/action-enforce-branch-name
       - name: Validate branch name
         id: branch
-        # Skip bot and release branches.
+        # Skip bot, release and revert branches.
         if: >-
           !startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
           !startsWith(github.event.pull_request.head.ref, 'renovate/') &&
@@ -108,7 +106,6 @@ jobs:
           regex: '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\/[a-z0-9]+([-.][a-z0-9]+)*$'
           exclude: main,master,develop
 
-      # https://github.com/marocchino/sticky-pull-request-comment
       - name: Comment on failure
         if: always() && (steps.title.outcome == 'failure' || steps.branch.outcome == 'failure')
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88

@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""HuggingFaceEmbedder tests against a mocked inference client — no network."""
+"""HuggingFaceEmbedder tests against a mocked inference client, with no network."""
 
 from unittest.mock import MagicMock, patch
 
@@ -75,7 +75,7 @@ def test_huggingface_embedder_returns_plain_floats(inference_client):
 
 
 def test_huggingface_embedder_rejects_token_level_embeddings(inference_client):
-    """A model answering with one vector per token is refused: a fact stores one vector."""
+    """A model answering one vector per token is refused. A fact stores one vector."""
     embedder = HuggingFaceEmbedder(
         client=inference_client(values=[[0.1, 0.2], [0.3, 0.4]])
     )
@@ -93,8 +93,8 @@ def test_huggingface_embedder_accepts_a_plain_list(inference_client):
 def test_huggingface_embedder_builds_its_own_client_from_the_api_key(inference_client):
     """Without an injected client the embedder builds its own InferenceClient.
 
-    The vendor module is patched where the provider imported it, so the test
-    pins what the provider builds without a real client or an API key.
+    The vendor module is patched where the provider imported it. So the test
+    pins what the provider builds, with no real client or API key.
     """
     hub = MagicMock()
     hub.InferenceClient.return_value = inference_client()

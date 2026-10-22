@@ -6,11 +6,11 @@ before:
   hooks:
     - go mod tidy
     # Refuse to release if pkg/version disagrees with the tag. release-please
-    # rewrites that constant in the commit it tags, but if the
-    # x-release-please-version annotation is broken or moved off the literal's
-    # line it stops updating the file without an error, and builds that skip
-    # the ldflags below (go install ...@vX.Y.Z, the docker image) would report
-    # a stale version. Skipped for snapshots, whose version is not a tag.
+    # rewrites Version in the commit it tags. If the x-release-please-version
+    # annotation breaks or moves off the literal's line, release-please stops
+    # updating the file without an error. Builds that skip the ldflags below
+    # (go install ...@vX.Y.Z, the docker image) would then report a stale
+    # version. Snapshots skip this check, because their version is not a tag.
     - sh -c "{{ if .IsSnapshot }}true{{ else }}grep -q 'Version = \"{{ .Version }}\"' pkg/version/version.go || { echo 'pkg/version/version.go does not declare {{ .Version }} (tag {{ .Tag }}) — check the x-release-please-version annotation'; exit 1; }{{ end }}"
 
 builds:
@@ -34,23 +34,24 @@ archives:
         formats: [zip]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
-    # Setting files replaces the default list, so LICENSE/README are named
-    # explicitly. The default config rides in the archive so the brew formula
-    # can install it under etc/ — the packages ship their own copy via nfpms.
+    # Setting files replaces the default list, so LICENSE and README are named
+    # explicitly. The default config ships in the archive so the brew formula
+    # can install it under etc/. The packages ship their own copy through
+    # nfpms.
     files:
       - LICENSE
       - README.md
       - src: fraise.config.toml
         dst: fraise.config.toml
 
-# fraise as a managed local service, the Postgres/Redis model. brews is
-# deprecated since GoReleaser v2.10 in favour of homebrew_casks, but only a
-# formula carries the service block `brew services start fraise` needs, so the
-# deprecation is accepted: CI runs `release`, which warns, never `check`,
-# which fails on it. The formula lands in the tap the README installs from
-# (fraisehq/tap); keep_alive restarts the daemon on crashes, and its logs go
-# to var/log/. The config install is upgrade-safe: an existing, user-edited
-# config is left in place and the new default lands beside it as .default.
+# fraise as a managed local service, like Postgres or Redis. brews is
+# deprecated since GoReleaser v2.10 in favour of homebrew_casks. Only a formula
+# carries the service block that `brew services start fraise` needs, so the
+# deprecation is accepted. CI runs `release`, which warns, never `check`, which
+# fails on it. The formula lands in the tap the README installs from
+# (fraisehq/tap). keep_alive restarts the daemon after a crash, and its logs go
+# to var/log/. The config install is upgrade-safe. An existing, user-edited
+# config stays in place, and the new default lands beside it as .default.
 brews:
   - name: fraise
     repository:
@@ -61,10 +62,11 @@ brews:
     homepage: https://github.com/FraiseHQ/fraise
     description: In-memory temporal graph database for AI agents memory
     license: MIT
-    # (etc/"fraise").install, not etc.install "x" => "fraise/x": Pathname#install
-    # mkpaths its receiver only, so the rename form ENOENTs when etc/fraise does
-    # not exist yet — the receiver form creates it and keeps the upgrade-safe
-    # .default behaviour for an existing, user-edited config.
+    # Use (etc/"fraise").install, not etc.install "x" => "fraise/x".
+    # Pathname#install creates only its receiver directory, so the rename form
+    # fails with ENOENT when etc/fraise does not exist yet. The receiver form
+    # creates it, and keeps the upgrade-safe .default behaviour for an
+    # existing, user-edited config.
     install: |
       bin.install "fraise"
       (etc/"fraise").install "fraise.config.toml"
@@ -82,10 +84,10 @@ brews:
     test: |
       assert_match "-config", shell_output("#{bin}/fraise -h 2>&1")
 
-# .deb/.rpm parity for the brew service story, from the same tag and build
-# matrix. The systemd user unit ships to the vendor unit directory so
-# `systemctl --user enable --now fraise` works right after install; the
-# default config is marked config|noreplace so upgrades never clobber edits.
+# .deb and .rpm packages that match the brew service, from the same tag and
+# build matrix. The systemd user unit ships to the vendor unit directory, so
+# `systemctl --user enable --now fraise` works right after install. The default
+# config is marked config|noreplace, so upgrades never overwrite edits.
 nfpms:
   - package_name: fraise
     ids: [fraise]
@@ -108,18 +110,18 @@ nfpms:
 checksum:
   name_template: checksums.txt
 
-# Keyless cosign signing of checksums.txt only: it covers every archive and
-# package, so one signature covers the whole set. Produces
-# checksums.txt.sigstore.json, a Sigstore bundle carrying the signature and the
-# signing certificate together; .sigstore.json is one of the suffixes OpenSSF
-# Scorecard's Signed-Releases check looks for. Requires cosign on PATH and
-# id-token: write on the publishing job (see .github/workflows/go.yaml);
-# without the OIDC token, signing fails the release rather than shipping it
+# Keyless cosign signing of checksums.txt only. It lists every archive and
+# package, so one signature covers the whole set. The output is
+# checksums.txt.sigstore.json, a Sigstore bundle that holds the signature and
+# the signing certificate. .sigstore.json is one of the suffixes OpenSSF
+# Scorecard's Signed-Releases check looks for. Signing needs cosign on PATH and
+# id-token: write on the publishing job (see .github/workflows/go.yaml).
+# Without the OIDC token, signing fails the release rather than shipping it
 # unsigned.
 #
-# --bundle is the only output flag to use here. cosign 3 (what
-# sigstore/cosign-installer v4 installs) defaults to --new-bundle-format, under
-# which --output-signature and --output-certificate are ignored; with no bundle
+# --bundle is the only output flag to use here. cosign 3, which
+# sigstore/cosign-installer v4 installs, defaults to --new-bundle-format. That
+# format ignores --output-signature and --output-certificate. With no bundle
 # path to write, cosign resolves an empty filename and aborts the release.
 signs:
   - cmd: cosign
@@ -161,10 +163,10 @@ release:
   github:
     owner: FraiseHQ
     name: fraise
-  # release-please creates the GitHub Release and owns its notes; GoReleaser
+  # release-please creates the GitHub Release and owns its notes. GoReleaser
   # only attaches binaries to it. keep-existing leaves those notes untouched
-  # however many times the publish job runs, where append and prepend add
-  # GoReleaser's own notes on every run and replace overwrites them.
+  # however many times the publish job runs. append and prepend would add
+  # GoReleaser's own notes on every run, and replace would overwrite them.
   mode: keep-existing
   draft: false
   prerelease: auto # vX.Y.Z-alpha.N / -beta.N / -rc.N auto-marked as pre-release

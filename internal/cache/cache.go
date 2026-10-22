@@ -22,13 +22,17 @@
 
 package cache
 
-// Cache is a fixed-capacity key/value store. Implementations decide which
-// entry to evict when an insertion would exceed the capacity (for example, the
-// least-recently-used entry). Implementations are expected to be safe for
-// concurrent use.
+// Cache is a fixed-capacity key/value store. When an insertion would exceed the
+// capacity, the implementation decides which entry to evict, such as the least
+// recently used. Implementations must be safe for concurrent use.
 type Cache[K comparable, T any] interface {
 	// Capacity returns the maximum number of entries the cache will hold.
 	Capacity() int
+
+	// Resize changes the cache's capacity to capacity, evicting entries as
+	// needed to fit the new bound, and returns the number of entries evicted.
+	// It returns ErrCacheCapacity if capacity is not strictly positive.
+	Resize(capacity int) (int, error)
 
 	// Put inserts or updates the value stored under key. If adding a new key
 	// would exceed the capacity, an existing entry is evicted to make room.
@@ -36,14 +40,13 @@ type Cache[K comparable, T any] interface {
 
 	// Get returns the value stored under key and true if present, or the zero
 	// value and false otherwise. A successful lookup counts as a use of the
-	// entry (relevant to usage-based eviction policies).
+	// entry, for usage-based eviction policies.
 	Get(key K) (T, bool)
 
-	// Delete removes key from the cache, returning true if it was present and
-	// false if it was not.
+	// Delete removes key from the cache and reports whether it was present.
 	Delete(key K) bool
 
-	// Len returns the current number of entries held in the cache.
+	// Len returns the number of entries in the cache.
 	Len() int
 
 	// Clear removes all entries from the cache.

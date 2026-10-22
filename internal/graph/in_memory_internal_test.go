@@ -20,11 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Same-package tests of the collection layer. findNeighbours is handed
-// hand-built seed contributions, with exact values that BM25 masses from the
-// public surface cannot be chosen to hit, so the tests can pin which anchors
-// weigh in the background, which are expanded and what each graph
-// contribution records.
+// Same-package tests of the collection layer. findNeighbours gets hand-built
+// seed contributions with exact values. BM25 masses from the public surface
+// cannot be chosen to hit them. So the tests can pin which anchors weigh in
+// the background, which are expanded, and what each graph contribution
+// records.
 
 package graph
 
@@ -43,9 +43,9 @@ import (
 //	hub     (topic, degree 6): members h1 .. h6
 //	giant   (topic, degree 10): members u1 .. u10, never touched by a seed
 //
-// Hand-built seed contributions give masses m(f1)=8, m(f2)=6, m(h1)=2 — exact
-// binary values, so every sum below is exact regardless of accumulation
-// order — and the arithmetic is:
+// Hand-built seed contributions give masses m(f1)=8, m(f2)=6 and m(h1)=2.
+// These are exact binary values, so every sum below is exact in any
+// accumulation order. The arithmetic is:
 //
 //	ρ₀      = (8+6+2) / (3+6) = 16/9   (the giant holds no seed: untouched)
 //	cluster = M 14 > 3·ρ₀ ≈ 5.33       (admitted: expanded to its members)
@@ -103,7 +103,7 @@ func newCollectFixture(t *testing.T) *collectFixture {
 	fx.hub = topic("hub", fx.h[:]...)
 	topic("giant", fx.u[:]...)
 
-	// Hand-built seed contributions: seed fusion (background 0) sums them, so
+	// Hand-built seed contributions. Seed fusion (background 0) sums them, so
 	// these are the masses.
 	fx.candidates = scoring.Candidates[uint64, float64]{
 		fx.f1:   {{Src: scoring.SrcText, Score: 8, Rank: 0, Count: 1}},
@@ -143,10 +143,10 @@ func graphContributions(candidates scoring.Candidates[uint64, float64], key uint
 }
 
 // TestCollectBackgroundWeighsAllTouchedAnchors pins the background's
-// denominator: the silent hub is pruned from expansion, yet its mass and
-// degree still count toward ρ₀, while the untouched giant, which the traversal
-// never reached, does not. Excluding the hub would give 14/3 and counting the
-// giant 16/19; the pin is 16/9 exactly.
+// denominator. The silent hub is pruned from expansion, yet its mass and
+// degree still count toward ρ₀. The untouched giant, which the traversal
+// never reached, does not count. Excluding the hub would give 14/3, and
+// counting the giant 16/19. The pin is exactly 16/9.
 func TestCollectBackgroundWeighsAllTouchedAnchors(t *testing.T) {
 	fx := newCollectFixture(t)
 	if want := 16.0 / 9.0; fx.background != want {
@@ -155,10 +155,10 @@ func TestCollectBackgroundWeighsAllTouchedAnchors(t *testing.T) {
 }
 
 // TestCollectSilencesALoneAnchorExactly pins that an anchor holding exactly
-// its fair share stays silent even when the division rounds. A query that
+// its fair share stays silent, even when the division rounds. A query that
 // reaches a single anchor gives it exactly its fair share (M = d·(M/d)). With
-// M = 0.1 + 0.8 on a degree-3 topic, 3·(0.9/3) rounds to 0.8999999999999999,
-// so a division-based test would admit the anchor and hand its unmatched
+// M = 0.1 + 0.8 on a degree-3 topic, 3·(0.9/3) rounds to 0.8999999999999999.
+// A division-based test would then admit the anchor and hand its unmatched
 // member a surplus of ~4e-17. BM25 masses from the public surface cannot be
 // chosen to hit that rounding.
 func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
@@ -200,9 +200,9 @@ func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
 }
 
 // TestCollectExpandsOnlyAboveBackgroundAnchors pins the admission prune, the
-// collection half of hub silence: the fair-share hub is never expanded (its
-// members pool nothing and its own seed keeps a graph-free list), while the
-// cluster is expanded to every member.
+// collection half of hub silence. The hub, within its fair share, is never
+// expanded. Its members pool nothing, and its own seed keeps a graph-free
+// list. The cluster is expanded to every member.
 func TestCollectExpandsOnlyAboveBackgroundAnchors(t *testing.T) {
 	fx := newCollectFixture(t)
 
@@ -227,10 +227,10 @@ func TestCollectExpandsOnlyAboveBackgroundAnchors(t *testing.T) {
 }
 
 // TestCollectRecordsObservationsNotPolicy pins what a graph contribution
-// carries: the funding anchor's full observed mass, its identity, degree and
-// funding-seed count, and nothing hinged, subtracted or attenuated. The
-// cluster's non-seed member and its strongest seed record the identical
-// observation; only the scorer's self-exclusion will treat them differently.
+// carries: the funding anchor's full observed mass, identity, degree and
+// funding-seed count. Nothing is hinged, subtracted or attenuated. The
+// cluster's non-seed member and its strongest seed record the same
+// observation. Only the scorer's self-exclusion treats them differently.
 func TestCollectRecordsObservationsNotPolicy(t *testing.T) {
 	fx := newCollectFixture(t)
 
@@ -244,12 +244,12 @@ func TestCollectRecordsObservationsNotPolicy(t *testing.T) {
 }
 
 // TestCollectMemberOfTwoAnchorsIsTwoObservations pins Parents-driven
-// incidence end to end: a fact on two admitted anchors pools one observation
-// per anchor, because each anchor's surplus is a separate claim about it.
-// Two small clusters alone can never both clear a background they define
-// between them, so a large silent hub supplies the ballast that lowers ρ₀
-// under both: left and right observe 16 each (degree 2, share 2·ρ₀ = 6.8),
-// the hub observes 2 on degree 6, ρ₀ = 34/10.
+// incidence end to end. A fact on two admitted anchors pools one observation
+// per anchor, because each anchor's surplus is a separate claim about it. Two
+// small clusters alone can never both clear a background they define between
+// them. So a large silent hub supplies the ballast that lowers ρ₀ under both.
+// Left and right observe 16 each (degree 2, share 2·ρ₀ = 6.8). The hub
+// observes 2 on degree 6, and ρ₀ = 34/10.
 func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 	g := NewGraph[uint64, float64](config.New())
 	g.SetTraversal(NewExcessTraversal[uint64, float64]())

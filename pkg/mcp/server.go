@@ -34,15 +34,15 @@ import (
 	"github.com/FraiseHQ/fraise/pkg/version"
 )
 
-// defaultTimeout bounds one query round trip, mirroring the Python SDK's
-// default: long enough for a large recall, short enough that a wedged daemon
-// turns into a readable tool error instead of a hung agent.
+// defaultTimeout bounds one query round trip, like the Python SDK's default.
+// It is long enough for a large recall, and short enough that a stuck daemon
+// turns into a readable tool error, not a hung agent.
 const defaultTimeout = 30 * time.Second
 
-// MCPServer is the stdio MCP bridge to a running fraise daemon: a thin adapter
-// over the HTTP query API, not a second engine. It forwards to mcp.address,
-// which defaults to the daemon its config describes, so 'fraise mcp -config x'
-// finds whatever 'fraise -config x' serves; -addr points it anywhere else.
+// MCPServer is the stdio MCP bridge to a running fraise daemon. It forwards
+// to mcp.address, which defaults to the daemon its config describes. So
+// 'fraise mcp -config x' finds whatever 'fraise -config x' serves. The -addr
+// flag points it anywhere else.
 type MCPServer struct {
 	Server *mcp.Server
 
@@ -50,11 +50,11 @@ type MCPServer struct {
 	baseURL string
 }
 
-// New builds the bridge and registers its two tools. Registration goes
-// through the SDK's typed AddTool: it unmarshals and validates arguments
-// against the input schema before a handler runs, marshals the typed output
-// into structured content and validates it against the output schema, and
-// turns a handler error into an in-band tool error the model can read.
+// New builds the bridge and registers its two tools with the SDK's typed
+// AddTool. AddTool unmarshals the arguments and validates them against the
+// input schema before a handler runs. It marshals the typed output into
+// structured content and validates it against the output schema. It turns a
+// handler error into an in-band tool error the model can read.
 func New(c *config.ConfigSet) *MCPServer {
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "fraise", Version: version.Version}, nil)
@@ -83,8 +83,8 @@ func New(c *config.ConfigSet) *MCPServer {
 }
 
 // Start serves MCP over stdio until the client disconnects or ctx is
-// cancelled. Stdout belongs to the protocol from here on: nothing on this path
-// may print to it.
+// cancelled. Stdout belongs to the protocol from here on, so nothing on this
+// path may print to it.
 func (s *MCPServer) Start(ctx context.Context) error {
 	return s.Server.Run(ctx, &mcp.StdioTransport{})
 }

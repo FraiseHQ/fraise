@@ -42,8 +42,8 @@ def test_resolve_none():
 def test_resolve_callable():
     """A bare callable is used as it is."""
     embedder = MagicMock(return_value=[1.0])
-    # A plain callable has no .embed; deleting it is what makes this mock the
-    # bare-callable shape rather than the Embedder one.
+    # A plain callable has no .embed. Deleting it gives this mock the
+    # bare-callable shape, not the Embedder one.
     del embedder.embed
     assert resolve_embedder(embedder) is embedder
 
@@ -70,7 +70,7 @@ def test_resolve_rejects_non_embedder():
 def test_embedder_abc_cannot_be_instantiated():
     """Embedder is a contract: it has no ``embed`` of its own."""
     with pytest.raises(TypeError):
-        Embedder()  # abstract
+        Embedder()
 
 
 def test_resolve_extractor_none():
@@ -81,8 +81,8 @@ def test_resolve_extractor_none():
 def test_resolve_extractor_callable():
     """A bare callable is used as it is."""
     extractor = MagicMock(return_value=[])
-    # A plain callable has no .extract; deleting it is what makes this mock the
-    # bare-callable shape rather than the Extractor one.
+    # A plain callable has no .extract. Deleting it gives this mock the
+    # bare-callable shape, not the Extractor one.
     del extractor.extract
     assert resolve_extractor(extractor) is extractor
 
@@ -90,8 +90,8 @@ def test_resolve_extractor_callable():
 def test_resolve_extractor_prefers_extract_method():
     """An Extractor resolves to its bound ``extract``, never its ``__call__``.
 
-    ``__call__`` delegates to ``extract``, so resolving to it would only add a
-    hop — and a subclass overriding one of the two would split them.
+    ``__call__`` delegates to ``extract``, so resolving to it would add a hop.
+    And a subclass that overrides one of the two would split them.
     """
     extractor = MagicMock()
     resolved = resolve_extractor(extractor)
@@ -110,7 +110,7 @@ def test_resolve_extractor_rejects_non_extractor():
 def test_extractor_abc_cannot_be_instantiated():
     """Extractor is a contract: it has no ``extract`` of its own."""
     with pytest.raises(TypeError):
-        Extractor()  # abstract
+        Extractor()
 
 
 def test_calling_an_extractor_extracts():

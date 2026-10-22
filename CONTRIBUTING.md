@@ -83,7 +83,7 @@ type(optional-scope): subject
 ```
 
 - **Subject**: lowercase, no trailing period, 3–60 characters.
-- **Type**: `feat` `fix` `docs` `refactor` `perf` `test` `build` `ci` `chore` (also `deps`, `upgrade`, `release`). Branch names also accept `style` and `revert`; PR titles do not.
+- **Type**: `feat` `fix` `perf` `refactor` `build` `ci` `chore` `docs` `test` `deps`, the types `release-please-config.json` gives a changelog section. Branch names also accept `style` and `revert`; PR titles do not.
 - **Scope routes the change to a component.** This keeps each component's changelog clean:
   - _no scope_ → server — `feat: add request rate limiting`
   - `(python)` → Python SDK — `fix(python): handle empty response body`

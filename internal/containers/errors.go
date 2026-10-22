@@ -28,11 +28,11 @@ import (
 )
 
 var (
-	// ErrDimMismatch is returned by vector operations when the operands have
-	// different dimensionalities.
+	// ErrDimMismatch is returned by [Vector.Distance] when the two vectors
+	// have different dimensions.
 	ErrDimMismatch = errors.New("containers: vector dimensions do not match")
 	// ErrPriorityQueueCapacity is returned when a priority queue is created with
-	// a capacity that is not strictly positive.
+	// zero capacity.
 	ErrPriorityQueueCapacity = errors.New("containers: priority queue capacity must be strictly positive")
 	// ErrEmptyPriorityQueue is returned by Dequeue on an empty priority queue.
 	ErrEmptyPriorityQueue = errors.New("containers: priority queue is empty")
@@ -42,9 +42,9 @@ var (
 )
 
 // DurationRangeError is returned by ParseTimeValue for a relative duration
-// longer than a time.Duration can hold — about 292 years, whatever the unit.
-// It carries the largest count its unit allows so the message can state the
-// range, and it is an ErrInvalidTime: a caller that only asks whether the
+// longer than a time.Duration can hold, about 292 years in any unit. It
+// carries the largest count its unit allows, so the message can state the
+// range. It is also an ErrInvalidTime, so a caller that only asks whether the
 // value parsed still gets the right answer.
 type DurationRangeError struct {
 	Value string // the duration as written, e.g. "106752d"

@@ -30,30 +30,31 @@ import (
 	"github.com/blevesearch/snowballstem/english"
 )
 
-// Tokenizer splits raw document text into the sequence of normalized terms that
-// get indexed and queried. Implementations decide casing, stemming, stop-word
-// removal, n-gramming, etc. The same Tokenizer must be used at index and query
-// time so terms line up — the index owns one instance and runs it on both
-// sides, which is what makes a stemmed posting findable by a stemmed query.
-// Like the Relevance model, a tokenizer is installed before the first insert
-// and never swapped mid-corpus: postings tokenized under the old scheme would
-// be unreachable under the new one.
+// Tokenizer splits raw text into the normalized terms that are indexed and
+// queried. Implementations decide casing, stemming, stop-word removal,
+// n-gramming and so on. Index and query time must use the same Tokenizer so
+// their terms line up. The index owns one instance and runs it on both sides,
+// which makes a stemmed posting findable by a stemmed query. A tokenizer is
+// installed before the first insert and never swapped mid-corpus. Postings
+// tokenized under the old scheme would be unreachable under the new one.
 type Tokenizer interface {
 	Tokenize(text string) []string
 }
 
 // Words splits text into the spellings of its terms: the maximal runs of term
-// characters, in order, with their case and everything else intact. It is the
-// one definition of where a term ends, shared by the tokenizers and by
-// stop-word cleaning, so the words cleaning removes are exactly the terms the
-// index would otherwise carry. A term character is a letter, a digit, or a
-// symbol in Unicode category So (Symbol, other), the class that holds emoji,
-// check marks and signs such as ©: without So, a fact whose salient content is
-// an emoji would index under no term and be unreachable by text search. Every
-// other rune delimits: whitespace, punctuation, and the math, currency and
-// modifier symbol classes ("+", "$", "^"), so operators and prices split
-// apart. Joiners and variation selectors delimit too, so a multi-rune emoji
-// sequence indexes as its So components.
+// characters, in order and exactly as written. It is the one definition of
+// where a term ends. The tokenizers and stop-word cleaning share it, so the
+// words cleaning removes are exactly the terms the index would otherwise
+// carry.
+//
+// A term character is a letter, a digit, or a symbol in Unicode category So
+// (Symbol, other). That category holds emoji, check marks and signs such as
+// ©. Without it, a fact whose main content is an emoji would index under no
+// term, and text search could not reach it. Every other rune delimits:
+// whitespace, punctuation, and the math, currency and modifier symbol classes
+// ("+", "$", "^"). Operators and prices split apart as a result. Joiners and
+// variation selectors delimit too, so a multi-rune emoji sequence indexes as
+// its So components.
 func Words(text string) []string {
 	return strings.FieldsFunc(text, func(r rune) bool {
 		return !isTermRune(r)
@@ -73,13 +74,13 @@ func (SimpleTokenizer) Tokenize(text string) []string {
 	return Words(strings.ToLower(text))
 }
 
-// StemmingTokenizer is SimpleTokenizer's split with Snowball (Porter2)
-// English stemming over each term: "running", "runs" and "run" all index and
-// query as "run", so morphological variants of a word find each other: recall
+// StemmingTokenizer splits like SimpleTokenizer, then applies Snowball
+// (Porter2) English stemming to each term. "running", "runs" and "run" all
+// index and query as "run", so variants of a word find each other. Recall
 // keywords rarely arrive in the inflection the fact was written with. A term
 // with no English suffix to strip, such as a number, a symbol or CJK text,
-// passes through unchanged. Stemming only rewrites, never drops, so every term
-// SimpleTokenizer would index still exists under some spelling.
+// passes through unchanged. Stemming only rewrites and never drops, so every
+// term SimpleTokenizer would index still exists under some spelling.
 type StemmingTokenizer struct{}
 
 // Tokenize returns the lowercased terms found in text, each reduced to its

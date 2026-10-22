@@ -20,15 +20,19 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""The stats endpoint: per-graph shape snapshots, and the gauges as a window
-into storage invariants that queries alone cannot observe.
+"""The stats endpoint: per-graph shape snapshots.
+
+The gauges also give a window into storage invariants that queries alone cannot
+observe.
 """
 
 
 def test_stats_reports_per_graph_snapshots(get):
-    """GET /api/v1/stats returns one snapshot per graph with the shape gauges
-    (nodes, edges, vectors, forest entries) and the relevance model the text
-    index ranks with, BM25 under the image's default configuration.
+    """GET /api/v1/stats returns one snapshot per graph.
+
+    Each snapshot has the shape gauges (nodes, edges, vectors, forest entries)
+    and the relevance model the text index ranks with. The model is BM25 under
+    the image's default configuration.
     """
     response = get("/api/v1/stats")
 
@@ -44,13 +48,13 @@ def test_stats_reports_per_graph_snapshots(get):
 
 
 def test_vector_forest_stays_bounded_under_writes(get, query, vector):
-    """Sustained writes must not bloat the vector forest: forest_entries stays
-    within the flush-factor bound (2x) of live vectors.
+    """Sustained writes must not bloat the vector forest.
 
-    A write that re-inserted every staged vector into the live forest would
-    grow it quadratically (~W^2/2 entries after W writes, ~800 for these 40),
-    so the 2x bound fails loudly on that regression. The bound is a per-graph
-    invariant, so writes from other tests on this graph don't disturb it.
+    forest_entries stays within the flush-factor bound (2x) of live vectors. A
+    write that re-inserted every staged vector into the live forest would grow
+    it quadratically: ~W^2/2 entries after W writes, ~800 for these 40. The 2x
+    bound fails loudly on that regression. The bound is a per-graph invariant,
+    so other tests' writes on this graph do not disturb it.
     """
     graph = 4
     writes = 40

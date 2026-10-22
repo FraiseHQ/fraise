@@ -22,14 +22,14 @@
 
 package scoring
 
-// Source identifies the retrieval stage that produced a Contribution.
-// Collection sites record observations on each source's own scale; the
-// Scorer is what knows how to combine them, so contributions can only be
-// read by knowing where each one came from.
+// Source identifies the retrieval stage that produced a Contribution. Each
+// source records observations on its own scale, and only the Scorer knows how
+// to combine them. So a contribution can be read only by knowing where it came
+// from.
 type Source uint8
 
 const (
-	// SrcText is the full-text index; Score is the BM25 × coverage mass.
+	// SrcText is the full-text index. Score is the BM25 × coverage mass.
 	SrcText Source = iota
 
 	// SrcVector is the vector index; Score is the similarity 1/(1+distance)
@@ -37,16 +37,16 @@ const (
 	// the scorer's to apply (see Observation.TextMissed).
 	SrcVector
 
-	// SrcGraph is the anchor traversal; Score is the funding anchor's full
-	// observed mass M_A — the raw observation, before the scorer subtracts
+	// SrcGraph is the anchor traversal. Score is the funding anchor's full
+	// observed mass M_A. It is the raw observation, before the scorer subtracts
 	// the fair share and applies the hinge.
 	SrcGraph
 
-	// SrcAnchor is anchor seeding: a Search naming anchors and nothing to
-	// match seeds from the anchors' own members (see graph.Graph). Score is
-	// a unit mass, one sighting per named anchor the fact is filed under, so
-	// a fact under several of the named anchors carries more seed mass than
-	// one under a single anchor: it answers more of the question.
+	// SrcAnchor is anchor seeding. A Search that names anchors and nothing to
+	// match seeds from the anchors' own members (see graph.Graph). Score is a
+	// unit mass, one sighting per named anchor the fact is filed under. A fact
+	// under several named anchors carries more seed mass than a fact under one.
+	// It answers more of the question.
 	SrcAnchor
 
 	// SrcNamed is a named anchor's observation on a Search that also has
@@ -104,8 +104,8 @@ type Scorer[K comparable, P float32 | float64] interface {
 	Observe(o Observation[K, P]) Scorer[K, P]
 }
 
-// String names the source for logs and for the explain payload, which
-// serializes contributions for clients that never see the Go constants.
+// String names the source for logs and the explain payload. Explain serialises
+// contributions for clients, which never see the Go constants.
 func (s Source) String() string {
 	switch s {
 	case SrcText:
@@ -123,11 +123,10 @@ func (s Source) String() string {
 	}
 }
 
-// Contribution records one observation of a candidate by one retrieval
-// source. Collection sites record what they saw (who, through which anchor,
-// how much mass sat on it) and apply no policy of their own: the hinge, the
-// null model and the attenuation belong to the Scorer, so changing how
-// ranking works does not touch the collection sites.
+// Contribution records one observation of a candidate by one retrieval source.
+// Collection sites record what they saw: who, through which anchor, and how
+// much mass sat on it. They apply no policy of their own. The hinge, the null
+// model and the attenuation belong to the Scorer.
 //
 // Score is oriented so that bigger is always better: the vector site converts
 // the distance its index reports (smaller is nearer) to 1/(1+distance); a
@@ -148,7 +147,7 @@ type Contribution[K comparable, P float32 | float64] struct {
 }
 
 // Candidates pools every contribution made during one search, keyed by
-// candidate node. Append order is deterministic — the sources run in a fixed
-// order and seed traversals run in ascending key order — so a Scorer may fold
-// a list's floats front to back without run-to-run drift in the low bits.
+// candidate node. Append order is deterministic. The sources run in a fixed
+// order, and seed traversals run in ascending key order. So a Scorer may fold a
+// list's floats front to back without run-to-run drift in the low bits.
 type Candidates[K comparable, P float32 | float64] map[K][]Contribution[K, P]

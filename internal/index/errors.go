@@ -27,12 +27,12 @@ import "errors"
 var (
 	// ErrEmptyIndex is returned by Search when the index holds no entries. A
 	// search of a non-empty index that matches nothing returns no keys and no
-	// error, so callers can tell the two situations apart.
+	// error. Callers can tell the two cases apart.
 	ErrEmptyIndex = errors.New("index: is empty")
 	// ErrIndexNotFound is returned by Retrieve, Update and Delete when the key
 	// is not indexed.
 	ErrIndexNotFound = errors.New("index: not found")
-	// ErrInvalidDimension is returned when a vector's dimensionality does not
-	// match the index it is being used with.
+	// ErrInvalidDimension is returned when a vector's dimension does not match
+	// the index it is used with.
 	ErrInvalidDimension = errors.New("index: invalid vector dimension")
 )

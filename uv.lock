@@ -195,7 +195,7 @@ wheels = [
 
 [[package]]
 name = "claude-agent-sdk"
-version = "0.2.165"
+version = "0.2.168"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -203,12 +203,12 @@ dependencies = [
     { name = "mcp" },
     { name = "sniffio" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7f/45/10f00a408b480926b5e340e3507562ede1e30d4ce5b73eea9ccc3468a9e6/claude_agent_sdk-0.2.165.tar.gz", hash = "sha256:1bfa8e7a6bb36e82de9a12324c9bcfa6eebd4f96ee5890f0c656d50445240ff8", size = 365169, upload-time = "2026-10-08T18:18:49.528Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9a/ee/31e159daf956f0c5503eac67d02743da692c0999fef046cdde3cc52702b9/claude_agent_sdk-0.2.168.tar.gz", hash = "sha256:80388054a09c137d76fc29caa6e46bc90d2ae2ef09fac5ee1c38fc36d2762fda", size = 371591, upload-time = "2026-10-15T20:20:43.683Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/a7/a7226ae5e7fa3f225d99a0acf12ee354c4af9c953661f66bbcd424e48853/claude_agent_sdk-0.2.165-py3-none-macosx_11_0_arm64.whl", hash = "sha256:7f7017bb59eaf77b9a7c7ce3b9ed2c8a397b8201c8630f011bb1b955290f06e4", size = 97973182, upload-time = "2026-10-08T18:18:56.039Z" },
-    { url = "https://files.pythonhosted.org/packages/5c/9d/1eaa82f8dbafa63a3fb26aabc088be307c4977438269cc6cb10056a32e99/claude_agent_sdk-0.2.165-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:f4b5c6f536062e3af72357b1235f05ad4513230a32a3c639341a91a607d2df1e", size = 102479136, upload-time = "2026-10-08T18:19:01.908Z" },
-    { url = "https://files.pythonhosted.org/packages/40/4a/93fe172811bcd7704c4c4776d5eed1bb1881ba440d86e0f8e5cbbec0dca9/claude_agent_sdk-0.2.165-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:46a47e1e1075a8f2b7976f6bd5aa06c5610cb322c47cdc5b728fb25d02691164", size = 107447420, upload-time = "2026-10-08T18:19:09.571Z" },
-    { url = "https://files.pythonhosted.org/packages/57/81/a0d3ff04ae7045218566b36d1c78729c3fc7550877e154697f263ac5122e/claude_agent_sdk-0.2.165-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:9dbee4bfc69f0bb27ee455afdc19d78f958540a99217d2e28831fb9b7d496f08", size = 107800988, upload-time = "2026-10-08T18:19:16.24Z" },
+    { url = "https://files.pythonhosted.org/packages/15/31/9a205fc0b7ae1b66d5964774bb534ab378047c9bf87578f443bd1fb2205e/claude_agent_sdk-0.2.168-py3-none-macosx_11_0_arm64.whl", hash = "sha256:2ef1e7fc442c5abdc1e698027bf1b5faa8ea2130134a14364e2ae3c53bf31fdd", size = 104355641, upload-time = "2026-10-15T20:20:48.105Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/ba/12bbe92d5e9145c7aaa94aa349a0859b77a9b58ccc40ae9e69cf7f078e5b/claude_agent_sdk-0.2.168-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:653fc7bbe56630e6ddd9601a7cfe50586667e74102da3fb90571456c63655a62", size = 109438860, upload-time = "2026-10-15T20:20:52.274Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/5a/26e587846f14f67f3353f96811b86931263a9c7e264d17a691d9577e4da5/claude_agent_sdk-0.2.168-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:77ae66b10edfd07b6ea3dec2af106ad47a9d616f8eb52d4f9b385e1b00bb2a27", size = 114030032, upload-time = "2026-10-15T20:20:56.813Z" },
+    { url = "https://files.pythonhosted.org/packages/00/03/09d347dcddbbab4becd41fef3a811967eddf24135b2d62dac9e321c81537/claude_agent_sdk-0.2.168-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:be197be92549909ec62a2cee04c27f4b0a38c80f723735538a3efc352507f81d", size = 114443626, upload-time = "2026-10-15T20:21:01.794Z" },
 ]
 
 [[package]]
@@ -375,7 +375,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pre-commit", specifier = ">=4.6.2" }]
+requires-dist = [{ name = "pre-commit", specifier = ">=4.7.0" }]
 
 [[package]]
 name = "fraise-sdk"
@@ -402,9 +402,9 @@ openai = [
 
 [package.metadata]
 requires-dist = [
-    { name = "claude-agent-sdk", marker = "extra == 'anthropic'", specifier = ">=0.2.165" },
+    { name = "claude-agent-sdk", marker = "extra == 'anthropic'", specifier = ">=0.2.168" },
     { name = "huggingface-hub", marker = "extra == 'huggingface'", specifier = ">=2.2.0" },
-    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.23.1" },
+    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.24.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1.1" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.1.0" },
     { name = "requests", specifier = ">=2.33.1" },
@@ -860,7 +860,7 @@ wheels = [
 
 [[package]]
 name = "openai-agents"
-version = "0.23.1"
+version = "0.24.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "griffelib" },
@@ -876,9 +876,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e6/8e/67aa6f764c9041e96c523ff01407d3304bb1c886e2cfb216821a1086ef8f/openai_agents-0.23.1.tar.gz", hash = "sha256:2bbd0a87a42531d25638529396644defd3ff2afd92fd9ec7d2f02167e5458a99", size = 6908432, upload-time = "2026-10-02T15:42:06.011Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/36/537006bc2a22f3aa232ce0907f52a333f831a6a2f525894ff43747a7abee/openai_agents-0.24.0.tar.gz", hash = "sha256:4b4b285f4fed81fdf1b4ac426a9101658d9cd29b4fb1aaeee18f639b77e704e3", size = 7026950, upload-time = "2026-10-15T02:38:21.466Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/a7/546403f30d1409db12a7c81c2912442e841ecb43edf8dbdcb714cf9f17ae/openai_agents-0.23.1-py3-none-any.whl", hash = "sha256:0183e6da7370df80f7cf900379d9f113e664e32b426f51aa7486c9091faf8f2d", size = 1215213, upload-time = "2026-10-02T15:42:03.694Z" },
+    { url = "https://files.pythonhosted.org/packages/05/93/01efc034d7011b89381f96a9fb8957c09a16e3c190f3a5de128e1d0a42e9/openai_agents-0.24.0-py3-none-any.whl", hash = "sha256:18d4ac34e84ed937333ec8ce46395ed3521ffcbb0a521780a4c2eaa451467f49", size = 1242571, upload-time = "2026-10-15T02:38:18.835Z" },
 ]
 
 [[package]]
@@ -910,7 +910,7 @@ wheels = [
 
 [[package]]
 name = "pre-commit"
-version = "4.6.2"
+version = "4.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cfgv" },
@@ -919,9 +919,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "virtualenv" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/74/89/1f3e8e1fc3e97de0fa963495832f581f025f29471602a309e48808244292/pre_commit-4.6.2.tar.gz", hash = "sha256:8f5d7bfb021ecdbcd9d49d89847082dd24172ccde534390081a679ad046e2441", size = 198670, upload-time = "2026-08-10T22:07:18.421Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/c3/6965c2690ddce885ec75121572d065a5b94c5a5d8d3e657927ecda9fd715/pre_commit-4.7.0.tar.gz", hash = "sha256:1f3deee12b914c8fa184bd2b5953391c2e4f36763e403d4a23dc9983fa7c6e86", size = 198120, upload-time = "2026-10-12T20:45:40.32Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/e2/bbb7129c9e7999a6b8ee9cca3b66486c25c423ab5a75f34071798b74ce94/pre_commit-4.6.2-py2.py3-none-any.whl", hash = "sha256:e2dde9a75d3bce11bd3831c26d134df00a2803c1d818be6a0383c3dcda25dc4e", size = 226202, upload-time = "2026-08-10T22:07:16.942Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/83/ce0a196e4f7b20b11ce3aa1fc72fb973f64b7628d51c1b8aebad37fb7f81/pre_commit-4.7.0-py2.py3-none-any.whl", hash = "sha256:2e229038ad3656081b70c27913157e4b636ef306f643f024a8a8e3f0f7b2f877", size = 226261, upload-time = "2026-10-12T20:45:38.858Z" },
 ]
 
 [[package]]
@@ -1448,7 +1448,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.5" },
     { name = "torch", marker = "sys_platform == 'linux' and extra == 'embeddings'", specifier = ">=2.14.1", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch", marker = "sys_platform != 'linux' and extra == 'embeddings'", specifier = ">=2.14.1" },
-    { name = "transformers", marker = "extra == 'embeddings'", specifier = ">=5.19.0" },
+    { name = "transformers", marker = "extra == 'embeddings'", specifier = ">=5.20.1" },
 ]
 provides-extras = ["embeddings"]
 
@@ -1553,7 +1553,7 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "5.19.0"
+version = "5.20.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -1566,9 +1566,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/65/4c/70012ed0795235fb6bd7806fafd4a1842f03e49ebbfa3bb9580e451948ce/transformers-5.19.0.tar.gz", hash = "sha256:87f38dd25e4521151b97e94520ac457f44a0ae8a8358a5b112daff6c64a822d6", size = 10032022, upload-time = "2026-10-06T16:39:00.229Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/03/2e8d6da6a582a0fdbaa7af9c0dab72dac113e6e3ea3b98d6ed67248322cc/transformers-5.20.1.tar.gz", hash = "sha256:25b30879e4c243f00630c1079171ede6d4f6bf76e68f978acd47628a640bc8a0", size = 10224416, upload-time = "2026-10-16T13:02:04.181Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/59/1e7f1212c215c73690ae6cab4678efe1555ff985953e145d88cc212859b0/transformers-5.19.0-py3-none-any.whl", hash = "sha256:afcd2dd5f603ed28c1e1fcb00a338ccbb4ef5f878ed289635df8b58187afb518", size = 12599123, upload-time = "2026-10-06T16:38:56.794Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/ba/057af605774c3c7a9228ce61d88040749134ef320426403b31bb73755d43/transformers-5.20.1-py3-none-any.whl", hash = "sha256:5f51ce444193e5d0a751e3fa489ddbc2224ff12f6675a5cfefd4044b09757c19", size = 12844669, upload-time = "2026-10-16T13:02:00.488Z" },
 ]
 
 [[package]]

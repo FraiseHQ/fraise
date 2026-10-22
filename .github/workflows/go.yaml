@@ -86,9 +86,9 @@ jobs:
   publish:
     name: Release
     # Fired by the tag release-please creates when its release PR is merged.
-    # That requires release-please to push the tag as fraise-bot: a tag pushed
-    # with the default GITHUB_TOKEN does not trigger workflows, so this job
-    # would never run (see .github/workflows/release.yaml).
+    # release-please must push the tag as fraise-bot. A tag pushed with the
+    # default GITHUB_TOKEN does not trigger workflows, so this job would never
+    # run (see .github/workflows/release.yaml).
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [cross-compile, test]
     runs-on: ubuntu-latest
@@ -116,13 +116,13 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Consumed by the signs block in .goreleaser.yaml, which signs
-      # checksums.txt keylessly during the release step below.
+      # The signs block in .goreleaser.yaml uses cosign to sign checksums.txt
+      # keylessly, in the release step below.
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       # The formula is pushed to FraiseHQ/homebrew-tap, which GITHUB_TOKEN
-      # cannot write to: fraise-bot mints a token for that repository alone.
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      # cannot write to. fraise-bot mints a token for that repository alone.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: fraise-bot
         with:
           client-id: ${{ secrets.FRAISE_BOT_CLIENT_ID }}
@@ -131,10 +131,11 @@ jobs:
           repositories: homebrew-tap
           permission-contents: write
 
-      # No changelog is built here: release-please already created the GitHub
-      # Release and wrote its notes, the entry it added to docs/changelog.md.
-      # GoReleaser only appends binaries and checksums to it (release.mode: keep-existing).
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94
+      # No changelog is built here. release-please already created the GitHub
+      # Release, and its notes are the entry release-please added to
+      # docs/changelog.md. GoReleaser only appends binaries and checksums to
+      # it (release.mode: keep-existing).
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -152,9 +153,9 @@ jobs:
           subject-path: dist/*.tar.gz, dist/*.zip, dist/checksums.txt
 
       # The step above records the attestation in GitHub's attestations API,
-      # which is what `gh attestation verify` reads. Scorecard's Signed-Releases
-      # check reads release assets instead, so the same bundle is attached under
-      # the .intoto.jsonl name the check matches on. Without this step the
+      # which `gh attestation verify` reads. Scorecard's Signed-Releases check
+      # reads release assets instead. So the same bundle is attached under the
+      # .intoto.jsonl name the check matches on. Without this step the
       # provenance is still published, but Scorecard keeps flagging the release.
       - name: Attach provenance to the release
         env:

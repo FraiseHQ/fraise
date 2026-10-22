@@ -39,7 +39,7 @@ import (
 // Engine plans queries and hands the resulting streams to its scheduler. K is
 // the node key type and P the floating-point precision of embeddings and
 // scores. Cache maps a query's Hash, computed with Hasher, to the optimised
-// query planned for it; it is allocated by [Engine.Start].
+// query planned for it. [Engine.Start] allocates it.
 type Engine[K ~uint64, P float32 | float64] struct {
 	Config        *config.ConfigSet
 	Cache         cache.Cache[K, query.Query[K, P]]
@@ -62,9 +62,8 @@ func NewEngine[K ~uint64, P float32 | float64](c *config.ConfigSet, hasher hash.
 
 // Start allocates the plan cache and starts the scheduler workers. It returns
 // an error if either fails, so a caller never brings up a live server backed by
-// a nil cache: the cache is assigned only once it is known good.
+// a nil cache. The cache is assigned only once it is known good.
 func (e *Engine[K, P]) Start() error {
-	// allocate cache memory
 	c, err := cache.NewLRUCache[K, query.Query[K, P]](e.Config.Engine.CacheCapacity)
 	if err != nil {
 		logger.Error("Error while initialising cache", "error", err)
@@ -76,7 +75,6 @@ func (e *Engine[K, P]) Start() error {
 	logger.Debug("Plan cache keys hashed",
 		"function", e.Config.DB.HashingFunction.Name, "seed", e.Hasher.Seed())
 
-	// start the scheduler workers that execute planned streams
 	if err := e.Scheduler.Start(); err != nil {
 		logger.Error("Error while starting scheduler", "error", err)
 		return err
@@ -84,30 +82,27 @@ func (e *Engine[K, P]) Start() error {
 	return nil
 }
 
-// Stop stops the scheduler, which runs every stream it has already accepted
-// before returning, and then clears the plan cache.
+// Stop stops the scheduler, then clears the plan cache. The scheduler runs
+// every stream it has already accepted before it returns.
 func (e *Engine[K, P]) Stop() {
-	// stop scheduler workers, then release cache memory
 	logger.Info("Stopping engine")
 	e.Scheduler.Stop()
 	e.Cache.Clear()
 }
 
 // Plan returns an executable stream for q. A cached query with the same Hash
-// stands in for q; on a miss q is optimised and the result cached under q's
-// own Hash, the parsed query's rather than the optimised one's, since that is
-// the key the next request for it looks up. Each distinct query therefore goes
-// through the optimisation pipeline once. The stream is
-// built fresh on every call because it carries per-execution state (its
-// results, error and completion signal). It returns [ErrQueryPlan] if the
-// query cannot be planned.
+// stands in for q. On a miss, q is optimised and cached under the parsed
+// query's Hash, not the optimised one's. That is the key the next request for
+// it looks up. So each distinct query goes through the optimisation pipeline
+// once. The stream is built fresh on every call because it carries
+// per-execution state: its results, error and completion signal. It returns
+// [ErrQueryPlan] if the query cannot be planned.
 func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
 	key := q.Hash(e.Hasher)
 	if cached, ok := e.Cache.Get(key); ok {
 		q = cached
 	} else {
-		// Only optimised queries are cached, so a hit skips optimisation.
 		optimised := e.Optimisations.Optimise(q)
 		e.Cache.Put(key, optimised)
 		q = optimised
@@ -122,9 +117,9 @@ func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 }
 
 // Apply hands a planned stream to the scheduler for execution. It returns the
-// scheduler's error (e.g. ErrShutdown, ErrQueueFull, or a wrapped context
-// cancellation) so a caller knows the stream was never enqueued and must not
-// wait on its completion.
+// scheduler's error, such as ErrShutdown, ErrQueueFull or a wrapped context
+// cancellation. An error means the stream was never enqueued, so the caller
+// must not wait on its completion.
 func (e *Engine[K, P]) Apply(ctx context.Context, s *query.Stream[K, P]) error {
 	return e.Scheduler.Submit(ctx, s)
 }

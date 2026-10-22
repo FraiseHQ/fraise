@@ -35,8 +35,4 @@ var (
 	ErrUnableToServe = errors.New("server: error while serving HTTP")
 	// ErrUnableToStopDatabase is returned when the database fails to stop.
 	ErrUnableToStopDatabase = errors.New("server: error while attempting to stop database")
-	// ErrUnableToStopEngine is returned when the query engine fails to stop.
-	ErrUnableToStopEngine = errors.New("server: error while attempting to stop engine")
-	// ErrUnableToStartScheduler is returned when the scheduler fails to start.
-	ErrUnableToStartScheduler = errors.New("server: error while attempting to start scheduler")
 )

@@ -57,33 +57,36 @@ Linux packages, Docker, `go install` and signed release binaries are all in [Get
 
 ## How it compares
 
-Measured on [LoCoMo](https://github.com/snap-research/locomo) — 10 multi-session conversations, 1,982 questions — with every system ingesting the same conversations, using the same extraction model and the same embedding model, and answering the same questions. `k=10`, full data, run 2026-08-30.
+Measured on [LoCoMo](https://github.com/snap-research/locomo) — 10 multi-session conversations, 1,986 questions — with every system ingesting the same conversations, using the same extraction model and the same embedding model, and answering the same questions. `k=10`, full data, latest run per system as of 2026-10-11.
 
 | system | retrieval recall | p50 search | memory tokens |
 |---|---|---|---|
-| **fraise 0.1.0** | **0.893** | **0.176 s** | **2,902,039** |
+| **fraise 0.3.3** | **0.910** | **0.185 s** | **7,453,109** |
+| hindsight 0.9.2 | 0.913 | 5.836 s | 1,688,873 |
 | everos 1.2.3 | 0.897 | 0.376 s | 10,030,966 |
 | letta 0.16.8 | 0.897 | 0.349 s | 226,854 |
 | mem0 2.0.18 | 0.886 | 0.576 s | 4,120,078 |
-| graphiti 0.29.3 | 0.819 | 0.301 s | 9,866,183 |
+| memos 2.0.33 | 0.865 | 0.307 s | 4,000,552 |
+| graphiti 0.30.2 | 0.828 | 0.290 s | 9,861,973 |
 | cognee 1.5.3 | 0.790 | 6.273 s | 8,526,019 |
+| langmem 0.0.30 | 0.783 | 0.227 s | 1,078,110 |
 
-**Fraise comes within 0.004 of the best recall, at twice the speed of the two systems that reach it.** Near enough the same evidence, in half the time — and with fewer memory tokens than every system but letta.
+**Fraise comes within 0.003 of the best recall, 31× faster than the one system that reaches it.** Near enough the same evidence, in a fraction of the time. The token column is the price of that recall: the extractor (fraise-sdk 0.2.0) reads each message beside what the graph already holds, and that context is where the recall came from.
 
-These come from a standalone multi-system harness — precision, recall and F1 across `k` ∈ {1, 3, 5, 10}, per category, every run tagged and reproducible from the tag. The harness and the full results are published separately, in November.
+These come from [agent-memory-benchmarks](https://github.com/RonsenbergVI/agent-memory-benchmarks), an open harness — precision, recall and F1 across `k` ∈ {1, 3, 5, 10}, per category, every run tagged and reproducible from the tag. The full tables are in its [RESULTS.md](https://github.com/RonsenbergVI/agent-memory-benchmarks/blob/b19b1ae/RESULTS.md).
 
 ## Why Fraise
 
 - **A query language agents can actually write.** FQL has two verbs — `remember` and `recall` — and one way to say each thing. Fewer degrees of freedom means fewer ways for a model to get it wrong, and fewer tokens spent saying it.
 - **Hybrid retrieval.** Facts are indexed for full-text, graph, and (optionally) vector search. One query, ranked across all three.
 - **Temporal by default.** Recent memories outrank older ones, so recall is recency-aware without asking for it.
-- **The fastest system measured.** 0.176 s p50 on LoCoMo, 1.7× faster than the next fastest. Remember and recall mid-step, while the user waits.
+- **The fastest system measured.** 0.185 s p50 on LoCoMo, ahead of every other system and 31× faster than the one with matching recall. Remember and recall mid-step, while the user waits.
 - **No infrastructure.** A single binary. No database to provision, no service to stand up beside it.
 - **Open source, MIT.**
 
 ## Status
 
-**v0.3.0.** The core loop works end to end and the install paths are verified on clean machines. The benchmark row above was produced from v0.1.0, the first stable release.
+**v0.3.3.** The core loop works end to end and the install paths are verified on clean machines. The benchmark row above was produced from this release. 0.4.0 (late October) changes the scorer and adds `explain` and `describe`; 0.5.0 (November) is persistence and `forget`.
 
 Good for building agent memory today. Not yet for long term production use.
 

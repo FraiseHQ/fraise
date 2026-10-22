@@ -31,13 +31,13 @@ var (
 	// ErrEnqueueStream is returned, wrapping the context's error, when the
 	// caller's context ends before its stream is queued.
 	ErrEnqueueStream = errors.New("scheduler: could not add stream to queue")
-	// ErrQueueFull is returned when the queue stays saturated past the
-	// configured enqueue timeout, so callers can shed load (e.g. answer 429)
+	// ErrQueueFull is returned when the queue stays full past the configured
+	// enqueue timeout. Callers can then shed load, for example with a 429,
 	// instead of blocking without bound.
 	ErrQueueFull = errors.New("scheduler: queue full")
 	// ErrStreamCommit is recorded on a stream whose commit failed. It wraps the
-	// commit error rather than replacing it, so the HTTP boundary can match the
-	// cause with errors.Is and tell a client fault (a vector-dimension
+	// commit error rather than replacing it. The HTTP boundary matches the
+	// cause with errors.Is, to tell a client fault (a vector-dimension
 	// mismatch) from an internal one.
 	ErrStreamCommit = errors.New("scheduler: error while committing stream")
 )

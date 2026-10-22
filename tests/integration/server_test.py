@@ -20,16 +20,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""The bridge's identity and registration (pkg/mcp/server.go) over real stdio:
-what an MCP client learns about fraise before it ever calls a tool.
+"""The bridge's identity and registration (pkg/mcp/server.go) over real stdio.
+
+This is what an MCP client learns about fraise before it ever calls a tool.
 """
 
 
 def test_initialize_names_the_server(mcp):
     """The handshake identifies the bridge as fraise with a real version.
 
-    ``claude mcp add`` surfaces exactly this — a wrong name here is what a
-    user sees in their client's server list.
+    ``claude mcp add`` shows exactly this. A wrong name here is what a user
+    sees in their client's server list.
     """
     result = mcp.handshake_result
     assert result["serverInfo"]["name"] == "fraise"
@@ -39,12 +40,12 @@ def test_initialize_names_the_server(mcp):
 def test_tools_list_carries_both_tools_with_their_schemas(mcp):
     """tools/list names recall and remember, each carrying the wire schemas.
 
-    The schemas mirror the HTTP query API: query is required on the way in,
-    and on the way out each tool requires what that side of the API answers
-    with, results for a recall and the status token for a write. The Go SDK
-    validates every tool result against its output schema before sending it,
-    and a client may validate against them too, so they must be present and
-    match the daemon.
+    The schemas mirror the HTTP query API. On the way in, query is required.
+    On the way out, each tool requires what the API answers with: results for
+    a recall, and the status token for a write. The Go SDK validates every
+    tool result against its output schema before sending it. A client may
+    validate against the schemas too, so they must be present and match the
+    daemon.
     """
     tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
 
@@ -59,8 +60,8 @@ def test_tools_list_carries_both_tools_with_their_schemas(mcp):
 def test_recall_description_tells_the_model_anchors_alone_seed(mcp):
     """The recall tool says anchors alone are enough to search from.
 
-    An agent learns the anchor-only shape from nothing but the description it
-    is handed, so the phrase has to be there for it to ask "what do I know
+    An agent learns the anchor-only shape only from the description it is
+    given. So the phrase must be there for the agent to ask "what do I know
     about this topic" before it knows what to search for.
     """
     tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}

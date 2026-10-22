@@ -20,22 +20,26 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Vector search end to end: writes carrying embeddings, recall seeded by the
-vector index alone, parameter/dimension validation, and semantic search with a
-real HuggingFace model.
+"""Vector search, end to end.
 
-The API takes the embedding out-of-band: `vec:$v` in the query is a
-placeholder bound by name from the flat float list in `parameters["v"]`. The
+Covers writes carrying embeddings, recall seeded by the vector index alone,
+parameter and dimension validation, and semantic search with a real HuggingFace
+model.
+
+The API takes the embedding out-of-band. `vec:$v` in the query is a
+placeholder, bound by name to the flat float list in `parameters["v"]`. The
 `vector` fixture builds those lists at the suite-wide dimension (conftest
-VECTOR_DIM), which fixes the index dimension of the graphs written here.
+VECTOR_DIM). That fixes the index dimension of the graphs written here.
 """
 
 import pytest
 
 
 def test_remember_with_vector_is_accepted(query, vector):
-    """A remember carrying a vector parameter is accepted and exercises the
-    write path's vector-index insert (stream.Commit -> VectorIndex.Insert).
+    """A remember carrying a vector parameter is accepted.
+
+    It exercises the write path's vector-index insert (stream.Commit ->
+    VectorIndex.Insert).
     """
     status, body = query(
         "remember@6 'the parrot is turquoise' vec:$v topic:color",
@@ -46,13 +50,12 @@ def test_remember_with_vector_is_accepted(query, vector):
 
 
 def test_remember_vector_then_recall_by_vector(query, vector):
-    """The vector round trip: store a fact with an embedding, then recall it by
-    that embedding alone.
+    """A fact stored with an embedding is recalled by that embedding alone.
 
-    The recall term is a keyword that appears in no stored fact, so the text
-    index yields no seeds. The fact can only surface if the vector index seeds
-    the search from `vec:$v` — this is what proves vector search actually works
-    end to end, not just that the write was accepted.
+    This is the vector round trip. The recall term appears in no stored fact,
+    so the text index yields no seeds. The fact can only surface if the vector
+    index seeds the search from `vec:$v`. That proves vector search works end
+    to end, not only that the write was accepted.
     """
     graph = 6
     phrase = "the kingfisher is electric blue"
@@ -64,7 +67,6 @@ def test_remember_vector_then_recall_by_vector(query, vector):
     )
     assert status == 200, body.get("error")
 
-    # "zzznomatch" matches no fact's text, so only the vector can seed the recall.
     status, body = query(
         f"recall@{graph} zzznomatch vec:$v", parameters={"v": embedding}
     )
@@ -76,8 +78,9 @@ def test_remember_vector_then_recall_by_vector(query, vector):
 
 
 def test_recall_missing_vector_parameter_is_rejected(query):
-    """A query references `vec:$v` but supplies no matching parameter. Binding
-    fails at parse time, so the request is a 400 naming the missing placeholder,
+    """A query that names `vec:$v` without a matching parameter is a 400.
+
+    Binding fails at parse time. The 400 names the missing placeholder. It is
     not a 500 or a silent empty result.
     """
     status, body = query("recall@6 parrot vec:$v")
@@ -90,17 +93,18 @@ def test_recall_missing_vector_parameter_is_rejected(query):
 
 
 def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim):
-    """The first vector inserted into a graph fixes that graph's embedding
-    dimension; a later vector of a different size is a 400 naming the expected
-    and supplied dimensions — a client error, not a 500, so callers can tell
-    their bad input from a server fault.
+    """A write whose vector size differs from the graph's dimension is a 400.
 
-    Both writes go to graph 4, whose other writes (the forest-bound test in
-    stats_test.py and the dimension probes below) use the same suite-wide
-    dimension, so the first insert here establishes the dimension
-    deterministically even across reruns against a long-lived server.
+    The first vector inserted into a graph fixes its embedding dimension. A
+    later vector of another size is a 400 naming the expected and supplied
+    dimensions. It is a client error, not a 500, so callers can tell their bad
+    input from a server fault.
+
+    Both writes go to graph 4. Its other writes, the forest-bound test in
+    stats_test.py and the dimension probes below, use the same suite-wide
+    dimension. So the dimension is the same whichever write comes first, even
+    across reruns against a long-lived server.
     """
-    # Establish the graph's dimension.
     status, body = query(
         "remember@4 'establish the vector dimension' vec:$v topic:size",
         parameters={"v": vector()},
@@ -130,13 +134,12 @@ def test_remember_vector_incompatible_size_is_rejected(query, vector, vector_dim
     ],
 )
 def test_recall_vector_incompatible_size_is_rejected(query, vector, vector_dim, text):
-    """A recall whose vector differs in width from the graph's is a 400 naming
-    both dimensions, exactly as a write is.
+    """A recall vector of the wrong width is a 400 naming both dimensions.
 
-    Answering 200 from the text index alone would drop the semantic half of
-    the question without a word: "dimension" matches the fact written below,
-    so the first shape would come back with a plausible hit. A vector on its
-    own, and a vector beside an anchor, fail the same way.
+    It fails exactly as a write does. A 200 from the text index alone would
+    silently drop the semantic half of the question. "dimension" matches the
+    fact written below, so the first shape would come back with a plausible
+    hit. A vector on its own, and a vector beside an anchor, fail the same way.
 
     The write fixes graph 4 at the suite-wide dimension, idempotently, as in
     test_remember_vector_incompatible_size_is_rejected.
@@ -161,9 +164,10 @@ def test_recall_vector_incompatible_size_is_rejected(query, vector, vector_dim, 
 def test_explain_rejects_a_recall_vector_of_the_wrong_size(
     query, explain, vector, vector_dim
 ):
-    """/explain runs the same pipeline as /q, so a mismatched recall vector is
-    the same 400 there — an explanation of a ranking the vector never entered
-    would explain the wrong question.
+    """/explain answers a mismatched recall vector with the same 400 as /q.
+
+    Both run the same pipeline. An explanation of a ranking the vector never
+    entered would explain the wrong question.
     """
     status, body = query(
         "remember@4 'establish the vector dimension' vec:$v topic:size",
@@ -181,11 +185,11 @@ def test_explain_rejects_a_recall_vector_of_the_wrong_size(
 def test_recall_vector_on_a_graph_without_vectors_is_answered(
     query, vector, planets_graph, planet_facts
 ):
-    """A graph no vector was ever written to has no dimension to disagree
-    with, so a recall carrying one is answered, not rejected: the vector seeds
-    nothing, and the text match comes back as it would without it.
+    """A recall vector on a graph with no vectors is answered, not rejected.
 
-    The planet graph is never given a vector (see the graph map in
+    A graph no vector was ever written to has no dimension to disagree with.
+    The vector seeds nothing, and the text match comes back as it would without
+    it. The planet graph never gets a vector (see the graph map in
     conftest.py), so any width stands in for a vector from another model.
     """
     keyword, fact = next(iter(planet_facts.items()))
@@ -201,16 +205,17 @@ def test_recall_vector_on_a_graph_without_vectors_is_answered(
 def test_vector_search_with_real_embeddings(query, embedding_docs):
     """End-to-end semantic search with a real HuggingFace embedding model.
 
-    Embeds a few documents with a small model loaded through the vanilla
-    transformers API (AutoTokenizer + AutoModel, mean-pooled), stores each with
-    its vector, then recalls with the embedding of a semantically related phrase
-    and checks the closest document comes back — and that the scores the API
-    returns are floating-point numbers.
+    The test embeds a few documents with a small model, loaded through the
+    plain transformers API (AutoTokenizer + AutoModel, mean-pooled). It stores
+    each document with its vector. Then it recalls with the embedding of a
+    phrase related in meaning. The closest document must come back, and the
+    API's scores must be floating-point numbers.
 
-    Skippable three ways: the `embeddings` marker (`pytest -m "not embeddings"`),
-    importorskip when transformers/torch are not installed, and a skip when the
-    model itself cannot be loaded — e.g. an offline CI container that cannot
-    download it from the HuggingFace Hub.
+    It can be skipped three ways. The `embeddings` marker deselects it
+    (`pytest -m "not embeddings"`). importorskip skips it when transformers or
+    torch is not installed. It also skips when the model cannot be loaded, for
+    example in an offline CI container that cannot download it from the
+    HuggingFace Hub.
     """
     transformers = pytest.importorskip("transformers")
     torch = pytest.importorskip("torch")
@@ -221,16 +226,16 @@ def test_vector_search_with_real_embeddings(query, embedding_docs):
         model = transformers.AutoModel.from_pretrained(model_id)
     except OSError as exc:
         # transformers raises OSError ("Can't load the model for ...") when the
-        # weights are not available: no network, no cache, or a blocked Hub. That
-        # is an environment limitation, not a test failure, so skip.
+        # weights are unavailable: no network, no cache, or a blocked Hub. That
+        # is a limit of the environment, not a test failure, so skip.
         pytest.skip(f"embedding model unavailable: {exc}")
     model.eval()
 
     def embed(text: str) -> list[float]:
-        # Vanilla transformers gives per-token hidden states; a sentence
-        # embedding is the attention-masked mean over tokens, L2-normalized —
-        # the standard pooling for this model. .tolist() yields a flat list of
-        # Python floats, the shape the API binds to vec:$v.
+        # Plain transformers gives per-token hidden states. A sentence
+        # embedding is their attention-masked mean, L2-normalised, the standard
+        # pooling for this model. .tolist() yields a flat list of Python
+        # floats, the shape the API binds to vec:$v.
         enc = tokenizer(text, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
             hidden = model(**enc).last_hidden_state
@@ -248,8 +253,8 @@ def test_vector_search_with_real_embeddings(query, embedding_docs):
         assert status == 200, body.get("error")
 
     # A phrase close in meaning to the cat document, sharing none of its words.
-    # The recall keyword matches no stored text and the recall names no anchor,
-    # so only the vector index decides the result.
+    # The recall keyword matches no stored text, and the recall names no
+    # anchor. So only the vector index decides the result.
     query_vec = embed("a sleepy kitten dozing in the afternoon sun")
     status, body = query(
         f"recall@{graph} zzznomatch vec:$v depth:0",
@@ -264,10 +269,10 @@ def test_vector_search_with_real_embeddings(query, embedding_docs):
         f"nearest document should be the cat one; got {hits[0]['value']!r}"
     )
 
-    # Outputs are floats. Every score is a JSON number, and the ranking produces
-    # genuine fractional scores. (JSON renders an exact 1.0 as `1`, which decodes
-    # to a Python int, so the top score may be int while lower ranks are float —
-    # assert both that all are numeric and that real floats appear.)
+    # Every score is a JSON number, and the ranking produces fractional scores.
+    # JSON renders an exact 1.0 as `1`, which decodes to a Python int. So the
+    # top score may be an int while lower ranks are floats. The test asserts
+    # that all scores are numeric and that real floats appear.
     for hit in hits:
         assert isinstance(hit["score"], (int, float)), (
             f"score not numeric: {hit['score']!r}"

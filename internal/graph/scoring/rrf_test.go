@@ -28,10 +28,10 @@ import (
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 )
 
-// TestRRFConsensusBeatsASingleFavourite is the fusion property the scorer
-// exists for: a candidate two sources place at rank 3 outranks one a single
-// source places at rank 1 (2/63 > 1/61). k = 60 is what buys this: a bare
-// reciprocal rank would hand the single rank-1 sighting the win.
+// TestRRFConsensusBeatsASingleFavourite pins the fusion property the scorer
+// exists for. A candidate two sources place at rank 3 outranks one a single
+// source places at rank 1 (2/63 > 1/61). k = 60 buys this. A bare reciprocal
+// rank would hand the single rank-1 sighting the win.
 func TestRRFConsensusBeatsASingleFavourite(t *testing.T) {
 	scorer := scoring.NewRRFScorer[uint64, float64](60)
 
@@ -67,10 +67,10 @@ func rrfScoresExactly[P float32 | float64](t *testing.T) {
 			P(1) / P(60),
 		},
 		{
-			// Score 999 changes nothing: rank is the only input, and
-			// weighing magnitudes would reintroduce the scale calibration
-			// RRF exists to avoid.
-			"score and hop are deliberately ignored",
+			// Score 999 changes nothing. Rank is the only input, and weighing
+			// magnitudes would bring back the scale calibration RRF exists to
+			// avoid.
+			"score is deliberately ignored",
 			60,
 			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcGraph, Score: 999, Rank: 0}},
 			P(1) / P(60),

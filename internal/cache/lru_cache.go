@@ -27,22 +27,22 @@ import (
 	"sync"
 )
 
-// LRUCache is a [Cache] that evicts the least recently used entry, where both
-// Get and Put count as a use. A map gives constant-time lookup and a list
-// keeps the recency order, so every operation is O(1). It is safe for
-// concurrent use. [NewLRUCache] builds one and fixes its capacity.
+// LRUCache is a [Cache] that evicts the least recently used entry. Both Get and
+// Put count as a use. A map gives constant-time lookup and a list keeps the
+// recency order, so every operation is O(1). It is safe for concurrent use.
+// [NewLRUCache] builds one and fixes its capacity.
 type LRUCache[K comparable, T any] struct {
 	capacity int
 	items    map[K]*list.Element
 	order    *list.List
-	// PERF: Len is the only method that takes the read lock (Get reorders the
-	// list, so it takes the write lock). Unless Len is called often, a
-	// sync.Mutex would be cheaper than this RWMutex.
+	// PERF: Only Len takes the read lock. Get reorders the list, so it takes
+	// the write lock. Unless Len is called often, a sync.Mutex would be cheaper
+	// than this RWMutex.
 	mu sync.RWMutex
 }
 
-// NewLRUCache returns a new LRU cache with the given capacity.
-// Capacity must be > 0; it returns ErrCacheCapacity otherwise.
+// NewLRUCache returns an LRU cache with the given capacity. Capacity must be
+// positive, or it returns ErrCacheCapacity.
 func NewLRUCache[K comparable, T any](capacity int) (*LRUCache[K, T], error) {
 	if capacity <= 0 {
 		return nil, ErrCacheCapacity
@@ -54,8 +54,7 @@ func NewLRUCache[K comparable, T any](capacity int) (*LRUCache[K, T], error) {
 	}, nil
 }
 
-// Get returns the value for key and true if present, or the zero value
-// and false otherwise. Get marks the entry as most recently used.
+// Get implements [Cache]. It marks the entry as most recently used.
 func (c *LRUCache[K, T]) Get(key K) (T, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -70,27 +69,24 @@ func (c *LRUCache[K, T]) Get(key K) (T, bool) {
 	return elem.Value.(*Entry[K, T]).Value, true
 }
 
-// Put inserts or updates the value stored under key and marks it most
-// recently used. A new key beyond the capacity evicts the least recently used
-// entry.
+// Put implements [Cache]. It marks the entry as most recently used. A new key
+// past the capacity evicts the least recently used entry.
 func (c *LRUCache[K, T]) Put(key K, value T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// update path (key already exists)
 	if elem, ok := c.items[key]; ok {
 		elem.Value.(*Entry[K, T]).Value = value
 		c.order.MoveToFront(elem)
 		return
 	}
 
-	// insert path (new key)
 	e := &Entry[K, T]{Key: key, Value: value}
 	elem := c.order.PushFront(e)
 	c.items[key] = elem
 
 	// Evict if over capacity
-	if c.order.Len() > c.Capacity() {
+	if c.order.Len() > c.capacity {
 		oldest := c.order.Back()
 		if oldest != nil {
 			c.order.Remove(oldest)
@@ -99,8 +95,7 @@ func (c *LRUCache[K, T]) Put(key K, value T) {
 	}
 }
 
-// Delete removes key from the cache. Returns true if the key was
-// present, false if it wasn't.
+// Delete removes key from the cache. It reports whether the key was present.
 func (c *LRUCache[K, T]) Delete(key K) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -115,17 +110,18 @@ func (c *LRUCache[K, T]) Delete(key K) bool {
 	return true
 }
 
-// Len returns the current number of entries in the cache.
+// Len returns the number of entries in the cache.
 func (c *LRUCache[K, T]) Len() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.order.Len()
 }
 
-// Capacity returns the maximum number of entries the cache will hold. The
-// capacity is fixed at construction, so reading it takes no lock, and Put and
-// Clear call it while holding theirs.
+// Capacity implements [Cache]. Resize writes the capacity under the lock, so
+// reading it takes the read lock, as Len does.
 func (c *LRUCache[K, T]) Capacity() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.capacity
 }
 
@@ -134,6 +130,45 @@ func (c *LRUCache[K, T]) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.items = make(map[K]*list.Element, c.Capacity())
+	c.items = make(map[K]*list.Element, c.capacity)
 	c.order = list.New()
+}
+
+// Resize sets the cache's capacity, evicting least recently used entries until
+// the cache fits, and returns how many it evicted. For a capacity that is not
+// strictly positive it returns ErrCacheCapacity and leaves the cache unchanged.
+func (c *LRUCache[K, T]) Resize(capacity int) (int, error) {
+
+	if capacity <= 0 {
+		return 0, ErrCacheCapacity
+	}
+	entries := 0
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	switch {
+	// Growing: rebuild the map with the new capacity as its size hint. Not
+	// required for correctness, but it saves later Puts from growing the map.
+	case c.capacity < capacity:
+		n := make(map[K]*list.Element, capacity)
+		for k, v := range c.items {
+			n[k] = v
+		}
+		c.items = n
+	// Shrinking: evict least recently used entries down to the new capacity.
+	case c.capacity > capacity:
+		for c.order.Len() > capacity {
+			oldest := c.order.Back()
+			if oldest == nil {
+				break
+			}
+			c.order.Remove(oldest)
+			delete(c.items, oldest.Value.(*Entry[K, T]).Key)
+			entries++
+		}
+	}
+
+	c.capacity = capacity
+	return entries, nil
 }

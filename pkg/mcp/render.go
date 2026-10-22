@@ -28,19 +28,19 @@ import (
 )
 
 // The renderers produce the model-facing text that rides beside the
-// structured payload, in the voice of the Python integrations: one line per
-// hit, best first, relevance to three decimals. An empty result says so in
-// words, since an empty string reads as a failure to a model, and warnings
-// follow one per line: the query ran, and the model needs them to fix its
+// structured payload. They use the voice of the Python integrations: one line
+// per hit, best first, relevance to three decimals. An empty result says so
+// in words, since an empty string reads as a failure to a model. Warnings
+// follow, one per line. The query ran, and the model needs them to fix its
 // next one.
 
-// renderRecall renders a recall response for the model. graphEmpty separates
-// the two ways a recall comes back with nothing, which the daemon distinguishes
-// by status: a graph that holds nothing at all, and a populated graph none of
-// whose facts matched. The model needs them apart — the first is answered by
-// remembering something, the second by asking differently — and a single "no
-// match" line sends it re-phrasing a query against a graph that was never
-// written to.
+// renderRecall renders a recall response for the model. A recall can come
+// back with nothing in two ways, and the daemon tells them apart by status.
+// Either the graph holds nothing at all, or a populated graph has no matching
+// fact. graphEmpty marks the first case. The model must tell them apart. The
+// first calls for remembering something, the second for asking differently.
+// A single "no match" line would send the model rephrasing a query against a
+// graph that was never written to.
 func renderRecall(out RecallOutput, graphEmpty bool) string {
 	var lines []string
 	if len(out.Results.Hits) == 0 {
@@ -60,8 +60,8 @@ func renderRecall(out RecallOutput, graphEmpty bool) string {
 }
 
 // renderRemember confirms a write for the model. The daemon acknowledges a
-// write with a status token rather than a payload, so the confirmation is
-// fixed text; only warnings vary.
+// write with a status token rather than a payload. So the confirmation is
+// fixed text, and only warnings vary.
 func renderRemember(out RememberOutput) string {
 	lines := []string{"Remembered."}
 	for _, warning := range out.Warnings {

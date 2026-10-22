@@ -29,9 +29,9 @@ import (
 )
 
 // TestSourceStringNamesEveryStage pins the names the explain payload
-// serializes: a client keys its breakdown on these strings and never sees the
-// Go constants, so a renamed or unnamed source is a wire change, and a stage
-// added without a name would reach the client as "unknown".
+// serialises. A client keys its breakdown on these strings and never sees the
+// Go constants. So a renamed or unnamed source is a wire change. A stage added
+// without a name would reach the client as "unknown".
 func TestSourceStringNamesEveryStage(t *testing.T) {
 	cases := map[string]scoring.Source{
 		"text":    scoring.SrcText,

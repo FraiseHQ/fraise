@@ -30,5 +30,5 @@ services:
         condition: service_healthy
     environment:
       FRAISE_URL: http://fraise:9876
-      # Taken from your shell; the run fails fast if it is unset.
+      # Taken from your shell. The run fails fast if it is unset.
       OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY in your environment}

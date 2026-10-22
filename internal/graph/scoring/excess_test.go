@@ -39,9 +39,9 @@ func excessContributions(m float64, graphs ...scoring.Contribution[uint64, float
 	return append(out, graphs...)
 }
 
-// TestExcessScorerFloor pins the BM25 floor at the fold: a graph-free list
-// folds to exactly its seed mass, and a graph observation can only add, since
-// the hinge clips a negative surplus to zero instead of subtracting it.
+// TestExcessScorerFloor pins the BM25 floor at the fold. A graph-free list
+// folds to exactly its seed mass. A graph observation can only add, since the
+// hinge clips a negative surplus to zero instead of subtracting it.
 func TestExcessScorerFloor(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 
@@ -56,11 +56,10 @@ func TestExcessScorerFloor(t *testing.T) {
 }
 
 // TestExcessScorerHubSilenceAndPreemption pins the hinge arithmetic behind hub
-// silence and earned preemption. With background 2, a degree-6 anchor
-// observing mass 14 owes 12 to the background and 2 to the candidate's own
-// mass (self-exclusion), so it transmits nothing. Shrink its degree to 3 and
-// the same observation holds surplus 6, or 2 per edge, of which α² = 1/4
-// arrives.
+// silence and earned preemption. With background 2, a degree-6 anchor observing
+// mass 14 owes 12 to the background. It owes 2 to the candidate's own mass
+// (self-exclusion), so it transmits nothing. At degree 3, the same observation
+// holds surplus 6, or 2 per edge, and α² = 1/4 of that arrives.
 func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 
@@ -75,17 +74,17 @@ func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	}
 
 	// Earned preemption: a pure non-seed funded by a rich anchor outranks a
-	// weak seed of mass 1. Transmission is per-edge, so the anchor must clear
-	// α²·(M − d·ρ₀)/d > 1: at degree 3 and background 2, mass 20 funds 7/6.
+	// weak seed of mass 1. Transmission is per edge, so the anchor must clear
+	// α²·(M − d·ρ₀)/d > 1. At degree 3 and background 2, mass 20 funds 7/6.
 	nonSeed := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcGraph, Score: 20, Via: 1, Degree: 3, Count: 2}}
 	if got := scorer.Observe(scoring.Observation[uint64, float64]{Background: 2}).Score(nonSeed); got <= 1 {
 		t.Errorf("funded non-seed fold = %v, want it to preempt a weak seed's mass 1", got)
 	}
 }
 
-// TestExcessScorerScaleInvariance pins scale invariance at the fold: scaling
+// TestExcessScorerScaleInvariance pins scale invariance at the fold. Scaling
 // the masses and the background by the same power of two scales the score
-// exactly, since nothing in the fold depends on an absolute scale.
+// exactly. Nothing in the fold depends on an absolute scale.
 func TestExcessScorerScaleInvariance(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 	list := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 3, Count: 2})
@@ -101,10 +100,10 @@ func TestExcessScorerScaleInvariance(t *testing.T) {
 	}
 }
 
-// TestExcessScorerPurity pins the Scorer contract's purity clause: folding
-// the same list twice yields the identical result and leaves the list
-// unmutated, and binding a background never mutates the shared instance,
-// which Search shares across concurrent queries.
+// TestExcessScorerPurity pins the purity clause of the Scorer contract. Folding
+// the same list twice gives the same result and leaves the list unchanged.
+// Binding a background never mutates the shared instance, which Search shares
+// across concurrent queries.
 func TestExcessScorerPurity(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 	list := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 3, Count: 2})
@@ -186,7 +185,7 @@ func TestExcessScorerAnchorSightingsAreSeedMass(t *testing.T) {
 	}
 
 	// Mass 2, background 0: an anchor observing 6 over one edge holds surplus
-	// 6 − 2 − 1·0 = 4, of which α² = 1/4 arrives.
+	// 6 − 2 − 1·0 = 4. α² = 1/4 of it arrives.
 	funded := append(append([]scoring.Contribution[uint64, float64]{}, two...), scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 6, Via: 3, Degree: 1, Count: 1})
 	if got, want := scorer.Score(funded), 2+0.25*(6-2-1*0.0)/1; got != want {
 		t.Errorf("funded fold = %v, want m + α²·(M − m − d·ρ₀)/d = %v", got, want)

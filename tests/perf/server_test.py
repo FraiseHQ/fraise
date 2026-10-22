@@ -36,9 +36,9 @@ import pytest
 def test_retrieval_does_not_drop(comparison, fail_regressed, unit):
     """No retrieval metric drops by more than 0.001, over all questions or in any category.
 
-    The metrics are exact, the same server ranking the same facts the same
-    way whatever machine runs it, so one run decides it and 0.001 is not a
-    noise margin: it is the smallest drop worth a look.
+    The metrics are exact. The same server ranks the same facts the same way
+    on any machine. So one run decides it, and 0.001 is not a noise margin. It
+    is the smallest drop worth a look.
     """
     dropped = [
         row for row in comparison if row.unit == unit and row.base - row.head > 0.001
@@ -52,8 +52,8 @@ def test_http_slowdowns_are_reported(comparison, warn_slower):
     """A significant rise of 10% or more in a latency percentile is reported, without failing.
 
     The baseline was measured on another runner, so latency is shown for a
-    reviewer to judge rather than gated. Each run fills a server and holds it
-    under load for twenty seconds, which is why this runs nightly only.
+    reviewer to judge, not gated. Each run fills a server and holds it under
+    load for twenty seconds, so this gate runs nightly only.
     """
     for row in comparison:
         if (

@@ -20,26 +20,31 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Opinionated ranking properties: the promises a recall's scores must keep,
-whatever scorer is in charge. Each test states an opinion about what good
-memory retrieval looks like — better matches outrank worse ones, the fact you
-asked about outranks the ones merely connected to it, an anchor speaks only
-when its members matched better than its size predicts — and pins the fused
-order, not the plumbing. If a future scorer breaks one of these, that is a
-product decision to make consciously, not a regression to discover in an
-agent's answers.
+"""Opinionated ranking properties: the promises a recall's scores must keep.
 
-(The one promise not pinned here is "recent memories outrank older ones" at
-equal relevance: remember stamps time.Now(), so an HTTP test cannot create the
-weeks-old fact needed to observe decay. That property is pinned by the unit
-suite's decay tests.)
+They hold whatever scorer is in charge. Each test states an opinion about good
+memory retrieval, and pins the fused order, not the plumbing:
+
+- Better matches outrank worse ones.
+- The fact you asked about outranks the facts merely connected to it.
+- An anchor speaks only when its members matched better than its size
+  predicts.
+
+If a future scorer breaks one of these, that is a product decision to make
+consciously. It is not a regression to discover in an agent's answers.
+
+One promise is not pinned here: at equal relevance, recent memories outrank
+older ones. remember stamps time.Now(), so an HTTP test cannot create the
+weeks-old fact needed to observe decay. The unit suite's decay tests pin that
+property.
 """
 
 
 def test_matching_more_of_the_query_outranks_matching_less(query, ranked_hits):
-    """A fact matching both query terms must strictly outrank a fact matching
-    one — relevance is the first-order signal, and coverage of the query is
-    the text index's measure of it.
+    """A fact matching both query terms must strictly outrank a one-term match.
+
+    Relevance is the first-order signal, and query coverage is how the text
+    index measures it.
     """
     graph = 0
     both = "the monsoon flooded the delta"

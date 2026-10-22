@@ -24,11 +24,11 @@ package scoring
 
 // DefaultRRFK is the dampening constant db.Start passes when the RRF scorer is
 // configured. 60 is the empirical standard from Cormack, Clarke & Büttcher
-// (SIGIR 2009), where it beat every individual ranker and Condorcet fusion
-// across TREC collections. It is a constant, not configuration: RRF exists
-// for comparison runs against the excess methodology, and a comparison
-// baseline must not move. NewRRFScorer still takes k, a parameter of the
-// algorithm that the tests exercise.
+// (SIGIR 2009). There it beat every individual ranker and Condorcet fusion
+// across TREC collections. It is a constant, not configuration. RRF exists for
+// comparison runs against the excess methodology, and a comparison baseline
+// must not move. NewRRFScorer still takes k, a parameter of the algorithm that
+// the tests exercise.
 const DefaultRRFK = 60
 
 // RRFScorer fuses a candidate's contributions by reciprocal rank,
@@ -40,12 +40,12 @@ const DefaultRRFK = 60
 // alternative fold for comparison runs; the default is the
 // InformationScorer.
 //
-// The consensus property this buys: a candidate two sources place at Rank 3
-// outranks one a single source places at Rank 0 (2/(k+3) > 1/k for k = 60),
-// so agreement between text and vector beats either alone.
+// It rewards consensus. A candidate two sources place at Rank 3 outranks one a
+// single source places at Rank 0, since 2/(k+3) > 1/k for k = 60. So agreement
+// between text and vector beats either alone.
 type RRFScorer[K comparable, P float32 | float64] struct {
 	// k dampens the reciprocal so rank differences near the top do not
-	// dominate: at k=60 ranks 0 and 1 differ by ~1.6%, not the 50% a bare
+	// dominate. At k=60, ranks 0 and 1 differ by ~1.6%, not the 50% a bare
 	// reciprocal rank would give. The wiring always passes DefaultRRFK.
 	k int
 }
@@ -61,7 +61,8 @@ func (s *RRFScorer[K, P]) Observe(Observation[K, P]) Scorer[K, P] {
 	return s
 }
 
-// Score sums 1/(k+Rank) over the contributions, in list order.
+// Score implements [Scorer]. It sums 1/(k+Rank) over the contributions, in
+// list order.
 func (s *RRFScorer[K, P]) Score(contributions []Contribution[K, P]) P {
 	var total P
 	for _, c := range contributions {

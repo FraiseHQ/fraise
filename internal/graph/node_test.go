@@ -29,18 +29,18 @@ import (
 	"github.com/FraiseHQ/fraise/internal/graph"
 )
 
-// fakeHasher returns the material it was handed instead of hashing it, so a test
-// can pin the exact bytes a node keys itself by rather than an opaque number.
+// fakeHasher returns the material it is handed instead of hashing it. A test
+// can then pin the exact bytes a node keys itself by, not an opaque number.
 type fakeHasher struct{}
 
 func (fakeHasher) Hash(s string) string { return "H(" + s + ")" }
 func (fakeHasher) Seed() uint64         { return 0 }
 
-// TestNodeKeyMaterialIsTypeTagged pins the key material of every node kind. Each
-// hashes its own type tag ahead of its value, which is what makes identity
-// (type, value); the tags differ in their first byte, so no two namespaces can
-// produce the same material. These strings are the contract — editing one moves
-// every key of that type, and this test is where that shows up.
+// TestNodeKeyMaterialIsTypeTagged pins the key material of every node kind.
+// Each hashes its type tag ahead of its value, which makes identity (type,
+// value). The tags differ in their first byte, so no two namespaces can
+// produce the same material. These strings are the contract. Editing one
+// moves every key of that type, and this test is where that shows up.
 func TestNodeKeyMaterialIsTypeTagged(t *testing.T) {
 	fact := graph.Fact[string]{NodeAttributes: graph.NodeAttributes{Value: "billing"}}
 	topic := graph.Topic[string]{NodeAttributes: graph.NodeAttributes{Value: "billing"}}
@@ -66,10 +66,11 @@ func TestNodeKeyMaterialIsTypeTagged(t *testing.T) {
 	}
 }
 
-// TestNodeKeysDistinguishTypesOfTheSameText is the contract the tags exist for,
-// checked through the production hasher: five nodes that all read "billing" are
-// five distinct keys. If two shared a key, the second node of the pair would
-// never be stored, and the edge between them would close on itself.
+// TestNodeKeysDistinguishTypesOfTheSameText checks the contract the tags
+// exist for, through the production hasher. Five nodes that all read
+// "billing" have five distinct keys. If two shared a key, the second node of
+// the pair would never be stored, and the edge between them would close on
+// itself.
 func TestNodeKeysDistinguishTypesOfTheSameText(t *testing.T) {
 	g := newGraph()
 	now := time.Now()

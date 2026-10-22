@@ -20,8 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package scoring folds the observations a search collects for a candidate
-// into its relevance score.
+// Package scoring folds the observations a search collects for a candidate into
+// its relevance score.
 //
 // Collection records each observation as a [Contribution], tagged with the
 // [Source] that made it (text, vector, graph traversal, named anchor or

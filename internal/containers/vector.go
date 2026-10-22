@@ -31,8 +31,8 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
-// Vector carries K so it can hash itself with the same Hasher[K, string] its
-// enclosing query uses, mirroring the Recall/Remember pattern.
+// Vector carries K so it can hash itself with the same Hasher[K, string] as
+// its enclosing query, the way Recall and Remember do.
 type Vector[K comparable, P float32 | float64] struct {
 	Data []P
 }
@@ -42,15 +42,15 @@ func NewVector[K comparable, P float32 | float64](data []P) Vector[K, P] {
 	return Vector[K, P]{Data: data}
 }
 
-// Dim returns the number of coordinates, the dimensionality the vector index
-// checks every insert and search against.
+// Dim returns the number of coordinates. The vector index checks every insert
+// and search against it.
 func (v Vector[K, P]) Dim() int {
 	return len(v.Data)
 }
 
-// Empty reports whether the vector has no coordinates, nil and zero-length
-// Data alike. A query given no vector carries the zero Vector, so Empty is how
-// recall and remember tell that no vector search was asked for.
+// Empty reports whether the vector has no coordinates, for nil and zero-length
+// Data alike. A query given no vector carries the zero Vector, so recall and
+// remember use Empty to tell that no vector search was asked for.
 func (v Vector[K, P]) Empty() bool {
 	if v.Data == nil {
 		return true
@@ -71,17 +71,21 @@ func (v Vector[K, P]) Equal(other Vector[K, P]) bool {
 	return true
 }
 
-// Distance returns the Euclidean distance from v to other, the metric the
-// vector index ranks its neighbours by. It is defined on the vector itself so
-// the index can re-rank its candidates straight from the live vectors it
-// holds, without boxing each one into a tree point first.
-func (v Vector[K, P]) Distance(other Vector[K, P]) P {
+// Distance returns the Euclidean distance from v to other. The vector index
+// ranks its neighbours by it. It is defined on the vector itself, so the index
+// can re-rank candidates straight from its live vectors, without boxing each
+// one into a tree point first. Vectors of different dimensions have no
+// distance, and Distance returns [ErrDimMismatch].
+func (v Vector[K, P]) Distance(other Vector[K, P]) (P, error) {
+	if len(v.Data) != len(other.Data) {
+		return 0, fmt.Errorf("%w: %d and %d", ErrDimMismatch, len(v.Data), len(other.Data))
+	}
 	var sum P
 	for i, x := range v.Data {
 		diff := x - other.Data[i]
 		sum += diff * diff
 	}
-	return P(math.Sqrt(float64(sum)))
+	return P(math.Sqrt(float64(sum))), nil
 }
 
 // Hash keys the vector through h and renders the key for folding into an

@@ -34,8 +34,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// ConfigSet is the server configuration: one field per section of the TOML
-// file, and the flag set whose flags write to the same fields.
+// ConfigSet is the server configuration. It holds one field per section of the
+// TOML file, and the flag set whose flags write to the same fields.
 type ConfigSet struct {
 	*flag.FlagSet `json:"-"`
 
@@ -49,179 +49,191 @@ type ConfigSet struct {
 	configFile string
 }
 
-// SchedulerConfig is the scheduler section: how many workers run queries and
-// how much queued work the scheduler accepts before it turns clients away.
+// SchedulerConfig is the scheduler section. It sets how many workers run
+// queries, and how much queued work the scheduler accepts before it turns
+// clients away.
 type SchedulerConfig struct {
-	// Number of worker goroutines executing reads and writes.
+	// Workers is the number of worker goroutines that run reads and writes.
 	Workers int `toml:"workers"`
 
-	// Capacity of the scheduler's stream queue.
+	// BufferSize is the capacity of the scheduler's stream queue.
 	BufferSize uint `toml:"buffer-size"`
 
-	// Maximum time a submit waits for space in a full queue before the
-	// request is rejected so clients can back off.
+	// EnqueueTimeout is the maximum time a submit waits for space in a full
+	// queue. After it, the request is rejected so clients can back off.
 	EnqueueTimeout time.Duration `toml:"enqueue-timeout"`
 }
 
-// ServerConfig is the server section: the port the HTTP API listens on, and
-// the timeouts and body cap that bound what a single client can hold.
+// ServerConfig is the server section. It holds the port the HTTP API listens
+// on, and the timeouts and body cap that bound what one client can hold.
 type ServerConfig struct {
 	Port int `toml:"port"`
 
-	// Maximum time to read an entire request (headers + body).
+	// ReadTimeout is the maximum time to read a whole request, body included.
 	ReadTimeout time.Duration `toml:"read-timeout"`
 
-	// Maximum time to read request headers alone (Slowloris protection).
+	// ReadHeaderTimeout is the maximum time to read request headers alone. It
+	// protects against Slowloris attacks.
 	ReadHeaderTimeout time.Duration `toml:"read-header-timeout"`
 
-	// Maximum time to write a response.
+	// WriteTimeout is the maximum time to write a response.
 	WriteTimeout time.Duration `toml:"write-timeout"`
 
-	// Maximum time a kept-alive connection may sit idle between requests.
+	// IdleTimeout is the maximum time a kept-alive connection may sit idle
+	// between requests.
 	IdleTimeout time.Duration `toml:"idle-timeout"`
 
-	// How long a graceful shutdown waits for in-flight requests to drain.
+	// ShutdownGrace is how long a graceful shutdown waits for in-flight
+	// requests to drain.
 	ShutdownGrace time.Duration `toml:"shutdown-grace"`
 
-	// Maximum request body size, in bytes, accepted by the query endpoints.
+	// MaxBodyBytes is the maximum request body size, in bytes, that the query
+	// endpoints accept.
 	MaxBodyBytes int64 `toml:"max-body-bytes"`
 }
 
-// LogConfig is the log section: the minimum severity, the line format and
-// whether lines carry a timestamp.
+// LogConfig is the log section. It sets the minimum severity, the line format
+// and whether lines carry a timestamp.
 type LogConfig struct {
-	// LOG LEVEL: DEBUG, INFO, WARN, ERROR (default = INFO)
+	// Level is the minimum severity logged: DEBUG, INFO, WARN or ERROR. The
+	// default is INFO.
 	Level string `toml:"level"`
 
-	// LOG FORMAT: text or json (default = text)
-	// Logs go to stdout; file logging is not supported.
+	// Format is the line format, text or json. The default is text. Logs go
+	// to stdout, and file logging is not supported.
 	Format string `toml:"format"`
 
-	// Omit the timestamp from every line (default = false). For a supervisor
-	// that stamps what it collects — journald, docker — a second time is noise.
+	// DisableTimestamp omits the timestamp from every line. The default is
+	// false. A supervisor such as journald or docker stamps what it collects,
+	// so a second timestamp is noise.
 	DisableTimestamp bool `toml:"disable-timestamp"`
 }
 
-// EngineConfig is the engine section: the recency decay applied to fact
-// scores and the size of the query plan cache.
+// EngineConfig is the engine section. It sets the recency decay applied to
+// fact scores and the size of the query plan cache.
 type EngineConfig struct {
-	// Half life for time decay (used to score facts)
+	// Halflife is the half-life of the time decay applied to fact scores.
 	Halflife time.Duration `toml:"half-life"`
 
-	// Query cache size
+	// CacheCapacity is how many plans the query plan cache holds.
 	CacheCapacity int `toml:"cache-capacity"`
 }
 
-// DBConfig is the db section: the store's precision and graph count, the
-// defaults and ceilings a recall is held to, and the retrieval algorithms,
-// each chosen by name in a table nested under db.
+// DBConfig is the db section. It holds the store's precision and graph count,
+// and the defaults and ceilings a recall is held to. It also names the
+// retrieval algorithms, each in a table nested under db.
 type DBConfig struct {
-	// Floating-point precision for embeddings and scores: "float32" or
-	// "float64". Selects which generic instantiation of the server is built at
-	// startup (see cmd/server).
+	// Precision is the floating-point precision of embeddings and scores,
+	// float32 or float64. It selects which generic instantiation of the
+	// server is built at startup (see cmd/server).
 	Precision string `toml:"precision"`
 
-	// How many independent graphs the store allocates (selectors 0..n-1)
+	// NumGraphs is how many independent graphs the store allocates. Their
+	// selectors run from 0 to NumGraphs-1.
 	NumGraphs int `toml:"num-graphs"`
 
-	// Top a recall uses when it has no top clause.
+	// DefaultTop is the top a recall uses when it has no top clause.
 	DefaultTop int `toml:"default-top"`
 
-	// Depth a recall uses when it has no depth clause.
+	// DefaultDepth is the depth a recall uses when it has no depth clause.
 	DefaultDepth int `toml:"default-depth"`
 
-	// Ceiling on a recall's top clause (rejected past this at parse time).
+	// MaxTop is the ceiling on a recall's top clause. A larger top is
+	// rejected at parse time.
 	MaxTop int `toml:"max-top"`
 
-	// Ceiling on a recall's depth clause (rejected past this at parse time).
+	// MaxDepth is the ceiling on a recall's depth clause. A larger depth is
+	// rejected at parse time.
 	MaxDepth int `toml:"max-depth"`
 
-	// Ceiling on the length of a bound vector parameter (rejected past this at
-	// parse time).
+	// MaxVectorDimension is the ceiling on the length of a bound vector
+	// parameter. A longer vector is rejected at parse time.
 	MaxVectorDimension int `toml:"max-vector-dimension"`
 
-	// The *minimum* candidate budget pulled from each source (text and vector
-	// index). Search widens it to max(seed-size, top), so a recall asking for
-	// more results than this is never starved of candidates.
+	// SeedSize is the minimum candidate budget pulled from each source, the
+	// text and the vector index. Search widens it to max(seed-size, top), so a
+	// recall that asks for more results is never starved of candidates.
 	SeedSize int `toml:"seed-size"`
 
-	// Aggregate is how a recall spends its top slots across the contexts its
+	// Aggregate is how a recall spends its top slots across the facets its
 	// ranking spans (see [Aggregate]).
 	Aggregate Aggregate `toml:"aggregate"`
 
-	// database hashing function
+	// HashingFunction is the hash that derives node keys from values.
 	HashingFunction HashingFunction `toml:"hashing-function"`
 
-	// graph search traversal algorithm
+	// SearchAlgorithm is the graph traversal a recall runs.
 	SearchAlgorithm SearchAlgorithm `toml:"search-algorithm"`
 
-	// relevance fold (excess, rrf)
+	// ScoringAlgorithm is the relevance fold, excess or rrf.
 	ScoringAlgorithm ScoringAlgorithm `toml:"scoring-algorithm"`
 
-	// text-index relevance model (bm25, matchcount)
+	// RelevanceModel is the text index's relevance model, bm25 or matchcount.
 	RelevanceModel RelevanceModel `toml:"relevance-model"`
 
 	VectorSearch VectorSearch `toml:"vector-search"`
 }
 
-// HashingFunction is the db.hashing-function table: the hash that derives node
-// keys from values, one of [HashingFunctions], and the seed it runs with.
+// HashingFunction is the db.hashing-function table. It names the hash that
+// derives node keys from values, one of [HashingFunctions], and the seed it
+// runs with.
 type HashingFunction struct {
-	// (xxhash, t1ha)
+	// Name is the hash, xxhash or t1ha.
 	Name string `toml:"name"`
 
-	// hashing function seed
+	// Seed is the seed the hash runs with.
 	Seed uint64 `toml:"seed"`
 }
 
-// SearchAlgorithm is the db.search-algorithm table, naming the graph traversal
-// recall runs, one of [SearchAlgorithms].
+// SearchAlgorithm is the db.search-algorithm table. It names the graph
+// traversal a recall runs, one of [SearchAlgorithms].
 type SearchAlgorithm struct {
-	// name (none, bfs, excess): the traversal moving seed evidence through
-	// the graph; "none" turns the graph channel off (text/vector only)
+	// Name is the traversal that moves seed evidence through the graph: none,
+	// bfs or excess. "none" turns the graph channel off, leaving text and
+	// vector search only.
 	Name string `toml:"name"`
 }
 
-// ScoringAlgorithm is the db.scoring-algorithm table, naming the fold that
+// ScoringAlgorithm is the db.scoring-algorithm table. It names the fold that
 // turns a candidate's pooled contributions into its relevance, one of
 // [ScoringAlgorithms].
 type ScoringAlgorithm struct {
-	// name (excess, rrf): the fold deriving each candidate's relevance from
-	// its pooled contributions
+	// Name is the fold, excess or rrf.
 	Name string `toml:"name"`
 }
 
-// RelevanceModel is the db.relevance-model table, naming the text index's
+// RelevanceModel is the db.relevance-model table. It names the text index's
 // relevance model, one of [RelevanceModels].
 type RelevanceModel struct {
-	// name (bm25, matchcount): the text index's relevance model — how a
-	// document's match against the query becomes a number
+	// Name is the model, bm25 or matchcount. The model turns a document's
+	// match against the query into a number.
 	Name string `toml:"name"`
 }
 
-// Aggregate is the db.aggregate table: how a recall spends its top slots
-// across the facets its ranking spans. A facet is the finest anchor a
-// candidate is filed under beyond those the query named: on a graph filed by
-// session, the session. A broad question, "how many", "what types", "what did
-// we decide", has its evidence spread over many facets, and ten slots down a
-// ranking that leans on one of them hold that one ten times over; the slots
-// are filled one facet at a time instead, each facet's best first.
+// Aggregate is the db.aggregate table. It sets how a recall spends its top
+// slots across the facets its ranking spans. A facet is the finest anchor a
+// candidate is filed under beyond those the query named. On a graph filed by
+// session, it is the session. A broad question ("how many", "what types",
+// "what did we decide") has its evidence spread over many facets. Ten slots
+// down a ranking that leans on one facet hold that facet ten times over. So
+// the slots are filled one facet at a time, each facet's best first.
 type Aggregate struct {
-	// Pool is how many ranked candidates the slots are drawn from, from the
-	// top: the facets the slots are spread over come from it, so it is the
-	// breadth of the answer as much as a cost.
+	// Pool is how many ranked candidates, from the top, the slots are drawn
+	// from. The facets the slots spread over come from the pool, so it sets
+	// the breadth of the answer as much as the cost.
 	Pool int `toml:"pool"`
 
 	// Cap is how many fact hits one facet takes before the next facet gets
-	// its first; the facts deferred by it follow in rank order once every
-	// facet is served. 1 is the recall setting: as many facets as slots.
+	// its first. The facts it defers follow in rank order once every facet is
+	// served. 1 is the recall setting: as many facets as slots.
 	Cap int `toml:"cap"`
 }
 
-// VectorSearch is the db.vector-search table, shaping the vector index's forest
-// of random-projection trees: how many trees, how many random directions each
-// splits on, the seed that makes them reproducible, and when leaves split,
-// searches stop probing and garbage is compacted.
+// VectorSearch is the db.vector-search table. It shapes the vector index's
+// forest of random-projection trees: how many trees, how many random
+// directions each splits on, and the seed that makes them reproducible. It
+// also sets when leaves split, when searches stop probing and when garbage is
+// compacted.
 type VectorSearch struct {
 	ProjectionDimension int `toml:"projection-dimension"`
 
@@ -229,24 +241,26 @@ type VectorSearch struct {
 
 	Seed uint64 `toml:"seed"`
 
-	// Forest garbage compaction threshold: entries per live vector before
-	// the forest is rebuilt from the live set.
+	// FlushFactor is the forest's garbage compaction threshold, in entries per
+	// live vector. Past it, the forest is rebuilt from the live set.
 	FlushFactor int `toml:"flush-factor"`
 
-	// Points an RP-tree leaf holds before it splits into two.
+	// LeafSize is how many points an RP-tree leaf holds before it splits into
+	// two.
 	LeafSize int `toml:"leaf-size"`
 
-	// Candidates gathered per result asked for before a search stops probing.
+	// Overfetch is how many candidates a search gathers per result asked for
+	// before it stops probing.
 	Overfetch int `toml:"overfetch"`
 }
 
-// MCPConfig is the mcp section, read by the 'fraise mcp' bridge rather than by
-// the daemon it forwards to.
+// MCPConfig is the mcp section. The 'fraise mcp' bridge reads it, not the
+// daemon it forwards to.
 type MCPConfig struct {
-	// Address of the daemon the 'fraise mcp' bridge forwards to. Unset, it is
-	// the daemon this same config describes (127.0.0.1 on server.port), so
-	// 'fraise mcp -config x' finds whatever 'fraise -config x' serves. The
-	// graph is not configured here: every query names its own with @N.
+	// Address points at the daemon the 'fraise mcp' bridge forwards to. Unset,
+	// it is the daemon this same config describes, 127.0.0.1 on server.port.
+	// So 'fraise mcp -config x' finds whatever 'fraise -config x' serves. The
+	// graph is not set here, because every query names its own with @N.
 	Address string `toml:"address"`
 }
 
@@ -259,16 +273,13 @@ func New() *ConfigSet {
 
 	flagSet := config.FlagSet
 
-	// config file (path to the TOML config Parse reads before applying flags)
 	flagSet.StringVar(&config.configFile, "config", DefaultConfigFile, "Path to the TOML config file")
 
-	// scheduler
 	defaultWorkers := max(MinWorkersCount, runtime.GOMAXPROCS(0))
 	flagSet.IntVar(&config.Scheduler.Workers, "workers", defaultWorkers, "Worker goroutines executing streams")
 	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Queue depth: streams waiting for a worker")
 	flagSet.DurationVar(&config.Scheduler.EnqueueTimeout, "enqueue-timeout", DefaultEnqueueTimeout, "Max wait for queue space before rejecting a query")
 
-	// server
 	flagSet.IntVar(&config.Server.Port, "port", DefaultPort, "Server port")
 	flagSet.DurationVar(&config.Server.ReadTimeout, "read-timeout", DefaultReadTimeout, "Max time to read a whole request")
 	flagSet.DurationVar(&config.Server.ReadHeaderTimeout, "read-header-timeout", DefaultReadHeaderTimeout, "Max time to read request headers")
@@ -277,16 +288,13 @@ func New() *ConfigSet {
 	flagSet.DurationVar(&config.Server.ShutdownGrace, "shutdown-grace", DefaultShutdownGrace, "Grace period for in-flight requests on shutdown")
 	flagSet.Int64Var(&config.Server.MaxBodyBytes, "max-body-bytes", DefaultMaxBodyBytes, "Max request body size in bytes")
 
-	// log
 	flagSet.StringVar(&config.Log.Level, "log-level", DefaultLogLevel, "Log level (debug, info, warn, error)")
 	flagSet.StringVar(&config.Log.Format, "log-format", DefaultLogFormat, "Log format (text, json)")
 	flagSet.BoolVar(&config.Log.DisableTimestamp, "log-disable-timestamp", DefaultLogDisableTimestamp, "Omit the timestamp from every log line")
 
-	// engine
 	flagSet.DurationVar(&config.Engine.Halflife, "half-life", DefaultHalflife, "Time-decay half-life applied to fact scores")
 	flagSet.IntVar(&config.Engine.CacheCapacity, "cache-capacity", DefaultCacheCapacity, "Size of the LRU of optimised query plans")
 
-	// db
 	flagSet.IntVar(&config.DB.NumGraphs, "num-graphs", DefaultNumGraph, "Number of independent graphs the store allocates")
 	flagSet.IntVar(&config.DB.DefaultTop, "default-top", DefaultTop, "Results returned when a recall omits top:")
 	flagSet.IntVar(&config.DB.DefaultDepth, "default-depth", DefaultDepth, "Retrieval lane when a recall omits depth: (0 = floor)")
@@ -303,7 +311,6 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.DB.ScoringAlgorithm.Name, "scoring-algorithm", DefaultScoringAlgorithm, "Relevance fold (information, excess, rrf)")
 	flagSet.StringVar(&config.DB.RelevanceModel.Name, "relevance-model", DefaultRelevanceModel, "Text-index relevance model (bm25, matchcount)")
 
-	// vector search
 	flagSet.IntVar(&config.DB.VectorSearch.ProjectionDimension, "rptree-projection-dimension", DefaultProjectionDimension, "Dimension each RP-tree projects vectors down to")
 	flagSet.IntVar(&config.DB.VectorSearch.NumberTrees, "rptree-n-trees", DefaultNumberTrees, "Trees in the vector index forest")
 	flagSet.Uint64Var(&config.DB.VectorSearch.Seed, "rptree-seed", DefaultRPSeed, "Seed of the RP-trees' random projections")
@@ -311,7 +318,7 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.VectorSearch.LeafSize, "rptree-leaf-size", DefaultLeafSize, "Points an RP-tree leaf holds before it splits")
 	flagSet.IntVar(&config.DB.VectorSearch.Overfetch, "rptree-overfetch", DefaultOverfetch, "Candidates gathered per result before a vector search stops probing")
 
-	// mcp bridge (unset: derived from -port in adjust)
+	// The address has no default here. adjust derives it from -port.
 	flagSet.StringVar(&config.MCP.Address, "addr", "", "Address of the fraise daemon the mcp bridge forwards to (default: 127.0.0.1 on -port)")
 
 	return config
@@ -333,10 +340,10 @@ func (c *ConfigSet) String() string {
 	return string(data)
 }
 
-// Parse resolves the configuration from arguments. The config file they name
-// is decoded over the built-in defaults and the flags are applied over the
-// file; settings still at their zero value then take their default, and the
-// result is validated. A missing file is ErrMissingFile, returned with the
+// Parse resolves the configuration from arguments. It decodes the config file
+// they name over the built-in defaults, then applies the flags over the file.
+// Settings still at their zero value then take their default, and the result
+// is validated. A missing file is ErrMissingFile, returned with the
 // configuration complete and valid. flag.ErrHelp, ErrInvalidFlag,
 // ErrParsingFailed and ErrInvalidValue mean the configuration must not be
 // used.
@@ -355,17 +362,17 @@ func (c *ConfigSet) Parse(arguments []string) error {
 		c.configFile = DefaultConfigFile
 	}
 
-	// A missing config file is survivable, since the flags and the built-in
-	// defaults are a complete configuration, so its error is carried to the
-	// end: the flags must still be adjusted and validated. A file that exists
-	// but cannot be used stops here, since nothing after it would run with
-	// what the operator wrote.
+	// A missing config file is survivable, because the flags and the built-in
+	// defaults are a complete configuration. Its error is carried to the end,
+	// since the flags must still be adjusted and validated. A file that exists
+	// but cannot be used stops here. Nothing after it would run with what the
+	// operator wrote.
 	meta, fileErr := c.FromFile(c.configFile)
 	if errors.Is(fileErr, ErrParsingFailed) {
 		return fileErr
 	}
 
-	// Parse again to replace with command line options
+	// Parse the flags again so they override the file.
 	err = c.FlagSet.Parse(arguments)
 	if err != nil {
 		return err
@@ -379,8 +386,8 @@ func (c *ConfigSet) Parse(arguments []string) error {
 		return err
 	}
 
-	// An invalid value outranks a missing file: it is the one the caller must
-	// stop on, so it is the one returned. What remains is ErrMissingFile or nil.
+	// An invalid value outranks a missing file. The caller must stop on it, so
+	// it is the one returned. What remains is ErrMissingFile or nil.
 	if err = c.validate(); err != nil {
 		return err
 	}
@@ -397,12 +404,10 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 		}
 	}
 
-	// scheduler
 	Adjust(&c.Scheduler.Workers, max(MinWorkersCount, runtime.GOMAXPROCS(0)))
 	Adjust(&c.Scheduler.BufferSize, DefaultBufferSize)
 	Adjust(&c.Scheduler.EnqueueTimeout, DefaultEnqueueTimeout)
 
-	// server
 	Adjust(&c.Server.Port, DefaultPort)
 	Adjust(&c.Server.ReadTimeout, DefaultReadTimeout)
 	Adjust(&c.Server.ReadHeaderTimeout, DefaultReadHeaderTimeout)
@@ -411,23 +416,21 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.Server.ShutdownGrace, DefaultShutdownGrace)
 	Adjust(&c.Server.MaxBodyBytes, DefaultMaxBodyBytes)
 
-	// log
 	Adjust(&c.Log.Level, DefaultLogLevel)
 	Adjust(&c.Log.Format, DefaultLogFormat)
-	// Log.DisableTimestamp needs no Adjust: its default, false, is the zero
+	// Log.DisableTimestamp needs no Adjust. Its default, false, is the zero
 	// value, so an absent key and an explicit false already agree.
 
-	// mcp: after server.port, which the default address is derived from
+	// The mcp address is adjusted after server.port, because its default
+	// derives from the port.
 	Adjust(&c.MCP.Address, fmt.Sprintf(DefaultMCPAddressFormat, c.Server.Port))
 
-	// engine
 	Adjust(&c.Engine.Halflife, DefaultHalflife)
 	Adjust(&c.Engine.CacheCapacity, DefaultCacheCapacity)
 
-	// db
 	Adjust(&c.DB.NumGraphs, DefaultNumGraph)
 	Adjust(&c.DB.DefaultTop, DefaultTop)
-	// DB.DefaultDepth needs no Adjust: its default, 0, is the zero value and
+	// DB.DefaultDepth needs no Adjust. Its default, 0, is the zero value and
 	// the floor lane, so an absent key and an explicit 0 already agree.
 	Adjust(&c.DB.MaxTop, DefaultMaxTop)
 	Adjust(&c.DB.MaxDepth, DefaultMaxDepth)
@@ -437,13 +440,12 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.Aggregate.Pool, DefaultAggregatePool)
 	Adjust(&c.DB.Aggregate.Cap, DefaultAggregateCap)
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
-	// DB.HashingFunction.Seed needs no Adjust: its default, 0, is the zero
+	// DB.HashingFunction.Seed needs no Adjust. Its default, 0, is the zero
 	// value, so an absent key and an explicit 0 already agree.
 	Adjust(&c.DB.SearchAlgorithm.Name, DefaultSearchAlgorithm)
 	Adjust(&c.DB.ScoringAlgorithm.Name, DefaultScoringAlgorithm)
 	Adjust(&c.DB.RelevanceModel.Name, DefaultRelevanceModel)
 
-	// vector search
 	Adjust(&c.DB.VectorSearch.ProjectionDimension, DefaultProjectionDimension)
 	Adjust(&c.DB.VectorSearch.NumberTrees, DefaultNumberTrees)
 	Adjust(&c.DB.VectorSearch.Seed, DefaultRPSeed)
@@ -455,9 +457,9 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 }
 
 // FromFile decodes the TOML file at path over c. A file that does not exist
-// is ErrMissingFile, which the caller may survive; any other failure — the
-// file is unreadable, not TOML, or holds a value of the wrong type — is
-// ErrParsingFailed, naming the file and what was wrong with it.
+// is ErrMissingFile, which the caller may survive. Any other failure is
+// ErrParsingFailed: the file is unreadable, is not TOML, or holds a value of
+// the wrong type. The error names the file and what was wrong with it.
 func (c *ConfigSet) FromFile(path string) (*toml.MetaData, error) {
 	meta, err := toml.DecodeFile(path, c)
 	if errors.Is(err, fs.ErrNotExist) {

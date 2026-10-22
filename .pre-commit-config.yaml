@@ -4,7 +4,7 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
-        args: ['--maxkb=700']  # Increase the limit to 700 KB
+        args: ['--maxkb=700']
       - id: check-merge-conflict
       - id: check-shebang-scripts-are-executable
       - id: detect-private-key
@@ -20,28 +20,26 @@ repos:
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.12.2
     hooks:
-    # -full lints the whole module; the plain hook only diffs against HEAD,
-    # which lints nothing in CI.
+    # -full lints the whole module. The plain hook lints only the diff against
+    # HEAD, which is empty in CI.
     - id: golangci-lint-full
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.0
     hooks:
-    # Run the linter.
     - id: ruff
       args: [ --fix, --config=pyproject.toml, --show-fixes ]
     - id: ruff-format
       args: [--config=pyproject.toml]
 
   - repo: https://github.com/astral-sh/ty-pre-commit
-    # ty version.
     rev: v0.0.64
     hooks:
     - id: ty
       args: [--no-default-groups]
 
-  # types: [file] + files override because the hook's default types: [dockerfile]
-  # doesn't match the non-standard Dockerfile.<name> filenames used here.
+  # The hook's default types: [dockerfile] does not match the Dockerfile.<name>
+  # filenames used here, so types: [file] and files override it.
   - repo: https://github.com/hadolint/hadolint
     rev: v2.15.1
     hooks:

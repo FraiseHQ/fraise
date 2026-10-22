@@ -37,35 +37,34 @@ type GraphStats struct {
 	Size    int `json:"size"`    // number of relationships (edges)
 	Nodes   int `json:"nodes"`   // total stored nodes
 	Vectors int `json:"vectors"` // total vectors indexed
-	// ForestEntries is how many entries the vector forest holds (live vectors
-	// plus garbage awaiting compaction); bounded by the index's flush factor
-	// times Vectors. 0 for index implementations without a forest.
+	// ForestEntries is how many entries the vector forest holds: live vectors
+	// plus garbage awaiting compaction. The index's flush factor times Vectors
+	// bounds it.
 	ForestEntries int `json:"forest_entries"`
 	// Relevance is the db.relevance-model.name of the model the text index
-	// ranks with: the model that took effect, read back from the index, not
-	// the configured name. Empty for implementations without a text index.
+	// ranks with. It is read back from the index, so it names the model that
+	// took effect, not the configured name. It is empty for implementations
+	// without a text index.
 	Relevance string `json:"relevance"`
 }
 
-// Hit is one entry of a search result: a fact and its final score, after
-// boost and recency decay, with the contributions the score was folded from.
+// Hit is one entry of a search result. It holds a fact, its final score after
+// recency decay, and the contributions the score was folded from.
 type Hit[K comparable, P float32 | float64] struct {
 	Node          Node[K]
 	Score         P
 	Contributions []scoring.Contribution[K, P]
 }
 
-// Result is what Search returns: the hits best first, and the query's
-// background rate ρ₀, which explain serializes so a client can recompute each
-// hit's relevance.
+// Result is what Search returns: the hits, best first, and the query's
+// background rate ρ₀. Explain serializes the background so a client can
+// recompute each hit's relevance.
 type Result[K comparable, P float32 | float64] struct {
 	Hits       []Hit[K, P]
 	Background P
 }
 
-// Nodes returns the hits' facts in order; nil when there are no hits, so a
-// caller can tell an empty result from a populated one as it could when
-// Search returned slices.
+// Nodes returns the hits' facts in order, or nil when there are no hits.
 func (r Result[K, P]) Nodes() []Node[K] {
 	if len(r.Hits) == 0 {
 		return nil
@@ -102,10 +101,10 @@ func (r Result[K, P]) Contributions() [][]scoring.Contribution[K, P] {
 }
 
 // Graph is a temporal memory graph, the unit of storage in the database. As
-// with Redis databases, a server holds several graphs addressed by index (the
-// @N selector in FQL).
+// with Redis databases, a server holds several graphs addressed by index, the
+// @N selector in FQL.
 //
-// K is the node key type; P is the floating-point precision of embedding
+// K is the node key type. P is the floating-point precision of embedding
 // vectors and ranking scores.
 //
 // Methods do not lock. Callers hold the graph's read or write lock around the
@@ -134,9 +133,9 @@ type Graph[K comparable, P float32 | float64] interface {
 	// GetTextIndex returns the graph's full-text search index.
 	GetTextIndex() index.TextIndex[K, P]
 
-	// Nodes returns the graph's live node map, keyed by node key: the map
-	// itself, not a copy. Callers read it under the graph lock and never
-	// write it; only the graph's own writes keep it consistent with the edge
+	// Nodes returns the graph's live node map, keyed by node key. It is the
+	// map itself, not a copy. Callers read it under the graph lock and never
+	// write it. Only the graph's own writes keep it consistent with the edge
 	// maps and the indexes.
 	Nodes() map[K]Node[K]
 
@@ -150,9 +149,9 @@ type Graph[K comparable, P float32 | float64] interface {
 	PredecessorMap() map[K]map[K]K
 
 	// Neighbours returns the keys adjacent to key in either direction, in
-	// unspecified order. It copies only that node's edges, where
-	// AdjacencyMap and PredecessorMap copy every edge in the graph, so a
-	// traversal can read one node's neighbourhood cheaply.
+	// unspecified order. It copies only that node's edges, so a traversal can
+	// read one node's neighbourhood cheaply. AdjacencyMap and PredecessorMap
+	// copy every edge in the graph.
 	Neighbours(key K) []K
 
 	// Order returns the number of vertices (facts, topics and entities) in
@@ -165,11 +164,11 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Stats returns a point-in-time snapshot of the graph's shape.
 	Stats() GraphStats
 
-	// Search runs a hybrid query over the graph. It returns the hits best
-	// first, at most top of them, each with the contributions its score was
-	// folded from, and the query's background rate (see Result). An
-	// implementation may spend the top slots across the facets the ranking
-	// spans rather than down it.
+	// Search runs a hybrid query over the graph. It returns at most top hits,
+	// best first, and the query's background rate (see Result). Each hit
+	// carries the contributions its score was folded from. An implementation
+	// may spread the top slots across the facets the ranking spans, instead
+	// of filling them in rank order.
 	//
 	// keywords, vector, topics and entities each add evidence; only since and
 	// until narrow the result:
@@ -182,10 +181,11 @@ type Graph[K comparable, P float32 | float64] interface {
 	//   - entities: the same, for the entities facts mention
 	//   - depth:    the retrieval lane. 0 ranks by seed mass alone and skips
 	//               the anchor traversal. 1 and 2 run the same single
-	//               anchor-mediated round and differ only in the admission
-	//               bar: 1 admits only strongly above-chance anchors
-	//               (precision), 2 any anchor above its fair share (recall).
-	//               The round runs only when a topic or entity is named.
+	//               anchor-mediated round. They differ only in the admission
+	//               bar. 1 admits only strongly above-chance anchors
+	//               (precision). 2 admits any anchor above its fair share
+	//               (recall). The round runs only when a topic or entity is
+	//               named.
 	//   - top:      maximum number of results
 	//   - since:    inclusive lower time bound; zero is unbounded
 	//   - until:    exclusive upper time bound; zero is unbounded
@@ -202,10 +202,10 @@ type Graph[K comparable, P float32 | float64] interface {
 	// has no effect, and the background is zero. An anchor nothing is filed
 	// under seeds nothing.
 	//
-	// The error reports a question that cannot be answered as asked: a vector
-	// whose dimension differs from the vector index's is
-	// index.ErrInvalidDimension, rather than a text-only answer that silently
-	// ignores it. A graph with nothing indexed is not an error; it returns no
+	// The error reports a question that cannot be answered as asked. A vector
+	// whose dimension differs from the vector index's returns
+	// index.ErrInvalidDimension, rather than a text-only answer that ignores
+	// the vector. A graph with nothing indexed is not an error. It returns no
 	// hits.
 	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (Result[K, P], error)
 

@@ -63,11 +63,11 @@ from fraise_sdk.providers.base import (
 def _with_extracted(
     given: Sequence[str] | None, extracted: Sequence[str]
 ) -> Sequence[str] | None:
-    """Return ``given`` followed by the extracted values it does not already carry.
+    """Return ``given`` plus the extracted values it does not already hold.
 
-    The server folds anchors to lower case, so a value is a repeat whatever its
-    casing, and a repeat names an anchor the fact is already filed under. A
-    bare string is returned untouched, for the builder to refuse by name.
+    The server lowercases anchors, so values that differ only in case are
+    repeats. A bare string is returned as is, so the builder can reject it by
+    name.
     """
     if not extracted or isinstance(given, str):
         return given
@@ -105,33 +105,33 @@ def _parse_version(text: str) -> tuple[int, int, int] | None:
 class FraiseClient:
     """A thin, synchronous client over the Fraise query API.
 
-    Memory operations funnel through ``POST /api/v1/q``: :meth:`remember` and
-    :meth:`recall` are typed conveniences over it, and :meth:`query` is the
-    escape hatch for raw query strings. :meth:`explain` sends the query
-    :meth:`recall` would to ``POST /api/v1/explain``, which answers with the
-    breakdown of every hit's score. :meth:`stats` reads ``GET /api/v1/stats``
-    for how much each graph holds.
+    Memory operations go through ``POST /api/v1/q``. :meth:`remember` and
+    :meth:`recall` are typed conveniences over it. :meth:`query` is the escape
+    hatch for raw query strings. :meth:`explain` sends the query :meth:`recall`
+    would send to ``POST /api/v1/explain``, which breaks down every hit's
+    score. :meth:`stats` reads ``GET /api/v1/stats`` for how much each graph
+    holds.
 
-    Requests go through one :class:`requests.Session` for connection reuse,
-    created by the client unless ``session`` passes one in. Use the client as a
-    context manager (``with FraiseClient() as f: ...``) or call :meth:`close` to
-    close a session it created; a passed-in session is left open.
+    Requests go through one :class:`requests.Session` for connection reuse. The
+    client creates it unless ``session`` passes one in. Use the client as a
+    context manager (``with FraiseClient() as f: ...``) or call :meth:`close`
+    to close a session it created. A passed-in session is left open.
 
-    Pass ``embedder`` (an object with an ``embed(text)`` method, or a plain
-    ``callable(text) -> Sequence[float]``) to have :meth:`remember` and
-    :meth:`recall` encode their text into a vector automatically. Without one,
-    both operate on text alone, and any call can still pass an explicit
-    ``vector`` or opt out with ``embed=False``.
+    Pass ``embedder`` to have :meth:`remember` and :meth:`recall` encode their
+    text into a vector automatically. It is an object with an ``embed(text)``
+    method, or a plain ``callable(text) -> Sequence[float]``. Without one, both
+    work on text alone. Any call can still pass an explicit ``vector`` or opt
+    out with ``embed=False``.
 
-    Pass ``extractor`` (an object with an ``extract(text, context)`` method, or
-    a plain ``callable(text, context) -> Sequence[Anchor]``) to have
-    :meth:`remember` file each fact under the topics and entities it finds in
-    the text, beside any given ones. The text itself is stored verbatim;
-    ``extract=False`` opts a call out. Each message is read in its graph's
-    :class:`~fraise_sdk.providers.base.Context`: the latest facts stored in
-    that graph and the anchors extraction filed them under, which the client
-    keeps per graph, in this process only. A new client starts every graph's
-    context empty.
+    Pass ``extractor`` to have :meth:`remember` file each fact under the topics
+    and entities it finds in the text, beside any given ones. It is an object
+    with an ``extract(text, context)`` method, or a plain
+    ``callable(text, context) -> Sequence[Anchor]``. The text itself is stored
+    verbatim. ``extract=False`` opts a call out. Each message is read in its
+    graph's :class:`~fraise_sdk.providers.base.Context`: the latest facts
+    stored in that graph, and the anchors extraction filed them under. The
+    client keeps one context per graph, in this process only. A new client
+    starts every graph's context empty.
     """
 
     def __init__(
@@ -145,14 +145,13 @@ class FraiseClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        # Track whether we own the session so we only close what we created.
         self._owns_session = session is None
         self._session = session or requests.Session()
         self._embed_fn = resolve_embedder(embedder)
         self._extract_fn = resolve_extractor(extractor)
-        # Each graph's context, as the facts this client stored there left it:
-        # the latest values, and on how many facts each extracted anchor was
-        # filed. The counts are kept whole, so an anchor outside the
+        # Each graph's context, built from the facts this client stored there:
+        # the latest values, and how many facts carry each extracted anchor.
+        # All counts are kept, not just the top ones, so an anchor outside the
         # vocabulary's cap can still grow into it.
         self._recent: defaultdict[int, deque[str]] = defaultdict(
             lambda: deque(maxlen=MAX_RECENT)
@@ -160,7 +159,7 @@ class FraiseClient:
         self._vocabulary: defaultdict[int, Counter[Anchor]] = defaultdict(Counter)
 
     def close(self) -> None:
-        """Close the session the client created; a passed-in session is left open."""
+        """Close the session the client created. A passed-in session stays open."""
         if self._owns_session:
             self._session.close()
 
@@ -171,7 +170,7 @@ class FraiseClient:
         self.close()
 
     def health(self) -> bool:
-        """Return whether the server's health endpoint answers 200; never raises."""
+        """Return whether the server's health endpoint answers 200. Never raises."""
         try:
             response = self._session.get(f"{self.base_url}/", timeout=self.timeout)
         except requests.RequestException:
@@ -237,16 +236,16 @@ class FraiseClient:
     def stats(self, *, timeout: float | None = None) -> list[GraphStats]:
         """Return how much each graph holds, one row per graph, in id order.
 
-        Reads ``GET /api/v1/stats``, which the server computes from the live
+        It reads ``GET /api/v1/stats``, which the server computes from the live
         graphs on every call. Every allocated graph has a row, empty ones
-        included, so the list's length is the server's graph count and a
+        included. So the list's length is the server's graph count, and a
         graph's row sits at its id.
 
-        Unlike :meth:`health`, this raises rather than answering a failure
-        with a value: :class:`FraiseError` on a timeout or an unreachable
-        server, :class:`FraiseAPIError` on any non-2xx response. A caller
-        asking for counts, to check a restore or size a run, must not mistake
-        an unreachable server for an empty one.
+        Unlike :meth:`health`, it raises on failure instead of returning a
+        value. It raises :class:`FraiseError` on a timeout or an unreachable
+        server, and :class:`FraiseAPIError` on any non-2xx response. A caller
+        checking a restore or sizing a run must not mistake an unreachable
+        server for an empty one.
 
         Args:
             timeout: per-call override of the client's timeout.
@@ -271,26 +270,27 @@ class FraiseClient:
     ) -> None:
         """Store ``value`` as a fact in ``graph``.
 
-        ``topics`` and ``entities`` are the anchors the fact is filed under;
-        facts that share an anchor can reach one another on recall.
+        ``topics`` and ``entities`` are the anchors the fact is filed under.
+        Facts that share an anchor can reach one another on recall.
 
         If the client has an extractor, the fact is also filed under the
         anchors it finds in ``value``, after the given ``topics`` and
-        ``entities``; ``value`` itself is stored verbatim. ``extract`` overrides
-        that default per call: ``True`` forces extraction (and errors if no
-        extractor is set), ``False`` skips it. A failed extraction costs the
-        extracted anchors, never the fact: it is stored under the given ones,
-        and a :class:`FraiseWarning` names the failure. The extractor reads
-        ``value`` in ``graph``'s context, and once the server has stored the
-        fact, the fact joins that context, extracted or not; its vocabulary
-        counts only the anchors the extractor returned.
+        ``entities``. ``value`` itself is stored verbatim. ``extract``
+        overrides that default per call. ``True`` forces extraction, and errors
+        if no extractor is set. ``False`` skips it. A failed extraction costs
+        the extracted anchors, never the fact. The fact is stored under the
+        given anchors, and a :class:`FraiseWarning` names the failure.
 
-        A vector is attached when one is available: an explicit ``vector`` always
-        wins; otherwise, if the client has an embedder, ``value`` is encoded
-        automatically. ``embed`` overrides that default per call: ``True`` forces
-        encoding (and errors if no embedder is set), ``False`` skips it. The first
-        vector written to a graph fixes that graph's dimension; later writes must
-        match it.
+        The extractor reads ``value`` in ``graph``'s context. Once the server
+        has stored the fact, the fact joins that context, extracted or not. The
+        context's vocabulary counts only the anchors the extractor returned.
+
+        A vector is attached when one is available. An explicit ``vector``
+        always wins. Otherwise, if the client has an embedder, ``value`` is
+        encoded automatically. ``embed`` overrides that default per call.
+        ``True`` forces encoding, and errors if no embedder is set. ``False``
+        skips it. The first vector written to a graph fixes that graph's
+        dimension. Later writes must match it.
 
         Returns nothing on success and raises :class:`FraiseAPIError` if the
         server rejects the write.
@@ -326,28 +326,31 @@ class FraiseClient:
     ) -> RecallResult:
         """Search ``graph`` for facts and return them ranked by relevance.
 
-        ``query`` is a whole question, sent to the server as a single quoted
-        phrase term, so natural language travels verbatim rather than as bare
-        words that would collide with the grammar's reserved words. Pass any
-        number of ``keywords`` positionally as additional terms, each quoted
-        when it needs to be (see :mod:`fraise_sdk.query`). A recall needs at
-        least one seed: a query, keywords, a vector, or a ``topics``/``entities``
-        anchor. ``top`` caps the number of results. ``depth`` picks the
-        retrieval lane, 0 to 2: 0 searches the text and vector indices only, 1
-        lets topics and entities that clearly concentrate the matches transmit
-        to the facts filed under them, 2 admits them at their fair share for
-        maximum recall; omitted, the server's configured lane applies. The
-        graph is entered only through a named topic or entity, so a lane above
-        0 on a recall without one has no effect and comes back with a warning.
+        ``query`` is a whole question, sent as one quoted phrase term. So
+        natural language travels verbatim, not as bare words that would collide
+        with the grammar's reserved words. Pass any number of ``keywords``
+        positionally as extra terms. Each is quoted when it needs to be (see
+        :mod:`fraise_sdk.query`). A recall needs at least one seed: a query,
+        keywords, a vector, or a ``topics``/``entities`` anchor. ``top`` caps
+        the number of results.
 
-        For semantic search, a vector is attached the same way as in
-        :meth:`remember`: an explicit ``vector`` wins; otherwise, if the client
-        has an embedder, the ``query`` phrase (or, absent that, the space-joined
-        ``keywords``) is encoded. ``embed`` overrides per call.
+        ``depth`` picks the retrieval lane, 0 to 2. Lane 0 searches the text
+        and vector indices only. Lane 1 lets topics and entities that clearly
+        concentrate the matches transmit to the facts filed under them. Lane 2
+        admits them at their fair share, for maximum recall. Without ``depth``,
+        the server's configured lane applies. The graph is entered only through
+        a named topic or entity. So a lane above 0 has no effect on a recall
+        without one, and the recall comes back with a warning.
 
-        Any warnings the server attached (the query ran, but something in it
-        cannot help or may not be what was meant) are listed on the result's
-        ``warnings`` and emitted as :class:`FraiseWarning`.
+        For semantic search, a vector is attached as in :meth:`remember`. An
+        explicit ``vector`` wins. Otherwise, if the client has an embedder, it
+        encodes the ``query`` phrase, or the space-joined ``keywords`` when
+        there is no query. ``embed`` overrides this per call.
+
+        Any warnings the server attached are listed on the result's
+        ``warnings`` and emitted as :class:`FraiseWarning`. A warning means the
+        query ran, but something in it cannot help or may not be what was
+        meant.
         """
         return self._recall(
             keywords,
@@ -378,14 +381,15 @@ class FraiseClient:
     ) -> RecallResult:
         """Recall as :meth:`recall` does, with each hit's score explained.
 
-        Takes the same arguments and sends the same query to the server's
+        It takes the same arguments and sends the same query to the server's
         explain route, which runs the same pipeline. Each hit comes back with
-        ``contributions``, the per-source sightings (text, vector, graph or
-        anchor) its score was folded from, and the result carries the query's
-        ``background`` rate. Use it to see why a fact ranked where it did, e.g.
-        whether a multi-hop miss was reached through the graph and ranked out,
-        or never reached at all. The breakdown costs response size, so use
-        :meth:`recall` when the ranking is all you need.
+        ``contributions``: the per-source sightings (text, vector, graph or
+        anchor) its score was folded from. The result also carries the query's
+        ``background`` rate. Use it to see why a fact ranked where it did. For
+        example, it shows whether a multi-hop miss was reached through the
+        graph and ranked out, or never reached at all. The breakdown makes the
+        response larger, so use :meth:`recall` when the ranking is all you
+        need.
 
         Returns:
             The ranked result, as :meth:`recall` returns it, with
@@ -422,8 +426,8 @@ class FraiseClient:
     ) -> RecallResult:
         """Build, send and parse a recall, on the query or the explain route.
 
-        :meth:`recall` and :meth:`explain` share this path, so they build the
-        same query string and vector, and an explanation is always of the
+        :meth:`recall` and :meth:`explain` share this path. So they build the
+        same query string and vector, and an explanation always matches the
         ranking :meth:`recall` would return.
         """
         embed_text = query if query is not None else " ".join(keywords)
@@ -462,14 +466,14 @@ class FraiseClient:
     ) -> dict:
         """Send a raw query string and return the decoded JSON body.
 
-        The escape hatch for queries the typed helpers do not cover: the text
-        is sent exactly as written, and the server does the checking.
+        Use it for queries the typed helpers do not cover. The text is sent
+        exactly as written, and the server does the checking.
 
-        The body's shape follows the query: a recall answers with ``results``,
+        The body's shape follows the query. A recall answers with ``results``,
         a write with ``{"status": "ok"}``. A recall of a graph that holds
         nothing is answered 204 with no body, which decodes to ``{}``.
-        :meth:`recall` reads that status instead, so prefer it when you need to
-        tell an empty graph from a miss.
+        :meth:`recall` reads that status, so prefer it when you need to tell an
+        empty graph from a miss.
 
         Any ``warnings`` the server attached to a successful response are
         emitted as :class:`FraiseWarning`, as they are for the typed helpers.
@@ -492,10 +496,10 @@ class FraiseClient:
     ) -> tuple[int, dict]:
         """Send a query and return the response status beside its decoded body.
 
-        Every query the client sends goes through here, :meth:`query`'s
-        included. It is separate from that method because a 204 carries its
-        meaning in the status line (the graph searched holds nothing), while
-        :meth:`query` returns only the body, which for a 204 is empty.
+        Every query the client sends goes through here, including
+        :meth:`query`'s. It is separate from that method because a 204 carries
+        its meaning in the status line: the graph searched holds nothing.
+        :meth:`query` returns only the body, which is empty for a 204.
 
         Args:
             text: the raw query string.
@@ -523,9 +527,9 @@ class FraiseClient:
         """Send one request and return the response status beside its decoded body.
 
         Every call that must not mistake a failure for an answer goes through
-        here: the queries via :meth:`_post`, and :meth:`stats`. Only
-        :meth:`health` and :meth:`server_version`, which answer a failure with
-        a value, read the health endpoint themselves.
+        here: the queries, via :meth:`_post`, and :meth:`stats`. Only
+        :meth:`health` and :meth:`server_version` read the health endpoint
+        themselves, because they answer a failure with a value.
 
         Args:
             send: the session method for the request's verb, such as
@@ -559,8 +563,8 @@ class FraiseClient:
             ) from exc
 
         # Decode first, so an error body's ``error`` field can be surfaced
-        # verbatim. A body that is not JSON (a 204's, or a proxy's error page)
-        # decodes to {}.
+        # verbatim. A body that is not JSON, such as a 204's or a proxy's error
+        # page, decodes to {}.
         try:
             body = response.json()
         except ValueError:
@@ -574,10 +578,10 @@ class FraiseClient:
 
         body = body if isinstance(body, dict) else {}
 
-        # Surface server-attached warnings through Python's own channel: the
-        # query ran and the results are valid, but the server flagged something
-        # in it the caller may want to change. One FraiseWarning per message, so
-        # a caller can react to one or silence them all.
+        # Surface the server's warnings through Python's own channel. The query
+        # ran and the results are valid, but the server flagged something the
+        # caller may want to change. Each message gets its own FraiseWarning,
+        # so a caller can react to one or silence them all.
         for message in body.get("warnings") or []:
             warn(message, FraiseWarning, skip_file_prefixes=SDK_FILES)
 
@@ -621,18 +625,19 @@ class FraiseClient:
     ) -> tuple[Sequence[str] | None, Sequence[str] | None, list[Anchor]]:
         """Return the anchors to file ``value`` under, and those extracted for it.
 
-        ``extract`` is the same three-way switch as ``embed``: ``True`` requires
-        an extractor, ``False`` never extracts, ``None`` extracts only if one is
-        configured. The extractor reads ``value`` in ``graph``'s context. Any
-        failure of the extractor (a raised error, or an answer that is not a
-        list of anchors) costs the extracted anchors and nothing else: the
-        given ones are returned, and a :class:`FraiseWarning` says why, so the
+        ``extract`` is the same three-way switch as ``embed``: ``True``
+        requires an extractor, ``False`` never extracts, ``None`` extracts only
+        if one is configured. The extractor reads ``value`` in ``graph``'s
+        context. If it fails, only the extracted anchors are lost. A failure is
+        a raised error, or an answer that is not a list of anchors. The given
+        anchors are returned, and a :class:`FraiseWarning` says why. So the
         fact is never lost to its tagging.
 
         Returns:
-            The topics and the entities to file ``value`` under, the given
-            ones followed by the extracted ones, then the extracted anchors
-            alone, empty when nothing was extracted.
+            The topics and the entities to file ``value`` under, then the
+            extracted anchors alone. The topics and entities hold the given
+            values first, then the extracted ones. The extracted anchors are
+            empty when nothing was extracted.
 
         Raises:
             FraiseError: if ``extract`` is ``True`` and the client has no
@@ -669,7 +674,7 @@ class FraiseClient:
         )
 
     def _context(self, graph: int) -> Context:
-        """Return ``graph``'s context, as the facts stored there so far left it."""
+        """Return ``graph``'s context, built from the facts stored there so far."""
         return Context(
             recent=tuple(self._recent[graph]),
             vocabulary=tuple(
@@ -682,9 +687,9 @@ class FraiseClient:
         """Add a stored fact, and the anchors extracted for it, to ``graph``'s context.
 
         An anchor is counted as the server stores it, trimmed and in lower
-        case, and once per fact, so the most used anchor is the one filed on
-        the most facts. A tie keeps the order of first use, which keeps the
-        prompt a graph's history produces the same from run to run.
+        case. It counts once per fact, so the most used anchor is the one filed
+        on the most facts. A tie keeps the order of first use, so a graph's
+        history produces the same prompt on every run.
         """
         self._recent[graph].append(value)
         filed = dict.fromkeys(
