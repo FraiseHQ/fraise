@@ -301,25 +301,41 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 // recall too. The endpoints are kept: 0 is off and 1 keeps only hits tied
 // with the best, both meaningful settings.
 func TestValidateBoundsMinScoreRatio(t *testing.T) {
-	for _, ratio := range []float64{0, 0.3, 1} {
-		c := New()
-		c.DB.MinScoreRatio = ratio
-		if err := c.validate(); err != nil {
-			t.Errorf("validate() with min-score-ratio = %v returned error: %v, want it accepted", ratio, err)
-		}
+	accepted := map[string]float64{
+		"0 is off":                         0,
+		"a fraction":                       0.3,
+		"1 keeps only hits tied with best": 1,
+	}
+	for name, ratio := range accepted {
+		t.Run(name, func(t *testing.T) {
+			c := New()
+			c.DB.MinScoreRatio = ratio
+			if err := c.validate(); err != nil {
+				t.Errorf("validate() with min-score-ratio = %v returned error: %v, want it accepted", ratio, err)
+			}
+		})
 	}
 
-	for _, ratio := range []float64{-0.1, 1.0000001, 30, math.NaN(), math.Inf(1)} {
-		c := New()
-		c.DB.MinScoreRatio = ratio
-		err := c.validate()
-		if !errors.Is(err, ErrInvalidValue) {
-			t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
-		}
-		for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("error %q does not mention %q", err, want)
+	rejected := map[string]float64{
+		"negative":          -0.1,
+		"just past 1":       1.0000001,
+		"a percent":         30,
+		"NaN":               math.NaN(),
+		"positive infinity": math.Inf(1),
+	}
+	for name, ratio := range rejected {
+		t.Run(name, func(t *testing.T) {
+			c := New()
+			c.DB.MinScoreRatio = ratio
+			err := c.validate()
+			if !errors.Is(err, ErrInvalidValue) {
+				t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
 			}
-		}
+			for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not mention %q", err, want)
+				}
+			}
+		})
 	}
 }

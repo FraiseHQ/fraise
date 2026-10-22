@@ -823,15 +823,20 @@ func TestBTreeIndexSearchWindowOffIsThePlainSearch(t *testing.T) {
 		"gamma 0":        func(idx *index.BTreeIndex[int, float64]) { idx.SetWindow(0, func(int) []int { return []int{1, 2, 3} }) },
 		"nil neighbours": func(idx *index.BTreeIndex[int, float64]) { idx.SetWindow(0.5, nil) },
 	} {
-		idx := build()
-		install(idx)
-		keys, scores, err := idx.Search("red green", 0, nil)
-		if err != nil {
-			t.Fatalf("%s: Search = %v, want nil", name, err)
-		}
-		if !reflect.DeepEqual(keys, wantKeys) || !reflect.DeepEqual(scores, wantScores) {
-			t.Errorf("%s: Search = %v %v, want the plain search's %v %v", name, keys, scores, wantKeys, wantScores)
-		}
+		t.Run(name, func(t *testing.T) {
+			idx := build()
+			install(idx)
+			keys, scores, err := idx.Search("red green", 0, nil)
+			if err != nil {
+				t.Fatalf("Search = %v, want nil", err)
+			}
+			if diff := cmp.Diff(wantKeys, keys); diff != "" {
+				t.Errorf("Search keys mismatch with the plain search (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(wantScores, scores); diff != "" {
+				t.Errorf("Search scores mismatch with the plain search (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

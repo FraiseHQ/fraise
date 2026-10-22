@@ -1907,33 +1907,34 @@ func scoreCutoffAt[P float32 | float64](t *testing.T) {
 	file("another one anchor", "a")
 
 	// The premise of the test: the scores are 3, 2, 1, 1 before any cutoff.
-	if _, scores, _, _, _ := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{}); !reflect.DeepEqual(scores, []P{3, 2, 1, 1}) {
-		t.Fatalf("Search(topics a b c) scores = %v, want [3 2 1 1]", scores)
+	_, premise, _, _, _ := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{})
+	if diff := cmp.Diff([]P{3, 2, 1, 1}, premise); diff != "" {
+		t.Fatalf("Search(topics a b c) scores before any cutoff mismatch (-want +got):\n%s", diff)
 	}
 
-	cases := []struct {
-		name       string
-		ratio      float64
-		top        int
-		wantScores []P
+	cases := map[string]struct {
+		ratio float64
+		top   int
+		want  []P
 	}{
-		{"off keeps the whole list", 0, 10, []P{3, 2, 1, 1}},
-		{"ratio drops the tail under the bar", 0.5, 10, []P{3, 2}},
-		{"a hit exactly at the bar is kept", 1.0 / 3, 10, []P{3, 2, 1, 1}},
-		{"the cut falls just under a hit on the bar", 2.0 / 3, 10, []P{3, 2}},
-		{"the best hit survives any ratio", 1, 10, []P{3}},
-		{"top still caps the list", 0.1, 2, []P{3, 2}},
+		"off keeps the whole list":                  {0, 10, []P{3, 2, 1, 1}},
+		"ratio drops the tail under the bar":        {0.5, 10, []P{3, 2}},
+		"a hit exactly at the bar is kept":          {1.0 / 3, 10, []P{3, 2, 1, 1}},
+		"the cut falls just under a hit on the bar": {2.0 / 3, 10, []P{3, 2}},
+		"the best hit survives any ratio":           {1, 10, []P{3}},
+		"top still caps the list":                   {0.1, 2, []P{3, 2}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			cfg.DB.MinScoreRatio = tc.ratio
-			nodes, scores, contributions, _, err := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
+			nodes, got, contributions, _, err := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
 			if err != nil {
 				t.Fatalf("Search() error = %v, want nil", err)
 			}
-			if !reflect.DeepEqual(scores, tc.wantScores) {
-				t.Fatalf("Search(ratio=%v, top=%d) scores = %v, want %v (%v)", tc.ratio, tc.top, scores, tc.wantScores, values(nodes))
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Search(ratio=%v, top=%d) scores mismatch (-want +got), hits %v:\n%s", tc.ratio, tc.top, values(nodes), diff)
 			}
+			scores := got
 			if len(nodes) != len(scores) || len(contributions) != len(scores) {
 				t.Fatalf("Search() returned %d nodes and %d contribution lists for %d scores, want parallel slices", len(nodes), len(contributions), len(scores))
 			}
@@ -1973,24 +1974,23 @@ func TestInMemoryGraphSearchScoreCutoffIgnoresDecay(t *testing.T) {
 	file("old pair", old, "a", "b")
 	file("fresh single", now, "a")
 
-	cases := []struct {
-		name  string
+	cases := map[string]struct {
 		ratio float64
 		want  []string
 	}{
-		{"off keeps the whole list", 0, []string{"fresh pair", "fresh single", "old pair"}},
-		{"the same evidence clears the bar at any age", 0.3, []string{"fresh pair", "fresh single", "old pair"}},
-		{"weaker evidence is cut even when it outscores what stays", 0.6, []string{"fresh pair", "old pair"}},
+		"off keeps the whole list":                                 {0, []string{"fresh pair", "fresh single", "old pair"}},
+		"the same evidence clears the bar at any age":              {0.3, []string{"fresh pair", "fresh single", "old pair"}},
+		"weaker evidence is cut even when it outscores what stays": {0.6, []string{"fresh pair", "old pair"}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			cfg.DB.MinScoreRatio = tc.ratio
 			nodes, scores, _, _, err := search(g, nil, containers.Vector[uint64, float64]{}, []string{"a", "b"}, nil, 0, 10, time.Time{}, time.Time{})
 			if err != nil {
 				t.Fatalf("Search() error = %v, want nil", err)
 			}
-			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("Search(ratio=%v) = %v (scores %v), want %v", tc.ratio, got, scores, tc.want)
+			if diff := cmp.Diff(tc.want, values(nodes)); diff != "" {
+				t.Fatalf("Search(ratio=%v) mismatch (-want +got), scores %v:\n%s", tc.ratio, scores, diff)
 			}
 			if !sort.SliceIsSorted(scores, func(i, j int) bool { return scores[i] > scores[j] }) {
 				t.Errorf("Search(ratio=%v) scores = %v, want the decay order kept", tc.ratio, scores)
@@ -2088,21 +2088,21 @@ func TestInMemoryGraphSearchWindowFollowsWrites(t *testing.T) {
 
 	file("the deploy is at noon", 0)
 	file("lunch is at one", 10*time.Second)
-	if got := hits(); !reflect.DeepEqual(got, []string{"the deploy is at noon", "lunch is at one"}) {
-		t.Fatalf("Search = %v, want the deploy fact and its neighbour", got)
+	if diff := cmp.Diff([]string{"the deploy is at noon", "lunch is at one"}, hits()); diff != "" {
+		t.Fatalf("Search mismatch (-want +got), the deploy fact and its neighbour:\n%s", diff)
 	}
 
 	// Filed between the two in time: it becomes the deploy fact's neighbour
 	// and lunch stops being one.
 	between := file("the build is green", 5*time.Second)
-	if got := hits(); !reflect.DeepEqual(got, []string{"the deploy is at noon", "the build is green"}) {
-		t.Fatalf("after filing between: Search = %v, want the deploy fact and the build fact", got)
+	if diff := cmp.Diff([]string{"the deploy is at noon", "the build is green"}, hits()); diff != "" {
+		t.Fatalf("after filing between: Search mismatch (-want +got), the build fact is the new neighbour:\n%s", diff)
 	}
 
 	if err := g.Delete(between); err != nil {
 		t.Fatalf("Delete = %v, want nil", err)
 	}
-	if got := hits(); !reflect.DeepEqual(got, []string{"the deploy is at noon", "lunch is at one"}) {
-		t.Fatalf("after deleting: Search = %v, want lunch back as the neighbour", got)
+	if diff := cmp.Diff([]string{"the deploy is at noon", "lunch is at one"}, hits()); diff != "" {
+		t.Fatalf("after deleting: Search mismatch (-want +got), lunch is the neighbour again:\n%s", diff)
 	}
 }
