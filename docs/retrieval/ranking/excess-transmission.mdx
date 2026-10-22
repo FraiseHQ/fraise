@@ -57,7 +57,7 @@ $$
 \frac{\max\bigl(0,\; M_A - m\bigr)}{d_A}
 $$
 
-Naming `hub` in the example above lets it speak. Its five unmatched facts each receive $2/6 \approx 0.33$, and its one match receives nothing, since a fact never funds its own boost. The named anchor still weighs in $\rho_0$ like any anchor the query reached, so naming one changes what it transmits, never the bar the others are held to.
+Naming `hub` in the example above lets it speak. Its five unmatched facts each receive $2/6 \approx 0.33$, and its one match receives nothing, since a fact never funds its own boost. The named anchor weighs in $\rho_0$ like any anchor the query reached. Naming it also seeds the matches filed under it, and those seeds weigh in $\rho_0$ like any others, so the discovered anchors are held to the bar the anchored recall's own evidence sets.
 
 A named anchor filters nothing. A match filed under none of the named anchors keeps its own mass and ranks among the rest; a match filed under one is lifted by what its siblings there matched.
 

@@ -38,6 +38,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/graph"
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/index"
+	"github.com/google/go-cmp/cmp"
 )
 
 // newGraph builds an empty graph carrying the test config.
@@ -365,8 +366,9 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	// behind it. The unconnected fact stays out.
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
 	nodes, _, _, _, _ = search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, []string{"alice"}, 2, 10, time.Time{}, time.Time{})
-	if want := []string{"alice works at acme", "alice lives in paris"}; !reflect.DeepEqual(values(nodes), want) {
-		t.Errorf("Search(acme, entity=alice, depth=2) = %v, want %v: the named entity lifts its other member", values(nodes), want)
+	want := []string{"alice works at acme", "alice lives in paris"}
+	if diff := cmp.Diff(want, values(nodes)); diff != "" {
+		t.Errorf("Search(acme, entity=alice, depth=2) mismatch (-want +got), the named entity lifts its other member:\n%s", diff)
 	}
 }
 
@@ -437,13 +439,16 @@ func TestInMemoryGraphSearchAnchorKeepsMatchesFiledElsewhere(t *testing.T) {
 	mustSet(t, g, topic)
 	mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact1, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
-	for _, depth := range []int{0, 1, 2} {
-		nodes, _, _, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, depth, 10, time.Time{}, time.Time{})
-		got := values(nodes)
-		sort.Strings(got)
-		if want := []string{"alice plays tennis", "alice works at acme"}; !reflect.DeepEqual(got, want) {
-			t.Errorf("Search(alice, topic=work, depth=%d) = %v, want both matches %v", depth, got, want)
-		}
+	for name, depth := range map[string]int{"depth 0": 0, "depth 1": 1, "depth 2": 2} {
+		t.Run(name, func(t *testing.T) {
+			nodes, _, _, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, depth, 10, time.Time{}, time.Time{})
+			got := values(nodes)
+			sort.Strings(got)
+			want := []string{"alice plays tennis", "alice works at acme"}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Search(alice, topic=work) mismatch (-want +got), both matches come back:\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -485,19 +490,21 @@ func TestInMemoryGraphSearchNamedAnchorSeedsItsOwnMatches(t *testing.T) {
 	}
 	sort.Strings(underB)
 
-	for _, depth := range []int{1, 2} {
-		nodes, _, _, _, err := search(g, []string{"zebra"}, containers.Vector[uint64, float64]{}, []string{"b"}, nil, depth, 10, time.Time{}, time.Time{})
-		if err != nil {
-			t.Fatalf("Search(zebra, topic=b, depth=%d) = %v, want nil", depth, err)
-		}
-		if len(nodes) < 5 {
-			t.Fatalf("Search(zebra, topic=b, depth=%d) = %v, want b's five facts first", depth, values(nodes))
-		}
-		got := values(nodes[:5])
-		sort.Strings(got)
-		if !reflect.DeepEqual(got, underB) {
-			t.Errorf("Search(zebra, topic=b, depth=%d) head = %v, want b's facts %v: the named anchor was never funded", depth, values(nodes[:5]), underB)
-		}
+	for name, depth := range map[string]int{"depth 1": 1, "depth 2": 2} {
+		t.Run(name, func(t *testing.T) {
+			nodes, _, _, _, err := search(g, []string{"zebra"}, containers.Vector[uint64, float64]{}, []string{"b"}, nil, depth, 10, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search(zebra, topic=b) = %v, want nil", err)
+			}
+			if len(nodes) < 5 {
+				t.Fatalf("Search(zebra, topic=b) = %v, want b's five facts first", values(nodes))
+			}
+			got := values(nodes[:5])
+			sort.Strings(got)
+			if diff := cmp.Diff(underB, got); diff != "" {
+				t.Errorf("Search(zebra, topic=b) head mismatch (-want +got), the named anchor was never funded:\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -567,8 +574,8 @@ func TestInMemoryGraphSearchNamedAnchorSeedsItsOwnNearest(t *testing.T) {
 	}
 	got := values(nodes[:5])
 	sort.Strings(got)
-	if !reflect.DeepEqual(got, underB) {
-		t.Errorf("Search(vec, topic=b) head = %v, want b's facts %v: the named anchor was never funded", values(nodes[:5]), underB)
+	if diff := cmp.Diff(underB, got); diff != "" {
+		t.Errorf("Search(vec, topic=b) head mismatch (-want +got), the named anchor was never funded:\n%s", diff)
 	}
 }
 
@@ -1434,8 +1441,8 @@ func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
 	// harbour fact that mentions no pilot, and it comes back alone: the
 	// anchors' other members are not seeded on their names.
 	nodes, _, _, _, _ = search(g, []string{"dawn"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, []string{"pilot"}, 0, 10, time.Time{}, time.Time{})
-	if want := []string{harbourDawn}; !reflect.DeepEqual(values(nodes), want) {
-		t.Errorf("Search(dawn, topic=harbour, entity=pilot) = %v, want %v: beside a term the anchors filter nothing", values(nodes), want)
+	if diff := cmp.Diff([]string{harbourDawn}, values(nodes)); diff != "" {
+		t.Errorf("Search(dawn, topic=harbour, entity=pilot) mismatch (-want +got), beside a term the anchors filter nothing:\n%s", diff)
 	}
 }
 
