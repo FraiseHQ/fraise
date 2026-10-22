@@ -665,10 +665,15 @@ _NO_MATCH = "zzznomatchzzz"
 _DEAD_URL = "http://127.0.0.1:1"
 
 # Four facts on one topic hub, each with a unique keyword, so result counts are
-# exact. Each keyword matches one fact. The hub a single seed reaches holds
-# only its fair share, so it transmits nothing in either graph lane. This
-# mirrors the e2e suite's star, written through the SDK instead of raw HTTP.
+# exact. Each keyword matches one fact. The hub a single seed discovers holds
+# only its fair share, so it transmits nothing in either graph lane. Named, it
+# owes no fair share and lifts every fact on it. This mirrors the e2e suite's
+# star, written through the SDK instead of raw HTTP.
 _INSTRUMENT_TOPIC = "instruments"
+
+# A topic nothing is filed under. Naming it opens the graph lane while every
+# anchor the seeds reach is discovered, so hub silence can be pinned.
+_DOOR_TOPIC = "doorprobe"
 _INSTRUMENT_FACTS = {
     "cello": "the cello is bowed and tuned in fifths",
     "flute": "the flute is blown across a lip plate",
@@ -795,6 +800,16 @@ def instrument_topic():
         The topic name.
     """
     return _INSTRUMENT_TOPIC
+
+
+@pytest.fixture(scope="session")
+def door_topic():
+    """A topic nothing is filed under: naming it opens the graph lane alone.
+
+    Returns:
+        The topic name.
+    """
+    return _DOOR_TOPIC
 
 
 @pytest.fixture(scope="session")

@@ -103,6 +103,7 @@ type Hit[K comparable, P float32 | float64] struct {
 //   - A text or vector entry carries its raw mass and list position.
 //   - A graph entry, one per funding anchor, carries the anchor's full observed
 //     mass, its value under via, its degree and how many seeds funded it.
+//     named is set when the query named the anchor, which owes no fair share.
 //   - An anchor entry, one per named anchor an anchor-seeded fact is filed
 //     under, carries a unit mass and the anchor's value and degree.
 //
@@ -115,6 +116,7 @@ type HitContribution[P float32 | float64] struct {
 	Via    string `json:"via,omitempty"`
 	Degree uint32 `json:"degree,omitempty"`
 	Count  uint16 `json:"count"`
+	Named  bool   `json:"named,omitempty"`
 }
 
 // MarshalJSON flattens the node into the hit, so the response carries the

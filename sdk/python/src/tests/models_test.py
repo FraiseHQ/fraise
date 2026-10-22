@@ -138,6 +138,27 @@ def test_an_explained_hit_carries_its_contributions(explain_response):
     ]
 
 
+@pytest.mark.parametrize(
+    ("named", "want"),
+    [({"named": True}, True), ({}, False)],
+)
+def test_a_graph_sighting_says_whether_the_recall_named_its_anchor(named, want):
+    """``named`` parses from the wire, and its absence reads as not named.
+
+    A named anchor owes no fair share, so a client recomputing the score needs
+    the flag. The server omits it when false, so a missing key must not fail.
+    """
+    data = {
+        "source": "graph",
+        "score": 2.0,
+        "rank": 0,
+        "count": 1,
+        "via": "archive",
+        "degree": 8,
+    }
+    assert Contribution.from_json(data | named).named is want
+
+
 def test_a_hit_reached_through_the_graph_alone_says_so(explain_response):
     """A graph-only hit matched nothing itself, so its one sighting is the graph's.
 

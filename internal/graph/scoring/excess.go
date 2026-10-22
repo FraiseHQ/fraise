@@ -41,6 +41,13 @@ const alpha = 0.5
 // anchor at or below its fair share contributes nothing (hub silence). So a hub
 // is heard when it is surprising and silent when it is merely large.
 //
+// An anchor the query named has no fair share to clear: the query asserts it
+// bears on the question, so chance is not the null to test it against. Its
+// members gain α² · max(0, (M_A − m) / d_A). A match filed under it is lifted by
+// the mass its siblings there found, and a match filed elsewhere keeps its own
+// mass. Self-exclusion still holds, so a named anchor holding one match lifts
+// nothing.
+//
 // Scores stay in raw seed units. Relevance is homogeneous of degree 1 in the
 // mass scale, so rescaling every mass leaves the ordering unchanged (scale
 // invariance). Normalising a single channel would only break the channels'
@@ -85,7 +92,11 @@ func (s *ExcessScorer[K, P]) Score(contributions []Contribution[K, P]) P {
 		if deg < 1 {
 			deg = 1
 		}
-		if surplus := (c.Score - mass - deg*s.background) / deg; surplus > 0 {
+		fair := deg * s.background
+		if c.Named {
+			fair = 0
+		}
+		if surplus := (c.Score - mass - fair) / deg; surplus > 0 {
 			excess += surplus
 		}
 	}

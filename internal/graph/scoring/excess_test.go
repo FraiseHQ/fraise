@@ -82,6 +82,25 @@ func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	}
 }
 
+// TestExcessScorerNamedAnchorOwesNoFairShare pins the named anchor's fold. The
+// degree-6 hub silent above, observing 14 at background 2, transmits once
+// named: it owes the candidate's own mass 2 (self-exclusion) and nothing to
+// the background, so (14 − 2)/6 = 2 per edge, α² of which arrives. A named
+// anchor whose only mass is the candidate's own lifts nothing.
+func TestExcessScorerNamedAnchorOwesNoFairShare(t *testing.T) {
+	scorer := scoring.NewExcessScorer[uint64, float64]()
+
+	named := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 6, Count: 2, Named: true})
+	if got, want := scorer.WithBackground(2).Score(named), 2+0.25*(14-2)/6.0; got != want {
+		t.Errorf("named hub fold = %v, want m + α²·(M − m)/d = %v", got, want)
+	}
+
+	alone := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 2, Via: 1, Degree: 6, Count: 1, Named: true})
+	if got := scorer.WithBackground(2).Score(alone); got != 2 {
+		t.Errorf("named anchor funded by the candidate alone folds to %v, want the seed mass 2", got)
+	}
+}
+
 // TestExcessScorerScaleInvariance pins scale invariance at the fold. Scaling
 // the masses and the background by the same power of two scales the score
 // exactly. Nothing in the fold depends on an absolute scale.

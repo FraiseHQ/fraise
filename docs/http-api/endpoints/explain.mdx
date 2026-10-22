@@ -40,6 +40,7 @@ One contribution records one sighting of the hit by one retrieval source:
 | `via` | the anchor a `graph` or `anchor` sighting came through |
 | `degree` | that anchor's degree — how many edges its mass is shared across |
 | `count` | how many seeds funded the sighting |
+| `named` | `true` on a `graph` sighting through an anchor the recall named; omitted otherwise |
 
 An `anchor` sighting belongs to a recall seeded by its anchors alone: the fact was reached because it is filed under an anchor the query named.
 
@@ -60,6 +61,8 @@ A `text` or `vector` sighting is the fact's own match, its mass $m$. A `graph` s
 $$
 \alpha^2 \cdot \frac{\max(0,\; M_A - m - d_A \, \rho_0)}{d_A}, \qquad \alpha = 0.5
 $$
+
+A sighting marked `named` comes through an anchor the recall named, which owes no fair share: drop the $d_A \, \rho_0$ term, and it adds $\alpha^2 \max(0,\; M_A - m)/d_A$.
 
 In the example, `polly` holds $2.9682 - 0.9762 - 3 \times 0.6596 \approx 0.013$ above background, which spread over its 3 edges and attenuated adds about $0.0011$ to the text mass — hence $0.9773$. A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score.
 

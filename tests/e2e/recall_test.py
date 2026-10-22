@@ -129,46 +129,45 @@ def test_recall_question_travels_as_a_quoted_phrase(query):
     assert body["results"] is not None
 
 
-def test_recall_depth_selects_a_lane(planets_graph, recall_count):
+def test_recall_depth_selects_a_lane(planets_graph, door_topic, recall_count):
     """Every depth gives this query the same answer, for different reasons.
 
-    depth picks the retrieval lane. depth:0 is the floor. The anchor traversal
-    never runs, so only the seed can come back. depth:1 and depth:2 run the
-    anchor round, because the recall names the star's topic. They still return
-    the seed alone. A lone seed's topic hub sits exactly at the background
-    rate, so it transmits nothing at either admission bar. Omitting the clause
-    uses the configured default. This test cannot tell a silent hub from a
-    graph channel that never ran. The lantern tests below separate the floor
-    from the graph lanes by their results.
+    depth picks the retrieval lane. The recall names the door, an anchor beside
+    a term, so it runs at depth:1 at least: a written depth:0 runs as depth:1.
+    depth:1 and depth:2 run the anchor round. They return the seed alone. The
+    star's topic hub is discovered, not named, and a lone seed's hub sits
+    exactly at the background rate, so it transmits nothing at either admission
+    bar. Omitting the clause uses the configured default. This test cannot tell
+    a silent hub from a graph channel that never ran. The lantern tests below
+    separate the lanes by their results.
     """
     g = planets_graph
     for clause in ("depth:0", "depth:1", "depth:2", ""):
-        text = f"recall@{g} mercury topic:planets {clause}".strip()
+        text = f"recall@{g} mercury topic:{door_topic} {clause}".strip()
         assert recall_count(text) == 1, f"{text}: a fair-share hub must not transmit"
 
 
-def test_floor_lane_returns_only_what_the_text_index_matched(
+def test_floor_lane_beside_an_anchor_runs_as_depth_one(
     lantern_graph, lantern_silent, query
 ):
-    """depth:0 is the floor lane: seeds only, no transmission.
+    """depth:0 beside an anchor runs as depth:1, and the response says so.
 
-    The traversal never runs, so every hit contains the query term. The
-    cluster's silent member contains none, so it cannot appear. depth:0 also
-    spells the shipped default explicitly. It must be honoured, not replaced by
-    the configured default (2 in tests/fraise.config.toml).
+    An anchor beside a term takes part only through what it transmits, and the
+    floor lane transmits nothing. So the recall runs the anchor round instead:
+    the cluster's silent member, which carries no query term, is funded. The
+    warning sits beside the hits, at the depth clause.
     """
-    clause = "depth:0"
     status, body = query(
-        f"recall@{lantern_graph} lantern topic:lanterns topic:almanac {clause} top:20"
+        f"recall@{lantern_graph} lantern topic:lanterns depth:0 top:20"
     )
     assert status == 200, body.get("error")
 
     values = [hit["value"] for hit in body["results"]["hits"]]
-    assert values, f"{clause}: the text index still matches the lantern facts"
-    assert lantern_silent not in values, (
-        f"{clause} surfaced {lantern_silent!r}: it carries no query term, so "
-        "the floor lane must not be able to reach it"
+    assert lantern_silent in values, (
+        f"depth:0 did not run as depth:1: {lantern_silent!r} unfunded; got {values}"
     )
+    warnings = body.get("warnings") or []
+    assert any("depth:0 ran as depth:1" in w for w in warnings), warnings
 
 
 @pytest.mark.parametrize("clause", ["depth:1", "depth:2"])
@@ -177,23 +176,18 @@ def test_graph_lanes_transmit_to_a_fact_the_floor_cannot_reach(
 ):
     """depth:1 and depth:2 run the round, and their hits show it.
 
-    The silent member arrives funded by its cluster's surplus alone. The
-    almanac hub holds no more than its fair share of the query's mass across
-    eight members. It transmits nothing, so its entries stay out. This test and
-    the floor test above run the same query on the same graph, one clause
-    apart. The pair proves the lane switch reaches the engine and is not parsed
-    and dropped. Both topics are named, because the graph is entered only
-    through an anchor the recall names. Naming the hub keeps its entries in the
-    candidate set, so their absence is the hub's silence, not the filter's
-    doing.
+    The silent member arrives funded by its cluster's transmission alone. The
+    recall names only the cluster. The almanac hub is discovered, and holds no
+    more than its fair share of the query's mass across eight members. It
+    transmits nothing, so its entries stay out.
 
-    This cluster is strongly above chance, so it clears both admission bars.
-    depth:1 (precision) and depth:2 (max recall) differ on an anchor between
-    one and two times its fair share. That needs mass arithmetic too delicate
-    to pin over HTTP. TestSearchDepthOnePrecisionBar covers it.
+    The cluster is named, so it clears both admission bars whatever its share.
+    depth:1 (precision) and depth:2 (max recall) differ on a discovered anchor
+    between one and two times its fair share. That needs mass arithmetic too
+    delicate to pin over HTTP. TestSearchDepthOnePrecisionBar covers it.
     """
     status, body = query(
-        f"recall@{lantern_graph} lantern topic:lanterns topic:almanac {clause} top:20"
+        f"recall@{lantern_graph} lantern topic:lanterns {clause} top:20"
     )
     assert status == 200, body.get("error")
 
@@ -455,23 +449,23 @@ def test_recall_top_keeps_the_head_of_the_ranking(
 
 
 def test_recall_depth_one_is_not_polluted_by_a_fact_named_like_a_topic(
-    query, ledger_topic, ledger_facts, recall_ranking
+    query, ledger_topic, ledger_facts, door_topic, recall_ranking
 ):
     """A fact whose text is its topic's name must not stand in for the topic.
 
-    Recall returns facts, never the hubs it walks through. With the topic
-    named, depth:1 runs the anchor round from the seed. The topic is the only
-    anchor the seed touches, so it stays silent and the seed comes back alone.
-    A "ledgerprobe" fact standing in for the topic would show up here as a
-    second hit. Graph 5's other facts carry different topics, so nothing else
-    is one hop from the seed.
+    Recall returns facts, never the hubs it walks through. Through the door,
+    depth:1 runs the anchor round from the seed. The ledger topic is the only
+    anchor the seed touches, discovered rather than named, so it stays silent
+    and the seed comes back alone. A "ledgerprobe" fact standing in for the
+    topic would show up here as a second hit. Graph 5's other facts carry
+    different topics, so nothing else is one hop from the seed.
     """
     graph = 5
     for phrase in ledger_facts:
         status, body = query(f"remember@{graph} '{phrase}' topic:{ledger_topic}")
         assert status == 200, body.get("error")
 
-    hits = recall_ranking(f"recall@{graph} quarterly topic:{ledger_topic} depth:1")
+    hits = recall_ranking(f"recall@{graph} quarterly topic:{door_topic} depth:1")
     assert hits == ["acme settles invoices quarterly"], (
         f"depth:1 must return the seed alone; {ledger_facts[0]!r} reached it as a "
         f"neighbour, so it is serving as the {ledger_topic!r} topic node: {hits}"
@@ -630,13 +624,15 @@ def test_recall_of_an_unknown_anchor_is_empty(query):
     assert body["results"] == {"count": 0, "hits": []}
 
 
-def test_a_recall_with_a_term_filters_by_the_anchor(
+def test_a_recall_with_a_term_lifts_the_anchors_facts(
     planets_graph, planet_facts, recall_ranking
 ):
-    """Beside a term, the anchor filters the seeds the text index finds.
+    """Beside a term, the anchor filters nothing and lifts the facts under it.
 
-    `recall mercury topic:planets` returns the mercury fact alone, not the star
-    it is filed in.
+    `recall mercury topic:planets` returns the mercury fact first, on its own
+    match, then the rest of the star: the named topic passes the seed's mass to
+    every fact filed under it.
     """
     hits = recall_ranking(f"recall@{planets_graph} mercury topic:planets")
-    assert hits == [planet_facts["mercury"]]
+    assert hits[0] == planet_facts["mercury"], hits
+    assert sorted(hits) == sorted(planet_facts.values()), hits

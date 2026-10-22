@@ -43,11 +43,23 @@ $$
 
 so admission is a comparison among the anchors one query reached: an anchor speaks when it concentrates more of the query's evidence than its size accounts for next to the others. Three consequences follow, all of them intended:
 
-- **A query that reaches one anchor transmits nothing.** That anchor holds exactly its share — $M = d \cdot (M/d)$ — and with nothing to compare it against there is no evidence that it concentrates anything.
+- **A query that reaches one anchor it did not name transmits nothing.** That anchor holds exactly its share — $M = d \cdot (M/d)$ — and with nothing to compare it against there is no evidence that it concentrates anything.
 - **A query with one seed admits on degree alone.** Every anchor it touches observes the same mass $m$, so an anchor clears its share exactly when its degree is below the touched mean. That is the correct inference: an anchor of degree 3 holding $m$ *is* more surprising than an anchor of degree 300 holding the same $m$.
 - **Silence is relative, not absolute.** An anchor falls silent when it holds no more of the query's evidence than its size accounts for next to the other anchors reached, whatever that evidence amounts to in raw units.
 
 `depth:1` raises the admission bar to twice the fair share; `depth:2` admits at the fair share itself. The rate and the fold are the same in both — see [Retrieval lanes](/docs/retrieval/ranking/depth).
+
+## Named anchors
+
+The bar is a null model for the anchors a query discovers: an anchor the seeds happen to reach must show that it concentrates more of the evidence than chance would put there. An anchor the recall names needs no such test, since naming it is the query's own claim that it bears on the question. It transmits whenever a seed reaches it, at either lane, and owes each member only that member's own mass:
+
+$$
+\alpha^2 \, \frac{\max\bigl(0,\; M_A - m\bigr)}{d_A}
+$$
+
+Naming `hub` in the example above lets it speak. Its five unmatched facts each receive $\alpha^2 \cdot 2/6 \approx 0.08$, and its one match receives nothing, since a fact never funds its own boost. The named anchor weighs in $\rho_0$ like any anchor the query reached. Naming it also seeds the matches filed under it, and those seeds weigh in $\rho_0$ like any others, so the discovered anchors are held to the bar the anchored recall's own evidence sets.
+
+A named anchor filters nothing. A match filed under none of the named anchors keeps its own mass and ranks among the rest; a match filed under one is lifted by what its siblings there matched.
 
 ## Choosing the traversal
 

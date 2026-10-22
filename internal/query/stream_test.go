@@ -169,7 +169,7 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 	contributions := [][]scoring.Contribution[string, float32]{
 		{{Src: scoring.SrcText, Score: 1, Rank: 0, Count: 1}},
-		{{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2}},
+		{{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2, Named: true}},
 		{{Src: scoring.SrcAnchor, Score: 1, Via: "harbour-key", Degree: 4, Count: 1}},
 	}
 	// The wire form names each source, and resolves the graph and anchor
@@ -177,7 +177,7 @@ func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 	// back to empty, as the contract says for a vanished anchor.
 	want := [][]HitContribution[float32]{
 		{{Source: "text", Score: 1, Rank: 0, Count: 1}},
-		{{Source: "vector", Score: 0.5, Rank: 1, Count: 1}, {Source: "graph", Score: 2, Degree: 3, Count: 2}},
+		{{Source: "vector", Score: 0.5, Rank: 1, Count: 1}, {Source: "graph", Score: 2, Degree: 3, Count: 2, Named: true}},
 		{{Source: "anchor", Score: 1, Degree: 4, Count: 1}},
 	}
 
