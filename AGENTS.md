@@ -284,3 +284,5 @@ not an obstacle to sed away.
 
 Follow `CONTRIBUTING.md` for PR instructions: branch naming, commit message
 format, and the review process.
+
+The repository merges by squash only: each pull request lands on `main` as a single commit titled after the pull request, the commit release-please reads. Stacked pull requests therefore don't work here. Squashing the lower one rewrites its commits into a new commit, and the one above it, still carrying the originals, then conflicts with `main` on every line both touched. Branch every pull request from `main`, and when a change depends on another that is still open, wait for that one to merge first.
