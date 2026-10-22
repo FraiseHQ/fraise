@@ -60,18 +60,24 @@ def test_matching_more_of_the_query_outranks_matching_less(query, ranked_hits):
     )
 
 
-def test_the_fact_asked_about_outranks_its_neighbourhood(query, ranked_hits):
-    """The fact that matches the query must top the expansion around it.
+def test_the_fact_asked_about_outranks_its_neighbourhood(
+    query, recall_ranking, unfiled_topic
+):
+    """The fact that actually matches the query must top the expansion pulled
+    in around it. Graph context enriches an answer; it must never bury the
+    answer itself.
 
-    Graph context enriches an answer. It must never bury the answer itself.
-
-    Expansion needs surplus. The smallest shape where an anchor speaks has two
-    anchors. A small cluster concentrates the query's mass, and a bigger hub
-    holds no more than its fair share. The cluster's silent member is funded,
-    attenuated by α², and lands behind both facts that matched. The hub
-    transmits nothing, so its notes, which all contain "geyser", rank on their
-    own text match alone. Both topics are named, because the graph is entered
-    only through an anchor the recall names.
+    Expansion requires surplus: a small cluster concentrating the query's
+    mass next to a bigger hub holding no more than its fair share is the
+    smallest shape where an anchor speaks. The cluster's silent member is
+    funded by the cluster's surplus and lands behind both facts that matched;
+    the hub transmits nothing, so its notes, which all contain "geyser", rank
+    on their own text match alone. The graph is entered only once the recall
+    names an anchor, and a named anchor raises its facts instead of being
+    judged by the round, so the recall names a topic nothing is filed under
+    and leaves both topics to the round. The two topics are two facets, so
+    the spread (db.aggregate) seats the hub's best note before the cluster's
+    second fact; the order within the cluster is the ranking's.
     """
     graph = 0
     direct = (
@@ -88,8 +94,8 @@ def test_the_fact_asked_about_outranks_its_neighbourhood(query, ranked_hits):
         )
         assert status == 200, body.get("error")
 
-    values, scores = ranked_hits(
-        f"recall@{graph} geyser caldera topic:thermal topic:archive top:20"
+    values = recall_ranking(
+        f"recall@{graph} geyser caldera topic:{unfiled_topic} top:20"
     )
     assert silent in values, f"the cluster's surplus must fund its member; got {values}"
     assert values[0] == direct[0], (

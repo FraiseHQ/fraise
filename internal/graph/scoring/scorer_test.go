@@ -33,19 +33,19 @@ import (
 // Go constants. So a renamed or unnamed source is a wire change. A stage added
 // without a name would reach the client as "unknown".
 func TestSourceStringNamesEveryStage(t *testing.T) {
-	cases := []struct {
-		src  scoring.Source
-		want string
-	}{
-		{scoring.SrcText, "text"},
-		{scoring.SrcVector, "vector"},
-		{scoring.SrcGraph, "graph"},
-		{scoring.SrcAnchor, "anchor"},
-		{scoring.Source(255), "unknown"},
+	cases := map[string]scoring.Source{
+		"text":    scoring.SrcText,
+		"vector":  scoring.SrcVector,
+		"graph":   scoring.SrcGraph,
+		"anchor":  scoring.SrcAnchor,
+		"named":   scoring.SrcNamed,
+		"unknown": scoring.Source(255),
 	}
-	for _, tc := range cases {
-		if got := tc.src.String(); got != tc.want {
-			t.Errorf("Source(%d).String() = %q, want %q", tc.src, got, tc.want)
-		}
+	for want, src := range cases {
+		t.Run(want, func(t *testing.T) {
+			if got := src.String(); got != want {
+				t.Errorf("Source(%d).String() = %q, want %q", src, got, want)
+			}
+		})
 	}
 }

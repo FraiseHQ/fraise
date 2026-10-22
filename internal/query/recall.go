@@ -32,10 +32,10 @@ import (
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
-// Recall is a read query. It searches the selected graph for the facts that
-// best match its Keywords and Vector. Its Entities and Topics narrow or seed
-// the search, and its Parameters rank and bound it. [Parse] builds one from a
-// recall command. The engine's optimisation pipeline may rewrite its lists
+// Recall is a read query: it searches the selected graph for the facts that
+// best match its Keywords and Vector, raised or seeded by its Entities and
+// Topics, and ranked and bounded by Parameters. [Parse] builds one from a
+// recall command, and the engine's optimisation pipeline may rewrite its lists
 // before it is cached.
 type Recall[K comparable, P float32 | float64] struct {
 	Keywords []string

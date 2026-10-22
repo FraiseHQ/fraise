@@ -29,16 +29,16 @@ hit's per-source contribution breakdown. /q responses stay free of it.
 import pytest
 
 
-def test_explain_breaks_down_each_hit_by_source(explain, pulsar_graph, pulsar_entity):
-    """Every explained hit carries its contribution records.
-
-    Here each hit is a pure text seed. Its record has the source name, the raw
-    BM25 mass, the rank in the text list, and a count (1 for a seed sighting).
-    The shared entity is the only touched anchor, so it holds no surplus and no
-    graph contribution appears. No contribution carries a hop field.
+def test_explain_breaks_down_each_hit_by_source(explain, pulsar_graph, unfiled_topic):
+    """Every explained hit carries its contribution records: here each hit is
+    a pure text seed — source name, raw BM25 mass, rank in the text list, and
+    count (1 for a seed sighting). The recall names a topic nothing is filed
+    under, which opens the round and leaves the facts' shared entity to it:
+    the only touched anchor, it holds no surplus, so no graph contribution
+    appears. No contribution carries a hop field.
     """
     status, body = explain(
-        f"recall@{pulsar_graph} pulsar entity:{pulsar_entity} depth:2"
+        f"recall@{pulsar_graph} pulsar topic:{unfiled_topic} depth:2"
     )
     assert status == 200, body.get("error")
     hits = body["results"]["hits"]
@@ -63,21 +63,20 @@ def test_explain_shows_transmitted_surplus(
     explain,
     storm_graph,
     storm_cluster_topic,
-    storm_hub_topic,
+    unfiled_topic,
     storm_silent_member,
     storm_hub,
 ):
-    """Funded case: the cluster's silent member carries a graph contribution.
-
-    The contribution names its funding anchor: the cluster's topic as via, the
-    anchor's degree, its observed mass and its funding-seed count. This proves
-    that an anchor passes on surplus, not reachability. The archive hub's memos
-    stay out. The hub holds no more than its fair share, so it transmits
-    nothing.
+    """The funded case: the cluster's silent member surfaces carrying a graph
+    contribution that names its funding anchor — via the cluster's topic, the
+    anchor's degree, its observed mass and funding-seed count — proving
+    surplus, not reachability, is what an anchor passes on. The archive hub's
+    memos stay out: holding no more than its fair share, it transmits nothing.
+    The recall names a topic nothing is filed under, so both anchors are left
+    to the round.
     """
     status, body = explain(
-        f"recall@{storm_graph} barometer storm "
-        f"topic:{storm_cluster_topic} topic:{storm_hub_topic} top:20"
+        f"recall@{storm_graph} barometer storm topic:{unfiled_topic} top:20"
     )
     assert status == 200, body.get("error")
     hits = {h["value"]: h for h in body["results"]["hits"]}
@@ -98,39 +97,34 @@ def test_explain_shows_transmitted_surplus(
 
 
 def test_explain_score_recomputes_from_payload(
-    explain, storm_graph, storm_cluster_topic, storm_hub_topic, alpha
+    explain, storm_graph, storm_hub_topic, storm_hub, information_scores
 ):
-    """Every hit's score recomputes from its own payload.
-
-    With the query-level background rate, each score equals the formula applied
-    to the hit's contributions:
-
-        S = m + α²·Σ max(0, M_A − m − d_A·ρ₀)/d_A
-
-    Each anchor's surplus arrives as its per-edge share. The tolerance absorbs
-    the recency decay between write and read. So the payload is a complete
-    explanation, not a summary.
+    """The recompute pin: with the query-level background rate, every hit's
+    score equals the information fold applied to the payload, within a
+    tolerance that absorbs the recency decay between write and read. The fold
+    measures each fact against the recall's whole pool, so the recall returns
+    every candidate, and the payload is then a complete explanation, not a
+    summary. Naming the hub puts both kinds of graph evidence in it: the
+    hub's memos carry named observations, owing no fair share, while the
+    cluster, left to the round, funds its silent member with a graph one.
     """
     status, body = explain(
-        f"recall@{storm_graph} barometer storm "
-        f"topic:{storm_cluster_topic} topic:{storm_hub_topic} top:20"
+        f"recall@{storm_graph} barometer storm topic:{storm_hub_topic} top:1000"
     )
     assert status == 200, body.get("error")
     background = body["results"].get("background", 0)
     assert background > 0, "two anchors are touched; the null rate must be positive"
+    hits = body["results"]["hits"]
+    sources = {c["source"] for hit in hits for c in hit["contributions"]}
+    assert {"text", "graph", "named"} <= sources, sources
+    assert {h["value"] for h in hits} >= set(storm_hub), (
+        "the named hub raises its memos"
+    )
 
-    for hit in body["results"]["hits"]:
-        contributions = hit["contributions"]
-        m = sum(c["score"] for c in contributions if c["source"] in ("text", "vector"))
-        surplus = sum(
-            max(0.0, c["score"] - m - c["degree"] * background) / max(c["degree"], 0.01)
-            for c in contributions
-            if c["source"] == "graph"
-        )
-        want = m + alpha * alpha * surplus
-        assert abs(hit["score"] - want) < 1e-3, (
+    for hit, want in zip(hits, information_scores(hits, background), strict=True):
+        assert abs(hit["score"] - want) < 1e-6 * max(1.0, want), (
             f"{hit['value']!r}: score {hit['score']} != recomputed {want} "
-            f"from {contributions} at background {background}"
+            f"from {hit['contributions']} at background {background}"
         )
 
 

@@ -164,14 +164,15 @@ func TestSearchWithConfiguredTraversal(t *testing.T) {
 
 	// No traversal. NewGraph installs none (db.Start installs one from
 	// configuration), so on a bare graph the graph channel is off and the
-	// silent member cannot surface. Both searches name the fixture's topics,
-	// because the traversal runs only through a named anchor. Only the
+	// silent member cannot surface. Both searches name a topic nothing is
+	// filed under, because the traversal runs only once an anchor is named,
+	// and that anchor leaves the fixture's topics to the round; only the
 	// traversal differs between them.
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	bare := graph.NewGraph[uint64, float64](cfg)
 	calm, _ := stormGraph(t, bare)
-	nodes, _, _, _, _ := search(bare, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, _, _, _ := search(bare, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"scope"}, nil, 2, 20, time.Time{}, time.Time{})
 	if find(values(nodes), calm) {
 		t.Errorf("Search with no traversal surfaced %q — the graph channel should be off", calm)
 	}
@@ -181,7 +182,7 @@ func TestSearchWithConfiguredTraversal(t *testing.T) {
 	g := noDecayGraph()
 	g.SetTraversal(graph.NewBFSTraversal[uint64, float64](graph.Both))
 	calm, _ = stormGraph(t, g)
-	nodes, _, _, _, _ = search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, _, _, _ = search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"scope"}, nil, 2, 20, time.Time{}, time.Time{})
 	if !find(values(nodes), calm) {
 		t.Errorf("Search with BFS installed did not fund %q — a tree traversal still observes anchors", calm)
 	}

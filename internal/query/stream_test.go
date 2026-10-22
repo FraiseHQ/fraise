@@ -359,10 +359,10 @@ func TestStreamFinishIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestCommitStoresAnchorNodesForFilteredRecall drives the production write
-// path, an in-place Commit against a real graph. It checks that the written
-// fact is recallable with its topic: and entity: anchors as filters.
-func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
+// TestCommitStoresAnchorNodesForAnchoredRecall drives the production write
+// path (an in-place Commit against a real graph) and checks the written fact
+// is recallable with its topic: and entity: anchors named beside a term.
+func TestCommitStoresAnchorNodesForAnchoredRecall(t *testing.T) {
 	g := graph.NewGraph[uint64, float32](config.New())
 
 	remember := &Remember[uint64, float32]{
@@ -390,9 +390,9 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 		topics   []string
 		entities []string
 	}{
-		{"no filter", nil, nil},
-		{"topic filter", []string{"travel"}, nil},
-		{"entity filter", nil, []string{"alice"}},
+		{"no anchor", nil, nil},
+		{"topic named", []string{"travel"}, nil},
+		{"entity named", nil, []string{"alice"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -476,15 +476,15 @@ func BenchmarkRecallCommit(b *testing.B) {
 	}
 }
 
-// TestCommitSeedsFromAnchorsStoredByCommit drives the production write path,
-// then the anchor-only read it makes possible. A Recall that names a topic and
-// no term reaches Search with nil keywords and an empty vector. The seeding
-// must resolve the topic to the node Commit stored. Under any other key it
-// would seed nothing. Every fact filed under the topic comes back, and nothing
-// else. Each is scored from its unit anchor mass, and in explain mode each
-// breakdown names the topic it was found under. Naming the entity as well
-// doubles the mass of every fact filed under both. A term beside the anchor
-// seeds from the text index, with the anchor as a filter.
+// TestCommitSeedsFromAnchorsStoredByCommit drives the production write path
+// and then the anchor-only read it makes possible. A Recall naming a topic
+// and no term reaches Search with nil keywords and an empty vector, and the
+// seeding must resolve the topic to the node Commit stored: under any other
+// key it would seed nothing. Every fact filed under the topic comes back and
+// nothing else, each scored from its unit anchor mass, and in explain mode
+// each breakdown names the topic it was found under. Naming the entity as
+// well doubles the mass of every fact filed under both, and a term beside the
+// anchor seeds from the text index, the anchor lending no sighting.
 func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	g := graph.NewGraph[uint64, float32](config.New())
 	facts := []string{"the deploy runs at noon", "the deploy key lives in vault", "the deploy log is archived weekly"}
@@ -571,7 +571,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	t.Run("a term beside the anchor searches", func(t *testing.T) {
 		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
 		if got, want := hitValues(r), []string{"the deploy key lives in vault"}; !reflect.DeepEqual(got, want) {
-			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: the anchor filters, it does not list", got, want)
+			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: beside a term the anchor does not list its members", got, want)
 		}
 		for _, c := range r.Hits[0].Contributions {
 			if c.Source == "anchor" {

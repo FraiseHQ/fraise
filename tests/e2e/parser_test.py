@@ -897,10 +897,10 @@ def test_stop_word_only_recall_is_rejected(query, text, assert_rejected):
     assert 'term "the" is a stop word' in body["error"], body["error"]
 
 
-# Anchor-seeded recall. Anchors are seeds, not only filters, so "everything
-# about billing" is a natural query. With no term or vector beside them, the
-# anchors seed the recall with everything filed under them. recall_test.py pins
-# the results. These tests pin that the shape parses with every modifier a
+# Anchor-seeded recall. Anchors are seeds, so "everything about billing" is a
+# natural query: with no term or vector beside them the anchors seed the
+# recall with everything filed under them. The results themselves are pinned
+# in recall_test.py; these pin that the shape parses with every modifier a
 # recall takes.
 
 

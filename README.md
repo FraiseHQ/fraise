@@ -98,9 +98,9 @@ Fraise stores knowledge as a **temporal memory graph** built from three kinds of
 - **entities** — who or what a fact mentions
 - **topics** — what a fact is about
 
-Edges connect facts to the entities they mention and the topics they're about, so a query can start from either side. A `recall` finds seed facts by text and, optionally, by vector similarity; a recall that names only topics or entities starts from the facts filed under them. With `depth:1` or `depth:2`, a named topic or entity whose facts matched better than its size predicts passes that evidence on to the rest of its facts. Results are ranked by relevance and recency, and the best `top` come back.
+Edges connect facts to the entities they mention and the topics they're about, so a query can start from either side. A `recall` finds seed facts by text and, optionally, by vector similarity; a recall that names only topics or entities starts from the facts filed under them. A topic or entity the recall names beside a search raises the facts filed under it and excludes none; with `depth:1` or `depth:2`, any other topic or entity whose facts matched better than its size predicts passes that evidence on to the rest of its facts. Results are ranked by relevance and recency, and the best `top` come back.
 
-Ranking is not a black box: a fact's score is its own match strength plus what it receives through anchors carrying *more* mass than their size would predict. The background rate that "more" is measured against is estimated per query, from the part of the graph the query touched, so there is no relevance constant to tune. [Hybrid retrieval](https://docs.getfraise.dev/docs/retrieval/ranking/hybrid-retrieval) has the full model.
+Ranking is not a black box: a fact's score folds its own match strength with what it receives through anchors carrying *more* mass than their size would predict, each weighed by how much it says about the facts the recall could return. The background rate that "more" is measured against is estimated per query, from the part of the graph the query touched, so there is no relevance constant to tune. [Hybrid retrieval](https://docs.getfraise.dev/docs/retrieval/ranking/hybrid-retrieval) has the full model.
 
 A single Fraise instance holds several independent memory graphs (8 by default), addressed with `@N` — one per user, per session, per agent, however you like.
 
@@ -216,7 +216,7 @@ curl -X POST localhost:9876/api/v1/q \
   "results": {
     "count": 1,
     "hits": [
-      { "value": "the parrot is turquoise", "timestamp": "...", "score": 0.2867 }
+      { "value": "the parrot is turquoise", "timestamp": "...", "score": 1 }
     ]
   }
 }

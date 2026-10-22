@@ -361,12 +361,14 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	}
 
 	// The shared entity is the only anchor the query touches, so its fair
-	// share is all of its observed mass. It holds no surplus, so the
-	// entity-linked fact does not ride in on reachability alone. With the
-	// entity named and depth 2, the traversal runs and still funds nothing.
+	// share is all of its observed mass: it holds no surplus, and the
+	// entity-linked fact does not ride in on mere reachability. The traversal
+	// runs only when the query names an anchor, so the query names a topic
+	// nothing is filed under: at depth 2 the round runs and, the entity left
+	// to it, still funds nothing.
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
-	nodes, _, _, _, _ = search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, []string{"alice"}, 2, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 || nodes[0].GetValue() != "alice works at acme" {
+	nodes, _, _, _, _ = search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, []string{"scope"}, nil, 2, 10, time.Time{}, time.Time{})
+	if len(nodes) != 1 || (*nodes[0]).GetValue() != "alice works at acme" {
 		t.Errorf("Search(acme, depth=2) = %v, want only the direct hit — a lone anchor has no surplus to transmit", values(nodes))
 	}
 }
@@ -420,22 +422,42 @@ func TestInMemoryGraphSearchRejectsAVectorOfTheWrongDimension(t *testing.T) {
 	}
 }
 
-func TestInMemoryGraphSearchTopicFilter(t *testing.T) {
-	g := newGraph()
+// TestInMemoryGraphSearchNamedTopicRaisesWithoutNarrowing pins what a topic
+// named beside a term does: it raises the facts filed under it and removes
+// none. The office fact matches no word of the query, yet the topic carries
+// the seed mass of the work fact the query did match, so the office fact
+// surfaces on that share alone; the tennis fact is filed under no named
+// anchor and stays, on its own text match. A topic that narrowed would have
+// lost it, and one that only filtered would have left the office fact out.
+func TestInMemoryGraphSearchNamedTopicRaisesWithoutNarrowing(t *testing.T) {
+	g := noDecayGraph()
 	now := time.Now()
+	work := mkTopic(g, "work", now)
+	mustSet(t, g, work)
+	file := func(value string, topic *graph.Topic[uint64]) {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		if topic != nil {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		}
+	}
+	file("alice works at acme", work)
+	file("the office opens at nine", work)
+	file("alice plays tennis", nil)
 
-	fact1 := mkFact(g, "alice works at acme", now)
-	fact2 := mkFact(g, "alice plays tennis", now)
-	topic := mkTopic(g, "work", now)
-	mustSet(t, g, fact1)
-	mustSet(t, g, fact2)
-	mustSet(t, g, topic)
-	mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact1, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
-
-	// Both facts match "alice", but only fact1 is tagged with topic "work".
-	nodes, _, _, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 || nodes[0].GetValue() != "alice works at acme" {
-		t.Errorf("Search(alice, topic=work) = %v, want [alice works at acme]", values(nodes))
+	nodes, _, contributions, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
+	got := values(nodes)
+	sort.Strings(got)
+	if want := []string{"alice plays tennis", "alice works at acme", "the office opens at nine"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Search(alice, topic=work) = %v, want both text matches and the topic's other fact %v", values(nodes), want)
+	}
+	for i, node := range nodes {
+		if (*node).GetValue() != "the office opens at nine" {
+			continue
+		}
+		if len(contributions[i]) != 1 || contributions[i][0].Src != scoring.SrcNamed || contributions[i][0].Via != work.Key() {
+			t.Errorf("office fact contributions = %+v, want a single named observation via work", contributions[i])
+		}
 	}
 }
 
@@ -601,15 +623,17 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	}
 }
 
-// constScorer is a minimal alternative fold. Every candidate scores the same
-// constant, whatever the background. It shows that a new fold is a Scorer
-// installed with SetScorer, not a change to Search. Like fakeHasher, it is a
-// real, deterministic implementation of an in-tree interface.
+// constScorer is a minimal alternative fold: every candidate scores the same
+// constant, whatever the query observed. It shows that a new fold is a Scorer
+// installed with SetScorer, not a change to Search, and like fakeHasher it is
+// a real, deterministic implementation of an in-tree interface.
 type constScorer struct{ score float64 }
 
 func (s constScorer) Score([]scoring.Contribution[uint64, float64]) float64 { return s.score }
 
-func (s constScorer) WithBackground(float64) scoring.Scorer[uint64, float64] { return s }
+func (s constScorer) Observe(scoring.Observation[uint64, float64]) scoring.Scorer[uint64, float64] {
+	return s
+}
 
 // TestNewGraphInstallsStemmingTokenizer pins the tokenizer wiring. Recall
 // keywords rarely arrive in the fact's exact inflection, so NewGraph installs
@@ -877,10 +901,12 @@ func stormGraph(t *testing.T, g *graph.InMemoryGraph[uint64, float64]) (calm str
 	return calm, memos
 }
 
-// TestSearchBM25Floor pins the BM25 floor through the public surface. When
-// the query touches a single anchor, its fair share is all of its observed
-// mass, so it holds no surplus. The ranking and the scores are then exactly
-// the text index's. Transmission can add to a text score but never lower it.
+// TestSearchBM25Floor pins the BM25 floor through the public surface: when the
+// query touches a single anchor, its fair share is all of its observed mass and
+// it holds no surplus, so the ranking and the scores are exactly the text
+// index's. Transmission can add to a text score but never lower it. The query
+// names a topic nothing is filed under, which opens the round without naming
+// the harbour, so the harbour is held to its fair share.
 func TestSearchBM25Floor(t *testing.T) {
 	g := noDecayGraph()
 	now := time.Now()
@@ -896,8 +922,8 @@ func TestSearchBM25Floor(t *testing.T) {
 		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	}
 
-	nodes, scores, _, _, _ := search(g, []string{"comet"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 1, 10, time.Time{}, time.Time{})
-	textKeys, textScores, err := g.GetTextIndex().Search("comet", 10, nil)
+	nodes, scores, _, _, _ := search(g, []string{"comet"}, containers.Vector[uint64, float64]{}, []string{"scope"}, nil, 1, 10, time.Time{}, time.Time{})
+	textKeys, textScores, err := g.GetTextIndex().Search("comet", 10)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
 	}
@@ -936,13 +962,15 @@ func TestSearchScoresNeverBelowTextMass(t *testing.T) {
 // preemption through the public surface. The weather cluster concentrates the
 // query's mass. So its silent member surfaces on transmitted surplus alone,
 // earned by above-background evidence rather than reachability. The archive
-// hub also holds a matching fact, but at its size that mass is within its
-// fair share. Its seven memos must not ride in behind it.
+// hub also holds a matching fact, but at its size that mass is within its fair
+// share, so its seven memos must not ride in behind it. The query names a
+// topic nothing is filed under, which opens the round and leaves both anchors
+// to it: a named anchor is not held to its fair share.
 func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	g := noDecayGraph()
 	calm, memos := stormGraph(t, g)
 
-	nodes, _, contributions, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, contributions, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"scope"}, nil, 2, 20, time.Time{}, time.Time{})
 	if background <= 0 {
 		t.Fatalf("background = %v, want positive: two anchors are touched", background)
 	}
@@ -1013,13 +1041,14 @@ func marginalGraph(t *testing.T, g *graph.InMemoryGraph[uint64, float64]) (silen
 	return silent
 }
 
-// TestSearchDepthLanes pins the three depth lanes on a cluster whose anchor
-// is strongly above chance. depth 0 is the floor. It skips the traversal, so
-// the background is 0 and no SrcGraph contribution is recorded. The silent
-// member the other lanes fund does not surface. depth 1 and depth 2 both run
-// the anchor-mediated round. The weather cluster clears even the precision
-// bar, so both lanes fund it. TestSearchDepthOnePrecisionBar separates the
-// two bars.
+// TestSearchDepthLanes pins the three depth lanes on a cluster whose anchor is
+// strongly above chance. depth 0 is the floor: the traversal is skipped, so
+// the background is 0, no SrcGraph contribution is recorded, and the silent
+// member the other lanes fund is not surfaced. depth 1 and depth 2 both run
+// the anchor-mediated round, and the weather cluster clears even the
+// precision bar, so both fund it. TestSearchDepthOnePrecisionBar separates the
+// two bars. The query names a topic nothing is filed under, which opens the
+// round and leaves the fixture's anchors to it.
 func TestSearchDepthLanes(t *testing.T) {
 	g := noDecayGraph()
 	calm, _ := stormGraph(t, g)
@@ -1032,7 +1061,7 @@ func TestSearchDepthLanes(t *testing.T) {
 		return false
 	}
 	search := func(depth int) ([]string, [][]scoring.Contribution[uint64, float64], float64) {
-		nodes, _, contribs, bg, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, depth, 20, time.Time{}, time.Time{})
+		nodes, _, contribs, bg, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"scope"}, nil, depth, 20, time.Time{}, time.Time{})
 		return values(nodes), contribs, bg
 	}
 
@@ -1069,7 +1098,8 @@ func TestSearchDepthLanes(t *testing.T) {
 // twice it is evidence, but not strong evidence. depth 2 (max recall) admits
 // it and funds its silent member. depth 1 (precision) turns it away, so the
 // same query returns only what the text index matched. With depthOneAdmission
-// at 1, this test fails.
+// at 1, this test fails. The query names a topic nothing is filed under, so
+// both anchors are left to the round.
 func TestSearchDepthOnePrecisionBar(t *testing.T) {
 	g := noDecayGraph()
 	silent := marginalGraph(t, g)
@@ -1082,7 +1112,7 @@ func TestSearchDepthOnePrecisionBar(t *testing.T) {
 		return false
 	}
 	search := func(depth int) []string {
-		nodes, _, _, _, _ := search(g, []string{"tide"}, containers.Vector[uint64, float64]{}, []string{"harbour", "ledger"}, nil, depth, 20, time.Time{}, time.Time{})
+		nodes, _, _, _, _ := search(g, []string{"tide"}, containers.Vector[uint64, float64]{}, []string{"scope"}, nil, depth, 20, time.Time{}, time.Time{})
 		return values(nodes)
 	}
 
@@ -1345,13 +1375,13 @@ func TestInMemoryGraphSearchSeedsFromAnchorMembersNewestFirst(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchAnchorSeedsUnion pins what naming several anchors
-// means when they seed. The pool is their union, with each fact once. Beside
-// a term, the same two clauses narrow to facts filed under both. A fact filed
-// under both named anchors carries a sighting from each, so twice the seed
-// mass. At an hour's age that puts it ahead of the fresher singly-filed fact:
-// 2 × 0.5^(1h/2160h) against 1. The rest follow newest first. The sightings
+// means when they seed: the pool is their union, each fact once. A fact filed
+// under both named anchors carries a sighting from each, twice the seed mass,
+// which at an hour's age puts it ahead of the fresher singly-filed fact
+// (2 × 0.5^(1h/2160h) against 1); the rest follow newest first. The sightings
 // arrive in query order, topics then entities, so the fold is byte-identical
-// run to run.
+// run to run. Beside a term the same clauses neither seed nor narrow: they
+// raise the facts filed under them on the mass the term's matches put there.
 func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
 	g, harbour, pilot := anchorGraph(t)
 
@@ -1370,11 +1400,12 @@ func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
 		t.Errorf("doubly-filed score %v is not above the singly-filed %v", scores[0], scores[1])
 	}
 
-	// Beside a term, the same anchors filter rather than seed. "dawn" is in a
-	// harbour fact that mentions no pilot, so the entity clause empties it.
+	// "dawn" is in a harbour fact that mentions no pilot. The harbour carries
+	// its mass, so the harbour's other facts rise behind it, newest first; no
+	// pilot fact matched, so the pilot raises nothing, and nothing is removed.
 	nodes, _, _, _, _ = search(g, []string{"dawn"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, []string{"pilot"}, 0, 10, time.Time{}, time.Time{})
-	if len(nodes) != 0 {
-		t.Errorf("Search(dawn, topic=harbour, entity=pilot) = %v, want nothing: beside a term the anchors narrow", values(nodes))
+	if want := []string{harbourDawn, harbourFerry, harbourCranes}; !reflect.DeepEqual(values(nodes), want) {
+		t.Errorf("Search(dawn, topic=harbour, entity=pilot) = %v, want the match and the harbour's facts it raises %v", values(nodes), want)
 	}
 }
 
@@ -1467,19 +1498,26 @@ func TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey(t *testing.T) {
 }
 
 // TestInMemoryGraphSearchWithATermSeedsFromText pins that a term keeps the
-// seeding in the text index. Beside a keyword, the same anchor filters the
-// text matches and lends no sighting. So every contribution is the text
-// index's, and the score is BM25 mass rather than the unit anchor mass.
+// seeding in the text index: the same anchor beside a keyword lends no anchor
+// sighting, the unit mass of a search with nothing to match. It observes
+// instead: the harbour carries the seed mass of the one text match, so its
+// other facts rise behind it on a named observation each, and the match keeps
+// first place on its BM25 mass.
 func TestInMemoryGraphSearchWithATermSeedsFromText(t *testing.T) {
-	g, _, _ := anchorGraph(t)
+	g, harbour, _ := anchorGraph(t)
 
 	nodes, _, contributions, _, _ := search(g, []string{"cranes"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 0, 10, time.Time{}, time.Time{})
-	if want := []string{harbourCranes}; !reflect.DeepEqual(values(nodes), want) {
-		t.Fatalf("Search(cranes, topic=harbour) = %v, want the one text match %v", values(nodes), want)
+	if want := []string{harbourCranes, harbourDawn, harbourFerry}; !reflect.DeepEqual(values(nodes), want) {
+		t.Fatalf("Search(cranes, topic=harbour) = %v, want the text match, then the harbour's facts it raises %v", values(nodes), want)
 	}
-	for _, c := range contributions[0] {
-		if c.Src == scoring.SrcAnchor {
-			t.Errorf("a text-seeded search recorded an anchor sighting %+v; anchors seed only on their own", c)
+	for i, list := range contributions {
+		for _, c := range list {
+			if c.Src == scoring.SrcAnchor {
+				t.Errorf("a text-seeded search recorded an anchor sighting %+v; anchors seed only on their own", c)
+			}
+		}
+		if i > 0 && (len(list) != 1 || list[0].Src != scoring.SrcNamed || list[0].Via != harbour.Key()) {
+			t.Errorf("contributions[%d] = %+v, want a single named observation via the harbour", i, list)
 		}
 	}
 }
@@ -1526,10 +1564,10 @@ func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 }
 
 // TestSearchWithoutAnchorsSkipsTheGraph pins that the anchor traversal runs
-// only when the query names a topic or entity. Once the fixture's topics are
-// named, the storm query funds the cluster's silent member. Without them it
-// observes no anchor: the background is zero, no graph contribution is
-// recorded, and the silent member is absent. A recall naming no anchor is a
+// only when the query names a topic or entity. The storm query that funds the
+// cluster's silent member once an anchor is named, even one nothing is filed
+// under, observes no anchor without one (background zero, no graph
+// contribution, the silent member absent): a recall naming no anchor is a
 // text and vector search, whatever its depth.
 func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
 	g := noDecayGraph()
@@ -1552,43 +1590,133 @@ func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
 		}
 	}
 
-	nodes, _, _, background, _ = search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, _, background, _ = search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"scope"}, nil, 2, 20, time.Time{}, time.Time{})
 	if background <= 0 {
-		t.Fatalf("background = %v with the topics named, want positive: the traversal runs through a named anchor", background)
+		t.Fatalf("background = %v with a topic named, want positive: the traversal runs once an anchor is named", background)
 	}
 	funded := false
 	for _, value := range values(nodes) {
 		funded = funded || value == calm
 	}
 	if !funded {
-		t.Errorf("Search(topics named) = %v, want the silent member %q funded once the graph is entered", values(nodes), calm)
+		t.Errorf("Search(topic named) = %v, want the silent member %q funded once the graph is entered", values(nodes), calm)
 	}
 }
 
-// TestInMemoryGraphSearchFilterIsTheAnchorTheDoorOpens pins that a filter
-// names the same node the door does. The door is the anchor node whose
-// members seed an anchor-only search. topic:work admits facts filed under the
-// Topic "work", not facts mentioning a NamedEntity spelled "work". A topic
-// and an entity with the same name are two anchors, with two keys and two
-// rows. A filter matching on the value alone would confuse them. It would
-// admit, through a topic filter, a fact the topic's own row does not hold.
-func TestInMemoryGraphSearchFilterIsTheAnchorTheDoorOpens(t *testing.T) {
-	g := newGraph()
+// TestInMemoryGraphSearchNamesTheAnchorOfItsKind pins that a named anchor is
+// the node of its kind: topic:work is the Topic "work", not a NamedEntity
+// spelled "work". A topic and an entity with the same name are two anchors
+// with two keys and two rows, and reading the name alone would confuse them,
+// raising through a topic facts only the entity holds. Both facts mention the
+// entity and the query matches only the first: naming the entity raises the
+// second on the first's mass, while naming the topic, which nothing is filed
+// under, raises nothing and removes nothing.
+func TestInMemoryGraphSearchNamesTheAnchorOfItsKind(t *testing.T) {
+	g := noDecayGraph()
 	now := time.Now()
-
-	fact := mkFact(g, "alice works at acme", now)
 	entity := mkEntity(g, "work", now)
-	mustSet(t, g, fact)
 	mustSet(t, g, entity)
-	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	for _, value := range []string{"alice works at acme", "the office opens at nine"} {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+	}
 
 	nodes, _, _, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, 0, 10, time.Time{}, time.Time{})
-	if len(nodes) != 0 {
-		t.Errorf("Search(alice, topic=work) = %v, want nothing: the fact mentions an entity named work, it is not filed under a topic", values(nodes))
+	if want := []string{"alice works at acme"}; !reflect.DeepEqual(values(nodes), want) {
+		t.Errorf("Search(alice, topic=work) = %v, want only the text match %v: no topic is named work", values(nodes), want)
 	}
 	nodes, _, _, _, _ = search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, nil, []string{"work"}, 0, 10, time.Time{}, time.Time{})
-	if len(nodes) != 1 {
-		t.Errorf("Search(alice, entity=work) = %v, want [alice works at acme]", values(nodes))
+	if want := []string{"alice works at acme", "the office opens at nine"}; !reflect.DeepEqual(values(nodes), want) {
+		t.Errorf("Search(alice, entity=work) = %v, want the match and the fact the entity raises %v", values(nodes), want)
+	}
+}
+
+// TestInMemoryGraphSearchNamedAnchorOwesNoFairShare pins what naming an anchor
+// changes about it. Left to the round, the archive hub holds no more than its
+// fair share of the storm query's mass and stays silent. Named, it is evidence
+// the query asked for: each of its memos gains a named observation of its
+// mass, with no fair share owed, and it leaves the round, so no memo carries a
+// graph observation through it. The weather cluster, unnamed, still funds its
+// silent member through the round.
+func TestInMemoryGraphSearchNamedAnchorOwesNoFairShare(t *testing.T) {
+	g := noDecayGraph()
+	calm, memos := stormGraph(t, g)
+	archive := mkTopic(g, "archive", time.Now()).Key()
+
+	nodes, _, contributions, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	found := make(map[string][]scoring.Contribution[uint64, float64], len(nodes))
+	for i, node := range nodes {
+		found[(*node).GetValue()] = contributions[i]
+	}
+	for _, memo := range memos {
+		list, ok := found[memo]
+		if !ok {
+			t.Errorf("memo %q absent, want it raised by the named archive", memo)
+			continue
+		}
+		if len(list) != 1 || list[0].Src != scoring.SrcNamed || list[0].Via != archive {
+			t.Errorf("memo %q contributions = %+v, want a single named observation via the archive", memo, list)
+		}
+	}
+	for value, list := range found {
+		for _, c := range list {
+			if c.Src == scoring.SrcGraph && c.Via == archive {
+				t.Errorf("%q carries a graph observation %+v through the named archive, want the round to leave it to its named observation", value, c)
+			}
+		}
+	}
+	if list, ok := found[calm]; !ok || len(list) != 1 || list[0].Src != scoring.SrcGraph {
+		t.Errorf("silent member %q contributions = %+v (found %v), want the unnamed weather cluster's graph observation", calm, list, ok)
+	}
+}
+
+// TestInMemoryGraphSearchNamedAnchorNeedsTheGraphChannel pins that a named
+// anchor's observation is graph evidence: on a graph with no traversal, the
+// graph channel is off, so naming the weather topic raises nothing, and the
+// recall is the text search alone.
+func TestInMemoryGraphSearchNamedAnchorNeedsTheGraphChannel(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, float64](cfg)
+	calm, _ := stormGraph(t, g)
+
+	nodes, _, contributions, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather"}, nil, 0, 20, time.Time{}, time.Time{})
+	for i, node := range nodes {
+		if (*node).GetValue() == calm {
+			t.Errorf("silent member %q surfaced with the graph channel off", calm)
+		}
+		for _, c := range contributions[i] {
+			if c.Src == scoring.SrcNamed {
+				t.Errorf("%q carries a named observation %+v with the graph channel off", (*node).GetValue(), c)
+			}
+		}
+	}
+}
+
+// TestInMemoryGraphSearchPoolsWhatTheRecallCanReturn pins the pool a fold
+// measures candidates against: the facts the recall can return, those inside
+// [since, until). With the information scorer installed, a recall from a day
+// ago keeps one of the two kettle facts, and a pool of one gives its text a
+// share of 1, so its score is log₂(1 + 1) = 1 bit. Pooled with the older,
+// longer fact the recall cannot return, which the text scores lower, its share
+// and its score would both change.
+func TestInMemoryGraphSearchPoolsWhatTheRecallCanReturn(t *testing.T) {
+	g := noDecayGraph()
+	g.SetScorer(scoring.NewInformationScorer[uint64, float64]())
+	now := time.Now()
+	mustSet(t, g, mkFact(g, "the kettle whistles", now))
+	mustSet(t, g, mkFact(g, "the kettle boils over the stove while the cook reads", now.Add(-48*time.Hour)))
+
+	nodes, scores, _, _, _ := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, now.Add(-24*time.Hour), time.Time{})
+	if want := []string{"the kettle whistles"}; !reflect.DeepEqual(values(nodes), want) {
+		t.Fatalf("Search(kettle, since a day ago) = %v, want %v", values(nodes), want)
+	}
+	if scores[0] != 1 {
+		t.Errorf("score = %v, want 1 bit: a pool of one is the recall's one fact", scores[0])
+	}
+	if _, all, _, _, _ := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{}); all[0] == 1 {
+		t.Errorf("score = %v with both facts returnable, want it moved off 1 bit by the second", all[0])
 	}
 }
 
@@ -1649,11 +1777,10 @@ func benchmarkGraph(b *testing.B, n int) (g *graph.InMemoryGraph[uint64, float64
 	return g, []string{"w0", "w1", "w2"}
 }
 
-// BenchmarkSearch measures the graph's Search over ten thousand facts, for a
-// three-term query filtered by one topic. It runs each lane: depth 0 seeds
-// only, and depths 1 and 2 run the anchor-mediated round at the precision and
-// recall bars. A vector variant seeds from the forest instead of the text
-// index.
+// BenchmarkSearch measures the graph's Search over ten thousand facts in each
+// lane (depth 0 seeds only; depths 1 and 2 run the anchor-mediated round at
+// the precision and recall bars) for a three-term query naming one topic, and
+// a vector variant seeding from the forest instead of the text index.
 func BenchmarkSearch(b *testing.B) {
 	g, query := benchmarkGraph(b, 10000)
 	rng := rand.New(rand.NewSource(2))
@@ -1801,10 +1928,13 @@ func vectorWeightGraph(t *testing.T) (*graph.InMemoryGraph[uint64, float64], gra
 }
 
 // vectorScore runs a recall, under topics and from since when they are set,
-// and returns the vector contribution of the fact found by its embedding.
-func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords []string, topics []string, since time.Time, key uint64) float64 {
+// and returns what the fact found by its embedding gets from its vector: its
+// score less its text mass. The graph folds with the ExcessScorer, and at
+// depth 0 with decay off that is the similarity times the weight the text's
+// weakness gives it. raw is the similarity its vector contribution records.
+func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords []string, topics []string, since time.Time, key uint64) (weighted, raw float64) {
 	t.Helper()
-	nodes, _, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), topics, nil, 0, 10, since, time.Time{})
+	nodes, scores, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), topics, nil, 0, 10, since, time.Time{})
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -1812,45 +1942,58 @@ func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords
 		if node.Key() != key {
 			continue
 		}
+		weighted = scores[i]
 		for _, c := range contributions[i] {
-			if c.Src == scoring.SrcVector {
-				return c.Score
+			switch c.Src {
+			case scoring.SrcText:
+				weighted -= c.Score
+			case scoring.SrcVector:
+				raw = c.Score
 			}
 		}
+		return weighted, raw
 	}
 	t.Fatalf("Search = %v, want the embedding's fact among the hits with a vector contribution", values(nodes))
-	return 0
+	return 0, 0
 }
 
 // TestInMemoryGraphSearchWeightsVectorsByMissingInformation pins the vector
 // weight. The similarity is multiplied by I_q / I_hit: the information in the
 // query's words over the part of it the best text hit holds. A best hit
 // holding every word leaves the embedding at its plain similarity. In
-// "deploy release", each word is held by one of the two facts, so each
-// carries one bit. The best hit holds one of the query's two bits, so the
-// embedding counts double. A query sharing no word with any fact has no text
-// hit. The embedding is then the only seed and keeps weight 1.
+// "deploy release" each word is held by one of the two facts, so each carries
+// one bit and the best hit holds one of the query's two: the embedding counts
+// double. A query no fact holds a word of has no text hit, and the embedding,
+// the only seed, keeps weight 1. The weight is the scorer's to apply: the
+// vector contribution records the same similarity in every case.
 func TestInMemoryGraphSearchWeightsVectorsByMissingInformation(t *testing.T) {
 	g, key := vectorWeightGraph(t)
-	plain := vectorScore(t, g, []string{"deploy", "friday"}, nil, time.Time{}, key.Key())
-	if half := vectorScore(t, g, []string{"deploy", "release"}, nil, time.Time{}, key.Key()); math.Abs(half-2*plain) > 1e-12 {
+	plain, raw := vectorScore(t, g, []string{"deploy", "friday"}, nil, time.Time{}, key.Key())
+	if math.Abs(plain-raw) > 1e-12 {
+		t.Errorf("full information found: vector score %v, want the recorded similarity %v", plain, raw)
+	}
+	half, halfRaw := vectorScore(t, g, []string{"deploy", "release"}, nil, time.Time{}, key.Key())
+	if math.Abs(half-2*plain) > 1e-12 {
 		t.Errorf("half the information found: vector score %v, want twice the plain %v", half, plain)
 	}
-	if none := vectorScore(t, g, []string{"zebra"}, nil, time.Time{}, key.Key()); math.Abs(none-plain) > 1e-12 {
+	if halfRaw != raw {
+		t.Errorf("half the information found: recorded similarity %v, want %v as measured, the weight left to the scorer", halfRaw, raw)
+	}
+	if none, _ := vectorScore(t, g, []string{"zebra"}, nil, time.Time{}, key.Key()); math.Abs(none-plain) > 1e-12 {
 		t.Errorf("no text hit: vector score %v, want the plain %v", none, plain)
 	}
 }
 
 // TestInMemoryGraphSearchWeightsVectorsByTheHitsTheRecallKeeps pins the
 // vector weight to the best text hit the recall can return. "deploy release
-// notes" holds both words of "deploy release". But it sits under another
-// topic, and before the recall's since. Inside ops and inside the time range,
-// each text hit holds one of the two words, half the query's information. So
-// the embedding counts double. Read off the unfiltered reading, the
-// out-of-scope full match would put the weight back at 1. The embedding would
-// then compete on equal terms with partial matches, in exactly the recall it
-// should lead. The unfiltered recall keeps that full match, and with it
-// weight 1.
+// notes" holds both words of "deploy release" but sits before the recall's
+// since; inside the time range, each text hit holds one of the two words,
+// half the query's information, so the embedding counts double. Read off the
+// whole reading, the out-of-range full match would put the weight back at 1,
+// and the embedding would compete on equal terms with partial matches in
+// exactly the recall it should lead. A named topic narrows nothing, so a
+// recall naming ops keeps the full match filed under another topic, and with
+// it weight 1, as the recall naming nothing does.
 func TestInMemoryGraphSearchWeightsVectorsByTheHitsTheRecallKeeps(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -1873,11 +2016,11 @@ func TestInMemoryGraphSearchWeightsVectorsByTheHitsTheRecallKeeps(t *testing.T) 
 	}
 
 	query := []string{"deploy", "release"}
-	plain := vectorScore(t, g, query, nil, time.Time{}, vector.Key())
-	if topic := vectorScore(t, g, query, []string{"ops"}, time.Time{}, vector.Key()); math.Abs(topic-2*plain) > 1e-12 {
-		t.Errorf("topic:ops: vector score %v, want twice the unfiltered %v", topic, plain)
+	plain, _ := vectorScore(t, g, query, nil, time.Time{}, vector.Key())
+	if topic, _ := vectorScore(t, g, query, []string{"ops"}, time.Time{}, vector.Key()); math.Abs(topic-plain) > 1e-12 {
+		t.Errorf("topic:ops: vector score %v, want the unbounded %v: a named topic narrows nothing", topic, plain)
 	}
-	if since := vectorScore(t, g, query, nil, now.Add(-24*time.Hour), vector.Key()); math.Abs(since-2*plain) > 1e-12 {
-		t.Errorf("since a day ago: vector score %v, want twice the unfiltered %v", since, plain)
+	if since, _ := vectorScore(t, g, query, nil, now.Add(-24*time.Hour), vector.Key()); math.Abs(since-2*plain) > 1e-12 {
+		t.Errorf("since a day ago: vector score %v, want twice the unbounded %v", since, plain)
 	}
 }

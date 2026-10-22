@@ -102,10 +102,18 @@ const (
 	// vector search only.
 	DefaultSearchAlgorithm string = SearchExcess
 
-	// DefaultScoringAlgorithm selects scoring.ExcessScorer, the shipped
-	// scoring methodology. "rrf" selects scoring.RRFScorer, kept for
-	// comparison runs.
-	DefaultScoringAlgorithm string = ScoringExcess
+	// DefaultScoringAlgorithm selects scoring.InformationScorer, the shipped
+	// scoring methodology: the text, vector and graph channels weighed by the
+	// bits each carries about every candidate. Measured on the ten LoCoMo
+	// conversations, one graph each, with text-embedding-3-small vectors: it
+	// beats "excess" on precision, recall and F1 at every k, with recall@10
+	// 0.911 against 0.909, multi-hop 0.728 against 0.699, temporal 0.920
+	// against 0.897 and open-domain 0.677 against 0.658. It does not keep the
+	// BM25 floor: weighing the graph against the text, it can rank a fact the
+	// graph raised above one the words matched better. "excess" selects
+	// scoring.ExcessScorer, which keeps it, and "rrf" scoring.RRFScorer, kept
+	// for comparison runs.
+	DefaultScoringAlgorithm string = ScoringInformation
 
 	// DefaultRelevanceModel is the text index's relevance model. The excess
 	// methodology needs BM25's raw retrieval mass. "matchcount" is kept for

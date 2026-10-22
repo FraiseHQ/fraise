@@ -75,14 +75,17 @@ class GraphStats:
 class Contribution:
     """One retrieval source's sighting of a hit, as ``explain`` reports it.
 
-    ``source`` names the stage that saw the fact: ``text``, ``vector``,
-    ``graph`` or ``anchor``. ``score`` is that stage's raw mass, not a share of
-    the hit's score. The hit's score is the final value, after transmission and
-    recency decay. So its contributions are its ingredients and do not sum to
-    it. ``rank`` is the hit's place in that source's own list, 0 first.
-    ``count`` is how many seeds funded the sighting. A ``graph`` or ``anchor``
-    sighting also names the anchor it came through (``via``) and that anchor's
-    ``degree``. A ``text`` or ``vector`` sighting has neither.
+    ``source`` names the stage that saw the fact (``text``, ``vector``,
+    ``graph``, ``anchor`` or ``named``) and ``score`` is that stage's raw
+    observation, not a share of the hit's score: the hit's score is the final
+    value, after the fold and recency decay, so its contributions are its
+    ingredients and do not sum to it. A ``vector`` score is the similarity as
+    measured, and a ``named`` one the seed mass filed under an anchor the
+    recall named. ``rank`` is the hit's place in that source's own list, 0
+    first, and ``count`` how many seeds funded the sighting. A ``graph``,
+    ``anchor`` or ``named`` sighting also names the anchor it came through
+    (``via``) and that anchor's ``degree``; a ``text`` or ``vector`` one has
+    neither.
     """
 
     source: str
@@ -134,23 +137,26 @@ class Hit:
 class RecallResult:
     """The result of a ``recall``: the hits, in ranked order, and how many came back.
 
-    ``warnings`` holds any warnings the server attached. The query ran and the
-    hits are valid, but something in it cannot help or may not be what was
-    meant. An example is a stop-word term that can never match. It is empty for
-    a clean query.
+    ``warnings`` carries any warnings the server attached: the query ran and
+    the hits are valid, but something in it cannot help or may not be what was
+    meant (e.g. a stop-word term that can never match). Empty for a clean query.
 
-    ``empty`` is about the graph, not the result set. ``bool(result)`` reports
-    whether anything came back. ``empty`` tells apart the two ways a recall
-    comes back with nothing. False is the ordinary miss. The graph holds facts
-    and none of them matched, so the query is what to change. True means the
-    graph searched holds nothing at all, so no rephrasing would have helped.
-    The server carries the difference in the status line, with 204 for the
-    empty graph.
+    ``empty`` is about the graph, not the result set; ``bool(result)`` is what
+    reports whether anything came back. It separates the two ways a recall comes
+    back with nothing: False is the ordinary miss, where the graph holds facts
+    and none of them matched, so the query is what to change; True means the
+    graph searched holds nothing at all, so no rephrasing would have helped. The
+    server carries the difference in the status line (204 for the empty graph).
 
-    ``background`` is the query's background rate: the seed mass per unit of
-    anchor degree the search observed. With each hit's contributions, it is
-    every input of the scoring fold. So a caller can see why a fact ranked
-    where it did. ``explain`` sets it, and it is ``None`` on a plain recall.
+    ``background`` is the query's background rate, the seed mass per unit of
+    anchor degree the search observed. With each hit's contributions it is
+    what the graph evidence is folded from, so a caller can see why a fact
+    ranked where it did. The information fold, the server's default, also
+    measures each hit against the recall's whole pool, so the contributions
+    explain a score exactly only when the recall returns every candidate, and
+    it weighs the vector by how much of the question the best text hit
+    missed, which the payload does not carry. It is set by ``explain`` and
+    ``None`` on a plain recall.
     """
 
     count: int

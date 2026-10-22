@@ -8,7 +8,7 @@ Each temporal memory graph indexes every fact's text in a full-text search index
 
 <Note title="Seeds, not answers" type="note">
 
-**The indexes are seeds, not answers**, and a retrieval score is **the seeds' own mass plus transmitted surplus**.
+**The indexes are seeds, not answers**, and a retrieval score is **what the text, the vector and the graph each say about a fact**, measured against everything the recall could return.
 
 </Note>
 
@@ -19,30 +19,55 @@ A recall pulls candidates from each source it can use, each carrying its raw ret
 | Source | Mass it carries |
 |---|---|
 | text index | BM25 $\times$ coverage: the share of the query's idf mass the fact matched, so a fact matching every query term keeps its full BM25 score and a partial match is discounted by the informativeness of the terms it missed |
-| vector index | $1 / (1 + \text{distance})$ similarity, weighted by the information the best text hit missed ([vector weight](/docs/configuration/reference/database#vector-weight)) |
+| vector index | $1 / (1 + \text{distance})$ similarity, which counts for more the more of the question the best text hit missed ([vector weight](/docs/configuration/reference/database#vector-weight)) |
 | named anchors, on a recall with no term or vector | a unit mass for each named anchor the fact is filed under |
 
-A fact found by more than one source carries the sum of their masses.
+A fact found by more than one source carries the sum of their masses, the vector's weighted, as its **seed mass** $m$: what it puts into the graph.
 
 ### What the text index matches
 
 A fact is indexed under its terms and a recall's keywords are read the same way, so the two line up: text is case-folded, English stop words are dropped, and each remaining term is reduced to its stem, which is how `running` finds a fact written with `runs`. The stop words are [Snowball's English list](https://snowballstem.org/algorithms/english/stop.txt), the one written for the stemmer: function words only (pronouns, articles, prepositions, auxiliaries, conjunctions), so every content word stays searchable. Negations are not stop words: `not`, `no` and `nor` are indexed, so a fact that something is not so is told apart from one that it is. A term is a maximal run of letters, digits and symbols in Unicode category So (Symbol, other), the class that holds emoji, check marks and marks such as `©`. A fact written as `🍊 🍋 🍌` is therefore found by `recall '🍊'` (quoted, since an emoji is not a letter to the query grammar). Every other character delimits: whitespace, punctuation, and the math, currency and modifier symbols, so `c++` indexes as `c` and `$5` as `5`. Joiners and variation selectors delimit too, so a multi-character emoji sequence indexes as each of its symbols.
 
+## Named anchors
+
+A `topic:` or `entity:` named beside a term or a vector **adds relevance and removes nothing**. The recall's matches filed under the anchor put their seed mass $M_N$ on it, and each fact filed under it receives that mass divided across the anchor's $d_N$ edges, its own mass excluded:
+
+$$
+\frac{M_N - m}{d_N}
+$$
+
+It owes no fair share, since the recall asked for that anchor, and an anchor none of the recall's matches is filed under adds nothing. A fact the words never matched but filed under a named anchor is therefore a candidate, and a fact the words matched but filed elsewhere stays one: only `since:` and `until:` narrow what a recall can return. A named anchor is graph evidence, so it needs the graph channel (any `search-algorithm` but `none`), and it acts in every lane, `depth:0` included.
+
 ## The transmission
 
-When a recall with a term or vector also names a `topic:` or `entity:` anchor and takes `depth:1` or `depth:2` (see [Retrieval lanes](/docs/retrieval/ranking/depth)), that mass then flows into the fact–anchor graph. Every anchor the query touches, meaning every topic or entity a seed is filed under, observes the total seed mass on its members and compares it with its fair share: its degree times the **background rate** $\rho_0$, the query's seed mass per unit of degree across the anchors it reached.
+When a recall with a term or vector also names a `topic:` or `entity:` anchor and takes `depth:1` or `depth:2` (see [Retrieval lanes](/docs/retrieval/ranking/depth)), the seed mass also flows through the rest of the fact–anchor graph. Every anchor the query touches, meaning every topic or entity a seed is filed under, observes the total seed mass on its members and compares it with its fair share: its degree times the **background rate** $\rho_0$, the query's seed mass per unit of degree across the anchors it reached.
 
 Only the excess above background is transmitted, and it is transmitted **once, not once per member**:
 
 - the surplus is divided across the anchor's edges, each member receiving its per-edge share;
-- attenuated per edge ($\alpha = 0.5$, $\alpha^2$ over the two-edge seed → anchor → fact path);
 - with the member's own mass excluded, so a fact never funds its own boost.
 
-A fact's relevance is its own mass plus everything transmitted to it.
+The named anchors are observed with the others and count in $\rho_0$, but pass their mass on only through the named share above, never a second time through the round. What a fact receives over every anchor it is filed under is its **graph evidence** $g$.
+
+## The fold
+
+A candidate ends with three channels: its text mass $t$, its vector similarity above the reading's floor $v$ (the lowest similarity among the recall's vector hits, so the farthest of them adds nothing), and its graph evidence $g$. `scoring-algorithm` picks how they fold into one score ([Algorithm settings](/docs/configuration/reference/algorithms)).
+
+**`information`, the default.** The recall's pool is every candidate it could return: the $n$ facts inside its time range. A fact's share $p$ of a channel's total, set against the even share $1/n$, is the ratio $r = n\,p$, and the fact scores the bits each channel gives it, weighted by what that channel tells about the pool:
+
+$$
+\text{score} = \sum_{c \in \{t,\,v,\,g\}} w_c \log_2(1 + r_c), \qquad w_c = \frac{I_c}{I_t + I_v + I_g}, \qquad I_c = \sum_{\text{pool}} p_c \log_2(n\,p_c)
+$$
+
+$I_c$ is $\log_2 n$ minus the entropy of the channel's shares: a channel that scores every fact alike tells them apart not at all and gets no weight, one concentrated on a few facts gets more, and when no channel tells them apart each counts once. The vector's $I_v$ is multiplied by the [vector weight](/docs/configuration/reference/database#vector-weight), so the embedding leads where the words missed the question. Each channel is measured against its own total, so none needs calibrating against another, and the fold carries no constant. A recall seeded by anchors alone has no channel to measure: each fact scores one unit per named anchor it is filed under.
+
+**`excess`.** A fact scores its seed mass plus its graph evidence, attenuated per edge ($\alpha = 0.5$, $\alpha^2$ over the two-edge seed → anchor → fact path): $m + \alpha^2 g$, its vector similarity counted in $m$ by the vector weight. Graph evidence then only ever adds, which is the [BM25 floor](/docs/retrieval/ranking/guarantees#bm25-floor). The information fold weighs the graph against the text instead, so graph evidence concentrated on a few facts can rank them above a fact the words matched better.
 
 ## One sentence of intuition
 
 > *An anchor may only speak when its members matched better than its size alone predicted — hubs are heard exactly when they are surprising, silent when they are merely large, and never louder than their surplus divided among everyone listening.*
+
+An anchor the recall names is the one exception, by design: the question asked for it.
 
 ## Where the list stops
 

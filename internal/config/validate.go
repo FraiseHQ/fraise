@@ -74,8 +74,9 @@ const (
 // db.scoring-algorithm.name names the fold that derives relevance from pooled
 // contributions.
 const (
-	ScoringExcess string = "excess"
-	ScoringRRF    string = "rrf"
+	ScoringInformation string = "information"
+	ScoringExcess      string = "excess"
+	ScoringRRF         string = "rrf"
 )
 
 // db.relevance-model.name names the text index's relevance model.
@@ -100,7 +101,7 @@ var (
 
 	SearchAlgorithms = []string{SearchNone, SearchBFS, SearchExcess}
 
-	ScoringAlgorithms = []string{ScoringExcess, ScoringRRF}
+	ScoringAlgorithms = []string{ScoringInformation, ScoringExcess, ScoringRRF}
 
 	RelevanceModels = []string{RelevanceBM25, RelevanceMatchCount}
 )
