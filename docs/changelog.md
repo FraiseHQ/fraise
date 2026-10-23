@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.5](https://github.com/FraiseHQ/fraise/compare/v0.3.4...v0.3.5) (2026-10-23)
+
+
+### Bug fixes
+
+* named anchors transmit excess instead of filtering ([#574](https://github.com/FraiseHQ/fraise/issues/574)) ([1de4270](https://github.com/FraiseHQ/fraise/commit/1de42700ecb60da98b2b898aaf39aae0cb214724))
+* restore the window, drop the spread and alpha ([#575](https://github.com/FraiseHQ/fraise/issues/575)) ([f94d1e4](https://github.com/FraiseHQ/fraise/commit/f94d1e4e445bd2303785104fdd46decac22606e2))
+
+
+### Maintenance
+
+* add missing cache internal module test ([#562](https://github.com/FraiseHQ/fraise/issues/562)) ([7c544c7](https://github.com/FraiseHQ/fraise/commit/7c544c73e4bfc70f9eafc485735c4b95bb93397a))
+
 ## [0.3.4](https://github.com/FraiseHQ/fraise/compare/v0.3.3...v0.3.4) (2026-10-18)
 
 
