@@ -82,7 +82,7 @@ func TestRPTreeIndexRetrieveMissing(t *testing.T) {
 
 func TestRPTreeIndexSearchEmpty(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](3, 4, 3, 1, 2, 32, 8, comparator.OrderedComparator[int])
-	if _, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0, 0}), 3, nil); !errors.Is(err, index.ErrEmptyIndex) {
+	if _, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0, 0}), 3); !errors.Is(err, index.ErrEmptyIndex) {
 		t.Errorf("Search on empty index = %v, want ErrEmptyIndex", err)
 	}
 }
@@ -92,7 +92,7 @@ func TestRPTreeIndexSearchRejectsWrongDimension(t *testing.T) {
 	if err := idx.Insert(1, containers.NewVector[int]([]float64{1, 2, 3})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
-	if _, _, err := idx.Search(containers.NewVector[int]([]float64{1, 2}), 3, nil); !errors.Is(err, index.ErrInvalidDimension) {
+	if _, _, err := idx.Search(containers.NewVector[int]([]float64{1, 2}), 3); !errors.Is(err, index.ErrInvalidDimension) {
 		t.Errorf("Search with wrong dimension = %v, want ErrInvalidDimension", err)
 	}
 }
@@ -117,10 +117,11 @@ func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
 		t.Fatalf("Insert(4) = %v, want nil", err)
 	}
 
-	got, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), 3, nil)
+	readings, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), 3)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
+	got := readings[0]
 	if len(got) != 3 {
 		t.Fatalf("Search returned %d keys, want 3: %v", len(got), got)
 	}
@@ -157,10 +158,11 @@ func TestRPTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 		}
 	}
 
-	got, scores, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), 4, nil)
+	readings, readingScores, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), 4)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
+	got, scores := readings[0], readingScores[0]
 	if want := []float64{1, 1, 1, 1}; !reflect.DeepEqual(scores, want) {
 		t.Fatalf("Search scores = %v, want %v — the four vectors must tie for the tiebreak to be under test", scores, want)
 	}
@@ -216,10 +218,11 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 		t.Fatalf("Delete = %v, want nil", err)
 	}
 
-	got, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), 5, nil)
+	readings, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), 5)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
+	got := readings[0]
 	for _, key := range got {
 		if key == 1 {
 			t.Errorf("Search() = %v, deleted key 1 should not appear", got)
@@ -250,10 +253,11 @@ func TestRPTreeIndexSearchNonPositiveKReturnsEveryVector(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), tc.k, nil)
+			readings, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), tc.k)
 			if err != nil {
 				t.Fatalf("Search(k=%d) = %v, want nil", tc.k, err)
 			}
+			got := readings[0]
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("Search(k=%d) mismatch (-want +got):\n%s", tc.k, diff)
 			}
@@ -277,10 +281,11 @@ func TestRPTreeIndexSearchKeepFiltersBeforeTruncation(t *testing.T) {
 	}
 	keep := func(key int) bool { return key%40 == 0 }
 
-	got, distances, err := idx.Search(randVector(rng, dim), k, keep)
+	readings, readingScores, err := idx.Search(randVector(rng, dim), k, keep)
 	if err != nil {
 		t.Fatalf("Search(keep) = %v, want nil", err)
 	}
+	got, distances := readings[0], readingScores[0]
 	if len(got) != k {
 		t.Fatalf("Search(k=%d, keep) returned %v, want %d accepted keys", k, got, k)
 	}
@@ -290,6 +295,42 @@ func TestRPTreeIndexSearchKeepFiltersBeforeTruncation(t *testing.T) {
 		}
 		if i > 0 && distances[i] < distances[i-1] {
 			t.Errorf("Search(keep) distances %v, want nearest first", distances)
+		}
+	}
+}
+
+// TestRPTreeIndexSearchReadingsAreLoneSearches pins that a search for several
+// readings returns, for each keep, exactly what a search with that keep alone
+// returns: the same keys in the same order, at the same distances.
+func TestRPTreeIndexSearchReadingsAreLoneSearches(t *testing.T) {
+	rng := rand.New(rand.NewSource(43))
+	const dim = 4
+	idx := index.NewRPTreeIndex[int, float64](dim, 4, 3, 7, 2, 8, 2, comparator.OrderedComparator[int])
+	for i := 0; i < 200; i++ {
+		if err := idx.Insert(i, randVector(rng, dim)); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	keeps := []func(int) bool{nil, func(key int) bool { return key%3 == 0 }, func(key int) bool { return key%40 == 0 }}
+	query := randVector(rng, dim)
+
+	gotKeys, gotDistances, err := idx.Search(query, 5, keeps...)
+	if err != nil {
+		t.Fatalf("Search(%d keeps) = %v, want nil", len(keeps), err)
+	}
+	if len(gotKeys) != len(keeps) || len(gotDistances) != len(keeps) {
+		t.Fatalf("Search(%d keeps) returned %d readings, want one per keep", len(keeps), len(gotKeys))
+	}
+	for i, keep := range keeps {
+		wantKeys, wantDistances, err := idx.Search(query, 5, keep)
+		if err != nil {
+			t.Fatalf("Search(keep %d) = %v, want nil", i, err)
+		}
+		if diff := cmp.Diff(wantKeys[0], gotKeys[i]); diff != "" {
+			t.Errorf("reading %d keys mismatch with its lone search (-want +got):\n%s", i, diff)
+		}
+		if diff := cmp.Diff(wantDistances[0], gotDistances[i]); diff != "" {
+			t.Errorf("reading %d distances mismatch with its lone search (-want +got):\n%s", i, diff)
 		}
 	}
 }
@@ -317,10 +358,11 @@ func TestRPTreeIndexSearchFindsKeyBehindStaleCopy(t *testing.T) {
 		}
 	}
 
-	keys, scores, err := idx.Search(containers.NewVector[string]([]float64{0, 0}), 2, nil)
+	readings, readingScores, err := idx.Search(containers.NewVector[string]([]float64{0, 0}), 2)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
+	keys, scores := readings[0], readingScores[0]
 	if !reflect.DeepEqual(keys, []string{"a", "b"}) || !reflect.DeepEqual(scores, []float64{0, 1}) {
 		t.Errorf("Search() = (%v, %v), want ([a b], [0 1])", keys, scores)
 	}
@@ -352,8 +394,8 @@ func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 	queries := rand.New(rand.NewSource(8))
 	for q := 0; q < 50; q++ {
 		query := randVector(queries, 16)
-		gotA, _, errA := a.Search(query, 5, nil)
-		gotB, _, errB := b.Search(query, 5, nil)
+		gotA, _, errA := a.Search(query, 5)
+		gotB, _, errB := b.Search(query, 5)
 		if errA != nil || errB != nil {
 			t.Fatalf("Search = %v, %v; want nil", errA, errB)
 		}
@@ -414,10 +456,11 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 		}
 	}
 	// Search over the whole remaining corpus must never surface a deleted key.
-	keys, _, err := idx.Search(randVector(rng, dim), n, nil)
+	readings, _, err := idx.Search(randVector(rng, dim), n)
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
+	keys := readings[0]
 	for _, key := range keys {
 		if key < deleted {
 			t.Errorf("Search surfaced deleted key %d", key)
@@ -426,11 +469,11 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 	queries := rand.New(rand.NewSource(22))
 	for q := 0; q < 50; q++ {
 		query := randVector(queries, dim)
-		got, _, err := idx.Search(query, 5, nil)
+		got, _, err := idx.Search(query, 5)
 		if err != nil {
 			t.Fatalf("Search = %v, want nil", err)
 		}
-		want, _, err := live.Search(query, 5, nil)
+		want, _, err := live.Search(query, 5)
 		if err != nil {
 			t.Fatalf("Search on the live-only index = %v, want nil", err)
 		}
@@ -467,10 +510,11 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 
 	query := containers.NewVector[int]([]P{0, 0})
 
-	got, scores, err := idx.Search(query, 10, nil)
+	readings, readingScores, err := idx.Search(query, 10)
 	if err != nil {
 		t.Fatalf("Search(k=10) = %v, want nil", err)
 	}
+	got, scores := readings[0], readingScores[0]
 	want := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Search(k=10) order = %v, want %v", got, want)
@@ -490,10 +534,11 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 		prev = scores[rank]
 	}
 
-	got3, scores3, err := idx.Search(query, 3, nil)
+	readings, readingScores, err = idx.Search(query, 3)
 	if err != nil {
 		t.Fatalf("Search(k=3) = %v, want nil", err)
 	}
+	got3, scores3 := readings[0], readingScores[0]
 	if want3 := []int{1, 2, 3}; !reflect.DeepEqual(got3, want3) {
 		t.Errorf("Search(k=3) keys = %v, want %v", got3, want3)
 	}
@@ -520,8 +565,11 @@ func nearestKeys[P float32 | float64](pts [][]int, query []int, k int) []int {
 	for d, v := range query {
 		q[d] = P(v)
 	}
-	keys, _, _ := idx.Search(containers.NewVector[int](q), k, nil)
-	return keys
+	readings, _, err := idx.Search(containers.NewVector[int](q), k)
+	if err != nil {
+		return nil
+	}
+	return readings[0]
 }
 
 // TestRPTreeSearchIdenticalAcrossPrecision indexes the same well-separated
@@ -615,9 +663,12 @@ func TestRPTreeIndexForestBounded(t *testing.T) {
 	if err := idx.Insert(1000, randVector(rng, 3)); err != nil {
 		t.Fatalf("Insert after compactions = %v, want nil", err)
 	}
-	keys, _, err := idx.Search(randVector(rng, 3), 1, nil)
-	if err != nil || len(keys) != 1 || keys[0] != 1000 {
-		t.Errorf("Search after compactions = (%v, err=%v), want key 1000", keys, err)
+	readings, _, err := idx.Search(randVector(rng, 3), 1)
+	if err != nil {
+		t.Fatalf("Search after compactions = %v, want nil", err)
+	}
+	if keys := readings[0]; len(keys) != 1 || keys[0] != 1000 {
+		t.Errorf("Search after compactions = %v, want key 1000", keys)
 	}
 }
 
@@ -630,9 +681,13 @@ func TestRPTreeIndexSearchExactMatchIsDistanceZero(t *testing.T) {
 	if err := idx.Insert(1, containers.NewVector[int]([]float64{2, 3})); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
-	keys, scores, err := idx.Search(containers.NewVector[int]([]float64{2, 3}), 1, nil)
-	if err != nil || !reflect.DeepEqual(keys, []int{1}) {
-		t.Fatalf("Search = (%v, %v), want ([1], nil)", keys, err)
+	readings, readingScores, err := idx.Search(containers.NewVector[int]([]float64{2, 3}), 1)
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	keys, scores := readings[0], readingScores[0]
+	if !reflect.DeepEqual(keys, []int{1}) {
+		t.Fatalf("Search = %v, want [1]", keys)
 	}
 	if scores[0] != 0 || math.Signbit(scores[0]) {
 		t.Errorf("distance of an exact match = %v, want +0", scores[0])
@@ -661,7 +716,7 @@ func BenchmarkRPTreeIndexSearch(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		if _, _, err := idx.Search(containers.NewVector[uint64](query), 20, nil); err != nil {
+		if _, _, err := idx.Search(containers.NewVector[uint64](query), 20); err != nil {
 			b.Fatalf("Search = %v, want nil", err)
 		}
 	}
