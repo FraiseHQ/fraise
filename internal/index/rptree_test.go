@@ -639,6 +639,37 @@ func TestRPTreeIndexSearchExactMatchIsDistanceZero(t *testing.T) {
 	}
 }
 
+// BenchmarkRPTreeIndexInsert measures the write path of the default forest:
+// one 384-dimensional vector routed down sixteen trees that already hold two
+// thousand, with a leaf split now and then.
+func BenchmarkRPTreeIndexInsert(b *testing.B) {
+	const dim = 384
+	rng := rand.New(rand.NewSource(1))
+	idx := index.NewRPTreeIndex[uint64, float64](dim, 128, 16, 4, 2, 32, 32, comparator.OrderedComparator[uint64])
+	vectors := make([]containers.Vector[uint64, float64], 4096)
+	for i := range vectors {
+		data := make([]float64, dim)
+		for d := range data {
+			data[d] = rng.NormFloat64()
+		}
+		vectors[i] = containers.NewVector[uint64](data)
+	}
+	for i := range 2000 {
+		if err := idx.Insert(uint64(i)*2654435761, vectors[i]); err != nil {
+			b.Fatalf("Insert(%d) = %v, want nil", i, err)
+		}
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	key := uint64(2000)
+	for b.Loop() {
+		if err := idx.Insert(key*2654435761, vectors[key%uint64(len(vectors))]); err != nil {
+			b.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+		key++
+	}
+}
+
 // BenchmarkRPTreeIndexSearch measures a nearest-neighbour search for twenty
 // results over ten thousand 64-dimensional vectors on a five-tree forest.
 func BenchmarkRPTreeIndexSearch(b *testing.B) {

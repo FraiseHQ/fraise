@@ -40,10 +40,10 @@ import (
 // holds one posting list per indexed term, ordered by term, and every term
 // lookup goes through it. Scoring belongs to the installed Relevance model.
 //
-// A posting list is a slice of (key, tf) pairs sorted by key, not a map. The
-// search loop only reads it, and a slice streams through the cache where a
-// map hops. Removing a document leaves tombstones in its lists. They are
-// garbage until Flush compacts them, as in the vector forest. The index
+// A posting list holds (key, tf) pairs sorted by key, in slices rather than a
+// map. The search loop only reads it, and a slice streams through the cache
+// where a map hops. Removing a document leaves tombstones in its lists. They
+// are garbage until Flush compacts them, as in the vector forest. The index
 // compacts itself once it holds more dead documents than live ones.
 type BTreeIndex[K comparable, P float32 | float64] struct {
 	tree      *trees.BTree[K, *postingList[K], P] // term dictionary, ordered by term (P is unused)
@@ -69,16 +69,27 @@ type posting[K comparable] struct {
 	tf  int
 }
 
-// postingList holds one term's postings, sorted by key. Deletes and updates
-// leave tombstones in entries until Flush, so live counts the entries still
-// in use. The relevance model weighs a term by that count, its document
-// frequency. The tree orders lists by term, and a lookup probes it with a
-// list that holds only the term.
+// postingList holds one term's postings, sorted by key, in chunks of at most
+// postingChunk entries laid end to end. Keys are hashes, so a new document
+// lands anywhere in the order. Inserting it shifts the entries of one chunk,
+// never the whole list, so a write costs the same whether a handful of
+// documents hold the term or every one does. A read walks the chunks in turn,
+// which is the key order of a single list, so a search folds its floats in
+// the same order however the list grew. Deletes and updates leave tombstones
+// in place until Flush, so live counts the entries still in use. The
+// relevance model weighs a term by that count, its document frequency. The
+// tree orders lists by term, and a lookup probes it with a list that holds
+// only the term.
 type postingList[K comparable] struct {
-	term    string
-	entries []posting[K]
-	live    int
+	term   string
+	chunks [][]posting[K]
+	live   int
 }
+
+// postingChunk is the most entries one chunk of a posting list holds before
+// it splits in two: few enough that shifting a chunk's entries is cheap, many
+// enough that a read streams through long runs of them.
+const postingChunk = 128
 
 // NewBTreeIndex returns an empty BTreeIndex. Its term dictionary sorts
 // posting lists lexicographically by term. compare orders document keys, and
@@ -234,12 +245,14 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int, keep func(K) bool) ([]K
 			w.accumulate(list, weight, prepared)
 			continue
 		}
-		for _, p := range list.entries {
-			if p.tf == 0 || (keep != nil && !keep(p.key)) {
-				continue
+		for _, chunk := range list.chunks {
+			for _, p := range chunk {
+				if p.tf == 0 || (keep != nil && !keep(p.key)) {
+					continue
+				}
+				scores[p.key] += idx.relevance.Increment(weight, p.key, p.tf, prepared)
+				matched[p.key] += weight
 			}
-			scores[p.key] += idx.relevance.Increment(weight, p.key, p.tf, prepared)
-			matched[p.key] += weight
 		}
 	}
 	// Finalize each score as it is offered, so the map is read once and never
@@ -362,14 +375,16 @@ func (w *window[K, P]) accumulate(list *postingList[K], weight P, prepared P) {
 	idx := w.index
 	w.term++
 	w.touched = w.touched[:0]
-	for _, p := range list.entries {
-		if p.tf == 0 || (w.keep != nil && !w.keep(p.key)) {
-			continue
-		}
-		i := w.slot(p.key)
-		w.lendTo(i, P(p.tf))
-		for _, n := range w.adjacent(i) {
-			w.lendTo(n, idx.gamma*P(p.tf))
+	for _, chunk := range list.chunks {
+		for _, p := range chunk {
+			if p.tf == 0 || (w.keep != nil && !w.keep(p.key)) {
+				continue
+			}
+			i := w.slot(p.key)
+			w.lendTo(i, P(p.tf))
+			for _, n := range w.adjacent(i) {
+				w.lendTo(n, idx.gamma*P(p.tf))
+			}
 		}
 	}
 	for _, i := range w.touched {
@@ -419,7 +434,7 @@ func (idx *BTreeIndex[K, P]) Information(query string, key K) (total P, held P) 
 		}
 		bits := P(-math.Log2(float64(list.live) / n))
 		total += bits
-		if i, found := list.find(key, idx.compare); found && list.entries[i].tf > 0 {
+		if c, i, found := list.find(key, idx.compare); found && list.chunks[c][i].tf > 0 {
 			held += bits
 		}
 	}
@@ -446,7 +461,13 @@ func (idx *BTreeIndex[K, P]) Flush() error {
 			idx.tree.Delete(list)
 			continue
 		}
-		list.entries = slices.DeleteFunc(list.entries, func(p posting[K]) bool { return p.tf == 0 })
+		chunks := list.chunks[:0]
+		for _, chunk := range list.chunks {
+			if chunk = slices.DeleteFunc(chunk, func(p posting[K]) bool { return p.tf == 0 }); len(chunk) > 0 {
+				chunks = append(chunks, chunk)
+			}
+		}
+		list.chunks = chunks
 	}
 	idx.dead = 0
 	return nil
@@ -482,16 +503,16 @@ func (idx *BTreeIndex[K, P]) index(key K, value string) error {
 				return err
 			}
 		}
-		i, found := list.find(key, idx.compare)
+		c, i, found := list.find(key, idx.compare)
 		switch {
 		case !found:
-			list.entries = slices.Insert(list.entries, i, posting[K]{key: key, tf: 1})
+			list.insert(c, i, posting[K]{key: key, tf: 1})
 			list.live++
-		case list.entries[i].tf == 0:
-			list.entries[i].tf = 1
+		case list.chunks[c][i].tf == 0:
+			list.chunks[c][i].tf = 1
 			list.live++
 		default:
-			list.entries[i].tf++
+			list.chunks[c][i].tf++
 		}
 	}
 
@@ -514,8 +535,8 @@ func (idx *BTreeIndex[K, P]) removePostings(key K, value string) {
 		if !ok {
 			continue
 		}
-		if i, found := list.find(key, idx.compare); found && list.entries[i].tf != 0 {
-			list.entries[i].tf = 0
+		if c, i, found := list.find(key, idx.compare); found && list.chunks[c][i].tf != 0 {
+			list.chunks[c][i].tf = 0
 			list.live--
 		}
 	}
@@ -523,9 +544,42 @@ func (idx *BTreeIndex[K, P]) removePostings(key K, value string) {
 	idx.relevance.Removed(key, tokens)
 }
 
-// find returns where key sits in the sorted entries and whether it is there.
-// When it is absent, the position is where an insert keeps the list sorted.
-func (l *postingList[K]) find(key K, compare comparator.Comparator[K]) (int, bool) {
-	i := sort.Search(len(l.entries), func(i int) bool { return compare(l.entries[i].key, key) >= 0 })
-	return i, i < len(l.entries) && l.entries[i].key == key
+// find returns where key sits in the list, as its chunk and its position in
+// that chunk, and whether it is there. When it is absent, the position is
+// where an insert keeps the list sorted. Every chunk holds at least one entry,
+// so each has a last key to search the chunks by.
+func (l *postingList[K]) find(key K, compare comparator.Comparator[K]) (c, i int, found bool) {
+	c = sort.Search(len(l.chunks), func(c int) bool {
+		chunk := l.chunks[c]
+		return compare(chunk[len(chunk)-1].key, key) >= 0
+	})
+	if c == len(l.chunks) {
+		// key is past every entry, so an insert appends to the last chunk.
+		if c == 0 {
+			return 0, 0, false
+		}
+		return c - 1, len(l.chunks[c-1]), false
+	}
+	chunk := l.chunks[c]
+	i = sort.Search(len(chunk), func(i int) bool { return compare(chunk[i].key, key) >= 0 })
+	return c, i, i < len(chunk) && chunk[i].key == key
+}
+
+// insert puts p at position i of chunk c, where find placed it, and splits a
+// chunk that outgrows postingChunk into two halves. The first half keeps the
+// chunk's array, capped at its own length, so growing it later copies out
+// rather than writing over the entries that moved to the second.
+func (l *postingList[K]) insert(c, i int, p posting[K]) {
+	if len(l.chunks) == 0 {
+		l.chunks = [][]posting[K]{{p}}
+		return
+	}
+	chunk := slices.Insert(l.chunks[c], i, p)
+	if len(chunk) <= postingChunk {
+		l.chunks[c] = chunk
+		return
+	}
+	half := len(chunk) / 2
+	l.chunks[c] = chunk[:half:half]
+	l.chunks = slices.Insert(l.chunks, c+1, slices.Clone(chunk[half:]))
 }
