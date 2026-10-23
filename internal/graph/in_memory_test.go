@@ -1729,13 +1729,68 @@ func benchmarkGraph(b *testing.B, n int) (g *graph.InMemoryGraph[uint64, float64
 	return g, []string{"w0", "w1", "w2"}
 }
 
+// conversationGraph builds a graph of n facts filed the way a conversation is:
+// every fact under one conversation topic, each run of twenty-five under a
+// session topic, and alternate facts mentioning one of two speakers. Words and
+// timestamps are drawn as in benchmarkGraph. A recall scoped to the
+// conversation names an anchor that holds every fact, and each of its seeds
+// also reaches its session and a speaker who mentions half the graph.
+func conversationGraph(b *testing.B, n int) (g *graph.InMemoryGraph[uint64, float64], query []string) {
+	b.Helper()
+	g = newGraph()
+	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
+	rng := rand.New(rand.NewSource(1))
+	zipf := rand.NewZipf(rng, 1.1, 1, 4999)
+	now := time.Now()
+
+	conversation := mkTopic(g, "conversation", now)
+	if err := g.Set(conversation); err != nil {
+		b.Fatalf("Set(conversation) = %v, want nil", err)
+	}
+	speakers := []*graph.NamedEntity[uint64]{mkEntity(g, "caroline", now), mkEntity(g, "melanie", now)}
+	for _, speaker := range speakers {
+		if err := g.Set(speaker); err != nil {
+			b.Fatalf("Set(speaker %q) = %v, want nil", speaker.GetValue(), err)
+		}
+	}
+	var session *graph.Topic[uint64]
+	for i := range n {
+		if i%25 == 0 {
+			session = mkTopic(g, "session"+strconv.Itoa(i/25), now)
+			if err := g.Set(session); err != nil {
+				b.Fatalf("Set(session %d) = %v, want nil", i/25, err)
+			}
+		}
+		words := make([]string, 8+rng.Intn(5))
+		for w := range words {
+			words[w] = "w" + strconv.FormatUint(zipf.Uint64(), 10)
+		}
+		ts := now.Add(-time.Duration(i) * time.Minute)
+		fact := mkFact(g, strings.Join(words, " "), ts)
+		if err := g.Set(fact); err != nil {
+			b.Fatalf("Set(fact %d) = %v, want nil", i, err)
+		}
+		for _, topic := range []*graph.Topic[uint64]{conversation, session} {
+			if err := g.Set(graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()}); err != nil {
+				b.Fatalf("Set(isabout %d %q) = %v, want nil", i, topic.GetValue(), err)
+			}
+		}
+		if err := g.Set(graph.Mentions[uint64]{Fact: &fact, NamedEntity: speakers[i%2], NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()}); err != nil {
+			b.Fatalf("Set(mentions %d) = %v, want nil", i, err)
+		}
+	}
+	return g, []string{"w0", "w1", "w2"}
+}
+
 // BenchmarkSearch measures the graph's Search over ten thousand facts, for a
 // three-term query filtered by one topic. It runs each lane: depth 0 seeds
 // only, and depths 1 and 2 run the anchor-mediated round at the precision and
 // recall bars. A vector variant seeds from the forest instead of the text
-// index.
+// index. A conversation variant runs the anchored round on a graph whose named
+// topic holds every fact, the shape of a recall scoped to its conversation.
 func BenchmarkSearch(b *testing.B) {
 	g, query := benchmarkGraph(b, 10000)
+	conversation, terms := conversationGraph(b, 10000)
 	rng := rand.New(rand.NewSource(2))
 	vec := make([]float64, 32)
 	for d := range vec {
@@ -1758,6 +1813,14 @@ func BenchmarkSearch(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			if _, _, _, _, err := search(g, nil, vector, []string{"topic7"}, nil, 1, 10, time.Time{}, time.Time{}); err != nil {
+				b.Fatalf("Search = %v, want nil", err)
+			}
+		}
+	})
+	b.Run("conversation", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, _, _, _, err := search(conversation, terms, none, []string{"conversation"}, nil, 1, 10, time.Time{}, time.Time{}); err != nil {
 				b.Fatalf("Search = %v, want nil", err)
 			}
 		}

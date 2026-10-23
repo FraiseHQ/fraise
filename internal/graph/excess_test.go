@@ -23,15 +23,15 @@
 package graph_test
 
 import (
-	"reflect"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/google/go-cmp/cmp"
 )
 
-// excessTraversalGraph builds the smallest graph that exercises every band
+// excessTraversalGraph builds the smallest graph that exercises every step
 // rule. A source fact sits on two anchors, one shared with a sibling and one
 // exclusive:
 //
@@ -59,11 +59,11 @@ func excessTraversalGraph(t *testing.T) (g *graph.InMemoryGraph[uint64, float64]
 	return g, sourceFact.Key(), siblingFact.Key(), leftTopic.Key(), rightEntity.Key()
 }
 
-// runExcess traverses g from source with a fresh ExcessTraversal.
-func runExcess(t *testing.T, g *graph.InMemoryGraph[uint64, float64], source uint64) graph.TraversalResult[uint64] {
+// runExcess walks g from sources with a fresh ExcessTraversal.
+func runExcess(t *testing.T, g *graph.InMemoryGraph[uint64, float64], sources ...uint64) graph.TraversalResult[uint64] {
 	t.Helper()
 	tr := graph.NewExcessTraversal[uint64, float64]()
-	tr.SetSource(source)
+	tr.SetSources(sources)
 	result, err := tr.Run(g)
 	if err != nil {
 		t.Fatalf("Run = %v, want nil", err)
@@ -75,86 +75,121 @@ func runExcess(t *testing.T, g *graph.InMemoryGraph[uint64, float64], source uin
 	return r
 }
 
-// TestExcessTraversalBands pins the two-band shape. The source's anchors sit
-// at depth 1, reached along its outgoing IsAbout and Mentions edges. Their
-// members sit at depth 2, along the anchors' incoming edges. Keys ascend
-// within each band. The source itself is among the members of its own
-// anchors.
-func TestExcessTraversalBands(t *testing.T) {
-	g, source, sibling, left, right := excessTraversalGraph(t)
-	r := runExcess(t, g, source)
-
-	anchors := []uint64{left, right}
-	sort.Slice(anchors, func(i, j int) bool { return anchors[i] < anchors[j] })
-	members := []uint64{source, sibling}
-	sort.Slice(members, func(i, j int) bool { return members[i] < members[j] })
-	if want := append(append([]uint64{}, anchors...), members...); !reflect.DeepEqual(r.Order, want) {
-		t.Errorf("Order = %v, want anchors then members, ascending within bands: %v", r.Order, want)
-	}
-	for _, anchor := range anchors {
-		if r.Depth[anchor] != 1 {
-			t.Errorf("Depth[anchor %d] = %d, want 1", anchor, r.Depth[anchor])
-		}
-	}
-	if r.Depth[source] != 2 || r.Depth[sibling] != 2 {
-		t.Errorf("member depths = %d, %d, want 2, 2 — the source is a member of its own anchors", r.Depth[source], r.Depth[sibling])
-	}
+// ascending returns keys sorted, the order ExcessTraversal lists what it
+// reaches in.
+func ascending(keys ...uint64) []uint64 {
+	slices.Sort(keys)
+	return keys
 }
 
-// TestExcessTraversalParentsCarryFullIncidence pins Parents. A member on two
-// of the source's anchors is two observations, not one. So Parents carries
-// both anchors, while Parent keeps one canonical entry.
-func TestExcessTraversalParentsCarryFullIncidence(t *testing.T) {
+// TestExcessTraversalStepsAcrossTheBipartition pins the one step. A fact
+// steps to its anchors, along its outgoing IsAbout and Mentions edges, and an
+// anchor steps to its members, along its incoming ones. Everything reached
+// sits at depth 1, listed in ascending key order. Parents carries the full
+// incidence, every source a vertex was reached from, in the order the sources
+// were given: an anchor two seeds reach is funded twice, and a member of two
+// anchors is observed twice. A seed is a member of its own anchors. A source
+// the graph does not hold is skipped.
+func TestExcessTraversalStepsAcrossTheBipartition(t *testing.T) {
 	g, source, sibling, left, right := excessTraversalGraph(t)
-	r := runExcess(t, g, source)
-
-	sourceParents := append([]uint64{}, r.Parents[source]...)
-	sort.Slice(sourceParents, func(i, j int) bool { return sourceParents[i] < sourceParents[j] })
-	wantParents := []uint64{left, right}
-	sort.Slice(wantParents, func(i, j int) bool { return wantParents[i] < wantParents[j] })
-	if !reflect.DeepEqual(sourceParents, wantParents) {
-		t.Errorf("Parents[source] = %v, want both anchors %v", r.Parents[source], wantParents)
+	type walk struct {
+		Order   []uint64
+		Depth   map[uint64]int
+		Parents map[uint64][]uint64
 	}
-	if !reflect.DeepEqual(r.Parents[sibling], []uint64{left}) {
-		t.Errorf("Parents[sibling] = %v, want the left topic alone", r.Parents[sibling])
+	cases := map[string]struct {
+		sources []uint64
+		want    walk
+	}{
+		"a fact steps to its anchors": {
+			sources: []uint64{source},
+			want: walk{
+				Order:   ascending(left, right),
+				Depth:   map[uint64]int{left: 1, right: 1},
+				Parents: map[uint64][]uint64{left: {source}, right: {source}},
+			},
+		},
+		"an anchor steps to its members, the seed among them": {
+			sources: []uint64{left},
+			want: walk{
+				Order:   ascending(source, sibling),
+				Depth:   map[uint64]int{source: 1, sibling: 1},
+				Parents: map[uint64][]uint64{source: {left}, sibling: {left}},
+			},
+		},
+		"an anchor two seeds reach is funded by both, in source order": {
+			sources: []uint64{sibling, source},
+			want: walk{
+				Order:   ascending(left, right),
+				Depth:   map[uint64]int{left: 1, right: 1},
+				Parents: map[uint64][]uint64{left: {sibling, source}, right: {source}},
+			},
+		},
+		"a member of two anchors is observed through both": {
+			sources: []uint64{right, left},
+			want: walk{
+				Order:   ascending(source, sibling),
+				Depth:   map[uint64]int{source: 1, sibling: 1},
+				Parents: map[uint64][]uint64{source: {right, left}, sibling: {left}},
+			},
+		},
+		"a source the graph does not hold is skipped": {
+			sources: []uint64{0xdeadbeef, source},
+			want: walk{
+				Order:   ascending(left, right),
+				Depth:   map[uint64]int{left: 1, right: 1},
+				Parents: map[uint64][]uint64{left: {source}, right: {source}},
+			},
+		},
 	}
-	if _, ok := r.Parent[source]; !ok {
-		t.Error("Parent[source] missing: tree-shaped consumers need the canonical entry")
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := runExcess(t, g, tc.sources...)
+			got := walk{Order: r.Order, Depth: r.Depth, Parents: r.Parents}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("walk from %v mismatch (-want +got):\n%s", tc.sources, diff)
+			}
+			for _, v := range r.Order {
+				if parents := r.Parents[v]; r.Parent[v] != parents[0] {
+					t.Errorf("Parent[%d] = %d, want the first of Parents %v for tree-shaped consumers", v, r.Parent[v], parents)
+				}
+			}
+		})
 	}
 }
 
 // TestExcessTraversalCloneIsIndependent pins Clone's contract: a clone walks
-// from its own source without disturbing the original's.
+// from its own sources without disturbing the original's.
 func TestExcessTraversalCloneIsIndependent(t *testing.T) {
-	g, source, sibling, left, _ := excessTraversalGraph(t)
+	g, source, sibling, left, right := excessTraversalGraph(t)
 
 	original := graph.NewExcessTraversal[uint64, float64]()
-	original.SetSource(source)
+	original.SetSources([]uint64{source})
 	clone := original.Clone()
-	clone.SetSource(sibling)
+	clone.SetSources([]uint64{sibling})
 
 	fromClone, err := clone.Run(g)
 	if err != nil {
 		t.Fatalf("clone Run = %v, want nil", err)
 	}
-	if r := fromClone.(graph.TraversalResult[uint64]); !reflect.DeepEqual(r.Parents[sibling], []uint64{left}) {
-		t.Errorf("clone's walk = %v, want the sibling's own neighbourhood", r.Order)
+	if diff := cmp.Diff([]uint64{left}, fromClone.(graph.TraversalResult[uint64]).Order); diff != "" {
+		t.Errorf("clone's walk mismatch (-want +got), want the sibling's own anchor:\n%s", diff)
 	}
 	fromOriginal, err := original.Run(g)
 	if err != nil {
 		t.Fatalf("original Run = %v, want nil", err)
 	}
-	if r := fromOriginal.(graph.TraversalResult[uint64]); r.Depth[source] != 2 {
-		t.Errorf("original's source membership lost after Clone: %v", r.Order)
+	if diff := cmp.Diff(ascending(left, right), fromOriginal.(graph.TraversalResult[uint64]).Order); diff != "" {
+		t.Errorf("original's walk mismatch (-want +got) after Clone:\n%s", diff)
 	}
 }
 
-// TestExcessTraversalMissingSource mirrors the BFS contract: an unknown
-// source is an error, not an empty walk.
+// TestExcessTraversalMissingSource mirrors the BFS contract: a walk from no
+// source the graph holds is an error, not an empty walk.
 func TestExcessTraversalMissingSource(t *testing.T) {
 	g, _, _, _, _ := excessTraversalGraph(t)
 	tr := graph.NewExcessTraversal[uint64, float64]()
-	tr.SetSource(0xdeadbeef)
+	tr.SetSources([]uint64{0xdeadbeef})
 	if _, err := tr.Run(g); err == nil {
 		t.Fatal("Run from a missing source = nil error, want ErrSourceNotFound")
 	}

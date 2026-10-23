@@ -24,23 +24,28 @@ package graph
 
 import (
 	"cmp"
-	"sort"
+	"slices"
 )
 
-// ExcessTraversal is the excess methodology's traversal. From a source fact,
-// it visits the source's anchors at depth 1. These are its Topic and
-// NamedEntity neighbours, in either edge direction. It then visits every
-// member of those anchors at depth 2. Order lists the anchors, then the
-// members, each band in ascending key order. So the collection layer folds
-// floats in a fixed order. That sort is why K is cmp.Ordered rather than
-// comparable.
+// ExcessTraversal is the excess methodology's traversal. It steps once from
+// each source across the bipartition between facts and anchors. A fact steps
+// to its anchors, its Topic and NamedEntity neighbours in either edge
+// direction. An anchor steps to its members, the facts filed under it. Search
+// walks it twice: from the seeds to the anchors they are filed under, then
+// from the anchors that transmit to their members. So a hub the seeds reach
+// is listed only if it transmits, and then once, however many seeds reach it.
 //
-// Parents carries the full member-to-anchors incidence. The source itself
-// appears among its anchors' members, so an anchor's members are the same
-// whichever seed reaches it. Self-exclusion then happens once, in the scorer,
-// where the member's own mass is at hand.
+// Every vertex it reaches sits at depth 1. Order lists them in ascending key
+// order, so the collection layer folds floats in a fixed order. That sort is
+// why K is cmp.Ordered rather than comparable. Parents carries the full
+// incidence, every source a vertex was reached from, in source order. An
+// anchor that two seeds reach is funded twice, and a member of two
+// transmitting anchors is observed twice. A seed is among the members of its
+// own anchors, so an anchor's members are the same whichever seeds reach it.
+// Self-exclusion then happens once, in the scorer, where the member's own mass
+// is at hand.
 type ExcessTraversal[K cmp.Ordered, P float32 | float64] struct {
-	source K
+	sources []K
 }
 
 // NewExcessTraversal returns the excess-transmission traversal.
@@ -48,80 +53,61 @@ func NewExcessTraversal[K cmp.Ordered, P float32 | float64]() *ExcessTraversal[K
 	return &ExcessTraversal[K, P]{}
 }
 
-// Run traverses from the configured source, returning an AlgorithmResult
+// Run traverses from the configured sources, returning an AlgorithmResult
 // (a TraversalResult).
 func (t *ExcessTraversal[K, P]) Run(g Graph[K, P]) (AlgorithmResult, error) {
-	return t.traverse(g, t.source)
+	return t.traverse(g, t.sources)
 }
 
-// SetSource sets the vertex the next Run starts from.
-func (t *ExcessTraversal[K, P]) SetSource(source K) {
-	t.source = source
+// SetSources sets the vertices the next Run starts from.
+func (t *ExcessTraversal[K, P]) SetSources(sources []K) {
+	t.sources = sources
 }
 
 // Clone returns a fresh traversal with no per-run state, so each walk can set
-// its own source instead of mutating a shared instance.
+// its own sources instead of mutating a shared instance.
 func (t *ExcessTraversal[K, P]) Clone() Traversal[K, P] {
 	return &ExcessTraversal[K, P]{}
 }
 
-// traverse visits the source's anchors (depth 1) and their members (depth 2).
-func (t *ExcessTraversal[K, P]) traverse(g Graph[K, P], source K) (TraversalResult[K], error) {
-	if g.Get(source) == nil {
-		return TraversalResult[K]{}, ErrSourceNotFound
-	}
-
-	// traverse runs once per seed, so it reads one node's neighbours at a time
-	// (see Graph.Neighbours).
-	neighbours := func(key K) []K {
-		out := g.Neighbours(key)
-		sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-		return out
-	}
-
-	anchors := make([]K, 0)
-	seenAnchor := make(map[K]struct{})
-	for _, neighbour := range neighbours(source) {
-		if _, dup := seenAnchor[neighbour]; dup {
-			continue
-		}
-		if !isAnchor(g, neighbour) {
-			continue
-		}
-		seenAnchor[neighbour] = struct{}{}
-		anchors = append(anchors, neighbour)
-	}
-
+// traverse steps once from every source g holds to its neighbours of the
+// other kind: a fact's anchors, an anchor's members.
+func (t *ExcessTraversal[K, P]) traverse(g Graph[K, P], sources []K) (TraversalResult[K], error) {
 	result := TraversalResult[K]{
-		Order:   make([]K, 0, len(anchors)),
-		Parent:  make(map[K]K, len(anchors)),
-		Parents: make(map[K][]K, len(anchors)),
-		Depth:   make(map[K]int, len(anchors)),
+		Parent:  make(map[K]K),
+		Parents: make(map[K][]K),
+		Depth:   make(map[K]int),
 	}
-	for _, anchor := range anchors {
-		result.Order = append(result.Order, anchor)
-		result.Parent[anchor] = source
-		result.Parents[anchor] = []K{source}
-		result.Depth[anchor] = 1
-	}
-
-	members := make([]K, 0)
-	for _, anchor := range anchors {
-		for _, member := range neighbours(anchor) {
-			if _, isAnchorVertex := seenAnchor[member]; isAnchorVertex {
+	walked := make(map[K]struct{}, len(sources))
+	for _, source := range sources {
+		if _, dup := walked[source]; dup || g.Get(source) == nil {
+			continue
+		}
+		walked[source] = struct{}{}
+		fromAnchor := isAnchor(g, source)
+		for _, neighbour := range g.Neighbours(source) {
+			if isAnchor(g, neighbour) == fromAnchor {
 				continue
 			}
-			if _, seen := result.Depth[member]; !seen {
-				result.Parent[member] = anchor
-				result.Depth[member] = 2
-				members = append(members, member)
+			// Neighbours lists a pair joined by an edge each way twice, but
+			// it is one incidence. While a source is walked, its entry is the
+			// last one appended to a neighbour's Parents.
+			parents := result.Parents[neighbour]
+			if n := len(parents); n > 0 && parents[n-1] == source {
+				continue
 			}
-			result.Parents[member] = append(result.Parents[member], anchor)
+			if _, seen := result.Depth[neighbour]; !seen {
+				result.Order = append(result.Order, neighbour)
+				result.Parent[neighbour] = source
+				result.Depth[neighbour] = 1
+			}
+			result.Parents[neighbour] = append(parents, source)
 		}
 	}
-	sort.Slice(members, func(i, j int) bool { return members[i] < members[j] })
-	result.Order = append(result.Order, members...)
-
+	if len(walked) == 0 {
+		return TraversalResult[K]{}, ErrSourceNotFound
+	}
+	slices.Sort(result.Order)
 	return result, nil
 }
 
