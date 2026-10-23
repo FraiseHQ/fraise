@@ -34,6 +34,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
@@ -2125,8 +2126,8 @@ func TestInMemoryGraphSearchWindowScoresAnExchange(t *testing.T) {
 // TestInMemoryGraphSearchWindowFollowsWrites pins that the write order a
 // window reads is never stale: a fact filed between two others after they
 // were searched becomes their neighbour on the next search, and a fact
-// deleted stops lending. The sequence is a cache built on first use, so the
-// test is of its invalidation.
+// deleted stops lending. The writes keep the order in step, so the test is of
+// that bookkeeping.
 func TestInMemoryGraphSearchWindowFollowsWrites(t *testing.T) {
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
@@ -2168,4 +2169,175 @@ func TestInMemoryGraphSearchWindowFollowsWrites(t *testing.T) {
 	if diff := cmp.Diff([]string{"the deploy is at noon", "lunch is at one"}, hits()); diff != "" {
 		t.Fatalf("after deleting: Search mismatch (-want +got), lunch is the neighbour again:\n%s", diff)
 	}
+}
+
+// TestInMemoryGraphSearchWindowReadsTheGraphAsItStands pins that the write
+// order a window reads is the graph's as it stands, whatever writes made it.
+// A graph taken through a random history searches exactly as one holding the
+// same facts, anchors and edges written once, oldest fact first. The history
+// writes facts out of time order and several in one instant, files a fact
+// under several anchors, stores edges before their fact or their anchor,
+// re-asserts facts with fresh timestamps, and deletes facts, edges and
+// anchors. A neighbour the writes kept wrong lends to the wrong fact, which
+// shows in the scores.
+func TestInMemoryGraphSearchWindowReadsTheGraphAsItStands(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.WindowGamma = 0.3
+	words := []string{"deploy", "friday", "lunch", "budget", "storm", "noon", "cat", "report"}
+	queries := [][]string{{"deploy"}, {"friday"}, {"lunch", "noon"}, {"budget", "storm", "report"}, {"cat", "deploy", "friday"}}
+	for seed := range 20 {
+		t.Run(strconv.Itoa(seed), func(t *testing.T) {
+			g := graph.NewGraph[uint64, float64](cfg)
+			writeHistory(t, g, rand.New(rand.NewSource(int64(seed))), words)
+			ref := asItStands(t, g, cfg)
+			for _, query := range queries {
+				wantNodes, wantScores, _, _, err := search(ref, query, containers.Vector[uint64, float64]{}, nil, nil, 0, 0, time.Time{}, time.Time{})
+				if err != nil {
+					t.Fatalf("Search(%v) on the graph as it stands = %v, want nil", query, err)
+				}
+				gotNodes, gotScores, _, _, err := search(g, query, containers.Vector[uint64, float64]{}, nil, nil, 0, 0, time.Time{}, time.Time{})
+				if err != nil {
+					t.Fatalf("Search(%v) after the history = %v, want nil", query, err)
+				}
+				if diff := cmp.Diff(keys(wantNodes), keys(gotNodes)); diff != "" {
+					t.Errorf("Search(%v) hits mismatch with the graph as it stands (-want +got):\n%s", query, diff)
+				}
+				if diff := cmp.Diff(wantScores, gotScores); diff != "" {
+					t.Errorf("Search(%v) scores mismatch with the graph as it stands (-want +got):\n%s", query, diff)
+				}
+			}
+		})
+	}
+}
+
+// writeHistory takes g through a random history of writes to its facts,
+// anchors and edges: four topics and two entities, facts drawn from words and
+// timestamped within forty seconds of one another, so ties and out-of-order
+// writes are common.
+func writeHistory(t *testing.T, g *graph.InMemoryGraph[uint64, float64], rng *rand.Rand, words []string) {
+	t.Helper()
+	now := time.Now()
+	anchors := []graph.Node[uint64]{
+		mkTopic(g, "ops", now), mkTopic(g, "pets", now), mkTopic(g, "travel", now), mkTopic(g, "work", now),
+		mkEntity(g, "alice", now), mkEntity(g, "bob", now),
+	}
+	edge := func(fact graph.Fact[uint64], anchor graph.Node[uint64]) graph.Node[uint64] {
+		attrs := graph.NodeAttributes{Timestamp: fact.Timestamp}
+		if topic, ok := anchor.(*graph.Topic[uint64]); ok {
+			return graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: attrs, Hasher: g.GetHasher()}
+		}
+		return graph.Mentions[uint64]{Fact: &fact, NamedEntity: anchor.(*graph.NamedEntity[uint64]), NodeAttributes: attrs, Hasher: g.GetHasher()}
+	}
+	set := func(n graph.Node[uint64]) {
+		if err := g.Set(n); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
+			t.Fatalf("Set(%v) = %v, want nil or ErrNodeAlreadyExists", n.Key(), err)
+		}
+	}
+	remove := func(n graph.Node[uint64]) {
+		if err := g.Delete(n); err != nil && !errors.Is(err, graph.ErrNodeNotFound) {
+			t.Fatalf("Delete(%v) = %v, want nil or ErrNodeNotFound", n.Key(), err)
+		}
+	}
+	at := func() time.Time { return now.Add(time.Duration(rng.Intn(40)) * time.Second) }
+	var written []string
+	stored := func() (graph.Fact[uint64], bool) {
+		if len(written) == 0 {
+			return graph.Fact[uint64]{}, false
+		}
+		node, ok := g.Get(mkFact(g, written[rng.Intn(len(written))], now).Key()).(graph.Fact[uint64])
+		return node, ok
+	}
+	for step := range 150 {
+		switch r := rng.Intn(100); {
+		case r < 45:
+			// A new fact, filed under one to three anchors. Its edges may come
+			// first, and an anchor may be stored only after its edges.
+			value := "f" + strconv.Itoa(step) + " " + words[rng.Intn(len(words))] + " " + words[rng.Intn(len(words))]
+			fact := mkFact(g, value, at())
+			edgesFirst := rng.Intn(3) == 0
+			if !edgesFirst {
+				set(fact)
+			}
+			for range 1 + rng.Intn(3) {
+				anchor := anchors[rng.Intn(len(anchors))]
+				if rng.Intn(4) > 0 {
+					set(anchor)
+				}
+				set(edge(fact, anchor))
+			}
+			if edgesFirst {
+				set(fact)
+			}
+			written = append(written, value)
+		case r < 60:
+			// A re-asserted fact takes a fresh timestamp.
+			if fact, ok := stored(); ok {
+				if err := g.Put(fact.Key(), mkFact(g, fact.Value, at())); err != nil {
+					t.Fatalf("Put(%q) = %v, want nil", fact.Value, err)
+				}
+			}
+		case r < 72:
+			if fact, ok := stored(); ok {
+				anchor := anchors[rng.Intn(len(anchors))]
+				set(anchor)
+				set(edge(fact, anchor))
+			}
+		case r < 82:
+			if fact, ok := stored(); ok {
+				remove(fact)
+			}
+		case r < 92:
+			if fact, ok := stored(); ok {
+				remove(edge(fact, anchors[rng.Intn(len(anchors))]))
+			}
+		case r < 96:
+			remove(anchors[rng.Intn(len(anchors))])
+		default:
+			set(anchors[rng.Intn(len(anchors))])
+		}
+	}
+}
+
+// asItStands returns a graph holding what g holds, written once: the anchors,
+// then each fact in write order followed by its edges, then any edge whose
+// fact g does not hold. Every fact is the newest of its anchors' members when
+// its edges are stored, so this graph's write order is built by appends alone.
+func asItStands(t *testing.T, g *graph.InMemoryGraph[uint64, float64], cfg *config.ConfigSet) *graph.InMemoryGraph[uint64, float64] {
+	t.Helper()
+	ref := graph.NewGraph[uint64, float64](cfg)
+	var facts []graph.Fact[uint64]
+	edges := map[uint64][]graph.Node[uint64]{}
+	var dangling []graph.Node[uint64]
+	for key, node := range g.Nodes() {
+		switch n := node.(type) {
+		case graph.Fact[uint64]:
+			facts = append(facts, n)
+		case graph.Relationship[uint64]:
+			source := (*n.Source()).Key()
+			if _, isFact := g.Get(source).(graph.Fact[uint64]); isFact {
+				edges[source] = append(edges[source], node)
+			} else {
+				dangling = append(dangling, node)
+			}
+		default:
+			mustSet(t, ref, g.Get(key))
+		}
+	}
+	sort.Slice(facts, func(i, j int) bool {
+		if c := facts[i].Timestamp.Compare(facts[j].Timestamp); c != 0 {
+			return c < 0
+		}
+		return facts[i].Key() < facts[j].Key()
+	})
+	for _, fact := range facts {
+		mustSet(t, ref, fact)
+		for _, e := range edges[fact.Key()] {
+			mustSet(t, ref, e)
+		}
+	}
+	for _, e := range dangling {
+		mustSet(t, ref, e)
+	}
+	return ref
 }

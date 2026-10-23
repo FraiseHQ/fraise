@@ -69,31 +69,44 @@ type InMemoryGraph[K ~uint64, P float32 | float64] struct {
 
 	config *config.ConfigSet
 
-	// sequences caches, per anchor, its member facts in the order they were
-	// written. contiguous reads a fact's temporal neighbours from it. An
-	// anchor's sequence is built on first use, under sequenceMu because
-	// searches share the graph's read lock. Every write that touches the
-	// anchor or one of its members drops it. So a sequence is never stale, and
-	// a graph never searched with a window never builds one.
-	sequences map[K]*sequence[K]
-
-	// contiguity caches, per fact, what contiguous returned for it. It is a
-	// pure function of the cached sequences of the fact's anchors, so it is
-	// dropped with any of them. A window search asks for the neighbours of
-	// every matched fact, and between writes the answer does not change.
+	// places and spans keep each anchor's member facts in write order:
+	// timestamp, then key, so the order is total and two searches agree on
+	// who neighbours whom. places holds, per anchor and member, the members
+	// written just before and just after it, and spans each anchor's oldest
+	// and newest member. contiguity holds what contiguous returns for each
+	// fact. The writes keep all three in step under the write lock: a new
+	// fact is linked at the newest end, a re-asserted one moves there, and
+	// only the facts whose neighbours change are recomputed. So a search
+	// reads them under the read lock and never writes them, and concurrent
+	// searches never wait on one another.
+	places     map[filing[K]]place[K]
+	spans      map[K]span[K]
 	contiguity map[K][]K
 
-	sequenceMu sync.Mutex
+	// ordered is whether the writes keep the write order. Only the window
+	// reads it, so a graph built with the window off pays nothing for it.
+	ordered bool
 
 	mu sync.RWMutex
 }
 
-// sequence is one anchor's member facts ordered by write time, then key. It
-// holds each member's position, so a neighbour lookup is a map read and two
-// slice reads rather than a search.
-type sequence[K comparable] struct {
-	keys []K
-	at   map[K]int
+// filing names a fact filed under an anchor: one link of the anchor's write
+// order.
+type filing[K comparable] struct {
+	anchor, fact K
+}
+
+// place is a fact's position in one anchor's write order: the members written
+// just before and just after it, where there are any.
+type place[K comparable] struct {
+	before, after       K
+	hasBefore, hasAfter bool
+}
+
+// span is an anchor's oldest and newest member, the two ends of its write
+// order.
+type span[K comparable] struct {
+	oldest, newest K
 }
 
 // SetTraversal installs the traversal Search expands seeds with, such as
@@ -145,13 +158,15 @@ func NewGraph[K ~uint64, P float32 | float64](cfg *config.ConfigSet) *InMemoryGr
 		scorer:     scoring.NewExcessScorer[K, P](),
 		hasher:     hash.NewHasher[K](cfg),
 		config:     cfg,
-		sequences:  make(map[K]*sequence[K]),
+		places:     make(map[filing[K]]place[K]),
+		spans:      make(map[K]span[K]),
 		contiguity: make(map[K][]K),
 	}
 	// The window needs the graph's notion of adjacency, which only exists
 	// once the graph does, so it is installed last. A non-positive gamma
 	// leaves the index on the plain search.
 	if cfg.DB.WindowGamma > 0 {
+		g.ordered = true
 		textIndex.SetWindow(P(cfg.DB.WindowGamma), g.contiguous)
 	}
 	return g
@@ -232,7 +247,6 @@ var textLanguage = language.English
 // replaced through Update. A new fact is added through Insert.
 func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 	g.idToNodes[key] = node
-	g.dropSequences(key)
 
 	r, ok := node.(Relationship[K])
 	if ok {
@@ -250,10 +264,9 @@ func (g *InMemoryGraph[K, P]) store(key K, node Node[K]) error {
 		}
 
 		g.nodeToSources[target][source] = r.Key()
-		// The edge files source under target, so target's sequence has a new
-		// member. The drop walks source's rows, so it runs once they hold the
-		// edge.
-		g.dropSequences(source)
+	}
+	if g.ordered {
+		g.order(key, node)
 	}
 
 	_, isFact := node.(Fact[K])
@@ -308,9 +321,10 @@ func (g *InMemoryGraph[K, P]) Delete(node Node[K]) error {
 	if !ok {
 		return ErrNodeNotFound
 	}
-	g.dropSequences(key)
-	if r, isEdge := stored.(Relationship[K]); isEdge {
-		g.dropSequences((*r.Source()).Key())
+	// The write order is read off the edges, so the node leaves it while its
+	// edges are still there to say where it was filed.
+	if g.ordered {
+		g.unorder(key, stored)
 	}
 
 	// When the node is an endpoint, its adjacency rows hold each incident
@@ -440,96 +454,179 @@ func (g *InMemoryGraph[K, P]) GetTextIndex() index.TextIndex[K, P] {
 // anchor are one exchange, a question and its answer, a statement and its
 // follow-up, and the window lets the exchange match as a whole. A fact filed
 // under no anchor has no neighbours. Searches call it under the graph's read
-// lock, once per matched fact, so the answer is cached until a write drops it
-// (see dropSequences) and a repeated lookup allocates nothing.
+// lock, once per matched fact. The writes keep the answer current (see
+// places), so a call is one map read: it takes no lock and allocates nothing.
 func (g *InMemoryGraph[K, P]) contiguous(key K) []K {
-	g.sequenceMu.Lock()
-	defer g.sequenceMu.Unlock()
-	if out, ok := g.contiguity[key]; ok {
-		return out
-	}
-	var out []K
-	for anchor := range g.nodeToTargets[key] {
-		if !isAnchor[K, P](g, anchor) {
-			continue
-		}
-		seq := g.sequence(anchor)
-		i, ok := seq.at[key]
-		if !ok {
-			continue
-		}
-		if i > 0 {
-			out = append(out, seq.keys[i-1])
-		}
-		if i+1 < len(seq.keys) {
-			out = append(out, seq.keys[i+1])
-		}
-	}
-	slices.Sort(out)
-	out = slices.Compact(out)
-	g.contiguity[key] = out
-	return out
+	return g.contiguity[key]
 }
 
-// sequence returns anchor's members in write order, building and caching it
-// on first use. Members are the facts adjacent to the anchor; ties on the
-// timestamp (a batch written in one instant) are broken by key, so the order
-// is total and two searches agree on who neighbours whom. The caller holds
-// sequenceMu.
-func (g *InMemoryGraph[K, P]) sequence(anchor K) *sequence[K] {
-	if seq, ok := g.sequences[anchor]; ok {
-		return seq
-	}
-	seq := &sequence[K]{at: make(map[K]int, len(g.nodeToSources[anchor]))}
-	for member := range g.nodeToSources[anchor] {
-		if _, isFact := g.Nodes()[member].(Fact[K]); isFact {
-			seq.keys = append(seq.keys, member)
+// order keeps the write order in step with the store of node under key. A
+// fact, new or re-asserted with a fresh timestamp, takes its place under every
+// anchor it is filed under. An edge files its fact under its anchor. An anchor
+// stored after edges that already name it orders the members they file.
+func (g *InMemoryGraph[K, P]) order(key K, node Node[K]) {
+	switch n := node.(type) {
+	case Fact[K]:
+		for anchor := range g.nodeToTargets[key] {
+			if isAnchor[K, P](g, anchor) {
+				g.unfile(anchor, key)
+				g.file(anchor, key)
+			}
 		}
-	}
-	slices.SortFunc(seq.keys, func(a, b K) int {
-		if c := g.Nodes()[a].GetTimestamp().Compare(g.Nodes()[b].GetTimestamp()); c != 0 {
-			return c
+	case *Topic[K], *NamedEntity[K]:
+		if _, ordered := g.spans[key]; ordered {
+			return
 		}
-		return comparator.OrderedComparator(a, b)
-	})
-	for i, member := range seq.keys {
-		seq.at[member] = i
-	}
-	g.sequences[anchor] = seq
-	return seq
-}
-
-// dropSequences discards the cached sequence of key and of every node
-// adjacent to it. A write to a fact moves it in each of its anchors'
-// sequences (a re-asserted fact takes a new timestamp), a new edge adds a
-// member, a deleted node removes one: all three reach here, under the write
-// lock, so a cached sequence never outlives the writes that would change it.
-// A dropped sequence takes its members' cached contiguity with it, and key's
-// own, so every cached neighbour list is read off sequences still cached.
-func (g *InMemoryGraph[K, P]) dropSequences(key K) {
-	g.sequenceMu.Lock()
-	defer g.sequenceMu.Unlock()
-	delete(g.contiguity, key)
-	g.dropSequence(key)
-	for neighbour := range g.nodeToTargets[key] {
-		g.dropSequence(neighbour)
-	}
-	for neighbour := range g.nodeToSources[key] {
-		g.dropSequence(neighbour)
+		var members []K
+		for member := range g.nodeToSources[key] {
+			if _, isFact := g.idToNodes[member].(Fact[K]); isFact {
+				members = append(members, member)
+			}
+		}
+		slices.SortFunc(members, func(a, b K) int {
+			if g.earlier(a, b) {
+				return -1
+			}
+			return 1
+		})
+		for _, member := range members {
+			g.file(key, member)
+		}
+	case Relationship[K]:
+		fact, anchor := (*n.Source()).Key(), (*n.Target()).Key()
+		if _, isFact := g.idToNodes[fact].(Fact[K]); !isFact || !isAnchor[K, P](g, anchor) {
+			return
+		}
+		if _, filed := g.places[filing[K]{anchor, fact}]; !filed {
+			g.file(anchor, fact)
+		}
 	}
 }
 
-// dropSequence discards anchor's cached sequence and the cached contiguity of
-// each of its members. The caller holds sequenceMu.
-func (g *InMemoryGraph[K, P]) dropSequence(anchor K) {
-	seq, ok := g.sequences[anchor]
-	if !ok {
+// unorder takes the node under key out of the write order before Delete
+// removes it. A fact leaves every anchor it is filed under, an anchor's members
+// lose their neighbours under it, and an edge unfiles its fact.
+func (g *InMemoryGraph[K, P]) unorder(key K, node Node[K]) {
+	switch n := node.(type) {
+	case Fact[K]:
+		for anchor := range g.nodeToTargets[key] {
+			g.unfile(anchor, key)
+		}
+	case *Topic[K], *NamedEntity[K]:
+		for member := range g.nodeToSources[key] {
+			g.unfile(key, member)
+		}
+	case Relationship[K]:
+		g.unfile((*n.Target()).Key(), (*n.Source()).Key())
+	}
+}
+
+// earlier reports whether fact a was written before fact b: by timestamp,
+// then by key, so facts written in one instant still have an order.
+func (g *InMemoryGraph[K, P]) earlier(a, b K) bool {
+	if c := g.idToNodes[a].GetTimestamp().Compare(g.idToNodes[b].GetTimestamp()); c != 0 {
+		return c < 0
+	}
+	return a < b
+}
+
+// file links fact into anchor's write order and recomputes the contiguity of
+// fact and of the members either side of it. A fact is almost always written
+// last, so its place is looked for from the newest end, and a fact older than
+// every member goes straight to the oldest end.
+func (g *InMemoryGraph[K, P]) file(anchor, fact K) {
+	s, ordered := g.spans[anchor]
+	var p place[K]
+	switch {
+	case !ordered:
+		s = span[K]{oldest: fact, newest: fact}
+	case !g.earlier(fact, s.newest):
+		p = place[K]{before: s.newest, hasBefore: true}
+		s.newest = fact
+	case g.earlier(fact, s.oldest):
+		p = place[K]{after: s.oldest, hasAfter: true}
+		s.oldest = fact
+	default:
+		// The walk back from the newest end stops at the last member written
+		// before fact, which exists, since the oldest one was.
+		p = place[K]{after: s.newest, hasBefore: true, hasAfter: true}
+		p.before = g.places[filing[K]{anchor, p.after}].before
+		for !g.earlier(p.before, fact) {
+			p.after = p.before
+			p.before = g.places[filing[K]{anchor, p.after}].before
+		}
+	}
+	g.places[filing[K]{anchor, fact}] = p
+	g.spans[anchor] = s
+	if p.hasBefore {
+		g.relink(anchor, p.before, func(q *place[K]) { q.after, q.hasAfter = fact, true })
+	}
+	if p.hasAfter {
+		g.relink(anchor, p.after, func(q *place[K]) { q.before, q.hasBefore = fact, true })
+	}
+	g.recompute(fact)
+}
+
+// unfile unlinks fact from anchor's write order, joining the members either
+// side of it, and recomputes their contiguity and its own. A fact not filed
+// under anchor is left as it is.
+func (g *InMemoryGraph[K, P]) unfile(anchor, fact K) {
+	p, filed := g.places[filing[K]{anchor, fact}]
+	if !filed {
 		return
 	}
-	for _, member := range seq.keys {
-		delete(g.contiguity, member)
+	delete(g.places, filing[K]{anchor, fact})
+	s := g.spans[anchor]
+	if p.hasBefore {
+		g.relink(anchor, p.before, func(q *place[K]) { q.after, q.hasAfter = p.after, p.hasAfter })
+	} else {
+		s.oldest = p.after
 	}
-	delete(g.sequences, anchor)
+	if p.hasAfter {
+		g.relink(anchor, p.after, func(q *place[K]) { q.before, q.hasBefore = p.before, p.hasBefore })
+	} else {
+		s.newest = p.before
+	}
+	if p.hasBefore || p.hasAfter {
+		g.spans[anchor] = s
+	} else {
+		delete(g.spans, anchor)
+	}
+	g.recompute(fact)
+}
+
+// relink applies change to member's place under anchor and recomputes
+// member's contiguity.
+func (g *InMemoryGraph[K, P]) relink(anchor, member K, change func(*place[K])) {
+	at := filing[K]{anchor, member}
+	q := g.places[at]
+	change(&q)
+	g.places[at] = q
+	g.recompute(member)
+}
+
+// recompute rebuilds what contiguous returns for fact from its places under
+// the anchors it is filed under.
+func (g *InMemoryGraph[K, P]) recompute(fact K) {
+	var out []K
+	for anchor := range g.nodeToTargets[fact] {
+		p, filed := g.places[filing[K]{anchor, fact}]
+		if !filed {
+			continue
+		}
+		if p.hasBefore {
+			out = append(out, p.before)
+		}
+		if p.hasAfter {
+			out = append(out, p.after)
+		}
+	}
+	if len(out) == 0 {
+		delete(g.contiguity, fact)
+		return
+	}
+	slices.Sort(out)
+	g.contiguity[fact] = slices.Compact(out)
 }
 
 // Search implements [Graph.Search]. It collects candidates and folds each
