@@ -167,22 +167,26 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Search runs a hybrid query over the graph. It returns at most top hits,
 	// best first, and the query's background rate (see Result). Each hit
 	// carries the contributions its score was folded from. An implementation
-	// may spread the top slots across the facets the ranking spans, instead
-	// of filling them in rank order.
+	// may return fewer than top hits when its own retrieval policy, such as a
+	// score cutoff, drops the tail.
 	//
-	// The criteria combine to narrow the result:
+	// The criteria:
 	//   - keywords: full-text terms matched against the text index
 	//   - vector:   query embedding for nearest-neighbour search. A nil or
 	//               empty vector skips the vector index.
-	//   - topics:   keep only facts filed under at least one of these topics
-	//   - entities: keep only facts that mention at least one of these
-	//               entities
+	//   - topics:   anchors whose facts are seeded beside the whole graph's
+	//               and which transmit excess to their members. They filter
+	//               nothing: a match filed under none of them still ranks on
+	//               its own mass.
+	//   - entities: the same, for the entities facts mention
 	//   - depth:    the retrieval lane. 0 ranks by seed mass alone and skips
-	//               the anchor traversal. 1 and 2 run the same single
-	//               anchor-mediated round. They differ only in the admission
-	//               bar. 1 admits only strongly above-chance anchors
-	//               (precision). 2 admits any anchor above its fair share
-	//               (recall). The round runs only when a topic or entity is
+	//               the anchor traversal, so the named anchors contribute
+	//               nothing. 1 and 2 run the same single anchor-mediated
+	//               round. They differ only in the admission bar for the
+	//               anchors the seeds reach. 1 admits only strongly
+	//               above-chance anchors (precision). 2 admits any anchor
+	//               above its fair share (recall). A named anchor transmits
+	//               at either. The round runs only when a topic or entity is
 	//               named.
 	//   - top:      maximum number of results
 	//   - since:    inclusive lower time bound; zero is unbounded

@@ -59,7 +59,7 @@ func TestExcessScorerFloor(t *testing.T) {
 // silence and earned preemption. With background 2, a degree-6 anchor observing
 // mass 14 owes 12 to the background. It owes 2 to the candidate's own mass
 // (self-exclusion), so it transmits nothing. At degree 3, the same observation
-// holds surplus 6, or 2 per edge, and α² = 1/4 of that arrives.
+// holds surplus 6, and its per-edge share of 2 arrives whole.
 func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	scorer := scoring.NewExcessScorer[uint64, float64]()
 
@@ -69,16 +69,35 @@ func TestExcessScorerHubSilenceAndPreemption(t *testing.T) {
 	}
 
 	surplus := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 3, Count: 2})
-	if want := 2 + 0.25*(14-2-3*2.0)/3; scorer.WithBackground(2).Score(surplus) != want {
-		t.Errorf("surplus fold = %v, want m + α²·(M − m − d·ρ₀)/d = %v", scorer.WithBackground(2).Score(surplus), want)
+	if want := 2 + (14-2-3*2.0)/3; scorer.WithBackground(2).Score(surplus) != want {
+		t.Errorf("surplus fold = %v, want m + (M − m − d·ρ₀)/d = %v", scorer.WithBackground(2).Score(surplus), want)
 	}
 
 	// Earned preemption: a pure non-seed funded by a rich anchor outranks a
 	// weak seed of mass 1. Transmission is per edge, so the anchor must clear
-	// α²·(M − d·ρ₀)/d > 1. At degree 3 and background 2, mass 20 funds 7/6.
+	// (M − d·ρ₀)/d > 1. At degree 3 and background 2, mass 20 funds 14/3.
 	nonSeed := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcGraph, Score: 20, Via: 1, Degree: 3, Count: 2}}
 	if got := scorer.WithBackground(2).Score(nonSeed); got <= 1 {
 		t.Errorf("funded non-seed fold = %v, want it to preempt a weak seed's mass 1", got)
+	}
+}
+
+// TestExcessScorerNamedAnchorOwesNoFairShare pins the named anchor's fold. The
+// degree-6 hub silent above, observing 14 at background 2, transmits once
+// named: it owes the candidate's own mass 2 (self-exclusion) and nothing to
+// the background, so (14 − 2)/6 = 2 per edge arrives. A named
+// anchor whose only mass is the candidate's own lifts nothing.
+func TestExcessScorerNamedAnchorOwesNoFairShare(t *testing.T) {
+	scorer := scoring.NewExcessScorer[uint64, float64]()
+
+	named := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: 1, Degree: 6, Count: 2, Named: true})
+	if got, want := scorer.WithBackground(2).Score(named), 2+(14-2)/6.0; got != want {
+		t.Errorf("named hub fold = %v, want m + (M − m)/d = %v", got, want)
+	}
+
+	alone := excessContributions(2, scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 2, Via: 1, Degree: 6, Count: 1, Named: true})
+	if got := scorer.WithBackground(2).Score(alone); got != 2 {
+		t.Errorf("named anchor funded by the candidate alone folds to %v, want the seed mass 2", got)
 	}
 }
 
@@ -145,9 +164,9 @@ func TestExcessScorerAnchorSightingsAreSeedMass(t *testing.T) {
 	}
 
 	// Mass 2, background 0: an anchor observing 6 over one edge holds surplus
-	// 6 − 2 − 1·0 = 4. α² = 1/4 of it arrives.
+	// 6 − 2 − 1·0 = 4, and all of it arrives.
 	funded := append(append([]scoring.Contribution[uint64, float64]{}, two...), scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 6, Via: 3, Degree: 1, Count: 1})
-	if got, want := scorer.Score(funded), 2+0.25*(6-2-1*0.0)/1; got != want {
-		t.Errorf("funded fold = %v, want m + α²·(M − m − d·ρ₀)/d = %v", got, want)
+	if got, want := scorer.Score(funded), 2+(6-2-1*0.0)/1; got != want {
+		t.Errorf("funded fold = %v, want m + (M − m − d·ρ₀)/d = %v", got, want)
 	}
 }

@@ -32,10 +32,11 @@ import pytest
 def test_explain_breaks_down_each_hit_by_source(explain, pulsar_graph, pulsar_entity):
     """Every explained hit carries its contribution records.
 
-    Here each hit is a pure text seed. Its record has the source name, the raw
-    BM25 mass, the rank in the text list, and a count (1 for a seed sighting).
-    The shared entity is the only touched anchor, so it holds no surplus and no
-    graph contribution appears. No contribution carries a hop field.
+    Each hit is a text seed. Its text record has the source name, the raw BM25
+    mass, the rank in the text list, and a count (1 for a seed sighting). The
+    recall names the shared entity, so each hit also carries one graph record
+    through it, marked named: the entity's degree, both seeds' mass and their
+    count. No contribution carries a hop field.
     """
     status, body = explain(
         f"recall@{pulsar_graph} pulsar entity:{pulsar_entity} depth:2"
@@ -49,9 +50,15 @@ def test_explain_breaks_down_each_hit_by_source(explain, pulsar_graph, pulsar_en
         assert contributions, f"explained hit carries no contributions: {hit}"
 
         by_source = {c["source"]: c for c in contributions}
-        assert set(by_source) == {"text"}, (
-            f"a lone fair-share anchor must transmit nothing, got {contributions}"
-        )
+        assert set(by_source) == {
+            "text",
+            "graph",
+        }, f"want a text seed lifted through the named entity, got {contributions}"
+        graph = by_source["graph"]
+        assert graph["via"] == pulsar_entity, graph
+        assert graph["named"] is True, "the recall named the entity"
+        assert graph["degree"] == 2, graph
+        assert graph["count"] == 2, "both pulsar seeds fund the entity"
         assert by_source["text"]["rank"] in (0, 1), "two text seeds rank 0 and 1"
         assert by_source["text"]["count"] == 1, "a seed sighting counts once"
         assert "hop" not in by_source["text"], "hop left the wire with the walk"
@@ -63,21 +70,21 @@ def test_explain_shows_transmitted_surplus(
     explain,
     storm_graph,
     storm_cluster_topic,
-    storm_hub_topic,
+    door_topic,
     storm_silent_member,
     storm_hub,
 ):
     """Funded case: the cluster's silent member carries a graph contribution.
 
     The contribution names its funding anchor: the cluster's topic as via, the
-    anchor's degree, its observed mass and its funding-seed count. This proves
-    that an anchor passes on surplus, not reachability. The archive hub's memos
-    stay out. The hub holds no more than its fair share, so it transmits
-    nothing.
+    anchor's degree, its observed mass and its funding-seed count. The recall
+    enters through the door, so the cluster is discovered, not named, and the
+    contribution carries no named mark. This proves that an anchor passes on
+    surplus, not reachability. The archive hub's memos stay out. The hub holds
+    no more than its fair share, so it transmits nothing.
     """
     status, body = explain(
-        f"recall@{storm_graph} barometer storm "
-        f"topic:{storm_cluster_topic} topic:{storm_hub_topic} top:20"
+        f"recall@{storm_graph} barometer storm topic:{door_topic} top:20"
     )
     assert status == 200, body.get("error")
     hits = {h["value"]: h for h in body["results"]["hits"]}
@@ -92,28 +99,61 @@ def test_explain_shows_transmitted_surplus(
     assert contribution["degree"] == 3, contribution
     assert contribution["count"] == 2, "two seeds fund the storm cluster"
     assert contribution["score"] > 0, "the observation carries the anchor's mass"
+    assert "named" not in contribution, "the cluster was discovered, not named"
 
     for memo in storm_hub[1:]:
         assert memo not in hits, f"fair-share hub memo {memo!r} rode in on size alone"
 
 
-def test_explain_score_recomputes_from_payload(
-    explain, storm_graph, storm_cluster_topic, storm_hub_topic, alpha
+def test_explain_marks_a_named_hub(
+    explain, storm_graph, storm_hub_topic, storm_cluster_topic, storm_hub
 ):
+    """Naming the archive hub lets it speak, and the payload says why.
+
+    Discovered, the hub holds no more than its fair share and stays silent
+    (above). Named, it owes no fair share: its memos ride in behind its
+    matching fact, each through one graph contribution marked named. The
+    weather cluster, discovered beside it, still earns its own transmission
+    unmarked.
+    """
+    status, body = explain(
+        f"recall@{storm_graph} barometer storm topic:{storm_hub_topic} top:20"
+    )
+    assert status == 200, body.get("error")
+    hits = {h["value"]: h for h in body["results"]["hits"]}
+
+    for memo in storm_hub[1:]:
+        assert memo in hits, f"named hub memo {memo!r} missing from {list(hits)}"
+        [contribution] = hits[memo]["contributions"]
+        assert contribution["via"] == storm_hub_topic, contribution
+        assert contribution["named"] is True, contribution
+
+    cluster = [
+        c
+        for h in hits.values()
+        for c in h["contributions"]
+        if c.get("via") == storm_cluster_topic
+    ]
+    assert cluster, "the weather cluster still transmits beside the named hub"
+    assert not any(c.get("named") for c in cluster), cluster
+
+
+def test_explain_score_recomputes_from_payload(explain, storm_graph, storm_hub_topic):
     """Every hit's score recomputes from its own payload.
 
     With the query-level background rate, each score equals the formula applied
     to the hit's contributions:
 
-        S = m + α²·Σ max(0, M_A − m − d_A·ρ₀)/d_A
+        S = m + Σ max(0, M_A − m − d_A·ρ₀)/d_A
 
-    Each anchor's surplus arrives as its per-edge share. The tolerance absorbs
-    the recency decay between write and read. So the payload is a complete
-    explanation, not a summary.
+    A contribution marked named drops the d_A·ρ₀ term, since a named anchor
+    owes no fair share. The recall names the hub and discovers the cluster, so
+    both kinds of term are recomputed. Each anchor's surplus arrives as its
+    per-edge share. The tolerance absorbs the recency decay between write and
+    read. So the payload is a complete explanation, not a summary.
     """
     status, body = explain(
-        f"recall@{storm_graph} barometer storm "
-        f"topic:{storm_cluster_topic} topic:{storm_hub_topic} top:20"
+        f"recall@{storm_graph} barometer storm topic:{storm_hub_topic} top:20"
     )
     assert status == 200, body.get("error")
     background = body["results"].get("background", 0)
@@ -123,11 +163,15 @@ def test_explain_score_recomputes_from_payload(
         contributions = hit["contributions"]
         m = sum(c["score"] for c in contributions if c["source"] in ("text", "vector"))
         surplus = sum(
-            max(0.0, c["score"] - m - c["degree"] * background) / max(c["degree"], 0.01)
+            max(
+                0.0,
+                c["score"] - m - (0 if c.get("named") else c["degree"] * background),
+            )
+            / max(c["degree"], 0.01)
             for c in contributions
             if c["source"] == "graph"
         )
-        want = m + alpha * alpha * surplus
+        want = m + surplus
         assert abs(hit["score"] - want) < 1e-3, (
             f"{hit['value']!r}: score {hit['score']} != recomputed {want} "
             f"from {contributions} at background {background}"

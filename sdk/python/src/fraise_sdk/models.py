@@ -82,7 +82,9 @@ class Contribution:
     it. ``rank`` is the hit's place in that source's own list, 0 first.
     ``count`` is how many seeds funded the sighting. A ``graph`` or ``anchor``
     sighting also names the anchor it came through (``via``) and that anchor's
-    ``degree``. A ``text`` or ``vector`` sighting has neither.
+    ``degree``. A ``text`` or ``vector`` sighting has neither. ``named`` marks
+    a ``graph`` sighting through an anchor the recall named, which owes no
+    fair share to the background.
     """
 
     source: str
@@ -91,6 +93,7 @@ class Contribution:
     count: int
     via: str | None = None
     degree: int | None = None
+    named: bool = False
 
     @classmethod
     def from_json(cls, data: dict) -> Contribution:  # noqa: D102
@@ -101,6 +104,7 @@ class Contribution:
             count=int(data["count"]),
             via=data.get("via"),
             degree=data.get("degree"),
+            named=bool(data.get("named", False)),
         )
 
 

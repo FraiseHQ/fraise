@@ -342,10 +342,18 @@ def assert_accepted():
 
 
 # The planet star: four facts on one "planets" topic hub, each with a unique
-# keyword. A recall seeded from the star touches no anchor but that hub. The
-# hub then holds exactly its fair share and transmits nothing (hub silence). So
-# the exact result counts depend on the keywords and top, never on depth.
+# keyword. A recall seeded from the star touches no anchor but that hub. Found
+# by the seeds rather than named, the hub then holds exactly its fair share and
+# transmits nothing (hub silence). So the exact result counts of a recall
+# entering through the door depend on the keywords and top, never on depth.
+# Named, the hub owes no fair share and lifts all four facts.
 _PLANET_GRAPH = 7
+
+# The door: a topic nothing is filed under. The graph is searched only beside
+# an anchor the recall names, and a named anchor transmits whatever its share.
+# Naming the door opens the graph lane while every anchor the seeds reach is
+# discovered, so hub silence and earned transmission can be pinned over HTTP.
+_DOOR_TOPIC = "doorprobe"
 _PLANET_TOPIC = "planets"
 _PLANET_FACTS = {
     "mercury": "mercury is the smallest planet",
@@ -405,6 +413,12 @@ _TIDEPOOL_ANCHORS = {
 DEFAULT_TOP = 10
 _SALTMARSH_TOPIC = "saltmarsh"
 _SALTMARSH_FACTS = tuple(f"saltmarsh channel {i} was surveyed" for i in range(12))
+
+
+@pytest.fixture(scope="session")
+def door_topic():
+    """A topic nothing is filed under, naming it opens the graph lane alone."""
+    return _DOOR_TOPIC
 
 
 @pytest.fixture(scope="session")
@@ -619,11 +633,11 @@ def bird_facts():
 # The explain probes, both on graph 2.
 #
 # Two facts that share a keyword and an entity. Both are text seeds for
-# "pulsar". Their shared entity is the query's only touched anchor, so it sits
-# exactly at the background rate and transmits nothing. Every hit's breakdown
-# is a single text contribution. An anchor is heard only when its members
-# matched better than its size predicts. The storm probe below is the funded
-# case.
+# "pulsar". The recall names their shared entity, so it owes no fair share and
+# passes each fact's mass to the other. Every hit's breakdown is a text
+# contribution and a named graph contribution. The storm probe below is the
+# case of anchors the seeds discover, heard only when their members matched
+# better than their size predicts.
 _EXPLAIN_GRAPH = 2
 _PULSAR_FACTS = (
     "the pulsar spins thirty times a second",
@@ -634,9 +648,9 @@ _PULSAR_ENTITY = "vela"
 # The surplus probe. A small "weather" cluster concentrates the query's mass. A
 # larger "archive" hub holds no more than its fair share of it. So exactly one
 # anchor speaks, and transmission alone funds its silent member. The explain
-# recalls name both topics, because the graph is entered only through an anchor
-# the recall names. Naming the hub keeps its memos in the candidate set, so
-# their absence is the hub's silence, not the filter's doing.
+# recalls enter the graph through the door, so both topics are discovered and
+# each must earn its transmission. Named, the hub owes no fair share and its
+# memos ride in behind it.
 _STORM_CLUSTER_TOPIC = "weather"
 _STORM_HUB_TOPIC = "archive"
 # No query term: funded or invisible.
@@ -649,8 +663,6 @@ _STORM_CLUSTER = (
 _STORM_HUB = ("a storm of paperwork",) + tuple(
     f"unrelated archive memo {i}" for i in range(7)
 )
-
-_ALPHA = 0.5
 
 
 @pytest.fixture
@@ -716,12 +728,6 @@ def storm_silent_member():
 def storm_hub():
     """The archive hub's facts; only the first contains a query term."""
     return tuple(_STORM_HUB)
-
-
-@pytest.fixture(scope="session")
-def alpha():
-    """The server's per-edge attenuation α, applied as α² on the two-edge path."""
-    return _ALPHA
 
 
 # Documents on three clearly distinct subjects. A real sentence embedding puts

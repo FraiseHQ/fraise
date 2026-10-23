@@ -48,6 +48,7 @@ type locomoConversation struct {
 }
 
 type locomoTurn struct {
+	DiaID       string `json:"dia_id"`
 	Speaker     string `json:"speaker"`
 	Text        string `json:"text"`
 	BlipCaption string `json:"blip_caption"`
@@ -62,21 +63,22 @@ type locomoQuestion struct {
 }
 
 // question is one LoCoMo question ready to send. It holds the recall, the
-// vector bound to it and the sessions its evidence lies in. It also maps each
-// value of its conversation to the session it was said in.
+// vector bound to it and the turns its evidence cites. It also maps each value
+// of its conversation to its turn's dia_id, which is how a hit is traced back
+// to evidence.
 type question struct {
 	category int
 	fql      string
 	vec      []float64
-	evidence map[string]bool
-	sessions map[string]string
+	turns    map[string]bool
+	ids      map[string]string
 }
 
-// evidenceSession reads a session number out of a dia_id ("D8:6"). A handful of
+// evidenceTurn reads a dia_id ("D8:6") out of an evidence string. A handful of
 // evidence strings join several ids ("D8:6; D9:17") or are malformed
 // ("D:11:26"). So every well-formed id in a string counts, and nothing else
 // does.
-var evidenceSession = regexp.MustCompile(`D(\d+):\d+`)
+var evidenceTurn = regexp.MustCompile(`D\d+:\d+`)
 
 // plainWord matches the words the amb adapter builds a recall from: runs of
 // ASCII letters and digits. Each one is also a bare word in the grammar.
@@ -159,16 +161,15 @@ func vectorOf(b *testing.B, vectors map[string][]float64, text string) []float64
 // one fact, in order, valued "[session N @ <date>] <speaker>: <text>". Any
 // shared image's caption is appended. Each fact is filed in graph 0 under the
 // conversation and session topics and the speaker's entity. The returned map
-// gives the session each stored value belongs to, which is how a hit is traced
-// back to evidence.
+// gives each stored value its turn's dia_id.
 func ingest(b *testing.B, url string, conv locomoConversation, vectors map[string][]float64) map[string]string {
 	b.Helper()
-	sessions := map[string]string{}
+	ids := map[string]string{}
 	for i := 1; ; i++ {
 		n := strconv.Itoa(i)
 		raw, ok := conv.Conversation["session_"+n]
 		if !ok {
-			return sessions
+			return ids
 		}
 		var turns []locomoTurn
 		if err := json.Unmarshal(raw, &turns); err != nil {
@@ -188,7 +189,7 @@ func ingest(b *testing.B, url string, conv locomoConversation, vectors map[strin
 			// before storing. The stored value and the text its vector was
 			// computed from both carry the swap.
 			value := strings.ReplaceAll(fmt.Sprintf("[session %s @ %s] %s: %s", n, date, t.Speaker, text), "'", "’")
-			sessions[value] = n
+			ids[value] = t.DiaID
 
 			vec := vectorOf(b, vectors, value)
 			speaker := strings.Trim(anchorBreak.ReplaceAllString(t.Speaker, "-"), "-")
@@ -203,18 +204,18 @@ func ingest(b *testing.B, url string, conv locomoConversation, vectors map[strin
 // recall takes the question's plain words as terms and is scoped to the
 // conversation's topic. It asks for ten results at the server's default depth,
 // with the question's own embedding as the vector seed. A question whose
-// evidence names no session cannot be scored and is left out.
-func questions(b *testing.B, conv locomoConversation, sessions map[string]string, vectors map[string][]float64) []question {
+// evidence names no turn cannot be scored and is left out.
+func questions(b *testing.B, conv locomoConversation, ids map[string]string, vectors map[string][]float64) []question {
 	b.Helper()
 	out := make([]question, 0, len(conv.QA))
 	for _, qa := range conv.QA {
-		evidence := map[string]bool{}
+		turns := map[string]bool{}
 		for _, e := range qa.Evidence {
-			for _, m := range evidenceSession.FindAllStringSubmatch(e, -1) {
-				evidence[m[1]] = true
+			for _, m := range evidenceTurn.FindAllString(e, -1) {
+				turns[m] = true
 			}
 		}
-		if len(evidence) == 0 {
+		if len(turns) == 0 {
 			continue
 		}
 
@@ -224,14 +225,15 @@ func questions(b *testing.B, conv locomoConversation, sessions map[string]string
 		}
 		vec := vectorOf(b, vectors, qa.Question)
 		fql := fmt.Sprintf("recall@0 %s topic:%s top:10", strings.Join(terms, " "), fqlValue("conv-"+conv.SampleID))
-		out = append(out, question{category: qa.Category, fql: withVec(fql, vec), vec: vec, evidence: evidence, sessions: sessions})
+		out = append(out, question{category: qa.Category, fql: withVec(fql, vec), vec: vec, turns: turns, ids: ids})
 	}
 	return out
 }
 
-// scores are the session-level retrieval metrics of one question. A hit counts
-// for the session its fact was said in. A session retrieved twice counts once,
-// as the amb adapter scores them.
+// scores are the retrieval metrics of one question. A hit counts only for the
+// turn it is, and the evidence is the turns the question cites, so a hit is
+// credited only when it is the evidence itself. A turn retrieved twice counts
+// once.
 type scores struct {
 	f1, p1, recall float64
 }
@@ -242,21 +244,21 @@ func score(q question, hits []string) scores {
 	}
 	retrieved := map[string]bool{}
 	for _, h := range hits {
-		retrieved[q.sessions[h]] = true
+		retrieved[q.ids[h]] = true
 	}
 	found := 0
-	for s := range retrieved {
-		if q.evidence[s] {
+	for id := range retrieved {
+		if q.turns[id] {
 			found++
 		}
 	}
 	precision := float64(found) / float64(len(retrieved))
-	recall := float64(found) / float64(len(q.evidence))
+	recall := float64(found) / float64(len(q.turns))
 	var s scores
 	if precision+recall > 0 {
 		s.f1 = 2 * precision * recall / (precision + recall)
 	}
-	if q.evidence[q.sessions[hits[0]]] {
+	if q.turns[q.ids[hits[0]]] {
 		s.p1 = 1
 	}
 	s.recall = recall
@@ -264,9 +266,10 @@ func score(q question, hits []string) scores {
 }
 
 // BenchmarkRetrievalQuality ingests the LoCoMo conversations FRAISE_LOCOMO
-// names into a fresh server. It reports how well the recalls find the sessions
-// each question's evidence lies in: f1@10, p@1 and recall@10. Each metric is
-// macro-averaged over all questions and over each category's. Ingestion and
+// names into a fresh server. It reports how well the recalls find each
+// question's evidence turns: turn-f1@10, turn-p@1 and turn-recall@10. A hit
+// counts only when it is an evidence turn, the fact the reader needs. Each
+// metric is macro-averaged over all questions and over each category's. Ingestion and
 // questions follow the amb adapter's raw path, so the numbers are comparable
 // with a LoCoMo run of the same server through amb.
 //
@@ -291,7 +294,7 @@ func BenchmarkRetrievalQuality(b *testing.B) {
 		b.Skip("FRAISE_LOCOMO is unset: point it at a LoCoMo file, such as tests/perf/data/locomo-conv-26.json")
 	}
 	convs := loadLoCoMo(b, path)
-	for _, unit := range []string{"f1@10", "p@1", "recall@10"} {
+	for _, unit := range []string{"turn-f1@10", "turn-p@1", "turn-recall@10"} {
 		fmt.Printf("Unit %s better=higher assume=exact\n", unit)
 	}
 
@@ -340,7 +343,7 @@ func measure(b *testing.B, url string, qs []question) {
 		}
 	}
 	n := float64(len(qs))
-	b.ReportMetric(total.f1/n, "f1@10")
-	b.ReportMetric(total.p1/n, "p@1")
-	b.ReportMetric(total.recall/n, "recall@10")
+	b.ReportMetric(total.f1/n, "turn-f1@10")
+	b.ReportMetric(total.p1/n, "turn-p@1")
+	b.ReportMetric(total.recall/n, "turn-recall@10")
 }

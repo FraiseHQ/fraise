@@ -51,7 +51,7 @@ class Anchor:
 
     ``type`` says which clause it becomes on ``remember``: ``topic:`` or
     ``entity:``. ``value`` is what follows the ``:``. Anchors drive the
-    server's filtering and transmission. The message text itself is never
+    server's seeding and transmission. The message text itself is never
     rewritten to carry them.
     """
 

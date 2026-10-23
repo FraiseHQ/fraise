@@ -40,6 +40,10 @@ func testConfig() *config.ConfigSet {
 	cfg.DB.VectorSearch.ProjectionDimension = 8
 	cfg.DB.VectorSearch.NumberTrees = 4
 	cfg.DB.VectorSearch.Seed = 4
+	// The pins below describe the plain pipeline, each fact scored on its own
+	// terms. The window, on by default, has its own tests, which turn it on
+	// explicitly.
+	cfg.DB.WindowGamma = -1
 	return cfg
 }
 

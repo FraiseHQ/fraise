@@ -367,6 +367,22 @@ func (p *parser[K, P]) warnDepthWithoutGraph(r *RecallCommandNode[K, P]) {
 	})
 }
 
+// warnAnchorsWithoutDepth flags depth:0 on a recall that names an anchor beside
+// a term or vector. Such an anchor takes part only through the excess it
+// transmits over the graph, which depth 0 does not search, so the recall runs
+// at depth 1 instead (see [RecallCommandNode.Depth]). The query still runs.
+// The warning says which depth ran. An omitted depth does not warn: the
+// operator's default is raised in silence, since the caller chose nothing.
+func (p *parser[K, P]) warnAnchorsWithoutDepth(r *RecallCommandNode[K, P]) {
+	if !r.HasDepth() || r.depth.value != 0 || !r.anchoredSearch() {
+		return
+	}
+	p.warns = append(p.warns, Warning{
+		Msg: fmt.Sprintf("%s ran as depth:1: a topic:/entity: anchor beside a term or vector contributes through the graph, which depth:0 does not search", r.depth.String()),
+		Pos: r.depth.key.Pos,
+	})
+}
+
 // warnStopWords flags each bare term that is an English stop word, and rejects
 // a recall left with nothing to search. Facts lose their stop words on the way
 // into the index, through CleanContent with the same English tag. So a bare
@@ -605,6 +621,7 @@ func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
 	}
 
 	p.warnDepthWithoutGraph(&r)
+	p.warnAnchorsWithoutDepth(&r)
 
 	return &r, nil
 }

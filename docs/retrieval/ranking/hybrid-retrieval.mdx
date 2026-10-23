@@ -14,7 +14,7 @@ Each temporal memory graph indexes every fact's text in a full-text search index
 
 ## The seeds
 
-A recall pulls candidates from each source it can use, each carrying its raw retrieval mass; the text and vector indexes are each asked for `seed-size` of them, or `top:` when that is larger. Named anchors and `since:`/`until:` restrict what the indexes search: the seeds are the best matches among the facts filed under the named anchors and inside the time window, never a cut of the whole graph filtered afterwards, so a fact that ranks first under its anchor is seeded however many matches the rest of the graph holds:
+A recall pulls candidates from each source it can use, each carrying its raw retrieval mass; the text and vector indexes are each asked for `seed-size` of them, or `top:` when that is larger. `since:`/`until:` restrict what the indexes search: the seeds are the best matches inside the time window, never a cut of the whole graph filtered afterwards. Named anchors filter nothing. Each index is read once over the window and once more over the facts filed under the named anchors, and the two readings are pooled, so a fact that ranks first under its anchor is seeded however many matches the rest of the graph holds, and a match filed under none of them still counts:
 
 | Source | Mass it carries |
 |---|---|
@@ -30,13 +30,14 @@ A fact is indexed under its terms and a recall's keywords are read the same way,
 
 ## The transmission
 
-When a recall with a term or vector also names a `topic:` or `entity:` anchor and takes `depth:1` or `depth:2` (see [Retrieval lanes](/docs/retrieval/ranking/depth)), that mass then flows into the fact–anchor graph. Every anchor the query touches, meaning every topic or entity a seed is filed under, observes the total seed mass on its members and compares it with its fair share: its degree times the **background rate** $\rho_0$, the query's seed mass per unit of degree across the anchors it reached.
+When a recall with a term or vector also names a `topic:` or `entity:` anchor, it takes `depth:1` or `depth:2` (see [Retrieval lanes](/docs/retrieval/ranking/depth)), and that mass then flows into the fact–anchor graph. Every anchor the query touches, meaning every topic or entity a seed is filed under, observes the total seed mass on its members and compares it with its fair share: its degree times the **background rate** $\rho_0$, the query's seed mass per unit of degree across the anchors it reached.
 
 Only the excess above background is transmitted, and it is transmitted **once, not once per member**:
 
 - the surplus is divided across the anchor's edges, each member receiving its per-edge share;
-- attenuated per edge ($\alpha = 0.5$, $\alpha^2$ over the two-edge seed → anchor → fact path);
 - with the member's own mass excluded, so a fact never funds its own boost.
+
+An anchor the recall names has no fair share to clear: naming it is the query's own claim that it bears on the question. It transmits whenever a seed reaches it, its surplus measured against the member's own mass alone. A match filed under it is lifted by what its siblings there matched, its unmatched facts are lifted behind them, and a match filed elsewhere keeps its own mass.
 
 A fact's relevance is its own mass plus everything transmitted to it.
 
@@ -44,11 +45,13 @@ A fact's relevance is its own mass plus everything transmitted to it.
 
 > *An anchor may only speak when its members matched better than its size alone predicted — hubs are heard exactly when they are surprising, silent when they are merely large, and never louder than their surplus divided among everyone listening.*
 
+### The window
+
+Facts written one after the other under the same anchor are usually one exchange, and scored one by one each is a fragment of it. With [`db.window-gamma`](/docs/configuration/reference/database#window) set, a fact borrows that share of each temporal neighbour's term counts and length when the text index scores it, so a question holding half the query and its answer holding the other half both cover the query, and a fact beside a match becomes a candidate even when it holds no query term itself. Neighbours are the facts written just before and after under a shared anchor. It is on by default; a negative share turns it off.
+
 ## Where the list stops
 
-A recall returns its `top:` best candidates, or every match when there are fewer.
-
-The slots are spread across the facets the ranking spans, the sessions of a conversation, say: each facet's best fact before any facet's second, the deferred facts after, so ten slots cover as many sessions as the pool offers before deepening any, and the best hit stays first. See [`db.aggregate`](/docs/configuration/reference/database#dbaggregate).
+A recall returns its `top:` best candidates in rank order, or every match when there are fewer — and, with the score cutoff on, fewer still: `db.min-score-ratio` drops the hits whose relevance, before recency decay, is below a fraction of the best hit's. The scores and their order are unchanged, so turning it on only shortens the list. It is off by default; see [Database settings](/docs/configuration/reference/database#score-cutoff).
 
 ## Why a recall needs a seed
 

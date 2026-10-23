@@ -970,19 +970,20 @@ def test_a_failed_extraction_still_stores_the_fact(fraise_url, round_trip_graph)
 
 
 @pytest.mark.integration
-def test_a_lone_seed_hub_stays_silent(instrument_graph, instrument_topic, client):
+def test_a_lone_seed_hub_stays_silent(instrument_graph, door_topic, client):
     """A single seed's topic hub stays silent in either graph lane.
 
     The hub holds exactly its fair share, so it transmits nothing and its
-    siblings never surface. This is hub silence through the SDK. An anchor is
-    heard only when its members matched better than its size predicts. The
-    recall names the topic, because the anchor round runs only through an
-    anchor the recall names. depth=1 admits an anchor only well above its fair
-    share, and depth=2 any anchor above it. The hub clears neither bar.
+    siblings never surface. This is hub silence through the SDK. An anchor the
+    seeds discover is heard only when its members matched better than its size
+    predicts. The recall names the door, because the anchor round runs only
+    beside an anchor the recall names, and a named hub owes no fair share.
+    depth=1 admits an anchor only well above its fair share, and depth=2 any
+    anchor above it. The hub clears neither bar.
     """
     for depth in (1, 2):
         hits = client.recall(
-            "cello", graph=instrument_graph, topics=[instrument_topic], depth=depth
+            "cello", graph=instrument_graph, topics=[door_topic], depth=depth
         )
         assert hits.count == 1, f"depth={depth}: a fair-share hub must not transmit"
 
@@ -1003,14 +1004,20 @@ def test_top_caps_the_number_of_results(instrument_graph, instrument_facts, clie
 
 
 @pytest.mark.integration
-def test_a_topic_filter_narrows_a_keyword_recall(
-    instrument_graph, instrument_topic, client
+def test_a_topic_beside_a_keyword_lifts_the_facts_under_it(
+    instrument_graph, instrument_topic, instrument_facts, client
 ):
-    """A topic filter beside a keyword narrows the result to the tagged match."""
-    filtered = client.recall(
+    """A named topic beside a keyword filters nothing and lifts its facts.
+
+    The cello fact comes first on its own match. The named topic owes no fair
+    share, so it passes that match's mass to every other instrument filed under
+    it, and they follow.
+    """
+    lifted = client.recall(
         "cello", graph=instrument_graph, topics=[instrument_topic], depth=2
     )
-    assert filtered.count == 1
+    assert lifted.hits[0].value == instrument_facts["cello"]
+    assert lifted.count == len(instrument_facts)
 
 
 @pytest.mark.integration
