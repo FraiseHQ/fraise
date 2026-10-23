@@ -11,6 +11,10 @@ Each descent is multi-probe: routing a query past a split does not discard the s
 
 One descent per tree would see a single leaf. That caps what a search can return whatever `top:` asks for, and a query landing near a split would miss the neighbours just the other side of it, which is the failure the forest exists to average away.
 
+## Small indexes are searched exactly
+
+Each tree gathers `overfetch` candidates for every result asked for, and a recall asks for `seed-size` results, or `top:` when that is larger. So the forest measures at least `number-trees` × `overfetch` vectors per result. When that is as many as the index holds, the forest costs no less than measuring every vector and can still miss a neighbour, so the search measures every live vector instead and returns the exact nearest. At the defaults, that is an index of up to 5,120 vectors.
+
 ## Garbage and rebuilds
 
 Deletes and overwrites leave garbage behind rather than restructuring the trees, so the forest is rebuilt from the live set once it exceeds `flush-factor` entries per live vector. That bounds it at **O(live vectors)** under sustained writes.

@@ -216,6 +216,11 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 // sorted. TopK keeps the largest scores, so each candidate is offered with
 // its distance negated. keep goes down to every tree, and each tree probes
 // until it holds enough accepted candidates.
+//
+// Each tree measures at least k × overfetch candidates. When the forest would
+// measure as many vectors as the index holds, it costs no less than measuring
+// every one, and it can still miss a neighbour. So Search then measures every
+// live vector and returns the exact k nearest.
 func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int, keep func(K) bool) ([]K, []P, error) {
 	if len(idx.vectors) == 0 {
 		return nil, nil, ErrEmptyIndex
@@ -228,6 +233,9 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int, keep 
 	// still hold stale copies, so each is asked for all of its entries.
 	if k <= 0 {
 		k = idx.Entries()
+	}
+	if k*idx.overfetch*len(idx.forest) >= len(idx.vectors) {
+		return idx.scan(query, k, keep)
 	}
 
 	var zeroKey K
@@ -266,6 +274,29 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int, keep 
 		scores[i] = -score
 	}
 	logger.Debug("Vector search returned neighbours", "k", k, "found", len(out))
+	return out, scores, nil
+}
+
+// scan measures every live vector keep accepts against query and returns the
+// k nearest, nearest first, ties ranked by key as the forest's re-rank ranks
+// them.
+func (idx *RPTreeIndex[K, P]) scan(query containers.Vector[K, P], k int, keep func(K) bool) ([]K, []P, error) {
+	nearest := containers.NewTopK[K, P](k, idx.compare)
+	for key, vector := range idx.vectors {
+		if keep != nil && !keep(key) {
+			continue
+		}
+		d, err := query.Distance(vector)
+		if err != nil {
+			return nil, nil, err
+		}
+		nearest.Offer(key, -d)
+	}
+	out, scores := nearest.Drain()
+	for i, score := range scores {
+		scores[i] = -score
+	}
+	logger.Debug("Vector search measured every vector", "k", k, "found", len(out))
 	return out, scores, nil
 }
 

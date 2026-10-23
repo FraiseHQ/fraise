@@ -27,6 +27,7 @@ import (
 	"math"
 	"math/rand"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/comparator"
@@ -639,13 +640,95 @@ func TestRPTreeIndexSearchExactMatchIsDistanceZero(t *testing.T) {
 	}
 }
 
+// TestRPTreeIndexSearchMeasuresEveryVectorOfASmallIndex pins the exact
+// search. Sixteen trees gathering five candidates for each of five results
+// would measure 400 vectors, as many as the index holds, so the search
+// measures all 400 and returns the five nearest a brute-force ranking returns,
+// at the same distances, ties ranked by key. Under a keep it returns the
+// nearest the keep accepts. On this index the forest alone misses one of the
+// five, with the keep and without it.
+func TestRPTreeIndexSearchMeasuresEveryVectorOfASmallIndex(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	const dim, n, k = 64, 400, 5
+	idx := index.NewRPTreeIndex[int, float64](dim, 8, 16, 7, 2, 4, 5, comparator.OrderedComparator[int])
+	vectors := make(map[int]containers.Vector[int, float64], n)
+	for key := range n {
+		vectors[key] = randVector(rng, dim)
+		if err := idx.Insert(key, vectors[key]); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	query := randVector(rng, dim)
+	cases := map[string]func(int) bool{
+		"every vector": nil,
+		"under a keep": func(key int) bool { return key%5 != 0 },
+	}
+	for name, keep := range cases {
+		t.Run(name, func(t *testing.T) {
+			type measured struct {
+				key      int
+				distance float64
+			}
+			var ranking []measured
+			for key, vector := range vectors {
+				if keep != nil && !keep(key) {
+					continue
+				}
+				d, err := query.Distance(vector)
+				if err != nil {
+					t.Fatalf("Distance = %v, want nil", err)
+				}
+				ranking = append(ranking, measured{key, d})
+			}
+			sort.Slice(ranking, func(i, j int) bool {
+				if ranking[i].distance != ranking[j].distance {
+					return ranking[i].distance < ranking[j].distance
+				}
+				return ranking[i].key < ranking[j].key
+			})
+			wantKeys := make([]int, k)
+			wantDistances := make([]float64, k)
+			for i, m := range ranking[:k] {
+				wantKeys[i], wantDistances[i] = m.key, m.distance
+			}
+
+			gotKeys, gotDistances, err := idx.Search(query, k, keep)
+			if err != nil {
+				t.Fatalf("Search = %v, want nil", err)
+			}
+			if diff := cmp.Diff(wantKeys, gotKeys); diff != "" {
+				t.Errorf("Search keys mismatch with the brute-force ranking (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(wantDistances, gotDistances); diff != "" {
+				t.Errorf("Search distances mismatch with the brute-force ranking (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// BenchmarkRPTreeIndexSearchSmall measures a search over an index small
+// enough to be measured whole: two thousand 384-dimensional vectors, the turns
+// of one long conversation, on the default forest, asked for a recall's ten
+// seeds.
+func BenchmarkRPTreeIndexSearchSmall(b *testing.B) {
+	benchmarkSearch(b, 2000, 10, 384, 128, 16, 4, 32, 32)
+}
+
 // BenchmarkRPTreeIndexSearch measures a nearest-neighbour search for twenty
 // results over ten thousand 64-dimensional vectors on a five-tree forest.
 func BenchmarkRPTreeIndexSearch(b *testing.B) {
-	const dim = 64
+	benchmarkSearch(b, 10000, 20, 64, 8, 5, 7, 32, 8)
+}
+
+// benchmarkSearch measures a search for the k nearest of n vectors of
+// dimension dim, on the forest the remaining arguments build (see
+// NewRPTreeIndex). The vectors and the query are drawn from one fixed seed, so
+// every run searches the same index for the same point.
+func benchmarkSearch(b *testing.B, n, k, dim, projDim, numTrees int, seed uint64, leafSize, overfetch int) {
+	b.Helper()
 	rng := rand.New(rand.NewSource(1))
-	idx := index.NewRPTreeIndex[uint64, float64](dim, 8, 5, 7, 2, 32, 8, comparator.OrderedComparator[uint64])
-	for i := range 10000 {
+	idx := index.NewRPTreeIndex[uint64, float64](dim, projDim, numTrees, seed, 2, leafSize, overfetch, comparator.OrderedComparator[uint64])
+	for i := range n {
 		data := make([]float64, dim)
 		for d := range data {
 			data[d] = rng.NormFloat64()
@@ -661,7 +744,7 @@ func BenchmarkRPTreeIndexSearch(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		if _, _, err := idx.Search(containers.NewVector[uint64](query), 20, nil); err != nil {
+		if _, _, err := idx.Search(containers.NewVector[uint64](query), k, nil); err != nil {
 			b.Fatalf("Search = %v, want nil", err)
 		}
 	}
