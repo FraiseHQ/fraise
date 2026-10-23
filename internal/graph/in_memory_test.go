@@ -34,7 +34,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
@@ -473,7 +472,7 @@ func fileUnder(t *testing.T, g *graph.InMemoryGraph[uint64, float64], value stri
 // under b, its five facts seed, fund b, and rank first on its transmission.
 // Topic a, discovered and within its fair share, stays silent.
 func TestInMemoryGraphSearchNamedAnchorSeedsItsOwnMatches(t *testing.T) {
-	cfg := topDeepConfig()
+	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	g := graph.NewGraph[uint64, float64](cfg)
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
@@ -515,7 +514,7 @@ func TestInMemoryGraphSearchNamedAnchorSeedsItsOwnMatches(t *testing.T) {
 // recall returns nothing when the graph's newest matches lie outside the
 // window. As above, the index is read only top deep.
 func TestInMemoryGraphSearchWindowFiltersBeforeSeeding(t *testing.T) {
-	g := graph.NewGraph[uint64, float64](topDeepConfig())
+	g := graph.NewGraph[uint64, float64](testConfig())
 	recent := time.Now()
 	old := recent.Add(-30 * 24 * time.Hour)
 	for i := range 30 {
@@ -541,7 +540,7 @@ func TestInMemoryGraphSearchWindowFiltersBeforeSeeding(t *testing.T) {
 // only top deep. The reading under b probes on until it holds b's facts.
 // They seed, fund b, and its transmission lifts them past a's nearest.
 func TestInMemoryGraphSearchNamedAnchorSeedsItsOwnNearest(t *testing.T) {
-	cfg := topDeepConfig()
+	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	g := graph.NewGraph[uint64, float64](cfg)
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
@@ -867,16 +866,6 @@ func noDecayGraph() *graph.InMemoryGraph[uint64, float64] {
 	return g
 }
 
-// topDeepConfig is testConfig with the aggregation pool at its floor, so
-// Search reads each index only as deep as the seed budget. The tests of how
-// that budget is spent need it. A deeper reading would pool the facts the
-// budget left out, and those tests would pass whatever the budget did.
-func topDeepConfig() *config.ConfigSet {
-	cfg := testConfig()
-	cfg.DB.Aggregate.Pool = 1
-	return cfg
-}
-
 // stormGraph is the behavioural transmission fixture, the barometer/storm
 // probe. A small "weather" cluster holds most of the query's seed mass. A
 // large "archive" hub holds a little. Querying "barometer storm" touches both
@@ -1176,10 +1165,9 @@ func TestSearchDepthOnePrecisionBar(t *testing.T) {
 // TestSearchFairSeeding pins fair seeding: the text candidate budget tracks
 // the requested result size. Fifteen facts match, and seed-size is at its
 // default of 10. top:15 must still return all fifteen. A budget capped at
-// seed-size would cut every ranking off at ten. The aggregation pool is at its
-// floor, so it cannot read past the budget and hide the cut.
+// seed-size would cut every ranking off at ten.
 func TestSearchFairSeeding(t *testing.T) {
-	cfg := topDeepConfig()
+	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	g := graph.NewGraph[uint64, float64](cfg)
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
@@ -1202,9 +1190,9 @@ func TestSearchFairSeeding(t *testing.T) {
 // can be a hit. Twelve facts match "billing" and top is twelve, so all twelve
 // must come back. If anchors were indexed, the Topic and the NamedEntity
 // would take two of the twelve seed slots, and the search would return ten.
-// The aggregation pool is at its floor, so the index is read only twelve deep.
+// The index is read only twelve deep.
 func TestSearchAnchorsDoNotConsumeSeedBudget(t *testing.T) {
-	cfg := topDeepConfig()
+	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	g := graph.NewGraph[uint64, float64](cfg)
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
@@ -1776,102 +1764,6 @@ func BenchmarkSearch(b *testing.B) {
 	})
 }
 
-// spreadGraph files a conversation whose matches for "deploy" lean on one
-// session. ops holds three short deploy turns. They outscore the one longer
-// deploy turn in each of planning and budget. In rank order, the top three
-// are all ops. Spread, they cover the three sessions.
-func spreadGraph(t *testing.T, cfg *config.ConfigSet) *graph.InMemoryGraph[uint64, float64] {
-	t.Helper()
-	g := graph.NewGraph[uint64, float64](cfg)
-	now := time.Now()
-	conv := mkTopic(g, "conv", now)
-	mustSet(t, g, conv)
-	sessions := map[string][]string{
-		"ops":      {"deploy started", "deploy finished", "deploy verified"},
-		"planning": {"the deploy is planned for friday afternoon"},
-		"budget":   {"the deploy budget covers the quarter"},
-	}
-	i := 0
-	for _, name := range []string{"ops", "planning", "budget"} {
-		session := mkTopic(g, name, now)
-		mustSet(t, g, session)
-		for _, value := range sessions[name] {
-			ts := now.Add(time.Duration(i) * time.Second)
-			i++
-			fact := mkFact(g, value, ts)
-			mustSet(t, g, fact)
-			for _, topic := range []*graph.Topic[uint64]{conv, session} {
-				mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
-			}
-		}
-	}
-	return g
-}
-
-// session reports the facet the spread files value under: the session topic
-// it is filed under beyond the conversation.
-func session(value string) string {
-	switch {
-	case strings.HasPrefix(value, "deploy "):
-		return "ops"
-	case strings.Contains(value, "planned"):
-		return "planning"
-	default:
-		return "budget"
-	}
-}
-
-// TestInMemoryGraphSearchSpreadsTheRankingOverFacets pins the spread
-// (db.aggregate). The slots go to one fact per facet before any facet gets a
-// second. So a top of three covers three sessions, where the ranking would
-// have spent all three on ops. The best hit stays first, since it is the
-// first fact of its facet. The facts deferred by the cap follow in rank order
-// once every facet is served, so a larger top fills with ops again. A cap of
-// two gives ops two slots before planning gets one.
-func TestInMemoryGraphSearchSpreadsTheRankingOverFacets(t *testing.T) {
-	cfg := testConfig()
-	cfg.Engine.Halflife = 0
-	cfg.DB.Aggregate = config.Aggregate{Pool: 60, Cap: 1}
-	g := spreadGraph(t, cfg)
-	sessionsOf := func(hits []graph.Hit[uint64, float64]) []string {
-		out := make([]string, len(hits))
-		for i, hit := range hits {
-			out[i] = session(hit.Node.GetValue())
-		}
-		return out
-	}
-
-	result, err := g.Search([]string{"deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
-	if err != nil {
-		t.Fatalf("Search = %v, want nil", err)
-	}
-	got := sessionsOf(result.Hits)
-	if len(got) != 3 || got[0] != "ops" {
-		t.Fatalf("Search = %v, want three hits led by the best, an ops turn", got)
-	}
-	sort.Strings(got)
-	if !reflect.DeepEqual(got, []string{"budget", "ops", "planning"}) {
-		t.Errorf("Search covers %v, want every session once", got)
-	}
-
-	wide, err := g.Search([]string{"deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 5, time.Time{}, time.Time{})
-	if err != nil {
-		t.Fatalf("Search(top 5) = %v, want nil", err)
-	}
-	if got := sessionsOf(wide.Hits); len(got) != 5 || got[3] != "ops" || got[4] != "ops" {
-		t.Errorf("Search(top 5) = %v, want the two deferred ops turns after the three sessions", got)
-	}
-
-	cfg.DB.Aggregate.Cap = 2
-	two, err := g.Search([]string{"deploy"}, containers.Vector[uint64, float64]{}, []string{"conv"}, nil, 0, 3, time.Time{}, time.Time{})
-	if err != nil {
-		t.Fatalf("Search(cap 2) = %v, want nil", err)
-	}
-	if got := sessionsOf(two.Hits); len(got) != 3 || got[0] != "ops" || got[1] != "ops" || got[2] == "ops" {
-		t.Errorf("Search(cap 2) = %v, want two ops turns then another session's", got)
-	}
-}
-
 // vectorWeightGraph stores two facts. One's words answer the query. The other
 // is found only by its embedding, nearest to the query vector.
 func vectorWeightGraph(t *testing.T) (*graph.InMemoryGraph[uint64, float64], graph.Fact[uint64]) {
@@ -1972,5 +1864,245 @@ func TestInMemoryGraphSearchWeightsVectorsByTheHitsTheRecallKeeps(t *testing.T) 
 	}
 	if since := vectorScore(t, g, query, nil, now.Add(-24*time.Hour), vector.Key()); math.Abs(since-2*plain) > 1e-12 {
 		t.Errorf("since a day ago: vector score %v, want twice the unfiltered %v", since, plain)
+	}
+}
+
+// TestInMemoryGraphSearchScoreCutoff pins db.min-score-ratio through the
+// public surface. The fixture is an anchor-only recall with decay off, so
+// every score is exactly the number of named anchors a fact is filed under —
+// 3, 2, 1, 1 — and the bar each ratio sets is known to the bit. Off (the
+// default) is the first case on purpose: the cutoff must change nothing until
+// an operator asks for it.
+//
+// The table runs at both precisions because the bar is a product computed in
+// P and "exactly at the bar" is a rounding question: float32 is what the
+// server ships with (config.DefaultPrecision), and a pin that only holds in
+// float64 would not be testing the contract an operator gets.
+func TestInMemoryGraphSearchScoreCutoff(t *testing.T) {
+	t.Run("float32", scoreCutoffAt[float32])
+	t.Run("float64", scoreCutoffAt[float64])
+}
+
+func scoreCutoffAt[P float32 | float64](t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	g := graph.NewGraph[uint64, P](cfg)
+	now := time.Now()
+
+	topics := map[string]*graph.Topic[uint64]{}
+	for _, name := range []string{"a", "b", "c"} {
+		topics[name] = mkTopic(g, name, now)
+		mustSet(t, g, topics[name])
+	}
+	file := func(value string, under ...string) {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		for _, name := range under {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topics[name], NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		}
+	}
+	file("three anchors", "a", "b", "c")
+	file("two anchors", "a", "b")
+	file("one anchor", "a")
+	file("another one anchor", "a")
+
+	// The premise of the test: the scores are 3, 2, 1, 1 before any cutoff.
+	_, premise, _, _, _ := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{})
+	if diff := cmp.Diff([]P{3, 2, 1, 1}, premise); diff != "" {
+		t.Fatalf("Search(topics a b c) scores before any cutoff mismatch (-want +got):\n%s", diff)
+	}
+
+	cases := map[string]struct {
+		ratio float64
+		top   int
+		want  []P
+	}{
+		"off keeps the whole list":                  {0, 10, []P{3, 2, 1, 1}},
+		"ratio drops the tail under the bar":        {0.5, 10, []P{3, 2}},
+		"a hit exactly at the bar is kept":          {1.0 / 3, 10, []P{3, 2, 1, 1}},
+		"the cut falls just under a hit on the bar": {2.0 / 3, 10, []P{3, 2}},
+		"the best hit survives any ratio":           {1, 10, []P{3}},
+		"top still caps the list":                   {0.1, 2, []P{3, 2}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg.DB.MinScoreRatio = tc.ratio
+			nodes, got, contributions, _, err := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search() error = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Search(ratio=%v, top=%d) scores mismatch (-want +got), hits %v:\n%s", tc.ratio, tc.top, values(nodes), diff)
+			}
+			scores := got
+			if len(nodes) != len(scores) || len(contributions) != len(scores) {
+				t.Fatalf("Search() returned %d nodes and %d contribution lists for %d scores, want parallel slices", len(nodes), len(contributions), len(scores))
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchScoreCutoffIgnoresDecay pins that the bar is set on
+// relevance, not on the decayed score the list is ordered by. Two facts are
+// filed under the same two anchors (relevance 2 each), one fresh and one two
+// half-lives old (decayed score 0.5), next to a fresh fact under one anchor
+// (relevance 1, score 1). The list is ordered by decayed score — fresh pair,
+// single, old pair — but the cutoff reads the evidence: at 0.3 the old fact
+// clears the bar its 0.5 score would have missed; at 0.6 the single-anchor
+// fact is dropped although it outscores the old fact that stays. Measured
+// after decay, the documented 0.3 would turn into a recency window and 0.6
+// would keep the weaker evidence over the stronger.
+func TestInMemoryGraphSearchScoreCutoffIgnoresDecay(t *testing.T) {
+	cfg := testConfig()
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	old := now.Add(-2 * cfg.Engine.Halflife)
+
+	topics := map[string]*graph.Topic[uint64]{}
+	for _, name := range []string{"a", "b"} {
+		topics[name] = mkTopic(g, name, now)
+		mustSet(t, g, topics[name])
+	}
+	file := func(value string, ts time.Time, under ...string) {
+		fact := mkFact(g, value, ts)
+		mustSet(t, g, fact)
+		for _, name := range under {
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topics[name], NodeAttributes: graph.NodeAttributes{Timestamp: ts}, Hasher: g.GetHasher()})
+		}
+	}
+	file("fresh pair", now, "a", "b")
+	file("old pair", old, "a", "b")
+	file("fresh single", now, "a")
+
+	cases := map[string]struct {
+		ratio float64
+		want  []string
+	}{
+		"off keeps the whole list":                                 {0, []string{"fresh pair", "fresh single", "old pair"}},
+		"the same evidence clears the bar at any age":              {0.3, []string{"fresh pair", "fresh single", "old pair"}},
+		"weaker evidence is cut even when it outscores what stays": {0.6, []string{"fresh pair", "old pair"}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg.DB.MinScoreRatio = tc.ratio
+			nodes, scores, _, _, err := search(g, nil, containers.Vector[uint64, float64]{}, []string{"a", "b"}, nil, 0, 10, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("Search() error = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.want, values(nodes)); diff != "" {
+				t.Fatalf("Search(ratio=%v) mismatch (-want +got), scores %v:\n%s", tc.ratio, scores, diff)
+			}
+			if !sort.SliceIsSorted(scores, func(i, j int) bool { return scores[i] > scores[j] }) {
+				t.Errorf("Search(ratio=%v) scores = %v, want the decay order kept", tc.ratio, scores)
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchWindowScoresAnExchange pins the window end to end:
+// two facts written one after the other under the same topic are one
+// exchange, so under db.window-gamma the question half borrows the answer
+// half's terms and scores above what it scores alone, a fact beside the
+// answer becomes a hit without holding a query term, and a fact under
+// another topic, however close in time, borrows nothing, because adjacency
+// is in write order under a shared anchor, not in time alone. With the
+// window off (a negative share) the same graph scores as the plain search.
+func TestInMemoryGraphSearchWindowScoresAnExchange(t *testing.T) {
+	build := func(gamma float64) *graph.InMemoryGraph[uint64, float64] {
+		cfg := testConfig()
+		cfg.Engine.Halflife = 0
+		cfg.DB.WindowGamma = gamma
+		g := graph.NewGraph[uint64, float64](cfg)
+		now := time.Now()
+		ops := mkTopic(g, "ops", now)
+		pets := mkTopic(g, "pets", now)
+		mustSet(t, g, ops)
+		mustSet(t, g, pets)
+		file := func(value string, topic *graph.Topic[uint64], offset time.Duration) {
+			fact := mkFact(g, value, now.Add(offset))
+			mustSet(t, g, fact)
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now.Add(offset)}, Hasher: g.GetHasher()})
+		}
+		file("when is the deploy", ops, 0)
+		file("friday at noon", ops, time.Second)
+		file("the dashboards are green", ops, 2*time.Second)
+		file("the cat sleeps at noon on friday", pets, 3*time.Second)
+		return g
+	}
+	search := func(g *graph.InMemoryGraph[uint64, float64]) map[string]float64 {
+		nodes, scores, _, _, err := search(g, []string{"deploy", "friday"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+		if err != nil {
+			t.Fatalf("Search = %v, want nil", err)
+		}
+		out := make(map[string]float64, len(nodes))
+		for i, n := range nodes {
+			out[n.GetValue()] = scores[i]
+		}
+		return out
+	}
+
+	alone := search(build(-1))
+	if _, ok := alone["the dashboards are green"]; ok {
+		t.Fatalf("window off: Search returned the dashboards fact, which holds no query term")
+	}
+	windowed := search(build(0.3))
+	for _, value := range []string{"when is the deploy", "friday at noon"} {
+		if windowed[value] <= alone[value] {
+			t.Errorf("%q scored %v under the window, want above its lone score %v", value, windowed[value], alone[value])
+		}
+	}
+	if _, ok := windowed["the dashboards are green"]; !ok {
+		t.Errorf("window on: Search = %v, want the dashboards fact among the hits: it follows the answer under the same topic", windowed)
+	}
+	if windowed["the cat sleeps at noon on friday"] != alone["the cat sleeps at noon on friday"] {
+		t.Errorf("the pets fact scored %v under the window and %v alone, want them equal: it shares no anchor with the exchange", windowed["the cat sleeps at noon on friday"], alone["the cat sleeps at noon on friday"])
+	}
+}
+
+// TestInMemoryGraphSearchWindowFollowsWrites pins that the write order a
+// window reads is never stale: a fact filed between two others after they
+// were searched becomes their neighbour on the next search, and a fact
+// deleted stops lending. The sequence is a cache built on first use, so the
+// test is of its invalidation.
+func TestInMemoryGraphSearchWindowFollowsWrites(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.WindowGamma = 0.5
+	g := graph.NewGraph[uint64, float64](cfg)
+	now := time.Now()
+	topic := mkTopic(g, "ops", now)
+	mustSet(t, g, topic)
+	file := func(value string, offset time.Duration) graph.Fact[uint64] {
+		fact := mkFact(g, value, now.Add(offset))
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now.Add(offset)}, Hasher: g.GetHasher()})
+		return fact
+	}
+	hits := func() []string {
+		nodes, _, _, _, err := search(g, []string{"deploy"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+		if err != nil {
+			t.Fatalf("Search = %v, want nil", err)
+		}
+		return values(nodes)
+	}
+
+	file("the deploy is at noon", 0)
+	file("lunch is at one", 10*time.Second)
+	if diff := cmp.Diff([]string{"the deploy is at noon", "lunch is at one"}, hits()); diff != "" {
+		t.Fatalf("Search mismatch (-want +got), the deploy fact and its neighbour:\n%s", diff)
+	}
+
+	// Filed between the two in time: it becomes the deploy fact's neighbour
+	// and lunch stops being one.
+	between := file("the build is green", 5*time.Second)
+	if diff := cmp.Diff([]string{"the deploy is at noon", "the build is green"}, hits()); diff != "" {
+		t.Fatalf("after filing between: Search mismatch (-want +got), the build fact is the new neighbour:\n%s", diff)
+	}
+
+	if err := g.Delete(between); err != nil {
+		t.Fatalf("Delete = %v, want nil", err)
+	}
+	if diff := cmp.Diff([]string{"the deploy is at noon", "lunch is at one"}, hits()); diff != "" {
+		t.Fatalf("after deleting: Search mismatch (-want +got), lunch is the neighbour again:\n%s", diff)
 	}
 }

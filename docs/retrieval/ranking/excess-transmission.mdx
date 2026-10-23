@@ -25,7 +25,7 @@ Three topics: `cluster` files 3 facts, two of which match the query with mass 8 
 | `hub` | 6 | 2 | 10.67 | no — one weak match among six facts |
 | `giant` | 10 | — | not touched | no, and it does not weigh in $\rho_0$ |
 
-$\rho_0 = (14 + 2)/(3 + 6) = 16/9$. The third `cluster` fact, which matched nothing, receives $\alpha^2 (14 - 0 - 5.33)/3 \approx 0.72$: the surplus shared across `cluster`'s three edges and attenuated over two. The two facts that matched keep their own mass plus a smaller share, since a fact never funds its own boost.
+$\rho_0 = (14 + 2)/(3 + 6) = 16/9$. The third `cluster` fact, which matched nothing, receives $(14 - 0 - 5.33)/3 \approx 2.89$: the surplus shared across `cluster`'s three edges. The two facts that matched keep their own mass plus a smaller share, since a fact never funds its own boost.
 
 ## Why untouched anchors stay out
 
@@ -54,10 +54,10 @@ so admission is a comparison among the anchors one query reached: an anchor spea
 The bar is a null model for the anchors a query discovers: an anchor the seeds happen to reach must show that it concentrates more of the evidence than chance would put there. An anchor the recall names needs no such test, since naming it is the query's own claim that it bears on the question. It transmits whenever a seed reaches it, at either lane, and owes each member only that member's own mass:
 
 $$
-\alpha^2 \, \frac{\max\bigl(0,\; M_A - m\bigr)}{d_A}
+\frac{\max\bigl(0,\; M_A - m\bigr)}{d_A}
 $$
 
-Naming `hub` in the example above lets it speak. Its five unmatched facts each receive $\alpha^2 \cdot 2/6 \approx 0.08$, and its one match receives nothing, since a fact never funds its own boost. The named anchor weighs in $\rho_0$ like any anchor the query reached. Naming it also seeds the matches filed under it, and those seeds weigh in $\rho_0$ like any others, so the discovered anchors are held to the bar the anchored recall's own evidence sets.
+Naming `hub` in the example above lets it speak. Its five unmatched facts each receive $2/6 \approx 0.33$, and its one match receives nothing, since a fact never funds its own boost. The named anchor weighs in $\rho_0$ like any anchor the query reached. Naming it also seeds the matches filed under it, and those seeds weigh in $\rho_0$ like any others, so the discovered anchors are held to the bar the anchored recall's own evidence sets.
 
 A named anchor filters nothing. A match filed under none of the named anchors keeps its own mass and ranks among the rest; a match filed under one is lifted by what its siblings there matched.
 

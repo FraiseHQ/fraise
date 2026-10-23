@@ -27,7 +27,7 @@
 // [Source] that made it: text, vector, graph traversal or anchor seeding. A
 // contribution carries that source's raw mass, rank and anchor statistics, with
 // no policy applied. A [Scorer] owns the policy. [ExcessScorer], the default,
-// sums the seed mass. It adds each anchor's attenuated surplus over its fair
+// sums the seed mass. It adds each anchor's per-edge surplus over its fair
 // share under the query's background rate. [RRFScorer] fuses ranks alone, for
 // comparison runs. Keeping policy out of collection means a change to ranking
 // never touches the retrieval sites.

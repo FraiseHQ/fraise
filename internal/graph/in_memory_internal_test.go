@@ -216,7 +216,7 @@ func TestCollectExpandsOnlyAboveBackgroundAnchors(t *testing.T) {
 
 // TestCollectRecordsObservationsNotPolicy pins what a graph contribution
 // carries: the funding anchor's full observed mass, identity, degree and
-// funding-seed count. Nothing is hinged, subtracted or attenuated. The
+// funding-seed count. Nothing is hinged or subtracted. The
 // cluster's non-seed member and its strongest seed record the same
 // observation. Only the scorer's self-exclusion treats them differently.
 func TestCollectRecordsObservationsNotPolicy(t *testing.T) {

@@ -167,8 +167,8 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Search runs a hybrid query over the graph. It returns at most top hits,
 	// best first, and the query's background rate (see Result). Each hit
 	// carries the contributions its score was folded from. An implementation
-	// may spread the top slots across the facets the ranking spans, instead
-	// of filling them in rank order.
+	// may return fewer than top hits when its own retrieval policy, such as a
+	// score cutoff, drops the tail.
 	//
 	// The criteria:
 	//   - keywords: full-text terms matched against the text index
