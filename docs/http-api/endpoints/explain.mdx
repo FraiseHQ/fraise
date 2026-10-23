@@ -56,7 +56,7 @@ A `remember` on this endpoint is rejected with 400: a write has no ranking to ex
 
 ## Reading a breakdown
 
-A `text` or `vector` sighting is the fact's own match, its mass $m$. A `graph` sighting is an anchor the fact is filed under, carrying the mass $M_A$ the query's seeds put on it; it adds to the hit only the part of that mass above what the anchor's degree predicts at the `background` rate $\rho_0$, with the fact's own mass excluded, shared across the anchor's edges:
+A `text` sighting is the fact's own match plus what it borrows from its temporal neighbours under the [window](/docs/configuration/reference/database#window), so one can appear on a fact that holds none of the query's words. A `vector` sighting is the fact's own similarity. Together they are its mass $m$. A `graph` sighting is an anchor the fact is filed under, carrying the mass $M_A$ the query's seeds put on it; it adds to the hit only the part of that mass above what the anchor's degree predicts at the `background` rate $\rho_0$, with the fact's own mass excluded, shared across the anchor's edges:
 
 $$
 \frac{\max(0,\; M_A - m - d_A \, \rho_0)}{d_A}
