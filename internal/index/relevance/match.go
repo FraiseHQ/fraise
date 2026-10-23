@@ -54,9 +54,13 @@ func (MatchCount[K, P]) Length(K) P { return 0 }
 // binary per document and query-term occurrence. prepared is unused.
 func (MatchCount[K, P]) Increment(weight P, _ K, _ int, _ P) P { return weight }
 
-// Gain awards the term's weight whatever the term frequency and document
-// length, as Increment does.
-func (MatchCount[K, P]) Gain(weight P, _ P, _ P, _ P) P { return weight }
+// Gain awards the term's weight for an own match, as Increment does, whatever
+// the document length. A window search hands it a count that includes a share
+// of the neighbours' counts. A document holding the term itself has a count of
+// at least 1 and earns the whole weight. A document that only borrows earns the
+// share it borrowed, gamma of the weight for one neighbouring occurrence, so a
+// neighbour of a match never ties with the match.
+func (MatchCount[K, P]) Gain(weight P, tf P, _ P, _ P) P { return weight * min(tf, 1) }
 
 // Finalize is the identity: the count is the relevance.
 func (MatchCount[K, P]) Finalize(score P, _, _ int) P { return score }

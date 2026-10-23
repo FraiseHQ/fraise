@@ -840,6 +840,41 @@ func TestBTreeIndexSearchWindowOffIsThePlainSearch(t *testing.T) {
 	}
 }
 
+// TestBTreeIndexSearchWindowMatchCountLendsGamma pins the window under the
+// match count. A document that holds no query term but neighbours a match
+// scores gamma of a match, not a whole one. Were it a whole one, every
+// neighbour would tie with the matches and fill the top k ordered by key.
+func TestBTreeIndexSearchWindowMatchCountLendsGamma(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetRelevance(relevance.MatchCount[int, float64]{})
+	for key, doc := range map[int]string{1: "the deploy is friday", 2: "lunch is at one", 3: "a deploy log"} {
+		if err := idx.Insert(key, doc); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	idx.SetWindow(0.25, func(key int) []int {
+		switch key {
+		case 1:
+			return []int{2}
+		case 2:
+			return []int{1}
+		}
+		return nil
+	})
+	keys, scores, err := idx.Search("deploy", 0, nil)
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	got := make(map[int]float64, len(keys))
+	for i, key := range keys {
+		got[key] = scores[i]
+	}
+	want := map[int]float64{1: 1, 2: 0.25, 3: 1}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Search(deploy) scores mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // TestBTreeIndexSearchWindowHonoursKeep pins the window under a filter. A
 // posting keep rejects lends nothing, and a neighbour keep rejects is not a
 // candidate. Here document 2, the answer half of the exchange, is filtered
