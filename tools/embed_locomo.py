@@ -130,7 +130,10 @@ def main() -> None:
     model = transformers.AutoModel.from_pretrained(MODEL)
     model.eval()
     vectors: dict[str, list[float]] = {}
-    for texts, prefix in ((values(conversations), ""), (questions(conversations), QUERY)):
+    for texts, prefix in (
+        (values(conversations), ""),
+        (questions(conversations), QUERY),
+    ):
         unique = list(dict.fromkeys(texts))
         for start in range(0, len(unique), BATCH):
             batch = unique[start : start + BATCH]

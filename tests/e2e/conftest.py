@@ -283,7 +283,9 @@ def recall_ranking(query):
 def ranked_hits(query):
     """Callable running a recall and checking every ranking's invariants.
 
-    Scores must be positive and must not increase down the list.
+    Scores must not be negative, the best one must be positive, and they must
+    not increase down the list. A fold may score 0 a fact every channel places
+    at or below the pool's mean.
 
     Returns:
         ``callable(text, parameters=None) -> (values, scores)``, both best first.
@@ -294,7 +296,8 @@ def ranked_hits(query):
         assert status == 200, body.get("error")
         hits = body["results"]["hits"]
         scores = [hit["score"] for hit in hits]
-        assert all(s > 0 for s in scores), f"scores must be positive: {scores}"
+        assert all(s >= 0 for s in scores), f"scores must not be negative: {scores}"
+        assert not scores or scores[0] > 0, f"the best score must be positive: {scores}"
         assert scores == sorted(scores, reverse=True), (
             f"scores must not increase down the ranking: {scores}"
         )
@@ -761,7 +764,10 @@ def _information_scores(hits, background, missed=0.0):
             graph += max(0.0, (c["score"] - mass - share) / degree)
         values.append([text, vector, graph, mass])
         held.append(
-            max((c.get("held", 0.0) for c in contributions if c["source"] == "text"), default=0.0)
+            max(
+                (c.get("held", 0.0) for c in contributions if c["source"] == "text"),
+                default=0.0,
+            )
         )
     n = len(values)
     mean = [sum(v[c] for v in values) / n for c in range(3)]

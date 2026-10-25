@@ -818,10 +818,9 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 		}
 		keys, scores := g.union(readings, masses, seedK, seeded)
 		textSeeds = len(keys)
-		if !vector.Empty() && len(keys) > 0 {
-			if total, held := g.textIndex.Information(query, keys[0]); held > 0 {
-				missed = (total - held) / held
-			}
+		total, held := g.textIndex.Information(query, keys)
+		if !vector.Empty() && len(keys) > 0 && held[0] > 0 {
+			missed = (total - held[0]) / held[0]
 		}
 		// The reading's sightings share one array, so a reading allocates
 		// once. A candidate's first sighting is a capacity-one
@@ -830,8 +829,8 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 		sightings := make([]scoring.Contribution[K, P], len(keys))
 		for rank, key := range keys {
 			sightings[rank] = scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1}
-			if total, held := g.textIndex.Information(query, key); total > 0 {
-				sightings[rank].Held = held / total
+			if total > 0 {
+				sightings[rank].Held = held[rank] / total
 			}
 			if candidates[key] == nil {
 				candidates[key] = sightings[rank : rank+1 : rank+1]
