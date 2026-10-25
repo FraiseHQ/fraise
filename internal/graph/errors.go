@@ -34,6 +34,6 @@ var (
 	// not in the graph.
 	ErrNodeNotFound = errors.New("graph: node not found")
 	// ErrSourceNotFound is returned by traversal algorithms (e.g. BFS) when the
-	// requested source vertex is absent from the graph.
+	// graph holds none of the requested source vertices.
 	ErrSourceNotFound = errors.New("graph: source vertex not found")
 )
