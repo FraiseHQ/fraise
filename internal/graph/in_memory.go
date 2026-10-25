@@ -621,8 +621,9 @@ func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Cand
 }
 
 // collect runs the retrieval stages and pools their observations into one
-// candidate map. The stages are text and vector seeding, then the traversal
-// from every seed. collect also returns the background rate the scorer needs.
+// candidate map. The stages are text and vector seeding, then the anchor
+// round over the seeds (see findNeighbours). collect also returns the
+// background rate the scorer needs.
 // Stages only record Contributions. The hinge and the null model belong to
 // the Scorer. The only error is a vector dimension mismatch.
 //
@@ -900,21 +901,25 @@ func (g *InMemoryGraph[K, P]) union(readings [][]K, scores [][]P, seeded map[K]s
 // itself. It is a methodology constant, not configuration.
 const depthOneAdmission = 2
 
-// findNeighbours runs the traversal from every seed and pools what it
-// observes into candidates. It returns the background rate.
+// findNeighbours walks the traversal twice and pools what it observes into
+// candidates. It returns the background rate.
 //
-// Pass 1 observes. Each seed's mass is the scorer's fold of its own
-// contributions. The mass is added to every anchor the traversal reaches at
-// depth 1. Each anchor also records its degree and how many seeds funded it.
-// The background rate is the total observed mass over the total degree of
-// every touched anchor, silent ones included.
+// Pass 1 observes. One walk from the seeds reaches the anchors they are filed
+// under. Each seed's mass is the scorer's fold of its own contributions, and
+// an anchor's mass is the sum over the seeds it was reached from. Each anchor
+// also records its degree and how many seeds funded it. The background rate is
+// the total observed mass over the total degree of every touched anchor,
+// silent ones included.
 //
 // Pass 2 expands. An anchor transmits when its mass exceeds its fair share:
-// degree × background, raised by depthOneAdmission at depth 1. It appends one
-// SrcGraph contribution per member, carrying its full observed mass,
-// identity, degree and seed count. An anchor at or below its fair share
-// transmits nothing (hub silence), so pass 2 skips its members. The hinge and
-// the fair-share subtraction are left to the Scorer.
+// degree × background, raised by depthOneAdmission at depth 1. One walk from
+// the transmitting anchors reaches their members. Each member gets one
+// SrcGraph contribution per anchor it was reached from, carrying the anchor's
+// full observed mass, identity, degree and seed count. An anchor at or below
+// its fair share transmits nothing (hub silence), and pass 2 never walks it.
+// So a recall pays once for the members of each anchor that transmits, and
+// nothing for a hub its seeds reach that stays silent. The hinge and the
+// fair-share subtraction are left to the Scorer.
 //
 // A named anchor is how the query's topics and entities take part. It filters
 // nothing. It transmits whenever a seed reaches it, whatever its share, and
@@ -942,63 +947,31 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 			seedScores[seed] = g.scorer.Score(candidates[seed])
 		}
 
-		// Pass 1 (observe): each anchor's mass, seed count, degree and
-		// members.
+		// Pass 1 (observe): each anchor's mass, seed count and degree. The
+		// seeds funding an anchor come in seed order, so its mass is folded
+		// in a fixed order.
+		observed, ok := g.walk(seeds)
+		if !ok {
+			return background
+		}
 		anchorMass := make(map[K]P)
 		anchorSeeds := make(map[K]int)
 		degree := make(map[K]int)
-		members := make(map[K][]K)
 		touched := make([]K, 0)
-		for _, seed := range seeds {
-			t := g.traversal.Clone()
-			t.SetSource(seed)
-			result, err := t.Run(g)
-			if err != nil {
+		for _, anchor := range observed.Order {
+			// Only anchors observe mass. BFS follows every edge, so it can
+			// reach other kinds of node at depth 1.
+			if observed.Depth[anchor] != 1 || !isAnchor[K, P](g, anchor) {
 				continue
 			}
-			r, ok := result.(TraversalResult[K])
-			if !ok {
-				continue
-			}
-			// ExcessTraversal reports an anchor's full membership, the seed
-			// included. So the members are the same from every seed, and are
-			// recorded on first touch. The anchor's mass accumulates over
-			// every seed that touches it.
-			newAnchors := make(map[K]struct{})
-			for _, vertex := range r.Order {
-				// Only anchors observe mass. BFS follows every edge, so it can
-				// reach other kinds of node at depth 1.
-				if r.Depth[vertex] != 1 || !isAnchor[K, P](g, vertex) {
-					continue
-				}
-				anchor := vertex
-				if _, seen := degree[anchor]; !seen {
-					degree[anchor] = len(g.nodeToTargets[anchor]) + len(g.nodeToSources[anchor])
-					touched = append(touched, anchor)
-					newAnchors[anchor] = struct{}{}
-				}
+			degree[anchor] = len(g.nodeToTargets[anchor]) + len(g.nodeToSources[anchor])
+			touched = append(touched, anchor)
+			// ExcessTraversal reports every seed the anchor was reached from.
+			// A tree-shaped traversal such as BFS reports only the seed that
+			// discovered it, which alone funds it.
+			for _, seed := range observed.reachedFrom(anchor) {
 				anchorMass[anchor] += seedScores[seed]
 				anchorSeeds[anchor]++
-			}
-			for _, vertex := range r.Order {
-				if r.Depth[vertex] != 2 {
-					continue
-				}
-				// Use the full incidence when the traversal provides it
-				// (ExcessTraversal's Parents). A tree-shaped traversal such as
-				// BFS has only Parent, so a member is observed through the
-				// one anchor that discovered it.
-				parents := r.Parents[vertex]
-				if len(parents) == 0 {
-					if parent, ok := r.Parent[vertex]; ok {
-						parents = []K{parent}
-					}
-				}
-				for _, anchor := range parents {
-					if _, isNew := newAnchors[anchor]; isNew {
-						members[anchor] = append(members[anchor], vertex)
-					}
-				}
 			}
 		}
 		sort.Slice(touched, func(i, j int) bool { return touched[i] < touched[j] })
@@ -1026,12 +999,30 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 		for _, anchor := range slices.Concat(topicKeys, entityKeys) {
 			named[anchor] = struct{}{}
 		}
+		transmitting := make([]K, 0, len(touched))
 		for _, anchor := range touched {
 			_, isNamed := named[anchor]
-			if !isNamed && anchorMass[anchor]*P(totalDegree) <= P(degree[anchor])*totalMass*admission {
+			if isNamed || anchorMass[anchor]*P(totalDegree) > P(degree[anchor])*totalMass*admission {
+				transmitting = append(transmitting, anchor)
+			}
+		}
+		if len(transmitting) == 0 {
+			return background
+		}
+		// The anchors a member was reached from come in ascending key order,
+		// so its contributions are appended in a fixed order. A tree-shaped
+		// traversal observes a member through the one anchor that discovered
+		// it.
+		expanded, ok := g.walk(transmitting)
+		if !ok {
+			return background
+		}
+		for _, member := range expanded.Order {
+			if expanded.Depth[member] != 1 {
 				continue
 			}
-			for _, member := range members[anchor] {
+			for _, anchor := range expanded.reachedFrom(member) {
+				_, isNamed := named[anchor]
 				candidates[member] = append(candidates[member], scoring.Contribution[K, P]{
 					Src:    scoring.SrcGraph,
 					Score:  anchorMass[anchor],
@@ -1044,6 +1035,20 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, candidates scoring.Candi
 		}
 	}
 	return background
+}
+
+// walk runs a clone of the installed traversal from sources. It reports false
+// when the walk fails, which it does only when the graph holds none of the
+// sources.
+func (g *InMemoryGraph[K, P]) walk(sources []K) (TraversalResult[K], bool) {
+	t := g.traversal.Clone()
+	t.SetSources(sources)
+	result, err := t.Run(g)
+	if err != nil {
+		return TraversalResult[K]{}, false
+	}
+	r, ok := result.(TraversalResult[K])
+	return r, ok
 }
 
 // filedUnder reports whether key is one of the anchors or filed under one. A

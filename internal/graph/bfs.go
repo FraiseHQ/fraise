@@ -25,39 +25,41 @@ package graph
 import "fmt"
 
 // BFS is a breadth-first traversal. It explores the graph frontier by
-// frontier, nearest vertices first, using a FIFO queue. It implements
-// Traversal, and Run starts from the source set by NewBFS or SetSource.
+// frontier, nearest vertices first, using a FIFO queue that starts with every
+// source. It implements Traversal, and Run starts from the sources set by
+// NewBFS or SetSources. Several sources grow one forest: each vertex is
+// discovered once, along a shortest path from the nearest source.
 type BFS[K comparable, P float32 | float64] struct {
-	dir    Direction // which edges to follow
-	source K         // vertex Run starts the traversal from
+	dir     Direction // which edges to follow
+	sources []K       // vertices Run starts the traversal from
 }
 
 // NewBFS returns a breadth-first traversal that starts from source and follows
 // edges in the given direction.
 func NewBFS[K comparable, P float32 | float64](source K, dir Direction) *BFS[K, P] {
-	return &BFS[K, P]{dir: dir, source: source}
+	return &BFS[K, P]{dir: dir, sources: []K{source}}
 }
 
 // NewBFSTraversal returns a breadth-first Traversal that follows edges in the
 // given direction, with no source set. It serves as a graph's search
-// traversal. The graph clones it and sets each seed as the clone's source.
+// traversal. The graph clones it for each walk and sets the walk's sources.
 func NewBFSTraversal[K comparable, P float32 | float64](dir Direction) *BFS[K, P] {
 	return &BFS[K, P]{dir: dir}
 }
 
-// Run traverses g from the configured source and returns the result as an
+// Run traverses g from the configured sources and returns the result as an
 // AlgorithmResult (a TraversalResult).
 func (b *BFS[K, P]) Run(g Graph[K, P]) (AlgorithmResult, error) {
-	result, err := b.traverse(g, b.source)
+	result, err := b.traverse(g, b.sources)
 	if err != nil {
 		return nil, fmt.Errorf("BFS failed: %w", err)
 	}
 	return result, nil
 }
 
-// SetSource sets the vertex the next Run starts from.
-func (b *BFS[K, P]) SetSource(source K) {
-	b.source = source
+// SetSources sets the vertices the next Run starts from.
+func (b *BFS[K, P]) SetSources(sources []K) {
+	b.sources = sources
 }
 
 // Clone implements [Traversal]. The clone keeps the direction and has no
@@ -66,10 +68,25 @@ func (b *BFS[K, P]) Clone() Traversal[K, P] {
 	return &BFS[K, P]{dir: b.dir}
 }
 
-// traverse walks g breadth-first from source, following edges in the
-// configured direction.
-func (b *BFS[K, P]) traverse(g Graph[K, P], source K) (TraversalResult[K], error) {
-	if g.Get(source) == nil {
+// traverse walks g breadth-first from every source g holds, following edges
+// in the configured direction. The sources sit at depth 0, in the order
+// given.
+func (b *BFS[K, P]) traverse(g Graph[K, P], sources []K) (TraversalResult[K], error) {
+	result := TraversalResult[K]{
+		Parent: make(map[K]K, len(sources)),
+		Depth:  make(map[K]int, len(sources)),
+	}
+	queue := make([]K, 0, len(sources))
+	for _, source := range sources {
+		if _, dup := result.Depth[source]; dup || g.Get(source) == nil {
+			continue
+		}
+		result.Order = append(result.Order, source)
+		result.Parent[source] = source
+		result.Depth[source] = 0
+		queue = append(queue, source)
+	}
+	if len(queue) == 0 {
 		return TraversalResult[K]{}, ErrSourceNotFound
 	}
 
@@ -91,13 +108,6 @@ func (b *BFS[K, P]) traverse(g Graph[K, P], source K) (TraversalResult[K], error
 		return out
 	}
 
-	result := TraversalResult[K]{
-		Order:  []K{source},
-		Parent: map[K]K{source: source},
-		Depth:  map[K]int{source: 0},
-	}
-
-	queue := []K{source}
 	for len(queue) > 0 {
 		u := queue[0]
 		queue = queue[1:]

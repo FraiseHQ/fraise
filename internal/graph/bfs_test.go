@@ -28,6 +28,7 @@ import (
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/google/go-cmp/cmp"
 )
 
 // chainGraph builds 1 -> 2 -> 3 plus the isolated node 4.
@@ -123,7 +124,7 @@ func TestBFSTraverse(t *testing.T) {
 	g := chainGraph()
 	traversal := graph.NewBFSTraversal[uint64, float64](graph.Outgoing)
 
-	traversal.SetSource(1)
+	traversal.SetSources([]uint64{1})
 	result, err := traversal.Run(g)
 	if err != nil {
 		t.Fatalf("Run = %v, want nil", err)
@@ -140,9 +141,59 @@ func TestBFSTraverse(t *testing.T) {
 		}
 	}
 
-	traversal.SetSource(99)
+	traversal.SetSources([]uint64{99})
 	if _, err := traversal.Run(g); err == nil {
 		t.Errorf("Run from missing source = nil error, want ErrSourceNotFound")
+	}
+}
+
+// TestBFSFromSeveralSources pins a walk from a source set. The sources share
+// one frontier, so a vertex is discovered once, from the first source in the
+// queue that reaches it, and its depth is its distance to the nearest
+// source. A source the graph does not hold is skipped rather than failing a
+// walk that has others to start from.
+func TestBFSFromSeveralSources(t *testing.T) {
+	cases := map[string]struct {
+		sources    []uint64
+		dir        graph.Direction
+		wantDepth  map[uint64]int
+		wantParent map[uint64]uint64
+	}{
+		"both ends of the chain meet in the middle": {
+			sources:    []uint64{1, 3},
+			dir:        graph.Both,
+			wantDepth:  map[uint64]int{1: 0, 3: 0, 2: 1},
+			wantParent: map[uint64]uint64{1: 1, 3: 3, 2: 1},
+		},
+		"the queue order decides who discovers a shared vertex": {
+			sources:    []uint64{3, 1},
+			dir:        graph.Both,
+			wantDepth:  map[uint64]int{3: 0, 1: 0, 2: 1},
+			wantParent: map[uint64]uint64{3: 3, 1: 1, 2: 3},
+		},
+		"a missing source is skipped": {
+			sources:    []uint64{99, 1},
+			dir:        graph.Outgoing,
+			wantDepth:  map[uint64]int{1: 0, 2: 1, 3: 2},
+			wantParent: map[uint64]uint64{1: 1, 2: 1, 3: 2},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			traversal := graph.NewBFSTraversal[uint64, float64](tc.dir)
+			traversal.SetSources(tc.sources)
+			result, err := traversal.Run(chainGraph())
+			if err != nil {
+				t.Fatalf("Run = %v, want nil", err)
+			}
+			got := result.(graph.TraversalResult[uint64])
+			if diff := cmp.Diff(tc.wantDepth, got.Depth); diff != "" {
+				t.Errorf("Depth mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantParent, got.Parent); diff != "" {
+				t.Errorf("Parent mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

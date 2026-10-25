@@ -48,44 +48,64 @@ type Algorithm[K comparable, P float32 | float64] interface {
 type AlgorithmResult interface {
 }
 
-// TraversalResult captures the outcome of a source-based traversal.
+// TraversalResult captures the outcome of a traversal from a set of sources.
 type TraversalResult[K comparable] struct {
 	AlgorithmResult
-	// Order lists the vertices in the order they were first visited.
+	// Order lists the visited vertices in the order the traversal defines:
+	// discovery order for BFS, ascending keys for ExcessTraversal.
 	Order []K
 
 	// Parent maps each visited vertex to the vertex it was discovered from,
-	// forming the traversal tree. A source visited at depth 0 maps to its own
-	// key.
+	// forming the traversal tree, a forest when there are several sources. A
+	// source visited at depth 0 maps to its own key.
 	Parent map[K]K
 
 	// Parents maps each visited vertex to every vertex it was reached through
-	// at the previous depth. Parent keeps one canonical entry, the first in
-	// Order, for tree-shaped consumers. Parents carries the full incidence,
-	// because a member reached through two of the source's anchors is two
-	// observations, not one. Tree-shaped traversals may leave it nil.
+	// at the previous depth. Parent keeps one canonical entry, the first of
+	// them, for tree-shaped consumers. Parents carries the full incidence,
+	// because a member reached through two anchors is two observations, not
+	// one. Tree-shaped traversals may leave it nil.
 	Parents map[K][]K
 
-	// Depth maps each visited vertex to its hop distance from the source.
+	// Depth maps each visited vertex to its hop distance from the nearest
+	// source.
 	Depth map[K]int
 }
 
-// Traversal explores a graph from a source vertex, in an order the
-// implementation defines. BFS visits every reachable vertex breadth-first.
-// ExcessTraversal visits only the source's anchors and their members. K is the
-// vertex key type and P the graph's score precision.
+// reachedFrom returns the vertices v was reached through: its Parents when
+// the traversal records the full incidence, and otherwise its Parent alone,
+// as a tree-shaped traversal observes it.
+func (r TraversalResult[K]) reachedFrom(v K) []K {
+	if parents := r.Parents[v]; len(parents) > 0 {
+		return parents
+	}
+	if parent, ok := r.Parent[v]; ok {
+		return []K{parent}
+	}
+	return nil
+}
+
+// Traversal explores a graph from a set of source vertices, in an order the
+// implementation defines. BFS visits every vertex reachable from the sources,
+// breadth-first. ExcessTraversal steps once from each source across the
+// bipartition between facts and anchors. K is the vertex key type and P the
+// graph's score precision.
 type Traversal[K comparable, P float32 | float64] interface {
 	Algorithm[K, P]
 
-	// traverse walks g from source and returns the visit order, traversal
-	// tree and per-vertex depth.
-	traverse(g Graph[K, P], source K) (TraversalResult[K], error)
+	// traverse walks g from sources and returns the visit order, traversal
+	// tree and per-vertex depth. A source the graph does not hold is skipped,
+	// and the walk fails with ErrSourceNotFound when it holds none of them.
+	traverse(g Graph[K, P], sources []K) (TraversalResult[K], error)
 
-	// SetSource sets the vertex the next Run starts from.
-	SetSource(source K)
+	// SetSources sets the vertices the next Run starts from. A walk from
+	// several sources is one walk, not one per source: a vertex that several
+	// sources reach is visited once, so a hub costs the same whether one seed
+	// reaches it or every seed does.
+	SetSources(sources []K)
 
 	// Clone returns a fresh traversal with the same configuration but no
-	// per-run state. Each walk can then set its own source and run on its own
-	// instance, instead of mutating a shared one.
+	// per-run state. Each walk can then set its own sources and run on its
+	// own instance, instead of mutating a shared one.
 	Clone() Traversal[K, P]
 }
