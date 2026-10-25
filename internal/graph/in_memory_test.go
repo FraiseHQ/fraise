@@ -639,15 +639,17 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	}
 }
 
-// constScorer is a minimal alternative fold. Every candidate scores the same
-// constant, whatever the background. It shows that a new fold is a Scorer
-// installed with SetScorer, not a change to Search. Like fakeHasher, it is a
-// real, deterministic implementation of an in-tree interface.
+// constScorer is a minimal alternative fold: every candidate scores the same
+// constant, whatever the query observed. It shows that a new fold is a Scorer
+// installed with SetScorer, not a change to Search, and like fakeHasher it is
+// a real, deterministic implementation of an in-tree interface.
 type constScorer struct{ score float64 }
 
 func (s constScorer) Score([]scoring.Contribution[uint64, float64]) float64 { return s.score }
 
-func (s constScorer) WithBackground(float64) scoring.Scorer[uint64, float64] { return s }
+func (s constScorer) Observe(scoring.Observation[uint64, float64]) scoring.Scorer[uint64, float64] {
+	return s
+}
 
 // TestNewGraphInstallsStemmingTokenizer pins the tokenizer wiring. Recall
 // keywords rarely arrive in the fact's exact inflection, so NewGraph installs
@@ -1672,6 +1674,117 @@ func TestInMemoryGraphSearchNamedAnchorIsTheAnchorTheDoorOpens(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphSearchPoolsWhatTheRecallCanReturn pins the pool a fold
+// measures candidates against: the facts the recall can return, those inside
+// [since, until). With the information scorer installed, a recall from a day
+// ago keeps one of the two kettle facts. A pool of one spreads no channel, so
+// the fact scores its own seed mass, its text mass exactly. Pooled with the
+// older fact the recall cannot return, it would score its text's z-score
+// over the two instead.
+func TestInMemoryGraphSearchPoolsWhatTheRecallCanReturn(t *testing.T) {
+	g := noDecayGraph()
+	g.SetScorer(scoring.NewInformationScorer[uint64, float64]())
+	now := time.Now()
+	mustSet(t, g, mkFact(g, "the kettle whistles", now))
+	mustSet(t, g, mkFact(g, "the kettle boils over the stove while the cook reads", now.Add(-48*time.Hour)))
+
+	nodes, scores, contributions, _, _ := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, now.Add(-24*time.Hour), time.Time{})
+	if diff := cmp.Diff([]string{"the kettle whistles"}, values(nodes)); diff != "" {
+		t.Fatalf("Search(kettle, since a day ago) mismatch (-want +got):\n%s", diff)
+	}
+	if got, want := scores[0], contributions[0][0].Score; got != want {
+		t.Errorf("score = %v, want the text mass %v: a pool of one is the recall's one fact", got, want)
+	}
+	if _, all, contributions, _, _ := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{}); all[0] == contributions[0][0].Score {
+		t.Errorf("score = %v with both facts returnable, want the z-score over the two, not the text mass", all[0])
+	}
+}
+
+// TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst pins how deep the
+// indexes are read. Each is read for every match, so a match below the seed
+// budget still carries its evidence and the scorer measures it against the
+// whole reading. Only the first seed-size of each reading seed the anchor
+// round. With a budget of one, the weaker kettle fact comes back with its text
+// sighting, yet the round observes only the stronger fact's topic: the
+// background is that fact's mass over its topic's two edges, the weaker
+// fact's topic never touched.
+func TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst(t *testing.T) {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.SeedSize = 1
+	g := graph.NewGraph[uint64, float64](cfg)
+	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
+	now := time.Now()
+	kitchen, shed := mkTopic(g, "kitchen", now), mkTopic(g, "shed", now)
+	mustSet(t, g, kitchen)
+	mustSet(t, g, shed)
+	file := func(value string, topic *graph.Topic[uint64]) graph.Fact[uint64] {
+		fact := mkFact(g, value, now)
+		mustSet(t, g, fact)
+		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		return fact
+	}
+	strong := file("the kettle kettle whistles", kitchen)
+	file("the stove is warm", kitchen)
+	weak := file("a kettle sits in the shed among tools and old garden chairs", shed)
+
+	nodes, _, contributions, background, err := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, []string{"kitchen"}, nil, 2, 0, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	var strongMass float64
+	weakRead := false
+	for i, node := range nodes {
+		for _, c := range contributions[i] {
+			if c.Src != scoring.SrcText {
+				continue
+			}
+			switch node.Key() {
+			case strong.Key():
+				strongMass = c.Score
+			case weak.Key():
+				weakRead = true
+			}
+		}
+	}
+	if !weakRead {
+		t.Errorf("hits = %v, want the weaker match with its text sighting: every match is read", values(nodes))
+	}
+	if want := strongMass / 2; math.Abs(background-want) > 1e-12 {
+		t.Errorf("background = %v, want the strong seed's mass over its topic's two edges %v: only the first match seeds", background, want)
+	}
+}
+
+// TestInMemoryGraphSearchRecordsTheShareTheWordsHold pins Held on a text
+// sighting: the share of the query's information the fact's own words hold.
+// "the kettle whistles" holds both words of "kettle whistles", all of it; "the
+// kettle boils" holds only the commoner word, part of it.
+func TestInMemoryGraphSearchRecordsTheShareTheWordsHold(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+	full := mkFact(g, "the kettle whistles", now)
+	part := mkFact(g, "the kettle boils", now)
+	mustSet(t, g, full)
+	mustSet(t, g, part)
+	mustSet(t, g, mkFact(g, "the oven hums", now))
+
+	nodes, _, contributions, _, _ := search(g, []string{"kettle", "whistles"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	held := map[uint64]float64{}
+	for i, node := range nodes {
+		for _, c := range contributions[i] {
+			if c.Src == scoring.SrcText {
+				held[node.Key()] = c.Held
+			}
+		}
+	}
+	if got := held[full.Key()]; got != 1 {
+		t.Errorf("Held for the full match = %v, want 1", got)
+	}
+	if got := held[part.Key()]; got <= 0 || got >= 1 {
+		t.Errorf("Held for the partial match = %v, want strictly between 0 and 1", got)
+	}
+}
+
 // benchmarkGraph builds a graph of n facts for the Search benchmarks. Each
 // fact is eight to twelve words from a Zipf-distributed vocabulary. It is
 // filed under one of fifty topics, mentions one of five hundred entities, and
@@ -1848,10 +1961,13 @@ func vectorWeightGraph(t *testing.T) (*graph.InMemoryGraph[uint64, float64], gra
 }
 
 // vectorScore runs a recall, under topics and from since when they are set,
-// and returns the vector contribution of the fact found by its embedding.
-func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords []string, topics []string, since time.Time, key uint64) float64 {
+// and returns what the fact found by its embedding gets from its vector: its
+// score less its text mass. The graph folds with the ExcessScorer, and at
+// depth 0 with decay off that is the similarity times the weight the text's
+// weakness gives it. raw is the similarity its vector contribution records.
+func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords []string, topics []string, since time.Time, key uint64) (weighted, raw float64) {
 	t.Helper()
-	nodes, _, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), topics, nil, 0, 10, since, time.Time{})
+	nodes, scores, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), topics, nil, 0, 10, since, time.Time{})
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -1859,31 +1975,44 @@ func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords
 		if node.Key() != key {
 			continue
 		}
+		weighted = scores[i]
 		for _, c := range contributions[i] {
-			if c.Src == scoring.SrcVector {
-				return c.Score
+			switch c.Src {
+			case scoring.SrcText:
+				weighted -= c.Score
+			case scoring.SrcVector:
+				raw = c.Score
 			}
 		}
+		return weighted, raw
 	}
 	t.Fatalf("Search = %v, want the embedding's fact among the hits with a vector contribution", values(nodes))
-	return 0
+	return 0, 0
 }
 
 // TestInMemoryGraphSearchWeightsVectorsByMissingInformation pins the vector
 // weight. The similarity is multiplied by I_q / I_hit: the information in the
 // query's words over the part of it the best text hit holds. A best hit
 // holding every word leaves the embedding at its plain similarity. In
-// "deploy release", each word is held by one of the two facts, so each
-// carries one bit. The best hit holds one of the query's two bits, so the
-// embedding counts double. A query sharing no word with any fact has no text
-// hit. The embedding is then the only seed and keeps weight 1.
+// "deploy release" each word is held by one of the two facts, so each carries
+// one bit and the best hit holds one of the query's two: the embedding counts
+// double. A query no fact holds a word of has no text hit, and the embedding,
+// the only seed, keeps weight 1. The weight is the scorer's to apply: the
+// vector contribution records the same similarity in every case.
 func TestInMemoryGraphSearchWeightsVectorsByMissingInformation(t *testing.T) {
 	g, key := vectorWeightGraph(t)
-	plain := vectorScore(t, g, []string{"deploy", "friday"}, nil, time.Time{}, key.Key())
-	if half := vectorScore(t, g, []string{"deploy", "release"}, nil, time.Time{}, key.Key()); math.Abs(half-2*plain) > 1e-12 {
+	plain, raw := vectorScore(t, g, []string{"deploy", "friday"}, nil, time.Time{}, key.Key())
+	if math.Abs(plain-raw) > 1e-12 {
+		t.Errorf("full information found: vector score %v, want the recorded similarity %v", plain, raw)
+	}
+	half, halfRaw := vectorScore(t, g, []string{"deploy", "release"}, nil, time.Time{}, key.Key())
+	if math.Abs(half-2*plain) > 1e-12 {
 		t.Errorf("half the information found: vector score %v, want twice the plain %v", half, plain)
 	}
-	if none := vectorScore(t, g, []string{"zebra"}, nil, time.Time{}, key.Key()); math.Abs(none-plain) > 1e-12 {
+	if halfRaw != raw {
+		t.Errorf("half the information found: recorded similarity %v, want %v as measured, the weight left to the scorer", halfRaw, raw)
+	}
+	if none, _ := vectorScore(t, g, []string{"zebra"}, nil, time.Time{}, key.Key()); math.Abs(none-plain) > 1e-12 {
 		t.Errorf("no text hit: vector score %v, want the plain %v", none, plain)
 	}
 }
@@ -1921,11 +2050,11 @@ func TestInMemoryGraphSearchWeightsVectorsByTheHitsTheRecallKeeps(t *testing.T) 
 	}
 
 	query := []string{"deploy", "release"}
-	plain := vectorScore(t, g, query, nil, time.Time{}, vector.Key())
-	if topic := vectorScore(t, g, query, []string{"ops"}, time.Time{}, vector.Key()); topic != plain {
+	plain, _ := vectorScore(t, g, query, nil, time.Time{}, vector.Key())
+	if topic, _ := vectorScore(t, g, query, []string{"ops"}, time.Time{}, vector.Key()); topic != plain {
 		t.Errorf("topic:ops: vector score %v, want the unbounded %v", topic, plain)
 	}
-	if since := vectorScore(t, g, query, nil, now.Add(-24*time.Hour), vector.Key()); math.Abs(since-2*plain) > 1e-12 {
+	if since, _ := vectorScore(t, g, query, nil, now.Add(-24*time.Hour), vector.Key()); math.Abs(since-2*plain) > 1e-12 {
 		t.Errorf("since a day ago: vector score %v, want twice the unfiltered %v", since, plain)
 	}
 }

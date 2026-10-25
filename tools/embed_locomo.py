@@ -29,10 +29,14 @@ raw path.
 
 Each turn is one fact, valued ``[session N @ <date>] <speaker>: <text>``. Any
 shared image's caption is appended to the text, and the ASCII apostrophe is
-swapped for a typographic one. Each question is taken as written.
+swapped for a typographic one. Each question is keyed as written.
 
-A vector is the model's attention-masked mean over tokens, L2-normalized, as in
-the e2e suite. The gates cache the file under a hash of the LoCoMo sample and
+The model is BAAI/bge-small-en-v1.5, a retrieval model of the same width as
+the e2e suite's, 384, trained for questions against the passages that answer
+them. A vector is its first token's hidden state, L2-normalized, the pooling
+the model was trained with. A question is embedded behind the model's query
+instruction, as the model expects, and keyed by the question alone. The
+gates cache the file under a hash of the LoCoMo sample and
 this script. So base and head read the same file, and are compared on
 identical vectors, unless a pull request changes one of the two. That pull
 request embeds anew, while the nightly baseline it is compared with used the
@@ -51,18 +55,19 @@ from pathlib import Path
 import torch
 import transformers
 
-MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL = "BAAI/bge-small-en-v1.5"
+QUERY = "Represent this sentence for searching relevant passages: "
 BATCH = 64
 
 
-def texts(conversations: list[dict]) -> Iterator[str]:
-    """Every value the benchmark stores and every question it asks, in order.
+def values(conversations: list[dict]) -> Iterator[str]:
+    """Every value the benchmark stores, in order.
 
     Args:
         conversations: LoCoMo conversations, in the dataset's own format.
 
     Yields:
-        The texts the benchmark needs a vector for.
+        The facts the benchmark needs a vector for.
     """
     for conv in conversations:
         sessions = conv["conversation"]
@@ -75,6 +80,18 @@ def texts(conversations: list[dict]) -> Iterator[str]:
                     text += f" [shared image: {turn['blip_caption']}]"
                 yield f"{header} {turn['speaker']}: {text}".replace("'", "’")
             n += 1
+
+
+def questions(conversations: list[dict]) -> Iterator[str]:
+    """Every question the benchmark asks, in order.
+
+    Args:
+        conversations: LoCoMo conversations, in the dataset's own format.
+
+    Yields:
+        The questions the benchmark needs a vector for.
+    """
+    for conv in conversations:
         for qa in conv["qa"]:
             yield qa["question"]
 
@@ -97,9 +114,7 @@ def embed(
     enc = tokenizer(batch, padding=True, truncation=True, return_tensors="pt")
     with torch.no_grad():
         hidden = model(**enc).last_hidden_state
-    mask = enc["attention_mask"].unsqueeze(-1).float()
-    pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
-    pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
+    pooled = torch.nn.functional.normalize(hidden[:, 0], p=2, dim=1)
     return [[round(x, 6) for x in vec] for vec in pooled.tolist()]
 
 
@@ -110,14 +125,17 @@ def main() -> None:
     parser.add_argument("out", type=Path)
     args = parser.parse_args()
 
-    unique = list(dict.fromkeys(texts(json.loads(args.data.read_text()))))
+    conversations = json.loads(args.data.read_text())
     tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL)
     model = transformers.AutoModel.from_pretrained(MODEL)
     model.eval()
     vectors: dict[str, list[float]] = {}
-    for start in range(0, len(unique), BATCH):
-        batch = unique[start : start + BATCH]
-        vectors.update(zip(batch, embed(batch, tokenizer, model), strict=True))
+    for texts, prefix in ((values(conversations), ""), (questions(conversations), QUERY)):
+        unique = list(dict.fromkeys(texts))
+        for start in range(0, len(unique), BATCH):
+            batch = unique[start : start + BATCH]
+            embedded = embed([prefix + text for text in batch], tokenizer, model)
+            vectors.update(zip(batch, embedded, strict=True))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(vectors, ensure_ascii=False))
 

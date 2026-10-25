@@ -1,17 +1,19 @@
 ---
 title: "Ranking guarantees"
-description: "Four properties of the retrieval model that are contract rather than tendency, each pinned by the test suite"
+description: "Four properties of the retrieval model that are contract rather than tendency, each pinned by the test suite, and the fold each depends on"
 ---
 
-Four consequences of the [excess-transmission model](/docs/retrieval/ranking/excess-transmission) are the contract, each pinned by the test suite.
+Four consequences of the [excess-transmission model](/docs/retrieval/ranking/excess-transmission) are the contract, each pinned by the test suite. Hub silence and earned preemption belong to the transmission and hold under either fold; the BM25 floor and raw units belong to the `excess` fold, and the `information` fold, the default, does not keep them (see [The fold](/docs/retrieval/ranking/hybrid-retrieval#the-fold)).
 
 ## BM25 floor
 
-Transmission only ever **adds**: a hit's relevance is never below its own seed mass, so the graph channel can lift a fact but never lower it. With no surplus anywhere, relevance is the seed mass and the ranking is exactly that of text and vector search alone.
+Under the `excess` fold, transmission only ever **adds**: a hit's relevance is never below its own seed mass, so the graph channel can lift a fact but never lower it. With no surplus anywhere, relevance is the seed mass and the ranking is exactly that of text and vector search alone.
 
-<Note title="Safe to raise depth" type="note">
+The `information` fold does not keep it in seed units, since it scores z-scores rather than masses. Each channel only adds, so a fact's score never falls when the graph speaks, but the graph's evidence is measured against the text's: the fact the words matched best can rank below a weaker match, or a fact with no match of its own, that the graph raised. With no graph evidence anywhere, the graph channel is absent and the ranking is the fold of text and vector alone.
 
-This is what makes `depth:` safe to raise: the graph channel can add evidence, never subtract it.
+<Note title="Safe to raise depth under excess" type="note">
+
+Under `excess` this is what makes `depth:` safe to raise: the graph channel can add evidence, never subtract it. Under `information`, raising the lane can reorder what the words found.
 
 </Note>
 
@@ -21,19 +23,21 @@ An anchor at or below its fair share, $d_A \, \rho_0$, transmits nothing: **a me
 
 Degree enters the fold twice: it raises the fair share an anchor must clear, and it divides what clears it into per-edge shares. Size both hardens the admission bar and thins whatever passes it. Silence is earned against the query's own rate, measured over the anchors it reached: an anchor is silent because it holds no more of the query's evidence than its size accounts for next to them, and memory the query never touched cannot lower that bar.
 
+An anchor the recall names owes no fair share, since the question asked for it, but its degree still divides what it passes on: a named hub raises each of its facts by the query's mass on it spread over all of them.
+
 ## Earned preemption
 
 A fact with no match of its own outranks a match only through anchors carrying above-background evidence or named by the recall, **and enough of it per edge**: a thin surplus spread over a large membership gives each member little. Never through mere reachability.
 
-## No normalization, no knobs
+## No knobs
 
-Scores stay in raw seed units end to end. Relevance is homogeneous in the mass scale, so normalising would leave the order unchanged and only break the commensurability of the channels. The methodology carries **zero dataset-tuned constants**.
+Neither fold carries a dataset-tuned constant: the background rate is the query's own, and the `information` fold carries no constant at all. Under `excess`, scores also stay in raw seed units end to end: relevance is homogeneous in the mass scale, so normalising would leave the order unchanged and only break the commensurability of the channels. The `information` fold measures each channel against its own spread over the pool instead, so its scores are z-scores, comparable within one recall, and no channel needs calibrating against another.
 
 ## What this buys a caller
 
-| Property | What it rules out |
-|---|---|
-| BM25 floor | the graph channel lowering a fact's score below its own match |
-| Hub silence | a popular topic drowning the ranking on popularity alone |
-| Earned preemption | reachability being mistaken for relevance |
-| No knobs | a relevance constant that has to be re-fitted per dataset |
+| Property | What it rules out | Fold |
+|---|---|---|
+| BM25 floor | the graph channel lowering a fact's score below its own match | `excess` |
+| Hub silence | a popular topic drowning the ranking on popularity alone | both |
+| Earned preemption | reachability being mistaken for relevance | both |
+| No knobs | a relevance constant that has to be re-fitted per dataset | both |

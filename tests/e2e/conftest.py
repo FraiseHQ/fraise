@@ -64,6 +64,7 @@ result set. Only a graph no test writes to can test the 204, so do not write to
 graph 8.
 """
 
+import math
 import os
 import time
 
@@ -728,6 +729,69 @@ def storm_silent_member():
 def storm_hub():
     """The archive hub's facts; only the first contains a query term."""
     return tuple(_STORM_HUB)
+
+
+def _information_scores(hits, background, missed=0.0):
+    """Recompute every hit's score from an explain payload under the
+    information fold, the server's default scorer.
+
+    The pool is the hits themselves, so the recall must return every
+    candidate. Each hit's channels are read off its contributions: text its
+    text mass, vector its similarity, graph the hinged per-edge surpluses, an
+    anchor the recall named owing no fair share. The seed mass the surpluses
+    exclude is text plus (1 + missed) times the similarity. Each channel's z
+    is taken over the pool, a hit the channel did not see counting at zero,
+    and floored at zero. A hit then scores (1 + z_text)(1 + z_vector)^e − 1 +
+    z_graph, e being 2 − held when z_vector clears √(2 ln n) and 1 otherwise.
+    With no channel spreading the pool, a hit scores its seed mass.
+    """
+    values, held = [], []
+    for hit in hits:
+        contributions = hit["contributions"]
+        text = sum(c["score"] for c in contributions if c["source"] == "text")
+        vector = sum(c["score"] for c in contributions if c["source"] == "vector")
+        anchor = sum(c["score"] for c in contributions if c["source"] == "anchor")
+        mass = text + (1 + missed) * vector + anchor
+        graph = 0.0
+        for c in contributions:
+            if c["source"] != "graph":
+                continue
+            degree = max(c["degree"], 1)
+            share = 0.0 if c.get("named") else degree * background
+            graph += max(0.0, (c["score"] - mass - share) / degree)
+        values.append([text, vector, graph, mass])
+        held.append(
+            max((c.get("held", 0.0) for c in contributions if c["source"] == "text"), default=0.0)
+        )
+    n = len(values)
+    mean = [sum(v[c] for v in values) / n for c in range(3)]
+    sd = [math.sqrt(sum((v[c] - mean[c]) ** 2 for v in values) / n) for c in range(3)]
+    if not any(sd):
+        return [v[3] for v in values]
+
+    def above(c, v):
+        return max(0.0, (v - mean[c]) / sd[c]) if v > 0 and sd[c] > 0 else 0.0
+
+    bar = math.sqrt(2 * math.log(n))
+    scores = []
+    for v, h in zip(values, held, strict=True):
+        z_text, z_vector, z_graph = above(0, v[0]), above(1, v[1]), above(2, v[2])
+        trust = 2 - h if z_vector > bar else 1
+        scores.append((1 + z_text) * (1 + z_vector) ** trust - 1 + z_graph)
+    return scores
+
+
+@pytest.fixture(scope="session")
+def information_scores():
+    """Callable recomputing an explain payload's scores under the information
+    fold.
+
+    Returns:
+        ``callable(hits, background, missed=0.0) -> list[float]``, one score
+        per hit in the order given; ``missed`` is the text's weakness,
+        (I_q − I_hit) / I_hit, 0 when the best text hit holds the question.
+    """
+    return _information_scores
 
 
 # Documents on three clearly distinct subjects. A real sentence embedding puts

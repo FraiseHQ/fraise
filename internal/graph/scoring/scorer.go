@@ -32,8 +32,9 @@ const (
 	// SrcText is the full-text index. Score is the BM25 × coverage mass.
 	SrcText Source = iota
 
-	// SrcVector is the vector index. Score is the similarity 1/(1+distance),
-	// scaled by the query's vector weight.
+	// SrcVector is the vector index; Score is the similarity 1/(1+distance)
+	// as the index measured it. How much the text's weakness lets it weigh is
+	// the scorer's to apply (see Observation.TextMissed).
 	SrcVector
 
 	// SrcGraph is the anchor traversal. Score is the funding anchor's full
@@ -49,27 +50,51 @@ const (
 	SrcAnchor
 )
 
-// Scorer folds one candidate's contributions into its relevance score. Higher
-// wins. Search first folds each seed's own contributions, before any traversal,
-// to fix the seed masses the traversal aggregates. Then it folds every
-// candidate's full list. Every concurrent search on the graph shares one
-// instance. So implementations must be pure: no mutation of the slice, no
+// Observation is what a search learned about its query as a whole, as
+// opposed to what it learned about any one candidate: the inputs a fold may
+// need beside a candidate's own contributions. Its zero value is a query
+// nothing has been observed for yet, which is what seed fusion folds under.
+type Observation[K comparable, P float32 | float64] struct {
+	// Background is the query's null rate ρ₀, the observed mass per unit of
+	// anchor degree over every anchor the traversal reached; zero before the
+	// traversal runs, or when it does not.
+	Background P
+
+	// TextMissed is the information the query's best text hit did not hold,
+	// per bit it did: (I_q − I_hit) / I_hit, so 1 + TextMissed = I_q / I_hit.
+	// Zero when the best hit holds the whole question, when nothing matched
+	// the text, or when the query has no vector to weigh against it.
+	TextMissed P
+
+	// Candidates is the query's whole candidate pool, for a fold that measures
+	// each candidate against the others; nil before the pool is complete.
+	Candidates Candidates[K, P]
+
+	// Keys lists Candidates in the order a fold reads the pool, ascending, so
+	// statistics summed over it fold the same way on every run.
+	Keys []K
+}
+
+// Scorer folds one candidate's contributions into its relevance score;
+// higher wins. Search folds each seed's own contributions before any
+// traversal (fixing the seed masses the traversal aggregates), then every
+// candidate's full list. One instance is shared by every concurrent search on
+// the graph, so implementations must be pure: no mutation of the slice, no
 // mutable state, same input same output.
 //
-// Query-scoped inputs arrive by binding, never by mutation. WithBackground
-// returns a scorer bound to one query's background rate, the observed mass per
-// unit of anchor degree. It is the one query-global number a null model needs.
-// An unbound scorer folds at background zero. That is what seed fusion needs,
-// since nothing has been observed before the traversal runs. Mutating the
-// shared instance instead would race one query's background into another's
-// folds, since reads run concurrently under RLock.
+// Query-scoped inputs arrive by binding, never by mutation. Observe returns a
+// scorer bound to what one query observed (see Observation). A scorer bound to
+// the zero Observation folds what seed fusion needs: nothing has been observed
+// before the traversal runs, so a seed's fold is its own seed mass. Mutating
+// the shared instance instead would race one query's observation into
+// another's folds, since reads run concurrently under RLock.
 type Scorer[K comparable, P float32 | float64] interface {
-	// Score folds contributions at the scorer's bound background rate.
+	// Score folds contributions under the scorer's bound observation.
 	Score(contributions []Contribution[K, P]) P
 
-	// WithBackground returns a scorer bound to background. A fold with no null
-	// model returns itself.
-	WithBackground(background P) Scorer[K, P]
+	// Observe returns a scorer bound to o; a fold that reads none of it
+	// returns itself.
+	Observe(o Observation[K, P]) Scorer[K, P]
 }
 
 // String names the source for logs and the explain payload. Explain serialises
@@ -113,6 +138,13 @@ type Contribution[K comparable, P float32 | float64] struct {
 	Degree uint32
 	Count  uint16
 	Named  bool
+
+	// Held is a text sighting's share of the query's information that the
+	// fact's own words hold, in [0, 1]: 1 for a fact holding every word the
+	// index knows, 0 for one matched only through its window neighbours. It
+	// tells the scorer how weak the words' match on this fact is. Other
+	// sources leave it zero.
+	Held P
 }
 
 // Candidates pools every contribution made during one search, keyed by
