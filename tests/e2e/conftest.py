@@ -343,10 +343,18 @@ def assert_accepted():
 
 
 # The planet star: four facts on one "planets" topic hub, each with a unique
-# keyword. A recall seeded from the star touches no anchor but that hub. The
-# hub then holds exactly its fair share and transmits nothing (hub silence). So
-# the exact result counts depend on the keywords and top, never on depth.
+# keyword. A recall seeded from the star touches no anchor but that hub. Found
+# by the seeds rather than named, the hub then holds exactly its fair share and
+# transmits nothing (hub silence). So the exact result counts of a recall
+# entering through the door depend on the keywords and top, never on depth.
+# Named, the hub owes no fair share and lifts all four facts.
 _PLANET_GRAPH = 7
+
+# The door: a topic nothing is filed under. The graph is searched only beside
+# an anchor the recall names, and a named anchor transmits whatever its share.
+# Naming the door opens the graph lane while every anchor the seeds reach is
+# discovered, so hub silence and earned transmission can be pinned over HTTP.
+_DOOR_TOPIC = "doorprobe"
 _PLANET_TOPIC = "planets"
 _PLANET_FACTS = {
     "mercury": "mercury is the smallest planet",
@@ -406,6 +414,12 @@ _TIDEPOOL_ANCHORS = {
 DEFAULT_TOP = 10
 _SALTMARSH_TOPIC = "saltmarsh"
 _SALTMARSH_FACTS = tuple(f"saltmarsh channel {i} was surveyed" for i in range(12))
+
+
+@pytest.fixture(scope="session")
+def door_topic():
+    """A topic nothing is filed under, naming it opens the graph lane alone."""
+    return _DOOR_TOPIC
 
 
 @pytest.fixture(scope="session")
@@ -619,12 +633,12 @@ def bird_facts():
 
 # The explain probes, both on graph 2.
 #
-# Two facts sharing a keyword and an entity. Both are text seeds for "pulsar";
-# left to the round, their shared entity is the query's only touched anchor,
-# so it sits exactly at the background rate and transmits nothing — every
-# hit's breakdown is a single text contribution. (Anchors are heard only when
-# their members matched better than their size predicts; the storm probe below
-# is the funded case.)
+# Two facts that share a keyword and an entity. Both are text seeds for
+# "pulsar". The recall names their shared entity, so it owes no fair share and
+# passes each fact's mass to the other. Every hit's breakdown is a text
+# contribution and a named graph contribution. The storm probe below is the
+# case of anchors the seeds discover, heard only when their members matched
+# better than their size predicts.
 _EXPLAIN_GRAPH = 2
 _PULSAR_FACTS = (
     "the pulsar spins thirty times a second",
@@ -632,11 +646,12 @@ _PULSAR_FACTS = (
 )
 _PULSAR_ENTITY = "vela"
 
-# The surplus probe: a small "weather" cluster concentrates the query's mass
-# while a larger "archive" hub holds no more than its fair share of it, so
-# exactly one anchor speaks and its silent member is funded by transmission
-# alone. Left to the round, the hub stays silent; named, it is evidence the
-# query asked for, owes no fair share, and raises its memos.
+# The surplus probe. A small "weather" cluster concentrates the query's mass. A
+# larger "archive" hub holds no more than its fair share of it. So exactly one
+# anchor speaks, and transmission alone funds its silent member. The explain
+# recalls enter the graph through the door, so both topics are discovered and
+# each must earn its transmission. Named, the hub owes no fair share and its
+# memos ride in behind it.
 _STORM_CLUSTER_TOPIC = "weather"
 _STORM_HUB_TOPIC = "archive"
 # No query term: funded or invisible.
@@ -649,12 +664,6 @@ _STORM_CLUSTER = (
 _STORM_HUB = ("a storm of paperwork",) + tuple(
     f"unrelated archive memo {i}" for i in range(7)
 )
-
-# A topic nothing in any graph is filed under. The anchor round runs only once
-# a recall names an anchor, and a named anchor leaves the round for its own
-# named observation, so naming this one opens the round and leaves every
-# anchor under test to it.
-_UNFILED_TOPIC = "unfiledprobe"
 
 
 @pytest.fixture
@@ -722,12 +731,6 @@ def storm_hub():
     return tuple(_STORM_HUB)
 
 
-@pytest.fixture(scope="session")
-def unfiled_topic():
-    """A topic nothing is filed under: naming it opens the round alone."""
-    return _UNFILED_TOPIC
-
-
 def _information_scores(hits, background, missed=0.0):
     """Recompute every hit's score from an explain payload under the
     information fold, the server's default scorer.
@@ -735,9 +738,9 @@ def _information_scores(hits, background, missed=0.0):
     The pool is the hits themselves, so the recall must return every
     candidate. Each hit's channels are read off its contributions: text its
     text mass, vector its similarity above the reading's floor (the smallest
-    similarity among the hits), graph the hinged per-edge surpluses with no
-    attenuation, a named anchor owing no fair share. The seed mass the
-    surpluses exclude is text plus (1 + missed) times the similarity. A fact
+    similarity among the hits), graph the hinged per-edge surpluses, an anchor
+    the recall named owing no fair share. The seed mass the surpluses exclude
+    is text plus (1 + missed) times the similarity. A fact
     then scores Σ w · log₂(1 + n·c/Σc), the weights being each channel's
     information Σ p · log₂(n·p), the vector's multiplied by 1 + missed.
     """
@@ -749,10 +752,10 @@ def _information_scores(hits, background, missed=0.0):
         mass = text + (1 + missed) * vector
         graph = 0.0
         for c in contributions:
-            if c["source"] not in ("graph", "named"):
+            if c["source"] != "graph":
                 continue
             degree = max(c["degree"], 1)
-            share = 0.0 if c["source"] == "named" else degree * background
+            share = 0.0 if c.get("named") else degree * background
             graph += max(0.0, (c["score"] - mass - share) / degree)
         values.append([text, vector, graph])
     similarities = [v[1] for v in values if v[1] > 0]

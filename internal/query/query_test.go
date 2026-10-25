@@ -229,19 +229,21 @@ func TestHitMarshalOmitsContributionsByDefault(t *testing.T) {
 // TestHitMarshalSerializesContributions pins the explain wire shape. Each
 // contribution carries its source by name, its raw score, rank and seed count.
 // A graph entry also carries the funding anchor's value under via, and its
-// degree. via and degree are omitted for text and vector entries, where they
-// mean nothing.
+// degree, and named when the query named that anchor. via, degree and named
+// are omitted where they mean nothing.
 func TestHitMarshalSerializesContributions(t *testing.T) {
 	got := marshalHit(t, []query.HitContribution[float32]{
 		{Source: "text", Score: 1, Rank: 0, Count: 1},
 		{Source: "vector", Score: 0.5, Rank: 1, Count: 1},
 		{Source: "graph", Score: 2, Via: "weather", Degree: 3, Count: 2},
+		{Source: "graph", Score: 4, Via: "archive", Degree: 8, Count: 1, Named: true},
 	})
 	want := `{"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5,` +
 		`"contributions":[` +
 		`{"source":"text","score":1,"rank":0,"count":1},` +
 		`{"source":"vector","score":0.5,"rank":1,"count":1},` +
-		`{"source":"graph","score":2,"rank":0,"via":"weather","degree":3,"count":2}]}`
+		`{"source":"graph","score":2,"rank":0,"via":"weather","degree":3,"count":2},` +
+		`{"source":"graph","score":4,"rank":0,"via":"archive","degree":8,"count":1,"named":true}]}`
 	if got != want {
 		t.Errorf("Marshal(Hit) = %s, want %s", got, want)
 	}

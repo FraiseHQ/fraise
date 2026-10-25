@@ -75,17 +75,17 @@ class GraphStats:
 class Contribution:
     """One retrieval source's sighting of a hit, as ``explain`` reports it.
 
-    ``source`` names the stage that saw the fact (``text``, ``vector``,
-    ``graph``, ``anchor`` or ``named``) and ``score`` is that stage's raw
-    observation, not a share of the hit's score: the hit's score is the final
-    value, after the fold and recency decay, so its contributions are its
-    ingredients and do not sum to it. A ``vector`` score is the similarity as
-    measured, and a ``named`` one the seed mass filed under an anchor the
-    recall named. ``rank`` is the hit's place in that source's own list, 0
-    first, and ``count`` how many seeds funded the sighting. A ``graph``,
-    ``anchor`` or ``named`` sighting also names the anchor it came through
-    (``via``) and that anchor's ``degree``; a ``text`` or ``vector`` one has
-    neither.
+    ``source`` names the stage that saw the fact: ``text``, ``vector``,
+    ``graph`` or ``anchor``. ``score`` is that stage's raw mass, not a share of
+    the hit's score. The hit's score is the final value, after transmission and
+    recency decay. So its contributions are its ingredients and do not sum to
+    it. A ``vector`` score is the similarity as measured. ``rank`` is the
+    hit's place in that source's own list, 0 first.
+    ``count`` is how many seeds funded the sighting. A ``graph`` or ``anchor``
+    sighting also names the anchor it came through (``via``) and that anchor's
+    ``degree``. A ``text`` or ``vector`` sighting has neither. ``named`` marks
+    a ``graph`` sighting through an anchor the recall named, which owes no
+    fair share to the background.
     """
 
     source: str
@@ -94,6 +94,7 @@ class Contribution:
     count: int
     via: str | None = None
     degree: int | None = None
+    named: bool = False
 
     @classmethod
     def from_json(cls, data: dict) -> Contribution:  # noqa: D102
@@ -104,6 +105,7 @@ class Contribution:
             count=int(data["count"]),
             via=data.get("via"),
             degree=data.get("degree"),
+            named=bool(data.get("named", False)),
         )
 
 

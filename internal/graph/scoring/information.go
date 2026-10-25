@@ -43,8 +43,7 @@ import "math"
 //	Σ_c w_c · log₂(1 + n · c_f / Σc),  w ∝ (I_text, (I_q / I_hit) · I_vector, I_graph)
 //
 // The channels: text is the text mass; graph is the ExcessScorer's graph term,
-// the hinged per-edge surpluses of the anchors that reach f, without
-// attenuation; vector is the similarity above the floor of the vector's own
+// the hinged per-edge surpluses of the anchors that reach f; vector is the similarity above the floor of the vector's own
 // reading, the similarity of the last hit it returned. The floor is what lets
 // the vector channel discriminate: an embedding places most texts at nearly
 // the same distance from any question, so raw similarities differ by a few
@@ -52,8 +51,8 @@ import "math"
 // Measured above the floor, the hits the vector ranks first stand apart from
 // the rest, as the text's and the graph's do.
 //
-// Every per-query constant cancels in r, so the channels' units, the
-// attenuation α and the vector weight inside a channel all drop out: the
+// Every per-query constant cancels in r, so the channels' units and the
+// vector weight inside a channel drop out: the
 // channels are commensurable without being calibrated against each other, and
 // the fold has no constant of its own to tune. The graph is still seeded with
 // the excess methodology's seed mass, which the scorer folds before the pool

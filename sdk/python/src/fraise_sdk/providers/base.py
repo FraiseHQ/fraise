@@ -49,10 +49,10 @@ EmbedderLike = Callable[[str], Sequence[float]]
 class Anchor:
     """One anchor a message is filed under: a topic or an entity.
 
-    ``type`` says which clause it becomes on ``remember`` — ``topic:`` or
-    ``entity:`` — and ``value`` is what follows the ``:``. A recall names
-    anchors to raise the facts filed under them, and the graph transmits
-    through them; the message text itself is never rewritten to carry them.
+    ``type`` says which clause it becomes on ``remember``: ``topic:`` or
+    ``entity:``. ``value`` is what follows the ``:``. Anchors drive the
+    server's seeding and transmission. The message text itself is never
+    rewritten to carry them.
     """
 
     value: str

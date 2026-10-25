@@ -38,7 +38,6 @@ func TestSourceStringNamesEveryStage(t *testing.T) {
 		"vector":  scoring.SrcVector,
 		"graph":   scoring.SrcGraph,
 		"anchor":  scoring.SrcAnchor,
-		"named":   scoring.SrcNamed,
 		"unknown": scoring.Source(255),
 	}
 	for want, src := range cases {

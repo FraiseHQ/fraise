@@ -155,9 +155,26 @@ type DBConfig struct {
 	// recall that asks for more results is never starved of candidates.
 	SeedSize int `toml:"seed-size"`
 
-	// Aggregate is how a recall spends its top slots across the facets its
-	// ranking spans (see [Aggregate]).
-	Aggregate Aggregate `toml:"aggregate"`
+	// MinScoreRatio is the score cutoff. A hit whose relevance is below this
+	// fraction of the best relevance in the ranked list is dropped, so a
+	// recall stops where the evidence does instead of filling to top.
+	// Relevance is the scorer's output before recency decay. Measured after
+	// decay, the bar would cut a fact with the same evidence as the best hit
+	// for being older. Only the length changes: order and scores are kept, and
+	// the best hit always clears its own bar, so a result that matched is
+	// never emptied. 0, the default, is off, leaving the trade of recall for
+	// precision to the operator. validate rejects anything outside [0, 1].
+	MinScoreRatio float64 `toml:"min-score-ratio"`
+
+	// WindowGamma is the window: the share of its temporal neighbours' term
+	// counts and length a fact borrows when the text index scores it. Two
+	// facts written one after the other under the same anchor are usually one
+	// exchange, a question and its answer, and scored alone each is a
+	// fragment of it. A fact that holds none of a term but sits beside one
+	// that does is a match too. A negative value turns the window off, as a
+	// negative half-life turns decay off. 0 means the default. validate
+	// rejects anything above 1.
+	WindowGamma float64 `toml:"window-gamma"`
 
 	// HashingFunction is the hash that derives node keys from values.
 	HashingFunction HashingFunction `toml:"hashing-function"`
@@ -208,25 +225,6 @@ type RelevanceModel struct {
 	// Name is the model, bm25 or matchcount. The model turns a document's
 	// match against the query into a number.
 	Name string `toml:"name"`
-}
-
-// Aggregate is the db.aggregate table. It sets how a recall spends its top
-// slots across the facets its ranking spans. A facet is the finest anchor a
-// candidate is filed under beyond those the query named. On a graph filed by
-// session, it is the session. A broad question ("how many", "what types",
-// "what did we decide") has its evidence spread over many facets. Ten slots
-// down a ranking that leans on one facet hold that facet ten times over. So
-// the slots are filled one facet at a time, each facet's best first.
-type Aggregate struct {
-	// Pool is how many ranked candidates, from the top, the slots are drawn
-	// from. The facets the slots spread over come from the pool, so it sets
-	// the breadth of the answer as much as the cost.
-	Pool int `toml:"pool"`
-
-	// Cap is how many fact hits one facet takes before the next facet gets
-	// its first. The facts it defers follow in rank order once every facet is
-	// served. 1 is the recall setting: as many facets as slots.
-	Cap int `toml:"cap"`
 }
 
 // VectorSearch is the db.vector-search table. It shapes the vector index's
@@ -303,8 +301,8 @@ func New() *ConfigSet {
 	flagSet.IntVar(&config.DB.MaxVectorDimension, "max-vector-dimension", DefaultMaxVectorDimension, "Ceiling on a bound vector's length")
 	flagSet.StringVar(&config.DB.Precision, "precision", DefaultPrecision, "Embedding/score precision: float32 or float64")
 	flagSet.IntVar(&config.DB.SeedSize, "seed-size", DefaultSeedSize, "Minimum candidate budget per source (search widens it to top)")
-	flagSet.IntVar(&config.DB.Aggregate.Pool, "aggregate-pool", DefaultAggregatePool, "Ranked candidates the slots are spread from")
-	flagSet.IntVar(&config.DB.Aggregate.Cap, "aggregate-cap", DefaultAggregateCap, "Fact hits one facet takes before the next facet gets its first")
+	flagSet.Float64Var(&config.DB.MinScoreRatio, "min-score-ratio", DefaultMinScoreRatio, "Drop hits whose relevance is below this fraction of the best hit's (0 = off)")
+	flagSet.Float64Var(&config.DB.WindowGamma, "window-gamma", DefaultWindowGamma, "Share of its temporal neighbours' matches a fact borrows when scored (negative = off)")
 	flagSet.StringVar(&config.DB.HashingFunction.Name, "hashing-function", DefaultHashingFunction, "Node-key hashing function (xxhash, t1ha)")
 	flagSet.Uint64Var(&config.DB.HashingFunction.Seed, "hashing-function-seed", DefaultHashingFunctionSeed, "Seed of the node-key hashing function")
 	flagSet.StringVar(&config.DB.SearchAlgorithm.Name, "search-algorithm", DefaultSearchAlgorithm, "Graph search traversal algorithm")
@@ -437,8 +435,9 @@ func (c *ConfigSet) adjust(meta *toml.MetaData) error {
 	Adjust(&c.DB.MaxVectorDimension, DefaultMaxVectorDimension)
 	Adjust(&c.DB.Precision, DefaultPrecision)
 	Adjust(&c.DB.SeedSize, DefaultSeedSize)
-	Adjust(&c.DB.Aggregate.Pool, DefaultAggregatePool)
-	Adjust(&c.DB.Aggregate.Cap, DefaultAggregateCap)
+	// DB.MinScoreRatio needs no Adjust. Its default, 0, is the zero value and
+	// means off, so an absent key and an explicit 0 already agree.
+	Adjust(&c.DB.WindowGamma, DefaultWindowGamma)
 	Adjust(&c.DB.HashingFunction.Name, DefaultHashingFunction)
 	// DB.HashingFunction.Seed needs no Adjust. Its default, 0, is the zero
 	// value, so an absent key and an explicit 0 already agree.

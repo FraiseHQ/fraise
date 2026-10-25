@@ -162,13 +162,19 @@ func (c *ConfigSet) validate() error {
 		}
 	}
 
-	// The pool and the cap must each be at least 1. Below that, no slot could
-	// be drawn, or no fact taken for a facet.
-	if p := c.DB.Aggregate.Pool; p < 1 {
-		return fmt.Errorf("%w: db.aggregate.pool = %d (accepted: 1 or more)", ErrInvalidValue, p)
+	// db.min-score-ratio is a fraction of the best hit's relevance. A value
+	// past 1, from an operator thinking in percent, would put the bar above
+	// every hit and silently empty every recall. Written as the accepted
+	// range rather than its complement, so a NaN, which fails every
+	// comparison, is rejected too.
+	if r := c.DB.MinScoreRatio; !(r >= 0 && r <= 1) {
+		return fmt.Errorf("%w: db.min-score-ratio = %v (accepted: 0 to 1)", ErrInvalidValue, r)
 	}
-	if n := c.DB.Aggregate.Cap; n < 1 {
-		return fmt.Errorf("%w: db.aggregate.cap = %d (accepted: 1 or more)", ErrInvalidValue, n)
+
+	// A window share past 1 would let a neighbour outweigh the fact itself. A
+	// negative share is the window off.
+	if w := c.DB.WindowGamma; !(w <= 1) {
+		return fmt.Errorf("%w: db.window-gamma = %v (accepted: 1 or less, negative is off)", ErrInvalidValue, w)
 	}
 
 	if w := c.Scheduler.Workers; w < 1 {

@@ -33,7 +33,9 @@ The baseline is the newest nightly run on main. CI downloads its outputs into
 ``--bench-baseline``. Every run leaves its own outputs in ``--bench-out`` under
 the same names, which is how a nightly run becomes the next baseline. Without
 a baseline for a gate there is nothing to compare against yet. The benchmarks
-still run and are reported, and the gate passes. benchstat does not compare
+still run and are reported, and the gate passes. A unit the baseline does not
+measure yet, a metric the pull request adds, is reported with this run's value
+alone and gates nothing until a nightly run of main measures it. benchstat does not compare
 with a baseline measured on another machine. Then the gate could not measure,
 and the report names both machines and shows this run's numbers.
 
@@ -187,20 +189,30 @@ def _compared(rows):
 
 
 def _table(base, head):
-    """benchstat's comparison of base with head as a markdown table, or head's own numbers when nothing compares."""
+    """benchstat's comparison of base with head as a markdown table, or head's own numbers when nothing compares.
+
+    A unit this run measures and the baseline does not, a metric a pull request
+    adds, has nothing to compare with. It still gets a row, with this run's value
+    and no baseline, so the report shows every unit the benchmark measured.
+    """
     rows = (
         _rows(_run([*_BENCHSTAT, "-format", "csv", f"base={base}", f"head={head}"]))
         if base
         else []
     )
+    measured = _single(_run([*_BENCHSTAT, "-format", "csv", str(head)]))
     if not rows:
         lines = ["| benchmark | unit | this run |", "|---|---|---:|"]
-        csv_text = _run([*_BENCHSTAT, "-format", "csv", str(head)])
         return lines + [
             f"| {name} | {unit} | {_quantity(value, unit)} |"
-            for name, unit, value in _single(csv_text)
+            for name, unit, value in measured
         ]
-    return _compared(rows)
+    compared = {(row.benchmark, row.unit) for row in rows}
+    return _compared(rows) + [
+        f"| {name} | {unit} | — | {_quantity(value, unit)} | new | |"
+        for name, unit, value in measured
+        if (name, unit) not in compared
+    ]
 
 
 def _measured(path):

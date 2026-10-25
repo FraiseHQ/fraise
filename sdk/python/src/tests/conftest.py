@@ -659,20 +659,21 @@ _VECTOR_DIM = 8
 # A keyword no fact in any graph contains.
 _NO_MATCH = "zzznomatchzzz"
 
-# A topic no fact in any graph is filed under. Naming it opens the anchor round
-# without raising a single fact, so a test watches what the round alone does.
-_UNFILED_TOPIC = "unfiledprobe"
-
-# A server nothing is listening on: port 1 is reserved (tcpmux) and never bound
-# in the test environment, so connecting to it fails immediately rather than
-# hanging until a timeout.
+# A server nothing listens on. Port 1 is reserved (tcpmux) and never bound in
+# the test environment, so a connection fails at once instead of hanging until
+# a timeout.
 _DEAD_URL = "http://127.0.0.1:1"
 
 # Four facts on one topic hub, each with a unique keyword, so result counts are
-# exact. Each keyword matches one fact. The hub a single seed reaches holds
-# only its fair share, so it transmits nothing in either graph lane. This
-# mirrors the e2e suite's star, written through the SDK instead of raw HTTP.
+# exact. Each keyword matches one fact. The hub a single seed discovers holds
+# only its fair share, so it transmits nothing in either graph lane. Named, it
+# owes no fair share and lifts every fact on it. This mirrors the e2e suite's
+# star, written through the SDK instead of raw HTTP.
 _INSTRUMENT_TOPIC = "instruments"
+
+# A topic nothing is filed under. Naming it opens the graph lane while every
+# anchor the seeds reach is discovered, so hub silence can be pinned.
+_DOOR_TOPIC = "doorprobe"
 _INSTRUMENT_FACTS = {
     "cello": "the cello is bowed and tuned in fifths",
     "flute": "the flute is blown across a lip plate",
@@ -772,17 +773,6 @@ def no_match():
 
 
 @pytest.fixture(scope="session")
-def unfiled_topic():
-    """A topic no fact in any graph is filed under.
-
-    Returns:
-        The topic to name when a recall must open the anchor round and raise
-        nothing by naming it.
-    """
-    return _UNFILED_TOPIC
-
-
-@pytest.fixture(scope="session")
 def vector_dim():
     """The width every vector in this suite is written with.
 
@@ -810,6 +800,16 @@ def instrument_topic():
         The topic name.
     """
     return _INSTRUMENT_TOPIC
+
+
+@pytest.fixture(scope="session")
+def door_topic():
+    """A topic nothing is filed under: naming it opens the graph lane alone.
+
+    Returns:
+        The topic name.
+    """
+    return _DOOR_TOPIC
 
 
 @pytest.fixture(scope="session")

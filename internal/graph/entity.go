@@ -67,9 +67,9 @@ func (f Fact[K]) Hash(h hash.Hasher[K, string]) K {
 }
 
 // NamedEntity is an anchor vertex for a person, place or thing that facts
-// mention, linked to each such fact by a [Mentions] edge. Naming it in a
-// recall raises those facts and opens the anchor round. Hasher is the
-// graph's hasher, carried so Key can derive the entity's key on its own.
+// mention. A [Mentions] edge links it to each such fact. Naming it in a recall
+// lifts and expands the search through those facts. Hasher is the graph's
+// hasher, carried so Key can derive the entity's key on its own.
 type NamedEntity[K comparable] struct {
 	NodeAttributes
 
@@ -104,10 +104,10 @@ func (n NamedEntity[K]) Hash(h hash.Hasher[K, string]) K {
 	return h.Hash("entity:" + n.Value)
 }
 
-// Topic is an anchor vertex for a subject facts are filed under, linked to
-// each such fact by an [IsAbout] edge. Naming it in a recall raises those
-// facts and opens the anchor round. Hasher is the graph's hasher,
-// carried so Key can derive the topic's key on its own.
+// Topic is an anchor vertex for a subject facts are filed under. An [IsAbout]
+// edge links it to each such fact. Naming it in a recall lifts and expands
+// the search through those facts. Hasher is the graph's hasher, carried so
+// Key can derive the topic's key on its own.
 type Topic[K comparable] struct {
 	ID K
 	NodeAttributes

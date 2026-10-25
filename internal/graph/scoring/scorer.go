@@ -48,13 +48,6 @@ const (
 	// under several named anchors carries more seed mass than a fact under one.
 	// It answers more of the question.
 	SrcAnchor
-
-	// SrcNamed is a named anchor's observation on a Search that also has
-	// something to match: Score is the anchor's observed mass M_N, the seed
-	// mass of the seeds filed under it, as SrcGraph's is for an anchor the
-	// traversal reaches. It is graph evidence the query asked for, so the
-	// scorer does not hold it to the anchor's fair share.
-	SrcNamed
 )
 
 // Observation is what a search learned about its query as a whole, as
@@ -116,8 +109,6 @@ func (s Source) String() string {
 		return "graph"
 	case SrcAnchor:
 		return "anchor"
-	case SrcNamed:
-		return "named"
 	default:
 		return "unknown"
 	}
@@ -125,18 +116,20 @@ func (s Source) String() string {
 
 // Contribution records one observation of a candidate by one retrieval source.
 // Collection sites record what they saw: who, through which anchor, and how
-// much mass sat on it. They apply no policy of their own. The hinge, the null
-// model and the attenuation belong to the Scorer.
+// much mass sat on it. They apply no policy of their own. The hinge and the
+// null model belong to the Scorer.
 //
-// Score is oriented so that bigger is always better: the vector site converts
-// the distance its index reports (smaller is nearer) to 1/(1+distance); a
-// graph or named observation carries the anchor's full observed mass; an
-// anchor sighting carries unit mass. Rank is the candidate's position in the
-// producing source's own result list (0 is best); a graph or named
-// observation or an anchor sighting has no list and leaves it zero. Via,
-// Degree and Count are for graph, named and anchor observations: the funding
-// or filing anchor, its degree at collection time, and how many seeds funded
-// it; a seed contribution's Count is 1.
+// Score is oriented so that bigger is always better. So the vector site turns
+// the distance its index reports, where smaller is nearer, into a similarity.
+// Each Src constant says what Score holds for its source. Rank is the
+// candidate's position in its source's own result list, and 0 is best. A graph
+// observation or an anchor sighting has no list and leaves Rank zero. Via,
+// Degree and Count describe the anchor of a graph or anchor observation. Via is
+// the funding or filing anchor, Degree its degree at collection time, and Count
+// how many seeds funded it. A seed contribution's Count is 1. Named marks a
+// graph observation whose anchor the query named. Naming an anchor asserts it
+// bears on the question, so the scorer does not test it against the fair
+// share a chance anchor must clear.
 type Contribution[K comparable, P float32 | float64] struct {
 	Src    Source
 	Score  P
@@ -144,6 +137,7 @@ type Contribution[K comparable, P float32 | float64] struct {
 	Via    K
 	Degree uint32
 	Count  uint16
+	Named  bool
 }
 
 // Candidates pools every contribution made during one search, keyed by

@@ -75,6 +75,9 @@ func TestMatchCountIncrementIgnoresTermFrequency(t *testing.T) {
 	if prepared != 0 {
 		t.Fatalf("Prepare = %v, want 0", prepared)
 	}
+	if got := model.Length(7); got != 0 {
+		t.Errorf("Length = %v, want 0 (a match count does not normalise by length)", got)
+	}
 	if got := model.Increment(1, 7, 1, prepared); got != 1 {
 		t.Errorf("Increment at tf 1 = %v, want 1", got)
 	}
@@ -83,6 +86,31 @@ func TestMatchCountIncrementIgnoresTermFrequency(t *testing.T) {
 	}
 	if got := model.Increment(2.5, 7, 3, prepared); got != 2.5 {
 		t.Errorf("Increment with weight 2.5 = %v, want the weight through whole", got)
+	}
+}
+
+// TestMatchCountGainEarnsTheBorrowedShare pins the window's gain. A count of at
+// least 1 holds the term itself and earns the whole weight, however much it
+// also borrows. A count below 1 is borrowed from neighbours only and earns that
+// share. Were it the whole weight, a neighbour of a match would tie with it.
+func TestMatchCountGainEarnsTheBorrowedShare(t *testing.T) {
+	model := relevance.MatchCount[int, float32]{}
+	cases := map[string]struct {
+		tf   float32
+		want float32
+	}{
+		"an own occurrence":                     {1, 2},
+		"repeated own occurrences":              {3, 2},
+		"an own occurrence and a borrowed one":  {1.3, 2},
+		"one occurrence borrowed at gamma 0.25": {0.25, 0.5},
+		"nothing held or borrowed":              {0, 0},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := model.Gain(2, tc.tf, 12, model.Prepare()); got != tc.want {
+				t.Errorf("Gain(weight 2, tf %v) = %v, want %v", tc.tf, got, tc.want)
+			}
+		})
 	}
 }
 

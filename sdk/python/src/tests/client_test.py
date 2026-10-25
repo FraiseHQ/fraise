@@ -970,21 +970,20 @@ def test_a_failed_extraction_still_stores_the_fact(fraise_url, round_trip_graph)
 
 
 @pytest.mark.integration
-def test_a_lone_seed_hub_stays_silent(instrument_graph, unfiled_topic, client):
-    """A single seed's topic hub holds exactly its fair share, so it transmits
-    nothing and its siblings never surface, in either graph lane.
+def test_a_lone_seed_hub_stays_silent(instrument_graph, door_topic, client):
+    """A single seed's topic hub stays silent in either graph lane.
 
-    This is hub silence through the SDK: an anchor is heard only when its
-    members matched better than its size predicts. The anchor round runs only
-    once the recall names an anchor, and a named anchor raises its facts
-    rather than being judged by the round, so the recall names a topic nothing
-    is filed under and leaves the instrument hub to the round. depth=1 admits
-    an anchor only well above its fair share and depth=2 any anchor above it,
-    and the hub clears neither bar.
+    The hub holds exactly its fair share, so it transmits nothing and its
+    siblings never surface. This is hub silence through the SDK. An anchor the
+    seeds discover is heard only when its members matched better than its size
+    predicts. The recall names the door, because the anchor round runs only
+    beside an anchor the recall names, and a named hub owes no fair share.
+    depth=1 admits an anchor only well above its fair share, and depth=2 any
+    anchor above it. The hub clears neither bar.
     """
     for depth in (1, 2):
         hits = client.recall(
-            "cello", graph=instrument_graph, topics=[unfiled_topic], depth=depth
+            "cello", graph=instrument_graph, topics=[door_topic], depth=depth
         )
         assert hits.count == 1, f"depth={depth}: a fair-share hub must not transmit"
 
@@ -1005,22 +1004,20 @@ def test_top_caps_the_number_of_results(instrument_graph, instrument_facts, clie
 
 
 @pytest.mark.integration
-def test_a_topic_beside_a_keyword_raises_its_facts_and_removes_none(
+def test_a_topic_beside_a_keyword_lifts_the_facts_under_it(
     instrument_graph, instrument_topic, instrument_facts, client
 ):
-    """A topic named beside a keyword adds relevance and takes none away.
+    """A named topic beside a keyword filters nothing and lifts its facts.
 
-    The keyword's match ranks first, and every other fact filed under the
-    topic follows, raised by the share of the match's mass the topic carries.
-    Nothing else in the graph is filed under the topic, so nothing else comes
-    back.
+    The cello fact comes first on its own match. The named topic owes no fair
+    share, so it passes that match's mass to every other instrument filed under
+    it, and they follow.
     """
-    result = client.recall(
+    lifted = client.recall(
         "cello", graph=instrument_graph, topics=[instrument_topic], depth=2
     )
-    values = [hit.value for hit in result]
-    assert values[0] == instrument_facts["cello"], values
-    assert sorted(values) == sorted(instrument_facts.values()), values
+    assert lifted.hits[0].value == instrument_facts["cello"]
+    assert lifted.count == len(instrument_facts)
 
 
 @pytest.mark.integration

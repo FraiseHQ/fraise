@@ -52,6 +52,12 @@ type BTreeIndex[K comparable, P float32 | float64] struct {
 	tokenizer nlp.Tokenizer
 	relevance relevance.Relevance[K, P]
 	compare   comparator.Comparator[K] // document key ordering
+
+	// gamma and neighbours are the window a search scores with (see
+	// SetWindow): a document borrows gamma of each neighbour's term counts
+	// and length. gamma 0 or a nil neighbours is the plain search.
+	gamma      P
+	neighbours func(K) []K
 }
 
 // posting is one document's sighting of a term: its key and how often the
@@ -117,6 +123,19 @@ func (idx *BTreeIndex[K, P]) Relevance() relevance.Relevance[K, P] {
 	return idx.relevance
 }
 
+// SetWindow installs the window a search scores with. A document then
+// borrows gamma of each of its neighbours' term counts and length. So a
+// question answered across two adjacent facts, or a reply whose question is
+// the fact before it, is scored as the exchange it is rather than as two
+// fragments. neighbours reports the documents adjacent to a key. The index
+// does not know what adjacency means, only the graph does (the facts written
+// just before and after under the same anchor), so the graph installs it.
+// gamma is a share in [0, 1]: 0, or a nil neighbours, is the plain search.
+func (idx *BTreeIndex[K, P]) SetWindow(gamma P, neighbours func(K) []K) {
+	idx.gamma = gamma
+	idx.neighbours = neighbours
+}
+
 // Insert tokenizes value, adds key to the posting list of each of its terms
 // and stores the raw document for Retrieve. If key is already indexed, its
 // previous document is replaced.
@@ -163,6 +182,15 @@ func (idx *BTreeIndex[K, P]) Delete(key K) error {
 // A posting whose key keep rejects is skipped in the same pass. Term weights
 // still come from the whole index: a filter narrows which documents compete,
 // not what a term is worth.
+//
+// With a window installed (SetWindow), a document's term frequency and length
+// for each term are its own plus gamma times its neighbours'. A document that
+// holds none of a term but sits beside one that does is a match too, so the
+// candidates are the matching documents and their neighbours. Coverage
+// counts a borrowed term as matched: the exchange covers the query, not the
+// fragment. A document keep rejects neither lends nor borrows: its postings
+// are skipped and it is no one's neighbour, so a filtered window search
+// scores what a filtered plain search sees.
 func (idx *BTreeIndex[K, P]) Search(query string, k int, keep func(K) bool) ([]K, []P, error) {
 	if len(idx.documents) == 0 {
 		return nil, nil, ErrEmptyIndex
@@ -181,8 +209,16 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int, keep func(K) bool) ([]K
 		}
 	}
 
-	scores := make(map[K]P, maxPosting)
-	matched := make(map[K]P, maxPosting)
+	// A window search keeps its documents in its own slots, so only the
+	// plain search needs the maps.
+	var scores, matched map[K]P
+	var w *window[K, P]
+	if idx.gamma > 0 && idx.neighbours != nil {
+		w = &window[K, P]{index: idx, keep: keep, at: make(map[K]int, maxPosting), docs: make([]windowDoc[K, P], 0, maxPosting), lent: make([]int, 0, 2*maxPosting), touched: make([]int, 0, maxPosting)}
+	} else {
+		scores = make(map[K]P, maxPosting)
+		matched = make(map[K]P, maxPosting)
+	}
 	prepared := idx.relevance.Prepare()
 
 	var totalW P
@@ -194,6 +230,10 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int, keep func(K) bool) ([]K
 		}
 		weight := idx.relevance.Weight(list.live, len(idx.documents))
 		totalW += weight
+		if w != nil {
+			w.accumulate(list, weight, prepared)
+			continue
+		}
 		for _, p := range list.entries {
 			if p.tf == 0 || (keep != nil && !keep(p.key)) {
 				continue
@@ -205,6 +245,9 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int, keep func(K) bool) ([]K
 	// Finalize each score as it is offered, so the map is read once and never
 	// rewritten.
 	top := containers.NewTopK[K, P](k, idx.compare)
+	if w != nil {
+		w.offer(top, totalW)
+	}
 	for key, score := range scores {
 		top.Offer(key, idx.relevance.Finalize(score, int(matched[key]*1024), int(totalW*1024)+1))
 	}
@@ -216,6 +259,136 @@ func (idx *BTreeIndex[K, P]) Search(query string, k int, keep func(K) bool) ([]K
 	}
 	logger.Debug("Text search matched documents", "matches", len(keys), "k", k)
 	return keys, out, nil
+}
+
+// window is one search's view of the installed window. Every document it
+// meets, a posting's or a neighbour it lends to, gets one slot holding all
+// the query needs of it: its neighbours' slots and window length, resolved
+// once since both are fixed for the query, the frequency the current term
+// lends it, and its running score and matched mass. A term then costs one
+// map lookup per posting and per neighbour it lends to, and the documents
+// are finalized and ranked straight from their slots when the query is done.
+type window[K comparable, P float32 | float64] struct {
+	index *BTreeIndex[K, P]
+	at    map[K]int
+	docs  []windowDoc[K, P]
+
+	// keep is the search's filter. A document it rejects neither lends nor
+	// borrows: its postings are skipped and it is no one's neighbour.
+	keep func(K) bool
+
+	// lent holds every slot's neighbour slots end to end, each slot's run at
+	// lend in windowDoc, so resolving a document allocates nothing of its own.
+	lent []int
+
+	// term numbers the posting lists accumulate has read, and touched the
+	// slots the current one reached.
+	term    int
+	touched []int
+}
+
+// windowDoc is one document's slot in a window search. tf is the current
+// term's frequency, valid while seen is the current term; its neighbours'
+// slots (lent[from:to]) and its length are resolved on first need
+// (resolved, measured).
+type windowDoc[K comparable, P float32 | float64] struct {
+	key      K
+	from, to int
+	length   P
+	tf       P
+	score    P
+	matched  P
+	seen     int
+	resolved bool
+	measured bool
+}
+
+// slot returns key's slot, opening one the first time the search meets it.
+func (w *window[K, P]) slot(key K) int {
+	if i, ok := w.at[key]; ok {
+		return i
+	}
+	i := len(w.docs)
+	w.docs = append(w.docs, windowDoc[K, P]{key: key})
+	w.at[key] = i
+	return i
+}
+
+// adjacent returns the slots of slot i's neighbours, asking the graph the
+// first time. A neighbour keep rejects is left out.
+func (w *window[K, P]) adjacent(i int) []int {
+	if !w.docs[i].resolved {
+		from := len(w.lent)
+		for _, n := range w.index.neighbours(w.docs[i].key) {
+			if w.keep != nil && !w.keep(n) {
+				continue
+			}
+			w.lent = append(w.lent, w.slot(n))
+		}
+		w.docs[i].from, w.docs[i].to, w.docs[i].resolved = from, len(w.lent), true
+	}
+	return w.lent[w.docs[i].from:w.docs[i].to]
+}
+
+// length returns slot i's window length: its own plus gamma of each
+// neighbour's.
+func (w *window[K, P]) length(i int) P {
+	if !w.docs[i].measured {
+		l := w.index.relevance.Length(w.docs[i].key)
+		for _, n := range w.adjacent(i) {
+			l += w.index.gamma * w.index.relevance.Length(w.docs[n].key)
+		}
+		w.docs[i].length, w.docs[i].measured = l, true
+	}
+	return w.docs[i].length
+}
+
+// lendTo adds tf to slot i's frequency for the current term.
+func (w *window[K, P]) lendTo(i int, tf P) {
+	d := &w.docs[i]
+	if d.seen != w.term {
+		d.seen, d.tf = w.term, 0
+		w.touched = append(w.touched, i)
+	}
+	d.tf += tf
+}
+
+// accumulate scores one term's posting list under the window. The term's
+// frequency per document is its own count plus gamma of each neighbour's: a
+// posting lends to its neighbours, so a document is accumulated from up to
+// three postings before it is scored, which is why the saturation runs after
+// the list rather than per posting.
+func (w *window[K, P]) accumulate(list *postingList[K], weight P, prepared P) {
+	idx := w.index
+	w.term++
+	w.touched = w.touched[:0]
+	for _, p := range list.entries {
+		if p.tf == 0 || (w.keep != nil && !w.keep(p.key)) {
+			continue
+		}
+		i := w.slot(p.key)
+		w.lendTo(i, P(p.tf))
+		for _, n := range w.adjacent(i) {
+			w.lendTo(n, idx.gamma*P(p.tf))
+		}
+	}
+	for _, i := range w.touched {
+		// length may open slots, growing docs, so it runs before d is taken.
+		length := w.length(i)
+		d := &w.docs[i]
+		d.score += idx.relevance.Gain(weight, d.tf, length, prepared)
+		d.matched += weight
+	}
+}
+
+// offer finalizes every document a term reached into top, as the plain
+// search does from its maps; totalW is the query's whole idf mass.
+func (w *window[K, P]) offer(top *containers.TopK[K, P], totalW P) {
+	for i := range w.docs {
+		if d := &w.docs[i]; d.seen > 0 {
+			top.Offer(d.key, w.index.relevance.Finalize(d.score, int(d.matched*1024), int(totalW*1024)+1))
+		}
+	}
 }
 
 // Information reports, in bits, how much information query carries and how

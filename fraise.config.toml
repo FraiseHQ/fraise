@@ -40,10 +40,8 @@
 # max-depth = 2
 # max-vector-dimension = 4096
 # seed-size = 10
-
-[db.aggregate]
-# pool = 60                   # ranked candidates a recall's slots are spread from
-# cap = 1                     # fact hits one facet takes before the next facet gets its first
+# min-score-ratio = 0         # drop hits whose relevance is under this fraction of the best hit's, in [0, 1]; 0 = off
+# window-gamma = 0.3          # share of its temporal neighbours' matches a fact borrows when scored, at most 1; negative disables; 0 means the default
 
 [db.hashing-function]
 # name = "xxhash"             # xxhash t1ha

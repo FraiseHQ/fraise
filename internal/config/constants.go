@@ -126,8 +126,10 @@ const (
 
 	// DefaultDepth is the depth a recall uses when no depth clause is given.
 	// It is 0, the floor lane, which ranks by seed mass alone and skips the
-	// anchor traversal. A recall that names a topic or entity opts into the
-	// traversal with a higher depth:
+	// anchor traversal. A recall that names a topic or entity beside a term or
+	// vector runs at depth 1 at least, since its anchors take part only
+	// through the traversal. Its depth chooses the bar for the anchors the
+	// seeds discover:
 	//   - depth:1 is the precision lane. Only strongly above-chance anchors
 	//     transmit.
 	//   - depth:2 is max recall. Any anchor above its fair share transmits.
@@ -161,19 +163,14 @@ const (
 	// max(seed-size, top), so a large recall is never starved of candidates.
 	DefaultSeedSize int = 10
 
-	// DefaultAggregatePool is how many ranked candidates a recall's slots are
-	// spread from.
-	DefaultAggregatePool int = 60
+	// DefaultMinScoreRatio leaves the score cutoff (DBConfig.MinScoreRatio)
+	// off.
+	DefaultMinScoreRatio float64 = 0
 
-	// DefaultAggregateCap is how many fact hits one facet takes before the
-	// next facet gets its first. It is 1, the recall setting, so the slots
-	// cover as many facets as the pool offers. Measured on the ten LoCoMo
-	// conversations, one graph each, against the ranking taken as it is:
-	//   - session recall@10: 0.932 against 0.908
-	//   - multi-hop: 0.757 against 0.679
-	//   - open-domain: 0.712 against 0.664
-	//   - precision: 0.117 against 0.177
-	DefaultAggregateCap int = 1
+	// DefaultWindowGamma is the window (DBConfig.WindowGamma) a fact is
+	// scored with. A negative value turns the window off, and 0 means this
+	// default.
+	DefaultWindowGamma float64 = 0.3
 
 	// DefaultCacheCapacity is the size of the LRU cache of optimised query plans.
 	DefaultCacheCapacity int = 1000

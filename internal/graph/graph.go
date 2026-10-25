@@ -167,24 +167,26 @@ type Graph[K comparable, P float32 | float64] interface {
 	// Search runs a hybrid query over the graph. It returns at most top hits,
 	// best first, and the query's background rate (see Result). Each hit
 	// carries the contributions its score was folded from. An implementation
-	// may spread the top slots across the facets the ranking spans, instead
-	// of filling them in rank order.
+	// may return fewer than top hits when its own retrieval policy, such as a
+	// score cutoff, drops the tail.
 	//
-	// keywords, vector, topics and entities each add evidence; only since and
-	// until narrow the result:
+	// The criteria:
 	//   - keywords: full-text terms matched against the text index
-	//   - vector:   query embedding for nearest-neighbour search; nil or
-	//               empty skips the vector index
-	//   - topics:   every fact filed under one of these topics gains one
-	//               unit of mass per named anchor it is filed under; a fact
-	//               under none keeps the rank its other evidence gives it
+	//   - vector:   query embedding for nearest-neighbour search. A nil or
+	//               empty vector skips the vector index.
+	//   - topics:   anchors whose facts are seeded beside the whole graph's
+	//               and which transmit excess to their members. They filter
+	//               nothing: a match filed under none of them still ranks on
+	//               its own mass.
 	//   - entities: the same, for the entities facts mention
 	//   - depth:    the retrieval lane. 0 ranks by seed mass alone and skips
-	//               the anchor traversal. 1 and 2 run the same single
-	//               anchor-mediated round. They differ only in the admission
-	//               bar. 1 admits only strongly above-chance anchors
-	//               (precision). 2 admits any anchor above its fair share
-	//               (recall). The round runs only when a topic or entity is
+	//               the anchor traversal, so the named anchors contribute
+	//               nothing. 1 and 2 run the same single anchor-mediated
+	//               round. They differ only in the admission bar for the
+	//               anchors the seeds reach. 1 admits only strongly
+	//               above-chance anchors (precision). 2 admits any anchor
+	//               above its fair share (recall). A named anchor transmits
+	//               at either. The round runs only when a topic or entity is
 	//               named.
 	//   - top:      maximum number of results
 	//   - since:    inclusive lower time bound; zero is unbounded
@@ -194,12 +196,12 @@ type Graph[K comparable, P float32 | float64] interface {
 	// a query that names the wrong anchor loses the boost, not the answer.
 	//
 	// With no keywords and no vector, the named topics and entities seed the
-	// search themselves, for questions like "what do I know about billing?".
-	// Every fact filed under any of them is a candidate, with the same unit
-	// of mass per named anchor it is filed under, and is then scored,
+	// search themselves. This answers questions like "what do I know about
+	// billing?". Every fact filed under any of them is a candidate, with one
+	// unit of mass per named anchor it is filed under. It is then scored,
 	// decayed, time filtered and capped like any other candidate, so under a
 	// single anchor the newest facts come first. No traversal runs, so depth
-	// has no effect, and the background is zero. An anchor nothing is filed
+	// has no effect and the background is zero. An anchor nothing is filed
 	// under seeds nothing.
 	//
 	// The error reports a question that cannot be answered as asked. A vector

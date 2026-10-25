@@ -32,9 +32,12 @@ import pytest
     benchtime="1x",
     data={"FRAISE_LOCOMO": "data/locomo-conv-26.json"},
 )
-@pytest.mark.parametrize("unit", ["f1@10", "p@1", "recall@10"])
+@pytest.mark.parametrize("unit", ["turn-f1@10", "turn-p@1", "turn-recall@10"])
 def test_retrieval_does_not_drop(comparison, fail_regressed, unit):
     """No retrieval metric drops by more than 0.001, over all questions or in any category.
+
+    The metrics count a hit only when it is an evidence turn, the fact the
+    reader needs.
 
     The metrics are exact. The same server ranks the same facts the same way
     on any machine. So one run decides it, and 0.001 is not a noise margin. It

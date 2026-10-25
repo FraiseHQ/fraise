@@ -22,29 +22,23 @@
 
 package scoring
 
-// alpha is the per-edge attenuation of transmitted excess. It is an internal
-// constant, not configuration, because the BM25 floor and hub silence hold for
-// any 0 < α < 1. The seed → anchor → fact path has two edges, so the fold
-// applies α². Applying α once per path would double the graph channel's weight
-// against the text channel.
-const alpha = 0.5
-
 // ExcessScorer folds a candidate's observations under the excess-transmission
 // methodology. Relevance is the candidate's own seed mass m plus, for each
-// graph observation, its anchor's per-edge surplus over the fair share, and
-// for each named observation, the named anchor's per-edge mass, both
-// attenuated α² for the two-edge path:
+// graph observation, its anchor's per-edge surplus over the fair share:
 //
-//	m + α² · [ Σ_graph max(0, (M_A − m − d_A·ρ₀) / d_A) + Σ_named max(0, (M_N − m) / d_N) ]
+//	m + Σ max(0, (M_A − m − d_A·ρ₀) / d_A)
 //
-// where M_A is the anchor's full observed mass, d_A its degree and ρ₀ the
-// background rate. Subtracting m is self-exclusion: a fact never funds its own
-// boost. An anchor at or below its fair share contributes nothing (hub
-// silence), so a hub is heard when it is surprising and silent when it is
-// merely large. A named anchor is not held to its fair share: the query asked
-// for it, so its size is not noise to silence, and dividing its mass by its
-// degree already makes an anchor spread over most of the graph add next to
-// nothing while one whose few facts the query matched adds a lot.
+// M_A is the anchor's full observed mass, d_A its degree and ρ₀ the background
+// rate. Subtracting m is self-exclusion: a fact never funds its own boost. An
+// anchor at or below its fair share contributes nothing (hub silence). So a hub
+// is heard when it is surprising and silent when it is merely large.
+//
+// An anchor the query named has no fair share to clear: the query asserts it
+// bears on the question, so chance is not the null to test it against. Its
+// members gain max(0, (M_A − m) / d_A). A match filed under it is lifted by
+// the mass its siblings there found, and a match filed elsewhere keeps its own
+// mass. Self-exclusion still holds, so a named anchor holding one match lifts
+// nothing.
 //
 // The seed mass is the text mass, the vector similarity weighted by the
 // text's weakness, w = I_q / I_hit (see Observation.TextMissed), and the
@@ -82,16 +76,16 @@ func (s *ExcessScorer[K, P]) Observe(o Observation[K, P]) Scorer[K, P] {
 // Score folds contributions under the bound observation.
 func (s *ExcessScorer[K, P]) Score(contributions []Contribution[K, P]) P {
 	_, _, mass, graph := s.fold(contributions)
-	return mass + alpha*alpha*graph
+	return mass + graph
 }
 
 // fold reads a candidate's contributions the way the methodology does and
 // returns its parts, which ExcessScorer adds and InformationScorer weighs
 // apart: the text mass, the vector similarity as recorded, the seed mass m
 // (text, weighted vector and anchor sightings) and the graph term, the sum of
-// the hinged per-edge surpluses before attenuation. Seed mass first, then the
-// hinge over each graph and named observation in list order, so identical
-// inputs fold to byte-identical parts.
+// the hinged per-edge surpluses. Seed mass first, then the hinge over each
+// graph observation in list order, so identical inputs fold to
+// byte-identical parts.
 func (s *ExcessScorer[K, P]) fold(contributions []Contribution[K, P]) (text, vector, mass, graph P) {
 	var anchor P
 	for _, c := range contributions {
@@ -107,18 +101,18 @@ func (s *ExcessScorer[K, P]) fold(contributions []Contribution[K, P]) (text, vec
 	mass = text + (1+s.missed)*vector + anchor
 
 	for _, c := range contributions {
-		if c.Src != SrcGraph && c.Src != SrcNamed {
+		if c.Src != SrcGraph {
 			continue
 		}
 		deg := P(c.Degree)
 		if deg < 1 {
 			deg = 1
 		}
-		share := deg * s.background
-		if c.Src == SrcNamed {
-			share = 0
+		fair := deg * s.background
+		if c.Named {
+			fair = 0
 		}
-		if surplus := (c.Score - mass - share) / deg; surplus > 0 {
+		if surplus := (c.Score - mass - fair) / deg; surplus > 0 {
 			graph += surplus
 		}
 	}

@@ -18,7 +18,7 @@ Each entry is positioned like a parse error — `parse warning at column N:`, th
 
 ## Queries that warn
 
-Three shapes warn: a mis-cased clause, and two that carry something with nothing to act on.
+Four shapes warn: a mis-cased clause, and three that carry something with nothing to act on.
 
 ### 1. A clause whose keyword is not lower case
 
@@ -47,7 +47,19 @@ A word glued to a `:` has exactly one reading, so the clause runs — see [Keywo
 
 See [Retrieval lanes](/docs/retrieval/ranking/depth).
 
-### 3. A search term that is a stop word
+### 3. The floor lane beside an anchor
+
+An anchor beside a term or vector takes part only through what it transmits over the graph, and `depth:0` searches no graph. In that query the anchor would have nothing to act through, so the recall runs at `depth:1` instead, and the warning says so at the `depth` clause.
+
+| query | reading that runs | what it warns about |
+|---------------------------|------------------------------------|------------------------------------------------|
+| `recall parrot topic:birds depth:0` | `recall parrot topic:birds depth:1` | `depth:0` ran as `depth:1` |
+| `recall parrot topic:birds` | `recall parrot topic:birds depth:1` | nothing: the caller chose no depth |
+| `recall topic:birds depth:0` | — | nothing: anchors alone seed the search at any depth |
+
+See [Retrieval lanes](/docs/retrieval/ranking/depth).
+
+### 4. A search term that is a stop word
 
 Stored facts are cleaned of English stop words on their way into the index, so a bare stop word among a recall's terms can never match. The recall runs on its other seeds, and there is one warning per stop word, at its column. The parser decides what a stop word is with the same list and the same word boundaries the index uses, so the two cannot disagree.
 

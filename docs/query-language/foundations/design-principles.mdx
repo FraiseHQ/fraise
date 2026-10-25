@@ -20,7 +20,7 @@ The principle of removing ambiguity remains central to new versions of the DSL. 
 
 ## No boolean operators
 
-There are none. Several terms in one recall are a **union** (any match seeds the search), and there is no way to write a conjunction or a negation. An anchor never removes a fact: beside a term or a vector it raises the facts filed under it, on its own it seeds the search with them, and there is no way to say MUST_NOT. Only the time bounds narrow a recall.
+There are none. Several terms in one recall are a **union** (any match seeds the search), and there is no way to write a conjunction or a negation. Beside a term or a vector an anchor filters nothing: it lifts the facts filed under it through the graph, and a match filed elsewhere still counts. There is no way to say MUST or MUST_NOT.
 
 ## Representation
 

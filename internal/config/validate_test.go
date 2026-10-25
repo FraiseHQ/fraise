@@ -117,8 +117,8 @@ func TestValidateChecksEverySetting(t *testing.T) {
 		{"db.search-algorithm.name", func(c *ConfigSet, v string) { c.DB.SearchAlgorithm.Name = v }},
 		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
 		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
-		{"db.aggregate.pool", func(c *ConfigSet, _ string) { c.DB.Aggregate.Pool = 0 }},
-		{"db.aggregate.cap", func(c *ConfigSet, _ string) { c.DB.Aggregate.Cap = 0 }},
+		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
+		{"db.window-gamma", func(c *ConfigSet, _ string) { c.DB.WindowGamma = 1.5 }},
 		{"scheduler.workers", func(c *ConfigSet, _ string) { c.Scheduler.Workers = -1 }},
 		{"db.max-depth", func(c *ConfigSet, _ string) { c.DB.MaxDepth = 3 }},
 		{"db.max-top", func(c *ConfigSet, _ string) { c.DB.MaxTop = -1 }},
@@ -289,5 +289,53 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 		if got.have != got.want {
 			t.Errorf("%s = %q, want the canonical %q", got.name, got.have, got.want)
 		}
+	}
+}
+
+// TestValidateBoundsMinScoreRatio pins the domain of db.min-score-ratio: a
+// fraction of the best hit's relevance, so anything outside [0, 1] is rejected
+// at startup rather than acted on. Each value past the range would otherwise
+// fail silently: 30 (an operator thinking in percent) puts the bar above
+// every hit so every recall comes back empty, a negative ratio reads as
+// "off", and NaN fails every comparison in the cutoff and empties every
+// recall too. The endpoints are kept: 0 is off and 1 keeps only hits tied
+// with the best, both meaningful settings.
+func TestValidateBoundsMinScoreRatio(t *testing.T) {
+	accepted := map[string]float64{
+		"0 is off":                         0,
+		"a fraction":                       0.3,
+		"1 keeps only hits tied with best": 1,
+	}
+	for name, ratio := range accepted {
+		t.Run(name, func(t *testing.T) {
+			c := New()
+			c.DB.MinScoreRatio = ratio
+			if err := c.validate(); err != nil {
+				t.Errorf("validate() with min-score-ratio = %v returned error: %v, want it accepted", ratio, err)
+			}
+		})
+	}
+
+	rejected := map[string]float64{
+		"negative":          -0.1,
+		"just past 1":       1.0000001,
+		"a percent":         30,
+		"NaN":               math.NaN(),
+		"positive infinity": math.Inf(1),
+	}
+	for name, ratio := range rejected {
+		t.Run(name, func(t *testing.T) {
+			c := New()
+			c.DB.MinScoreRatio = ratio
+			err := c.validate()
+			if !errors.Is(err, ErrInvalidValue) {
+				t.Fatalf("validate() with min-score-ratio = %v = %v, want an ErrInvalidValue", ratio, err)
+			}
+			for _, want := range []string{"db.min-score-ratio", "accepted: 0 to 1"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not mention %q", err, want)
+				}
+			}
+		})
 	}
 }

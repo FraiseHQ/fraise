@@ -169,7 +169,7 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 	contributions := [][]scoring.Contribution[string, float32]{
 		{{Src: scoring.SrcText, Score: 1, Rank: 0, Count: 1}},
-		{{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2}},
+		{{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2, Named: true}},
 		{{Src: scoring.SrcAnchor, Score: 1, Via: "harbour-key", Degree: 4, Count: 1}},
 	}
 	// The wire form names each source, and resolves the graph and anchor
@@ -177,7 +177,7 @@ func TestStreamCommitExplainAttachesContributions(t *testing.T) {
 	// back to empty, as the contract says for a vanished anchor.
 	want := [][]HitContribution[float32]{
 		{{Source: "text", Score: 1, Rank: 0, Count: 1}},
-		{{Source: "vector", Score: 0.5, Rank: 1, Count: 1}, {Source: "graph", Score: 2, Degree: 3, Count: 2}},
+		{{Source: "vector", Score: 0.5, Rank: 1, Count: 1}, {Source: "graph", Score: 2, Degree: 3, Count: 2, Named: true}},
 		{{Source: "anchor", Score: 1, Degree: 4, Count: 1}},
 	}
 
@@ -476,17 +476,22 @@ func BenchmarkRecallCommit(b *testing.B) {
 	}
 }
 
-// TestCommitSeedsFromAnchorsStoredByCommit drives the production write path
-// and then the anchor-only read it makes possible. A Recall naming a topic
-// and no term reaches Search with nil keywords and an empty vector, and the
-// seeding must resolve the topic to the node Commit stored: under any other
-// key it would seed nothing. Every fact filed under the topic comes back and
-// nothing else, each scored from its unit anchor mass, and in explain mode
-// each breakdown names the topic it was found under. Naming the entity as
-// well doubles the mass of every fact filed under both, and a term beside the
-// anchor seeds from the text index, the anchor lending no sighting.
+// TestCommitSeedsFromAnchorsStoredByCommit drives the production write path,
+// then the anchor-only read it makes possible. A Recall that names a topic and
+// no term reaches Search with nil keywords and an empty vector. The seeding
+// must resolve the topic to the node Commit stored. Under any other key it
+// would seed nothing. Every fact filed under the topic comes back, and nothing
+// else. Each is scored from its unit anchor mass, and in explain mode each
+// breakdown names the topic it was found under. Naming the entity as well
+// doubles the mass of every fact filed under both. A term beside the anchor
+// seeds from the text index, and the anchor's members are not listed.
 func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
-	g := graph.NewGraph[uint64, float32](config.New())
+	// The window is off: the last case pins that a term beside an anchor
+	// does not list the anchor's members, and under the window the match's
+	// neighbours would be hits for a reason of their own.
+	cfg := config.New()
+	cfg.DB.WindowGamma = -1
+	g := graph.NewGraph[uint64, float32](cfg)
 	facts := []string{"the deploy runs at noon", "the deploy key lives in vault", "the deploy log is archived weekly"}
 	for _, value := range facts {
 		w := &Remember[uint64, float32]{Value: value, Topics: []string{"deploys"}, Entities: []string{"ops"}}
@@ -571,7 +576,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	t.Run("a term beside the anchor searches", func(t *testing.T) {
 		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
 		if got, want := hitValues(r), []string{"the deploy key lives in vault"}; !reflect.DeepEqual(got, want) {
-			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: beside a term the anchor does not list its members", got, want)
+			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: beside a term the anchor does not list", got, want)
 		}
 		for _, c := range r.Hits[0].Contributions {
 			if c.Source == "anchor" {
