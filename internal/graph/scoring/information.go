@@ -38,7 +38,12 @@ import "math"
 // match's z can fall when the graph speaks though its own mass is unchanged.
 // The score is
 //
-//	(1 + z_text⁺) · (1 + z_vector⁺)^e − 1 + z_graph⁺
+//	(1 + z_text⁺) · (1 + z_vector⁺)^e + z_graph⁺
+//
+// A fact every channel leaves at or below the pool's mean scores 1, not 0:
+// recency decay scales the score, and a zero would leave every such match
+// tied whatever its age, in key order, where the newer of two equal matches
+// must come first.
 //
 // The text and the vector multiply because they are independent readings of
 // the question, one of its words and one of its meaning: a fact both single
@@ -150,7 +155,7 @@ func (s *InformationScorer[K, P]) Score(contributions []Contribution[K, P]) P {
 		}
 		trust = 2 - held
 	}
-	return (1+zText)*P(math.Pow(float64(1+zVector), float64(trust))) - 1 + zGraph
+	return (1+zText)*P(math.Pow(float64(1+zVector), float64(trust))) + zGraph
 }
 
 // above is channel c's z-score for value v over the pool, floored at zero:

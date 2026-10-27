@@ -283,9 +283,7 @@ def recall_ranking(query):
 def ranked_hits(query):
     """Callable running a recall and checking every ranking's invariants.
 
-    Scores must not be negative, the best one must be positive, and they must
-    not increase down the list. A fold may score 0 a fact every channel places
-    at or below the pool's mean.
+    Scores must be positive and must not increase down the list.
 
     Returns:
         ``callable(text, parameters=None) -> (values, scores)``, both best first.
@@ -296,8 +294,7 @@ def ranked_hits(query):
         assert status == 200, body.get("error")
         hits = body["results"]["hits"]
         scores = [hit["score"] for hit in hits]
-        assert all(s >= 0 for s in scores), f"scores must not be negative: {scores}"
-        assert not scores or scores[0] > 0, f"the best score must be positive: {scores}"
+        assert all(s > 0 for s in scores), f"scores must be positive: {scores}"
         assert scores == sorted(scores, reverse=True), (
             f"scores must not increase down the ranking: {scores}"
         )
@@ -744,7 +741,7 @@ def _information_scores(hits, background, missed=0.0):
     anchor the recall named owing no fair share. The seed mass the surpluses
     exclude is text plus (1 + missed) times the similarity. Each channel's z
     is taken over the pool, a hit the channel did not see counting at zero,
-    and floored at zero. A hit then scores (1 + z_text)(1 + z_vector)^e − 1 +
+    and floored at zero. A hit then scores (1 + z_text)(1 + z_vector)^e +
     z_graph, e being 2 − held when z_vector clears √(2 ln n) and 1 otherwise.
     With no channel spreading the pool, a hit scores its seed mass.
     """
@@ -783,7 +780,7 @@ def _information_scores(hits, background, missed=0.0):
     for v, h in zip(values, held, strict=True):
         z_text, z_vector, z_graph = above(0, v[0]), above(1, v[1]), above(2, v[2])
         trust = 2 - h if z_vector > bar else 1
-        scores.append((1 + z_text) * (1 + z_vector) ** trust - 1 + z_graph)
+        scores.append((1 + z_text) * (1 + z_vector) ** trust + z_graph)
     return scores
 
 

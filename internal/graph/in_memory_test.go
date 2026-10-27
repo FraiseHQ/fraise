@@ -1700,6 +1700,40 @@ func TestInMemoryGraphSearchPoolsWhatTheRecallCanReturn(t *testing.T) {
 	}
 }
 
+// TestInMemoryGraphSearchOrdersEqualMatchesByAge pins recency under the
+// default fold. Three facts match "kettle" equally, at 200, 30 and 1 day old,
+// and a fourth holds the word three times. The equal matches sit under the
+// text's mean, so no channel lifts them; they still score the fold's floor of
+// 1, never 0, so the 90-day half-life orders them newest first rather than
+// leaving them tied in key order.
+func TestInMemoryGraphSearchOrdersEqualMatchesByAge(t *testing.T) {
+	g := newGraph()
+	g.SetScorer(scoring.NewInformationScorer[uint64, float64]())
+	now := time.Now()
+	for value, age := range map[string]time.Duration{
+		"kettle kettle kettle": time.Hour,
+		"kettle red":           200 * 24 * time.Hour,
+		"kettle blue":          30 * 24 * time.Hour,
+		"kettle green":         24 * time.Hour,
+	} {
+		mustSet(t, g, mkFact(g, value, now.Add(-age)))
+	}
+
+	nodes, scores, _, _, err := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	want := []string{"kettle kettle kettle", "kettle green", "kettle blue", "kettle red"}
+	if diff := cmp.Diff(want, values(nodes)); diff != "" {
+		t.Errorf("Search(kettle) mismatch (-want +got), equal matches newest first:\n%s", diff)
+	}
+	for i, score := range scores {
+		if score <= 0 {
+			t.Errorf("scores[%d] = %v, want positive so decay can order it", i, score)
+		}
+	}
+}
+
 // TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst pins how deep the
 // indexes are read. Each is read for every match, so a match below the seed
 // budget still carries its evidence and the scorer measures it against the

@@ -68,7 +68,7 @@ func stats(values ...float64) (mean, sd float64) {
 // 1 observing 2, at background zero). Each channel's z is taken over all four,
 // a fact the channel did not see counting at zero, and only the part above the
 // mean counts. The vector's best z is under the bar √(2 ln 4), so it is not
-// trusted further. A fact scores (1 + z_text⁺)(1 + z_vector⁺) − 1 + z_graph⁺:
+// trusted further. A fact scores (1 + z_text⁺)(1 + z_vector⁺) + z_graph⁺:
 // the first is corroborated by both readings, the second's text is at the
 // mean and adds nothing, and the fourth stands on its graph term alone.
 func TestInformationScorerFoldsZScores(t *testing.T) {
@@ -87,10 +87,10 @@ func TestInformationScorerFoldsZScores(t *testing.T) {
 		t.Fatal("the fixture's best similarity clears the bar; this case pins the untrusted vector")
 	}
 	want := map[uint64]float64{
-		1: (1+(3-tm)/ts)*(1+(0.6-vm)/vs) - 1,
-		2: (0.5 - vm) / vs,
-		3: (0.4 - vm) / vs,
-		4: (2 - gm) / gs,
+		1: (1 + (3-tm)/ts) * (1 + (0.6-vm)/vs),
+		2: 1 + (0.5-vm)/vs,
+		3: 1 + (0.4-vm)/vs,
+		4: 1 + (2-gm)/gs,
 	}
 	for key, w := range want {
 		if got := scorer.Score(candidates[key]); math.Abs(got-w) > 1e-12 {
@@ -102,7 +102,8 @@ func TestInformationScorerFoldsZScores(t *testing.T) {
 // TestInformationScorerNeverTakesAway pins the floor: a channel that places a
 // fact at or below the pool's mean adds nothing to it, so no channel can lower
 // what the others give. The second fact's text is under the mean of 1.5 and it
-// has nothing else, so it scores zero, and a fact no channel saw scores zero.
+// has nothing else, and the fourth no channel lifts, so both score 1, the
+// fold's floor: positive, so decay can still order them by age.
 func TestInformationScorerNeverTakesAway(t *testing.T) {
 	candidates, keys := pool(
 		[]scoring.Contribution[uint64, float64]{text(4, 1)},
@@ -112,8 +113,8 @@ func TestInformationScorerNeverTakesAway(t *testing.T) {
 	)
 	scorer := scoring.NewInformationScorer[uint64, float64]().Observe(scoring.Observation[uint64, float64]{Candidates: candidates, Keys: keys})
 	for _, key := range []uint64{2, 4} {
-		if got := scorer.Score(candidates[key]); got != 0 {
-			t.Errorf("Score(candidate %d) = %v, want 0: a channel below its mean adds nothing", key, got)
+		if got := scorer.Score(candidates[key]); got != 1 {
+			t.Errorf("Score(candidate %d) = %v, want the floor 1: a channel below its mean adds nothing", key, got)
 		}
 	}
 }
@@ -140,10 +141,10 @@ func TestInformationScorerTrustsAConfidentVectorTheWordsMiss(t *testing.T) {
 		held float64
 		want float64
 	}{
-		"confident, words hold none":     {4, 0, math.Pow(1+math.Sqrt(3), 2) - 1},
-		"confident, words hold half":     {4, 0.5, math.Pow(1+math.Sqrt(3), 1.5) - 1},
-		"confident, words hold all":      {4, 1, math.Sqrt(3)},
-		"under the bar, words hold none": {3, 0, math.Sqrt(2)},
+		"confident, words hold none":     {4, 0, math.Pow(1+math.Sqrt(3), 2)},
+		"confident, words hold half":     {4, 0.5, math.Pow(1+math.Sqrt(3), 1.5)},
+		"confident, words hold all":      {4, 1, 1 + math.Sqrt(3)},
+		"under the bar, words hold none": {3, 0, 1 + math.Sqrt(2)},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

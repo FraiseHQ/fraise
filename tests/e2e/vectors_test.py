@@ -288,8 +288,8 @@ def test_recall_fuses_text_and_vector_by_corroboration(
     """The information fold fuses channels by corroboration, not by rank votes.
 
     A fact both the text and the vector place above the pool scores
-    (1 + z_text)(1 + z_vector) − 1, more than either reading gives it alone,
-    and a fact one channel sees scores that channel's z alone. Under rank
+    (1 + z_text)(1 + z_vector), more than either reading gives it alone,
+    and a fact one channel sees scores 1 plus that channel's z. Under rank
     votes a fact leading neither list can top both leaders by consensus, and
     large hubs manufacture consensus from their size. The recall returns
     every candidate, so the payload holds the whole pool the fold measured
