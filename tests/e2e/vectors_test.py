@@ -282,15 +282,18 @@ def test_vector_search_with_real_embeddings(query, embedding_docs):
     )
 
 
-def test_recall_fuses_text_and_vector_additively(
-    query, vector, explain, krakatoa_facts
+def test_recall_fuses_text_and_vector_by_corroboration(
+    query, vector, explain, krakatoa_facts, information_scores
 ):
-    """The excess scorer fuses channels by adding mass, not by rank votes.
+    """The information fold fuses channels by corroboration, not by rank votes.
 
-    A fact seen by both channels scores the sum of what each observed. A fact
-    seen by one scores that channel's mass alone. Under rank votes, a fact
-    leading neither list can top both leaders by consensus. Large hubs also
-    manufacture consensus from their size.
+    A fact both the text and the vector place above the pool scores
+    (1 + z_text)(1 + z_vector), more than either reading gives it alone,
+    and a fact one channel sees scores 1 plus that channel's z. Under rank
+    votes a fact leading neither list can top both leaders by consensus, and
+    large hubs manufacture consensus from their size. The recall returns
+    every candidate, so the payload holds the whole pool the fold measured
+    each fact against, and every score recomputes from it.
     """
     graph = 6
     writes = (
@@ -308,11 +311,13 @@ def test_recall_fuses_text_and_vector_additively(
         assert status == 200, body.get("error")
 
     status, body = explain(
-        f"recall@{graph} krakatoa ash vec:$v depth:0 top:10",
+        f"recall@{graph} krakatoa ash vec:$v depth:0 top:1000",
         parameters={"v": vector(value=-0.5)},
     )
     assert status == 200, body.get("error")
-    hits = {h["value"]: h for h in body["results"]["hits"]}
+    background = body["results"].get("background", 0)
+    ranked = body["results"]["hits"]
+    hits = {h["value"]: h for h in ranked}
 
     both = hits[krakatoa_facts["both"]]
     sources = sorted(c["source"] for c in both["contributions"])
@@ -320,9 +325,11 @@ def test_recall_fuses_text_and_vector_additively(
         "text",
         "vector",
     ], f"the two-channel fact must carry both observations: {both['contributions']}"
-    assert abs(both["score"] - sum(c["score"] for c in both["contributions"])) < 1e-3, (
-        f"fusion is additive: {both}"
-    )
+    for hit, want in zip(ranked, information_scores(ranked, background), strict=True):
+        assert abs(hit["score"] - want) < 1e-6 * max(1.0, want), (
+            f"fusion multiplies the corroborating channels: {hit['value']!r} scores "
+            f"{hit['score']}, recomputed {want} from {hit['contributions']}"
+        )
 
     text_only = hits[krakatoa_facts["text"]]
     assert [c["source"] for c in text_only["contributions"]] == ["text"], text_only

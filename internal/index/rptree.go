@@ -224,10 +224,28 @@ func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int, keep 
 		return nil, nil, fmt.Errorf("%w: index expects %d, got %d", ErrInvalidDimension, idx.dim, query.Dim())
 	}
 
-	// k <= 0 asks for every match, and every live vector is one. The trees may
-	// still hold stale copies, so each is asked for all of its entries.
+	// k <= 0 asks for every match, and every live vector is one. The live
+	// vectors are the source of truth the forest is re-ranked against, so
+	// reading them all directly gives the same answer as probing every tree
+	// for every entry, without building a tree point per entry per tree.
 	if k <= 0 {
-		k = idx.Entries()
+		every := containers.NewTopK[K, P](0, idx.compare)
+		for key, current := range idx.vectors {
+			if keep != nil && !keep(key) {
+				continue
+			}
+			d, err := query.Distance(current)
+			if err != nil {
+				return nil, nil, err
+			}
+			every.Offer(key, -d)
+		}
+		out, scores := every.Drain()
+		for i, score := range scores {
+			scores[i] = -score
+		}
+		logger.Debug("Vector search returned every match", "found", len(out))
+		return out, scores, nil
 	}
 
 	var zeroKey K

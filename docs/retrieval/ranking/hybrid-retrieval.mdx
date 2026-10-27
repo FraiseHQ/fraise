@@ -8,21 +8,21 @@ Each temporal memory graph indexes every fact's text in a full-text search index
 
 <Note title="Seeds, not answers" type="note">
 
-**The indexes are seeds, not answers**, and a retrieval score is **the seeds' own mass plus transmitted surplus**.
+**The indexes are seeds, not answers**, and a retrieval score is **what the text, the vector and the graph each say about a fact**, measured against everything the recall could return.
 
 </Note>
 
 ## The seeds
 
-A recall pulls candidates from each source it can use, each carrying its raw retrieval mass; the text and vector indexes are each asked for `seed-size` of them, or `top:` when that is larger. `since:`/`until:` restrict what the indexes search: the seeds are the best matches inside the time window, never a cut of the whole graph filtered afterwards. Named anchors filter nothing. Each index is read once over the window and once more over the facts filed under the named anchors, and the two readings are pooled, so a fact that ranks first under its anchor is seeded however many matches the rest of the graph holds, and a match filed under none of them still counts:
+A recall pulls candidates from each source it can use, each carrying its raw retrieval mass. The text and vector indexes are each read for every match, so every fact a source can see carries its evidence into the ranking, and the first `seed-size` of each reading, or `top:` when that is larger, are the **seeds** the graph expands from. `since:`/`until:` restrict what the indexes search: the matches are inside the time window, never a cut of the whole graph filtered afterwards. Named anchors filter nothing. Each index is read once over the window and once more over the facts filed under the named anchors, and the two readings are pooled, so a fact that ranks first under its anchor is seeded however many matches the rest of the graph holds, and a match filed under none of them still counts:
 
 | Source | Mass it carries |
 |---|---|
 | text index | BM25 $\times$ coverage: the share of the query's idf mass the fact matched, so a fact matching every query term keeps its full BM25 score and a partial match is discounted by the informativeness of the terms it missed |
-| vector index | $1 / (1 + \text{distance})$ similarity, weighted by the information the best text hit missed ([vector weight](/docs/configuration/reference/database#vector-weight)) |
+| vector index | $1 / (1 + \text{distance})$ similarity, which counts for more in the seed mass the more of the question the best text hit missed ([vector weight](/docs/configuration/reference/database#vector-weight)) |
 | named anchors, on a recall with no term or vector | a unit mass for each named anchor the fact is filed under |
 
-A fact found by more than one source carries the sum of their masses.
+A fact found by more than one source carries the sum of their masses, the vector's weighted, as its **seed mass** $m$: what it puts into the graph.
 
 ### What the text index matches
 
@@ -37,13 +37,27 @@ Only the excess above background is transmitted, and it is transmitted **once, n
 - the surplus is divided across the anchor's edges, each member receiving its per-edge share;
 - with the member's own mass excluded, so a fact never funds its own boost.
 
-An anchor the recall names has no fair share to clear: naming it is the query's own claim that it bears on the question. It transmits whenever a seed reaches it, its surplus measured against the member's own mass alone. A match filed under it is lifted by what its siblings there matched, its unmatched facts are lifted behind them, and a match filed elsewhere keeps its own mass.
+An anchor the recall names has no fair share to clear: naming it is the query's own claim that it bears on the question. It transmits whenever a seed reaches it, its surplus measured against the member's own mass alone. A match filed under it is lifted by what its siblings there matched, its unmatched facts are lifted behind them, and a match filed elsewhere keeps its own mass. What a fact receives over every anchor it is filed under is its **graph evidence** $g$.
 
-A fact's relevance is its own mass plus everything transmitted to it.
+## The fold
+
+A candidate ends with three channels: its text mass $t$, its vector similarity $v$ and its graph evidence $g$. `scoring-algorithm` picks how they fold into one score ([Algorithm settings](/docs/configuration/reference/algorithms)).
+
+**`information`, the default.** The recall's pool is every candidate it could return: the $n$ facts inside its time range. Each channel says how far it places a fact above the rest of the pool, its z-score $z = (c - \bar{c})/\sigma_c$ over the $n$ facts, a fact the channel did not see counting at zero; only the part above the mean counts, $z^+ = \max(0, z)$, so a channel never counts against a fact. The pool includes the facts the graph funds, so the anchor round moves the text's and the vector's statistics too. The text and the vector are independent readings of the question, one of its words and one of its meaning, so they corroborate each other and multiply; the graph passes the seeds' own mass on, so it is added rather than counted a second time:
+
+$$
+\text{score} = (1 + z_t^+)\,(1 + z_v^+)^{e} + z_g^+
+$$
+
+$e$ is how far the vector is trusted. It is 1, unless the vector singles the fact out beyond what chance would over the pool, $z_v > \sqrt{2 \ln n}$, the height a chance maximum over $n$ candidates reaches. Then $e = 2 - h$, where $h$ is the share of the question's information the fact's own words hold: the embedding counts twice over where the words hold none of the question, and once where they hold all of it. A z-score is free of its channel's units, so no channel needs calibrating against another, and the fold carries no constant. A pool no channel spreads has nothing to measure against, and each fact scores its seed mass: a recall that found a single fact scores that fact's own match, and one seeded by anchors alone scores each fact one unit per named anchor it is filed under.
+
+**`excess`.** A fact scores its seed mass plus its graph evidence, $m + g$, its vector similarity counted in $m$ by the vector weight. Graph evidence then only ever adds to the seed mass, which is the [BM25 floor](/docs/retrieval/ranking/guarantees#bm25-floor). The information fold measures the graph against the text instead, so graph evidence concentrated on a few facts can rank them above a fact the words matched better.
 
 ## One sentence of intuition
 
 > *An anchor may only speak when its members matched better than its size alone predicted — hubs are heard exactly when they are surprising, silent when they are merely large, and never louder than their surplus divided among everyone listening.*
+
+An anchor the recall names is the one exception, by design: the question asked for it.
 
 ### The window
 

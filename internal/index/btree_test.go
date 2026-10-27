@@ -721,10 +721,36 @@ func TestBTreeIndexInformation(t *testing.T) {
 		{"an unknown term", "friday zebra", 4, friday, friday},
 		{"only unknown terms", "zebra", 1, 0, 0},
 	} {
-		total, held := idx.Information(tc.query, tc.key)
-		if math.Abs(total-tc.total) > 1e-12 || math.Abs(held-tc.held) > 1e-12 {
-			t.Errorf("%s: Information = %v, %v, want %v, %v", tc.name, total, held, tc.total, tc.held)
+		total, held := idx.Information(tc.query, []int{tc.key})
+		if math.Abs(total-tc.total) > 1e-12 || math.Abs(held[0]-tc.held) > 1e-12 {
+			t.Errorf("%s: Information = %v, %v, want %v, %v", tc.name, total, held[0], tc.total, tc.held)
 		}
+	}
+}
+
+// TestBTreeIndexInformationReadsEveryKeyAtOnce pins the batch: asked about a
+// reading's keys together, Information reports each key's share in its own
+// slot, exactly what it reports for the key alone, and the query's total once.
+func TestBTreeIndexInformationReadsEveryKeyAtOnce(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetRelevance(relevance.NewBM25[int, float64]())
+	for key, doc := range map[int]string{1: "deploy friday", 2: "deploy monday", 3: "deploy tuesday", 4: "friday lunch"} {
+		if err := idx.Insert(key, doc); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	keys := []int{4, 9, 1, 2}
+	total, got := idx.Information("deploy friday", keys)
+	want := make([]float64, len(keys))
+	for i, key := range keys {
+		alone, held := idx.Information("deploy friday", []int{key})
+		if alone != total {
+			t.Errorf("total asked about %d alone = %v, want the batch's %v", key, alone, total)
+		}
+		want[i] = held[0]
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Information(batch) mismatch (-want +got):\n%s", diff)
 	}
 }
 

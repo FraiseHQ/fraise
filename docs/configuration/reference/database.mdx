@@ -13,7 +13,7 @@ navLabel: "Database"
 | `max-top` | `-max-top` | `1000` | ceiling on `top:`, rejected at parse time past it; `0` takes the default, and the server refuses to start on a negative value |
 | `max-depth` | `-max-depth` | `2` | ceiling on `depth:`, in `[0, 2]` (lanes are 0, 1 and 2); the server refuses to start on a value outside it |
 | `max-vector-dimension` | `-max-vector-dimension` | `4096` | ceiling on a bound vector's length |
-| `seed-size` | `-seed-size` | `10` | minimum candidate budget per source; widened to `top:` |
+| `seed-size` | `-seed-size` | `10` | how many of each source's best matches seed the anchor round; widened to `top:` |
 | `min-score-ratio` | `-min-score-ratio` | `0` | score cutoff: drop hits whose relevance is under this fraction of the best hit's, in `[0, 1]`; `0` is off |
 | `window-gamma` | `-window-gamma` | `0.3` | window: the share of its temporal neighbours' matches a fact borrows when scored, at most `1`; negative is off, `0` is the default |
 
@@ -61,7 +61,7 @@ The window is **on by default** at `0.3`. An exchange that matches as a whole ra
 
 ## Vector weight
 
-A recall with both words and an embedding sums the two lanes, and when the words answer the question the text index should lead. When they do not, when the question is phrased in words the memory never used, the text index still returns its best partial matches and their mass competes with the embedding's on equal terms. So the vector similarity of every candidate is weighted by the information the text did not find:
+A recall with both words and an embedding reads two lanes, and when the words answer the question the text index should lead. When they do not, when the question is phrased in words the memory never used, the text index still returns its best partial matches, and they compete with the embedding on equal terms. So the embedding is weighted by the information the text did not find:
 
 $$
 w_v = \frac{I_q}{I_{\text{hit}}} = 1 + \frac{I_q - I_{\text{hit}}}{I_{\text{hit}}}, \qquad I(S) = \sum_{t \in S} -\log_2 \frac{\text{df}_t}{N}
@@ -69,7 +69,7 @@ $$
 
 where $I_q$ is the information in the query's words, $I_{\text{hit}}$ the part of it the best text hit holds, the best among those the recall can return, inside its time range, $\text{df}_t$ the number of facts holding word $t$ and $N$ the number of facts. A word's information is its surprisal, the bits of the event that a fact picked at random holds it: a rare word carries many bits, a word every fact holds carries none. Words no fact holds have no estimate and are left out of both sums.
 
-The weight is the bits the text missed per bit it found, plus one. A best hit holding every word of the query leaves the embedding at its plain similarity, breaking ties; a hit holding half the query's information doubles it, a quarter quadruples it, and the embedding, which does not need the words, carries the ranking. Being a ratio of information, it reads the same for a long question as for a short one, and it has no setting: there is no constant to tune. A full match elsewhere in the graph says nothing about what the words found for this recall, so it is not the best hit; a recall with no text hit it can return keeps the embedding at weight 1. The weight is one number per query, so the vector lane's own order is kept and only its mass against the text's moves; a recall without both words and a vector is unaffected.
+The weight is the bits the text missed per bit it found, plus one. A best hit holding every word of the query leaves the embedding at weight 1; a hit holding half the query's information doubles it, a quarter quadruples it, and the embedding, which does not need the words, carries the ranking. Being a ratio of information, it reads the same for a long question as for a short one, and it has no setting: there is no constant to tune. A full match elsewhere in the graph says nothing about what the words found for this recall, so it is not the best hit; a recall with no text hit it can return keeps the embedding at weight 1. The weight multiplies the similarity in a fact's seed mass, the mass the graph spreads, and so in the `excess` fold's score. The `information` fold judges the words fact by fact instead: it trusts a confident embedding further on a fact the more of the question that fact's own words miss (see [The fold](/docs/retrieval/ranking/hybrid-retrieval#the-fold)). The weight is one number per query, so the vector lane's own order is kept and only its weight against the text's moves; a recall without both words and a vector is unaffected.
 
 ## `num-graphs`
 
