@@ -9,7 +9,7 @@ Four consequences of the [excess-transmission model](/docs/retrieval/ranking/exc
 
 Under the `excess` fold, transmission only ever **adds**: a hit's relevance is never below its own seed mass, so the graph channel can lift a fact but never lower it. With no surplus anywhere, relevance is the seed mass and the ranking is exactly that of text and vector search alone.
 
-The `information` fold does not keep it in seed units, since it scores z-scores rather than masses. Each channel only adds, so a fact's score never falls when the graph speaks, but the graph's evidence is measured against the text's: the fact the words matched best can rank below a weaker match, or a fact with no match of its own, that the graph raised. With no graph evidence anywhere, the graph channel is absent and the ranking is the fold of text and vector alone.
+The `information` fold does not keep it in seed units, since it scores z-scores rather than masses. Each channel's $z^+$ is never negative, but the facts the graph funds join the pool the text is measured against, so raising the lane can lower a match's score, and the fact the words matched best can rank below a weaker match, or a fact with no match of its own, that the graph raised. With no graph evidence anywhere, the graph channel is absent and the ranking is the fold of text and vector alone.
 
 <Note title="Safe to raise depth under excess" type="note">
 

@@ -32,8 +32,11 @@ import "math"
 // A channel's evidence on fact f is its z-score over the pool of n candidates,
 // z = (c_f − mean) / sd, with the facts the channel did not see counted at
 // zero: having been seen at all is part of what a channel says. Only the part
-// above the pool's mean counts, z⁺ = max(0, z), so a channel adds evidence and
-// never takes any away. The score is
+// above the pool's mean counts, z⁺ = max(0, z), so a channel never counts
+// against a fact. The pool holds the facts the graph funds as well as the
+// matches, so the anchor round moves every channel's mean and spread, and a
+// match's z can fall when the graph speaks though its own mass is unchanged.
+// The score is
 //
 //	(1 + z_text⁺) · (1 + z_vector⁺)^e − 1 + z_graph⁺
 //
