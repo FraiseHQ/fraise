@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/FraiseHQ/fraise/compare/python/v0.3.0...python/v0.3.1) (2026-10-29)
+
+
+### Bug fixes
+
+* score each channel against the recall's pool ([#580](https://github.com/FraiseHQ/fraise/issues/580)) ([7cd4de6](https://github.com/FraiseHQ/fraise/commit/7cd4de65232acec14639be1785f8448be651ffac))
+
 ## [0.3.0](https://github.com/FraiseHQ/fraise/compare/python/v0.2.0...python/v0.3.0) (2026-10-25)
 
 
