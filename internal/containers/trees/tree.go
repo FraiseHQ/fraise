@@ -28,8 +28,11 @@ type Point[K comparable, P float32 | float64] interface {
 	// Dim reports the number of dimensions of the point.
 	Dim() int
 
-	// GetValue returns the coordinate of the point along the given dimension.
-	GetValue(dim int) P
+	// Coordinates returns the point's coordinates, one per dimension. A tree
+	// projects a point onto a split direction at every level it passes, a dot
+	// product over every coordinate, so the point hands over its slice whole
+	// rather than answering one call per coordinate. Callers only read it.
+	Coordinates() []P
 
 	// Distance returns the distance between this point and p. Points of
 	// different dimensions have no distance, and Distance returns
