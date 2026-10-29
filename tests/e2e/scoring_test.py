@@ -67,11 +67,13 @@ def test_the_fact_asked_about_outranks_its_neighbourhood(query, ranked_hits):
 
     Expansion needs surplus. The smallest shape where an anchor speaks has two
     anchors. A small cluster concentrates the query's mass, and a bigger hub
-    holds no more than its fair share. The cluster's silent member is funded
-    and lands behind both facts that matched. The hub
-    transmits nothing, so its notes, which all contain "geyser", rank on their
-    own text match alone. Both topics are named, because the graph is entered
-    only through an anchor the recall names.
+    holds no more than its fair share. The cluster's silent member is funded,
+    behind the fact that matched both terms. The default fold measures the
+    graph's evidence against the text's, so the funded member may pass the
+    weaker match (see Ranking guarantees), but the hub transmits nothing: its
+    notes, which all contain "geyser", rank on their own text match alone,
+    behind what the cluster funds. Both topics are named, because the graph
+    is entered only through an anchor the recall names.
     """
     graph = 0
     direct = (
@@ -95,6 +97,7 @@ def test_the_fact_asked_about_outranks_its_neighbourhood(query, ranked_hits):
     assert values[0] == direct[0], (
         f"the direct two-term match must outrank everything funded; got {values}"
     )
-    assert values.index(silent) > values.index(direct[1]), (
-        f"funded expansion must follow the facts that matched: {values}"
+    notes = [v for v in values if v.startswith("archive geyser note")]
+    assert all(values.index(silent) < values.index(note) for note in notes), (
+        f"the silent hub's notes must not ride above what the cluster funds: {values}"
     )

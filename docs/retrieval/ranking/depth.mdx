@@ -7,7 +7,7 @@ description: "What depth:0, depth:1 and depth:2 select, and why the methodology 
 
 | Lane | Behaviour |
 |---|---|
-| `depth:0` | the default — stops at the seed mass, which *is* the BM25 floor, and skips the anchor traversal entirely: the fast lane, on the text and vector indexes alone |
+| `depth:0` | the default — skips the anchor traversal entirely: the fast lane, on the text and vector indexes alone |
 | `depth:1` | runs the anchor-mediated round, but admits an anchor only once its observed mass clears **twice** its null-expected share. Only strongly above-chance anchors speak, so what transmission adds is high-precision |
 | `depth:2` | runs the same round admitting at the plain fair share — every anchor holding any surplus at all transmits, for maximum recall |
 
@@ -31,9 +31,9 @@ A larger depth is rejected rather than silently answered as 2. The methodology d
 | graph evidence, but only where it is strongly above chance | `depth:1` |
 | everything the graph can justify | `depth:2` |
 
-<Note title="Never below the BM25 floor" type="note">
+<Note title="The BM25 floor depends on the fold" type="note">
 
-Because transmission only ever adds, raising the lane never lowers a result's score below what text and vector search alone give it. See [BM25 floor](/docs/retrieval/ranking/guarantees).
+Under the `excess` fold transmission only ever adds, so raising the lane never lowers a result's score below what text and vector search alone give it. Under the `information` fold, the default, each channel's $z^+$ is never negative, but the graph's facts join the pool the text is measured against, so raising the lane can lower a match's score and reorder what the words found. See [BM25 floor](/docs/retrieval/ranking/guarantees#bm25-floor).
 
 </Note>
 

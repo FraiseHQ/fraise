@@ -159,6 +159,21 @@ def test_a_graph_sighting_says_whether_the_recall_named_its_anchor(named, want):
     assert Contribution.from_json(data | named).named is want
 
 
+@pytest.mark.parametrize(
+    ("held", "want"),
+    [({"held": 0.5}, 0.5), ({}, 0.0)],
+)
+def test_a_text_sighting_says_how_much_of_the_query_its_words_hold(held, want):
+    """``held`` parses from the wire, and its absence reads as holding none.
+
+    The server omits it when the fact's own words hold none of the query, so a
+    missing key must not fail; a client recomputing the score needs it to know
+    how far the vector was trusted.
+    """
+    data = {"source": "text", "score": 1.5, "rank": 0, "count": 1}
+    assert Contribution.from_json(data | held).held == want
+
+
 def test_a_hit_reached_through_the_graph_alone_says_so(explain_response):
     """A graph-only hit matched nothing itself, so its one sighting is the graph's.
 

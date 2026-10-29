@@ -100,7 +100,9 @@ type Hit[K comparable, P float32 | float64] struct {
 
 // HitContribution is the wire form of one contribution. The source is
 // serialised by name, because clients never see the Go constants.
-//   - A text or vector entry carries its raw mass and list position.
+//   - A text or vector entry carries its raw mass and list position. A text
+//     entry also carries held, the share of the query's information the
+//     fact's own words hold, omitted when they hold none of it.
 //   - A graph entry, one per funding anchor, carries the anchor's full observed
 //     mass, its value under via, its degree and how many seeds funded it.
 //     named is set when the query named the anchor, which owes no fair share.
@@ -117,6 +119,7 @@ type HitContribution[P float32 | float64] struct {
 	Degree uint32 `json:"degree,omitempty"`
 	Count  uint16 `json:"count"`
 	Named  bool   `json:"named,omitempty"`
+	Held   P      `json:"held,omitempty"`
 }
 
 // MarshalJSON flattens the node into the hit, so the response carries the

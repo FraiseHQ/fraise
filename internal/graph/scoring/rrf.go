@@ -31,13 +31,14 @@ package scoring
 // the tests exercise.
 const DefaultRRFK = 60
 
-// RRFScorer fuses a candidate's contributions by reciprocal rank, Σ 1/(k+Rank).
-// Rank is the only input. The sources score on incomparable scales, and RRF
-// avoids calibrating them by trusting only the position each source assigned.
-// Contribution.Score is unused, and so is the query's background rate. Rank
-// fusion has no null model, so it cannot tell a surprising anchor from a merely
-// large one. It is an alternative fold for comparison runs. The default is the
-// ExcessScorer.
+// RRFScorer fuses a candidate's contributions by reciprocal rank,
+// Σ 1/(k+Rank). Rank is the only input: the sources score on incomparable
+// scales, and RRF avoids calibrating them by trusting only the position each
+// source assigned. Contribution.Score is unused, and so is everything the
+// query observed: rank fusion has no null model, so it cannot tell a
+// surprising anchor from a merely large one. It is available as an
+// alternative fold for comparison runs; the default is the
+// InformationScorer.
 //
 // It rewards consensus. A candidate two sources place at Rank 3 outranks one a
 // single source places at Rank 0, since 2/(k+3) > 1/k for k = 60. So agreement
@@ -54,9 +55,9 @@ func NewRRFScorer[K comparable, P float32 | float64](k int) *RRFScorer[K, P] {
 	return &RRFScorer[K, P]{k: k}
 }
 
-// WithBackground implements [Scorer]. It returns the scorer itself, since rank
-// fusion has no null model to bind.
-func (s *RRFScorer[K, P]) WithBackground(P) Scorer[K, P] {
+// Observe returns the scorer itself: rank fusion reads nothing the query
+// observed (see the type comment), so there is nothing to bind.
+func (s *RRFScorer[K, P]) Observe(Observation[K, P]) Scorer[K, P] {
 	return s
 }
 

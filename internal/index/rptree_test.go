@@ -231,7 +231,8 @@ func TestRPTreeIndexSearchIgnoresDeletedVectors(t *testing.T) {
 }
 
 // TestRPTreeIndexSearchNonPositiveKReturnsEveryVector pins the SearchIndex
-// contract for k <= 0: every live vector comes back, nearest first. The
+// contract for k <= 0: every live vector keep accepts comes back, nearest
+// first. The
 // deleted vector is the one nearest the query, and its copy stays in the
 // forest until Flush. A search that asked the trees for only as many keys as
 // are live would leave the farthest one out.
@@ -246,19 +247,24 @@ func TestRPTreeIndexSearchNonPositiveKReturnsEveryVector(t *testing.T) {
 		t.Fatalf("Delete(1) = %v, want nil", err)
 	}
 
-	want := []int{2, 3, 4, 5, 6, 7, 8, 9, 10}
-	cases := map[string]struct{ k int }{
-		"zero":     {0},
-		"negative": {-1},
+	even := func(key int) bool { return key%2 == 0 }
+	cases := map[string]struct {
+		k    int
+		keep func(int) bool
+		want []int
+	}{
+		"zero":            {0, nil, []int{2, 3, 4, 5, 6, 7, 8, 9, 10}},
+		"negative":        {-1, nil, []int{2, 3, 4, 5, 6, 7, 8, 9, 10}},
+		"zero, kept only": {0, even, []int{2, 4, 6, 8, 10}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			readings, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), tc.k)
+			readings, _, err := idx.Search(containers.NewVector[int]([]float64{0, 0}), tc.k, tc.keep)
 			if err != nil {
 				t.Fatalf("Search(k=%d) = %v, want nil", tc.k, err)
 			}
 			got := readings[0]
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("Search(k=%d) mismatch (-want +got):\n%s", tc.k, diff)
 			}
 		})

@@ -510,7 +510,7 @@ func (p *pass[K, P]) rank(r *reading[K, P], k int, totalW P) ([]K, []P) {
 }
 
 // Information reports, in bits, how much information query carries and how
-// much of it key holds. A term's information is its surprisal in the index,
+// much of it each of keys holds, held[i] for keys[i]. A term's information is its surprisal in the index,
 // −log₂(df/N). N is the number of live documents, and df the number that
 // hold the term. It is the information in the event that a random document
 // holds the term. A rare term carries many bits, and a term every document
@@ -518,10 +518,13 @@ func (p *pass[K, P]) rank(r *reading[K, P], k int, totalW P) ([]K, []P) {
 //
 // The query carries the sum over its distinct terms that some live document
 // holds. key holds the sum over the terms it holds itself. The difference is
-// the information in the terms key lacks. Summing assumes terms occur
+// the information in the terms a key lacks. Summing assumes terms occur
 // independently. A term no live document holds has no estimate and is left
-// out of both sums. A key that is not indexed holds 0.
-func (idx *BTreeIndex[K, P]) Information(query string, key K) (total P, held P) {
+// out of both sums. A key that is not indexed holds 0. The query is tokenized
+// and each term's postings found once, however many keys are asked about, so
+// a whole reading costs one pass over the query's terms.
+func (idx *BTreeIndex[K, P]) Information(query string, keys []K) (total P, held []P) {
+	held = make([]P, len(keys))
 	n := float64(len(idx.documents))
 	probe := &postingList[K]{}
 	seen := make(map[string]struct{})
@@ -537,8 +540,10 @@ func (idx *BTreeIndex[K, P]) Information(query string, key K) (total P, held P) 
 		}
 		bits := P(-math.Log2(float64(list.live) / n))
 		total += bits
-		if i, found := list.find(key, idx.compare); found && list.entries[i].tf > 0 {
-			held += bits
+		for k, key := range keys {
+			if i, found := list.find(key, idx.compare); found && list.entries[i].tf > 0 {
+				held[k] += bits
+			}
 		}
 	}
 	return total, held

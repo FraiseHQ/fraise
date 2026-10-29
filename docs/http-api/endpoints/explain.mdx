@@ -11,22 +11,50 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
 ```json
 {
   "results": {
-    "count": 1,
+    "count": 4,
     "hits": [
       {
         "value": "the parrot sleeps in the kitchen",
-        "timestamp": "2026-09-23T17:52:22.836+01:00",
-        "score": 0.9806,
+        "timestamp": "2026-10-27T18:18:29.467Z",
+        "score": 2.4656,
         "contributions": [
-          { "source": "text",  "score": 0.9762, "rank": 1, "count": 1 },
-          { "source": "graph", "score": 2.9682, "rank": 0, "via": "polly", "degree": 3, "count": 3 }
+          { "source": "text",  "score": 1.4572, "rank": 0, "count": 1, "held": 1 },
+          { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
+        ]
+      },
+      {
+        "value": "polly says hello to every visitor",
+        "timestamp": "2026-10-27T18:18:29.528Z",
+        "score": 2.3019,
+        "contributions": [
+          { "source": "text",  "score": 0.1145, "rank": 3, "count": 1 },
+          { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
+        ]
+      },
+      {
+        "value": "the parrot eats sunflower seeds",
+        "timestamp": "2026-10-27T18:18:29.498Z",
+        "score": 1.7510,
+        "contributions": [
+          { "source": "text",  "score": 0.8757, "rank": 1, "count": 1, "held": 0.5 },
+          { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
+        ]
+      },
+      {
+        "value": "the kitchen window faces east",
+        "timestamp": "2026-10-27T18:18:29.556Z",
+        "score": 1,
+        "contributions": [
+          { "source": "text",  "score": 0.3461, "rank": 2, "count": 1, "held": 0.5 }
         ]
       }
     ],
-    "background": 0.6596
+    "background": 0.8158
   }
 }
 ```
+
+That is `recall parrot kitchen entity:polly` over four facts, three of them filed under `polly`, in the default lane and fold.
 
 ## A contribution
 
@@ -35,18 +63,19 @@ One contribution records one sighting of the hit by one retrieval source:
 | Field | Meaning |
 |----------|--------------------------------------------------------------------|
 | `source` | which stage saw it: `text`, `vector`, `graph` or `anchor` |
-| `score` | the source's raw mass: BM25 match mass for `text`, similarity for `vector`, the funding anchor's full observed mass for `graph`, a unit mass for `anchor` |
+| `score` | the source's raw mass: BM25 match mass for `text`, similarity as measured for `vector`, the funding anchor's full observed mass for `graph`, a unit mass for `anchor` |
 | `rank` | the hit's position in that source's own result list, 0 first |
 | `via` | the anchor a `graph` or `anchor` sighting came through |
 | `degree` | that anchor's degree — how many edges its mass is shared across |
 | `count` | how many seeds funded the sighting |
 | `named` | `true` on a `graph` sighting through an anchor the recall named; omitted otherwise |
+| `held` | on a `text` sighting, the share of the query's information the fact's own words hold; omitted when they hold none of it, the fact matched only through its neighbours |
 
 An `anchor` sighting belongs to a recall seeded by its anchors alone: the fact was reached because it is filed under an anchor the query named.
 
 <Note title="Contributions are not a sum" type="warning">
 
-`score` on the hit remains the final value — after transmission and recency decay — so **the contributions explain its ingredients rather than summing to it.**
+`score` on the hit remains the final value — after the fold and recency decay — so **the contributions explain its ingredients rather than summing to it.** The default fold measures each hit against the recall's whole pool, so the contributions explain a score exactly only when the recall returns every candidate, and a recall with a vector also needs the [vector weight](/docs/configuration/reference/database#vector-weight), which the payload does not carry.
 
 </Note>
 
@@ -62,8 +91,10 @@ $$
 \frac{\max(0,\; M_A - m - d_A \, \rho_0)}{d_A}
 $$
 
-A sighting marked `named` comes through an anchor the recall named, which owes no fair share: drop the $d_A \, \rho_0$ term, and it adds $\max(0,\; M_A - m)/d_A$.
+A sighting marked `named` comes through an anchor the recall named, which owes no fair share: drop the $d_A \, \rho_0$ term, and it adds $\max(0,\; M_A - m)/d_A$. Summed over a hit's graph sightings, these are its **graph evidence** $g$.
 
-In the example, `polly` holds $2.9682 - 0.9762 - 3 \times 0.6596 \approx 0.013$ above background, which spread over its 3 edges adds about $0.0044$ to the text mass — hence $0.9806$. A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score.
+A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score. A hit with only `graph` contributions matched nothing itself and was preempted in on transmitted surplus alone, which the model permits only when the surplus is above background or the anchor was named.
 
-A hit with only `graph` contributions matched nothing itself and was preempted in on transmitted surplus alone, which the model permits only when the surplus is above background. The formula and the lanes are introduced in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).
+Under the `information` fold, the default, a hit's channels are its text mass, its vector similarity and $g$. Each is measured by its z-score over the recall's $n$ hits, a hit the channel did not see counting at zero, and only the part above the mean counts. The hit scores $(1 + z_t^+)(1 + z_v^+)^e + z_g^+$, where $e$ is 1 unless the vector singles the hit out beyond $\sqrt{2 \ln n}$, and then $2 - h$, $h$ being the text sighting's `held` (see [The fold](/docs/retrieval/ranking/hybrid-retrieval#the-fold)). In the example, the three `polly` facts put $1.4572 + 0.8757 + 0.1145 = 2.4474$ on `polly`, the second through what it borrows from its neighbours under the window, so they get $g = 0.3301$, $0.5239$ and $0.7776$: each the mass of the other two, shared over the anchor's three edges. Over the four hits the text masses average $0.6984$ with a spread of $0.5177$ and the graph terms $0.4079$ with $0.2840$. So the first fact scores $1 + z_t = 2.4656$, its graph term being under the mean; the visitor fact, which holds none of the words, scores $1 + z_g = 2.3019$; and the kitchen window, under the text's mean and with no graph term, scores the floor of 1, which recency decay still orders by age.
+
+Under the `excess` fold the hit scores $m + g$: graph evidence added to the fact's own mass. The fold and the lanes are introduced in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).
