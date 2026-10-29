@@ -9,6 +9,7 @@ pip install fraise-sdk                 # core client only
 pip install 'fraise-sdk[openai]'       # + OpenAI Agents SDK tools
 pip install 'fraise-sdk[anthropic]'    # + Claude Agent SDK tools
 pip install 'fraise-sdk[huggingface]'  # + Hugging Face embedder
+pip install 'fraise-sdk[fastembed]'    # + local fastembed embedder
 ```
 
 ## Client
@@ -72,7 +73,7 @@ fraise.remember("the kingfisher is electric blue", graph=6)          # stored wi
 hits = fraise.recall(query="small bright bird", graph=6)
 ```
 
-An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Two ship ready-made: `OpenAIEmbedder` (`fraise-sdk[openai]`) and `HuggingFaceEmbedder` (`fraise-sdk[huggingface]`); Anthropic has no embeddings API.
+An embedder is anything implementing the `Embedder` ABC (subclass it and define `embed(text) -> Sequence[float]`) or a plain `callable(text) -> Sequence[float]`, so a lambda over your own model works too. Per call you can force it with `embed=True`, skip it with `embed=False`, or override with an explicit `vector=`. Three ship ready-made: `OpenAIEmbedder` (`fraise-sdk[openai]`), `HuggingFaceEmbedder` (`fraise-sdk[huggingface]`), and `FastEmbedEmbedder` (`fraise-sdk[fastembed]`), which runs locally on ONNX Runtime with no key and no torch, and loads its model on first use; Anthropic has no embeddings API.
 
 ## Extraction (optional)
 

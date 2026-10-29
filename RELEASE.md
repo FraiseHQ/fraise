@@ -116,7 +116,7 @@ This policy grows with the project — once there are production users, the supp
 
 ## Branching & monorepo strategy
 
-One `main`, always releasable **for every component** (server, Python SDK). There are no per-component branches — CI path-filtering tests exactly the components a PR touches, and branch protection blocks any merge that breaks one of them.
+One `main`, always releasable **for every component** (server, Python SDK, MCP server). There are no per-component branches — CI path-filtering tests exactly the components a PR touches, and branch protection blocks any merge that breaks one of them.
 
 ### Branches
 
@@ -125,10 +125,11 @@ One `main`, always releasable **for every component** (server, Python SDK). Ther
 
 ### PR scopes route changes to components
 
-Only two scopes exist — anything unscoped is the server:
+Only three scopes exist — anything unscoped is the server:
 
 - `feat: ...` (no scope) → server
 - `fix(python): ...` → Python SDK
+- `fix(mcp): ...` → MCP server
 
 The scope keeps each component's changelog clean: `.goreleaser.yaml` excludes `(python)` scoped commits from server release notes.
 
@@ -140,6 +141,7 @@ The scope keeps each component's changelog clean: `.goreleaser.yaml` excludes `(
 |----------------|----------------------|----------------------------|
 | Server         | `v0.1.1`             | GitHub Releases (binaries) |
 | Python SDK     | `python/v1.0.1`      | PyPI (trusted publishing)  |
+| MCP server     | `mcp/v1.0.1`         | PyPI (trusted publishing)  |
 
 SDK tagging (after the version-bump PR is merged — the workflow rejects a tag that doesn't match `pyproject.toml`):
 
@@ -147,7 +149,7 @@ SDK tagging (after the version-bump PR is merged — the workflow rejects a tag 
     git tag python/v1.0.1 && git push origin python/v1.0.1
 ```
 
-CI is split per component (`go.yaml`, `python.yaml`), each path-filtered to its own files. Branch-protection note: only mark the **Go** jobs as required checks globally — path-filtered SDK checks would otherwise show "expected" forever on server-only PRs.
+CI is split per component (`go.yaml`, `python.yaml`, `mcp.yaml`), each path-filtered to its own files; `mcp.yaml` also runs on SDK changes, since the MCP server is built on the SDK. Branch-protection note: only mark the **Go** jobs as required checks globally — path-filtered SDK checks would otherwise show "expected" forever on server-only PRs.
 
 Every tag is a pointer to a commit on `main`; each component versions and releases on its own clock. Milestones are named like the tags.
 
