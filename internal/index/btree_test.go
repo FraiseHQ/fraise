@@ -1084,21 +1084,29 @@ func TestBTreeIndexSearchIsTheSameHoweverTheListsGrew(t *testing.T) {
 				}
 			}
 
-			for _, query := range []string{"every", "deploy friday", "every lunch noon", "storm"} {
-				wantKeys, wantScores, err := fresh.Search(query, 0)
-				if err != nil {
-					t.Fatalf("Search(%q) on the index written once = %v, want nil", query, err)
-				}
-				gotKeys, gotScores, err := grown.Search(query, 0)
-				if err != nil {
-					t.Fatalf("Search(%q) on the grown index = %v, want nil", query, err)
-				}
-				if diff := cmp.Diff(wantKeys[0], gotKeys[0]); diff != "" {
-					t.Errorf("Search(%q) keys mismatch with the index written once (-want +got):\n%s", query, diff)
-				}
-				if diff := cmp.Diff(wantScores[0], gotScores[0]); diff != "" {
-					t.Errorf("Search(%q) scores mismatch with the index written once (-want +got):\n%s", query, diff)
-				}
+			queries := map[string]struct{}{
+				"every":            {},
+				"deploy friday":    {},
+				"every lunch noon": {},
+				"storm":            {},
+			}
+			for query := range queries {
+				t.Run(query, func(t *testing.T) {
+					wantKeys, wantScores, err := fresh.Search(query, 0)
+					if err != nil {
+						t.Fatalf("Search(%q) on the index written once = %v, want nil", query, err)
+					}
+					gotKeys, gotScores, err := grown.Search(query, 0)
+					if err != nil {
+						t.Fatalf("Search(%q) on the grown index = %v, want nil", query, err)
+					}
+					if diff := cmp.Diff(wantKeys[0], gotKeys[0]); diff != "" {
+						t.Errorf("Search(%q) keys mismatch with the index written once (-want +got):\n%s", query, diff)
+					}
+					if diff := cmp.Diff(wantScores[0], gotScores[0]); diff != "" {
+						t.Errorf("Search(%q) scores mismatch with the index written once (-want +got):\n%s", query, diff)
+					}
+				})
 			}
 		})
 	}
