@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.6](https://github.com/FraiseHQ/fraise/compare/v0.3.5...v0.3.6) (2026-10-29)
+
+
+### Bug fixes
+
+* score each channel against the recall's pool ([#580](https://github.com/FraiseHQ/fraise/issues/580)) ([7cd4de6](https://github.com/FraiseHQ/fraise/commit/7cd4de65232acec14639be1785f8448be651ffac))
+
+
+### Performance
+
+* keep writes flat as posting lists and vectors grow ([#591](https://github.com/FraiseHQ/fraise/issues/591)) ([b3f52ff](https://github.com/FraiseHQ/fraise/commit/b3f52ffb1062c8b6e744abc1681ff79015745c06))
+* read the text index once for every reading ([#588](https://github.com/FraiseHQ/fraise/issues/588)) ([3ed2df3](https://github.com/FraiseHQ/fraise/commit/3ed2df34995d8a2017e7d75cba64e1ee126689e5))
+
+
+### Maintenance
+
+* **main:** release python 0.3.0 ([#553](https://github.com/FraiseHQ/fraise/issues/553)) ([cc32c97](https://github.com/FraiseHQ/fraise/commit/cc32c9774d78ad00871a0598b345a2aa8bd9fee5))
+
 ## [0.3.5](https://github.com/FraiseHQ/fraise/compare/v0.3.4...v0.3.5) (2026-10-25)
 
 
