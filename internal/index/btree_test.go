@@ -24,9 +24,11 @@ package index_test
 
 import (
 	"errors"
+	"maps"
 	"math"
 	"math/rand"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -998,6 +1000,115 @@ func TestBTreeIndexSearchWindowHonoursKeep(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantScores, gotScores); diff != "" {
 		t.Errorf("window Search scores mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestBTreeIndexSearchIsTheSameHoweverTheListsGrew pins that a search depends
+// on the documents an index holds, not on the writes that put them there. A
+// posting list keeps its key order across the chunks it is stored in, so an
+// index grown by inserts scattered over the key order, updates, deletes and
+// compactions ranks and scores exactly as one written once in key order, with
+// the window off and on. Every document holds "every", so that list splits
+// into chunks many times over, and the window folds its floats in list order,
+// so a list out of order would show in the scores' last bits.
+func TestBTreeIndexSearchIsTheSameHoweverTheListsGrew(t *testing.T) {
+	words := []string{"deploy", "friday", "lunch", "noon", "storm"}
+	// Four hundred keys scattered over a wide range, as hashed keys are. The
+	// window's neighbours are the keys either side in key order, whether the
+	// index holds them or not.
+	keys := make([]int, 400)
+	for i := range keys {
+		keys[i] = i * 7919 % 100003
+	}
+	sorted := slices.Sorted(slices.Values(keys))
+	position := make(map[int]int, len(sorted))
+	for i, key := range sorted {
+		position[key] = i
+	}
+	neighbours := func(key int) []int {
+		var out []int
+		if i := position[key]; i > 0 {
+			out = append(out, sorted[i-1])
+		}
+		if i := position[key]; i+1 < len(sorted) {
+			out = append(out, sorted[i+1])
+		}
+		return out
+	}
+	build := func(gamma float64) *index.BTreeIndex[int, float64] {
+		idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+		idx.SetRelevance(relevance.NewBM25[int, float64]())
+		if gamma > 0 {
+			idx.SetWindow(gamma, neighbours)
+		}
+		return idx
+	}
+	cases := map[string]float64{"window off": 0, "window on": 0.3}
+	for name, gamma := range cases {
+		t.Run(name, func(t *testing.T) {
+			rng := rand.New(rand.NewSource(5))
+			grown := build(gamma)
+			live := map[int]string{}
+			for step := range 1500 {
+				key := keys[rng.Intn(len(keys))]
+				_, held := live[key]
+				switch r := rng.Intn(10); {
+				case r < 2 && held:
+					if err := grown.Delete(key); err != nil {
+						t.Fatalf("Delete(%d) = %v, want nil", key, err)
+					}
+					delete(live, key)
+				case r < 4 && held:
+					doc := "every " + words[rng.Intn(len(words))] + " " + words[rng.Intn(len(words))]
+					if err := grown.Update(key, doc); err != nil {
+						t.Fatalf("Update(%d) = %v, want nil", key, err)
+					}
+					live[key] = doc
+				default:
+					doc := "every " + words[rng.Intn(len(words))] + " " + words[rng.Intn(len(words))]
+					if err := grown.Insert(key, doc); err != nil {
+						t.Fatalf("Insert(%d) = %v, want nil", key, err)
+					}
+					live[key] = doc
+				}
+				if step%500 == 499 {
+					if err := grown.Flush(); err != nil {
+						t.Fatalf("Flush = %v, want nil", err)
+					}
+				}
+			}
+			fresh := build(gamma)
+			for _, key := range slices.Sorted(maps.Keys(live)) {
+				if err := fresh.Insert(key, live[key]); err != nil {
+					t.Fatalf("Insert(%d) = %v, want nil", key, err)
+				}
+			}
+
+			queries := map[string]struct{}{
+				"every":            {},
+				"deploy friday":    {},
+				"every lunch noon": {},
+				"storm":            {},
+			}
+			for query := range queries {
+				t.Run(query, func(t *testing.T) {
+					wantKeys, wantScores, err := fresh.Search(query, 0)
+					if err != nil {
+						t.Fatalf("Search(%q) on the index written once = %v, want nil", query, err)
+					}
+					gotKeys, gotScores, err := grown.Search(query, 0)
+					if err != nil {
+						t.Fatalf("Search(%q) on the grown index = %v, want nil", query, err)
+					}
+					if diff := cmp.Diff(wantKeys[0], gotKeys[0]); diff != "" {
+						t.Errorf("Search(%q) keys mismatch with the index written once (-want +got):\n%s", query, diff)
+					}
+					if diff := cmp.Diff(wantScores[0], gotScores[0]); diff != "" {
+						t.Errorf("Search(%q) scores mismatch with the index written once (-want +got):\n%s", query, diff)
+					}
+				})
+			}
+		})
 	}
 }
 

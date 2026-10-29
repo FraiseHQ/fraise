@@ -75,11 +75,12 @@ func newProjection[K comparable, P float32 | float64](dim, projDim int, rng *ran
 // know which rows the splits below will use. Code that needs one row uses
 // ApplyRow.
 func (pr Projection[K, P]) Apply(p Point[K, P]) []P {
+	coordinates := p.Coordinates()
 	out := make([]P, len(pr.rows))
 	for i, row := range pr.rows {
 		var sum P
 		for d, w := range row {
-			sum += w * p.GetValue(d)
+			sum += w * coordinates[d]
 		}
 		out[i] = sum
 	}
@@ -91,9 +92,10 @@ func (pr Projection[K, P]) Apply(p Point[K, P]) []P {
 // internal node reads only that node's row. So ingest cost does not grow with
 // projDim.
 func (pr Projection[K, P]) ApplyRow(p Point[K, P], row int) P {
+	coordinates := p.Coordinates()
 	var sum P
 	for d, w := range pr.rows[row] {
-		sum += w * p.GetValue(d)
+		sum += w * coordinates[d]
 	}
 	return sum
 }
@@ -180,17 +182,19 @@ func (t *RPTree[K, T, P]) Insert(node TreeNode[K, T, P]) error {
 		return ErrDimensionMismatch
 	}
 
-	t.insert(t.root, node)
+	t.insert(t.root, node, p)
 	t.length++
 	return nil
 }
 
-func (t *RPTree[K, T, P]) insert(n *RPTreeNode[K, T, P], node TreeNode[K, T, P]) {
+// insert routes node, whose point is p, down from n to its leaf. The point is
+// read off the node once, by Insert, rather than at every level it passes.
+func (t *RPTree[K, T, P]) insert(n *RPTreeNode[K, T, P], node TreeNode[K, T, P], p Point[K, P]) {
 	if !n.isLeaf() {
-		if t.goesLeft(n, node.Point()) {
-			t.insert(n.left, node)
+		if t.goesLeft(n, p) {
+			t.insert(n.left, node, p)
 		} else {
-			t.insert(n.right, node)
+			t.insert(n.right, node, p)
 		}
 		return
 	}
@@ -437,9 +441,9 @@ func (t *RPTree[K, T, P]) Range(min, max Point[K, P]) []TreeNode[K, T, P] {
 // withinBox reports whether p falls within the axis-aligned box bounded by
 // min and max (inclusive) in every dimension.
 func withinBox[K comparable, P float32 | float64](p, min, max Point[K, P]) bool {
-	for d := 0; d < p.Dim(); d++ {
-		v := p.GetValue(d)
-		if v < min.GetValue(d) || v > max.GetValue(d) {
+	lo, hi := min.Coordinates(), max.Coordinates()
+	for d, v := range p.Coordinates() {
+		if v < lo[d] || v > hi[d] {
 			return false
 		}
 	}
@@ -462,8 +466,8 @@ func NewVectorPoint[K comparable, P float32 | float64](key K, vector containers.
 // Dim implements [Point]: the vector's dimensionality.
 func (v VectorPoint[K, P]) Dim() int { return v.vector.Dim() }
 
-// GetValue implements [Point]: the vector's coordinate along dimension d.
-func (v VectorPoint[K, P]) GetValue(d int) P { return v.vector.Data[d] }
+// Coordinates implements [Point]: the vector's own coordinates.
+func (v VectorPoint[K, P]) Coordinates() []P { return v.vector.Data }
 
 // Key implements [Point]: the key the point was built with, which ties a
 // search result back to the vector it came from.
@@ -471,7 +475,7 @@ func (v VectorPoint[K, P]) Key() K { return v.key }
 
 // Distance returns the Euclidean distance between v and p. Against another
 // VectorPoint it uses containers.Vector.Distance. It reads any other Point
-// coordinate by coordinate through the interface.
+// through its coordinates.
 func (v VectorPoint[K, P]) Distance(p Point[K, P]) (P, error) {
 	if o, ok := p.(VectorPoint[K, P]); ok {
 		return v.vector.Distance(o.vector)
@@ -479,9 +483,10 @@ func (v VectorPoint[K, P]) Distance(p Point[K, P]) (P, error) {
 	if p.Dim() != v.Dim() {
 		return 0, fmt.Errorf("%w: %d and %d", containers.ErrDimMismatch, v.Dim(), p.Dim())
 	}
+	other := p.Coordinates()
 	var sum P
-	for d := 0; d < v.Dim(); d++ {
-		diff := v.GetValue(d) - p.GetValue(d)
+	for d, x := range v.Coordinates() {
+		diff := x - other[d]
 		sum += diff * diff
 	}
 	return P(math.Sqrt(float64(sum))), nil
