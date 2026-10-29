@@ -38,6 +38,7 @@ GO_VET         := $(GO_CMD) vet
 BIN_DIR        := bin
 CMD_DIR        := ./cmd/server
 PY_DIR         := sdk/python
+MCP_DIR        := mcp
 
 BINARY_NAME    := fraise
 
@@ -70,7 +71,7 @@ help: ## Display this help message
 
 build: build-go ## Build the Go server
 
-build-all: build-go build-py ## Build Go server and all SDKs
+build-all: build-go build-py build-mcp ## Build Go server and all SDKs
 
 build-go: ## Build Go server binary
 	@echo "$(CYAN)Building Go server ($(BUILD_VERSION))...$(RESET)"
@@ -83,13 +84,18 @@ build-py: ## Build Python SDK
 	@cd $(PY_DIR) && $(UV_CMD) build
 	@echo "$(GREEN)✓ Python SDK built$(RESET)"
 
+build-mcp: ## Build the Python MCP server (fraise-mcp)
+	@echo "$(CYAN)Building fraise-mcp...$(RESET)"
+	@cd $(MCP_DIR) && $(UV_CMD) build
+	@echo "$(GREEN)✓ fraise-mcp built$(RESET)"
+
 ##@ Testing
 
 test: test-go ## Run all Go tests
 
-coverage: coverage-go coverage-py
+coverage: coverage-go coverage-py coverage-mcp
 
-test-all: test-go test-py ## Run tests for Go and all SDKs
+test-all: test-go test-py test-mcp ## Run tests for Go and all SDKs
 
 test-go: ## Run Go tests
 	@echo "$(CYAN)Running Go tests...$(RESET)"
@@ -105,6 +111,12 @@ coverage-py: ## Run Python SDK unit tests with coverage report (integration-mark
 	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m "not integration" \
 		--cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term
 	@echo "$(GREEN)✓ Coverage report: coverage-py.xml$(RESET)"
+
+coverage-mcp: ## Run fraise-mcp unit tests with coverage report (integration-marked tests excluded)
+	@echo "$(CYAN)Running fraise-mcp tests with coverage...$(RESET)"
+	@$(UV_CMD) run --package fraise-mcp --extra dev pytest $(MCP_DIR)/src/tests -m "not integration" \
+		--cov=fraise_mcp --cov-report=xml:coverage-mcp.xml --cov-report=term
+	@echo "$(GREEN)✓ Coverage report: coverage-mcp.xml$(RESET)"
 
 test-go-short: ## Run Go tests in short mode
 	@echo "$(CYAN)Running Go tests (short mode)...$(RESET)"
@@ -140,6 +152,13 @@ test-integration-py: ## Run Python SDK integration tests (marked `integration`) 
 	  FRAISE_URL=http://localhost:$(FRAISE_E2E_PORT) $(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m integration -vvv \
 	    || ( $(FRAISE_LOGS); exit 1 )
 
+test-integration-mcp: ## Run fraise-mcp integration tests (marked `integration`) against fraise in Docker
+	@echo "$(CYAN)Starting fraise (docker) for fraise-mcp integration tests...$(RESET)"
+	@FRAISE_PORT=$(FRAISE_E2E_PORT) $(COMPOSE) up --build --detach fraise
+	@trap '$(COMPOSE) down --remove-orphans' EXIT INT TERM; \
+	  FRAISE_URL=http://localhost:$(FRAISE_E2E_PORT) $(UV_CMD) run --package fraise-mcp --extra dev pytest $(MCP_DIR)/src/tests -m integration -vvv \
+	    || ( $(FRAISE_LOGS); exit 1 )
+
 test-integration: build-go ## Run server + MCP bridge integration tests (pytest drives the built binary over stdio)
 	@echo "$(CYAN)Running server + MCP bridge integration tests...$(RESET)"
 	@FRAISE_BIN=$(CURDIR)/$(BIN_DIR)/$(BINARY_NAME) $(UV_CMD) run --package tests pytest tests/integration -vvv
@@ -147,6 +166,10 @@ test-integration: build-go ## Run server + MCP bridge integration tests (pytest 
 test-py: ## Run Python unit tests with pytest (integration-marked tests excluded)
 	@echo "$(CYAN)Running Python tests...$(RESET)"
 	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m "not integration"
+
+test-mcp: ## Run fraise-mcp unit tests with pytest (integration-marked tests excluded)
+	@echo "$(CYAN)Running fraise-mcp tests...$(RESET)"
+	@$(UV_CMD) run --package fraise-mcp --extra dev pytest $(MCP_DIR)/src/tests -m "not integration"
 
 test-watch: ## Run Go tests in watch mode (requires reflex)
 	@echo "$(CYAN)Running Go tests in watch mode...$(RESET)"
@@ -277,7 +300,8 @@ clean-go: ## Clean Go build artifacts
 clean-py: ## Clean Python build artifacts
 	@echo "$(CYAN)Cleaning Python artifacts...$(RESET)"
 	@cd $(PY_DIR) && rm -rf dist/ .pytest_cache/ __pycache__/
-	rm -f coverage-py.xml .coverage
+	@cd $(MCP_DIR) && rm -rf dist/ .pytest_cache/ __pycache__/
+	rm -f coverage-py.xml coverage-mcp.xml .coverage
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@echo "$(GREEN)✓ Python artifacts cleaned$(RESET)"

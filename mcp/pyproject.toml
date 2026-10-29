@@ -1,0 +1,38 @@
+[project]
+name = "fraise-mcp"
+version = "0.0.0"
+description = "Fraise MCP server: remember and recall over a running Fraise daemon, with vectors embedded locally"
+readme = "README.md"
+authors = [
+    { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fraise-sdk[fastembed]>=0.3.0",
+    "mcp>=2.3.0,<3",
+]
+
+[project.scripts]
+fraise-mcp = "fraise_mcp.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+]
+
+[tool.uv.sources]
+fraise-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12.20,<0.13.0"]
+build-backend = "uv_build"
+
+# The suite's own pytest settings, so pytest's rootdir is this directory.
+# --import-mode=importlib names each test module after its path from the
+# rootdir. From the repository root that path starts with mcp/, and pytest
+# would register this directory as the module `mcp`, hiding the mcp
+# distribution the server is built on. From here it starts with src/.
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = ["-ra", "-q", "--capture=no", "-vvv", "--import-mode=importlib"]

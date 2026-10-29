@@ -1,21 +1,21 @@
 ---
 title: "MCP"
-description: "fraise mcp is a stdio MCP server bridging any MCP client to a running daemon"
+description: "fraise-mcp is a stdio MCP server bridging any MCP client to a running daemon, with vectors embedded locally"
 navIcon: "🔌"
 ---
 
-`fraise mcp` is a stdio MCP server — a thin bridge to a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, and needs no flags when the daemon runs on the same machine on its default port.
+`fraise-mcp` is a stdio MCP server for a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, each taking one FQL statement, and it embeds every statement's text on your machine, so retrieval is hybrid — text, graph and vector — out of the box. The model writes plain FQL; it never handles a vector. It ships on PyPI and runs with `uvx`, so there is nothing to install besides [uv](https://docs.astral.sh/uv/), and it needs no flags when the daemon runs on the same machine on its default port.
 
 <Note title="Before you register" type="note">
 
-Start the daemon first (`brew services start fraise`, or `systemctl --user start fraise` on Linux), then register the bridge with whichever coding agent you use.
+Start the daemon first (`brew services start fraise`, or `systemctl --user start fraise` on Linux), then register the server with whichever coding agent you use.
 
 </Note>
 
 ## Claude Code
 
 ```sh
-claude mcp add fraise -- fraise mcp
+claude mcp add fraise -- uvx fraise-mcp
 ```
 
 That registers it for the current project; add `--scope user` to make it available in every project instead.
@@ -23,15 +23,15 @@ That registers it for the current project; add `--scope user` to make it availab
 ## Codex
 
 ```sh
-codex mcp add fraise -- fraise mcp
+codex mcp add fraise -- uvx fraise-mcp
 ```
 
 Or write it into `~/.codex/config.toml` directly:
 
 ```toml title="~/.codex/config.toml"
 [mcp_servers.fraise]
-command = "fraise"
-args = ["mcp"]
+command = "uvx"
+args = ["fraise-mcp"]
 ```
 
 ## OpenCode
@@ -44,7 +44,7 @@ Add it to `opencode.json` in your project root:
   "mcp": {
     "fraise": {
       "type": "local",
-      "command": ["fraise", "mcp"]
+      "command": ["uvx", "fraise-mcp"]
     }
   }
 }
@@ -55,31 +55,57 @@ Add it to `opencode.json` in your project root:
 ```json
 {
   "mcpServers": {
-    "fraise": { "command": "fraise", "args": ["mcp"] }
+    "fraise": { "command": "uvx", "args": ["fraise-mcp"] }
   }
 }
 ```
 
-## A daemon elsewhere
+## Configuration
 
-The bridge reads configuration the way the daemon does (`fraise.config.toml` in its working directory, or the file `-config` names) and forwards to 127.0.0.1 on the port that configuration gives the server, so `fraise mcp -config <file>` finds whatever `fraise -config <file>` serves. To reach a daemon somewhere else, on another port or another host, pass its address:
+Every setting is a flag, and each flag falls back to an environment variable, so a client can configure the server through its command line or through its `env` block:
+
+| Flag | Environment | Default |
+| --- | --- | --- |
+| `--addr` | `FRAISE_ADDR` | `http://localhost:9876` |
+| `--model` | `FRAISE_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` |
+| `--no-vectors` | `FRAISE_NO_VECTORS=1` | vectors on |
+
+To reach a daemon somewhere else, on another port or another host, pass its address:
 
 ```sh
-claude mcp add fraise -- fraise mcp -addr http://10.0.0.5:9876
+claude mcp add fraise -- uvx fraise-mcp --addr http://10.0.0.5:9876
 ```
 
-or set it in the config file the bridge reads:
+The address carries no graph: each statement names its own with `@N`.
+
+## Embeddings
+
+The server embeds with [fastembed](https://qdrant.github.io/fastembed/), on ONNX Runtime and without torch. The default model, `BAAI/bge-small-en-v1.5`, gives 384-dimensional vectors; `--model` takes any text model fastembed supports. The model loads on the first statement that needs a vector, not at startup, so the server answers its client straight away. The first load downloads the model files, and later ones read them from fastembed's cache, which `FASTEMBED_CACHE_PATH` relocates.
+
+A `remember` embeds its fact. A `recall` embeds its search terms, the words and phrases before its first clause. The server appends `vec:$v` to the statement and binds the vector beside it, so the daemon sees an ordinary hybrid query. A recall with no terms, where [anchors alone seed the search](/docs/query-language/foundations/commands), is sent as written, and so is anything the server cannot read that far: the daemon checks every statement, and its error messages come back to the model as tool errors it can act on.
+
+With a vector on every statement, a recall finds a fact by meaning, not only by its words: `favorite color` finds `my favourite colour is teal`, so the model has no spelling variants to hedge with.
+
+The first vector written to a graph fixes that graph's dimension, so a graph keeps the model it was first written with. Pick the model before the first `remember`, and give a graph written by another embedder its own `@N`.
+
+## The built-in bridge
+
+The `fraise` binary carries the same two tools without the embedding: `fraise mcp` is a stdio bridge that sends each statement as written, so it searches by text and graph, and needs no Python.
+
+```sh
+claude mcp add fraise -- fraise mcp
+```
+
+It reads configuration the way the daemon does (`fraise.config.toml` in its working directory, or the file `-config` names) and forwards to 127.0.0.1 on the port that configuration gives the server, so `fraise mcp -config <file>` finds whatever `fraise -config <file>` serves. To reach a daemon somewhere else, pass `-addr http://10.0.0.5:9876`, or set it in the config file the bridge reads:
 
 ```toml
 [mcp]
 address = "http://10.0.0.5:9876"
 ```
 
-The address carries no graph: each query names its own with `@N`.
+## What the server carries, and what it cannot
 
-## What the bridge carries, and what it cannot
-
-The bridge describes itself over MCP: each tool arrives with a description and a full JSON schema for its arguments and results — the FQL shapes, a worked example, what a score means — so a client knows what `recall` and `remember` do and how to call them without being told.
+The server describes itself over MCP: each tool arrives with a description and a schema for its one argument — the FQL shapes, a worked example, what a score means — so a client knows what `recall` and `remember` do and how to call them without being told.
 
 What a tool description cannot carry is the **policy**: the habit of reaching for memory unprompted, and the judgement about what is worth keeping. That belongs in the file your agent already reads — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex and OpenCode — and two habits are enough:
 

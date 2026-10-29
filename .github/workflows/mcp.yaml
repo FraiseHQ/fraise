@@ -1,0 +1,138 @@
+name: MCP server
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "mcp/v[0-9]+.[0-9]+.[0-9]+"
+      - "mcp/v[0-9]+.[0-9]+.[0-9]+-*" # pre-releases: -alpha.N / -beta.N / -rc.N
+    paths:
+      - "mcp/**"
+      - "sdk/python/**"
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - Dockerfile.fraise
+      - docker-compose.yaml
+      - ".github/workflows/mcp.yaml"
+  pull_request:
+    paths:
+      - "mcp/**"
+      - "sdk/python/**"
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - Dockerfile.fraise
+      - docker-compose.yaml
+      - ".github/workflows/mcp.yaml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !contains(github.ref, 'main')}}
+
+permissions:
+  contents: read
+
+jobs:
+
+  lint:
+    name: Lint fraise-mcp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+      - name: Lint
+        run: make lint-py
+
+  unit:
+    name: Unit tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install the latest version of uv and set the python version
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          python-version: ${{ matrix.python }}
+
+      # Only the server's unit tests: a mocked client and embedder, so no
+      # daemon and no model download.
+      - name: Unit tests with coverage
+        run: make coverage-mcp
+
+      # Uploaded under the `mcp` flag so the server's coverage is reported
+      # separately from the SDK's and the Go server's (see codecov.yaml).
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-mcp.xml
+          flags: mcp
+
+  integration:
+    name: Integration tests (${{ matrix.runner }}, py${{ matrix.python }})
+    needs: unit
+    # The command a user runs with uvx, against the daemon image, on every
+    # published architecture and every supported Python. Each call launches a
+    # fresh server, so the two-turn test restarts it between its remember and
+    # its recall, once with vectors and once without as the control.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        python: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # fraise runs in a container, and Go builds inside the image. So only uv
+      # is needed here, to run pytest against it.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Run fraise-mcp integration tests
+        run: make test-integration-mcp
+
+  publish-mcp:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/mcp/v')
+    # integration already requires unit, so this gates on both. Nothing reaches
+    # PyPI unless the server passed against a live daemon on amd64 and arm64.
+    needs: integration
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write # PyPI trusted publishing, with no token secret
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+
+      - name: Version must match tag
+        run: |
+          RAW="${GITHUB_REF_NAME#mcp/v}"
+          if [[ ! "$RAW" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::bad tag '$GITHUB_REF_NAME' — expected mcp/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
+          fi
+          PKG_VERSION=$(uv run python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          [ "$RAW" = "$PKG_VERSION" ] || { echo "::error::tag maps to $RAW != pyproject $PKG_VERSION"; exit 1; }
+
+      # --out-dir is required here. This is a uv workspace, so a bare
+      # `uv build` writes to the workspace root's dist/ from any member
+      # directory. `uv publish` below globs dist/* relative to this job's
+      # working-directory (mcp), so it would find nothing.
+      - name: Build
+        run: uv build --out-dir dist
+
+      - name: Release
+        run: uv publish

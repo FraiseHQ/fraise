@@ -87,6 +87,7 @@ type(optional-scope): subject
 - **Scope routes the change to a component.** This keeps each component's changelog clean:
   - _no scope_ → server — `feat: add request rate limiting`
   - `(python)` → Python SDK — `fix(python): handle empty response body`
+  - `(mcp)` → MCP server — `fix(mcp): name the model in an embedding error`
 - **Breaking changes** use a `!` marker: `feat(api)!: drop legacy session cookies`. Pre-1.0, breaking changes are allowed but must be documented (see [RELEASE.md](RELEASE.md)).
 
 A wire-protocol or FQL change that spans the server and the Python SDK lands as **one PR** touching both together.

@@ -436,6 +436,7 @@ def callable_embedder():
 # then fails the provider tests instead of being followed by them.
 _OPENAI_DEFAULT_MODEL = "text-embedding-3-small"
 _HUGGINGFACE_DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+_FASTEMBED_DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 
 
 @pytest.fixture(scope="session")
@@ -489,6 +490,36 @@ def inference_client():
         return client
 
     return _inference_client
+
+
+@pytest.fixture(scope="session")
+def fastembed_default_model():
+    """The embedding model FastEmbedEmbedder uses when none is given."""
+    return _FASTEMBED_DEFAULT_MODEL
+
+
+@pytest.fixture
+def text_embedding():
+    """Callable building a mock ``fastembed.TextEmbedding`` class.
+
+    The real ``embed`` takes a batch and yields one numpy array per text, and
+    the embedder uses only each array's ``tolist()``. So the model the mock
+    class builds answers with one object whose ``tolist()`` returns the
+    values.
+
+    Returns:
+        ``callable(values=(0.1, 0.2, 0.3)) -> MagicMock``, the class. The model
+        it builds is its ``return_value``.
+    """
+
+    def _text_embedding(values=(0.1, 0.2, 0.3)) -> MagicMock:
+        cls = MagicMock()
+        cls.return_value.embed.return_value = [
+            MagicMock(**{"tolist.return_value": list(values)})
+        ]
+        return cls
+
+    return _text_embedding
 
 
 # What the suite's extractor finds in any text. "travel" repeats a topic a test
