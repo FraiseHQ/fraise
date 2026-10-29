@@ -28,6 +28,7 @@ import (
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
+	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -235,5 +236,46 @@ func TestSearchWithConfiguredTraversal(t *testing.T) {
 	nodes, _, _, _, _ = search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
 	if !find(values(nodes), calm) {
 		t.Errorf("Search with BFS installed did not fund %q — a tree traversal still observes anchors", calm)
+	}
+}
+
+// TestSearchFundsEveryMemberOfATransmittingAnchor pins that the traversal's
+// shape does not decide which members an anchor reaches. Every fact filed
+// under a transmitting anchor gets one SrcGraph contribution through it,
+// seeds included. A walk that set out from the seeds would put the seed that
+// discovered the anchor at depth 0 rather than among its members, and under
+// BFS "storm clouds gather at sea" would go unfunded while its cluster
+// siblings were funded. Expanding from the transmitting anchors puts every
+// member at depth 1, whichever traversal is installed.
+func TestSearchFundsEveryMemberOfATransmittingAnchor(t *testing.T) {
+	cases := map[string]graph.Traversal[uint64, float64]{
+		"excess": graph.NewExcessTraversal[uint64, float64](),
+		"bfs":    graph.NewBFSTraversal[uint64, float64](graph.Both),
+	}
+	for name, traversal := range cases {
+		t.Run(name, func(t *testing.T) {
+			g := noDecayGraph()
+			g.SetTraversal(traversal)
+			calm, _ := stormGraph(t, g)
+			weather := mkTopic(g, "weather", time.Now()).Key()
+
+			nodes, _, contributions, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
+			got := make(map[string]int)
+			for i, node := range nodes {
+				for _, c := range contributions[i] {
+					if c.Src == scoring.SrcGraph && c.Via == weather {
+						got[node.GetValue()]++
+					}
+				}
+			}
+			want := map[string]int{
+				"the barometer falls before the storm": 1,
+				"storm clouds gather at sea":           1,
+				calm:                                   1,
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("weather contributions per member mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
