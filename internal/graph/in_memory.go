@@ -759,9 +759,9 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // [index.BTreeIndex.Information]). Vector contributions carry the similarity
 // 1/(1+distance). So Score is bigger-is-better for every source.
 //
-// Each index is read once per keep, and the readings are pooled into one
-// ranking per source (see union). A key read under several keeps is sighted
-// once per source.
+// Each index is searched once, for one reading per keep, and the readings are
+// pooled into one ranking per source (see union). A key read under several
+// keeps is sighted once per source.
 //
 // It also measures the text's weakness, which the scorer applies to the
 // vector (see scoring.Observation.TextMissed): the information the best text
@@ -804,17 +804,10 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	var missed P
 	if len(keywords) > 0 {
 		query := stopwords.CleanContent(strings.Join(keywords, " "), textLanguage)
-		readings := make([][]K, 0, len(keeps))
-		masses := make([][]P, 0, len(keeps))
-		for _, keep := range keeps {
-			// An index error (empty index) means no text seeds.
-			keys, scores, err := g.GetTextIndex().Search(query, 0, keep)
-			if err != nil {
-				logger.Debug("Text index yielded no seeds", "error", err)
-				break
-			}
-			readings = append(readings, keys)
-			masses = append(masses, scores)
+		// An index error (empty index) means no text seeds.
+		readings, masses, err := g.GetTextIndex().Search(query, 0, keeps...)
+		if err != nil {
+			logger.Debug("Text index yielded no seeds", "error", err)
 		}
 		keys, scores := g.union(readings, masses, seedK, seeded)
 		textSeeds = len(keys)
@@ -841,25 +834,20 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 
 	if !vector.Empty() {
-		readings := make([][]K, 0, len(keeps))
-		nearness := make([][]P, 0, len(keeps))
-		for _, keep := range keeps {
-			keys, distances, err := g.vectorIndex.Search(vector, 0, keep)
-			if errors.Is(err, index.ErrInvalidDimension) {
-				return nil, 0, err
-			}
-			if err != nil {
-				logger.Debug("Vector index yielded no seeds", "error", err)
-				break
-			}
-			// union ranks bigger first, and a distance ranks smaller first.
-			// Negating it keeps the distance exact, so the similarity below
-			// folds the same bits as a lone reading's.
+		readings, nearness, err := g.vectorIndex.Search(vector, 0, keeps...)
+		if errors.Is(err, index.ErrInvalidDimension) {
+			return nil, 0, err
+		}
+		if err != nil {
+			logger.Debug("Vector index yielded no seeds", "error", err)
+		}
+		// union ranks bigger first, and a distance ranks smaller first.
+		// Negating it keeps the distance exact, so the similarity below folds
+		// the same bits as a lone reading's.
+		for _, distances := range nearness {
 			for i := range distances {
 				distances[i] = -distances[i]
 			}
-			readings = append(readings, keys)
-			nearness = append(nearness, distances)
 		}
 		keys, negated := g.union(readings, nearness, seedK, seeded)
 		vectorSeeds = len(keys)

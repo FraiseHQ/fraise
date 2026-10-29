@@ -55,22 +55,27 @@ type SearchIndex[K comparable, V any, P float32 | float64] interface {
 	// Count.
 	Flush() error
 
-	// Search returns the keys most relevant to query, best first, with their
-	// scores in a parallel slice. k bounds the number of results, and k <= 0
-	// returns all matches. Score direction depends on the index (see the
-	// aliases).
+	// Search returns one reading per keep: the keys most relevant to query
+	// among those the keep accepts, best first, with their scores in a
+	// parallel slice. k bounds each reading, and k <= 0 returns all its
+	// matches. Score direction depends on the index (see the aliases). A
+	// search given no keep returns a single reading over every key.
 	//
 	// The ranking is a total order: keys of equal score are ordered by the
 	// index's key comparator. Candidates are pooled from maps. Without the
 	// tiebreak, truncation would keep an arbitrary subset of a tied group, and
 	// two identical queries could rank the same matches differently.
 	//
-	// A non-nil keep restricts the search to the keys it accepts. A rejected
+	// A non-nil keep restricts its reading to the keys it accepts. A rejected
 	// key is never ranked, so it never takes one of the k places. Filtering
 	// after truncation would instead drop every accepted key ranked below k in
 	// the whole index. A selective filter would then return short or empty
 	// results while accepted matches exist. A nil keep accepts every key.
-	Search(query V, k int, keep func(K) bool) ([]K, []P, error)
+	//
+	// The readings are asked for together so an index can share the work
+	// between them. Each reading is the one a search with its keep alone
+	// returns.
+	Search(query V, k int, keeps ...func(K) bool) ([][]K, [][]P, error)
 }
 
 // TextIndex is a full-text index. It tokenizes string documents on insert and

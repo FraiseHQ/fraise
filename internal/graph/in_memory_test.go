@@ -290,8 +290,8 @@ func TestInMemoryGraphDeletePrunesIncidentRelationshipNodes(t *testing.T) {
 	if g.Get(about.Key()) != nil {
 		t.Errorf("the IsAbout node outlived its fact, want it pruned")
 	}
-	if keys, _, err := g.GetTextIndex().Search("acme", 0, nil); err == nil && len(keys) != 0 {
-		t.Errorf("text Search(acme) after Delete(fact) = %v, want no hits", keys)
+	if keys, _, err := g.GetTextIndex().Search("acme", 0); err == nil && len(keys[0]) != 0 {
+		t.Errorf("text Search(acme) after Delete(fact) = %v, want no hits", keys[0])
 	}
 	if got, want := len(g.Nodes()), 1; got != want {
 		t.Errorf("len(Nodes()) after Delete(fact) = %d, want %d (the topic alone)", got, want)
@@ -310,26 +310,32 @@ func TestInMemoryGraphIndexes(t *testing.T) {
 	mustSet(t, g, fact)
 
 	// Set must index the node's value in the text index.
-	keys, _, err := g.GetTextIndex().Search("acme", 0, nil)
-	if err != nil || len(keys) != 1 || keys[0] != key {
-		t.Errorf("text Search(acme) = (%v, %v), want ([key], nil)", keys, err)
+	readings, _, err := g.GetTextIndex().Search("acme", 0)
+	if err != nil {
+		t.Fatalf("text Search(acme) = %v, want nil", err)
+	}
+	if keys := readings[0]; len(keys) != 1 || keys[0] != key {
+		t.Errorf("text Search(acme) = %v, want [key]", keys)
 	}
 
 	// The vector index adopts the dimension of the first inserted embedding.
 	if err := g.GetVectorIndex().Insert(key, containers.NewVector[uint64]([]float64{1, 0, 0})); err != nil {
 		t.Fatalf("vector Insert = %v, want nil", err)
 	}
-	got, _, err := g.GetVectorIndex().Search(containers.NewVector[uint64]([]float64{1, 0, 0}), 1, nil)
-	if err != nil || len(got) != 1 || got[0] != key {
-		t.Errorf("vector Search = (%v, %v), want ([key], nil)", got, err)
+	readings, _, err = g.GetVectorIndex().Search(containers.NewVector[uint64]([]float64{1, 0, 0}), 1)
+	if err != nil {
+		t.Fatalf("vector Search = %v, want nil", err)
+	}
+	if got := readings[0]; len(got) != 1 || got[0] != key {
+		t.Errorf("vector Search = %v, want [key]", got)
 	}
 
 	// Deleting the node clears both indexes.
 	if err := g.Delete(fact); err != nil {
 		t.Fatalf("Delete = %v, want nil", err)
 	}
-	if keys, _, err := g.GetTextIndex().Search("acme", 0, nil); err == nil && len(keys) != 0 {
-		t.Errorf("text Search(acme) after delete = %v, want no hits", keys)
+	if keys, _, err := g.GetTextIndex().Search("acme", 0); err == nil && len(keys[0]) != 0 {
+		t.Errorf("text Search(acme) after delete = %v, want no hits", keys[0])
 	}
 	if got := g.GetVectorIndex().Count(); got != 0 {
 		t.Errorf("vector Count() after delete = %d, want 0", got)
@@ -930,10 +936,11 @@ func TestSearchBM25Floor(t *testing.T) {
 	}
 
 	nodes, scores, _, _, _ := search(g, []string{"comet"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, 1, 10, time.Time{}, time.Time{})
-	textKeys, textScores, err := g.GetTextIndex().Search("comet", 10, nil)
+	readings, readingScores, err := g.GetTextIndex().Search("comet", 10)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
 	}
+	textKeys, textScores := readings[0], readingScores[0]
 	if got := keys(nodes); !reflect.DeepEqual(got, textKeys) {
 		t.Errorf("Search ranking %v differs from the text index's %v with no surplus anywhere", got, textKeys)
 	}
@@ -950,10 +957,11 @@ func TestSearchScoresNeverBelowTextMass(t *testing.T) {
 	stormGraph(t, g)
 
 	nodes, scores, _, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
-	textKeys, textScores, err := g.GetTextIndex().Search("barometer storm", 20, nil)
+	readings, readingScores, err := g.GetTextIndex().Search("barometer storm", 20)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
 	}
+	textKeys, textScores := readings[0], readingScores[0]
 	textMass := make(map[uint64]float64, len(textKeys))
 	for i, key := range textKeys {
 		textMass[key] = textScores[i]
@@ -1211,10 +1219,11 @@ func TestSearchAnchorsDoNotConsumeSeedBudget(t *testing.T) {
 		mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	}
 
-	seeds, _, err := g.GetTextIndex().Search("billing", 12, nil)
+	readings, _, err := g.GetTextIndex().Search("billing", 12)
 	if err != nil {
 		t.Fatalf("text Search(billing) = %v, want nil", err)
 	}
+	seeds := readings[0]
 	for _, key := range seeds {
 		if node := g.Get(key); node.Key() == topic.Key() || node.Key() == entity.Key() {
 			t.Errorf("text index seeded the anchor %q, want facts only — it can neither transmit nor be a hit", node.GetValue())
