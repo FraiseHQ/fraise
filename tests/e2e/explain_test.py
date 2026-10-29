@@ -138,43 +138,36 @@ def test_explain_marks_a_named_hub(
     assert not any(c.get("named") for c in cluster), cluster
 
 
-def test_explain_score_recomputes_from_payload(explain, storm_graph, storm_hub_topic):
-    """Every hit's score recomputes from its own payload.
+def test_explain_score_recomputes_from_payload(
+    explain, storm_graph, storm_hub_topic, storm_hub, information_scores
+):
+    """Every hit's score recomputes from the payload.
 
-    With the query-level background rate, each score equals the formula applied
-    to the hit's contributions:
-
-        S = m + Σ max(0, M_A − m − d_A·ρ₀)/d_A
-
-    A contribution marked named drops the d_A·ρ₀ term, since a named anchor
-    owes no fair share. The recall names the hub and discovers the cluster, so
-    both kinds of term are recomputed. Each anchor's surplus arrives as its
-    per-edge share. The tolerance absorbs the recency decay between write and
-    read. So the payload is a complete explanation, not a summary.
+    With the query-level background rate, every hit's score equals the
+    information fold applied to the payload, within a tolerance that absorbs
+    the recency decay between write and read. The fold measures each fact
+    against the recall's whole pool, so the recall returns every candidate,
+    and the payload is then a complete explanation, not a summary. The recall
+    names the hub and discovers the cluster, so both kinds of graph term are
+    recomputed: the hub's memos carry graph contributions marked named, owing
+    no fair share, while the cluster funds its silent member unmarked.
     """
     status, body = explain(
-        f"recall@{storm_graph} barometer storm topic:{storm_hub_topic} top:20"
+        f"recall@{storm_graph} barometer storm topic:{storm_hub_topic} top:1000"
     )
     assert status == 200, body.get("error")
     background = body["results"].get("background", 0)
     assert background > 0, "two anchors are touched; the null rate must be positive"
+    hits = body["results"]["hits"]
+    graph = [c for hit in hits for c in hit["contributions"] if c["source"] == "graph"]
+    assert any(c.get("named") for c in graph), graph
+    assert not all(c.get("named") for c in graph), graph
+    assert {h["value"] for h in hits} >= set(storm_hub), "the named hub lifts its memos"
 
-    for hit in body["results"]["hits"]:
-        contributions = hit["contributions"]
-        m = sum(c["score"] for c in contributions if c["source"] in ("text", "vector"))
-        surplus = sum(
-            max(
-                0.0,
-                c["score"] - m - (0 if c.get("named") else c["degree"] * background),
-            )
-            / max(c["degree"], 0.01)
-            for c in contributions
-            if c["source"] == "graph"
-        )
-        want = m + surplus
-        assert abs(hit["score"] - want) < 1e-3, (
+    for hit, want in zip(hits, information_scores(hits, background), strict=True):
+        assert abs(hit["score"] - want) < 1e-6 * max(1.0, want), (
             f"{hit['value']!r}: score {hit['score']} != recomputed {want} "
-            f"from {contributions} at background {background}"
+            f"from {hit['contributions']} at background {background}"
         )
 
 

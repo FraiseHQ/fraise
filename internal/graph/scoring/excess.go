@@ -40,41 +40,65 @@ package scoring
 // mass. Self-exclusion still holds, so a named anchor holding one match lifts
 // nothing.
 //
+// The seed mass is the text mass, the vector similarity weighted by the
+// text's weakness, w = I_q / I_hit (see Observation.TextMissed), and the
+// anchor sightings: the embedding is credited with the bits the text missed
+// per bit it found, so a query whose words the best text hit holds outright
+// weighs it at 1 and the text leads, and one the text half answers doubles
+// it.
+//
 // Scores stay in raw seed units. Relevance is homogeneous of degree 1 in the
 // mass scale, so rescaling every mass leaves the ordering unchanged (scale
 // invariance). Normalising a single channel would only break the channels'
 // commensurability.
 type ExcessScorer[K comparable, P float32 | float64] struct {
-	// background is the query's bound null rate. Only WithBackground sets it,
-	// by returning a fresh value, never by mutating in place. So the graph's
-	// shared instance stays pure, and the zero value is the unbound scorer that
-	// seed fusion runs.
+	// background is the query's bound null rate and missed its text's
+	// weakness. They are set only by Observe returning a fresh value — never
+	// mutated in place — so the graph's shared instance stays pure and the
+	// zero value is the unbound scorer seed fusion runs.
 	background P
+	missed     P
 }
 
-// NewExcessScorer returns the excess-transmission fold. It is unbound, at
-// background zero, until WithBackground binds a query's rate.
+// NewExcessScorer returns the excess-transmission fold, unbound (background
+// zero, the vector at weight 1) until Observe binds a query.
 func NewExcessScorer[K comparable, P float32 | float64]() *ExcessScorer[K, P] {
 	return &ExcessScorer[K, P]{}
 }
 
-// WithBackground returns a scorer bound to one query's background rate.
-func (s *ExcessScorer[K, P]) WithBackground(background P) Scorer[K, P] {
-	return &ExcessScorer[K, P]{background: background}
+// Observe returns a scorer bound to one query's background rate and text
+// weakness. The candidate pool plays no part: each candidate folds on its
+// own observations.
+func (s *ExcessScorer[K, P]) Observe(o Observation[K, P]) Scorer[K, P] {
+	return &ExcessScorer[K, P]{background: o.Background, missed: o.TextMissed}
 }
 
-// Score implements [Scorer]. It sums the seed mass first: the text, vector and
-// anchor observations. Then it applies the hinge to each graph observation in
-// list order, so identical inputs fold to byte-identical scores.
+// Score folds contributions under the bound observation.
 func (s *ExcessScorer[K, P]) Score(contributions []Contribution[K, P]) P {
-	var mass P
+	_, _, mass, graph := s.fold(contributions)
+	return mass + graph
+}
+
+// fold reads a candidate's contributions the way the methodology does and
+// returns its parts, which ExcessScorer adds and InformationScorer weighs
+// apart: the text mass, the vector similarity as recorded, the seed mass m
+// (text, weighted vector and anchor sightings) and the graph term, the sum of
+// the hinged per-edge surpluses. Seed mass first, then the hinge over each
+// graph observation in list order, so identical inputs fold to
+// byte-identical parts.
+func (s *ExcessScorer[K, P]) fold(contributions []Contribution[K, P]) (text, vector, mass, graph P) {
+	var anchor P
 	for _, c := range contributions {
-		if c.Src == SrcText || c.Src == SrcVector || c.Src == SrcAnchor {
-			mass += c.Score
+		switch c.Src {
+		case SrcText:
+			text += c.Score
+		case SrcVector:
+			vector += c.Score
+		case SrcAnchor:
+			anchor += c.Score
 		}
 	}
-
-	var excess P
+	mass = text + (1+s.missed)*vector + anchor
 
 	for _, c := range contributions {
 		if c.Src != SrcGraph {
@@ -89,8 +113,8 @@ func (s *ExcessScorer[K, P]) Score(contributions []Contribution[K, P]) P {
 			fair = 0
 		}
 		if surplus := (c.Score - mass - fair) / deg; surplus > 0 {
-			excess += surplus
+			graph += surplus
 		}
 	}
-	return mass + excess
+	return text, vector, mass, graph
 }

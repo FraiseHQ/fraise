@@ -207,27 +207,62 @@ func (idx *RPTreeIndex[K, P]) Delete(key K) error {
 	return idx.maybeFlush()
 }
 
-// Search fans query out across the forest and pools the candidates. It
-// re-ranks them by true distance to the live vector, not the tree's copy, and
-// returns the k nearest. Which equidistant vectors the trees surface first
-// depends on insertion order, so ties are ranked by key.
-//
-// The re-rank keeps only the k best as it goes, and the pooled union is never
-// sorted. TopK keeps the largest scores, so each candidate is offered with
-// its distance negated. keep goes down to every tree, and each tree probes
-// until it holds enough accepted candidates.
-func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int, keep func(K) bool) ([]K, []P, error) {
+// Search returns one reading per keep (see SearchIndex). Each reading walks
+// the forest on its own, because a tree probes until it holds enough
+// candidates its keep accepts, so how far it walks depends on the keep.
+func (idx *RPTreeIndex[K, P]) Search(query containers.Vector[K, P], k int, keeps ...func(K) bool) ([][]K, [][]P, error) {
 	if len(idx.vectors) == 0 {
 		return nil, nil, ErrEmptyIndex
 	}
 	if query.Dim() != idx.dim {
 		return nil, nil, fmt.Errorf("%w: index expects %d, got %d", ErrInvalidDimension, idx.dim, query.Dim())
 	}
+	if len(keeps) == 0 {
+		keeps = []func(K) bool{nil}
+	}
+	keys := make([][]K, len(keeps))
+	distances := make([][]P, len(keeps))
+	for i, keep := range keeps {
+		var err error
+		if keys[i], distances[i], err = idx.read(query, k, keep); err != nil {
+			return nil, nil, err
+		}
+	}
+	return keys, distances, nil
+}
 
-	// k <= 0 asks for every match, and every live vector is one. The trees may
-	// still hold stale copies, so each is asked for all of its entries.
+// read is one reading. It fans query out across the forest and pools the
+// candidates. It re-ranks them by true distance to the live vector, not the
+// tree's copy, and returns the k nearest. Which equidistant vectors the trees
+// surface first depends on insertion order, so ties are ranked by key.
+//
+// The re-rank keeps only the k best as it goes, and the pooled union is never
+// sorted. TopK keeps the largest scores, so each candidate is offered with
+// its distance negated. keep goes down to every tree, and each tree probes
+// until it holds enough accepted candidates.
+func (idx *RPTreeIndex[K, P]) read(query containers.Vector[K, P], k int, keep func(K) bool) ([]K, []P, error) {
+	// k <= 0 asks for every match, and every live vector is one. The live
+	// vectors are the source of truth the forest is re-ranked against, so
+	// reading them all directly gives the same answer as probing every tree
+	// for every entry, without building a tree point per entry per tree.
 	if k <= 0 {
-		k = idx.Entries()
+		every := containers.NewTopK[K, P](0, idx.compare)
+		for key, current := range idx.vectors {
+			if keep != nil && !keep(key) {
+				continue
+			}
+			d, err := query.Distance(current)
+			if err != nil {
+				return nil, nil, err
+			}
+			every.Offer(key, -d)
+		}
+		out, scores := every.Drain()
+		for i, score := range scores {
+			scores[i] = -score
+		}
+		logger.Debug("Vector search returned every match", "found", len(out))
+		return out, scores, nil
 	}
 
 	var zeroKey K

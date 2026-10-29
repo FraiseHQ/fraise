@@ -102,10 +102,19 @@ const (
 	// vector search only.
 	DefaultSearchAlgorithm string = SearchExcess
 
-	// DefaultScoringAlgorithm selects scoring.ExcessScorer, the shipped
-	// scoring methodology. "rrf" selects scoring.RRFScorer, kept for
-	// comparison runs.
-	DefaultScoringAlgorithm string = ScoringExcess
+	// DefaultScoringAlgorithm selects scoring.InformationScorer, the shipped
+	// scoring methodology: each channel's z-score over the recall's pool, the
+	// text and the vector corroborating each other and the graph added, the
+	// vector trusted further where it is confident and the words are not.
+	// Measured on LoCoMo conv-26 at the turn level with bge-small-en-v1.5
+	// vectors, against "excess": turn-recall@10 0.838 against 0.804,
+	// turn-p@1 0.411 against 0.376 and turn-f1@10 0.170 against 0.162; with
+	// text alone, turn-recall@10 0.782 against 0.784. It does not keep the
+	// BM25 floor: measuring the graph against the text, it can rank a fact the
+	// graph raised above one the words matched better. "excess" selects
+	// scoring.ExcessScorer, which keeps it, and "rrf" scoring.RRFScorer, kept
+	// for comparison runs.
+	DefaultScoringAlgorithm string = ScoringInformation
 
 	// DefaultRelevanceModel is the text index's relevance model. The excess
 	// methodology needs BM25's raw retrieval mass. "matchcount" is kept for
