@@ -53,15 +53,16 @@ func (p *point) Point() trees.Point[int, float64] {
 	return p
 }
 
-func (p *point) Dim() int                 { return len(p.coord) }
-func (p *point) GetValue(dim int) float64 { return p.coord[dim] }
+func (p *point) Dim() int               { return len(p.coord) }
+func (p *point) Coordinates() []float64 { return p.coord }
 func (p *point) Distance(o trees.Point[int, float64]) (float64, error) {
 	if o.Dim() != p.Dim() {
 		return 0, containers.ErrDimMismatch
 	}
+	other := o.Coordinates()
 	var sum float64
-	for d := 0; d < p.Dim(); d++ {
-		diff := p.GetValue(d) - o.GetValue(d)
+	for d, x := range p.coord {
+		diff := x - other[d]
 		sum += diff * diff
 	}
 	return math.Sqrt(sum), nil
@@ -449,7 +450,7 @@ func TestRPTreeRangeIsExact(t *testing.T) {
 	for _, p := range points {
 		inBox := true
 		for d := 0; d < dim; d++ {
-			if p.GetValue(d) < min.GetValue(d) || p.GetValue(d) > max.GetValue(d) {
+			if p.coord[d] < min.coord[d] || p.coord[d] > max.coord[d] {
 				inBox = false
 				break
 			}
