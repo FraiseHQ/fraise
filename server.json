@@ -9,7 +9,7 @@
     "source": "github",
     "id": "1207409551"
   },
-  "version": "0.3.5",
+  "version": "0.3.6",
   "packages": [
     {
       "registryType": "oci",
