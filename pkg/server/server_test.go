@@ -26,13 +26,16 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -446,5 +449,95 @@ func TestStatsEndpoint(t *testing.T) {
 	if g0.ForestEntries < g0.Vectors || g0.ForestEntries > 2*g0.Vectors {
 		t.Errorf("graphs[0].forest_entries = %d, want within [vectors, 2*vectors] = [%d, %d]",
 			g0.ForestEntries, g0.Vectors, 2*g0.Vectors)
+	}
+}
+
+// captureStdout swaps os.Stdout for a pipe while fn runs and returns what was
+// written to it. The log handler captures os.Stdout when it is built, so fn
+// must build and install the logger too, not just log through one.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("creating pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = original }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing pipe: %v", err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading captured output: %v", err)
+	}
+	return string(out)
+}
+
+// TestQueryLogsCarryShapeNotContent pins that a remembered fact never reaches
+// the log at the default level. A query is what a caller remembers, and stdout
+// lands in every log aggregator the server runs under, so the text there is
+// personal data copied out of the store. At INFO the log still says that the
+// query ran, with its graph, hit count and duration. The text appears only at
+// DEBUG, where an operator has opted in. That covers the errors too: a parse
+// error that quotes the query, and a write that fails at commit, which the
+// scheduler and the handler log at Error. The DEBUG row keeps the marker visible, so the INFO row's absence
+// comes from the level and not from a query that never ran.
+func TestQueryLogsCarryShapeNotContent(t *testing.T) {
+	const private = "zzprivate"
+
+	cases := map[string]struct {
+		level       string
+		wantContent bool
+	}{
+		"info hides the text":  {level: config.LogLevelInfo, wantContent: false},
+		"debug shows the text": {level: config.LogLevelDebug, wantContent: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.New()
+			cfg.Log.Level = tc.level
+			t.Cleanup(func() { logger.SetDefault(nil) })
+
+			got := captureStdout(t, func() {
+				logger.SetDefault(logger.NewLogger(cfg))
+				s := newTestServerCfg(t, cfg)
+
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 '`+private+` anna sent the invoice'"}`); w.Code != http.StatusOK {
+					t.Fatalf("remember: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 `+private+`"}`); w.Code != http.StatusOK {
+					t.Fatalf("recall: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
+				// The second quoted phrase is unexpected, and the parse error
+				// quotes it back.
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna' '`+private+` second fact'"}`); w.Code != http.StatusBadRequest {
+					t.Fatalf("unparsable: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+				}
+				// The first vector fixes the graph's dimension at 3, so the
+				// second fails at commit, past the parser, and its error is
+				// logged at Error by the scheduler and the handler.
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'vec one' vec:$v","parameters":{"v":[0.1,0.2,0.3]}}`); w.Code != http.StatusOK {
+					t.Fatalf("first vector: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 '`+private+` vector fact' vec:$v","parameters":{"v":[0.1,0.2,0.3,0.4]}}`); w.Code != http.StatusBadRequest {
+					t.Fatalf("mismatched vector: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+				}
+			})
+
+			if gotContent := strings.Contains(got, private); gotContent != tc.wantContent {
+				t.Errorf("log contains %q = %t, want %t; log:\n%s", private, gotContent, tc.wantContent, got)
+			}
+			for _, want := range []string{`msg="Query executed"`, "graph=0", "hits=1", "duration=", `msg="Rejecting unparsable query"`} {
+				if !strings.Contains(got, want) {
+					t.Errorf("log is missing %q; log:\n%s", want, got)
+				}
+			}
+		})
 	}
 }
