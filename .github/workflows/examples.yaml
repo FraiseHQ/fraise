@@ -1,0 +1,51 @@
+name: Examples
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "examples/**"
+      - "sdk/python/**"
+      - ".github/workflows/examples.yaml"
+  pull_request:
+    paths:
+      - "examples/**"
+      - "sdk/python/**"
+      - ".github/workflows/examples.yaml"
+  schedule:
+    - cron: "0 7 * * 1" # weekly, Monday 07:00 UTC, since the agent SDKs the images resolve release without commits
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !contains(github.ref, 'main')}}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint Dockerfiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version-file: "pyproject.toml"
+      - name: Lint
+        run: make lint-docker
+
+  smoke:
+    name: Example images (${{ matrix.runner }})
+    needs: lint
+    # The images install wheels per architecture, the Claude Agent SDK's with
+    # the CLI binary inside it. So each example is built and started natively
+    # on both architectures a user runs it on.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build and start the examples
+        run: make test-examples
