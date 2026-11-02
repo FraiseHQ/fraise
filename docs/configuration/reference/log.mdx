@@ -22,6 +22,7 @@ disable-timestamp = true
 ## Notes
 
 - Values from the fixed vocabulary are matched without regard to case, so `-log-level error` and `-log-level ERROR` are the same request. A value outside it stops the server before it binds a port.
+- At `INFO` and above, a query's log lines carry its shape — graph, read or write, hit count and duration — never its text. Query text, and any parse error that quotes it, is logged only at `DEBUG`, so turning `DEBUG` on writes every remembered fact to stdout.
 - Run with `format = "json"` if you ship logs anywhere that parses them.
 - `disable-timestamp = true` drops the time from every line, for a supervisor that stamps what it collects — journald, docker — and would otherwise record two clocks per line.
 - The log is half the observability surface — `/api/v1/stats` is the other half. There are no metrics endpoints yet. See [Health and monitoring](/docs/operations/runbook/health-and-monitoring).
