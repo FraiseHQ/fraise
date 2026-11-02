@@ -70,12 +70,12 @@ func NewStream[K comparable, P float32 | float64](q Query[K, P]) *Stream[K, P] {
 // write fails instead of succeeding with the fact half-linked to its anchors.
 func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, edge graph.Node[K]) error {
 	if err := g.Set(node); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
-		logger.Error("Failed to store anchor node", "anchor", node.GetValue(), "error", err)
-		return fmt.Errorf("storing anchor %q: %w", node.GetValue(), err)
+		logger.Error("Failed to store anchor node", "error", err)
+		return fmt.Errorf("storing anchor: %w", err)
 	}
 	if err := g.Set(edge); err != nil && !errors.Is(err, graph.ErrNodeAlreadyExists) {
-		logger.Error("Failed to store anchor edge", "anchor", node.GetValue(), "error", err)
-		return fmt.Errorf("linking anchor %q: %w", node.GetValue(), err)
+		logger.Error("Failed to store anchor edge", "error", err)
+		return fmt.Errorf("linking anchor: %w", err)
 	}
 	return nil
 }
@@ -91,6 +91,10 @@ func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, e
 // rejects the write with g untouched. Later errors are not expected in
 // practice. If one occurs, it is returned with the write partly applied. A read
 // fails on the same mismatch rather than answering from the text index alone.
+//
+// Errors and Error lines name the step that failed, never the fact or anchor
+// value. A returned error is logged by the scheduler and the server at Error,
+// so a value quoted in it would copy a remembered fact into the default log.
 func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 
 	if s.Query.IsWrite() {
@@ -122,9 +126,8 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 				write = vectors.Update
 			}
 			if err := write(fact.Key(), remember.Vector); err != nil {
-				logger.Error("Failed to index fact vector",
-					"value", remember.Value, "error", err)
-				return fmt.Errorf("indexing vector for fact %q: %w", remember.Value, err)
+				logger.Error("Failed to index fact vector", "error", err)
+				return fmt.Errorf("indexing fact vector: %w", err)
 			}
 		}
 
@@ -134,8 +137,8 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		// rather than left decaying from its first write. A changed vector
 		// replaces the fact's index entry the same way, above.
 		if err := g.Put(fact.Key(), fact); err != nil {
-			logger.Error("Failed to store fact", "value", remember.Value, "error", err)
-			return fmt.Errorf("storing fact %q: %w", remember.Value, err)
+			logger.Error("Failed to store fact", "error", err)
+			return fmt.Errorf("storing fact: %w", err)
 		}
 
 		for _, e := range remember.Entities {
