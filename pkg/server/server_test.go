@@ -482,9 +482,10 @@ func captureStdout(t *testing.T, fn func()) string {
 // the log at the default level. A query is what a caller remembers, and stdout
 // lands in every log aggregator the server runs under, so the text there is
 // personal data copied out of the store. At INFO the log still says that the
-// query ran, with its graph, hit count and duration. The text, including a
-// parse error that quotes it, appears only at DEBUG, where an operator has
-// opted in. The DEBUG row keeps the marker visible, so the INFO row's absence
+// query ran, with its graph, hit count and duration. The text appears only at
+// DEBUG, where an operator has opted in. That covers the errors too: a parse
+// error that quotes the query, and a write that fails at commit, which the
+// scheduler and the handler log at Error. The DEBUG row keeps the marker visible, so the INFO row's absence
 // comes from the level and not from a query that never ran.
 func TestQueryLogsCarryShapeNotContent(t *testing.T) {
 	const private = "zzprivate"
@@ -517,6 +518,15 @@ func TestQueryLogsCarryShapeNotContent(t *testing.T) {
 				// quotes it back.
 				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna' '`+private+` second fact'"}`); w.Code != http.StatusBadRequest {
 					t.Fatalf("unparsable: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+				}
+				// The first vector fixes the graph's dimension at 3, so the
+				// second fails at commit, past the parser, and its error is
+				// logged at Error by the scheduler and the handler.
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'vec one' vec:$v","parameters":{"v":[0.1,0.2,0.3]}}`); w.Code != http.StatusOK {
+					t.Fatalf("first vector: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 '`+private+` vector fact' vec:$v","parameters":{"v":[0.1,0.2,0.3,0.4]}}`); w.Code != http.StatusBadRequest {
+					t.Fatalf("mismatched vector: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
 				}
 			})
 
