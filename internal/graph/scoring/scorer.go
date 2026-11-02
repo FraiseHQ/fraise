@@ -73,6 +73,25 @@ type Observation[K comparable, P float32 | float64] struct {
 	// Keys lists Candidates in the order a fold reads the pool, ascending, so
 	// statistics summed over it fold the same way on every run.
 	Keys []K
+
+	// Groups are the rest of the pool: candidates the search counted rather
+	// than listed, because each holds its group's contributions and nothing
+	// else. A fold counts every member, as it counts every key, so the pool's
+	// statistics are those of the facts the recall can return, however many
+	// of them a hub transmits to.
+	Groups []Group[K, P]
+}
+
+// Group is a run of candidates that hold the same contributions: the members
+// an anchor transmits to and nothing else observed. Their relevance is one
+// fold, so a search scores the group once instead of each member, and a hub's
+// members cost a recall what it costs to rank them, not to pool them.
+type Group[K comparable, P float32 | float64] struct {
+	// Members lists the group's candidates in ascending key order.
+	Members []K
+
+	// Contributions is what each member holds.
+	Contributions []Contribution[K, P]
 }
 
 // Scorer folds one candidate's contributions into its relevance score;
