@@ -140,6 +140,80 @@ func TestQueryMalformedBody(t *testing.T) {
 	}
 }
 
+// TestQueryTextThatIsNotUTF8IsRejected pins that a query whose text decoding
+// altered is rejected with 400 instead of stored. encoding/json replaces
+// invalid UTF-8, and a \u escape for half a surrogate pair, with U+FFFD
+// without an error, and the parser rejects U+FFFD. A fact written with either
+// would be stored as text its client never sent.
+func TestQueryTextThatIsNotUTF8IsRejected(t *testing.T) {
+	bodies := map[string]string{
+		"invalid bytes":                  "{\"query\":\"recall \xff\xfe\"}",
+		"lone high surrogate":            `{"query":"remember 'a \ud800' topic:t"}`,
+		"lone low surrogate":             `{"query":"remember 'a \udc00' topic:t"}`,
+		"high surrogate before a letter": `{"query":"remember 'a \ud800\u0041' topic:t"}`,
+		"pair in the wrong order":        `{"query":"remember 'a \ude00\ud83d' topic:t"}`,
+	}
+
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			s := newTestServer(t)
+
+			w := s.do(http.MethodPost, "/api/v1/q", body)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			if want := "not UTF-8 text"; !strings.Contains(w.Body.String(), want) {
+				t.Errorf("body = %q, want it to contain %q", w.Body.String(), want)
+			}
+		})
+	}
+}
+
+// TestQueryEscapedTextRoundTrips is the other half of the pair: an escape that
+// does spell UTF-8 text is stored as that text and returned unchanged. A
+// surrogate pair is one character, and an escaped backslash before "u" starts
+// no escape.
+func TestQueryEscapedTextRoundTrips(t *testing.T) {
+	cases := map[string]struct {
+		phrase string
+		want   string
+	}{
+		"surrogate pair":    {`smile \ud83d\ude00`, "smile \U0001F600"},
+		"escaped backslash": {`path \\ud800`, `path \ud800`},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newTestServer(t)
+			if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 '`+tc.phrase+`' topic:t"}`); w.Code != http.StatusOK {
+				t.Fatalf("write: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+			}
+
+			w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 topic:t"}`)
+			if w.Code != http.StatusOK {
+				t.Fatalf("recall: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+			}
+			var resp struct {
+				Results struct {
+					Hits []struct {
+						Value string `json:"value"`
+					} `json:"hits"`
+				} `json:"results"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decoding %s: %v", w.Body.String(), err)
+			}
+			if len(resp.Results.Hits) != 1 {
+				t.Fatalf("hits = %d, want 1 (body: %s)", len(resp.Results.Hits), w.Body.String())
+			}
+			if got := resp.Results.Hits[0].Value; got != tc.want {
+				t.Errorf("stored fact = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestQueryUnparsable checks that a syntactically invalid query string is
 // rejected with 400 before it reaches the engine.
 func TestQueryUnparsable(t *testing.T) {

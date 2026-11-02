@@ -41,9 +41,9 @@ import (
 // apostrophes doubled and quotes around it, it parses back to exactly that
 // value. The String() reconstruction parses back to it as well. Ingestion may
 // feed a phrase any character JSON can carry. So nothing between the quotes may
-// be lost or altered, or end the phrase early. Invalid UTF-8 is skipped,
-// because JSON decoding replaces it before a query reaches the parser. A blank
-// value is skipped, because an empty fact is rejected.
+// be lost or altered, or end the phrase early. Invalid UTF-8 and U+FFFD are
+// skipped, because Parse rejects them. A blank value is skipped, because an
+// empty fact is rejected.
 func FuzzRememberPhraseRoundTrip(f *testing.F) {
 	for _, seed := range []string{
 		"plain words",
@@ -64,8 +64,8 @@ func FuzzRememberPhraseRoundTrip(f *testing.F) {
 		if strings.TrimSpace(value) == "" {
 			t.Skip("a whitespace-only fact is empty, and empty facts are rejected")
 		}
-		if !utf8.ValidString(value) {
-			t.Skip("JSON transport never delivers invalid UTF-8")
+		if !utf8.ValidString(value) || strings.ContainsRune(value, utf8.RuneError) {
+			t.Skip("invalid UTF-8 and U+FFFD are rejected, not stored")
 		}
 		quoted := "'" + strings.ReplaceAll(value, "'", "''") + "'"
 		q := "remember " + quoted + " topic:x"
@@ -113,6 +113,8 @@ func FuzzParseNeverPanics(f *testing.F) {
 		"recall x topic:'y' since:7d until:'2026-01-15' depth:2 top:5",
 		"recall x \x00 y",
 		"recall 'a\x00b'",
+		"recall \xff\xfe",
+		"remember 'a\xed\xa0\x80b'",
 	} {
 		f.Add(seed)
 	}
@@ -1465,6 +1467,42 @@ func TestNulWhereTheFactShouldStartIsRejected(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestTextThatIsNotUTF8IsRejectedAtItsColumn pins that a query is rejected at
+// its first character that is not UTF-8 text, inside a phrase as well as
+// outside one. U+FFFD is rejected with the invalid bytes: JSON decoding puts it
+// in place of invalid UTF-8 and of a lone surrogate, so over HTTP it is the
+// only form they reach the parser in. A fact stored with any of them would
+// hold text its client never wrote.
+func TestTextThatIsNotUTF8IsRejectedAtItsColumn(t *testing.T) {
+	cases := map[string]struct {
+		want int // the column of the first character that is not UTF-8 text
+	}{
+		"recall \xff\xfe": {8},
+		// A UTF-16 surrogate encoded as UTF-8 is not UTF-8 either.
+		"recall \xed\xa0\x80":          {8},
+		"recall déjà\xc3":              {12},
+		"remember 'déjà \xfe' topic:x": {16},
+		"remember 'a \uFFFD' topic:x":  {13},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
+			if cmd != nil {
+				t.Errorf("Parse(%q) = %v, want no command", query, cmd)
+			}
+			var got *parser.Error
+			if !errors.As(err, &got) {
+				t.Fatalf("Parse(%q) error %v is not a *parser.Error", query, err)
+			}
+			want := parser.Error{Pos: lexer.Position{Column: tc.want}, Msg: "not UTF-8 text: an invalid byte, a lone surrogate, or U+FFFD in place of one"}
+			if diff := cmp.Diff(want, *got); diff != "" {
+				t.Errorf("Parse(%q) error mismatch (-want +got):\n%s", query, diff)
 			}
 		})
 	}
