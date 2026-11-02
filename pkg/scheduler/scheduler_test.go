@@ -25,11 +25,13 @@ package scheduler_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/graph"
 	"github.com/FraiseHQ/fraise/internal/index"
 	"github.com/FraiseHQ/fraise/internal/query"
 	"github.com/FraiseHQ/fraise/pkg/db"
@@ -64,7 +66,8 @@ func planStream(t *testing.T, cfg *config.ConfigSet, q string, params map[string
 	return stream
 }
 
-// TestStartStop checks the scheduler starts its worker pool and stops cleanly.
+// TestStartStop checks the scheduler opens its read queue and one write lane
+// per graph, and releases them on Stop.
 func TestStartStop(t *testing.T) {
 	cfg := config.New()
 	s := scheduler.NewScheduler[uint64, float32](cfg)
@@ -76,9 +79,15 @@ func TestStartStop(t *testing.T) {
 	if s.Queue == nil {
 		t.Fatal("Start did not allocate the queue")
 	}
+	if got, want := len(s.Lanes), s.DB.NumGraphs(); got != want {
+		t.Fatalf("Start opened %d lanes, want one per graph (%d)", got, want)
+	}
 	s.Stop()
 	if s.Queue != nil {
 		t.Error("Stop did not release the queue")
+	}
+	if s.Lanes != nil {
+		t.Error("Stop did not release the lanes")
 	}
 }
 
@@ -302,13 +311,143 @@ func TestSubmitFullQueueTimesOut(t *testing.T) {
 	}
 }
 
-// TestStopDrainsBufferedWrite checks that a graceful Stop executes work already
-// accepted into the buffer rather than dropping it. With no worker running,
-// Stop's drain is the only chance for the buffered write to run.
-func TestStopDrainsBufferedWrite(t *testing.T) {
+// TestWriteBlockedOnItsGraphLeavesReadsRunning checks that reads do not queue
+// behind writes. With one read worker and graph 0's lock held, a write to
+// graph 0 parks on the lock. A write that occupied the worker would leave the
+// read of graph 1 waiting for as long as graph 0 stays locked.
+func TestWriteBlockedOnItsGraphLeavesReadsRunning(t *testing.T) {
+	cfg := config.New()
+	cfg.Scheduler.Workers = 1
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer s.Stop()
+
+	g, err := s.DB.Select(0)
+	if err != nil {
+		t.Fatalf("Select(0) returned error: %v", err)
+	}
+	g.Lock()
+	write := planStream(t, cfg, "remember@0 'the gate is shut'", nil)
+	if err := s.Submit(context.Background(), write); err != nil {
+		g.Unlock()
+		t.Fatalf("Submit(write) returned error: %v", err)
+	}
+
+	read := planStream(t, cfg, "recall@1 gate", nil)
+	if err := s.Submit(context.Background(), read); err != nil {
+		g.Unlock()
+		t.Fatalf("Submit(read) returned error: %v", err)
+	}
+	select {
+	case <-read.Done():
+	case <-time.After(2 * time.Second):
+		t.Error("the read of graph 1 waited on graph 0's lock")
+	}
+	g.Unlock()
+
+	select {
+	case <-write.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("the write did not run once its graph was unlocked")
+	}
+}
+
+// TestWriteRunsWithoutReadWorkers checks that writes do not queue behind
+// reads. With no read worker at all, so reads only wait, a write still runs on
+// its graph's own writer.
+func TestWriteRunsWithoutReadWorkers(t *testing.T) {
 	cfg := config.New()
 	cfg.Scheduler.Workers = 0
-	cfg.Scheduler.BufferSize = 4
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer s.Stop()
+
+	if err := s.Submit(context.Background(), planStream(t, cfg, "recall@0 anna", nil)); err != nil {
+		t.Fatalf("Submit(read) returned error: %v", err)
+	}
+	write := planStream(t, cfg, "remember@0 'the sky is blue'", nil)
+	if err := s.Submit(context.Background(), write); err != nil {
+		t.Fatalf("Submit(write) returned error: %v", err)
+	}
+	select {
+	case <-write.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("the write waited for a read worker")
+	}
+	if write.Err != nil {
+		t.Errorf("write.Err = %v, want nil", write.Err)
+	}
+}
+
+// TestWritesToOneGraphRunInSubmitOrder checks the lane's ordering contract.
+// Writes one caller submits to a graph, each after the previous Submit
+// returned, run in that order. They queue behind graph 0's held lock, so all
+// are buffered at once and nothing but the lane orders them. The facts'
+// timestamps record when each ran.
+func TestWritesToOneGraphRunInSubmitOrder(t *testing.T) {
+	cfg := config.New()
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+	s.DB = newStartedDB(t, cfg)
+
+	if err := s.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer s.Stop()
+
+	g, err := s.DB.Select(0)
+	if err != nil {
+		t.Fatalf("Select(0) returned error: %v", err)
+	}
+	values := []string{"first", "second", "third", "fourth", "fifth", "sixth"}
+	streams := make([]*query.Stream[uint64, float32], len(values))
+	g.Lock()
+	for i, v := range values {
+		streams[i] = planStream(t, cfg, "remember@0 '"+v+"'", nil)
+		if err := s.Submit(context.Background(), streams[i]); err != nil {
+			g.Unlock()
+			t.Fatalf("Submit(%q) returned error: %v", v, err)
+		}
+	}
+	g.Unlock()
+
+	for i, stream := range streams {
+		select {
+		case <-stream.Done():
+		case <-time.After(2 * time.Second):
+			t.Fatalf("write %q did not finish within the timeout", values[i])
+		}
+	}
+
+	g.RLock()
+	defer g.RUnlock()
+	var last time.Time
+	for _, v := range values {
+		fact := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: v}, Hasher: g.GetHasher()}
+		node := g.Get(fact.Key())
+		if node == nil {
+			t.Fatalf("fact %q was not stored", v)
+		}
+		if ran := node.GetTimestamp(); !ran.After(last) {
+			t.Errorf("fact %q ran at %v, not after the write submitted before it (%v)", v, ran, last)
+		}
+		last = node.GetTimestamp()
+	}
+}
+
+// TestStopDrainsBufferedWrite checks that a graceful Stop executes work already
+// accepted into a lane rather than dropping it. Graph 0's held lock parks its
+// writer on the first write and keeps the second buffered while Stop begins.
+// Stop must not return until both have run.
+func TestStopDrainsBufferedWrite(t *testing.T) {
+	cfg := config.New()
 	s := scheduler.NewScheduler[uint64, float32](cfg)
 	s.DB = newStartedDB(t, cfg)
 
@@ -316,41 +455,61 @@ func TestStopDrainsBufferedWrite(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 
-	stream := planStream(t, cfg, "remember@0 'the sky is blue' topic:color", nil)
-	if err := s.Submit(context.Background(), stream); err != nil {
-		t.Fatalf("Submit returned error: %v", err)
-	}
-
-	s.Stop() // must drain and execute the buffered write
-
-	select {
-	case <-stream.Done():
-	default:
-		t.Fatal("Stop did not execute the buffered stream (Done never closed)")
-	}
-	if stream.Err != nil {
-		t.Errorf("stream.Err = %v, want nil", stream.Err)
-	}
-
-	// The write must land in the live graph. Commits run in place, not on a
-	// copy.
 	g, err := s.DB.Select(0)
 	if err != nil {
 		t.Fatalf("Select(0) returned error: %v", err)
 	}
+	g.Lock()
+	streams := []*query.Stream[uint64, float32]{
+		planStream(t, cfg, "remember@0 'the sky is blue' topic:color", nil),
+		planStream(t, cfg, "remember@0 'the grass is green' topic:color", nil),
+	}
+	for _, stream := range streams {
+		if err := s.Submit(context.Background(), stream); err != nil {
+			g.Unlock()
+			t.Fatalf("Submit returned error: %v", err)
+		}
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		s.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned while an accepted write was still waiting to run")
+	case <-time.After(50 * time.Millisecond):
+	}
+	g.Unlock()
+	<-stopped
+
+	for i, stream := range streams {
+		select {
+		case <-stream.Done():
+		default:
+			t.Fatalf("Stop did not execute buffered write %d (Done never closed)", i)
+		}
+		if stream.Err != nil {
+			t.Errorf("write %d: stream.Err = %v, want nil", i, stream.Err)
+		}
+	}
+
+	// The writes must land in the live graph. Commits run in place, not on a
+	// copy.
 	g.RLock()
 	nodes := g.Stats().Nodes
 	g.RUnlock()
 	if nodes == 0 {
-		t.Error("committed write left the live graph empty, want the fact stored in place")
+		t.Error("committed writes left the live graph empty, want the facts stored in place")
 	}
 }
 
-// TestConcurrentSubmitStop races many submits against a Stop. None may panic
-// (send on a closed queue) or hang (send on a nil queue). A submit may be
-// refused, but a stream it accepted must have run once Stop returns, or its
-// caller waits on a Done that never closes. The race is narrow, so the test
-// runs it many times. Run with -race.
+// TestConcurrentSubmitStop races many submits, reads and writes across the
+// graphs, against a Stop. None may panic (send on a closed queue) or hang
+// (send on a nil queue). A submit may be refused, but a stream it accepted
+// must have run once Stop returns, or its caller waits on a Done that never
+// closes. The race is narrow, so the test runs it many times. Run with -race.
 func TestConcurrentSubmitStop(t *testing.T) {
 	cfg := config.New()
 	for round := range 1000 {
@@ -364,7 +523,11 @@ func TestConcurrentSubmitStop(t *testing.T) {
 		const n = 64
 		streams := make([]*query.Stream[uint64, float32], n)
 		for i := range streams {
-			streams[i] = planStream(t, cfg, "recall@0 anna", nil)
+			q := fmt.Sprintf("recall@%d anna", i%4)
+			if i%2 == 1 {
+				q = fmt.Sprintf("remember@%d 'anna %d'", i%4, i)
+			}
+			streams[i] = planStream(t, cfg, q, nil)
 		}
 		errs := make([]error, n)
 
@@ -395,8 +558,8 @@ func TestConcurrentSubmitStop(t *testing.T) {
 
 // TestConcurrentStops checks that Stop is safe to call from several goroutines
 // at once. None closes the shutdown signal a second time, and each returns
-// only once the accepted stream has run. With no worker, only Stop's drain can
-// run it.
+// only once the accepted stream has run. The stream is a read and there is no
+// read worker, so only Stop's drain can run it.
 func TestConcurrentStops(t *testing.T) {
 	cfg := config.New()
 	cfg.Scheduler.Workers = 0
@@ -407,7 +570,7 @@ func TestConcurrentStops(t *testing.T) {
 		t.Fatalf("Start returned error: %v", err)
 	}
 
-	stream := planStream(t, cfg, "remember@0 'the tide turns at noon'", nil)
+	stream := planStream(t, cfg, "recall@0 tide", nil)
 	if err := s.Submit(context.Background(), stream); err != nil {
 		t.Fatalf("Submit returned error: %v", err)
 	}

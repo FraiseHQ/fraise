@@ -3,19 +3,19 @@ title: "Load and backpressure"
 description: "What a 429 means, why it is working as intended, and which of the three scheduler settings to move"
 ---
 
-A 429 means the queue stayed full for `enqueue-timeout` and the request was shed. **That is working as intended** — the alternative is unbounded blocked goroutines — but sustained 429s mean the three scheduler settings are mismatched to the load.
+A 429 means the queue the request waits on — the read queue, or the write's graph lane — stayed full for `enqueue-timeout` and the request was shed. **That is working as intended** — the alternative is unbounded blocked goroutines — but sustained 429s mean the three scheduler settings are mismatched to the load.
 
 ## Which setting to move
 
-- **`workers`** bounds how much executes at once. Raise it when workers are idle waiting on graph locks, not when they are busy.
-- **`buffer-size`** bounds how much waits. Raising it absorbs bursts; it does not add throughput, and a deep queue only delays the 429 while raising latency.
+- **`workers`** bounds how many reads execute at once. Raise it when reads are shed and workers are idle waiting on graph locks, not when they are busy. Writes do not use it: each graph has one writer.
+- **`buffer-size`** bounds how much waits, on the read queue and on each graph's lane. Raising it absorbs bursts; it does not add throughput, and a deep queue only delays the 429 while raising latency.
 - **`enqueue-timeout`** bounds how long a client waits before being told to back off. Keep it well under the caller's own timeout, or you will shed work the client has already given up on.
 
 ## When more workers will not help
 
 <Note title="One hot graph" type="warning">
 
-  Writes to the *same* graph serialise. **If one graph is hot, more workers will not help** — spread the load across graphs, which is what they are for.
+  Writes to the *same* graph serialise on its one writer. **If one graph is hot, more workers will not help** — spread the load across graphs, which is what they are for.
 
 </Note>
 

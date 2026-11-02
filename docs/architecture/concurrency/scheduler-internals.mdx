@@ -3,16 +3,16 @@ title: "Scheduler internals"
 description: "Submit semantics, worker lifecycle, and what execute() does with a stream"
 ---
 
-The `Scheduler` manages when and how streams are executed. It implements a work-queue pattern.
+The `Scheduler` manages when and how streams are executed. It implements a work-queue pattern twice over: one queue for reads, drained by a pool of workers, and one lane per graph for writes, each drained by a single writer.
 
 ## Submitting work
 
-`Submit` is bounded and context-aware, which is what turns overload into backpressure instead of an ever-growing pile of blocked goroutines. It returns:
+`Submit` puts a read on the read queue and a write on its graph's lane. It is bounded and context-aware, which is what turns overload into backpressure instead of an ever-growing pile of blocked goroutines. It returns:
 
 | Result | Meaning | HTTP |
 |---|---|---|
 | `nil` | the stream is on the queue | — |
-| `ErrQueueFull` | the queue stayed saturated for `enqueue-timeout` | **429** — back off |
+| `ErrQueueFull` | the read queue or the write's lane stayed saturated for `enqueue-timeout` | **429** — back off |
 | `ErrShutdown` | the scheduler is stopping, stopped or was never started | **503** |
 | `ErrEnqueueStream` wrapping `ctx.Err()` | the caller gave up first | no live request left to answer |
 
@@ -22,17 +22,17 @@ A caller is therefore never parked indefinitely on a full or nil queue.
 
 When the scheduler starts:
 
-1. A buffered channel of size `buffer-size` is created, alongside a `quit` channel.
-2. `workers` goroutines are spawned, each selecting on both.
-3. Streams submitted via `Submit()` are placed on the queue.
-4. Workers process streams in queue order (FIFO).
+1. A buffered read queue of size `buffer-size` is created, one lane of the same size per graph, and a `quit` channel.
+2. `workers` goroutines are spawned on the read queue, and one writer on each lane, each selecting on its queue and `quit`.
+3. Streams submitted via `Submit()` are placed on the read queue or their graph's lane.
+4. Workers take reads in queue order (FIFO); each writer runs its lane's writes one at a time, in lane order.
 
 When the scheduler stops:
 
-1. `quit` is closed — **the queue itself is never closed.** Closing it would panic a `Submit` that is mid-send; closing a separate channel refuses new work without that race, and unparks any `Submit` waiting on a full queue.
-2. Each worker drains what is already buffered, then exits.
+1. `quit` is closed — **the queues themselves are never closed.** Closing one would panic a `Submit` that is mid-send; closing a separate channel refuses new work without that race, and unparks any `Submit` waiting on a full queue.
+2. Each worker and writer drains what is already buffered, then exits.
 3. All goroutines are waited on (via `sync.WaitGroup`).
-4. `Stop` drains any straggler a `Submit` raced into the buffer as `quit` closed. This runs single-threaded once the workers are gone, so an accepted write is executed rather than silently dropped.
+4. `Stop` drains any straggler a `Submit` raced into a queue as `quit` closed. This runs single-threaded once the workers and writers are gone, so an accepted write is executed rather than silently dropped.
 
 <Note title="Accepted work runs" type="note">
 
@@ -42,7 +42,7 @@ When the scheduler stops:
 
 ## Stream execution
 
-Each worker processes a single stream at a time, taking whichever of queue or quit is ready:
+Workers and writers run the same loop, each over its own queue, processing a single stream at a time and taking whichever of queue or quit is ready:
 
 ```go
 func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struct{}) {
@@ -54,17 +54,9 @@ func (s *Scheduler[K, P]) worker(queue chan *query.Stream[K, P], quit chan struc
                 logger.Error("Failed to execute stream", "error", err)
             }
         case <-quit:
-            // drain what is already buffered, then return
-            for {
-                select {
-                case stream := <-queue:
-                    if err := s.execute(stream); err != nil {
-                        logger.Error("Failed to execute stream", "error", err)
-                    }
-                default:
-                    return
-                }
-            }
+            // run what is already buffered, then return
+            s.drain(queue)
+            return
         }
     }
 }

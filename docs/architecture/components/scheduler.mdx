@@ -1,38 +1,46 @@
 ---
 title: "Scheduler"
-description: "A bounded queue and a worker pool: how Fraise turns overload into backpressure instead of blocked goroutines"
+description: "Bounded queues, a read worker pool and one writer per graph: how Fraise turns overload into backpressure instead of blocked goroutines"
 ---
 
-The scheduler is a pool of `workers` goroutines fed by a bounded queue of `buffer-size` streams. A worker takes a stream, locks the graph it names, runs it, and unlocks — so writes serialise per graph while reads on other graphs carry on untouched.
+The scheduler keeps reads and writes apart. Reads go on one bounded queue of `buffer-size` streams, drained by a pool of `workers` goroutines. Writes go on their graph's **lane**, a bounded queue of its own drained by that graph's single writer. Whoever takes a stream locks the graph it names, runs it, and unlocks — so reads run together, writes serialise per graph, and writes to different graphs run in parallel.
 
 <Mermaid
   chart='flowchart TD
-  submit["Submit(stream)"] --> queue["Queue (buffered channel)"]
-  queue --> workers["Workers (pool of goroutines)"]
+  submit["Submit(stream)"] --> kind{"read or write?"}
+  kind -->|read| queue["Read queue (buffered channel)"]
+  kind -->|write to graph N| lane["Lane N (buffered channel)"]
+  queue --> workers["Read workers (pool of goroutines)"]
+  lane --> writer["Writer N (one goroutine)"]
   workers --> execute["execute(stream)"]
+  writer --> execute
   execute --> acquire["Acquire lock"]
   acquire --> commit["Commit in place"]'
 />
 
+## Why writes have lanes
+
+A graph's exclusive lock already admits one write at a time, so one writer per graph costs no write concurrency. What it buys is that the two kinds of work never wait on each other's goroutines: a read worker never parks on a write lock, so writes piling up on a hot graph cannot starve reads of the others, and a burst of slow reads cannot hold back a write to any graph. A lane also runs its writes in the order it accepted them.
+
 ## Bounded is the operative word
 
-Submitting to a full queue waits at most `enqueue-timeout` and then fails, which turns an overloaded server into 429s instead of an unbounded pile of blocked handler goroutines.
+Submitting to a full queue — the read queue, or the write's lane — waits at most `enqueue-timeout` and then fails, which turns an overloaded server into 429s instead of an unbounded pile of blocked handler goroutines.
 
-Shutdown is the mirror image: the queue stops accepting, workers drain what is already in it, and in-flight writes finish rather than being dropped.
+Shutdown is the mirror image: the queues stop accepting, workers and writers drain what is already in them, and in-flight writes finish rather than being dropped.
 
 ## Three settings, one knob
 
 | Setting | Default | Bounds |
 |---|---|---|
-| `workers` | `max(2, GOMAXPROCS(0))` | how much executes at once |
-| `buffer-size` | `200` | how much waits |
+| `workers` | `max(2, GOMAXPROCS(0))` | how many reads execute at once |
+| `buffer-size` | `200` | how much waits, on the read queue and on each lane |
 | `enqueue-timeout` | `2s` | how long a caller waits to become one of the waiting |
 
 <Note title="One knob, not three" type="warning">
   The three are one setting in three parts. Raising the first two without the third just moves where requests pile up.
 </Note>
 
-The default worker count tracks the machine's core count because reads take `RLock` and run concurrently, so a smaller pool would add a queueing penalty for nothing; `-workers` still overrides it.
+The default worker count tracks the machine's core count because reads take `RLock` and run concurrently, so a smaller pool would add a queueing penalty for nothing; `-workers` still overrides it. Writers need no setting: there is one per graph, as many as `num-graphs`.
 
 ## Deeper
 
