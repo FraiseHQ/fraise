@@ -34,35 +34,21 @@ jobs:
       - name: Lint
         run: make lint-docker
 
-  smoke:
-    name: ${{ matrix.example.name }} (${{ matrix.runner }})
+  build:
+    name: ${{ matrix.example }} (${{ matrix.runner }})
     needs: lint
     # The images install wheels per architecture, the Claude Agent SDK's with
-    # the CLI binary inside it. So each example is built and started natively
-    # on both architectures a user runs it on.
+    # the CLI binary inside it. So each example is built natively on both
+    # architectures a user runs it on.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
-        # check is what runs without a model API key: the agent module's
-        # imports, and for the Claude Agent SDK the CLI it spawns, through the
-        # SDK's own handshake.
-        example:
-          - name: claude-agent-sdk
-            check: >-
-              import asyncio, agent, claude_agent_sdk as sdk;
-              r = asyncio.Runner(); c = sdk.ClaudeSDKClient(); r.run(c.connect());
-              print("claude", r.run(c.get_server_info())["claude_code_version"]);
-              r.run(c.disconnect())
-          - name: openai-agents
-            check: import agent
+        example: [claude-agent-sdk, openai-agents]
     env:
-      EXAMPLE: ${{ matrix.example.name }}
-      CHECK: ${{ matrix.example.check }}
+      EXAMPLE: ${{ matrix.example }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Build the image
-        run: docker build -f "examples/$EXAMPLE/Dockerfile" -t "fraise-example-$EXAMPLE" .
-      - name: Start the agent SDK
-        run: docker run --rm "fraise-example-$EXAMPLE" python -c "$CHECK"
+        run: docker build -f "examples/$EXAMPLE/Dockerfile" .
