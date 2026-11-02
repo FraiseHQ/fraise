@@ -198,7 +198,59 @@ func TestPlanCachesUnderTheParsedQuerysHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse returned error: %v", err)
 	}
-	if _, ok := e.Cache.Get(again.Hash(e.Hasher)); !ok {
+	cached, ok := e.Cache.Get(again.Hash(e.Hasher))
+	if !ok {
 		t.Fatal("a repeat of a query Dedupe rewrote missed the plan cache")
+	}
+	stream, err := e.Plan(again)
+	if err != nil {
+		t.Fatalf("second Plan returned error: %v", err)
+	}
+	if stream.Query != cached.Optimised {
+		t.Error("a repeat of a query Dedupe rewrote was planned afresh, not served from the cache")
+	}
+}
+
+// collidingHasher keys every value alike, standing in for two distinct
+// queries a client crafted to share a 64-bit key.
+type collidingHasher struct{}
+
+func (collidingHasher) Hash(string) uint64 { return 0 }
+
+func (collidingHasher) Seed() uint64 { return 0 }
+
+// TestPlanConfirmsAHitByEquality pins the plan cache against key collisions.
+// Two writes to different graphs share a key here. Trusting the key, Plan
+// would run the first write's plan for the second, writing its fact to its
+// graph. Planned afresh, the second runs as itself and takes the entry over.
+func TestPlanConfirmsAHitByEquality(t *testing.T) {
+	cfg := config.New()
+	e := engine.NewEngine[uint64, float32](cfg, collidingHasher{})
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer e.Stop()
+
+	first, _, err := query.Parse[uint64, float32]("remember@1 'the parrot is turquoise'", nil, cfg)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if _, err := e.Plan(first); err != nil {
+		t.Fatalf("first Plan returned error: %v", err)
+	}
+
+	second, _, err := query.Parse[uint64, float32]("remember@2 'the kiwi is green'", nil, cfg)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	stream, err := e.Plan(second)
+	if err != nil {
+		t.Fatalf("second Plan returned error: %v", err)
+	}
+	if !stream.Query.Equal(second) {
+		t.Errorf("Plan ran %+v for a colliding query, want %+v", stream.Query, second)
+	}
+	if cached, _ := e.Cache.Get(0); cached.Parsed != second {
+		t.Error("the colliding query did not take the cache entry over")
 	}
 }

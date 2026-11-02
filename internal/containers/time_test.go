@@ -192,6 +192,41 @@ func TestTimeValueHash(t *testing.T) {
 	}
 }
 
+// TestTimeValueEqual pins the contract the plan cache relies on to confirm a
+// hit. Bounds of a different type, span or instant are never equal, even where
+// they resolve alike today, since their material differs. The same instant
+// written in two zones is equal, because it bounds the same window.
+func TestTimeValueEqual(t *testing.T) {
+	abs := time.Date(2026, time.June, 18, 12, 0, 0, 0, time.UTC)
+	tests := map[string]struct {
+		a, b TimeValue[string]
+		want bool
+	}{
+		"relative same":          {RelativeTime[string]{Dur: time.Hour}, RelativeTime[string]{Dur: time.Hour}, true},
+		"relative other span":    {RelativeTime[string]{Dur: time.Hour}, RelativeTime[string]{Dur: time.Minute}, false},
+		"absolute same":          {AbsoluteTime[string]{T: abs}, AbsoluteTime[string]{T: abs}, true},
+		"absolute other zone":    {AbsoluteTime[string]{T: abs}, AbsoluteTime[string]{T: abs.In(time.FixedZone("CEST", 2*60*60))}, true},
+		"absolute other instant": {AbsoluteTime[string]{T: abs}, AbsoluteTime[string]{T: abs.Add(time.Nanosecond)}, false},
+		"relative vs absolute":   {RelativeTime[string]{Dur: time.Hour}, AbsoluteTime[string]{T: abs}, false},
+		"relative vs filter":     {RelativeTime[string]{Dur: time.Hour}, TimeFilter[string]{Dur: time.Hour}, false},
+		"filter relative same":   {TimeFilter[string]{Dur: time.Hour, Abs: abs}, TimeFilter[string]{Dur: time.Hour}, true},
+		"filter absolute same":   {TimeFilter[string]{Abs: abs, IsAbs: true, Dur: time.Hour}, TimeFilter[string]{Abs: abs, IsAbs: true}, true},
+		"filter other form":      {TimeFilter[string]{Dur: time.Hour}, TimeFilter[string]{Dur: time.Hour, IsAbs: true}, false},
+		"filter other span":      {TimeFilter[string]{Dur: time.Hour}, TimeFilter[string]{Dur: time.Minute}, false},
+		"filter other instant":   {TimeFilter[string]{Abs: abs, IsAbs: true}, TimeFilter[string]{Abs: abs.Add(time.Second), IsAbs: true}, false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := tt.a.Equal(tt.b); got != tt.want {
+				t.Errorf("a.Equal(b) = %v, want %v", got, tt.want)
+			}
+			if got := tt.b.Equal(tt.a); got != tt.want {
+				t.Errorf("b.Equal(a) = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseTimeValueRelative(t *testing.T) {
 	tests := []struct {
 		in   string

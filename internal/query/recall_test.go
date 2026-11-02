@@ -84,10 +84,10 @@ func TestRecallHash(t *testing.T) {
 	}
 	h := &fakeHasher{}
 
-	// Hash folds in the graph, the delimited keyword, entity and topic lists,
-	// depth, top, the time bounds and the bound vector. Queries that differ in
-	// any of these get distinct cache keys.
-	const want = "g=3|kw=qu\x00ick|en=alice|to=weather|d=2|t=5" +
+	// Hash folds in the graph, the length-prefixed keyword, entity and topic
+	// lists, depth, top, the time bounds and the bound vector. Queries that
+	// differ in any of these get distinct cache keys.
+	const want = "g=3|kw=2:qu3:ick|en=5:alice|to=7:weather|d=2|t=5" +
 		"|s=H(r1h0m0s)|u=H(a2026-06-18T12:00:00Z)|vec=H(0x1p-01\x000x1p-02)"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
@@ -107,10 +107,10 @@ func TestRecallHashEmpty(t *testing.T) {
 }
 
 // TestRecallHashDistinguishesParameters pins the contract. Recalls that differ
-// only in graph, depth, top, time bounds or the bound vector must not share a
-// cache key. Otherwise the engine hands back another query's plan. A depth:2
-// query could get a depth:1 result, or results seeded by another query's
-// vector.
+// only in graph, depth, top, time bounds, the bound vector or how their text
+// splits into keywords and anchors must not share a cache key. Otherwise the
+// engine hands back another query's plan. A depth:2 query could get a depth:1
+// result, results seeded by another query's vector, or another query's terms.
 func TestRecallHashDistinguishesParameters(t *testing.T) {
 	base := func() Recall[string, float32] {
 		return Recall[string, float32]{Keywords: []string{"mercury"}}
@@ -121,6 +121,41 @@ func TestRecallHashDistinguishesParameters(t *testing.T) {
 		"top":     func() Recall[string, float32] { r := base(); r.Parameters.Top = 5; return r }(),
 		"graph":   func() Recall[string, float32] { r := base(); r.context.GraphID = 1; return r }(),
 		"keyword": func() Recall[string, float32] { r := base(); r.Keywords = []string{"venus"}; return r }(),
+		"keywords-joined": func() Recall[string, float32] {
+			r := base()
+			r.Keywords = []string{"ab"}
+			return r
+		}(),
+		"keywords-split": func() Recall[string, float32] {
+			r := base()
+			r.Keywords = []string{"a", "b"}
+			return r
+		}(),
+		"keywords-nul": func() Recall[string, float32] {
+			r := base()
+			r.Keywords = []string{"a\x00b"}
+			return r
+		}(),
+		"keywords-none": func() Recall[string, float32] {
+			r := base()
+			r.Keywords = nil
+			return r
+		}(),
+		"keywords-empty-phrase": func() Recall[string, float32] {
+			r := base()
+			r.Keywords = []string{""}
+			return r
+		}(),
+		"keyword-spells-entity": func() Recall[string, float32] {
+			r := base()
+			r.Keywords = []string{"mercury|en=venus"}
+			return r
+		}(),
+		"entity": func() Recall[string, float32] {
+			r := base()
+			r.Entities = []string{"venus"}
+			return r
+		}(),
 		"since-1h": func() Recall[string, float32] {
 			r := base()
 			r.Parameters.Since = containers.RelativeTime[string]{Dur: time.Hour}
@@ -155,6 +190,62 @@ func TestRecallHashDistinguishesParameters(t *testing.T) {
 			t.Errorf("hash collision: %q and %q both produced %q", name, other, key)
 		}
 		seen[key] = name
+	}
+}
+
+// TestRecallEqual pins the check the engine confirms a plan-cache hit with.
+// A recall differing from base in any field Hash folds in is not equal to it,
+// so a key it happens to share with base never runs base's plan. Keyword order
+// counts, as it does in the material. A remember is never equal to a recall.
+func TestRecallEqual(t *testing.T) {
+	base := func() *Recall[string, float32] {
+		return &Recall[string, float32]{
+			Keywords: []string{"mercury", "venus"},
+			Vector:   containers.NewVector[string]([]float32{1, 0}),
+			Entities: []string{"alice"},
+			Topics:   []string{"planets"},
+			Parameters: QueryParameters[string]{
+				Depth: 1,
+				Top:   5,
+				Since: containers.RelativeTime[string]{Dur: time.Hour},
+				Until: containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 0, 0, 0, 0, time.UTC)},
+			},
+			context: QueryContext{GraphID: 2},
+		}
+	}
+	with := func(f func(r *Recall[string, float32])) *Recall[string, float32] {
+		r := base()
+		f(r)
+		return r
+	}
+	tests := map[string]struct {
+		other Query[string, float32]
+		want  bool
+	}{
+		"same":          {base(), true},
+		"graph":         {with(func(r *Recall[string, float32]) { r.context.GraphID = 3 }), false},
+		"keywords":      {with(func(r *Recall[string, float32]) { r.Keywords = []string{"mercury"} }), false},
+		"keyword order": {with(func(r *Recall[string, float32]) { r.Keywords = []string{"venus", "mercury"} }), false},
+		"entities":      {with(func(r *Recall[string, float32]) { r.Entities = []string{"bob"} }), false},
+		"topics":        {with(func(r *Recall[string, float32]) { r.Topics = nil }), false},
+		"depth":         {with(func(r *Recall[string, float32]) { r.Parameters.Depth = 2 }), false},
+		"top":           {with(func(r *Recall[string, float32]) { r.Parameters.Top = 6 }), false},
+		"since": {with(func(r *Recall[string, float32]) {
+			r.Parameters.Since = containers.RelativeTime[string]{Dur: time.Minute}
+		}), false},
+		"no since":  {with(func(r *Recall[string, float32]) { r.Parameters.Since = nil }), false},
+		"until":     {with(func(r *Recall[string, float32]) { r.Parameters.Until = containers.RelativeTime[string]{Dur: time.Hour} }), false},
+		"no until":  {with(func(r *Recall[string, float32]) { r.Parameters.Until = nil }), false},
+		"vector":    {with(func(r *Recall[string, float32]) { r.Vector = containers.NewVector[string]([]float32{0, 1}) }), false},
+		"no vector": {with(func(r *Recall[string, float32]) { r.Vector = containers.Vector[string, float32]{} }), false},
+		"remember":  {&Remember[string, float32]{Value: "mercury venus", context: QueryContext{GraphID: 2}}, false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := base().Equal(tt.other); got != tt.want {
+				t.Errorf("Equal() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
