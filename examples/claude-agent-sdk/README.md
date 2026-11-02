@@ -18,10 +18,6 @@ The `agent` service waits for Fraise's health check, then runs [`agent.py`](agen
 ## What's here
 
 - [`agent.py`](agent.py) — the agent and its two-turn demo.
-- [`Dockerfile`](Dockerfile) — installs Node + the `claude` CLI, the local `fraise-sdk[anthropic]`, and the script.
+- [`Dockerfile`](Dockerfile) — installs the local `fraise-sdk[anthropic]`, whose Claude Agent SDK wheel bundles the `claude` CLI, and the script.
 - [`docker-compose.yaml`](docker-compose.yaml) — `fraise` + `agent` services on one network.
 - [`fraise.config.toml`](fraise.config.toml) — Fraise server config mounted into the `fraise` service.
-
-## Note on the Claude Code CLI
-
-The Claude Agent SDK drives Claude by spawning the Claude Code CLI, so the image installs Node.js and `@anthropic-ai/claude-code` (providing the `claude` binary) alongside Python. This is the main difference from the OpenAI Agents example, whose SDK calls the API directly.
