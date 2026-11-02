@@ -25,9 +25,12 @@ package optimisation
 import "github.com/FraiseHQ/fraise/internal/query"
 
 // Optimisation is one stage of a [Pipeline]. Optimise takes a parsed query and
-// returns the query to run in its place, which may be the same value rewritten
-// in place. The output is cached and shared by every request that hashes alike.
-// So a stage must be deterministic and leave no per-request state on it.
+// returns the query to run in its place: the same value when it changes
+// nothing, a new one when it rewrites. It never modifies its input, because the
+// engine caches the parsed query beside the output and confirms every later
+// hit against it. The output is cached and shared by every request equal to
+// that parsed query. So a stage must be deterministic and leave no per-request
+// state on it.
 type Optimisation[K comparable, P float32 | float64] interface {
 	Optimise(q query.Query[K, P]) query.Query[K, P]
 }

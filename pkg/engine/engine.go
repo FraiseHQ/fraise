@@ -36,13 +36,23 @@ import (
 	"github.com/FraiseHQ/fraise/pkg/scheduler"
 )
 
+// CachedQuery is a plan-cache entry. Parsed is the query as parsed, which a
+// hit must equal, and Optimised the query the pipeline planned in its place.
+// Parsed is kept because the key alone does not identify the query: two
+// distinct queries can share a 64-bit Hash, and the optimised query no longer
+// equals the request it came from once a stage rewrote it.
+type CachedQuery[K ~uint64, P float32 | float64] struct {
+	Parsed    query.Query[K, P]
+	Optimised query.Query[K, P]
+}
+
 // Engine plans queries and hands the resulting streams to its scheduler. K is
 // the node key type and P the floating-point precision of embeddings and
-// scores. Cache maps a query's Hash, computed with Hasher, to the optimised
-// query planned for it. [Engine.Start] allocates it.
+// scores. Cache maps a query's Hash, computed with Hasher, to the
+// [CachedQuery] planned for it. [Engine.Start] allocates it.
 type Engine[K ~uint64, P float32 | float64] struct {
 	Config        *config.ConfigSet
-	Cache         cache.Cache[K, query.Query[K, P]]
+	Cache         cache.Cache[K, CachedQuery[K, P]]
 	Scheduler     *scheduler.Scheduler[K, P]
 	Optimisations *optimisation.Pipeline[K, P]
 	Hasher        hash.Hasher[K, string]
@@ -64,7 +74,7 @@ func NewEngine[K ~uint64, P float32 | float64](c *config.ConfigSet, hasher hash.
 // an error if either fails, so a caller never brings up a live server backed by
 // a nil cache. The cache is assigned only once it is known good.
 func (e *Engine[K, P]) Start() error {
-	c, err := cache.NewLRUCache[K, query.Query[K, P]](e.Config.Engine.CacheCapacity)
+	c, err := cache.NewLRUCache[K, CachedQuery[K, P]](e.Config.Engine.CacheCapacity)
 	if err != nil {
 		logger.Error("Error while initialising cache", "error", err)
 		return fmt.Errorf("%w: %w", ErrCacheInit, err)
@@ -90,21 +100,25 @@ func (e *Engine[K, P]) Stop() {
 	e.Cache.Clear()
 }
 
-// Plan returns an executable stream for q. A cached query with the same Hash
-// stands in for q. On a miss, q is optimised and cached under the parsed
-// query's Hash, not the optimised one's. That is the key the next request for
-// it looks up. So each distinct query goes through the optimisation pipeline
-// once. The stream is built fresh on every call because it carries
-// per-execution state: its results, error and completion signal. It returns
-// [ErrQueryPlan] if the query cannot be planned.
+// Plan returns an executable stream for q. A cached query stands in for q only
+// when it was planned for a query equal to q, not merely one with the same
+// Hash. A key is 64 bits of a non-cryptographic hash, so a client can craft two
+// queries that share one. Trusting the key would run the first query's plan
+// for the second, against the first query's graph. On a miss, or a hit for
+// another query, q is optimised and cached under the parsed query's Hash, not
+// the optimised one's. That is the key the next request for it looks up. So
+// each distinct query goes through the optimisation pipeline once, and of two
+// that share a key the latest holds the entry. The stream is built fresh on
+// every call because it carries per-execution state: its results, error and
+// completion signal. It returns [ErrQueryPlan] if the query cannot be planned.
 func (e *Engine[K, P]) Plan(q query.Query[K, P]) (*query.Stream[K, P], error) {
 
 	key := q.Hash(e.Hasher)
-	if cached, ok := e.Cache.Get(key); ok {
-		q = cached
+	if cached, ok := e.Cache.Get(key); ok && cached.Parsed.Equal(q) {
+		q = cached.Optimised
 	} else {
 		optimised := e.Optimisations.Optimise(q)
-		e.Cache.Put(key, optimised)
+		e.Cache.Put(key, CachedQuery[K, P]{Parsed: q, Optimised: optimised})
 		q = optimised
 	}
 

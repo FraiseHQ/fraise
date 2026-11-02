@@ -30,9 +30,11 @@
 // Stream, which the scheduler commits against the selected graph. A read runs
 // under the shared lock, and a write under the exclusive lock.
 //
-// The plan cache hands the same query object to every request that hashes
-// alike. So a Query carries nothing per request. The explain flag and the
-// result live on the Stream, and parse warnings are returned beside the query.
-// For the same reason, Hash must fold in every field that changes what a query
-// reads or writes. Otherwise a cache hit would run another query's plan.
+// The plan cache hands the same query object to every request equal to the
+// one it was planned for. So a Query carries nothing per request. The explain
+// flag and the result live on the Stream, and parse warnings are returned
+// beside the query.
+// For the same reason, Hash and Equal must both cover every field that changes
+// what a query reads or writes. Otherwise a cache hit would run another query's
+// plan.
 package query
