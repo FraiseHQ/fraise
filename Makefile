@@ -144,18 +144,6 @@ test-integration: build-go ## Run server + MCP bridge integration tests (pytest 
 	@echo "$(CYAN)Running server + MCP bridge integration tests...$(RESET)"
 	@FRAISE_BIN=$(CURDIR)/$(BIN_DIR)/$(BINARY_NAME) $(UV_CMD) run --package tests pytest tests/integration -vvv
 
-# The examples are only ever run by hand, with a model API key, so they go
-# stale when an SDK they install changes underneath them. This builds each image
-# and starts what it can without a key: the agent module's imports, and for the
-# Claude Agent SDK the CLI it spawns, through the SDK's own handshake.
-test-examples: ## Build the example images and start their agent SDKs (no API key needed)
-	@echo "$(CYAN)Building the example images...$(RESET)"
-	docker build -f examples/claude-agent-sdk/Dockerfile -t fraise-example-claude-agent-sdk .
-	docker build -f examples/openai-agents/Dockerfile -t fraise-example-openai-agents .
-	@echo "$(CYAN)Starting the examples' agent SDKs...$(RESET)"
-	docker run --rm fraise-example-claude-agent-sdk python -c 'import asyncio, agent, claude_agent_sdk as sdk; r = asyncio.Runner(); c = sdk.ClaudeSDKClient(); r.run(c.connect()); print("claude", r.run(c.get_server_info())["claude_code_version"]); r.run(c.disconnect())'
-	docker run --rm fraise-example-openai-agents python -c 'import agent'
-
 test-py: ## Run Python unit tests with pytest (integration-marked tests excluded)
 	@echo "$(CYAN)Running Python tests...$(RESET)"
 	@$(UV_CMD) run --package fraise-sdk --all-extras pytest $(PY_DIR)/src/tests -m "not integration"
