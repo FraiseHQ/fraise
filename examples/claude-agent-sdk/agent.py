@@ -30,8 +30,7 @@ Environment:
     FRAISE_URL          base URL of the Fraise server (default http://localhost:9876)
     ANTHROPIC_API_KEY   required by the Claude Agent SDK
 
-The Claude Agent SDK drives Claude through the Claude Code CLI, so the `claude`
-binary must be on PATH. The Docker image installs it. Run with Docker:
+Run it with Docker (brings up Fraise too):
     ANTHROPIC_API_KEY=sk-ant-... docker compose run --rm agent
 """
 
