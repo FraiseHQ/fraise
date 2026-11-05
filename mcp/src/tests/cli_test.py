@@ -62,20 +62,38 @@ def test_a_flag_wins_over_its_environment_variable_and_both_over_the_default(
 
 
 @pytest.mark.parametrize(
-    "argv, model",
-    [([], None), (["--model", "BAAI/bge-base-en-v1.5"], "BAAI/bge-base-en-v1.5")],
+    "env, argv, model, cache_dir",
+    [
+        ({"HOME": "/home/rj"}, [], None, "/home/rj/.cache/fraise-mcp"),
+        (
+            {"HOME": "/home/rj", "XDG_CACHE_HOME": "/var/cache/rj"},
+            ["--model", "BAAI/bge-base-en-v1.5"],
+            "BAAI/bge-base-en-v1.5",
+            "/var/cache/rj/fraise-mcp",
+        ),
+        ({"HOME": "/home/rj", "FASTEMBED_CACHE_PATH": "/models"}, [], None, "/models"),
+    ],
 )
-def test_main_serves_over_stdio_with_the_configured_embedder(argv, model):
-    """The embedder is built with the chosen model, or the provider's own default."""
+def test_main_serves_over_stdio_with_the_configured_embedder(
+    env, argv, model, cache_dir
+):
+    """The embedder gets the chosen model, or the provider's own, and a lasting cache.
+
+    fastembed's own default is the temp directory, which macOS sweeps every
+    night and Linux empties at reboot, so the model would vanish between
+    sessions, and offline every write with it. The per-user cache follows
+    XDG_CACHE_HOME, and FASTEMBED_CACHE_PATH still names the directory when
+    it is set.
+    """
     with (
-        patch.dict("os.environ", {}, clear=True),
+        patch.dict("os.environ", env, clear=True),
         patch("fraise_mcp.cli.FraiseClient") as client,
         patch("fraise_mcp.cli.FastEmbedEmbedder") as embedder,
         patch("fraise_mcp.cli.build_server") as build,
     ):
         main(["--addr", "http://fraise:9876", *argv])
     client.assert_called_once_with("http://fraise:9876")
-    embedder.assert_called_once_with(*([model] if model else []))
+    embedder.assert_called_once_with(*([model] if model else []), cache_dir=cache_dir)
     build.assert_called_once()
     assert build.call_args.args == (
         client.return_value.__enter__.return_value,

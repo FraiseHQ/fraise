@@ -21,8 +21,12 @@ anthropic = [
 huggingface = [
     "huggingface-hub>=1.27.0",
 ]
+# onnxruntime ships no Intel macOS wheel from 1.24 on. fastembed accepts 1.23
+# before Python 3.14, so an Intel Mac stays there and the lock carries a
+# version it can install.
 fastembed = [
     "fastembed>=0.9.1",
+    "onnxruntime<1.24; sys_platform == 'darwin' and platform_machine == 'x86_64' and python_full_version < '3.14'",
 ]
 dev = [
     "pytest>=9.1.1",

@@ -80,7 +80,7 @@ The address carries no graph: each statement names its own with `@N`.
 
 ## Embeddings
 
-The server embeds with [fastembed](https://qdrant.github.io/fastembed/), on ONNX Runtime and without torch. The default model, `BAAI/bge-small-en-v1.5`, gives 384-dimensional vectors; `--model` takes any text model fastembed supports. The model loads on the first statement that needs a vector, not at startup, so the server answers its client straight away. The first load downloads the model files, and later ones read them from fastembed's cache, which `FASTEMBED_CACHE_PATH` relocates.
+The server embeds with [fastembed](https://qdrant.github.io/fastembed/), on ONNX Runtime and without torch. The default model, `BAAI/bge-small-en-v1.5`, gives 384-dimensional vectors; `--model` takes any text model fastembed supports. The model loads on the first statement that needs a vector, not at startup, so the server answers its client straight away. The first load downloads the model files into `~/.cache/fraise-mcp`, or `$XDG_CACHE_HOME/fraise-mcp` when `XDG_CACHE_HOME` is set, and later loads read them from there; `FASTEMBED_CACHE_PATH` names another directory.
 
 A `remember` embeds its fact. A `recall` embeds its search terms, the words and phrases before its first clause. The server appends `vec:$v` to the statement and binds the vector beside it, so the daemon sees an ordinary hybrid query. A recall with no terms, where [anchors alone seed the search](/docs/query-language/foundations/commands), is sent as written, and so is anything the server cannot read that far: the daemon checks every statement, and its error messages come back to the model as tool errors it can act on.
 

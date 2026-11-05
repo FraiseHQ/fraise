@@ -79,6 +79,10 @@
           "type": "toml",
           "path": "/uv.lock",
           "jsonpath": "$.package[?(@.name.value=='fraise-sdk')].version"
+        },
+        {
+          "type": "generic",
+          "path": "/mcp/pyproject.toml"
         }
       ]
     },

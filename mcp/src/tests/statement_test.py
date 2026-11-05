@@ -37,6 +37,9 @@ from fraise_mcp.statement import embedding_text, with_vector
         ("explain recall barometer", "barometer"),
         ("describe recall barometer topic:weather", "barometer"),
         ("recall  barometer\t", "barometer"),
+        ("remember 'a fact'\n", "a fact"),
+        ("recall zebras \n  \n\t", "zebras"),
+        ("recall favorite color\r\n", "favorite color"),
     ],
 )
 def test_the_fact_or_the_terms_are_encoded(statement, want):
@@ -44,6 +47,8 @@ def test_the_fact_or_the_terms_are_encoded(statement, want):
 
     A clause value is never a term, even one that spells a keyword, and a
     phrase is encoded unquoted, so the vector is of the words the model meant.
+    Trailing newlines and blank lines end the statement, as they do for the
+    parser, so a statement the model ends with one keeps its vector.
     """
     assert embedding_text(statement) == want
 
@@ -63,6 +68,7 @@ def test_the_fact_or_the_terms_are_encoded(statement, want):
         "recall e-mail",
         "recall 'unterminated",
         "recall barometer\nrecall storm",
+        "recall zebras\nfood",
         "RECALL barometer",
         "explain remember 'the barometer falls'",
         "remember barometer",
@@ -81,8 +87,10 @@ def test_a_statement_the_reader_cannot_follow_takes_no_vector(statement):
     assert embedding_text(statement) is None
 
 
-def test_the_vector_clause_goes_last():
-    """The clause is appended after trailing blanks, so every token keeps its place."""
-    assert with_vector("recall barometer topic:weather \t") == (
-        "recall barometer topic:weather vec:$v"
-    )
+@pytest.mark.parametrize(
+    "statement",
+    ["recall barometer topic:weather \t", "recall barometer topic:weather\r\n"],
+)
+def test_the_vector_clause_goes_last(statement):
+    """The clause is appended after trailing blanks and newlines, so every token keeps its place."""
+    assert with_vector(statement) == "recall barometer topic:weather vec:$v"

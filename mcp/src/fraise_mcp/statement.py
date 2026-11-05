@@ -56,14 +56,15 @@ def _tokens(statement: str) -> Iterator[tuple[Kind, str]]:
 
     A word glued to a ``:`` is a clause key, and the ``:`` goes with it. A
     phrase is unquoted, its doubled quotes read as one. Blanks separate
-    tokens and are dropped.
+    tokens and are dropped. A newline followed only by blanks and newlines
+    ends the statement, as it does for the parser.
 
     Yields:
         Each token's kind and text, in order.
 
     Raises:
-        ValueError: at a newline, which starts a second instruction, or at a
-            phrase with no closing quote.
+        ValueError: at a newline another instruction follows, or at a phrase
+            with no closing quote.
     """
     i, n = 0, len(statement)
     while i < n:
@@ -71,7 +72,9 @@ def _tokens(statement: str) -> Iterator[tuple[Kind, str]]:
         if ch in " \t\r":
             i += 1
         elif ch == "\n":
-            raise ValueError("more than one instruction")
+            if statement[i:].strip(" \t\r\n"):
+                raise ValueError("more than one instruction")
+            return
         elif ch == "'":
             parts: list[str] = []
             i += 1

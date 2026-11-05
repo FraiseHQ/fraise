@@ -61,7 +61,10 @@ def test_fastembed_embedder_loads_the_model_on_first_embed_only(text_embedding):
         embedder.embed("one")
         embedder("two")  # __call__ from the Embedder ABC
     cls.assert_called_once_with("BAAI/bge-base-en-v1.5", cache_dir="/models")
-    assert cls.return_value.embed.call_count == 2
+    assert [c.args for c in cls.return_value.embed.call_args_list] == [
+        (["one"],),
+        (["two"],),
+    ]
 
 
 def test_fastembed_embedder_is_an_embedder():

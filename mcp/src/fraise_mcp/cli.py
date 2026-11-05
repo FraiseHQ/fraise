@@ -45,6 +45,28 @@ from fraise_mcp.server import build_server
 ADDR_ENV = "FRAISE_ADDR"
 MODEL_ENV = "FRAISE_EMBEDDING_MODEL"
 NO_VECTORS_ENV = "FRAISE_NO_VECTORS"
+CACHE_ENV = "FASTEMBED_CACHE_PATH"
+
+
+def _cache_dir() -> str:
+    """Return the directory the embedding model's files are kept in.
+
+    fastembed's own default is the temp directory, which macOS sweeps every
+    night and Linux empties at reboot. The server never sends a statement
+    without its vector, so a swept model costs a silent download when online
+    and every write when offline. A per-user cache survives both, and
+    ``FASTEMBED_CACHE_PATH`` still names the directory when it is set.
+
+    Returns:
+        ``FASTEMBED_CACHE_PATH`` when set, else ``fraise-mcp`` under
+        ``XDG_CACHE_HOME``, or under ``~/.cache`` without it.
+    """
+    if path := os.environ.get(CACHE_ENV):
+        return path
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cache"
+    )
+    return os.path.join(base, "fraise-mcp")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -97,6 +119,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     warnings.filterwarnings("ignore", category=FraiseWarning)
     embedder = None
     if not args.no_vectors:
-        embedder = FastEmbedEmbedder(args.model) if args.model else FastEmbedEmbedder()
+        cache_dir = _cache_dir()
+        embedder = (
+            FastEmbedEmbedder(args.model, cache_dir=cache_dir)
+            if args.model
+            else FastEmbedEmbedder(cache_dir=cache_dir)
+        )
     with FraiseClient(args.addr) as client:
         build_server(client, embedder, version=version("fraise-mcp")).run("stdio")

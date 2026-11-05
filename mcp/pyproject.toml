@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "fraise-sdk[fastembed]>=0.3.0",
+    "fraise-sdk[fastembed]>=0.3.0",  # x-release-please-version
     "mcp>=2.3.0,<3",
 ]
 

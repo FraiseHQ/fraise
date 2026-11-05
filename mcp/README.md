@@ -29,7 +29,7 @@ Every setting is a flag, and each flag falls back to an environment variable:
 | `--model` | `FRAISE_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` |
 | `--no-vectors` | `FRAISE_NO_VECTORS=1` | vectors on |
 
-The model is any text model [fastembed](https://qdrant.github.io/fastembed/examples/Supported_Models/) supports. It runs on ONNX Runtime, with no torch, and loads on the first statement that needs a vector, so the server starts without it. The first load downloads the model files; `FASTEMBED_CACHE_PATH` sets where they are kept. A graph's first vector fixes its dimension, so a graph keeps the model it was first written with.
+The model is any text model [fastembed](https://qdrant.github.io/fastembed/examples/Supported_Models/) supports. It runs on ONNX Runtime, with no torch, and loads on the first statement that needs a vector, so the server starts without it. The first load downloads the model files into `~/.cache/fraise-mcp`, or `$XDG_CACHE_HOME/fraise-mcp` when `XDG_CACHE_HOME` is set, and later loads read them from there; `FASTEMBED_CACHE_PATH` names another directory. A graph's first vector fixes its dimension, so a graph keeps the model it was first written with.
 
 ## What gets embedded
 
