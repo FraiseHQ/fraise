@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.7](https://github.com/FraiseHQ/fraise/compare/v0.3.6...v0.3.7) (2026-11-05)
+
+
+### Bug fixes
+
+* keep distinct queries off one plan-cache entry ([#603](https://github.com/FraiseHQ/fraise/issues/603)) ([0e88f61](https://github.com/FraiseHQ/fraise/commit/0e88f615f543061509a845612859ea941a32c055))
+* keep query text out of logs above debug ([#602](https://github.com/FraiseHQ/fraise/issues/602)) ([5889b76](https://github.com/FraiseHQ/fraise/commit/5889b76db06b75f7e7b10b814ad98a73067273c3))
+* reject query text that is not UTF-8 ([#604](https://github.com/FraiseHQ/fraise/issues/604)) ([e3c1430](https://github.com/FraiseHQ/fraise/commit/e3c1430f18587e1ad1deca27238446245f39ce5b))
+
+
+### Performance
+
+* count a hub's members instead of pooling each ([#606](https://github.com/FraiseHQ/fraise/issues/606)) ([dd09176](https://github.com/FraiseHQ/fraise/commit/dd09176080ba053721a0c15b4c1864763ae282da))
+* run writes on one writer per graph, apart from the read workers ([#607](https://github.com/FraiseHQ/fraise/issues/607)) ([552a99d](https://github.com/FraiseHQ/fraise/commit/552a99d7e92481b473c875c926b13de40496b0fd))
+
 ## [0.3.6](https://github.com/FraiseHQ/fraise/compare/v0.3.5...v0.3.6) (2026-10-29)
 
 
