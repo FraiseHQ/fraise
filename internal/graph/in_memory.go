@@ -23,6 +23,7 @@
 package graph
 
 import (
+	"cmp"
 	"errors"
 	"math"
 	"slices"
@@ -1077,7 +1078,6 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 				Named:  isNamed,
 			}
 		}
-		// Members come in ascending key order, so each group's do too.
 		groups := make([]scoring.Group[K, P], 0, len(transmitting))
 		grouped := make(map[K]int, len(transmitting))
 		listed := make([]K, 0, len(expanded.Order))
@@ -1103,6 +1103,16 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 			listed = append(listed, member)
 			held += len(candidates[member]) + len(anchors)
 		}
+		// A tree-shaped traversal such as BFS lists members in discovery
+		// order. Search finds a ranked member in its group by binary search,
+		// and the scorer folds the groups in turn, so both are put in key
+		// order here, whatever order the traversal visited them in.
+		for i := range groups {
+			slices.Sort(groups[i].Members)
+		}
+		slices.SortFunc(groups, func(a, b scoring.Group[K, P]) int {
+			return cmp.Compare(a.Contributions[0].Via, b.Contributions[0].Via)
+		})
 		// A listed member's contributions move into one array, its own first
 		// and then one per anchor that reached it. So pass 2 allocates once
 		// however many members a hub's matches hold. Each member's window
