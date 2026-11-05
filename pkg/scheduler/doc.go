@@ -20,14 +20,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package scheduler runs planned query streams against the database on a
-// bounded worker pool.
+// Package scheduler runs planned query streams against the database: reads on
+// a bounded worker pool, writes on one writer per graph.
 //
-// [Scheduler.Submit] enqueues a stream. It never blocks without bound, so the
-// server can shed load. It fails with [ErrQueueFull] when the queue stays full
-// past the enqueue timeout, and with [ErrShutdown] once the scheduler is
-// stopping. A worker runs each stream under its graph's lock: shared for a
-// read, exclusive for a write. So writes to one graph are serialised, while
-// reads run together. [Scheduler.Stop] drains every stream already accepted
-// before it returns, so a graceful shutdown never drops an acknowledged write.
+// [Scheduler.Submit] enqueues a stream, a read on the shared read queue and a
+// write on its graph's lane. It never blocks without bound, so the server can
+// shed load. It fails with [ErrQueueFull] when that queue stays full past the
+// enqueue timeout, and with [ErrShutdown] once the scheduler is stopping. Each
+// stream runs under its graph's lock: shared for a read, exclusive for a
+// write. So writes to one graph are serialised, in the order their lane
+// accepted them, while reads run together. Keeping the two apart means a write
+// never holds a read worker, nor waits for one. [Scheduler.Stop] drains every
+// stream already accepted before it
+// returns, so a graceful shutdown never drops an acknowledged write.
 package scheduler

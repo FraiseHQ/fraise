@@ -14,7 +14,7 @@ Every failure returns the same shape, with the status code carrying the category
 |--------|---------------------------------------------------------------------------------------------------------------------------------------|
 | 400 | malformed JSON, a body over `max-body-bytes`, an unparseable query, a missing parameter, a `top`, `depth` or vector length outside its bounds, a vector whose dimension does not match its graph, a graph selector outside the allocated range, a write sent to `/api/v1/explain` |
 | 404 | no endpoint answers that method and path — the message names both |
-| 429 | the scheduler queue stayed full past `enqueue-timeout` — back off and retry |
+| 429 | the scheduler queue the query waits on stayed full past `enqueue-timeout` — back off and retry |
 | 503 | the server is shutting down |
 | 500 | an internal failure |
 
