@@ -1047,6 +1047,69 @@ func TestSearchNamedHubTransmits(t *testing.T) {
 	}
 }
 
+// TestSearchRanksANamedHubsMembersNewestFirst pins how a named hub's members
+// rank when nothing but the hub observed them. They hold the same
+// observation, so they share one relevance and recency alone orders them,
+// newest first, behind the match that funded the hub. top cuts them like any
+// hit, and a member older than since is not one. This is the ranking each
+// would take as a candidate of its own. The search counts them rather than
+// pooling each, which keeps a hub's size off the recall's cost.
+//
+// It holds whichever traversal walks the hub. BFS lists the members in the
+// order it discovers them, which changes from one walk to the next. So that
+// case repeats the recall, and keeps a score cutoff on, which every hit
+// clears only with its contributions intact: a member at a seventh of the
+// match's relevance clears a bar of a tenth.
+func TestSearchRanksANamedHubsMembersNewestFirst(t *testing.T) {
+	for name, tc := range map[string]struct {
+		traversal graph.Traversal[uint64, float64]
+		ratio     float64
+	}{
+		"excess":                  {traversal: graph.NewExcessTraversal[uint64, float64]()},
+		"bfs with a score cutoff": {traversal: graph.NewBFSTraversal[uint64, float64](graph.Both), ratio: 0.1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.Engine.Halflife = 24 * time.Hour
+			cfg.DB.MinScoreRatio = tc.ratio
+			g := graph.NewGraph[uint64, float64](cfg)
+			g.SetTraversal(tc.traversal)
+			now := time.Now()
+			log := mkTopic(g, "log", now)
+			mustSet(t, g, log)
+			for value, age := range map[string]time.Duration{
+				"the pump failed at noon": 10 * time.Hour,
+				"shift handover two":      2 * time.Hour,
+				"shift handover five":     5 * time.Hour,
+				"shift handover one":      1 * time.Hour,
+				"shift handover four":     4 * time.Hour,
+				"shift handover three":    3 * time.Hour,
+				"shift handover old":      48 * time.Hour,
+			} {
+				fact := mkFact(g, value, now.Add(-age))
+				mustSet(t, g, fact)
+				mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: log, NodeAttributes: graph.NodeAttributes{Timestamp: now.Add(-age)}, Hasher: g.GetHasher()})
+			}
+
+			want := []string{"the pump failed at noon", "shift handover one", "shift handover two", "shift handover three"}
+			for range 10 {
+				nodes, _, contributions, _, err := search(g, []string{"pump"}, containers.Vector[uint64, float64]{}, []string{"log"}, nil, 1, 4, now.Add(-24*time.Hour), time.Time{})
+				if err != nil {
+					t.Fatalf("Search = %v, want nil", err)
+				}
+				if diff := cmp.Diff(want, values(nodes)); diff != "" {
+					t.Fatalf("Search mismatch (-want +got):\n%s", diff)
+				}
+				for i, list := range contributions[1:] {
+					if len(list) != 1 || list[0].Src != scoring.SrcGraph || !list[0].Named {
+						t.Fatalf("member %q contributions = %+v, want the named hub's single observation", values(nodes)[i+1], list)
+					}
+				}
+			}
+		})
+	}
+}
+
 // marginalGraph builds the case that separates the two transmitting lanes. An
 // anchor holds more than its fair share of the query's mass, but less than
 // twice it. depth 2 admits it at the plain fair share. depth 1 raises the bar

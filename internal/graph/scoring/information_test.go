@@ -99,6 +99,40 @@ func TestInformationScorerFoldsZScores(t *testing.T) {
 	}
 }
 
+// TestInformationScorerCountsEveryGroupMember pins how a group joins the
+// pool. Each member counts toward every channel's mean and spread as a listed
+// candidate does, so binding three members as a group scores every candidate
+// as listing them one by one would. Were a group counted once, a hub that
+// transmits to thousands of facts would weigh as a single candidate, and
+// every match's z would depend on how the search pooled the hub's members.
+func TestInformationScorerCountsEveryGroupMember(t *testing.T) {
+	strong := []scoring.Contribution[uint64, float64]{text(3, 1)}
+	weak := []scoring.Contribution[uint64, float64]{text(1, 1)}
+	transmitted := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcGraph, Score: 2, Via: 9, Degree: 1, Count: 1}}
+
+	listedCandidates, listedKeys := pool(strong, weak, transmitted, transmitted, transmitted)
+	listed := scoring.NewInformationScorer[uint64, float64]().Observe(scoring.Observation[uint64, float64]{Candidates: listedCandidates, Keys: listedKeys})
+	groupedCandidates, groupedKeys := pool(strong, weak)
+	grouped := scoring.NewInformationScorer[uint64, float64]().Observe(scoring.Observation[uint64, float64]{
+		Candidates: groupedCandidates,
+		Keys:       groupedKeys,
+		Groups:     []scoring.Group[uint64, float64]{{Members: []uint64{3, 4, 5}, Contributions: transmitted}},
+	})
+
+	for name, contributions := range map[string][]scoring.Contribution[uint64, float64]{
+		"the strong match": strong,
+		"the weak match":   weak,
+		"a group member":   transmitted,
+	} {
+		t.Run(name, func(t *testing.T) {
+			want := listed.Score(contributions)
+			if got := grouped.Score(contributions); math.Abs(got-want) > 1e-12 {
+				t.Errorf("Score with the members grouped = %v, want %v as with them listed", got, want)
+			}
+		})
+	}
+}
+
 // TestInformationScorerNeverTakesAway pins the floor: a channel that places a
 // fact at or below the pool's mean adds nothing to it, so no channel can lower
 // what the others give. The second fact's text is under the mean of 1.5 and it

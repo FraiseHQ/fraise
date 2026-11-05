@@ -71,21 +71,38 @@ func (t *ExcessTraversal[K, P]) Clone() Traversal[K, P] {
 }
 
 // traverse steps once from every source g holds to its neighbours of the
-// other kind: a fact's anchors, an anchor's members.
+// other kind: a fact's anchors, an anchor's members. The result is sized from
+// the sources' adjacency up front, and every vertex's first parent is a
+// capacity-one window onto one shared array, so a walk from a hub allocates
+// per walk, not per member. Only a vertex reached from a second source copies
+// its parents out.
 func (t *ExcessTraversal[K, P]) traverse(g Graph[K, P], sources []K) (TraversalResult[K], error) {
-	result := TraversalResult[K]{
-		Parent:  make(map[K]K),
-		Parents: make(map[K][]K),
-		Depth:   make(map[K]int),
-	}
-	walked := make(map[K]struct{}, len(sources))
+	seen := make(map[K]struct{}, len(sources))
+	walked := make([]K, 0, len(sources))
+	steps := make([][]K, 0, len(sources))
+	var reach int
 	for _, source := range sources {
-		if _, dup := walked[source]; dup || g.Get(source) == nil {
+		if _, dup := seen[source]; dup || g.Get(source) == nil {
 			continue
 		}
-		walked[source] = struct{}{}
+		seen[source] = struct{}{}
+		walked = append(walked, source)
+		steps = append(steps, g.Neighbours(source))
+		reach += len(steps[len(steps)-1])
+	}
+	if len(walked) == 0 {
+		return TraversalResult[K]{}, ErrSourceNotFound
+	}
+	result := TraversalResult[K]{
+		Order:   make([]K, 0, reach),
+		Parent:  make(map[K]K, reach),
+		Parents: make(map[K][]K, reach),
+		Depth:   make(map[K]int, reach),
+	}
+	firsts := make([]K, 0, reach)
+	for i, source := range walked {
 		fromAnchor := isAnchor(g, source)
-		for _, neighbour := range g.Neighbours(source) {
+		for _, neighbour := range steps[i] {
 			if isAnchor(g, neighbour) == fromAnchor {
 				continue
 			}
@@ -96,16 +113,16 @@ func (t *ExcessTraversal[K, P]) traverse(g Graph[K, P], sources []K) (TraversalR
 			if n := len(parents); n > 0 && parents[n-1] == source {
 				continue
 			}
-			if _, seen := result.Depth[neighbour]; !seen {
-				result.Order = append(result.Order, neighbour)
-				result.Parent[neighbour] = source
-				result.Depth[neighbour] = 1
+			if len(parents) > 0 {
+				result.Parents[neighbour] = append(parents, source)
+				continue
 			}
-			result.Parents[neighbour] = append(parents, source)
+			result.Order = append(result.Order, neighbour)
+			result.Parent[neighbour] = source
+			result.Depth[neighbour] = 1
+			firsts = append(firsts, source)
+			result.Parents[neighbour] = firsts[len(firsts)-1 : len(firsts) : len(firsts)]
 		}
-	}
-	if len(walked) == 0 {
-		return TraversalResult[K]{}, ErrSourceNotFound
 	}
 	slices.Sort(result.Order)
 	return result, nil
