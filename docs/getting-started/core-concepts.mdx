@@ -34,7 +34,7 @@ Every query becomes a **stream**: the unit of work the engine plans, the schedul
   chart='flowchart TD
   request["HTTP request"] --> server["server<br/>parse the body, parse the query, reject client errors"]
   server --> engine["engine<br/>look up or build a plan (stream), then submit it"]
-  engine --> scheduler["scheduler<br/>queue the stream; a worker takes it and locks its graph"]
+  engine --> scheduler["scheduler<br/>queue the stream; a read worker or its graph#39;s writer takes it and locks the graph"]
   scheduler --> database["database<br/>apply the stream to graph N: index writes, or seed + walk"]
   database --> results["results marshalled back onto the waiting request"]'
 />

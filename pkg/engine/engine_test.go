@@ -225,7 +225,8 @@ func (collidingHasher) Seed() uint64 { return 0 }
 // graph. Planned afresh, the second runs as itself and takes the entry over.
 func TestPlanConfirmsAHitByEquality(t *testing.T) {
 	cfg := config.New()
-	e := engine.NewEngine[uint64, float32](cfg, collidingHasher{})
+	e := newEngine(t, cfg)
+	e.Hasher = collidingHasher{}
 	if err := e.Start(); err != nil {
 		t.Fatalf("Start returned error: %v", err)
 	}

@@ -7,7 +7,7 @@ navIcon: "🧵"
 Fraise employs three mechanisms to handle concurrency:
 
 1. **Multi-graph partitioning** — distributing data across independent in-memory graphs
-2. **Worker pool scheduler** — processing streams through configurable workers
+2. **Scheduler** — processing reads on a pool of configurable workers, and writes on one writer per graph
 3. **Per-graph read-write locks** — protecting individual graph state
 
 Together, these enable high-performance concurrent reads with serialized writes per graph.
