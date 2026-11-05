@@ -46,7 +46,7 @@ jobs:
       - name: Download the previous baseline
         id: baseline
         continue-on-error: true
-        uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
+        uses: dawidd6/action-download-artifact@a92c7ae74cf1df8810783758581e485ac3aaa309 # v28
         with:
           workflow: benchmarks-nightly.yaml
           branch: main
@@ -92,7 +92,7 @@ jobs:
       # the one before, on whichever runner each got. So an alert is a prompt
       # to look, never a failure. Both suites append to the same file, each
       # under its own name.
-      - uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477 # v27
+      - uses: dawidd6/action-download-artifact@a92c7ae74cf1df8810783758581e485ac3aaa309 # v28
         if: always()
         continue-on-error: true # the first night starts the history
         with:

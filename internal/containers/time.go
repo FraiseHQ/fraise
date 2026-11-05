@@ -45,6 +45,12 @@ type TimeValue[K comparable] interface {
 	// cannot serve as material, because AbsoluteTime's RFC822 form drops
 	// seconds.
 	Hash(h hash.Hasher[K, string]) string
+	// Equal reports whether other is the same bound: the same type, with the
+	// same span or the same instant. The engine confirms a plan-cache hit
+	// with it, because two bounds may still share a key when their material
+	// does not. Equal must never hold for bounds that resolve differently, or
+	// a recall would run in another query's time window.
+	Equal(other TimeValue[K]) bool
 }
 
 // RelativeTime is a [TimeValue] a fixed span before now, as in since:7d. It
@@ -82,6 +88,19 @@ func (a AbsoluteTime[K]) Hash(h hash.Hasher[K, string]) string {
 	return fmt.Sprint(h.Hash("a" + a.T.Format(time.RFC3339Nano)))
 }
 
+// Equal implements [TimeValue]: other is a RelativeTime of the same span.
+func (r RelativeTime[K]) Equal(other TimeValue[K]) bool {
+	o, ok := other.(RelativeTime[K])
+	return ok && o.Dur == r.Dur
+}
+
+// Equal implements [TimeValue]: other is an AbsoluteTime at the same instant,
+// whatever zone each was written in.
+func (a AbsoluteTime[K]) Equal(other TimeValue[K]) bool {
+	o, ok := other.(AbsoluteTime[K])
+	return ok && o.T.Equal(a.T)
+}
+
 // TimeFilter is a [TimeValue] held as one plain value. It is the fixed instant
 // Abs when IsAbs is set, otherwise the span Dur before now.
 type TimeFilter[K comparable] struct {
@@ -108,6 +127,20 @@ func (tf TimeFilter[K]) Hash(h hash.Hasher[K, string]) string {
 		return fmt.Sprint(h.Hash("fa" + tf.Abs.Format(time.RFC3339Nano)))
 	}
 	return fmt.Sprint(h.Hash("fr" + tf.Dur.String()))
+}
+
+// Equal implements [TimeValue]: other is a TimeFilter of the same form, at the
+// same instant when absolute or of the same span when relative. The field the
+// form ignores does not count.
+func (tf TimeFilter[K]) Equal(other TimeValue[K]) bool {
+	o, ok := other.(TimeFilter[K])
+	if !ok || o.IsAbs != tf.IsAbs {
+		return false
+	}
+	if tf.IsAbs {
+		return o.Abs.Equal(tf.Abs)
+	}
+	return o.Dur == tf.Dur
 }
 
 // ParseTimeValue converts a string into a TimeValue: a RelativeTime

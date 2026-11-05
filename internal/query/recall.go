@@ -23,6 +23,7 @@
 package query
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -69,18 +70,19 @@ func (r *Recall[K, P]) SetGraphID(id uint8) {
 // Hash keys the query for the plan cache. It must fold in everything that
 // changes the result set. Two recalls that differ only in graph, depth, top,
 // time bounds or the bound vector must not collide. Otherwise the cache would
-// hand back another query's plan. The lists are delimited so ["ab"] and
-// ["a","b"] do not hash alike.
+// hand back another query's plan. Every keyword and anchor is length-prefixed,
+// because a phrase may hold any byte, the delimiters included. So ["ab"] and
+// ["a","b"] do not hash alike, and no keyword can spell the segments after it.
 func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")
 	b.WriteString(strconv.Itoa(int(r.context.GraphID)))
 	b.WriteString("|kw=")
-	b.WriteString(strings.Join(r.Keywords, "\x00"))
+	writeStrings(&b, r.Keywords)
 	b.WriteString("|en=")
-	b.WriteString(strings.Join(r.Entities, "\x00"))
+	writeStrings(&b, r.Entities)
 	b.WriteString("|to=")
-	b.WriteString(strings.Join(r.Topics, "\x00"))
+	writeStrings(&b, r.Topics)
 	b.WriteString("|d=")
 	b.WriteString(strconv.Itoa(r.Parameters.Depth))
 	b.WriteString("|t=")
@@ -96,6 +98,21 @@ func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	b.WriteString("|vec=")
 	b.WriteString(r.Vector.Hash(h))
 	return h.Hash(b.String())
+}
+
+// Equal implements [Query]: other is a recall with every field Hash folds in
+// the same. The engine runs a cached plan only for an equal query, so Equal
+// must never hold for two recalls that read differently. A recall equal under
+// a key another recall planned would read that recall's graph and terms.
+func (r Recall[K, P]) Equal(other Query[K, P]) bool {
+	o, ok := other.(*Recall[K, P])
+	return ok &&
+		o.context == r.context &&
+		slices.Equal(o.Keywords, r.Keywords) &&
+		slices.Equal(o.Entities, r.Entities) &&
+		slices.Equal(o.Topics, r.Topics) &&
+		o.Parameters.Equal(r.Parameters) &&
+		o.Vector.Equal(r.Vector)
 }
 
 // IsWrite implements [Query]. A recall only reads, so it runs under the

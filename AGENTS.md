@@ -64,8 +64,9 @@ special cases is not.
 - `internal/containers` — value types (`Vector[K, P]`, `TimeValue[K]`,
   heaps, trees). Generic over the key/precision parameters of their users.
 - `internal/query` — `Query[K, P]` interface; `Recall`/`Remember` composites;
-  hash material is `|`-delimited `tag=` segments, lists NUL-delimited,
-  lossless (exact hex floats, RFC3339Nano — never a lossy `String()`).
+  hash material is `|`-delimited `tag=` segments, every user string
+  length-prefixed (`5:alice`), lossless (exact hex floats, RFC3339Nano — never
+  a lossy `String()`).
 - `internal/query/parser` — lexer → AST → command nodes, generic in `[K, P]`.
   New query fields get an AST field node, a parser case, and a segment in the
   relevant query's `Hash`.
