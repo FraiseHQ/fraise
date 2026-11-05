@@ -23,9 +23,9 @@ The nightly run also appends one sample per benchmark to the history, one JSON f
 
 They are Go benchmarks, beside the code they measure, and run as any other with `go test -bench`.
 
-**Microbenchmarks** are the benchmarks under `internal/`: query commit, graph search in each lane and with a vector seed, both indexes, and key hashing.
+**Microbenchmarks** are the benchmarks under `internal/`: query commit, graph search in each lane and with a vector seed, both indexes, and key hashing. Graph search runs over ten thousand facts on two topologies. On the first, each fact is filed under one of fifty topics and mentions one of five hundred entities, and each recall names one of the topics. On the second, filed the way a conversation is, every fact sits under one conversation topic, each run of twenty-five under a session topic, and alternate facts mention one of two speakers; each recall names the conversation, a hub that holds every fact.
 
-**Retrieval quality** is `BenchmarkRetrievalQuality` in `pkg/server`. It starts a server, ingests the [LoCoMo](https://github.com/snap-research/locomo) conversations `FRAISE_LOCOMO` names through the HTTP API, one fact per turn exactly as the amb benchmark's raw ingestion does, and asks each question as a recall of its words scoped to its conversation, ten results deep. LoCoMo names each question's evidence as turns, and a result counts for the turn it is; each question scores:
+**Retrieval quality** is `BenchmarkRetrievalQuality` in `pkg/server`. It starts a server, ingests the [LoCoMo](https://github.com/snap-research/locomo) conversations `FRAISE_LOCOMO` names through the HTTP API, one fact per turn exactly as the amb benchmark's raw ingestion does, each filed under its conversation's topic and its session's topic and mentioning its speaker, and asks each question as a recall of its words scoped to its conversation, ten results deep. LoCoMo names each question's evidence as turns, and a result counts for the turn it is; each question scores:
 
 | Metric | Meaning |
 |---|---|
@@ -37,7 +37,7 @@ Each is averaged over all questions and reported per category: single-hop, multi
 
 The sample is LoCoMo's conversation `conv-26`, in `tests/perf/data`: 199 questions across all five categories. LoCoMo is licensed CC BY-NC 4.0, not MIT like the rest of the repository; `tests/perf/data/NOTICE.md` gives the attribution.
 
-**HTTP latency** is `BenchmarkHTTP` in `pkg/server`. It fills a fresh server with a deterministic corpus, then holds it at a constant arrival rate of mixed recalls and writes for a fixed time, and reports the p50, p95 and p99 of the responses. Requests arrive on schedule however slowly the server answers, so the percentiles include the queueing a real client would see.
+**HTTP latency** is `BenchmarkHTTP` in `pkg/server`. It fills a fresh server with a deterministic corpus of twelve-word facts, each filed under one of fifty topics and mentioning one of five hundred entities. It then holds it at a constant arrival rate for a fixed time, one write in ten and otherwise recalls of two or three words scoped to one of the topics, spread evenly over the three depths, and reports the p50, p95 and p99 of the responses. Requests arrive on schedule however slowly the server answers, so the percentiles include the queueing a real client would see.
 
 Both start the server as the binary does, on `tests/perf/fraise.config.toml`, and talk to it over HTTP, so what they measure includes everything a client waits for.
 

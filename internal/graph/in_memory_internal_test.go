@@ -29,6 +29,7 @@
 package graph
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -57,6 +58,7 @@ type collectFixture struct {
 	u            [10]uint64
 	cluster, hub uint64
 	candidates   scoring.Candidates[uint64, float64]
+	groups       []scoring.Group[uint64, float64]
 	seeds        []uint64
 	background   float64
 }
@@ -116,14 +118,21 @@ func newCollectFixture(t *testing.T) *collectFixture {
 	// reach, and every rule below is the one an anchor the seeds discover
 	// obeys.
 	topicKeys, entityKeys := fx.g.anchorKeys([]string{"door"}, nil)
-	fx.background = fx.g.findNeighbours(fx.seeds, 0, fx.candidates, topicKeys, entityKeys, 2)
+	fx.background, fx.groups = fx.g.findNeighbours(fx.seeds, 0, fx.candidates, topicKeys, entityKeys, 2)
 	return fx
 }
 
-// graphContributions returns the SrcGraph entries pooled for key.
-func graphContributions(candidates scoring.Candidates[uint64, float64], key uint64) []scoring.Contribution[uint64, float64] {
+// graphContributions returns the SrcGraph entries observed for key, pooled
+// as a candidate or held as a member of a group.
+func graphContributions(candidates scoring.Candidates[uint64, float64], groups []scoring.Group[uint64, float64], key uint64) []scoring.Contribution[uint64, float64] {
 	var out []scoring.Contribution[uint64, float64]
-	for _, c := range candidates[key] {
+	held := candidates[key]
+	for _, group := range groups {
+		if slices.Contains(group.Members, key) {
+			held = append(held, group.Contributions...)
+		}
+	}
+	for _, c := range held {
 		if c.Src == scoring.SrcGraph {
 			out = append(out, c)
 		}
@@ -178,10 +187,10 @@ func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
 		facts[1].Key(): {{Src: scoring.SrcText, Score: 0.8, Rank: 1, Count: 1}},
 	}
 	topicKeys, entityKeys := g.anchorKeys([]string{"door"}, nil)
-	g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, 0, candidates, topicKeys, entityKeys, 2)
+	_, groups := g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, 0, candidates, topicKeys, entityKeys, 2)
 
 	for i, f := range facts {
-		if got := graphContributions(candidates, f.Key()); len(got) != 0 {
+		if got := graphContributions(candidates, groups, f.Key()); len(got) != 0 {
 			t.Errorf("fact %d received graph observations %+v from a lone anchor at its fair share, want none", i, got)
 		}
 	}
@@ -195,20 +204,20 @@ func TestCollectExpandsOnlyAboveBackgroundAnchors(t *testing.T) {
 	fx := newCollectFixture(t)
 
 	for i, member := range fx.h[1:] {
-		if _, pooled := fx.candidates[member]; pooled {
-			t.Errorf("hub member h[%d] was pooled by a silent anchor, want nothing", i+1)
+		if _, pooled := fx.candidates[member]; pooled || len(graphContributions(fx.candidates, fx.groups, member)) > 0 {
+			t.Errorf("hub member h[%d] was observed through a silent anchor, want nothing", i+1)
 		}
 	}
-	if got := graphContributions(fx.candidates, fx.h[0]); len(got) != 0 {
+	if got := graphContributions(fx.candidates, fx.groups, fx.h[0]); len(got) != 0 {
 		t.Errorf("the silent hub's own seed carries graph observations %+v, want none", got)
 	}
 	for _, member := range []uint64{fx.f1, fx.f2, fx.f3} {
-		if got := graphContributions(fx.candidates, member); len(got) != 1 {
+		if got := graphContributions(fx.candidates, fx.groups, member); len(got) != 1 {
 			t.Errorf("cluster member %d has %d graph observations, want exactly 1", member, len(got))
 		}
 	}
 	for i, member := range fx.u {
-		if _, pooled := fx.candidates[member]; pooled {
+		if _, pooled := fx.candidates[member]; pooled || len(graphContributions(fx.candidates, fx.groups, member)) > 0 {
 			t.Errorf("giant member u[%d] was pooled; untouched anchors hold no mass to observe", i)
 		}
 	}
@@ -224,7 +233,7 @@ func TestCollectRecordsObservationsNotPolicy(t *testing.T) {
 
 	want := scoring.Contribution[uint64, float64]{Src: scoring.SrcGraph, Score: 14, Via: fx.cluster, Degree: 3, Count: 2}
 	for _, member := range []uint64{fx.f1, fx.f3} {
-		got := graphContributions(fx.candidates, member)
+		got := graphContributions(fx.candidates, fx.groups, member)
 		if len(got) != 1 || got[0] != want {
 			t.Errorf("member %d observation = %+v, want %+v — collection must not apply policy", member, got, want)
 		}
@@ -283,9 +292,9 @@ func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 		s3: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	topicKeys, entityKeys := g.anchorKeys([]string{"door"}, nil)
-	g.findNeighbours([]uint64{s1, s2, s3}, 0, candidates, topicKeys, entityKeys, 2)
+	_, groups := g.findNeighbours([]uint64{s1, s2, s3}, 0, candidates, topicKeys, entityKeys, 2)
 
-	got := graphContributions(candidates, shared)
+	got := graphContributions(candidates, groups, shared)
 	if len(got) != 2 {
 		t.Fatalf("shared member pooled %d graph observations, want one per funding anchor (2): %+v", len(got), got)
 	}

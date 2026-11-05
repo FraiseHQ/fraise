@@ -631,8 +631,31 @@ def test_a_recall_with_a_term_lifts_the_anchors_facts(
 
     `recall mercury topic:planets` returns the mercury fact first, on its own
     match, then the rest of the star: the named topic passes the seed's mass to
-    every fact filed under it.
+    every fact filed under it. Those facts hold that one observation and
+    nothing else, so they share a score and recency alone orders them, newest
+    first. The fixture writes the star in dict order, so they come in that
+    order reversed.
     """
+    others = [fact for key, fact in planet_facts.items() if key != "mercury"]
+    want = [planet_facts["mercury"], *reversed(others)]
     hits = recall_ranking(f"recall@{planets_graph} mercury topic:planets")
-    assert hits[0] == planet_facts["mercury"], hits
-    assert sorted(hits) == sorted(planet_facts.values()), hits
+    assert hits == want, f"want the match, then the star newest first; got {hits}"
+
+
+@pytest.mark.parametrize("top", [1, 2, 3])
+def test_a_named_anchors_lifted_facts_are_cut_by_top(
+    top, planets_graph, recall_ranking
+):
+    """`top` keeps the head of the ranking a named anchor lifts.
+
+    The facts the topic lifts share one score, so only their ages tell them
+    apart. A top:N recall must keep the match and the newest of them, a prefix
+    of the uncut ranking, not whichever lifted facts the search came to first.
+    """
+    full = recall_ranking(f"recall@{planets_graph} mercury topic:planets")
+    truncated = recall_ranking(
+        f"recall@{planets_graph} mercury topic:planets top:{top}"
+    )
+    assert truncated == full[:top], (
+        f"top:{top} must be the first {top} of the full ranking {full}; got {truncated}"
+    )
