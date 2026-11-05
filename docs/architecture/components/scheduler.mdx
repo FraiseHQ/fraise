@@ -20,7 +20,7 @@ The scheduler keeps reads and writes apart. Reads go on one bounded queue of `bu
 
 ## Why writes have lanes
 
-A graph's exclusive lock already admits one write at a time, so one writer per graph costs no write concurrency. What it buys is that the two kinds of work never wait on each other's goroutines: a read worker never parks on a write lock, so writes piling up on a hot graph cannot starve reads of the others, and a burst of slow reads cannot hold back a write to any graph. A lane also runs its writes in the order it accepted them.
+A graph's exclusive lock already admits one write at a time, so one writer per graph costs no write concurrency. What it buys is that writes never hold the workers reads wait for: writes piling up on a hot graph wait on its lane, not in the read pool, and a burst of slow reads cannot hold back a write to any graph. A lane also runs its writes in the order it accepted them.
 
 ## Bounded is the operative word
 

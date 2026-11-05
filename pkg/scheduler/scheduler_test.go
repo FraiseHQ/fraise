@@ -91,6 +91,23 @@ func TestStartStop(t *testing.T) {
 	}
 }
 
+// TestStartWithoutDatabase checks that a scheduler with no database attached
+// refuses to start with ErrNoDatabase instead of panicking: it needs the graph
+// count to open its lanes. A later Submit then sees a scheduler that never
+// started.
+func TestStartWithoutDatabase(t *testing.T) {
+	cfg := config.New()
+	s := scheduler.NewScheduler[uint64, float32](cfg)
+
+	if err := s.Start(); !errors.Is(err, scheduler.ErrNoDatabase) {
+		t.Fatalf("Start without a database = %v, want ErrNoDatabase", err)
+	}
+	stream := planStream(t, cfg, "recall@0 anna", nil)
+	if err := s.Submit(context.Background(), stream); !errors.Is(err, scheduler.ErrShutdown) {
+		t.Errorf("Submit after a refused Start = %v, want ErrShutdown", err)
+	}
+}
+
 // TestStopWithoutStart checks that stopping a scheduler that never started is a
 // safe no-op rather than a panic.
 func TestStopWithoutStart(t *testing.T) {
@@ -311,13 +328,16 @@ func TestSubmitFullQueueTimesOut(t *testing.T) {
 	}
 }
 
-// TestWriteBlockedOnItsGraphLeavesReadsRunning checks that reads do not queue
-// behind writes. With one read worker and graph 0's lock held, a write to
-// graph 0 parks on the lock. A write that occupied the worker would leave the
-// read of graph 1 waiting for as long as graph 0 stays locked.
+// TestWriteBlockedOnItsGraphLeavesReadsRunning checks that a write parked on
+// its graph's lock holds no read worker. With two read workers and graph 0's
+// lock held, a write to graph 0 parks on the lock, and a read of graph 0 takes
+// one worker and waits on it too: a read of a locked graph waits whichever
+// goroutine runs it. The read of graph 1 must run on the other worker. A write
+// that occupied a worker would leave both taken, and the read of graph 1
+// waiting for as long as graph 0 stays locked.
 func TestWriteBlockedOnItsGraphLeavesReadsRunning(t *testing.T) {
 	cfg := config.New()
-	cfg.Scheduler.Workers = 1
+	cfg.Scheduler.Workers = 2
 	s := scheduler.NewScheduler[uint64, float32](cfg)
 	s.DB = newStartedDB(t, cfg)
 
@@ -336,23 +356,35 @@ func TestWriteBlockedOnItsGraphLeavesReadsRunning(t *testing.T) {
 		g.Unlock()
 		t.Fatalf("Submit(write) returned error: %v", err)
 	}
+	locked := planStream(t, cfg, "recall@0 gate", nil)
+	if err := s.Submit(context.Background(), locked); err != nil {
+		g.Unlock()
+		t.Fatalf("Submit(read of graph 0) returned error: %v", err)
+	}
 
 	read := planStream(t, cfg, "recall@1 gate", nil)
 	if err := s.Submit(context.Background(), read); err != nil {
 		g.Unlock()
-		t.Fatalf("Submit(read) returned error: %v", err)
+		t.Fatalf("Submit(read of graph 1) returned error: %v", err)
 	}
 	select {
 	case <-read.Done():
 	case <-time.After(2 * time.Second):
 		t.Error("the read of graph 1 waited on graph 0's lock")
 	}
+	select {
+	case <-locked.Done():
+		t.Error("the read of graph 0 ran while graph 0 was locked")
+	default:
+	}
 	g.Unlock()
 
-	select {
-	case <-write.Done():
-	case <-time.After(2 * time.Second):
-		t.Fatal("the write did not run once its graph was unlocked")
+	for name, stream := range map[string]*query.Stream[uint64, float32]{"write": write, "read of graph 0": locked} {
+		select {
+		case <-stream.Done():
+		case <-time.After(2 * time.Second):
+			t.Fatalf("the %s did not run once its graph was unlocked", name)
+		}
 	}
 }
 

@@ -39,9 +39,9 @@ import (
 // drained by a pool of workers. Writes go on their graph's lane, a bounded
 // queue drained by that graph's one writer. A stream holds its graph's lock
 // while it runs. Writes to one graph exclude each other anyway, so a single
-// writer per graph costs no write concurrency, and no read worker ever parks
-// on a write lock: a hot graph's writes cannot starve reads of the others,
-// and a burst of slow reads cannot hold back writes.
+// writer per graph costs no write concurrency. And a write never holds a read
+// worker: writes piling up on a hot graph wait on its lane, not in the read
+// pool, and a burst of slow reads cannot hold back writes.
 type Scheduler[K ~uint64, P float32 | float64] struct {
 	Config *config.ConfigSet
 
@@ -87,8 +87,13 @@ func NewScheduler[K ~uint64, P float32 | float64](config *config.ConfigSet) *Sch
 }
 
 // Start allocates the read queue and one lane per graph, then starts the
-// read workers and one writer per lane.
+// read workers and one writer per lane. It returns [ErrNoDatabase] when DB is
+// not attached, and starts nothing.
 func (s *Scheduler[K, P]) Start() error {
+	if s.DB == nil {
+		return ErrNoDatabase
+	}
+
 	s.mu.Lock()
 	queue := make(chan *query.Stream[K, P], s.Config.Scheduler.BufferSize)
 	lanes := make([]chan *query.Stream[K, P], s.DB.NumGraphs())

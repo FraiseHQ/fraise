@@ -20,7 +20,7 @@ buffer-size = 128
 
 `workers` bounds how many reads **execute** at once, `buffer-size` bounds how much **waits**, and `enqueue-timeout` bounds how long a caller is willing to wait to become one of the waiting. Raising the first two without the third just moves where requests pile up.
 
-Writes take no worker: each graph has a writer of its own, which its exclusive lock would serialise anyway. So reads never queue behind writes, nor writes behind reads.
+Writes take no worker: each graph has a writer of its own, which its exclusive lock would serialise anyway. So a write never holds a worker, nor waits behind reads for one.
 
 ## Why the default tracks core count
 

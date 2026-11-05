@@ -29,8 +29,8 @@
 // enqueue timeout, and with [ErrShutdown] once the scheduler is stopping. Each
 // stream runs under its graph's lock: shared for a read, exclusive for a
 // write. So writes to one graph are serialised, in the order their lane
-// accepted them, while reads run together. Keeping the two apart means a read
-// worker never parks on a write lock and a write never waits for a read
-// worker. [Scheduler.Stop] drains every stream already accepted before it
+// accepted them, while reads run together. Keeping the two apart means a write
+// never holds a read worker, nor waits for one. [Scheduler.Stop] drains every
+// stream already accepted before it
 // returns, so a graceful shutdown never drops an acknowledged write.
 package scheduler
