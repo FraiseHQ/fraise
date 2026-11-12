@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.8](https://github.com/FraiseHQ/fraise/compare/v0.3.7...v0.3.8) (2026-11-12)
+
+
+### Maintenance
+
+* **main:** release python 0.3.1 ([#592](https://github.com/FraiseHQ/fraise/issues/592)) ([56a0fb4](https://github.com/FraiseHQ/fraise/commit/56a0fb4b5b67db204812132574e5fce1eb17e91a))
+
 ## [0.3.7](https://github.com/FraiseHQ/fraise/compare/v0.3.6...v0.3.7) (2026-11-05)
 
 
