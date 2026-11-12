@@ -26,8 +26,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/graph"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/internal/query"
 	"github.com/FraiseHQ/fraise/pkg/db"
@@ -253,5 +257,60 @@ func TestPlanConfirmsAHitByEquality(t *testing.T) {
 	}
 	if cached, _ := e.Cache.Get(0); cached.Parsed != second {
 		t.Error("the colliding query did not take the cache entry over")
+	}
+}
+
+// TestPlanRunsARememberWithItsOwnTimes pins the plan cache against a fact
+// re-asserted with another time. A remember's key leaves its times out, so the
+// same fact said on two days shares one key. Trusting the key, Plan would run
+// the first remember's plan for the second and store the first day again. A
+// hit is confirmed by equality, which compares the times. So the second is
+// planned as itself, and its day is the one the fact holds.
+func TestPlanRunsARememberWithItsOwnTimes(t *testing.T) {
+	cfg := config.New()
+	e := newEngine(t, cfg)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer e.Stop()
+
+	run := func(text string) (query.Query[uint64, float32], *query.Stream[uint64, float32]) {
+		t.Helper()
+		q, _, err := query.Parse[uint64, float32](text, nil, cfg)
+		if err != nil {
+			t.Fatalf("Parse(%q) returned error: %v", text, err)
+		}
+		stream, err := e.Plan(q)
+		if err != nil {
+			t.Fatalf("Plan(%q) returned error: %v", text, err)
+		}
+		if err := e.Apply(context.Background(), stream); err != nil {
+			t.Fatalf("Apply(%q) returned error: %v", text, err)
+		}
+		<-stream.Done()
+		if stream.Err != nil {
+			t.Fatalf("%q failed: %v", text, stream.Err)
+		}
+		return q, stream
+	}
+
+	first, _ := run("remember 'the parrot is turquoise' said:'2023-05-08'")
+	second, _ := run("remember 'the parrot is turquoise' said:'2023-05-25'")
+	if first.Hash(e.Hasher) != second.Hash(e.Hasher) {
+		t.Fatal("the two remembers have different keys, so the second never met the first's cache entry")
+	}
+
+	_, recalled := run("recall parrot")
+
+	if len(recalled.Result.Hits) != 1 {
+		t.Fatalf("recall returned %d hits, want the one fact remembered", len(recalled.Result.Hits))
+	}
+	fact, ok := recalled.Result.Hits[0].Node.(graph.Fact[uint64])
+	if !ok {
+		t.Fatalf("recall returned a %T, want a fact", recalled.Result.Hits[0].Node)
+	}
+	want := time.Date(2023, time.May, 25, 0, 0, 0, 0, time.UTC)
+	if diff := cmp.Diff(want, fact.Said); diff != "" {
+		t.Errorf("Said mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -25,16 +25,23 @@
 These functions do no I/O. The wire format lives here, and
 :mod:`fraise_sdk.client` handles only transport. The grammar they target:
 
-    remember@<graph> '<value>' [topic:<t>]... [entity:<e>]... [vec:$<name>]
+    remember@<graph> '<value>' [topic:<t>]... [entity:<e>]...
+                     [said:<time>] [occurred:<span>]... [vec:$<name>]
     recall@<graph> ['<query>'] [<keyword>]... [topic:<t>]... [entity:<e>]...
-                   [top:<n>] [depth:<n>] [vec:$<name>]
+                   [top:<n>] [depth:<n>] [since:<bound>] [until:<bound>]
+                   [vec:$<name>]
 
 A topic, entity or keyword is written bare when it is one plain word, letters
 and digits only. Otherwise it is quoted. A keyword that spells a reserved word
 is quoted too, because a bare one is syntax, and the builder warns. So the
-builders take any value. A query they do not cover, such as a
-``since:``/``until:`` bound, is written as FQL and sent with
-:meth:`fraise_sdk.client.FraiseClient.query`.
+builders take any value.
+
+A time is written from a ``date`` or a ``datetime``, never from text: a day as
+``'2023-05-07'``, a moment as the RFC 3339 instant it names. A span is an
+:class:`~fraise_sdk.models.Interval`. A bound is a time, or a :class:`When`,
+the time another fact holds. A query the builders do not cover, such as a
+bound some days back from now (``since:7d``) or a ``when`` on its own, is
+written as FQL and sent with :meth:`fraise_sdk.client.FraiseClient.query`.
 
 The vector itself never appears in the string. The caller sends it out of band
 in the request ``parameters`` map. Only the ``vec:$<name>`` placeholder is
@@ -44,10 +51,65 @@ emitted here.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
+from typing import Literal
 
 from fraise_sdk.compat import warn
-from fraise_sdk.constants import KEYWORDS, MAX_GRAPH, SDK_FILES, VECTOR_PARAM
+from fraise_sdk.constants import CLOCKS, KEYWORDS, MAX_GRAPH, SDK_FILES, VECTOR_PARAM
 from fraise_sdk.errors import FraiseQueryError, FraiseWarning
+from fraise_sdk.models import Interval
+
+
+@dataclass(frozen=True, init=False)
+class When:
+    """The time another fact holds, as a recall's ``since`` or ``until``.
+
+    A when searches as a recall does and answers with the time of its best
+    match. So ``client.recall("anna", until=When("regatta"))`` keeps what
+    happened before the regatta began, and ``since=When("regatta")`` what
+    happened once it was over. It takes what a recall searches with:
+    ``keywords`` positionally, a ``query`` phrase, ``topics``, ``entities``
+    and ``depth``. ``top`` above 1 reads that many matches, and the when
+    answers with the span from the earliest to the latest of them.
+
+    ``clock`` picks which of a fact's times the bound is about: ``"happened"``,
+    when what the fact states happened, ``"said"``, when it was said, or
+    ``"written"``, when the server stored it. The when reads that time of its
+    match, and the recall compares the same time of every fact against it.
+    Without a clock it is ``happened``.
+
+    A when names no graph. It reads the graph of the recall it bounds.
+    """
+
+    keywords: tuple[str, ...]
+    clock: Literal["happened", "said", "written"] | None
+    query: str | None
+    topics: Sequence[str] | None
+    entities: Sequence[str] | None
+    top: int | None
+    depth: int | None
+
+    def __init__(
+        self,
+        *keywords: str,
+        clock: Literal["happened", "said", "written"] | None = None,
+        query: str | None = None,
+        topics: Sequence[str] | None = None,
+        entities: Sequence[str] | None = None,
+        top: int | None = None,
+        depth: int | None = None,
+    ) -> None:
+        # A frozen dataclass assigns through object.__setattr__. The fields
+        # are set by hand so the keywords can be given positionally, as
+        # FraiseClient.recall takes them.
+        object.__setattr__(self, "keywords", keywords)
+        object.__setattr__(self, "clock", clock)
+        object.__setattr__(self, "query", query)
+        object.__setattr__(self, "topics", topics)
+        object.__setattr__(self, "entities", entities)
+        object.__setattr__(self, "top", top)
+        object.__setattr__(self, "depth", depth)
 
 
 def _token(kind: str, value: str) -> str:
@@ -170,59 +232,24 @@ def _selector(graph: int) -> str:
     return f"@{graph}"
 
 
-def build_remember(
-    value: str,
-    *,
-    graph: int = 0,
-    topics: Sequence[str] | None = None,
-    entities: Sequence[str] | None = None,
-    with_vector: bool = False,
-) -> str:
-    """Build a ``remember`` query string that stores ``value`` in ``graph``.
+def _body(
+    keywords: Iterable[str] | None,
+    query: str | None,
+    topics: Sequence[str] | None,
+    entities: Sequence[str] | None,
+    top: int | None,
+    depth: int | None,
+) -> list[str]:
+    """Render what a search runs on: its seeds, its anchors, ``top`` and ``depth``.
 
-    Set ``with_vector`` when the request parameters carry a vector. The builder
-    then appends the ``vec:$v`` placeholder for the server to bind.
-    """
-    parts = [f"remember{_selector(graph)}", _quote_value(value)]
-    parts += _clauses("topic", topics)
-    parts += _clauses("entity", entities)
-    if with_vector:
-        parts.append(f"vec:${VECTOR_PARAM}")
-    return " ".join(parts)
-
-
-def build_recall(
-    keywords: Sequence[str] | None = None,
-    *,
-    graph: int = 0,
-    query: str | None = None,
-    topics: Sequence[str] | None = None,
-    entities: Sequence[str] | None = None,
-    top: int | None = None,
-    depth: int | None = None,
-    with_vector: bool = False,
-) -> str:
-    """Build a ``recall`` query string over ``graph``.
-
-    ``query`` is a whole question, sent as one quoted phrase term. The grammar
-    keeps every character inside the quotes literal. So natural language
-    ("What topic has John been blogging about recently?") travels verbatim, not
-    as bare words that would collide with the grammar's reserved keywords.
-    ``keywords`` go with it as separate terms. Each is quoted when a bare one
-    would not read back as that word (see :func:`_term`).
-
-    A recall needs at least one seed: a query phrase, keywords, a vector, or a
-    topic or entity anchor. A call given nothing but ``graph`` is rejected
-    here. A call given only ``top`` or ``depth`` is built as written, and the
-    server rejects it for the missing seed.
+    A when searches as a recall does, so both are written through here and a
+    value is quoted the same way in each.
 
     Raises:
-        FraiseQueryError: if nothing but ``graph`` is given, ``top`` is not
-            positive, or ``depth`` is negative. Also raised when a value cannot
-            be written as FQL: an empty value, a bare string where a sequence
-            is wanted, or a graph outside 0–255.
+        FraiseQueryError: if ``top`` is not positive or ``depth`` is negative,
+            or a seed or an anchor cannot be written as FQL.
     """
-    parts = [f"recall{_selector(graph)}"]
+    parts = []
     if query is not None:
         parts.append(_quote_value(query))
     for keyword in _sequence("keyword", keywords):
@@ -237,6 +264,185 @@ def build_recall(
         if depth < 0:
             raise FraiseQueryError(f"depth must be non-negative, got {depth}")
         parts.append(f"depth:{depth}")
+    return parts
+
+
+def _time(kind: str, value: date | datetime) -> str:
+    """Render a time as the quoted literal the grammar reads it from.
+
+    A ``date`` is written as its day, ``'2023-05-07'``, which the server reads
+    in UTC. A ``datetime`` is written as the RFC 3339 moment it names, with the
+    offset it carries, and the server returns it in that offset. One with no
+    time zone is read in UTC as a day is, so ``datetime(2023, 5, 7)`` and
+    ``date(2023, 5, 7)`` start at the same moment.
+    :class:`~fraise_sdk.client.FraiseClient` warns when it is given one.
+
+    Raises:
+        FraiseQueryError: if ``value`` is neither a date nor a datetime.
+    """
+    # A datetime is a date too, and must not be written as its day alone.
+    if isinstance(value, datetime):
+        if value.utcoffset() is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return _quote_value(value.isoformat())
+    if isinstance(value, date):
+        return _quote_value(value.isoformat())
+    raise FraiseQueryError(
+        f"{kind} cannot be written from the {type(value).__name__} {value!r}; "
+        "give a date or a datetime, or write the query as FQL and send it "
+        "with client.query"
+    )
+
+
+def _span(kind: str, value: date | datetime | Interval) -> str:
+    """Render one ``occurred`` value: a time, or the range an interval covers.
+
+    An interval is written as the range between its two moments,
+    ``'<start>'..'<end>'``. The server reads that back as the same span, start
+    held and end excluded. One that has not ended is left open,
+    ``'<start>'..``, and one that ends where it starts is that one moment. Its
+    edges are moments, so a ``date`` is refused there: a range of days holds
+    its last day, which an interval excludes.
+
+    Raises:
+        FraiseQueryError: if an edge of the interval is not a datetime, or
+            the value cannot be written as a time.
+    """
+    if not isinstance(value, Interval):
+        return _time(kind, value)
+    for edge in (value.start, value.end):
+        if edge is not None and not isinstance(edge, datetime):
+            raise FraiseQueryError(
+                f"{kind} takes an Interval between two datetimes, got {value!r}; "
+                "a whole day is given as a date on its own"
+            )
+    start = _time(kind, value.start)
+    if value.end is None:
+        return f"{start}.."
+    if value.end == value.start:
+        return start
+    return f"{start}..{_time(kind, value.end)}"
+
+
+def _bound(kind: str, value: date | datetime | When) -> str:
+    """Render a ``since`` or ``until`` value: a time, or a when in parentheses.
+
+    A when is written ``(when[:<clock>] <search>)``, its search rendered as a
+    recall's is. It needs a seed for the same reason a recall does.
+
+    Raises:
+        FraiseQueryError: if a when names a clock the grammar does not read or
+            has nothing to search with, or the value cannot be written as a
+            time.
+    """
+    if not isinstance(value, When):
+        return _time(kind, value)
+    if value.clock is not None and value.clock not in CLOCKS:
+        raise FraiseQueryError(
+            f"clock must be one of {', '.join(CLOCKS)}, got {value.clock!r}"
+        )
+    body = _body(
+        value.keywords,
+        value.query,
+        value.topics,
+        value.entities,
+        value.top,
+        value.depth,
+    )
+    if not body:
+        raise FraiseQueryError(
+            "a when needs at least one seed: keywords, a query, or a "
+            "topic/entity anchor"
+        )
+    clock = "" if value.clock is None else f":{value.clock}"
+    return f"(when{clock} {' '.join(body)})"
+
+
+def build_remember(
+    value: str,
+    *,
+    graph: int = 0,
+    topics: Sequence[str] | None = None,
+    entities: Sequence[str] | None = None,
+    said: date | datetime | None = None,
+    occurred: Sequence[date | datetime | Interval] | None = None,
+    with_vector: bool = False,
+) -> str:
+    """Build a ``remember`` query string that stores ``value`` in ``graph``.
+
+    ``said`` is when the fact was said. ``occurred`` holds each span over which
+    what it states happened: a ``date`` for a whole day, a ``datetime`` for one
+    moment, or an :class:`~fraise_sdk.models.Interval` between two moments.
+
+    Set ``with_vector`` when the request parameters carry a vector. The builder
+    then appends the ``vec:$v`` placeholder for the server to bind.
+
+    Raises:
+        FraiseQueryError: if a value cannot be written as FQL: an empty value,
+            a bare string where a sequence is wanted, a graph outside 0–255,
+            a time that is neither a date nor a datetime, or one time where
+            ``occurred`` wants a sequence of them.
+    """
+    if isinstance(occurred, (str, date, Interval)):
+        raise FraiseQueryError(
+            f"occurred must be a sequence of times, not one value: {occurred!r}; "
+            f"did you mean [{occurred!r}]?"
+        )
+    parts = [f"remember{_selector(graph)}", _quote_value(value)]
+    parts += _clauses("topic", topics)
+    parts += _clauses("entity", entities)
+    if said is not None:
+        parts.append(f"said:{_time('said', said)}")
+    parts += [f"occurred:{_span('occurred', span)}" for span in occurred or []]
+    if with_vector:
+        parts.append(f"vec:${VECTOR_PARAM}")
+    return " ".join(parts)
+
+
+def build_recall(
+    keywords: Sequence[str] | None = None,
+    *,
+    graph: int = 0,
+    query: str | None = None,
+    topics: Sequence[str] | None = None,
+    entities: Sequence[str] | None = None,
+    top: int | None = None,
+    depth: int | None = None,
+    since: date | datetime | When | None = None,
+    until: date | datetime | When | None = None,
+    with_vector: bool = False,
+) -> str:
+    """Build a ``recall`` query string over ``graph``.
+
+    ``query`` is a whole question, sent as one quoted phrase term. The grammar
+    keeps every character inside the quotes literal. So natural language
+    ("What topic has John been blogging about recently?") travels verbatim, not
+    as bare words that would collide with the grammar's reserved keywords.
+    ``keywords`` go with it as separate terms. Each is quoted when a bare one
+    would not read back as that word (see :func:`_term`).
+
+    ``since`` and ``until`` keep the facts that happened inside a window:
+    ``since`` from its time on, ``until`` before it. Each is a ``date``, a
+    ``datetime``, or a :class:`When`, the time another fact holds.
+
+    A recall needs at least one seed: a query phrase, keywords, a vector, or a
+    topic or entity anchor. A call given nothing but ``graph`` is rejected
+    here. A call given only ``top``, ``depth`` or a bound is built as written,
+    and the server rejects it for the missing seed.
+
+    Raises:
+        FraiseQueryError: if nothing but ``graph`` is given, ``top`` is not
+            positive, or ``depth`` is negative. Also raised when a value cannot
+            be written as FQL: an empty value, a bare string where a sequence
+            is wanted, a graph outside 0–255, a time that is neither a date
+            nor a datetime, or a when with no seed.
+    """
+    parts = [f"recall{_selector(graph)}"]
+    parts += _body(keywords, query, topics, entities, top, depth)
+    if since is not None:
+        parts.append(f"since:{_bound('since', since)}")
+    if until is not None:
+        parts.append(f"until:{_bound('until', until)}")
     if with_vector:
         parts.append(f"vec:${VECTOR_PARAM}")
 

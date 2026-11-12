@@ -67,14 +67,14 @@ func New(c *config.ConfigSet) *MCPServer {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:         "recall",
-		Description:  "Search the agent's long-term memory: run an FQL recall against the fraise daemon and return the matching facts ranked by relevance and recency. Anchors alone — topic:/entity: with no search terms and no vector — seed the search with every fact filed under them, scored one unit per named anchor and decayed by age, newest first under a single anchor: the way to see what is stored under a topic before you know what to search for.",
+		Description:  "Search the agent's long-term memory: run an FQL recall against the fraise daemon and return the matching facts ranked by relevance and recency. Each fact comes back with its dates in front: when it was said and when what it states happened, as one date where the two are the same. since:/until: keep the facts that happened inside a window, bounded by a date or by the time another fact holds: until:(when 'the regatta') keeps what happened before the regatta. A query that is a when on its own answers with that time. Anchors alone — topic:/entity: with no search terms and no vector — seed the search with every fact filed under them, scored one unit per named anchor and decayed by age, newest first under a single anchor: the way to see what is stored under a topic before you know what to search for.",
 		InputSchema:  recallInputSchema,
 		OutputSchema: recallOutputSchema,
 	}, s.recall)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:         "remember",
-		Description:  "Store a self-contained fact in the agent's long-term memory: run an FQL remember against the fraise daemon.",
+		Description:  "Store a self-contained fact in the agent's long-term memory: run an FQL remember against the fraise daemon. said: and occurred: date the fact: when it was said, and when what it states happened. Give them whenever the conversation tells you, so a later recall can be bounded by them.",
 		InputSchema:  rememberInputSchema,
 		OutputSchema: rememberOutputSchema,
 	}, s.remember)

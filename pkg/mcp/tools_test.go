@@ -24,12 +24,14 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -64,8 +66,56 @@ func TestRecallForwardsTheQueryAndRendersTheResponse(t *testing.T) {
 		t.Errorf("structured output = %+v, want the response body decoded as sent", out)
 	}
 	text := res.Content[0].(*mcp.TextContent).Text
-	if want := "- the barometer falls before the storm (relevance 1.250)"; text != want {
+	if want := "- [2026-01-02] the barometer falls before the storm (relevance 1.250)"; text != want {
 		t.Errorf("rendered text = %q, want %q", text, want)
+	}
+}
+
+// TestRecallReturnsTheResponseBodyKeyForKey pins that the structured output is
+// the daemon's response and nothing else. A hit carries the times its fact was
+// given, and a when the time it answers with. A fact given no times carries
+// neither key, and a recall no start. A zero date in their place would read to
+// a client as a fact said in the year one, or a recall that answered with a
+// time.
+func TestRecallReturnsTheResponseBodyKeyForKey(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want string
+	}{
+		"a when over a fact given its times": {
+			body: `{"results":{"count":1,"hits":[{"value":"anna ran the charity race","timestamp":"2026-01-02T03:04:05Z","said":"2023-05-08T00:00:00Z","occurred":[{"start":"2023-05-07T00:00:00Z","end":"2023-05-08T00:00:00Z"},{"start":"2023-05-20T00:00:00Z"}],"score":1.25}],"start":"2023-05-07T00:00:00Z","end":"2023-05-08T00:00:00Z"}}`,
+			want: "when: 2023-05-07\n" +
+				"- [said 2023-05-08, happened 2023-05-07 and 2023-05-20..] anna ran the charity race (relevance 1.250)",
+		},
+		"a recall of a fact given no times": {
+			body: `{"results":{"count":1,"hits":[{"value":"anna ran the charity race","timestamp":"2026-01-02T03:04:05Z","score":1.25}]}}`,
+			want: "- [2026-01-02] anna ran the charity race (relevance 1.250)",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer ts.Close()
+
+			res, out, err := bridge(ts).recall(context.Background(), nil, RecallInput{Query: "when anna"})
+			if err != nil {
+				t.Fatalf("recall = %v, want nil", err)
+			}
+			got, err := json.Marshal(out)
+			if err != nil {
+				t.Fatalf("marshal structured output = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.body, string(got)); diff != "" {
+				t.Errorf("structured output mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.want, res.Content[0].(*mcp.TextContent).Text); diff != "" {
+				t.Errorf("rendered text mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

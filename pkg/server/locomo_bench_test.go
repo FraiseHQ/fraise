@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/FraiseHQ/fraise/internal/query/lexer"
 )
@@ -86,6 +87,11 @@ var plainWord = regexp.MustCompile(`[A-Za-z0-9]+`)
 
 // anchorBreak is what the amb adapter folds to a hyphen in an anchor name.
 var anchorBreak = regexp.MustCompile(`[^A-Za-z0-9]+`)
+
+// sessionTime is the layout LoCoMo writes a session's date in, as in
+// "1:56 pm on 8 May, 2023". The dataset names no zone, so a session is read in
+// UTC.
+const sessionTime = "3:04 pm on 2 January, 2006"
 
 // fqlValue writes an anchor or a term bare when it is one plain word, and
 // quoted otherwise. A term that spells a reserved word is quoted too, since a
@@ -158,7 +164,9 @@ func vectorOf(b *testing.B, vectors map[string][]float64, text string) []float64
 }
 
 // ingest stores conv the way the amb adapter's raw path does. Each turn becomes
-// one fact, in order, valued "[session N @ <date>] <speaker>: <text>". Any
+// one fact, in order, valued "<speaker>: <text>" and said when its session took
+// place. The date is the fact's own time, which a bound reads, so it stays out
+// of the value, where it would be words every turn of a session matched on. Any
 // shared image's caption is appended. Each fact is filed in graph 0 under the
 // conversation and session topics and the speaker's entity. The returned map
 // gives each stored value its turn's dia_id.
@@ -179,6 +187,10 @@ func ingest(b *testing.B, url string, conv locomoConversation, vectors map[strin
 		if err := json.Unmarshal(conv.Conversation["session_"+n+"_date_time"], &date); err != nil {
 			b.Fatalf("%s session %s date: %v", conv.SampleID, n, err)
 		}
+		said, err := time.Parse(sessionTime, date)
+		if err != nil {
+			b.Fatalf("%s session %s date: %v", conv.SampleID, n, err)
+		}
 
 		for _, t := range turns {
 			text := t.Text
@@ -188,13 +200,13 @@ func ingest(b *testing.B, url string, conv locomoConversation, vectors map[strin
 			// The adapter swaps the ASCII apostrophe for a typographic one
 			// before storing. The stored value and the text its vector was
 			// computed from both carry the swap.
-			value := strings.ReplaceAll(fmt.Sprintf("[session %s @ %s] %s: %s", n, date, t.Speaker, text), "'", "’")
+			value := strings.ReplaceAll(t.Speaker+": "+text, "'", "’")
 			ids[value] = t.DiaID
 
 			vec := vectorOf(b, vectors, value)
 			speaker := strings.Trim(anchorBreak.ReplaceAllString(t.Speaker, "-"), "-")
-			fql := fmt.Sprintf("remember@0 %s topic:%s topic:%s entity:%s",
-				fqlValue(value), fqlValue("conv-"+conv.SampleID), fqlValue("session-"+n), fqlValue(speaker))
+			fql := fmt.Sprintf("remember@0 %s topic:%s topic:%s entity:%s said:'%s'",
+				fqlValue(value), fqlValue("conv-"+conv.SampleID), fqlValue("session-"+n), fqlValue(speaker), said.Format(time.RFC3339))
 			query(b, url, withVec(fql, vec), vec)
 		}
 	}

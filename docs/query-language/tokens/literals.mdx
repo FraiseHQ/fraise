@@ -1,6 +1,6 @@
 ---
 title: "Literals"
-description: "Phrases, integers, durations and dates — the value forms FQL accepts and how they are written"
+description: "Phrases, integers, durations, dates and date ranges — the value forms FQL accepts and how they are written"
 ---
 
 | Literal | Form | Notes |
@@ -8,7 +8,8 @@ description: "Phrases, integers, durations and dates — the value forms FQL acc
 | phrase | `'...'` | opaque: every character is literal, `''` is one apostrophe |
 | integer | `0`, `10`, `1000` | non-negative only; a leading `-` is a separate token |
 | duration | `7d`, `30m`, `1w` | `<integer><unit>`, units `s` `m` `h` `d` `w`, read as "ago" |
-| date | `'2026-01-15'` | `YYYY-MM-DD` or RFC3339, always quoted |
+| date | `'2026-01-15'`, `'2026-01'`, `'2026'` | a day, a month, a year or an RFC3339 instant, always quoted |
+| date range | `'2026-01-15'..'2026-01-20'` | two dates joined by `..`; without the second, a span that is not over |
 | param ref | `$v` | see [Parameters](/docs/query-language/tokens/parameters) |
 
 ## Phrases
@@ -24,18 +25,62 @@ The first stores a colon and the reserved word "topic" as part of the fact; the 
 
 ## Time values
 
-A time value is either a duration or a quoted absolute time:
+A time value is a duration, a quoted date, a range of dates, or a `when` in parentheses:
 
 ```ebnf
-time_value    = duration | "'" absolute_time "'" ;
+time_value    = duration | date | date_range | subquery ;
 duration      = integer time_unit ;
 time_unit     = 's' | 'm' | 'h' | 'd' | 'w' ;
-absolute_time = iso_date | rfc3339 ;
+date          = "'" absolute_time "'" ;
+date_range    = date '..' date? ;
+subquery      = '(' when_query ')' ;
+absolute_time = iso_date | iso_month | iso_year | rfc3339 ;
 iso_date      = ?\d{4}-\d{2}-\d{2}? ;
+iso_month     = ?\d{4}-\d{2}? ;
+iso_year      = ?\d{4}? ;
 rfc3339       = ?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})? ;
 ```
 
-A duration is read as **"ago"**, so `since:7d` means "no older than seven days".
+A duration is read as **"ago"**: `7d` is the instant seven days before the query runs, so `since:7d` bounds a recall to the last seven days.
+
+### A date names what it spells
+
+**A date carries its precision.** A day is the whole day, a month the whole month and a year the whole year, so a fact that only says "in May" is stored as May and not as its first day.
+
+| Written | Names |
+|---|---|
+| `'2023-05-07'` | that day |
+| `'2023-05'` | that month |
+| `'2023'` | that year |
+| `'2023-05-07T14:30:00Z'` | that instant |
+
+Each ends where the next begins: the day `'2023-05-07'` holds every instant of the 7th and none of the 8th. A day, a month and a year are read in UTC. A date and time carries its own offset, `Z` or `+02:00`, and keeps it.
+
+### Ranges
+
+Two dates joined by `..` are a range, running from the start of the first to the end of the second. The two need not share a precision, and the second may not end before the first starts. A range with no second date has begun and is not over. The `..` is glued to its dates, with no whitespace on either side.
+
+| Written | Names |
+|---|---|
+| `'2023-05-10'..'2023-05-16'` | from the start of the 10th to the end of the 16th |
+| `'2023-05'..'2023-06'` | May and June |
+| `'2023-05-07T09:00:00Z'..'2023-05-07T17:00:00Z'` | from 09:00 to 17:00 on the 7th |
+| `'2023-05-20'..` | from the start of the 20th, with no end |
+
+A range joins two dates: a duration is neither end of one.
+
+### Which clause takes which form
+
+| Clause | duration | date | range | `(when …)` |
+|---|---|---|---|---|
+| `since:` and `until:` on a `recall` | yes | yes | yes | yes |
+| `since:` and `until:` on a `when` | yes | yes | yes | no |
+| `said:` | yes | yes | no | no |
+| `occurred:` | yes | yes | yes | no |
+
+A bound and `said:` are each one instant. `said:` keeps where its value starts, so `said:'2023-05-08'` is the first instant of the 8th. `since:` and `until:` read where a date or a range starts, and from a `when` they read its answer: `until:` where it starts and `since:` where it ends. `occurred:` keeps the whole span. See [Temporality](/docs/retrieval/memory-model/temporality) for how a window compares with a fact's times, and [Commands](/docs/query-language/foundations/commands) for `when`.
+
+**A fact's time lies inside the years 0001 to 9999.** `said:` and `occurred:` take a time that starts after the year 0001 does and ends before the year 9999 does, and reject any other with the range in the message: the first day `occurred:` holds whole is `'0001-01-02'` and the last is `'9999-12-30'`. Inside that range every time a fact holds is written back on a hit as RFC3339 text any client reads. A bound is never written back, so `since:` and `until:` take every date a literal spells.
 
 <Note title="Dates are quoted" type="warning">
 

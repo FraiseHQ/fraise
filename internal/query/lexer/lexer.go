@@ -126,6 +126,15 @@ func (l *Lexer) Next() Token {
 	case rune('@'):
 		l.readCharacter()
 		tok = Token{Type: AT, Literal: string(l.Character)}
+	case rune('.'):
+		// Two dots are the range operator. One alone is a special character
+		// like any other, so v1.2 is still rejected at its dot.
+		l.readCharacter()
+		tok = Token{Type: SPECIAL, Literal: string(l.Character)}
+		if l.peek() == rune('.') {
+			l.readCharacter()
+			tok = Token{Type: RANGE, Literal: ".."}
+		}
 	case rune('\n'):
 		l.readCharacter()
 		tok = Token{Type: NEWLINE, Literal: string(l.Character)}

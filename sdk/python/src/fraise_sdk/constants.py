@@ -72,17 +72,25 @@ KEYWORDS = frozenset(
         "remember",
         "forget",
         "update",
+        "when",
         "topic",
         "entity",
         "since",
         "until",
         "top",
         "depth",
+        "said",
+        "occurred",
         "vec",
         "explain",
         "describe",
     }
 )
+
+# The times of a fact a when can read: when what it states happened, when it
+# was said, and when it was written. The grammar reads no other name after
+# ``when:``, so the builder refuses one before anything is sent.
+CLOCKS = ("happened", "said", "written")
 
 # The Claude integration's server and tool names. Claude sees a tool as
 # ``mcp__<server>__<tool>``. So the mcp_servers key and the allowed_tools

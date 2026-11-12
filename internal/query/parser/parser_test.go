@@ -28,10 +28,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/query/lexer"
 	"github.com/FraiseHQ/fraise/internal/query/parser"
 )
@@ -74,7 +77,7 @@ func FuzzRememberPhraseRoundTrip(f *testing.F) {
 		if err != nil {
 			t.Fatalf("Parse(%q) = %v, want the escaped phrase to parse", q, err)
 		}
-		rc, ok := cmd.(*parser.RememberCommandNode[float32])
+		rc, ok := cmd.(*parser.RememberCommandNode[uint64, float32])
 		if !ok {
 			t.Fatalf("Parse returned %T, want *RememberCommandNode", cmd)
 		}
@@ -87,7 +90,7 @@ func FuzzRememberPhraseRoundTrip(f *testing.F) {
 		if err != nil {
 			t.Fatalf("re-Parse(String() = %q) = %v", cmd.String(), err)
 		}
-		if got := cmd2.(*parser.RememberCommandNode[float32]).Value(); got != value {
+		if got := cmd2.(*parser.RememberCommandNode[uint64, float32]).Value(); got != value {
 			t.Fatalf("re-parsed value = %q, want %q", got, value)
 		}
 	})
@@ -115,6 +118,18 @@ func FuzzParseNeverPanics(f *testing.F) {
 		"recall 'a\x00b'",
 		"recall \xff\xfe",
 		"remember 'a\xed\xa0\x80b'",
+		"when",
+		"when:",
+		"when:said 'the race' topic:run top:3",
+		"(when x)",
+		"recall x until:(when race)",
+		"recall x until:(when race until:(when race until:(when x)))",
+		"recall x until:(when race until:((((((((x",
+		"recall x until:" + strings.Repeat("(", 4096),
+		"recall x since:'2023-05-07'..'2023-05-09'",
+		"recall x since:'2023-05'..",
+		"recall x ..'2023'",
+		"remember 'a' said:'2023-05-08' occurred:'2023-05-07' occurred:'2023'",
 	} {
 		f.Add(seed)
 	}
@@ -156,6 +171,11 @@ func FuzzRoundTripAllCommands(f *testing.F) {
 		"remember 'a fact' topic:x entity:anne vec:$v",
 		"remember@1 'it''s got an apostrophe' topic:x",
 		"recall 'déjà vu 😀 東京'",
+		"when race",
+		"when:said 'the race' entity:melanie top:3",
+		"recall x since:(when:written race) until:(when 'the race' topic:run)",
+		"recall x since:'2023-05-07'..'2023-05-09' until:'2023'..",
+		"remember 'a fact' said:'2023-05-08' occurred:'2023-05-07' occurred:'2023-05'..'2023-07'",
 	} {
 		f.Add(seed)
 	}
@@ -292,16 +312,21 @@ func TestRememberParser(t *testing.T) {
 // round-trip through String(). Fields are written in the order String() emits
 // them, so the reconstruction matches: terms, entities, topics, top, depth,
 // since, until. A value that was quoted comes back quoted. Printed bare,
-// 'e-mail' or '2026-01-15' would not parse.
+// 'e-mail' or '2026-01-15' would not parse. A bound comes back in the form it
+// was written in: a range with its dots, a when in its parentheses.
 func TestRecallParser(t *testing.T) {
 	queries := map[string]struct{}{
 		"recall anna":             {},
 		"recall anna bob charlie": {},
 		"recall@2 anna":           {},
-		"recall@2 anna bob entity:alice topic:job top:10 depth:5":    {},
-		"recall 'e-mail' entity:'o''brien' topic:'machine-learning'": {},
-		"recall@2 anna since:7d until:'2026-01-15'":                  {},
-		"recall anna since:'2026-01-15T10:00:00Z'":                   {},
+		"recall@2 anna bob entity:alice topic:job top:10 depth:5":                    {},
+		"recall 'e-mail' entity:'o''brien' topic:'machine-learning'":                 {},
+		"recall@2 anna since:7d until:'2026-01-15'":                                  {},
+		"recall anna since:'2026-01-15T10:00:00Z'":                                   {},
+		"recall anna since:'2023-05-07'..'2023-05-09'":                               {},
+		"recall anna since:'2023-05'..":                                              {},
+		"recall anna until:(when race)":                                              {},
+		"recall anna since:(when:said 'the race') until:(when race topic:run top:3)": {},
 	}
 
 	for q := range queries {
@@ -369,6 +394,853 @@ func TestAnchorSeededRecallParses(t *testing.T) {
 	}
 }
 
+// TestWhenParser checks that valid when queries parse to a when command and
+// round-trip through String(). A when is a recall whose answer is a time, so
+// it takes every clause a recall takes, written here in the order String()
+// emits them. The clock is glued to the command, and a when naming none reads
+// happened.
+func TestWhenParser(t *testing.T) {
+	queries := map[string]struct{}{
+		"when race":          {},
+		"when:said race":     {},
+		"when:happened race": {},
+		"when:written race":  {},
+		"when topic:run":     {},
+		"when vec:$v":        {},
+		"when:said 'the race' entity:melanie top:3":                                           {},
+		"when 'the race' entity:melanie topic:run top:3 depth:2 since:'2023' until:7d vec:$v": {},
+	}
+
+	for q := range queries {
+		t.Run(q, func(t *testing.T) {
+			cmd, warns, err := parser.Parse[uint64, float32](q, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
+			}
+			if len(warns) != 0 {
+				t.Errorf("Parse(%q) warnings = %v, want none", q, warns)
+			}
+			if _, ok := cmd.(*parser.WhenCommandNode[uint64, float32]); !ok {
+				t.Fatalf("Parse(%q) returned %T, want *WhenCommandNode", q, cmd)
+			}
+			if got := cmd.String(); got != q {
+				t.Errorf("round-trip mismatch: String() = %q, want %q", got, q)
+			}
+		})
+	}
+}
+
+// TestWhenReadsTheClockItNames pins which time of a fact a when answers with.
+// The clock is the whole difference between "when was it said" and "when did it
+// happen". A wrong default would answer one question with the other's date, and
+// the date would look right. A when naming no clock reads happened, the time a
+// question about an event means. A when names no graph either, so its selector
+// is always the default.
+func TestWhenReadsTheClockItNames(t *testing.T) {
+	cases := map[string]struct {
+		want containers.Clock
+	}{
+		"when race":          {containers.Happened},
+		"when:happened race": {containers.Happened},
+		"when:said race":     {containers.Said},
+		"when:written race":  {containers.Written},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			wc, ok := cmd.(*parser.WhenCommandNode[uint64, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *WhenCommandNode", query, cmd)
+			}
+			if got := wc.Clock(); got != tc.want {
+				t.Errorf("Clock() = %v, want %v", got, tc.want)
+			}
+			if got := wc.Selector(); got != 0 {
+				t.Errorf("Selector() = %d, want 0: a when names no graph", got)
+			}
+		})
+	}
+}
+
+// TestWhenHoldsTheBodyOfARecall pins that a when and a recall read the same
+// body. A when finds its fact the way a recall would, so the same words after
+// either command must be the same search. A when that read its clauses its own
+// way would date a fact the recall never shows.
+func TestWhenHoldsTheBodyOfARecall(t *testing.T) {
+	// body holds what the two commands must agree on.
+	type body struct {
+		Terms, Topics, Entities []string
+		Top, Depth              int
+		HasTop, HasDepth        bool
+		Since, Until            containers.TimeValue[uint64]
+		Vec                     string
+		HasVec                  bool
+	}
+	read := func(n parser.RecallBodyNode[uint64, float32]) body {
+		vec, hasVec := n.VecParam()
+		return body{
+			Terms:    n.Terms(),
+			Topics:   n.Topics(),
+			Entities: n.Entities(),
+			Top:      n.Top(7),
+			Depth:    n.Depth(7),
+			HasTop:   n.HasTop(),
+			HasDepth: n.HasDepth(),
+			Since:    n.Since(),
+			Until:    n.Until(),
+			Vec:      vec,
+			HasVec:   hasVec,
+		}
+	}
+
+	bodies := map[string]struct{}{
+		"race":                                  {},
+		"'the race' charity":                    {},
+		"topic:run":                             {},
+		"race entity:melanie topic:run":         {},
+		"race top:3":                            {},
+		"race topic:run depth:2":                {},
+		"race topic:run depth:0":                {},
+		"race since:7d until:'2023-06'":         {},
+		"race since:'2023-05-07'..'2023-05-09'": {},
+		"vec:$v":                                {},
+	}
+
+	for b := range bodies {
+		t.Run(b, func(t *testing.T) {
+			rcmd, _, err := parser.Parse[uint64, float32]("recall "+b, nil)
+			if err != nil {
+				t.Fatalf("Parse(recall %s) unexpected error: %v", b, err)
+			}
+			wcmd, _, err := parser.Parse[uint64, float32]("when "+b, nil)
+			if err != nil {
+				t.Fatalf("Parse(when %s) unexpected error: %v", b, err)
+			}
+			want := read(rcmd.(*parser.RecallCommandNode[uint64, float32]).RecallBodyNode)
+			got := read(wcmd.(*parser.WhenCommandNode[uint64, float32]).RecallBodyNode)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("a when read %q unlike a recall: mismatch (-want +got):\n%s", b, diff)
+			}
+		})
+	}
+}
+
+// TestWhenParserErrors checks that a malformed when is rejected, and that the
+// message says what a when is: a recall with a clock glued to it, and no graph
+// of its own. A when reads the graph of the recall that holds it, so a selector
+// on one is refused wherever it is written. The clock is syntax, so it is
+// lower case and unquoted, like the command.
+func TestWhenParserErrors(t *testing.T) {
+	const (
+		noSeed     = "a when needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>"
+		noSelector = "a when takes no graph selector: in a time bound it reads the graph of the recall that holds it, and on its own the default graph"
+		clocks     = "a when reads said, happened or written, as in when:said"
+	)
+	cases := map[string]struct {
+		want string
+	}{
+		"when":      {"expected a space after the command, found end of input"},
+		"when:said": {"expected a space after the command, found end of input"},
+		// Modifiers scope a search. They cannot start one.
+		"when ":              {noSeed},
+		"when top:3":         {noSeed},
+		"when:said since:7d": {noSeed},
+		"when the":           {`term "the" is a stop word`},
+		// No graph selector, before the clock or after it.
+		"when@2 race":      {noSelector},
+		"when @2 race":     {noSelector},
+		"when:said@2 race": {noSelector},
+		// The clock is one of three words.
+		"when:":            {"invalid clock end of input: " + clocks},
+		"when:soon race":   {`invalid clock "soon": ` + clocks},
+		"when:Said race":   {`invalid clock "Said": ` + clocks},
+		"when:SAID race":   {`invalid clock "SAID": ` + clocks},
+		"when:saidrace":    {`invalid clock "saidrace": ` + clocks},
+		"when:'said' race": {`invalid clock "said": a clock is not quoted — write when:said`},
+		// One level: a when's own bounds are written out.
+		"when race until:(when x)": {"a when holds no when: write until: as a duration or a quoted date, as in until:'2023-05-07'"},
+		"when race since:(when x)": {"a when holds no when: write since: as a duration or a quoted date, as in since:'2023-05-07'"},
+		// Among a when's terms the command word is a word to quote.
+		"when race when": {`term "when" is also a command: quote it ('when') to search for the word`},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want an error", query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestTimeLiteralKeepsItsPrecision pins what a time bound holds for each form
+// a time is written in. A date names the whole of what it spells, a day, a
+// month or a year, so '2023-05' and '2023-05-01' start at the same instant and
+// are different bounds. Read as that instant alone, a month would match only
+// what happened in its first second. A range joins two dates, and one written
+// without its second end has none.
+func TestTimeLiteralKeepsItsPrecision(t *testing.T) {
+	cases := map[string]struct {
+		want containers.TimeValue[uint64]
+	}{
+		"recall x since:7d": {
+			containers.RelativeTime[uint64]{Dur: 7 * 24 * time.Hour},
+		},
+		"recall x since:'2023-05-07T10:00:00Z'": {
+			containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 7, 10, 0, 0, 0, time.UTC), Precision: containers.Instant},
+		},
+		"recall x since:'2023-05-07'": {
+			containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 7, 0, 0, 0, 0, time.UTC), Precision: containers.Day},
+		},
+		"recall x since:'2023-05'": {
+			containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 1, 0, 0, 0, 0, time.UTC), Precision: containers.Month},
+		},
+		"recall x since:'2023'": {
+			containers.AbsoluteTime[uint64]{T: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Precision: containers.Year},
+		},
+		"recall x since:'2023-05-07'..'2023-05-09'": {
+			containers.RangeTime[uint64]{
+				From: containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 7, 0, 0, 0, 0, time.UTC), Precision: containers.Day},
+				To:   containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 9, 0, 0, 0, 0, time.UTC), Precision: containers.Day},
+			},
+		},
+		"recall x since:'2023-05'..'2024'": {
+			containers.RangeTime[uint64]{
+				From: containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 1, 0, 0, 0, 0, time.UTC), Precision: containers.Month},
+				To:   containers.AbsoluteTime[uint64]{T: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Precision: containers.Year},
+			},
+		},
+		"recall x since:'2023-05-07'..'2023-05-07'": {
+			containers.RangeTime[uint64]{
+				From: containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 7, 0, 0, 0, 0, time.UTC), Precision: containers.Day},
+				To:   containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 7, 0, 0, 0, 0, time.UTC), Precision: containers.Day},
+			},
+		},
+		// A range is in order when its second end reaches the start of its
+		// first, so a day may run to the end of the month that holds it.
+		"recall x since:'2023-05-07'..'2023-05'": {
+			containers.RangeTime[uint64]{
+				From: containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 7, 0, 0, 0, 0, time.UTC), Precision: containers.Day},
+				To:   containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 1, 0, 0, 0, 0, time.UTC), Precision: containers.Month},
+			},
+		},
+		"recall x since:'2023-05-07'..": {
+			containers.RangeTime[uint64]{
+				From: containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 7, 0, 0, 0, 0, time.UTC), Precision: containers.Day},
+			},
+		},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, warns, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			if len(warns) != 0 {
+				t.Errorf("Parse(%q) warnings = %v, want none", query, warns)
+			}
+			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
+			if diff := cmp.Diff(tc.want, rc.Since()); diff != "" {
+				t.Errorf("Since() mismatch (-want +got):\n%s", diff)
+			}
+			if got := rc.SinceQuery(); got != nil {
+				t.Errorf("SinceQuery() = %v, want nil: the bound is written out", got)
+			}
+			if got := cmd.String(); got != query {
+				t.Errorf("round-trip mismatch: String() = %q, want %q", got, query)
+			}
+		})
+	}
+}
+
+// TestTimeRangeErrors checks that a malformed range is rejected, and that the
+// message says what a range is: two quoted dates joined by "..", the earlier
+// one first, with nothing between them. Each shape gets its own repair. A range
+// the wrong way round would otherwise run as a window nothing can fall in, and
+// an empty answer reads as "nothing happened then".
+func TestTimeRangeErrors(t *testing.T) {
+	const (
+		joins    = "a range joins two quoted dates, as in '2023-05-07'..'2023-05-09'"
+		onlyJoin = `".." only joins the two ends of a time range, as in since:'2023-05-07'..'2023-05-09': anywhere else it is only allowed inside a quoted phrase`
+	)
+	cases := map[string]struct {
+		want string
+	}{
+		"recall x since:'2023-05-09'..'2023-05-07'":                     {"invalid since value: the range ends before it starts — write the earlier date first"},
+		"recall x until:'2024'..'2023'":                                 {"invalid until value: the range ends before it starts — write the earlier date first"},
+		"recall x since:'2023-05-08'..'2023-05-07'":                     {"invalid since value: the range ends before it starts — write the earlier date first"},
+		"recall x since:'2023-05-07T12:00:00Z'..'2023-05-07T10:00:00Z'": {"invalid since value: the range ends before it starts — write the earlier date first"},
+		// A duration moves with the clock, so it is neither end of a range.
+		"recall x since:7d..'2023-05-09'":   {"invalid since value: a duration cannot start a range — " + joins},
+		"recall x since:'2023-05-07'..7d":   {`invalid since value "7d": the end of a range is a quoted date — ` + joins},
+		"recall x since:'2023-05-07'..'7d'": {`invalid since value "7d": the end of a range is a quoted date — ` + joins},
+		// The second end is a date like the first.
+		"recall x since:'2023-05-07'..soon":        {`invalid since value "soon": the end of a range is a quoted date — ` + joins},
+		"recall x since:'2023-05-07'..'soon'":      {`invalid since value "soon": the end of a range is a quoted date — ` + joins},
+		"recall x since:'2023-05-07'...":           {`invalid since value ".": the end of a range is a quoted date — ` + joins},
+		"recall x since:'2023-05-07'..'2023-05-09": {"unterminated quoted phrase"},
+		// The dots are glued to both ends.
+		"recall x since:'2023-05-07' ..'2023-05-09'": {"no space allowed before .."},
+		"recall x since:'2023-05-07'.. '2023-05-09'": {"no space allowed after .."},
+		// A range has two ends, and the dots mean nothing outside one.
+		"recall x since:'2023-05-07'..'2023-05-08'..'2023-05-09'": {onlyJoin},
+		"recall x .. y":     {onlyJoin},
+		"recall x topic:..": {onlyJoin},
+		"recall ..":         {onlyJoin},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a range error", query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestUnreadableDateIsRejected pins that a date the calendar does not hold, or
+// one written short of the forms the grammar reads, is an error and never a
+// guess. A bound that parsed to some nearby date would answer a window the
+// caller never asked for. A date is always quoted, a bare year included: bare,
+// 2023 is a word, and a term when it stands among the terms.
+func TestUnreadableDateIsRejected(t *testing.T) {
+	cases := map[string]struct {
+		blame string // the value the error must quote
+	}{
+		"recall x since:'2023-13'":    {"2023-13"},
+		"recall x since:'2023-05-32'": {"2023-05-32"},
+		"recall x since:'2023-5'":     {"2023-5"},
+		"recall x since:'23'":         {"23"},
+		"recall x since:2023":         {"2023"},
+		"recall x until:'May 2023'":   {"May 2023"},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want an invalid-date error", query)
+			}
+			for _, want := range []string{
+				"value " + strconv.Quote(tc.blame),
+				"expected a duration like 7d or a quoted date like '2026-01-15'",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestTimeBoundHeldByAWhen pins the query nested in a time bound. Parentheses
+// after since: or until: hold a when, parsed as the command it is. The bound is
+// then that command and not a time, because the time is not known until the
+// when has run. A bound written out stays a time and holds no query, so the two
+// forms can never both be set.
+func TestTimeBoundHeldByAWhen(t *testing.T) {
+	// when holds what the nested command must keep of what was written.
+	type when struct {
+		Clock           containers.Clock
+		Terms, Entities []string
+		Top             int
+	}
+	read := func(t *testing.T, cmd parser.CommandNode) *when {
+		if cmd == nil {
+			return nil
+		}
+		wc, ok := cmd.(*parser.WhenCommandNode[uint64, float32])
+		if !ok {
+			t.Fatalf("the bound holds a %T, want *WhenCommandNode", cmd)
+		}
+		return &when{Clock: wc.Clock(), Terms: wc.Terms(), Entities: wc.Entities(), Top: wc.Top(1)}
+	}
+
+	cases := map[string]struct {
+		since, until *when // nil where the bound holds no query
+		written      bool  // whether a bound is written out as a time
+	}{
+		"recall x until:(when race)": {
+			until: &when{Clock: containers.Happened, Terms: []string{"race"}, Top: 1},
+		},
+		"recall x since:(when:said 'the race' entity:melanie top:3)": {
+			since: &when{Clock: containers.Said, Terms: []string{"the race"}, Entities: []string{"melanie"}, Top: 3},
+		},
+		"recall x since:(when:written race) until:(when:happened parade)": {
+			since: &when{Clock: containers.Written, Terms: []string{"race"}, Top: 1},
+			until: &when{Clock: containers.Happened, Terms: []string{"parade"}, Top: 1},
+		},
+		"recall@3 x topic:run until:(when race)": {
+			until: &when{Clock: containers.Happened, Terms: []string{"race"}, Top: 1},
+		},
+		"recall x since:7d until:'2023-05-07'": {written: true},
+		"recall x":                             {},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, warns, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			if len(warns) != 0 {
+				t.Errorf("Parse(%q) warnings = %v, want none", query, warns)
+			}
+			rc := cmd.(*parser.RecallCommandNode[uint64, float32])
+
+			if diff := cmp.Diff(tc.since, read(t, rc.SinceQuery())); diff != "" {
+				t.Errorf("SinceQuery() mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.until, read(t, rc.UntilQuery())); diff != "" {
+				t.Errorf("UntilQuery() mismatch (-want +got):\n%s", diff)
+			}
+			if got := rc.Since() != nil; got != tc.written {
+				t.Errorf("Since() = %v, want a time only where one is written out", rc.Since())
+			}
+			if got := rc.Until() != nil; got != tc.written {
+				t.Errorf("Until() = %v, want a time only where one is written out", rc.Until())
+			}
+			if got := cmd.String(); got != query {
+				t.Errorf("round-trip mismatch: String() = %q, want %q", got, query)
+			}
+		})
+	}
+}
+
+// TestSubqueryLimits pins what the parentheses of a time bound may hold: one
+// when, glued to the opening parenthesis, with no selector and no when of its
+// own. The nested query is parsed by the production that parses a whole
+// instruction, so each limit is a refusal of something that production would
+// otherwise accept, and each names its own repair. Parentheses anywhere else
+// group nothing, and say so.
+func TestSubqueryLimits(t *testing.T) {
+	const (
+		grouping   = `only encloses a when in a time bound, as in until:(when <terms>)`
+		noSelector = "a when takes no graph selector: in a time bound it reads the graph of the recall that holds it, and on its own the default graph"
+	)
+	cases := map[string]struct {
+		want string
+	}{
+		// Only a when answers with a time.
+		"recall x until:(recall race)":  {`"recall" cannot stand in a time bound: only a when answers with a time — write until:(when <terms>)`},
+		"recall x since:(remember 'a')": {`"remember" cannot stand in a time bound: only a when answers with a time — write since:(when <terms>)`},
+		"recall x until:(race)":         {`expected a when after "(", found "race": a time bound's parentheses hold the when whose answer is the bound — write until:(when <terms>)`},
+		"recall x until:()":             {`expected a when after "(", found ")"`},
+		"recall x until:(":              {`expected a when after "(", found end of input`},
+		"recall x until:((when race))":  {`expected a when after "(", found "("`},
+		// A when is written in parentheses, glued to the opening one, and closed.
+		"recall x until:when race":     {`invalid until value "when": a when is written in parentheses — write until:(when <terms>)`},
+		"recall x until:( when race)":  {"no space allowed after ("},
+		"recall x until:(when race":    {`expected ")" to close the when, found end of input`},
+		"recall x until:(when race\n)": {`expected ")" to close the when, found a new line`},
+		// The when reads the graph of the recall that holds it.
+		"recall x until:(when@2 race)": {noSelector},
+		// One level.
+		"recall x until:(when race until:(when y))": {"a when holds no when: write until: as a duration or a quoted date, as in until:'2023-05-07'"},
+		"recall x until:(when race since:((((x":     {"a when holds no when: write since: as a duration or a quoted date, as in since:'2023-05-07'"},
+		// A bound is still one clause.
+		"recall x until:(when race) until:7d": {"duplicate until clause: until may be given only once — drop one"},
+		"recall x since:(when race) since:7d": {"duplicate since clause: since may be given only once — drop one"},
+		// Anywhere but a time bound a parenthesis groups nothing.
+		"recall x until:(when race))":  {grouping},
+		"recall x until:(when race) )": {grouping},
+		"recall x topic:(when race)":   {grouping},
+		"when race )":                  {grouping},
+		// A remember's times are written out.
+		"remember 'a' said:(when x)":     {"said: takes a time written out, as in said:'2023-05-07': a when only bounds a recall, in since: and until:"},
+		"remember 'a' occurred:(when x)": {"occurred: takes a time written out, as in occurred:'2023-05-07': a when only bounds a recall, in since: and until:"},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want a parse error", query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), `found ""`) {
+				t.Errorf("error %q reports end of input as an empty literal", err)
+			}
+		})
+	}
+}
+
+// TestNestedWhenWarningsReachTheCaller pins that a warning raised inside a
+// nested when is returned with the outer query's, at its column in the whole
+// query. The caller wrote one string and repairs it from one response. A
+// warning positioned inside the parentheses alone, or dropped with the nested
+// parse, would leave the when to run unlike what was written with nothing said.
+// The warnings are compared by column: which is raised first is not the
+// contract.
+func TestNestedWhenWarningsReachTheCaller(t *testing.T) {
+	cases := map[string]struct {
+		want []parser.Warning
+	}{
+		"recall x until:(when the race)": {[]parser.Warning{{
+			Msg: `term "the" is a stop word: stored facts never contain it, so it cannot match`,
+			Pos: lexer.Position{Column: 24},
+		}}},
+		"recall x until:(when race depth:2)": {[]parser.Warning{{
+			Msg: "depth:2 has no effect: the graph is searched only through a topic:/entity: anchor and this when names none, so it runs on the text and vector indices alone",
+			Pos: lexer.Position{Column: 31},
+		}}},
+		"recall x until:(WHEN:said race)": {[]parser.Warning{{
+			Msg: `keyword "WHEN" is not lower case: it ran as the when command, but keywords are syntax and are written lower case`,
+			Pos: lexer.Position{Column: 20},
+		}}},
+		"WHEN:said race": {[]parser.Warning{{
+			Msg: `keyword "WHEN" is not lower case: it ran as the when command, but keywords are syntax and are written lower case`,
+			Pos: lexer.Position{Column: 4},
+		}}},
+		"when race depth:2": {[]parser.Warning{{
+			Msg: "depth:2 has no effect: the graph is searched only through a topic:/entity: anchor and this when names none, so it runs on the text and vector indices alone",
+			Pos: lexer.Position{Column: 15},
+		}}},
+		"recall the x since:(when the race) until:(when and parade)": {[]parser.Warning{
+			{Msg: `term "the" is a stop word: stored facts never contain it, so it cannot match`, Pos: lexer.Position{Column: 10}},
+			{Msg: `term "the" is a stop word: stored facts never contain it, so it cannot match`, Pos: lexer.Position{Column: 28}},
+			{Msg: `term "and" is a stop word: stored facts never contain it, so it cannot match`, Pos: lexer.Position{Column: 50}},
+		}},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, got, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			byColumn := cmpopts.SortSlices(func(a, b parser.Warning) bool { return a.Pos.Column < b.Pos.Column })
+			if diff := cmp.Diff(tc.want, got, byColumn); diff != "" {
+				t.Errorf("Parse(%q) warnings mismatch (-want +got):\n%s", query, diff)
+			}
+		})
+	}
+}
+
+// TestRememberTimes pins the times a remember gives its fact. said: is the one
+// moment the fact was stated, and each occurred: one stretch of what it
+// describes, so a remember takes a single said: and any number of occurred:,
+// kept in the order written. Each keeps the precision it was written with. A
+// remember naming neither leaves both unset, and its fact then reads as said
+// and happened when it was written.
+func TestRememberTimes(t *testing.T) {
+	var (
+		may7  = containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 7, 0, 0, 0, 0, time.UTC), Precision: containers.Day}
+		may8  = containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 8, 0, 0, 0, 0, time.UTC), Precision: containers.Day}
+		may   = containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 1, 0, 0, 0, 0, time.UTC), Precision: containers.Month}
+		july  = containers.AbsoluteTime[uint64]{T: time.Date(2023, 7, 1, 0, 0, 0, 0, time.UTC), Precision: containers.Month}
+		y2023 = containers.AbsoluteTime[uint64]{T: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Precision: containers.Year}
+		week  = containers.RelativeTime[uint64]{Dur: 7 * 24 * time.Hour}
+	)
+	cases := map[string]struct {
+		said     containers.TimeValue[uint64]
+		occurred []containers.TimeValue[uint64]
+	}{
+		"remember 'a'":         {},
+		"remember 'a' topic:x": {},
+		"remember 'a' said:'2023-05-08'": {
+			said: may8,
+		},
+		"remember 'a' said:'2023-05-08T10:00:00Z'": {
+			said: containers.AbsoluteTime[uint64]{T: time.Date(2023, 5, 8, 10, 0, 0, 0, time.UTC), Precision: containers.Instant},
+		},
+		"remember 'a' said:7d": {
+			said: week,
+		},
+		"remember 'a' occurred:'2023-05-07'": {
+			occurred: []containers.TimeValue[uint64]{may7},
+		},
+		"remember 'a' occurred:'2023-05'": {
+			occurred: []containers.TimeValue[uint64]{may},
+		},
+		"remember 'a' occurred:'2023'": {
+			occurred: []containers.TimeValue[uint64]{y2023},
+		},
+		"remember 'a' occurred:7d": {
+			occurred: []containers.TimeValue[uint64]{week},
+		},
+		"remember 'a' occurred:'2023-05-07'..'2023-05-08'": {
+			occurred: []containers.TimeValue[uint64]{containers.RangeTime[uint64]{From: may7, To: may8}},
+		},
+		"remember 'a' occurred:'2023-05-07'..": {
+			occurred: []containers.TimeValue[uint64]{containers.RangeTime[uint64]{From: may7}},
+		},
+		"remember 'a' occurred:'2023-05-07' occurred:'2023-05'..'2023-07'": {
+			occurred: []containers.TimeValue[uint64]{may7, containers.RangeTime[uint64]{From: may, To: july}},
+		},
+		// A repeated stretch is kept as written. Which stretches a fact holds
+		// is the graph's to settle, not the parser's.
+		"remember 'a' occurred:'2023-05-07' occurred:'2023-05-07'": {
+			occurred: []containers.TimeValue[uint64]{may7, may7},
+		},
+		"remember@2 'a' entity:melanie topic:x said:'2023-05-08' occurred:'2023-05-07' vec:$v": {
+			said:     may8,
+			occurred: []containers.TimeValue[uint64]{may7},
+		},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, warns, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			if len(warns) != 0 {
+				t.Errorf("Parse(%q) warnings = %v, want none", query, warns)
+			}
+			rc, ok := cmd.(*parser.RememberCommandNode[uint64, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *RememberCommandNode", query, cmd)
+			}
+			if diff := cmp.Diff(tc.said, rc.Said()); diff != "" {
+				t.Errorf("Said() mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.occurred, rc.Occurred()); diff != "" {
+				t.Errorf("Occurred() mismatch (-want +got):\n%s", diff)
+			}
+			if got := cmd.String(); got != query {
+				t.Errorf("round-trip mismatch: String() = %q, want %q", got, query)
+			}
+		})
+	}
+}
+
+// TestRememberStringWritesTimesAfterAnchors pins where String() puts a
+// remember's times, whatever order they were written in: after the anchors and
+// before the vector, said: first, then each occurred: in the order written.
+// One order is what gives a remember one spelling.
+func TestRememberStringWritesTimesAfterAnchors(t *testing.T) {
+	cases := map[string]struct {
+		want string
+	}{
+		"remember 'a' said:'2023-05-08' topic:x": {
+			"remember 'a' topic:x said:'2023-05-08'",
+		},
+		"remember 'a' occurred:'2023' said:7d": {
+			"remember 'a' said:7d occurred:'2023'",
+		},
+		"remember 'a' vec:$v occurred:'2023-05'..'2023-07' entity:melanie occurred:'2023-05-07' said:'2023-05-08' topic:x": {
+			"remember 'a' entity:melanie topic:x said:'2023-05-08' occurred:'2023-05'..'2023-07' occurred:'2023-05-07' vec:$v",
+		},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			if got := cmd.String(); got != tc.want {
+				t.Errorf("String() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRememberTimeErrors checks that a malformed said: or occurred: is
+// rejected, and that the message names the repair. said: is one moment, so a
+// second one and a range are both refused: last-wins or a silent first end
+// would date the fact with a time its writer never chose, and every later
+// bound on said would read it. The values are the time values of a recall's
+// bounds, rejected the same way.
+func TestRememberTimeErrors(t *testing.T) {
+	const (
+		expected  = "expected a duration like 7d or a quoted date like '2026-01-15'"
+		oneMoment = "said: is one moment, not a range: write the day the fact was said, as in said:'2023-05-08', and give a span to occurred:"
+		duplicate = "duplicate said clause: said may be given only once — drop one"
+	)
+	cases := map[string]struct {
+		want string
+	}{
+		"remember 'a' said:'2023-05-08' said:'2023-05-09'":   {duplicate},
+		"remember 'a' said:'2023-05-08' topic:x said:'2023'": {duplicate},
+		"remember 'a' said:7d SAID:1d":                       {duplicate},
+		"remember 'a' said:'2023-05-08'..'2023-05-09'":       {oneMoment},
+		"remember 'a' said:'2023-05-08'..":                   {oneMoment},
+		"remember 'a' said:":                                 {"invalid said value end of input: " + expected},
+		"remember 'a' said:soon":                             {`invalid said value "soon": ` + expected},
+		"remember 'a' said:'soon'":                           {`invalid said value "soon": ` + expected},
+		"remember 'a' said:'7d'":                             {`invalid said value "7d": a duration is not quoted — write said:7d`},
+		"remember 'a' occurred:soon":                         {`invalid occurred value "soon": ` + expected},
+		"remember 'a' occurred:'7d'":                         {`invalid occurred value "7d": a duration is not quoted — write occurred:7d`},
+		"remember 'a' occurred:'2023-05-09'..'2023-05-07'":   {"invalid occurred value: the range ends before it starts — write the earlier date first"},
+		// With nothing after it the word can still be a clause on a remember,
+		// so the message offers the clause and the quote.
+		"remember 'a' said":     {`"said" is a keyword and starts no clause here: write said:<value> if a clause was meant, or quote it ('said') to search for the word`},
+		"remember 'a' occurred": {`"occurred" is a keyword and starts no clause here: write occurred:<value> if a clause was meant, or quote it ('occurred') to search for the word`},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want an error", query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestFactTimesStayInsideTheYearsAHitCarries pins the calendar a remember's
+// times are held to. A fact's times are written back on every hit as RFC 3339
+// text, which has no year after 9999. A day, a month or a year that closes 9999
+// ends on the first instant of the year after, so it is refused, and the message
+// carries the range. Stored, one such fact would leave every recall that returns
+// it without a body. The other end is refused for what reads it: a year 0000 is
+// text not every client parses, and the first instant of the year 0001 is the
+// zero time, which would read as a fact given no time. An offset moves neither
+// end: a time is held to the range as it is written and in UTC. A bound is never
+// written back, so since: and until: keep every date a literal can spell.
+func TestFactTimesStayInsideTheYearsAHitCarries(t *testing.T) {
+	const outOfRange = "out of range (a fact's time starts after the year 0001 does and ends before the year 9999 does)"
+	cases := map[string]struct {
+		want string // "" when the query must parse
+	}{
+		// The last day, month and year of 9999 end in the year after.
+		"remember 'a' occurred:'9999'":               {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'9999-12'":            {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'9999-12-31'":         {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'2023-05-07'..'9999'": {"invalid occurred value: " + outOfRange},
+		"remember 'a' said:'9999-12-31'":             {"invalid said value: " + outOfRange},
+		// A year 0000, and the instant the year 0001 starts on.
+		"remember 'a' occurred:'0000'":               {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'0000-12-31'..'2023'": {"invalid occurred value: " + outOfRange},
+		"remember 'a' said:'0000-06-01T12:00:00Z'":   {"invalid said value: " + outOfRange},
+		"remember 'a' occurred:'0001'":               {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'0001-01'":            {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'0001-01-01'":         {"invalid occurred value: " + outOfRange},
+		"remember 'a' said:'0001-01-01'":             {"invalid said value: " + outOfRange},
+		"remember 'a' said:'0001-01-01T00:00:00Z'":   {"invalid said value: " + outOfRange},
+		// An offset that puts the instant, or the year it is written with, outside.
+		"remember 'a' said:'0001-01-01T00:00:00+14:00'":                                  {"invalid said value: " + outOfRange},
+		"remember 'a' said:'0000-12-31T23:00:00-05:00'":                                  {"invalid said value: " + outOfRange},
+		"remember 'a' said:'9999-12-31T23:59:59-12:00'":                                  {"invalid said value: " + outOfRange},
+		"remember 'a' occurred:'9999-12-31T23:59:59-12:00'..":                            {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'0001-01-02T00:00:00+14:00'..'0000-12-31T23:59:59-11:00'": {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'9999-12-31T00:00:00+14:00'..'9999-12-31T23:59:59-00:01'": {"invalid occurred value: " + outOfRange},
+		"remember 'a' said:'2023-05-08' occurred:'2023-05-07' occurred:'9999-12-31'":     {"invalid occurred value: " + outOfRange},
+		"remember 'a' occurred:'2023-05-07' said:'0001-01-01' topic:harbour":             {"invalid said value: " + outOfRange},
+		// The first and last times a fact holds.
+		"remember 'a' occurred:'9999-12-30'":                     {""},
+		"remember 'a' occurred:'9999-11'":                        {""},
+		"remember 'a' occurred:'9998'":                           {""},
+		"remember 'a' occurred:'9999-12-31T23:59:59Z'":           {""},
+		"remember 'a' occurred:'9999-12-31T23:59:59.999999999Z'": {""},
+		"remember 'a' occurred:'9999-12-31'..":                   {""},
+		"remember 'a' occurred:'0001-01-02'":                     {""},
+		"remember 'a' occurred:'0001-02'":                        {""},
+		"remember 'a' occurred:'0002'":                           {""},
+		"remember 'a' said:'0001-01-01T00:00:01Z'":               {""},
+		"remember 'a' said:'0001-01-02'":                         {""},
+		"remember 'a' said:'9999-12-31T23:59:59+14:00'":          {""},
+		"remember 'a' said:106751d occurred:106751d":             {""},
+		// A bound keeps every date a literal spells.
+		"recall x until:'9999-12-31'":                  {""},
+		"recall x since:'0000'":                        {""},
+		"recall x since:'0001-01-01'":                  {""},
+		"recall x since:'0000'..'9999'":                {""},
+		"when x until:'9999'":                          {""},
+		"recall x since:(when y since:'0000-01-01')":   {""},
+		"recall x until:(when y until:'9999-12-31'..)": {""},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("Parse(%q) = %v, want it to parse", query, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse(%q) = %v, want an error containing %q", query, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestRememberClauseOnAReadIsRefused pins the message for said and occurred on
+// a recall or a when. They give a fact its time when it is written and bound no
+// search, so the mistake is the command and not the spelling. The message says
+// where the clause belongs and which clauses bound a search. It never offers
+// said:<value>, with or without the ':' written: that repair is this same
+// rejection one step later. Where the word can only be a word, among the terms
+// or with nothing after it, the message names the quote.
+func TestRememberClauseOnAReadIsRefused(t *testing.T) {
+	const (
+		saidClause     = "said: is a remember clause: it gives a fact its time, and a search is bounded with since: and until:"
+		occurredClause = "occurred: is a remember clause: it gives a fact its time, and a search is bounded with since: and until:"
+	)
+	cases := map[string]struct {
+		column int
+		want   string
+	}{
+		// The clause, however it is spelled.
+		"recall x said:'2023'":               {13, saidClause},
+		"recall x occurred:7d":               {17, occurredClause},
+		"recall x topic:y said:'2023'":       {21, saidClause},
+		"recall x topic:y Said:'2023'":       {21, saidClause},
+		"recall x topic:y said 7d":           {21, saidClause},
+		"recall x topic:y said '2023'":       {21, saidClause},
+		"recall x topic:y said :7d":          {21, saidClause},
+		"recall x topic:y occurred '2023'":   {25, occurredClause},
+		"when race occurred:'2023'":          {18, occurredClause},
+		"recall x until:(when race said:7d)": {30, saidClause},
+		// The word alone, after a clause.
+		"recall x topic:y said":                   {21, `"said" is a keyword and starts no clause here: quote it ('said') to search for the word`},
+		"recall x topic:y occurred":               {25, `"occurred" is a keyword and starts no clause here: quote it ('occurred') to search for the word`},
+		"when race topic:y said":                  {22, `"said" is a keyword and starts no clause here: quote it ('said') to search for the word`},
+		"recall x until:(when race topic:y said)": {38, `"said" is a keyword and starts no clause here: quote it ('said') to search for the word`},
+		// The word among the terms.
+		"recall said":        {11, `term "said" is also a keyword: quote it ('said') to search for the word`},
+		"recall she said it": {15, `term "said" is also a keyword: quote it ('said') to search for the word`},
+		"recall occurred":    {15, `term "occurred" is also a keyword: quote it ('occurred') to search for the word`},
+		"when race said":     {14, `term "said" is also a keyword: quote it ('said') to search for the word`},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want the clause refused", query)
+			}
+			var perr *parser.Error
+			if !errors.As(err, &perr) {
+				t.Fatalf("error %v is not a *parser.Error, so it carries no position", err)
+			}
+			if got := perr.Pos.Column; got != tc.column {
+				t.Errorf("Parse(%q) error at column %d, want %d", query, got, tc.column)
+			}
+			if !strings.Contains(perr.Msg, tc.want) {
+				t.Errorf("error %q does not contain %q", perr.Msg, tc.want)
+			}
+			for _, repair := range []string{"said:<value>", "occurred:<value>"} {
+				if strings.Contains(perr.Msg, repair) {
+					t.Errorf("error %q offers %s, which is itself an error on a read", perr.Msg, repair)
+				}
+			}
+		})
+	}
+}
+
 // TestGraphSelectorRejectsOutOfRange checks that a selector that does not fit
 // in a uint8 is rejected at parse time. It is not silently wrapped into a
 // valid-looking graph (@256 -> 0, @300 -> 44). Wrapping would route the query
@@ -430,7 +1302,7 @@ func TestRememberPhrase(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse(%q) unexpected error: %v", tc.query, err)
 			}
-			rc, ok := cmd.(*parser.RememberCommandNode[float32])
+			rc, ok := cmd.(*parser.RememberCommandNode[uint64, float32])
 			if !ok {
 				t.Fatalf("Parse(%q) returned %T, want *RememberCommandNode", tc.query, cmd)
 			}
@@ -492,24 +1364,26 @@ func TestRememberPhraseErrors(t *testing.T) {
 // ':', instead of advancing past whatever token sits in the separator's place.
 // Advancing would shift the remaining tokens into other roles, and answer a
 // different query with no error. An agent cannot detect that failure, let alone
-// correct it. The whole family (topic, entity, since, until, top, depth) is
-// listed, so no field can regress alone.
+// correct it. The whole family (topic, entity, since, until, top, depth, said,
+// occurred) is listed, so no field can regress alone.
 func TestFieldRequiresColonSeparator(t *testing.T) {
 	cases := map[string]struct {
 		want string
 	}{
 		// The fix names the clause the caller would write, with the word they
 		// wrote after the keyword as its value. That is the query they meant.
-		"recall zebras topic food":                  {"write topic:food"},
-		"recall zebras topic food extra":            {"write topic:food"},
-		"recall zebras entity alice":                {"write entity:alice"},
-		"recall zebras since 7d":                    {"write since:7d"},
-		"recall zebras until 30d":                   {"write until:30d"},
-		"recall zebras top 5":                       {"write top:5"},
-		"recall zebras depth 2":                     {"write depth:2"},
-		"recall zebras topic:food entity alice":     {"write entity:alice"},
-		"remember 'zebras eat grass' topic food":    {"write topic:food"},
-		"remember 'zebras eat grass' entity zebras": {"write entity:zebras"},
+		"recall zebras topic food":                    {"write topic:food"},
+		"recall zebras topic food extra":              {"write topic:food"},
+		"recall zebras entity alice":                  {"write entity:alice"},
+		"recall zebras since 7d":                      {"write since:7d"},
+		"recall zebras until 30d":                     {"write until:30d"},
+		"recall zebras top 5":                         {"write top:5"},
+		"recall zebras depth 2":                       {"write depth:2"},
+		"recall zebras topic:food entity alice":       {"write entity:alice"},
+		"remember 'zebras eat grass' topic food":      {"write topic:food"},
+		"remember 'zebras eat grass' entity zebras":   {"write entity:zebras"},
+		"remember 'zebras eat grass' said 7d":         {`"said" is missing its ':': write said:7d`},
+		"remember 'zebras eat grass' occurred '2023'": {`"occurred" is missing its ':': write occurred:'2023'`},
 		// The token-shifting shapes. Without the check, the second value would
 		// silently win the field and the first would be swallowed.
 		"recall zebras since 7d 30d":           {"write since:7d"},
@@ -564,13 +1438,19 @@ func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
 		"recall zebras top 5 depth:2":      {"top"},
 		"recall zebras depth 2 top:3":      {"depth"},
 		// Unparseable values: the blamed token is the value, not the key.
-		"recall zebras since:soon top:3":  {"soon"},
-		"recall zebras until:later top:3": {"later"},
-		"recall zebras depth:abc top:3":   {"abc"},
-		"recall zebras top:abc depth:2":   {"abc"},
-		"recall@abc zebras top:3":         {"abc"},
+		"recall zebras since:soon top:3":                {"soon"},
+		"recall zebras until:later top:3":               {"later"},
+		"recall zebras depth:abc top:3":                 {"abc"},
+		"recall zebras top:abc depth:2":                 {"abc"},
+		"recall@abc zebras top:3":                       {"abc"},
+		"remember 'a' said:soon topic:x":                {"soon"},
+		"remember 'a' occurred:later topic:x":           {"later"},
+		"recall zebras since:'2023-05-07'..later top:3": {"later"},
+		"when:soon race top:3":                          {"soon"},
+		"recall zebras until:(race) top:3":              {"race"},
 		// A token in a position no clause can start.
-		"recall zebras : topic:food": {":"},
+		"recall zebras : topic:food":  {":"},
+		"recall zebras .. topic:food": {".."},
 	}
 
 	for query, tc := range cases {
@@ -609,7 +1489,7 @@ func TestQuotedValues(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		rc := cmd.(*parser.RememberCommandNode[float32])
+		rc := cmd.(*parser.RememberCommandNode[uint64, float32])
 		if diff := cmp.Diff([]string{"my project"}, rc.Topics()); diff != "" {
 			t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 		}
@@ -681,8 +1561,8 @@ func TestKeywordAsValue(t *testing.T) {
 			topics: []string{"some-topic", "top"},
 		},
 		"every field keyword as an anchor value": {
-			query:    "remember 'x' entity:recall entity:since entity:until entity:depth entity:vec entity:entity topic:topic",
-			entities: []string{"recall", "since", "until", "depth", "vec", "entity"},
+			query:    "remember 'x' entity:recall entity:since entity:until entity:depth entity:vec entity:entity entity:when entity:said entity:occurred topic:topic",
+			entities: []string{"recall", "since", "until", "depth", "vec", "entity", "when", "said", "occurred"},
 			topics:   []string{"topic"},
 		},
 		"keyword anchors on recall": {
@@ -711,7 +1591,7 @@ func TestKeywordAsValue(t *testing.T) {
 
 			var entities, topics, terms []string
 			switch n := cmd.(type) {
-			case *parser.RememberCommandNode[float32]:
+			case *parser.RememberCommandNode[uint64, float32]:
 				entities, topics = n.Entities(), n.Topics()
 			case *parser.RecallCommandNode[uint64, float32]:
 				entities, topics, terms = n.Entities(), n.Topics(), n.Terms()
@@ -776,6 +1656,8 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 		// because the verb decides whether the query writes.
 		"Recall zebras":        {"expected a command"},
 		"REMEMBER 'x' topic:y": {"expected a command"},
+		"When race":            {"expected a command"},
+		"WHEN race":            {"expected a command"},
 	}
 
 	for query, tc := range cases {
@@ -792,8 +1674,9 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 }
 
 // TestMiscasedKeywordBeforeColonIsTheClause pins the one place casing is
-// forgiven. A word glued to a ':' can only be a field, because no production
-// puts a bare word in front of a colon. Reading "DEPTH:5" as the depth clause
+// forgiven. A word glued to a ':' has one reading: a field, or the when in
+// front of its clock. No other production puts a bare word in front of a
+// colon. Reading "DEPTH:5" as the depth clause
 // lets a repeated clause be caught as a duplicate. Blaming the casing instead
 // would report the shallower of the two mistakes. An agent that fixed the
 // casing would meet the duplicate only on its next try.
@@ -838,10 +1721,10 @@ func TestMiscasedKeywordBeforeColonIsTheClause(t *testing.T) {
 
 	remembers := map[string]struct {
 		want []string
-		got  func(*parser.RememberCommandNode[float32]) []string
+		got  func(*parser.RememberCommandNode[uint64, float32]) []string
 	}{
-		"remember 'x' Entity:bob": {[]string{"bob"}, (*parser.RememberCommandNode[float32]).Entities},
-		"remember 'x' Topic:food": {[]string{"food"}, (*parser.RememberCommandNode[float32]).Topics},
+		"remember 'x' Entity:bob": {[]string{"bob"}, (*parser.RememberCommandNode[uint64, float32]).Entities},
+		"remember 'x' Topic:food": {[]string{"food"}, (*parser.RememberCommandNode[uint64, float32]).Topics},
 	}
 
 	for query, tc := range remembers {
@@ -850,12 +1733,35 @@ func TestMiscasedKeywordBeforeColonIsTheClause(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse(%q) = %v, want the clause it spells", query, err)
 			}
-			r, ok := cmd.(*parser.RememberCommandNode[float32])
+			r, ok := cmd.(*parser.RememberCommandNode[uint64, float32])
 			if !ok {
 				t.Fatalf("Parse(%q) returned %T, want *RememberCommandNode", query, cmd)
 			}
 			if diff := cmp.Diff(tc.want, tc.got(r)); diff != "" {
 				t.Errorf("anchors mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	whens := map[string]struct {
+		want containers.Clock
+	}{
+		"WHEN:said race":    {containers.Said},
+		"When:written race": {containers.Written},
+	}
+
+	for query, tc := range whens {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) = %v, want the when it spells", query, err)
+			}
+			w, ok := cmd.(*parser.WhenCommandNode[uint64, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *WhenCommandNode", query, cmd)
+			}
+			if got := w.Clock(); got != tc.want {
+				t.Errorf("Clock() = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -865,18 +1771,22 @@ func TestMiscasedKeywordBeforeColonIsTheClause(t *testing.T) {
 // is an error, not a last-wins overwrite. Last-wins is the failure an agent
 // cannot detect. The query runs and the results are real, but they answer a
 // differently scoped question than the one asked. Anchors are excluded, because
-// a repeated topic: or entity: is a list by design. The last two cases pin that
-// the stricter rule does not swallow them.
+// a repeated topic: or entity: is a list by design. So is occurred:, since a
+// fact can describe several stretches of time. The accepted cases pin that the
+// stricter rule does not swallow them.
 func TestDuplicateModifierIsRejected(t *testing.T) {
 	rejected := map[string]struct{}{
-		"recall zebras depth:1 depth:2":             {},
-		"recall zebras top:3 top:10":                {},
-		"recall zebras since:7d since:30d":          {},
-		"recall zebras until:1d until:2d":           {},
-		"recall zebras since:7d until:30d since:1d": {},
-		"recall zebras vec:$a vec:$b":               {},
-		"recall zebras depth:2 DEPTH:5":             {},
-		"remember 'x' vec:$a vec:$b":                {},
+		"recall zebras depth:1 depth:2":                     {},
+		"recall zebras top:3 top:10":                        {},
+		"recall zebras since:7d since:30d":                  {},
+		"recall zebras until:1d until:2d":                   {},
+		"recall zebras since:7d until:30d since:1d":         {},
+		"recall zebras vec:$a vec:$b":                       {},
+		"recall zebras depth:2 DEPTH:5":                     {},
+		"remember 'x' vec:$a vec:$b":                        {},
+		"remember 'x' said:7d said:1d":                      {},
+		"recall zebras until:(when race) until:7d":          {},
+		"recall zebras since:(when race) since:(when food)": {},
 	}
 
 	for q := range rejected {
@@ -892,14 +1802,15 @@ func TestDuplicateModifierIsRejected(t *testing.T) {
 	}
 
 	accepted := map[string]struct{}{
-		"recall zebras topic:food topic:drink":  {},
-		"recall zebras entity:alice entity:bob": {},
+		"recall zebras topic:food topic:drink":                  {},
+		"recall zebras entity:alice entity:bob":                 {},
+		"remember 'x' occurred:'2023-05-07' occurred:'2023-06'": {},
 	}
 
 	for q := range accepted {
 		t.Run(q, func(t *testing.T) {
 			if _, _, err := parser.Parse[uint64, float32](q, nil); err != nil {
-				t.Errorf("Parse(%q) = %v, want repeated anchors to parse", q, err)
+				t.Errorf("Parse(%q) = %v, want a repeated list clause to parse", q, err)
 			}
 		})
 	}
@@ -937,7 +1848,7 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		rc := cmd.(*parser.RememberCommandNode[float32])
+		rc := cmd.(*parser.RememberCommandNode[uint64, float32])
 		if got, want := rc.Value(), "MiXeD Case"; got != want {
 			t.Errorf("Value() = %q, want %q, the fact stored exactly as written", got, want)
 		}
@@ -954,7 +1865,7 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		rc := cmd.(*parser.RememberCommandNode[float32])
+		rc := cmd.(*parser.RememberCommandNode[uint64, float32])
 		if diff := cmp.Diff([]string{"my project"}, rc.Topics()); diff != "" {
 			t.Errorf("Topics() mismatch (-want +got):\n%s", diff)
 		}
@@ -982,7 +1893,7 @@ func TestValuesFoldToLowerCase(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		rc := cmd.(*parser.RememberCommandNode[float32])
+		rc := cmd.(*parser.RememberCommandNode[uint64, float32])
 		if diff := cmp.Diff([]string{"top"}, rc.Entities()); diff != "" {
 			t.Errorf("Entities() mismatch (-want +got):\n%s", diff)
 		}
@@ -1116,13 +2027,13 @@ func TestVectorIsTheBoundParameter(t *testing.T) {
 			return c.(*parser.RecallCommandNode[uint64, float32]).Vector()
 		}, nil},
 		"remember 'x'": {func(c parser.CommandNode) []float32 {
-			return c.(*parser.RememberCommandNode[float32]).Vector()
+			return c.(*parser.RememberCommandNode[uint64, float32]).Vector()
 		}, nil},
 		"remember 'x' vec:$q": {func(c parser.CommandNode) []float32 {
-			return c.(*parser.RememberCommandNode[float32]).Vector()
+			return c.(*parser.RememberCommandNode[uint64, float32]).Vector()
 		}, []float32{0.1, 0.2, 0.3}},
 		"remember 'x' vec:$missing": {func(c parser.CommandNode) []float32 {
-			return c.(*parser.RememberCommandNode[float32]).Vector()
+			return c.(*parser.RememberCommandNode[uint64, float32]).Vector()
 		}, nil},
 	}
 
@@ -1207,9 +2118,13 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		// A modifier is a recall clause. The message names the command it was
 		// given to and the clauses a remember takes. It does not tell the
 		// caller to write since:<value>, which is what they wrote.
-		"remember 'a fact' top:3":    {"top: is a recall clause: a remember takes only topic:, entity: and vec:"},
+		"remember 'a fact' top:3":    {"top: is a recall clause: a remember takes only topic:, entity:, vec:, said: and occurred:"},
 		"remember 'a fact' since:7d": {"since: is a recall clause"},
 		"remember 'a fact' depth:1":  {"depth: is a recall clause"},
+		// The mirror. said: and occurred: give a fact its time, so they are
+		// remember clauses, and the message names the ones that bound a search.
+		"recall zebras said:'2023-05-08'": {"said: is a remember clause: it gives a fact its time, and a search is bounded with since: and until:"},
+		"recall zebras occurred:7d":       {"occurred: is a remember clause"},
 		// An unclosed quote is reported as one, not as whatever it swallowed.
 		"recall 'unclosed phrase": {"unterminated quoted phrase"},
 		// In a clause value too. There the swallowed text would otherwise read
@@ -1264,6 +2179,9 @@ func TestCommandWordsAreNeverOfferedAsClauses(t *testing.T) {
 		"recall forget":          {"forget"},
 		"recall zebras recall":   {"recall"},
 		"recall zebras remember": {"remember"},
+		"recall when":            {"when"},
+		"recall zebras when":     {"when"},
+		"when race when":         {"when"},
 	}
 
 	for query, tc := range cases {
@@ -1319,9 +2237,12 @@ func TestDanglingCommandWordStartsASecondCommand(t *testing.T) {
 	cases := map[string]struct {
 		want string
 	}{
-		"remember 'a' recall":     {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
-		"remember 'a' remember":   {`"remember" starts a second command: one command per instruction — quote it ('remember') to search for the word`},
-		"recall x topic:y recall": {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"remember 'a' recall":      {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"remember 'a' remember":    {`"remember" starts a second command: one command per instruction — quote it ('remember') to search for the word`},
+		"recall x topic:y recall":  {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"recall x topic:y when":    {`"when" starts a second command: one command per instruction — quote it ('when') to search for the word`},
+		"remember 'a' when":        {`"when" starts a second command: one command per instruction — quote it ('when') to search for the word`},
+		"when race topic:y recall": {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
 	}
 
 	for query, tc := range cases {
@@ -1515,10 +2436,12 @@ func TestTextThatIsNotUTF8IsRejectedAtItsColumn(t *testing.T) {
 // Otherwise every client that ends its payload with a newline would break.
 func TestNewlineEndsTheInstruction(t *testing.T) {
 	accepted := map[string]struct{}{
-		"recall zebras\n":        {},
-		"recall zebras\n\n":      {},
-		"recall zebras \n  \n\t": {},
-		"remember 'a fact'\n":    {},
+		"recall zebras\n":                   {},
+		"recall zebras\n\n":                 {},
+		"recall zebras \n  \n\t":            {},
+		"remember 'a fact'\n":               {},
+		"when race\n":                       {},
+		"recall zebras until:(when race)\n": {},
 	}
 
 	for q := range accepted {
@@ -1533,6 +2456,8 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 		"recall zebras\nfood":        {},
 		"recall zebras\nrecall food": {},
 		"remember 'a'\nremember 'b'": {},
+		"when race\nrecall zebras":   {},
+		"recall zebras\nwhen race":   {},
 	}
 
 	for q := range rejected {
@@ -1593,6 +2518,9 @@ func TestIntegerValueTooLargeIsReportedAsOutOfRange(t *testing.T) {
 // case, and accepting `Depth:2` in silence teaches the caller the opposite. So
 // the clause runs, and the response says which clause it ran as.
 //
+// A when glued to its clock is read the same way. The colon leaves `WHEN:said`
+// one reading, so it runs as the when command and the response names it.
+//
 // Anchor values are excluded. `entity:Top` is data, folded to the same anchor
 // as `entity:top`. An agent never has to remember how it capitalised something.
 func TestMiscasedClauseWarns(t *testing.T) {
@@ -1608,6 +2536,10 @@ func TestMiscasedClauseWarns(t *testing.T) {
 		"lower case is silent":                     {"recall zebras top:3 topic:food", false},
 		"an anchor value is data, not syntax":      {"recall zebras entity:Top", false},
 		"a mis-cased value on a write is data too": {"remember 'a fact' topic:Food", false},
+		"mis-cased time on a write":                {"remember 'a fact' Said:'2023-05-08'", true},
+		"mis-cased stretch on a write":             {"remember 'a fact' OCCURRED:'2023-05-07'", true},
+		"mis-cased when glued to its clock":        {"WHEN:said race", true},
+		"a lower-case when is silent":              {"when:said race", false},
 	}
 
 	for name, tc := range cases {
@@ -1659,6 +2591,8 @@ func TestDepthWithoutAnchorWarns(t *testing.T) {
 		"depth beside a vector and an anchor": {"recall vec:$v entity:acme depth:1", false},
 		"the floor never warns":               {"recall ferry depth:0", false},
 		"no depth clause never warns":         {"recall ferry", false},
+		"depth on a term-only when":           {"when ferry depth:2", true},
+		"a when's depth beside an anchor":     {"when ferry topic:harbour depth:2", false},
 	}
 
 	for name, tc := range cases {
@@ -1798,10 +2732,11 @@ func TestWhitespaceSeparatesWords(t *testing.T) {
 }
 
 // TestNoSpaceInsideACommandOrClause pins that the parts of a command or clause
-// are glued: the selector to its verb, the value to its ':' and a parameter
-// name to its '$'. A space inside one is rejected with a message naming where
-// it is not allowed. A bare "unexpected" would leave the caller to guess the
-// fix. want is empty for a query that must parse.
+// are glued: the selector to its verb, the clock to its when, the value to its
+// ':', a parameter name to its '$', the two ends of a range to their dots, and
+// a nested when to its opening parenthesis. A space inside one is rejected
+// with a message naming where it is not allowed. A bare "unexpected" would
+// leave the caller to guess the fix. want is empty for a query that must parse.
 func TestNoSpaceInsideACommandOrClause(t *testing.T) {
 	cases := map[string]struct {
 		want string
@@ -1819,6 +2754,20 @@ func TestNoSpaceInsideACommandOrClause(t *testing.T) {
 		"recall zebras vec:$ v":      {"no space allowed after $"},
 		"recall zebras since:7d until:'2026-01-15' depth:2 top:5": {""},
 		"recall zebras since :7d":                                 {"no space allowed before :"},
+		"when:said zebras":                                        {""},
+		"when :said zebras":                                       {"no space allowed before :"},
+		"when: said zebras":                                       {"no space allowed after :"},
+		"remember 'x' said:7d occurred:'2023'":                    {""},
+		"remember 'x' said :7d":                                   {"no space allowed before :"},
+		"remember 'x' said: 7d":                                   {"no space allowed after :"},
+		"remember 'x' occurred: '2023'":                           {"no space allowed after :"},
+		"recall zebras since:'2023-05-07'..'2023-05-09'":          {""},
+		"recall zebras since:'2023-05-07' ..'2023-05-09'":         {"no space allowed before .."},
+		"recall zebras since:'2023-05-07'.. '2023-05-09'":         {"no space allowed after .."},
+		"recall zebras until:(when race)":                         {""},
+		"recall zebras until:(when race )":                        {""},
+		"recall zebras until:( when race)":                        {"no space allowed after ("},
+		"recall zebras until: (when race)":                        {"no space allowed after :"},
 	}
 
 	for query, tc := range cases {
@@ -1884,10 +2833,12 @@ func TestQuotedReservedWordIsATerm(t *testing.T) {
 	cases := map[string]struct {
 		terms []string
 	}{
-		"recall 'top'":               {[]string{"top"}},
-		"recall 'Top' 'since'":       {[]string{"top", "since"}},
-		"recall zebras 'topic' food": {[]string{"zebras", "topic", "food"}},
-		"recall 'since' 7d":          {[]string{"since", "7d"}},
+		"recall 'top'":                    {[]string{"top"}},
+		"recall 'Top' 'since'":            {[]string{"top", "since"}},
+		"recall zebras 'topic' food":      {[]string{"zebras", "topic", "food"}},
+		"recall 'since' 7d":               {[]string{"since", "7d"}},
+		"recall 'when' 'said' 'occurred'": {[]string{"when", "said", "occurred"}},
+		"recall race 'said' charity":      {[]string{"race", "said", "charity"}},
 	}
 
 	for query, tc := range cases {
@@ -2045,15 +2996,21 @@ func TestStopWordOnlyRecallIsAnError(t *testing.T) {
 //   - A depth beside an anchor it can act through.
 //   - A phrase whose content is only stop words.
 //   - A recall seeded by an anchor alone.
+//   - A time in any form it is written in, a when among them.
 //
 // A warning there is noise the caller learns to ignore.
 func TestUnambiguousQueriesRunSilently(t *testing.T) {
 	queries := map[string]struct{}{
-		"recall x since:7d":                 {},
-		"recall parrot topic:birds depth:2": {},
-		"recall 'the parrot'":               {},
-		"recall 'the'":                      {},
-		"recall topic:birds":                {},
+		"recall x since:7d":                                    {},
+		"recall parrot topic:birds depth:2":                    {},
+		"recall 'the parrot'":                                  {},
+		"recall 'the'":                                         {},
+		"recall topic:birds":                                   {},
+		"recall x since:'2023-05'..":                           {},
+		"recall x until:(when race)":                           {},
+		"when race":                                            {},
+		"when:said race topic:run depth:2":                     {},
+		"remember 'a' said:'2023-05-08' occurred:'2023-05-07'": {},
 	}
 
 	for q := range queries {
@@ -2116,18 +3073,34 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 		"recall parrot depth:2":             {},
 		"recall 'top' topic:'US elections' since:'2026-01-15' top:5": {},
 		"remember@2 'a fact' topic:'my project' entity:'O''Brien'":   {},
-		"recall 'recall'":   {},
-		"recall 'remember'": {},
-		"recall 'forget'":   {},
-		"recall 'update'":   {},
-		"recall 'topic'":    {},
-		"recall 'entity'":   {},
-		"recall 'since'":    {},
-		"recall 'until'":    {},
-		"recall 'depth'":    {},
-		"recall 'vec'":      {},
-		"recall 'explain'":  {},
-		"recall 'describe'": {},
+		"recall 'recall'":                {},
+		"recall 'remember'":              {},
+		"recall 'forget'":                {},
+		"recall 'update'":                {},
+		"recall 'topic'":                 {},
+		"recall 'entity'":                {},
+		"recall 'since'":                 {},
+		"recall 'until'":                 {},
+		"recall 'depth'":                 {},
+		"recall 'vec'":                   {},
+		"recall 'explain'":               {},
+		"recall 'describe'":              {},
+		"recall 'when'":                  {},
+		"recall 'said'":                  {},
+		"recall 'occurred'":              {},
+		"when race":                      {},
+		"when  race":                     {},
+		"when:said 'the race' topic:run": {},
+		"WHEN:said race":                 {},
+		"when race depth:2":              {},
+		"recall x until:(when race)":     {},
+		"recall x until:(when race )":    {},
+		"recall x until:(when the race)": {},
+		"recall x since:(when:written 'the race') until:(when race topic:run)":                    {},
+		"recall x since:'2023-05-07'..'2023-05-09'":                                               {},
+		"recall x since:'2023-05'..":                                                              {},
+		"remember 'a fact' said:'2023-05-08' occurred:'2023-05-07' occurred:'2023-05'..'2023-07'": {},
+		"remember 'a' Said:7d":                                                                    {},
 	}
 
 	for q := range queries {
@@ -2150,10 +3123,14 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 				a := again.(*parser.RecallCommandNode[uint64, float32])
 				want = command{Terms: c.Terms(), Topics: c.Topics(), Entities: c.Entities()}
 				got = command{Terms: a.Terms(), Topics: a.Topics(), Entities: a.Entities()}
-			case *parser.RememberCommandNode[float32]:
-				a := again.(*parser.RememberCommandNode[float32])
+			case *parser.RememberCommandNode[uint64, float32]:
+				a := again.(*parser.RememberCommandNode[uint64, float32])
 				want = command{Value: c.Value(), Topics: c.Topics(), Entities: c.Entities()}
 				got = command{Value: a.Value(), Topics: a.Topics(), Entities: a.Entities()}
+			case *parser.WhenCommandNode[uint64, float32]:
+				a := again.(*parser.WhenCommandNode[uint64, float32])
+				want = command{Terms: c.Terms(), Topics: c.Topics(), Entities: c.Entities()}
+				got = command{Terms: a.Terms(), Topics: a.Topics(), Entities: a.Entities()}
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("round trip changed the command: mismatch (-want +got):\n%s", diff)

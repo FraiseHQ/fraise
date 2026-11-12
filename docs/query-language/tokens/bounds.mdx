@@ -12,6 +12,7 @@ Every integer a query can write is bounded, and a value past its bound is reject
 | `top` | `1`–`max-top` (1000) | operator config |
 | `vec` length | up to `max-vector-dimension` (4096) | operator config |
 | duration | up to `106751d`, `15250w`, `2562047h`, `153722867m` or `9223372036s` — about 292 years | the width of a time value |
+| a fact's time (`said:`, `occurred:`) | starts after the year `0001` does, ends before the year `9999` does | the RFC3339 text a hit carries it in |
 
 ## Two layers, on purpose
 

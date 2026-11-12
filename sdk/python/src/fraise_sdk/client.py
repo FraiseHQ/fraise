@@ -27,6 +27,7 @@ from __future__ import annotations
 import warnings
 from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Sequence
+from datetime import date, datetime
 
 import requests
 
@@ -47,7 +48,7 @@ from fraise_sdk.constants import (
     SUPPORTED_SERVER,
 )
 from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
-from fraise_sdk.models import GraphStats, RecallResult
+from fraise_sdk.models import GraphStats, Interval, RecallResult
 from fraise_sdk.providers.base import (
     Anchor,
     Context,
@@ -58,6 +59,7 @@ from fraise_sdk.providers.base import (
     resolve_embedder,
     resolve_extractor,
 )
+from fraise_sdk.query import When
 
 
 def _with_extracted(
@@ -157,6 +159,10 @@ class FraiseClient:
             lambda: deque(maxlen=MAX_RECENT)
         )
         self._vocabulary: defaultdict[int, Counter[Anchor]] = defaultdict(Counter)
+        # Whether this client has already warned about a datetime with no time
+        # zone. A loop that stores a conversation passes one per message, and
+        # the reading is the same for all of them, so it is said once.
+        self._warned_naive = False
 
     def close(self) -> None:
         """Close the session the client created. A passed-in session stays open."""
@@ -263,6 +269,8 @@ class FraiseClient:
         graph: int = 0,
         topics: Sequence[str] | None = None,
         entities: Sequence[str] | None = None,
+        said: date | datetime | None = None,
+        occurred: Sequence[date | datetime | Interval] | None = None,
         vector: Sequence[float] | None = None,
         embed: bool | None = None,
         extract: bool | None = None,
@@ -272,6 +280,15 @@ class FraiseClient:
 
         ``topics`` and ``entities`` are the anchors the fact is filed under.
         Facts that share an anchor can reach one another on recall.
+
+        ``said`` is when the fact was said, such as the date of the message it
+        comes from. ``occurred`` holds each span over which what it states
+        happened: a ``date`` for a whole day, a ``datetime`` for one moment, or
+        an :class:`~fraise_sdk.models.Interval` between two moments. A fact
+        given no ``occurred`` happened when it was said, and one given no
+        ``said`` was said when the server wrote it. A fact remembered again
+        takes the times of the later call. A datetime with no time zone is
+        read as UTC, and the client says so once, in a :class:`FraiseWarning`.
 
         If the client has an extractor, the fact is also filed under the
         anchors it finds in ``value``, after the given ``topics`` and
@@ -304,8 +321,11 @@ class FraiseClient:
             graph=graph,
             topics=topics,
             entities=entities,
+            said=said,
+            occurred=occurred,
             with_vector=resolved is not None,
         )
+        self._warn_naive(said, *(occurred or ()))
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
         self._post(text, parameters=parameters, timeout=timeout)
         if self._extract_fn is not None:
@@ -320,6 +340,8 @@ class FraiseClient:
         entities: Sequence[str] | None = None,
         top: int | None = None,
         depth: int | None = None,
+        since: date | datetime | When | None = None,
+        until: date | datetime | When | None = None,
         vector: Sequence[float] | None = None,
         embed: bool | None = None,
         timeout: float | None = None,
@@ -342,6 +364,15 @@ class FraiseClient:
         a named topic or entity. So a lane above 0 has no effect on a recall
         without one, and the recall comes back with a warning.
 
+        ``since`` and ``until`` keep the facts that happened inside a window:
+        ``since`` from its time on, ``until`` before it. Each is a ``date``,
+        read as the start of that day in UTC, a ``datetime``, or a
+        :class:`~fraise_sdk.query.When`, the time another fact holds:
+        ``until=When("regatta")`` keeps what happened before the regatta began.
+        A fact given no time of its own happened when it was said, and one not
+        given that either when the server wrote it. A datetime with no time
+        zone is read as UTC, as in :meth:`remember`.
+
         For semantic search, a vector is attached as in :meth:`remember`. An
         explicit ``vector`` wins. Otherwise, if the client has an embedder, it
         encodes the ``query`` phrase, or the space-joined ``keywords`` when
@@ -361,6 +392,8 @@ class FraiseClient:
             entities=entities,
             top=top,
             depth=depth,
+            since=since,
+            until=until,
             vector=vector,
             embed=embed,
             timeout=timeout,
@@ -375,6 +408,8 @@ class FraiseClient:
         entities: Sequence[str] | None = None,
         top: int | None = None,
         depth: int | None = None,
+        since: date | datetime | When | None = None,
+        until: date | datetime | When | None = None,
         vector: Sequence[float] | None = None,
         embed: bool | None = None,
         timeout: float | None = None,
@@ -404,6 +439,8 @@ class FraiseClient:
             entities=entities,
             top=top,
             depth=depth,
+            since=since,
+            until=until,
             vector=vector,
             embed=embed,
             timeout=timeout,
@@ -420,6 +457,8 @@ class FraiseClient:
         entities: Sequence[str] | None,
         top: int | None,
         depth: int | None,
+        since: date | datetime | When | None,
+        until: date | datetime | When | None,
         vector: Sequence[float] | None,
         embed: bool | None,
         timeout: float | None,
@@ -440,8 +479,11 @@ class FraiseClient:
             entities=entities,
             top=top,
             depth=depth,
+            since=since,
+            until=until,
             with_vector=resolved is not None,
         )
+        self._warn_naive(since, until)
         parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
         status, body = self._post(
             text,
@@ -672,6 +714,36 @@ class FraiseClient:
             _with_extracted(entities, [a.value for a in found if a.type == "entity"]),
             found,
         )
+
+    def _warn_naive(self, *times: object) -> None:
+        """Warn, once per client, when a datetime among ``times`` has no time zone.
+
+        The builder reads such a datetime as UTC. That may not be the zone the
+        caller's clock was in, and nothing in the stored fact says which was
+        meant, so the reading is named while the caller can still change it.
+        ``times`` are the values the builder wrote a time from, one each: a
+        time or an interval, which is searched at both its edges. Anything
+        else among them holds no datetime of the caller's and is passed over.
+
+        Warns:
+            FraiseWarning: for the first such datetime this client is given.
+        """
+        if self._warned_naive:
+            return
+        for value in times:
+            if isinstance(value, Interval):
+                self._warn_naive(value.start, value.end)
+            elif isinstance(value, datetime) and value.utcoffset() is None:
+                self._warned_naive = True
+                warn(
+                    f"{value!r} has no time zone, so it was read as UTC; give "
+                    "it a tzinfo to place it in another zone. A client reports "
+                    "this once, however many it is given",
+                    FraiseWarning,
+                    skip_file_prefixes=SDK_FILES,
+                )
+            if self._warned_naive:
+                return
 
     def _context(self, graph: int) -> Context:
         """Return ``graph``'s context, built from the facts stored there so far."""

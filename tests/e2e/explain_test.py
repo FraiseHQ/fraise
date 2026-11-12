@@ -23,7 +23,9 @@
 """The explain endpoint.
 
 /api/v1/explain runs a recall through the ordinary pipeline and attaches each
-hit's per-source contribution breakdown. /q responses stay free of it.
+hit's per-source contribution breakdown and its decay. Where a time bound read
+a when, it attaches that when's answer too. /q responses stay free of all
+three.
 """
 
 import pytest
@@ -144,13 +146,15 @@ def test_explain_score_recomputes_from_payload(
     """Every hit's score recomputes from the payload.
 
     With the query-level background rate, every hit's score equals the
-    information fold applied to the payload, within a tolerance that absorbs
-    the recency decay between write and read. The fold measures each fact
-    against the recall's whole pool, so the recall returns every candidate,
-    and the payload is then a complete explanation, not a summary. The recall
-    names the hub and discovers the cluster, so both kinds of graph term are
-    recomputed: the hub's memos carry graph contributions marked named, owing
-    no fair share, while the cluster funds its silent member unmarked.
+    information fold applied to the payload, times the hit's decay. The decay
+    is on the payload because nothing else there says how much a fact's age
+    cost it, and without it the score would recompute only to the precision of
+    the time since the write. The fold measures each fact against the recall's
+    whole pool, so the recall returns every candidate, and the payload is then
+    a complete explanation, not a summary. The recall names the hub and
+    discovers the cluster, so both kinds of graph term are recomputed: the
+    hub's memos carry graph contributions marked named, owing no fair share,
+    while the cluster funds its silent member unmarked.
     """
     status, body = explain(
         f"recall@{storm_graph} barometer storm topic:{storm_hub_topic} top:1000"
@@ -164,10 +168,12 @@ def test_explain_score_recomputes_from_payload(
     assert not all(c.get("named") for c in graph), graph
     assert {h["value"] for h in hits} >= set(storm_hub), "the named hub lifts its memos"
 
-    for hit, want in zip(hits, information_scores(hits, background), strict=True):
-        assert abs(hit["score"] - want) < 1e-6 * max(1.0, want), (
+    for hit, fold in zip(hits, information_scores(hits, background), strict=True):
+        want = fold * hit["decay"]
+        assert abs(hit["score"] - want) < 1e-9 * max(1.0, want), (
             f"{hit['value']!r}: score {hit['score']} != recomputed {want} "
-            f"from {hit['contributions']} at background {background}"
+            f"from {hit['contributions']} at background {background} "
+            f"and decay {hit['decay']}"
         )
 
 
@@ -185,6 +191,158 @@ def test_plain_query_carries_no_contributions(query, pulsar_graph, pulsar_entity
         assert "contributions" not in hit, (
             f"/q must not carry the explain breakdown: {hit}"
         )
+
+
+def test_explain_carries_each_hits_decay_from_when_it_was_written(
+    explain, timeline_graph, timeline_keyword, timeline_facts
+):
+    """Every explained hit carries its decay, and a fact ages from its write.
+
+    The decay is the share of its score a fact keeps at its age. The timeline's
+    facts were all written moments ago, so each keeps nearly all of it,
+    whatever date the fact was said or happened on. Aged from May 2023 instead,
+    at the suite's 2160h half-life, they would have halved some fourteen times
+    and kept less than a thousandth.
+    """
+    status, body = explain(f"recall@{timeline_graph} {timeline_keyword}")
+    assert status == 200, body.get("error")
+    hits = body["results"]["hits"]
+    assert len(hits) == len(timeline_facts), hits
+
+    for hit in hits:
+        assert 0.99 < hit["decay"] <= 1, f"{hit['value']!r}: decay {hit['decay']}"
+
+
+def test_explain_carries_the_answer_of_each_when_a_bound_read(
+    explain, timeline_graph, timeline_keyword, timeline_facts
+):
+    """An explained recall shows the when behind each of its bounds.
+
+    A bound written as a when is a time the caller never saw: a search of its
+    own found a fact, and the fact's time became the bound. So the payload
+    holds that search under results.when, by the name of the bound that read
+    it. Each entry is the when's own results: the fact it kept, explained like
+    any other hit, and the start and end it answered with. since: opened the
+    window at the end of the regatta and until: closed it at the start of the
+    cruise, which leaves the protest.
+    """
+    status, body = explain(
+        f"recall@{timeline_graph} {timeline_keyword} "
+        "since:(when regatta) until:(when cruise)"
+    )
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert [hit["value"] for hit in results["hits"]] == [timeline_facts["protest"]]
+    assert set(results["when"]) == {"since", "until"}
+
+    since = results["when"]["since"]
+    assert [hit["value"] for hit in since["hits"]] == [timeline_facts["regatta"]]
+    assert (since["start"], since["end"]) == (
+        "2023-05-07T00:00:00Z",
+        "2023-05-08T00:00:00Z",
+    )
+
+    until = results["when"]["until"]
+    assert [hit["value"] for hit in until["hits"]] == [timeline_facts["cruise"]]
+    assert (until["start"], until["end"]) == (
+        "2023-05-10T00:00:00Z",
+        "2023-05-17T00:00:00Z",
+    )
+
+    for hit in since["hits"] + until["hits"]:
+        assert hit["contributions"], f"the when's own hit is unexplained: {hit}"
+        assert "decay" in hit, hit
+
+
+@pytest.mark.parametrize(
+    ("clause", "bounds"),
+    [
+        ("until:(when regatta)", ["until"]),
+        ("since:(when regatta)", ["since"]),
+        ("since:(when regatta) until:'2023-05-11'", ["since"]),
+        ("since:'2023-05-08' until:'2023-05-11'", []),
+        ("", []),
+    ],
+)
+def test_explain_names_only_the_bounds_that_read_a_when(
+    clause, bounds, explain, timeline_graph, timeline_keyword
+):
+    """results.when has an entry for a bound that held a when, and no other.
+
+    A bound written as a date explains itself, so it has no entry. A recall
+    with no when in either bound has no when key at all.
+    """
+    status, body = explain(f"recall@{timeline_graph} {timeline_keyword} {clause}")
+    assert status == 200, body.get("error")
+    results = body["results"]
+
+    assert sorted(results.get("when", {})) == bounds, results.get("when")
+    assert ("when" in results) == bool(bounds), results
+
+
+def test_explain_shows_the_when_that_matched_nothing(
+    explain, timeline_graph, timeline_keyword
+):
+    """A bound left unread is explained by the empty answer of its when.
+
+    The recall returns no hits, and the warning says why. The payload shows
+    the same thing: the when under the bound's name, with no hits and no time.
+    """
+    status, body = explain(
+        f"recall@{timeline_graph} {timeline_keyword} since:(when zzznomatchzzz)"
+    )
+    assert status == 200, body.get("error")
+    assert body == {
+        "results": {
+            "count": 0,
+            "hits": [],
+            "when": {"since": {"count": 0, "hits": []}},
+        },
+        "warnings": [
+            "since: the when matched no fact, so it has no time to answer with; "
+            "the recall has no bound to read and returns no hits"
+        ],
+    }
+
+
+def test_explain_accepts_a_when(explain, timeline_graph, timeline_facts):
+    """A when is a recall that answers with a time, so it explains like one.
+
+    The hit it read its time from carries its contributions and its decay, and
+    the results keep the start and end.
+    """
+    status, body = explain("when regatta")
+    assert status == 200, body.get("error")
+    results = body["results"]
+    [hit] = results["hits"]
+
+    assert hit["value"] == timeline_facts["regatta"]
+    assert [c["source"] for c in hit["contributions"]] == ["text"]
+    assert "decay" in hit, hit
+    assert (results["start"], results["end"]) == (
+        "2023-05-07T00:00:00Z",
+        "2023-05-08T00:00:00Z",
+    )
+
+
+def test_plain_query_carries_no_decay_and_no_when(
+    query, timeline_graph, timeline_keyword
+):
+    """A /q response holds neither a hit's decay nor the when a bound read.
+
+    Both explain a ranking, and an agent reading memories pays for every key.
+    The recall runs the same bound an explain would show under results.when.
+    """
+    status, body = query(
+        f"recall@{timeline_graph} {timeline_keyword} until:(when regatta)"
+    )
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert results["hits"], "the bound keeps the drills"
+
+    assert "when" not in results, results
+    for hit in results["hits"]:
+        assert "decay" not in hit, hit
 
 
 def test_explain_rejects_remember(explain):

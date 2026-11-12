@@ -64,7 +64,7 @@ func (g *fakeGraph) RUnlock() { g.runlocks++ }
 func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (graph.Result[string, float32], error) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) (graph.Result[string, float32], error) {
 	g.searchCalled = true
 	if g.searchErr != nil {
 		return graph.Result[string, float32]{}, g.searchErr
@@ -99,10 +99,10 @@ func newStream(q Query[string, float32]) *Stream[string, float32] {
 	return &Stream[string, float32]{Query: q, done: make(chan struct{})}
 }
 
-// readQuery builds a Recall. Its nil time bounds resolve to the zero time, so
-// Commit's read path can call Since and Until safely. It returns a *Recall
+// readQuery builds a Recall. Its absent time bounds resolve to the zero bound,
+// so Commit's read path can call Since and Until safely. It returns a *Recall
 // because Plan and SetGraphID have pointer receivers. So only *Recall satisfies
-// Query, and Commit's read path asserts *Recall.
+// Query, and Commit reads a *Recall.
 func readQuery() *Recall[string, float32] {
 	return &Recall[string, float32]{Keywords: []string{"x"}}
 }
@@ -275,7 +275,7 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	}
 
 	// A recall whose since: window covers only the re-assertion.
-	result, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
+	result, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, containers.Bound{At: windowStart}, containers.Bound{})
 	if len(result.Hits) != 1 {
 		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(result.Hits))
 	}
@@ -396,7 +396,7 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			result, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, containers.Bound{}, containers.Bound{})
 			nodes := result.Nodes()
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
@@ -462,7 +462,7 @@ func BenchmarkRecallCommit(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				r := &Recall[uint64, float32]{
 					Keywords:   []string{"fact", "number"},
-					Parameters: QueryParameters[uint64]{Top: 10},
+					Parameters: QueryParameters[uint64, float32]{Top: 10},
 				}
 				s := NewStream[uint64, float32](r)
 				if err := s.Commit(g); err != nil {
@@ -527,7 +527,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	}
 
 	t.Run("a topic alone lists its members", func(t *testing.T) {
-		r := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		r := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
 		if got, want := sorted(hitValues(r)), sorted(facts); !reflect.DeepEqual(got, want) {
 			t.Fatalf("Search(topic=deploys) = %v, want every fact filed under the topic %v and no other", got, want)
 		}
@@ -549,8 +549,8 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	})
 
 	t.Run("a topic and an entity double the mass of a fact under both", func(t *testing.T) {
-		single := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
-		both := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Entities: []string{"ops"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		single := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
+		both := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Entities: []string{"ops"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
 		if got, want := sorted(hitValues(both)), sorted(facts); !reflect.DeepEqual(got, want) {
 			t.Fatalf("Search(topic=deploys, entity=ops) = %v, want the union %v, each fact once", got, want)
 		}
@@ -574,7 +574,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	})
 
 	t.Run("a term beside the anchor searches", func(t *testing.T) {
-		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
 		if got, want := hitValues(r), []string{"the deploy key lives in vault"}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: beside a term the anchor does not list", got, want)
 		}

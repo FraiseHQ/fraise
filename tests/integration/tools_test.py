@@ -35,6 +35,9 @@ def test_remember_then_recall_round_trips_a_fact(mcp):
     Both faces of the result are pinned. One is the rendered text an agent
     reads. The other is the structured content a programmatic client parses:
     count, value, score, and a timestamp that is a real RFC 3339 instant.
+
+    The fact was given no times, so the hit carries neither said nor occurred,
+    and the line is dated the day the fact was written.
     """
     stored = mcp.call(
         "remember",
@@ -52,9 +55,116 @@ def test_remember_then_recall_round_trips_a_fact(mcp):
     assert hit["value"] == "the kittiwake nests on sheer cliffs"
     assert hit["score"] > 0
     datetime.fromisoformat(hit["timestamp"])  # raises if not a real instant
+    assert "said" not in hit
+    assert "occurred" not in hit
 
-    assert (
-        "the kittiwake nests on sheer cliffs (relevance" in found["content"][0]["text"]
+    written = hit["timestamp"][:10]
+    assert found["content"][0]["text"].startswith(
+        f"- [{written}] the kittiwake nests on sheer cliffs (relevance "
+    )
+
+
+def test_a_dated_fact_comes_back_with_its_dates_on_both_faces(mcp):
+    """A fact given said: and occurred: carries both, to a client and to a model.
+
+    The structured hit holds the two times as the daemon stores them: said as
+    an instant, occurred as the span of the day it names. The Go SDK checks the
+    result against the tool's output schema before sending it, so their arrival
+    also proves the schema declares them. The rendered line puts both dates in
+    front of the fact, which is where a model reads when something happened.
+    """
+    stored = mcp.call(
+        "remember",
+        {
+            "query": "remember@4 'the gannet colony was counted from the cliff' "
+            "said:'2023-05-08' occurred:'2023-05-07'"
+        },
+    )
+    assert not stored.get("isError", False), stored
+
+    found = mcp.call("recall", {"query": "recall@4 gannet"})
+    assert not found.get("isError", False), found
+
+    hit = found["structuredContent"]["results"]["hits"][0]
+    assert hit["said"] == "2023-05-08T00:00:00Z"
+    assert hit["occurred"] == [
+        {"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"}
+    ]
+    assert found["content"][0]["text"].startswith(
+        "- [said 2023-05-08, happened 2023-05-07] "
+        "the gannet colony was counted from the cliff (relevance "
+    )
+
+
+def test_a_when_through_the_recall_tool_answers_with_its_time(mcp):
+    """A when sent as the query comes back with the time of the fact it found.
+
+    The recall tool forwards any read, so a when travels through it. Its time
+    is on both faces: start and end beside the hits for a client, and a first
+    line for the model, written the way the span was given. The fact is on the
+    default graph, the one a when on its own reads.
+    """
+    stored = mcp.call(
+        "remember",
+        {
+            "query": "remember 'the puffin census took three days' "
+            "occurred:'2023-06-10'..'2023-06-12'"
+        },
+    )
+    assert not stored.get("isError", False), stored
+
+    found = mcp.call("recall", {"query": "when puffin"})
+    assert not found.get("isError", False), found
+
+    results = found["structuredContent"]["results"]
+    assert results["count"] == 1
+    assert results["start"] == "2023-06-10T00:00:00Z"
+    assert results["end"] == "2023-06-13T00:00:00Z"
+    assert found["content"][0]["text"].splitlines()[0] == "when: 2023-06-10..2023-06-12"
+
+
+def test_a_bound_reads_the_time_another_fact_holds(mcp):
+    """A when in a bound travels through the bridge and bounds the recall.
+
+    Three facts on graph 5 happened a month apart. Bounding the recall by when
+    the chicks hatched keeps only what happened before that day, and the when
+    finds its fact on the recall's own graph, since graph 0 holds none of them.
+    """
+    for fact, day in (
+        ("the guillemot eggs were laid", "2023-05-01"),
+        ("the guillemot chicks hatched", "2023-06-01"),
+        ("the guillemot chicks fledged", "2023-07-01"),
+    ):
+        stored = mcp.call(
+            "remember", {"query": f"remember@5 '{fact}' occurred:'{day}'"}
+        )
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call("recall", {"query": "recall@5 guillemot until:(when hatched)"})
+    assert not found.get("isError", False), found
+    values = [hit["value"] for hit in found["structuredContent"]["results"]["hits"]]
+    assert values == ["the guillemot eggs were laid"]
+
+
+def test_a_when_that_matched_nothing_says_so_in_band(mcp):
+    """A when with no fact to read answers with no time and a warning.
+
+    It is not a tool error: the query ran. The model reads why it has no time
+    in the text, and a client finds the same sentence under warnings.
+    """
+    stored = mcp.call("remember", {"query": "remember 'the skua patrols the shore'"})
+    assert not stored.get("isError", False), stored
+
+    found = mcp.call("recall", {"query": "when zzznomatchzzz"})
+    assert not found.get("isError", False), found
+
+    warning = "the when matched no fact, so it has no time to answer with"
+    assert found["structuredContent"] == {
+        "results": {"count": 0, "hits": []},
+        "warnings": [warning],
+    }
+    assert found["content"][0]["text"] == (
+        f"No stored facts matched.\nwarning: {warning}"
     )
 
 

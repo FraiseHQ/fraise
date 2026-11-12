@@ -27,9 +27,11 @@ The tools run the way the framework invokes them, through
 cover the real wrapping, not the undecorated closures.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from fraise_sdk.errors import FraiseError
-from fraise_sdk.models import Hit
+from fraise_sdk.models import Hit, Interval
 
 # The integration imports its framework at module scope, so skip the whole file
 # when the optional 'openai' extra is not installed.
@@ -68,6 +70,55 @@ def test_recall_formats_hits_by_descending_relevance(mock_client, invoke_functio
         result
         == "- the sky is blue (relevance 0.900)\n- grass is green (relevance 0.500)"
     )
+
+
+def test_recall_leads_each_hit_with_the_dates_its_fact_holds(
+    mock_client, invoke_function_tool
+):
+    """Each line opens with when the fact was said and when it happened.
+
+    This line is all the model reads of a hit. Without the dates on it, "what
+    did she do the day before she told me?" has no answer, however well the
+    recall ranked. A fact given no times shows the day it was written.
+    """
+    client = mock_client(
+        hits=[
+            Hit(
+                value="anna ran the charity race",
+                score=1.0,
+                timestamp="2026-01-02T03:04:05Z",
+                said=datetime(2023, 5, 8, tzinfo=timezone.utc),
+                occurred=[
+                    Interval(
+                        start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+                        end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+                    )
+                ],
+            ),
+            Hit(
+                value="anna is rowing again",
+                score=0.412,
+                timestamp="2026-01-02T03:04:05Z",
+            ),
+        ]
+    )
+    result = invoke_function_tool(recall_tool(client), keywords=["anna"])
+    assert result == (
+        "- [said 2023-05-08, happened 2023-05-07] anna ran the charity race "
+        "(relevance 1.000)\n"
+        "- [2026-01-02] anna is rowing again (relevance 0.412)"
+    )
+
+
+def test_recall_description_says_what_the_dates_are(mock_client):
+    """The description tells the model what the dates in front of a fact are.
+
+    The description is the only place the model can learn that the first date
+    is when the fact was said and the second when it happened. Read the other
+    way round, every "before" and "after" it answers comes out reversed.
+    """
+    description = recall_tool(mock_client()).description
+    assert "when it was said and when what it states happened" in description
 
 
 def test_recall_without_hits_says_so_rather_than_returning_empty(

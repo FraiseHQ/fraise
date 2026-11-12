@@ -1,10 +1,10 @@
 ---
 title: "Commands"
-description: "recall and remember — what each one requires, what seeds a search, and how a graph selector is written"
+description: "remember, recall and when — what each one requires, how a fact is given its times, what seeds a search, and how a graph selector is written"
 navIcon: "⌨️"
 ---
 
-FQL has two commands. A query is one of them, on one line.
+FQL has three commands. A query is one of them, on one line.
 
 ## `remember` — assert a fact
 
@@ -12,13 +12,36 @@ FQL has two commands. A query is one of them, on one line.
 remember 'acme moved to annual billing' topic:billing topic:contracts
 ```
 
-A remember takes a phrase — the fact — followed by any number of anchors and an optional vector:
+A remember takes a phrase — the fact — followed by any number of anchors, the times the fact was said and happened, and an optional vector:
 
 ```ebnf
-remember_query  = remember_cmd phrase (anchor_field | vec_field)* ;
+remember_query  = remember_cmd phrase (anchor_field | vec_field | said_field | occurred_field)* ;
 ```
 
 Anchors are **not required**: a fact with none is stored and reachable by text search alone. The phrase is stored exactly as written; anchors are folded to lower case.
+
+### The times of a fact
+
+```text
+remember 'anna ran the charity race' entity:anna said:'2023-05-08' occurred:'2023-05-07'
+```
+
+`said:` is when the fact was stated and `occurred:` is when what it states happened; the server adds when it was written. Neither is required: a fact given no `occurred:` happened when it was said, and one given no `said:` was said when it was written.
+
+| Field | Repeatable | Takes | Meaning |
+|---|---|---|---|
+| `said:` | no | a duration or a date | the moment the fact was stated |
+| `occurred:` | yes | a duration, a date or a range | a time what it states happened, one clause for each |
+
+`said:` is one moment, so a range there is an error and a date gives its first instant. `occurred:` keeps the span it is given: a day, a month, a year, a range, or a range left open for what is not over.
+
+```text
+remember 'anna trained for the race' entity:anna said:'2023-05-08' occurred:'2023-04'
+remember 'anna ran the harbour drills' entity:anna said:'2023-06-02' occurred:'2023-05-01' occurred:'2023-05-28'
+remember 'anna moors the boat at the east quay' entity:anna said:'2023-06-02' occurred:'2023-05-20'..
+```
+
+Remembering a fact again gives it the times of the new `remember` in place of the ones it held. See [Temporality](/docs/retrieval/memory-model/temporality) for what reads each time, and [Literals](/docs/query-language/tokens/literals#time-values) for every form a time takes.
 
 ## `recall` — ask a question
 
@@ -52,10 +75,70 @@ After the first field, a bare term is an error. The fields themselves interleave
 | `topic:` | yes | yes | anchor: what a fact is about |
 | `entity:` | yes | yes | anchor: who or what a fact mentions |
 | `vec:` | yes | no | semantic seed (recall) or stored embedding (remember) |
-| `since:` | no | no | lower time bound, duration read as "ago" |
-| `until:` | no | no | upper time bound |
+| `since:` | no | no | lower time bound: a duration read as "ago", a date, or a `when` |
+| `until:` | no | no | upper time bound, written the same way |
 | `depth:` | no | no | retrieval lane: 0 floor, 1 precision, 2 max recall |
 | `top:` | no | no | result limit, default 10 |
+
+## `when` — ask for a time
+
+```text
+when 'charity race'
+```
+
+A `when` is a recall that answers with a time. It searches as a recall does, with the same seeds, anchors and modifiers, and answers with the span its hits hold on the clock it names:
+
+```ebnf
+when_query = when_cmd recall_body ;
+when_cmd   = 'when' ( ':' clock )? ;
+clock      = 'said' | 'happened' | 'written' ;
+```
+
+| Written | Answers with |
+|---|---|
+| `when`, `when:happened` | when what the fact states happened |
+| `when:said` | when the fact was said |
+| `when:written` | when the fact was written |
+
+The clock is glued to the verb, with no whitespace on either side of the `:`, and is written in lower case and unquoted. A fact given no time on the clock asked for answers with the next one, as it does everywhere — see [Temporality](/docs/retrieval/memory-model/temporality).
+
+The answer is the `start` and `end` of the result, beside the hits it was read from:
+
+```json
+{
+  "results": {
+    "count": 1,
+    "hits": [
+      {
+        "value": "anna ran the charity race",
+        "timestamp": "2026-11-12T00:53:42.421Z",
+        "said": "2023-05-08T00:00:00Z",
+        "occurred": [{"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"}],
+        "score": 2.1206
+      }
+    ],
+    "start": "2023-05-07T00:00:00Z",
+    "end": "2023-05-08T00:00:00Z"
+  }
+}
+```
+
+The span holds its `start` and ends just before its `end`. One moment has the two equal, which is what `when:said` and `when:written` answer with for a single fact, and an answer that is not over has no `end`.
+
+**A `when` answers with the time of its best match**: its `top:` defaults to 1 and not to the recall's default. A fact that happened more than once answers with the span from its first time to its last. Asked for more hits, as in `when race top:5`, a `when` answers with the span from the earliest of their times to the latest, which is the extent of something told across several facts.
+
+### In a time bound
+
+```text
+recall anna until:(when 'charity race')
+recall anna since:(when 'charity race')
+```
+
+Written in parentheses, a `when` is the value of a recall's `since:` or `until:`: it runs first, and its answer is the bound. `until:` reads where the answer starts and `since:` where it ends, so the first recall is what happened before the race and the second what happened after it. An answer that is not over has no end, and `since:` reads where it starts. The bound compares on the clock the `when` names, so `until:(when:said 'charity race')` is what had been said before the race was told.
+
+The `(` is glued to the `when`, and the parentheses hold one `when` and nothing else. They never nest: the `since:` and `until:` of a `when` take a time written out.
+
+A `when` that no fact answers has no time to give. On its own it returns no hits and a [warning](/docs/query-language/reference/warnings); in a time bound it leaves the recall no bound to read, so the recall returns no hits and carries the warning under the bound's name.
 
 ## Graph selectors
 
@@ -70,7 +153,7 @@ remember@3 'acme signed with okta' topic:auth entity:okta
 graph_selector = '@' integer ;   (* default 0 *)
 ```
 
-An absent selector means graph 0. Selectors are `uint8` and bounded twice over: the parser rejects anything that does not fit the type, and the server rejects selectors past the allocated count. See [Bounds](/docs/query-language/tokens/bounds) and [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+An absent selector means graph 0. A `when` takes no selector: in a time bound it reads the graph of the recall that holds it, and on its own the default graph. Selectors are `uint8` and bounded twice over: the parser rejects anything that does not fit the type, and the server rejects selectors past the allocated count. See [Bounds](/docs/query-language/tokens/bounds) and [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
 
 ## Reserved but unimplemented
 

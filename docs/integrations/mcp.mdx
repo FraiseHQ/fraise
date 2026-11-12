@@ -77,6 +77,29 @@ address = "http://10.0.0.5:9876"
 
 The address carries no graph: each query names its own with `@N`.
 
+## What a recall reads like
+
+The `recall` tool answers with one line for each fact, best first, beside the same hits as structured content:
+
+```text
+- [said 2023-05-08, happened 2023-04] anna trained for the race (relevance 2.674)
+- [said 2023-05-08, happened 2023-05-07] anna ran the charity race (relevance 1.219)
+- [said 2023-06-02, happened 2023-05-01 and 2023-05-28] anna ran the harbour drills (relevance 1.130)
+- [2026-11-12] anna signed up for the autumn relay (relevance 1.000)
+- [said 2023-06-02, happened 2023-05-20..] anna moors the boat at the east quay (relevance 1.000)
+```
+
+**Each fact leads with its dates**: when it was said and when what it states happened, so a model can answer "when did she run" or "what had she done before she told me" from the line itself. A fact whose two dates are the same carries the one, which for a fact given no time is the day it was written. A time prints in the widest calendar unit that holds it exactly, `2023-04` for a month and `2023-05-10..2023-05-16` for a week. A fact that happened more than once has its times joined with `and`, and one that is not over ends in `..`.
+
+A query that is a `when` leads with the time it answered with, above the fact that time was read from:
+
+```text
+when: 2023-05-07
+- [said 2023-05-08, happened 2023-05-07] anna ran the charity race (relevance 2.121)
+```
+
+The structured content is the [query endpoint](/docs/http-api/endpoints/query)'s response: each hit with its `timestamp`, `said` and `occurred`, and a `when` with its `start` and `end`. A fact gets its dates from `said:` and `occurred:` on its `remember`; see [Temporality](/docs/retrieval/memory-model/temporality).
+
 ## What the bridge carries, and what it cannot
 
 The bridge describes itself over MCP: each tool arrives with a description and a full JSON schema for its arguments and results — the FQL shapes, a worked example, what a score means — so a client knows what `recall` and `remember` do and how to call them without being told.

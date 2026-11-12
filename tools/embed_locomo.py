@@ -27,7 +27,8 @@ through FRAISE_LOCOMO_VECTORS. It stops on any text it finds no vector for. So
 the values built here must be the ones it builds, following the amb adapter's
 raw path.
 
-Each turn is one fact, valued ``[session N @ <date>] <speaker>: <text>``. Any
+Each turn is one fact, valued ``<speaker>: <text>``. Its session's date is not
+part of the value: the benchmark stores it as the time the fact was said. Any
 shared image's caption is appended to the text, and the ASCII apostrophe is
 swapped for a typographic one. Each question is keyed as written.
 
@@ -73,12 +74,11 @@ def values(conversations: list[dict]) -> Iterator[str]:
         sessions = conv["conversation"]
         n = 1
         while f"session_{n}" in sessions:
-            header = f"[session {n} @ {sessions[f'session_{n}_date_time']}]"
             for turn in sessions[f"session_{n}"]:
                 text = turn["text"]
                 if turn.get("blip_caption"):
                     text += f" [shared image: {turn['blip_caption']}]"
-                yield f"{header} {turn['speaker']}: {text}".replace("'", "’")
+                yield f"{turn['speaker']}: {text}".replace("'", "’")
             n += 1
 
 

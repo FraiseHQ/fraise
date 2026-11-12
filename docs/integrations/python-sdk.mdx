@@ -28,7 +28,7 @@ navIcon: "🐍"
 
 The Python SDK is dependency-light and supports vector search when you supply an embedder.
 
-`recall` takes keywords positionally, as in `recall("parrot", "turquoise")`, and a natural-language question as `query=`, sent as one quoted phrase so its words never collide with the grammar's keywords. Anchors go in `topics=` and `entities=`, the graph in `graph=` (0 by default), and `top=` and `depth=` map to their clauses.
+`recall` takes keywords positionally, as in `recall("parrot", "turquoise")`, and a natural-language question as `query=`, sent as one quoted phrase so its words never collide with the grammar's keywords. Anchors go in `topics=` and `entities=`, the graph in `graph=` (0 by default), and `top=`, `depth=`, `since=` and `until=` map to their clauses.
 
 ## Typed helpers and raw FQL
 
@@ -43,13 +43,47 @@ client.recall("since", "7d", topics=["US elections"])
 # sends: recall@0 'since' 7d topic:'US elections'
 ```
 
-`query` sends the FQL you wrote, exactly as written: nothing is quoted or checked on the way out. It is the route for everything the typed helpers do not cover, such as a `since:`/`until:` time bound. When the server rejects a query, the error comes back as `FraiseAPIError` carrying the server's message, which names the fix.
+`query` sends the FQL you wrote, exactly as written: nothing is quoted or checked on the way out. It is the route for everything the typed helpers do not cover, such as a bound counted back from now or a `when` asked on its own. When the server rejects a query, the error comes back as `FraiseAPIError` carrying the server's message, which names the fix.
 
 ```python
-client.query("recall@0 ferry since:'2026-01-15'")
+client.query("recall@0 ferry since:7d")
+client.query("when 'charity race'")
 ```
 
 See [Identifiers](/docs/query-language/tokens/identifiers) for what counts as a plain word.
+
+## Dating a fact, and bounding a recall by time
+
+```python
+from datetime import date
+
+from fraise_sdk import FraiseClient, When
+
+client = FraiseClient("http://localhost:9876")
+client.remember(
+    "anna ran the charity race",
+    entities=["anna"],
+    said=date(2023, 5, 8),
+    occurred=[date(2023, 5, 7)],
+)
+client.recall("anna", until=When("charity race"))                      # what happened before the race
+client.recall("anna", since=date(2023, 5, 1), until=date(2023, 6, 1))  # what happened in May
+```
+
+`remember` takes `said=`, when the fact was said, and `occurred=`, a list of the times what it states happened. `recall` and `explain` take `since=` and `until=`. A time is a `date` or a `datetime`, never text; `Interval` and `When` are imported from `fraise_sdk`, beside the client. See [Temporality](/docs/retrieval/memory-model/temporality) for what each time means and which one a bound reads.
+
+| Value | Names | Goes in |
+|---|---|---|
+| `date(2023, 5, 7)` | that day, read in UTC | `said=`, `occurred=`, `since=`, `until=` |
+| a `datetime` | that moment, in the offset it carries | the same four |
+| `Interval(start, end)` | the span between two moments, holding `start` and ending just before `end`; `end=None` for one that is not over | `occurred=` |
+| `When("charity race")` | the time another fact holds | `since=`, `until=` |
+
+A month or a year is the `Interval` from its first midnight to the first midnight after it. A `datetime` with no time zone is read as UTC, and the client says so once in a `FraiseWarning`, since nothing in the stored fact would tell which zone was meant.
+
+`When` takes what a recall searches with (keywords, `query=`, `topics=`, `entities=`, `top=`, `depth=`) and a `clock=` of `"happened"`, `"said"` or `"written"`. The clock is the time read from its match and the time the recall compares against it, so `until=When("charity race", clock="said")` keeps what had been said before the race was told. A `When` names no graph: it reads the one its recall searches. One that matches no fact leaves the recall no bound to read, so the recall returns no hits and carries the server's warning.
+
+The times come back on each hit: `hit.said` is a `datetime` and `hit.occurred` a list of `Interval`, each `None` on a fact that was given none, and `hit.timestamp` is when it was written.
 
 ## With embeddings
 
