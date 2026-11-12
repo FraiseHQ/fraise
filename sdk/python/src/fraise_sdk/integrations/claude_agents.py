@@ -56,6 +56,7 @@ from fraise_sdk.constants import (
     REMEMBER_TOOL,
 )
 from fraise_sdk.errors import FraiseError
+from fraise_sdk.integrations.render import render_hit
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
 try:
@@ -97,7 +98,9 @@ def recall_tool(
     @tool(
         RECALL_TOOL,
         "Search the assistant's long-term memory for facts related to some "
-        "keywords and return them ranked by relevance. Call this before "
+        "keywords and return them ranked by relevance. Each fact comes back "
+        "with its dates in front: when it was said and when what it states "
+        "happened, as one date where the two are the same. Call this before "
         "answering when the user refers to something they told you earlier.",
         # Full JSON Schema, not the {name: type} shorthand, so top and depth
         # stay optional. The shorthand marks every property required.
@@ -152,11 +155,7 @@ def recall_tool(
             return _ok("Nothing has been stored in memory yet.")
         if not result.hits:
             return _ok("No stored facts matched those keywords.")
-        return _ok(
-            "\n".join(
-                f"- {hit.value} (relevance {hit.score:.3f})" for hit in result.hits
-            )
-        )
+        return _ok("\n".join(render_hit(hit) for hit in result.hits))
 
     return recall_memory
 

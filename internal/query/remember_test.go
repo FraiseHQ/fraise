@@ -24,6 +24,9 @@ package query
 
 import (
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
@@ -74,6 +77,44 @@ func TestRememberHash(t *testing.T) {
 	}
 }
 
+// TestRememberHashLeavesTheTimesOut pins that the times a remember gives its
+// fact are no part of its cache key. A fact stated again with other times is
+// the same write, of the same fact to the same graph under the same anchors.
+// It takes the key of the write before it, and Equal, which tells the two
+// apart, makes the engine plan it and cache it in the earlier one's place.
+func TestRememberHashLeavesTheTimesOut(t *testing.T) {
+	day := func(d int) containers.TimeValue[string] {
+		return containers.AbsoluteTime[string]{T: time.Date(2023, time.May, d, 0, 0, 0, 0, time.UTC), Precision: containers.Day}
+	}
+	tests := map[string]struct {
+		said     containers.TimeValue[string]
+		occurred []containers.TimeValue[string]
+	}{
+		"no times":          {},
+		"said":              {said: day(8)},
+		"occurred":          {occurred: []containers.TimeValue[string]{day(7)}},
+		"said and occurred": {said: day(8), occurred: []containers.TimeValue[string]{day(7), day(9)}},
+	}
+	const want = "H(g=2|v=11:hello world|en=5:alice|to=8:greeting|vec=H(0x1p-01))"
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := Remember[string, float32]{
+				Value:    "hello world",
+				Entities: []string{"alice"},
+				Topics:   []string{"greeting"},
+				Vector:   containers.NewVector[string]([]float32{0.5}),
+				Said:     tc.said,
+				Occurred: tc.occurred,
+				context:  QueryContext{GraphID: 2},
+			}
+
+			if diff := cmp.Diff(want, r.Hash(&fakeHasher{})); diff != "" {
+				t.Errorf("Hash() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 // TestRememberHashDistinguishesGraphAndTags pins the contract. Writes that
 // differ only in graph, entities, topics, the bound vector or where the fact
 // ends and its anchors begin must not share a cache key. Otherwise the engine
@@ -119,14 +160,22 @@ func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 // TestRememberEqual pins the check the engine confirms a plan-cache hit with.
 // A remember differing from base in any field Hash folds in is not equal to
 // it, so a key it happens to share with base never writes base's fact, to
-// base's graph. A recall is never equal to a remember.
+// base's graph. Nor is one that gives the fact other times. Those share base's
+// key by design, so Equal alone keeps a fact stated again from being written
+// with the times of the statement cached before it. A recall is never equal to
+// a remember.
 func TestRememberEqual(t *testing.T) {
+	day := func(d int) containers.TimeValue[string] {
+		return containers.AbsoluteTime[string]{T: time.Date(2023, time.May, d, 0, 0, 0, 0, time.UTC), Precision: containers.Day}
+	}
 	base := func() *Remember[string, float32] {
 		return &Remember[string, float32]{
 			Value:    "the parrot is turquoise",
 			Entities: []string{"polly"},
 			Topics:   []string{"birds"},
 			Vector:   containers.NewVector[string]([]float32{1, 0}),
+			Said:     day(8),
+			Occurred: []containers.TimeValue[string]{day(6), day(7)},
 			context:  QueryContext{GraphID: 2},
 		}
 	}
@@ -146,7 +195,22 @@ func TestRememberEqual(t *testing.T) {
 		"topics":    {with(func(r *Remember[string, float32]) { r.Topics = nil }), false},
 		"vector":    {with(func(r *Remember[string, float32]) { r.Vector = containers.NewVector[string]([]float32{0, 1}) }), false},
 		"no vector": {with(func(r *Remember[string, float32]) { r.Vector = containers.Vector[string, float32]{} }), false},
-		"recall":    {&Recall[string, float32]{Keywords: []string{"the parrot is turquoise"}, context: QueryContext{GraphID: 2}}, false},
+		"said":      {with(func(r *Remember[string, float32]) { r.Said = day(9) }), false},
+		"said at another precision": {with(func(r *Remember[string, float32]) {
+			r.Said = containers.AbsoluteTime[string]{T: time.Date(2023, time.May, 8, 0, 0, 0, 0, time.UTC)}
+		}), false},
+		"no said": {with(func(r *Remember[string, float32]) { r.Said = nil }), false},
+		"occurred": {with(func(r *Remember[string, float32]) {
+			r.Occurred = []containers.TimeValue[string]{day(6), day(9)}
+		}), false},
+		"occurred order": {with(func(r *Remember[string, float32]) {
+			r.Occurred = []containers.TimeValue[string]{day(7), day(6)}
+		}), false},
+		"one occurred fewer": {with(func(r *Remember[string, float32]) {
+			r.Occurred = []containers.TimeValue[string]{day(6)}
+		}), false},
+		"no occurred": {with(func(r *Remember[string, float32]) { r.Occurred = nil }), false},
+		"recall":      {&Recall[string, float32]{Keywords: []string{"the parrot is turquoise"}, context: QueryContext{GraphID: 2}}, false},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -28,6 +28,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
@@ -74,11 +76,11 @@ func TestRecallHash(t *testing.T) {
 		Vector:   containers.NewVector[string]([]float32{0.5, 0.25}),
 		Entities: []string{"alice"},
 		Topics:   []string{"weather"},
-		Parameters: QueryParameters[string]{
+		Parameters: QueryParameters[string, float32]{
 			Depth: 2,
 			Top:   5,
-			Since: containers.RelativeTime[string]{Dur: time.Hour},
-			Until: containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 12, 0, 0, 0, time.UTC)},
+			Since: TimeOperand[string, float32]{Value: containers.RelativeTime[string]{Dur: time.Hour}},
+			Until: TimeOperand[string, float32]{Value: containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 12, 0, 0, 0, time.UTC)}},
 		},
 		context: QueryContext{GraphID: 3},
 	}
@@ -103,6 +105,40 @@ func TestRecallHashEmpty(t *testing.T) {
 	const want = "g=0|kw=|en=|to=|d=0|t=0|s=|u=|vec=H()"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
+	}
+}
+
+// TestRecallHashFoldsInANestedQuery pins the material of a bound that holds a
+// nested query. The bound contributes "q" and the nested query's own key, where
+// a time written out contributes its own rendering. So the nested query's
+// clock, terms and graph all reach the recall's cache key, and a recall bounded
+// by the answer of one when never runs the plan of a recall bounded by another.
+func TestRecallHashFoldsInANestedQuery(t *testing.T) {
+	r := Recall[string, float32]{
+		Keywords: []string{"alice"},
+		Parameters: QueryParameters[string, float32]{
+			Top: 5,
+			Until: TimeOperand[string, float32]{Query: &When[string, float32]{
+				Clock: containers.Said,
+				Recall: Recall[string, float32]{
+					Keywords:   []string{"race"},
+					Parameters: QueryParameters[string, float32]{Top: 1},
+					context:    QueryContext{GraphID: 3},
+				},
+			}},
+		},
+		context: QueryContext{GraphID: 3},
+	}
+	h := &fakeHasher{}
+
+	const want = "g=3|kw=5:alice|en=|to=|d=0|t=5|s=" +
+		"|u=qH(c=1|r=H(g=3|kw=4:race|en=|to=|d=0|t=1|s=|u=|vec=H()))|vec=H()"
+	got := r.Hash(h)
+	if diff := cmp.Diff("H("+want+")", got); diff != "" {
+		t.Errorf("Hash() mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(want, h.last); diff != "" {
+		t.Errorf("hasher material mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -158,17 +194,45 @@ func TestRecallHashDistinguishesParameters(t *testing.T) {
 		}(),
 		"since-1h": func() Recall[string, float32] {
 			r := base()
-			r.Parameters.Since = containers.RelativeTime[string]{Dur: time.Hour}
+			r.Parameters.Since.Value = containers.RelativeTime[string]{Dur: time.Hour}
 			return r
 		}(),
 		"since-30d": func() Recall[string, float32] {
 			r := base()
-			r.Parameters.Since = containers.RelativeTime[string]{Dur: 30 * 24 * time.Hour}
+			r.Parameters.Since.Value = containers.RelativeTime[string]{Dur: 30 * 24 * time.Hour}
 			return r
 		}(),
 		"until": func() Recall[string, float32] {
 			r := base()
-			r.Parameters.Until = containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 0, 0, 0, 0, time.UTC)}
+			r.Parameters.Until.Value = containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 0, 0, 0, 0, time.UTC)}
+			return r
+		}(),
+		"since-when": func() Recall[string, float32] {
+			r := base()
+			r.Parameters.Since.Query = &When[string, float32]{Recall: Recall[string, float32]{Keywords: []string{"race"}}}
+			return r
+		}(),
+		"until-when": func() Recall[string, float32] {
+			r := base()
+			r.Parameters.Until.Query = &When[string, float32]{Recall: Recall[string, float32]{Keywords: []string{"race"}}}
+			return r
+		}(),
+		"since-when-said": func() Recall[string, float32] {
+			r := base()
+			r.Parameters.Since.Query = &When[string, float32]{Clock: containers.Said, Recall: Recall[string, float32]{Keywords: []string{"race"}}}
+			return r
+		}(),
+		"since-when-other-term": func() Recall[string, float32] {
+			r := base()
+			r.Parameters.Since.Query = &When[string, float32]{Recall: Recall[string, float32]{Keywords: []string{"wedding"}}}
+			return r
+		}(),
+		"since-when-top": func() Recall[string, float32] {
+			r := base()
+			r.Parameters.Since.Query = &When[string, float32]{Recall: Recall[string, float32]{
+				Keywords:   []string{"race"},
+				Parameters: QueryParameters[string, float32]{Top: 3},
+			}}
 			return r
 		}(),
 		"vector-a": func() Recall[string, float32] {
@@ -204,11 +268,11 @@ func TestRecallEqual(t *testing.T) {
 			Vector:   containers.NewVector[string]([]float32{1, 0}),
 			Entities: []string{"alice"},
 			Topics:   []string{"planets"},
-			Parameters: QueryParameters[string]{
+			Parameters: QueryParameters[string, float32]{
 				Depth: 1,
 				Top:   5,
-				Since: containers.RelativeTime[string]{Dur: time.Hour},
-				Until: containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 0, 0, 0, 0, time.UTC)},
+				Since: TimeOperand[string, float32]{Value: containers.RelativeTime[string]{Dur: time.Hour}},
+				Until: TimeOperand[string, float32]{Value: containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 0, 0, 0, 0, time.UTC)}},
 			},
 			context: QueryContext{GraphID: 2},
 		}
@@ -231,11 +295,16 @@ func TestRecallEqual(t *testing.T) {
 		"depth":         {with(func(r *Recall[string, float32]) { r.Parameters.Depth = 2 }), false},
 		"top":           {with(func(r *Recall[string, float32]) { r.Parameters.Top = 6 }), false},
 		"since": {with(func(r *Recall[string, float32]) {
-			r.Parameters.Since = containers.RelativeTime[string]{Dur: time.Minute}
+			r.Parameters.Since.Value = containers.RelativeTime[string]{Dur: time.Minute}
 		}), false},
-		"no since":  {with(func(r *Recall[string, float32]) { r.Parameters.Since = nil }), false},
-		"until":     {with(func(r *Recall[string, float32]) { r.Parameters.Until = containers.RelativeTime[string]{Dur: time.Hour} }), false},
-		"no until":  {with(func(r *Recall[string, float32]) { r.Parameters.Until = nil }), false},
+		"no since": {with(func(r *Recall[string, float32]) { r.Parameters.Since = TimeOperand[string, float32]{} }), false},
+		"since a when": {with(func(r *Recall[string, float32]) {
+			r.Parameters.Since = TimeOperand[string, float32]{Query: &When[string, float32]{Recall: Recall[string, float32]{Keywords: []string{"race"}}}}
+		}), false},
+		"until": {with(func(r *Recall[string, float32]) {
+			r.Parameters.Until.Value = containers.RelativeTime[string]{Dur: time.Hour}
+		}), false},
+		"no until":  {with(func(r *Recall[string, float32]) { r.Parameters.Until = TimeOperand[string, float32]{} }), false},
 		"vector":    {with(func(r *Recall[string, float32]) { r.Vector = containers.NewVector[string]([]float32{0, 1}) }), false},
 		"no vector": {with(func(r *Recall[string, float32]) { r.Vector = containers.Vector[string, float32]{} }), false},
 		"remember":  {&Remember[string, float32]{Value: "mercury venus", context: QueryContext{GraphID: 2}}, false},
@@ -249,21 +318,188 @@ func TestRecallEqual(t *testing.T) {
 	}
 }
 
+// TestRecallEqualComparesNestedQueries pins Equal over a bound that holds a
+// nested query. Two recalls are equal when the queries in their bounds are, and
+// differ as soon as those read another clock, search other terms, or sit in the
+// other bound. The plan cache would otherwise bound one recall by the answer of
+// another's when.
+func TestRecallEqualComparesNestedQueries(t *testing.T) {
+	when := func(clock containers.Clock, keyword string) *When[string, float32] {
+		return &When[string, float32]{Clock: clock, Recall: Recall[string, float32]{Keywords: []string{keyword}}}
+	}
+	base := func() *Recall[string, float32] {
+		return &Recall[string, float32]{
+			Keywords:   []string{"alice"},
+			Parameters: QueryParameters[string, float32]{Until: TimeOperand[string, float32]{Query: when(containers.Happened, "race")}},
+		}
+	}
+	with := func(f func(r *Recall[string, float32])) *Recall[string, float32] {
+		r := base()
+		f(r)
+		return r
+	}
+	tests := map[string]struct {
+		other *Recall[string, float32]
+		want  bool
+	}{
+		"same": {base(), true},
+		"another clock": {with(func(r *Recall[string, float32]) {
+			r.Parameters.Until.Query = when(containers.Said, "race")
+		}), false},
+		"another term": {with(func(r *Recall[string, float32]) {
+			r.Parameters.Until.Query = when(containers.Happened, "wedding")
+		}), false},
+		"the other bound": {with(func(r *Recall[string, float32]) {
+			r.Parameters.Since, r.Parameters.Until = r.Parameters.Until, TimeOperand[string, float32]{}
+		}), false},
+		"written out": {with(func(r *Recall[string, float32]) {
+			r.Parameters.Until = TimeOperand[string, float32]{Value: containers.RelativeTime[string]{Dur: time.Hour}}
+		}), false},
+		"no bound": {with(func(r *Recall[string, float32]) {
+			r.Parameters.Until = TimeOperand[string, float32]{}
+		}), false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := base().Equal(tc.other); got != tc.want {
+				t.Errorf("Equal() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRecallSinceUntil pins the bound a recall resolves for a time it writes
+// out: the start of that time, on the clock a bare bound reads, which is when
+// a fact happened. A duration counts back from now. A date at day precision
+// names the day's first instant. A clause that is absent, or that holds a
+// nested query, resolves to the zero bound, which the graph reads as open.
 func TestRecallSinceUntil(t *testing.T) {
 	now := time.Date(2026, time.June, 16, 12, 0, 0, 0, time.UTC)
-	absUntil := now.Add(48 * time.Hour)
-	r := Recall[string, float32]{
-		Parameters: QueryParameters[string]{
-			Since: containers.RelativeTime[string]{Dur: time.Hour}, // relative: now - 1h
-			Until: containers.AbsoluteTime[string]{T: absUntil},    // absolute: fixed instant
+	day := time.Date(2026, time.June, 18, 0, 0, 0, 0, time.UTC)
+	when := &When[string, float32]{Recall: Recall[string, float32]{Keywords: []string{"race"}}}
+
+	tests := map[string]struct {
+		operand TimeOperand[string, float32]
+		want    containers.Bound
+	}{
+		"a duration counts back from now": {
+			operand: TimeOperand[string, float32]{Value: containers.RelativeTime[string]{Dur: time.Hour}},
+			want:    containers.Bound{At: now.Add(-time.Hour)},
+		},
+		"an instant is itself": {
+			operand: TimeOperand[string, float32]{Value: containers.AbsoluteTime[string]{T: now.Add(48 * time.Hour)}},
+			want:    containers.Bound{At: now.Add(48 * time.Hour)},
+		},
+		"a day is its first instant": {
+			operand: TimeOperand[string, float32]{Value: containers.AbsoluteTime[string]{T: day, Precision: containers.Day}},
+			want:    containers.Bound{At: day},
+		},
+		"a range is its start": {
+			operand: TimeOperand[string, float32]{Value: containers.RangeTime[string]{
+				From: containers.AbsoluteTime[string]{T: day, Precision: containers.Day},
+				To:   containers.AbsoluteTime[string]{T: day.AddDate(0, 0, 3), Precision: containers.Day},
+			}},
+			want: containers.Bound{At: day},
+		},
+		"an absent clause is open": {
+			operand: TimeOperand[string, float32]{},
+			want:    containers.Bound{},
+		},
+		"a nested query is read from its answer": {
+			operand: TimeOperand[string, float32]{Query: when},
+			want:    containers.Bound{},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := Recall[string, float32]{Parameters: QueryParameters[string, float32]{Since: tc.operand, Until: tc.operand}}
+
+			if diff := cmp.Diff(tc.want, r.Since(now)); diff != "" {
+				t.Errorf("Since(now) mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.want, r.Until(now)); diff != "" {
+				t.Errorf("Until(now) mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestRecallSetGraphIDReachesNestedQueries pins that a query nested in a time
+// bound reads the graph of the recall that holds it. The selector is written
+// once, on the recall, and the nested query takes no selector of its own. If
+// it kept its own graph, the bound would be read from one graph and applied to
+// the facts of another.
+func TestRecallSetGraphIDReachesNestedQueries(t *testing.T) {
+	since := &When[string, float32]{Recall: Recall[string, float32]{Keywords: []string{"race"}}}
+	until := &When[string, float32]{Recall: Recall[string, float32]{Keywords: []string{"wedding"}}}
+	r := &Recall[string, float32]{
+		Keywords: []string{"alice"},
+		Parameters: QueryParameters[string, float32]{
+			Since: TimeOperand[string, float32]{Query: since},
+			Until: TimeOperand[string, float32]{Query: until},
 		},
 	}
 
-	if got := r.Since(now); !got.Equal(now.Add(-time.Hour)) {
-		t.Errorf("Since(now) = %v, want %v", got, now.Add(-time.Hour))
+	r.SetGraphID(4)
+
+	got := map[string]uint8{"recall": r.GetGraphID(), "since": since.GetGraphID(), "until": until.GetGraphID()}
+	want := map[string]uint8{"recall": 4, "since": 4, "until": 4}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("graph ids after SetGraphID(4) mismatch (-want +got):\n%s", diff)
 	}
-	if got := r.Until(now); !got.Equal(absUntil) {
-		t.Errorf("Until(now) = %v, want %v", got, absUntil)
+}
+
+// TestRecallPlanHangsNestedStreams pins how a nested query is planned: through
+// its own Plan, into a stream of its own that hangs on the recall's stream
+// under the bound that holds it. The engine and the scheduler handle the one
+// outer stream. A bound written out has no stream.
+func TestRecallPlanHangsNestedStreams(t *testing.T) {
+	nested := &When[string, float32]{Clock: containers.Said, Recall: Recall[string, float32]{Keywords: []string{"race"}}}
+	tests := map[string]struct {
+		parameters QueryParameters[string, float32]
+		wantSince  Query[string, float32]
+		wantUntil  Query[string, float32]
+	}{
+		"since": {
+			parameters: QueryParameters[string, float32]{Since: TimeOperand[string, float32]{Query: nested}},
+			wantSince:  nested,
+		},
+		"until": {
+			parameters: QueryParameters[string, float32]{Until: TimeOperand[string, float32]{Query: nested}},
+			wantUntil:  nested,
+		},
+		"written out": {
+			parameters: QueryParameters[string, float32]{
+				Since: TimeOperand[string, float32]{Value: containers.RelativeTime[string]{Dur: time.Hour}},
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := &Recall[string, float32]{Keywords: []string{"alice"}, Parameters: tc.parameters}
+
+			s, err := r.Plan(nil)
+			if err != nil {
+				t.Fatalf("Plan() err = %v, want nil", err)
+			}
+
+			if s.Query != Query[string, float32](r) {
+				t.Errorf("Plan() stream.Query = %v, want the recall", s.Query)
+			}
+			for clause, pair := range map[string]struct {
+				got  *Stream[string, float32]
+				want Query[string, float32]
+			}{"since": {s.Since, tc.wantSince}, "until": {s.Until, tc.wantUntil}} {
+				switch {
+				case pair.want == nil && pair.got != nil:
+					t.Errorf("Plan() hung a %s stream for %v, want none", clause, pair.got.Query)
+				case pair.want != nil && pair.got == nil:
+					t.Errorf("Plan() hung no %s stream, want one for the nested query", clause)
+				case pair.want != nil && pair.got.Query != pair.want:
+					t.Errorf("Plan() %s stream.Query = %v, want the nested query", clause, pair.got.Query)
+				}
+			}
+		})
 	}
 }
 

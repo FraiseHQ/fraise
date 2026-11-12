@@ -33,8 +33,11 @@ graph must not depend on each other's facts. Keep this map current when you
 claim a graph:
 
     0  comet + quasar shared-keyword facts
-       + monsoon/geyser ranking clusters   (recall_test.py, scoring_test.py)
-    1  loose remembers + concurrent load   (recall_test.py, concurrency_test.py,
+       + monsoon/geyser ranking clusters
+       + the dated timeline                (recall_test.py, scoring_test.py,
+                                            api_test.py, explain_test.py)
+    1  loose remembers + concurrent load
+       + the harbour's dated facts         (recall_test.py, concurrency_test.py,
                                             parser_test.py, api_test.py)
     2  union-across-keywords facts
        + pulsar and storm explain probes   (recall_test.py, explain_test.py)
@@ -206,8 +209,9 @@ def explain(base_url):
     """Callable posting a raw query string to /api/v1/explain.
 
     It sends the same request as the `query` fixture, to a different endpoint.
-    The response's hits carry a per-source contribution breakdown. Returns
-    (status_code, decoded JSON body).
+    The response's hits carry a per-source contribution breakdown and their
+    decay, and its results carry the answer of each when a time bound read.
+    Returns (status_code, decoded JSON body).
     """
 
     def _explain(text: str, parameters: dict[str, object] | None = None):
@@ -629,6 +633,108 @@ def ledger_facts():
 def bird_facts():
     """The bird facts, keyed by the unique keyword each contains."""
     return dict(_BIRD_FACTS)
+
+
+# The dated timeline: one fact for each way a fact holds its times. All six
+# contain "lapprobe", so a recall can ask for the whole timeline, and each holds
+# one word no other fact on the graph does, so a when can ask for one of them.
+# A fact reads the next clock down for a time it was not given: happened falls
+# back to said, and said to the moment the fact was written. So the briefing
+# happened when it was written, and the protest on the day it was said.
+#
+# The timeline sits on graph 0 because a when on its own reads the default
+# graph: it takes no selector. No other fact there contains any of these words.
+_TIMELINE_GRAPH = 0
+_TIMELINE_KEYWORD = "lapprobe"
+_TIMELINE_FACTS = {
+    "briefing": "the lapprobe crew held a briefing",
+    "protest": "the lapprobe skipper lodged a protest",
+    "regatta": "the lapprobe crew won the regatta",
+    "drills": "the lapprobe crew ran sprint drills",
+    "mooring": "the lapprobe boat took a new mooring",
+    "cruise": "the lapprobe crew sailed a coastal cruise",
+}
+_TIMELINE_TIMES = {
+    "briefing": "",
+    "protest": "said:'2023-05-08'",
+    "regatta": "said:'2023-05-08' occurred:'2023-05-07'",
+    "drills": "occurred:'2023-05-01' occurred:'2023-05-28'",
+    "mooring": "occurred:'2023-05-20'..",
+    "cruise": "said:'2023-05-25' occurred:'2023-05-10'..'2023-05-16'",
+}
+
+# The harbour's dated facts, on another graph than the timeline. Both graphs
+# hold a regatta, on different days: this one happened in March 2024, the
+# timeline's in May 2023. A when in a bound of a recall of this graph must
+# answer with this graph's regatta. The shoals were charted before it and the
+# buoys repainted after it, so each bound keeps one fact when it does, and
+# either all three or none when the when reads the default graph instead.
+_HARBOUR_GRAPH = 1
+_HARBOUR_KEYWORD = "harbourprobe"
+_HARBOUR_FACTS = {
+    "shoals": "the harbourprobe pilot charted the shoals",
+    "regatta": "the harbourprobe pilot marshalled the regatta",
+    "buoys": "the harbourprobe pilot repainted the buoys",
+}
+_HARBOUR_TIMES = {
+    "shoals": "occurred:'2024-03-05'",
+    "regatta": "occurred:'2024-03-10'",
+    "buoys": "occurred:'2024-03-20'",
+}
+
+
+@pytest.fixture(scope="session")
+def timeline_keyword():
+    """The word every timeline fact contains, and no other fact on its graph."""
+    return _TIMELINE_KEYWORD
+
+
+@pytest.fixture(scope="session")
+def timeline_facts():
+    """The timeline's facts, in write order, keyed by the word only each holds."""
+    return dict(_TIMELINE_FACTS)
+
+
+@pytest.fixture(scope="module")
+def timeline_graph(query):
+    """Write the dated timeline and return its graph id, the default graph.
+
+    A fact is keyed by its value, and remembering it again replaces its times
+    with the ones given. So a rerun against a long-lived server leaves the
+    timeline as it was, written afresh in the same order.
+    """
+    for key, phrase in _TIMELINE_FACTS.items():
+        status, body = query(
+            f"remember@{_TIMELINE_GRAPH} '{phrase}' {_TIMELINE_TIMES[key]}".rstrip()
+        )
+        assert status == 200, body.get("error")
+    return _TIMELINE_GRAPH
+
+
+@pytest.fixture(scope="session")
+def harbour_keyword():
+    """The word every harbour fact contains, and no other fact on its graph."""
+    return _HARBOUR_KEYWORD
+
+
+@pytest.fixture(scope="session")
+def harbour_facts():
+    """The harbour's dated facts, keyed by the word only each holds."""
+    return dict(_HARBOUR_FACTS)
+
+
+@pytest.fixture(scope="module")
+def harbour_graph(query):
+    """Write the harbour's dated facts and return their graph id.
+
+    The writes are idempotent, as for the timeline.
+    """
+    for key, phrase in _HARBOUR_FACTS.items():
+        status, body = query(
+            f"remember@{_HARBOUR_GRAPH} '{phrase}' {_HARBOUR_TIMES[key]}"
+        )
+        assert status == 200, body.get("error")
+    return _HARBOUR_GRAPH
 
 
 # The explain probes, both on graph 2.

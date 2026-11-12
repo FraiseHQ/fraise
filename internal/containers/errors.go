@@ -39,6 +39,9 @@ var (
 	// ErrInvalidTime is returned by ParseTimeValue when the input is neither a
 	// relative duration ("7d") nor a parseable absolute date.
 	ErrInvalidTime = errors.New("containers: invalid time value")
+	// ErrInvalidClock is returned by ParseClock for a name that is none of a
+	// fact's three clocks.
+	ErrInvalidClock = errors.New("containers: invalid clock")
 )
 
 // DurationRangeError is returned by ParseTimeValue for a relative duration

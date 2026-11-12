@@ -27,11 +27,13 @@ send those strings to a live server, whose parser judges whether they parse.
 """
 
 import warnings
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fraise_sdk.constants import VECTOR_PARAM
 from fraise_sdk.errors import FraiseAPIError, FraiseQueryError, FraiseWarning
-from fraise_sdk.query import build_recall, build_remember
+from fraise_sdk.models import Interval
+from fraise_sdk.query import When, build_recall, build_remember
 
 
 def test_remember_minimal():
@@ -142,8 +144,8 @@ def test_a_bare_string_where_a_sequence_is_wanted_is_rejected(build, args, param
     ``str`` satisfies ``Sequence[str]``, so the bare string type-checks.
     Iterated, it would file the fact under ``topic:b topic:i topic:l ...``, one
     anchor per letter. A recall by ``billing`` would then find nothing. The
-    five cases are every path that takes a sequence, and each reaches the check
-    on its own. The message names the fix.
+    five cases are every builder argument that takes a sequence of strings, and
+    each reaches the check on its own. The message names the fix.
     """
     with pytest.raises(FraiseQueryError) as exc_info:
         build(*args, **{param: "billing"})
@@ -200,6 +202,9 @@ def test_graph_above_the_uint8_range_is_rejected(bad):
             {"keywords": ["top"], "query": "what is at the top"},
             "recall@0 'what is at the top' 'top'",
         ),
+        ({"keywords": ["when", "said"]}, "recall@0 'when' 'said'"),
+        ({"keywords": ["occurred"]}, "recall@0 'occurred'"),
+        ({"keywords": ["When"]}, "recall@0 'When'"),
     ],
 )
 def test_a_keyword_spelled_search_word_is_quoted_and_warns(kwargs, expected):
@@ -270,6 +275,335 @@ def test_an_anchor_value_is_quoted_only_when_a_bare_word_cannot_hold_it(
 
 
 @pytest.mark.parametrize(
+    "said, rendered",
+    [
+        (date(2023, 5, 8), "'2023-05-08'"),
+        (
+            datetime(2023, 5, 8, 9, 30, tzinfo=timezone.utc),
+            "'2023-05-08T09:30:00+00:00'",
+        ),
+        (
+            datetime(2023, 5, 8, 23, 30, tzinfo=timezone(timedelta(hours=-7))),
+            "'2023-05-08T23:30:00-07:00'",
+        ),
+        (
+            datetime(2023, 5, 8, 9, 30, 15, 250000, tzinfo=timezone.utc),
+            "'2023-05-08T09:30:15.250000+00:00'",
+        ),
+        (datetime(2023, 5, 8, 9, 30), "'2023-05-08T09:30:00+00:00'"),
+    ],
+)
+def test_a_time_is_written_as_the_day_or_the_moment_it_names(said, rendered):
+    """A date is written as its day, and a datetime as its moment and offset.
+
+    The two are different times to the server: a day is the whole of it, and a
+    moment is one instant. So a datetime is never cut down to its day, though
+    it is a ``date`` too. The offset travels because the server keeps it: 23:30
+    at UTC-7 on the 8th is the 9th in UTC, and the fact was said on the 8th. A
+    datetime with no time zone is written in UTC, where a day is read.
+    """
+    assert build_remember("anna ran the race", said=said) == (
+        f"remember@0 'anna ran the race' said:{rendered}"
+    )
+
+
+@pytest.mark.parametrize(
+    "occurred, rendered",
+    [
+        ([date(2023, 5, 7)], "occurred:'2023-05-07'"),
+        (
+            [datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc)],
+            "occurred:'2023-05-07T18:30:00+00:00'",
+        ),
+        (
+            [
+                Interval(
+                    start=datetime(2023, 5, 1, tzinfo=timezone.utc),
+                    end=datetime(2023, 6, 1, tzinfo=timezone.utc),
+                )
+            ],
+            "occurred:'2023-05-01T00:00:00+00:00'..'2023-06-01T00:00:00+00:00'",
+        ),
+        (
+            [Interval(start=datetime(2023, 5, 20, tzinfo=timezone.utc), end=None)],
+            "occurred:'2023-05-20T00:00:00+00:00'..",
+        ),
+        (
+            [
+                Interval(
+                    start=datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc),
+                    end=datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc),
+                )
+            ],
+            "occurred:'2023-05-07T18:30:00+00:00'",
+        ),
+        (
+            [Interval(start=datetime(2023, 5, 1), end=datetime(2023, 6, 1))],
+            "occurred:'2023-05-01T00:00:00+00:00'..'2023-06-01T00:00:00+00:00'",
+        ),
+        (
+            [date(2023, 5, 1), date(2023, 5, 28)],
+            "occurred:'2023-05-01' occurred:'2023-05-28'",
+        ),
+    ],
+)
+def test_each_time_a_fact_happened_is_one_occurred_clause(occurred, rendered):
+    """Each value in ``occurred`` is its own clause: a time, or an interval's range.
+
+    An interval is written as the range between its two moments, which the
+    server reads back as the same span, start held and end excluded. One that
+    has not ended is left open after the ``..``, and one that ends where it
+    starts is that single moment. A fact that happened twice carries two
+    clauses in the order given, never one span stretched over both.
+    """
+    assert build_remember("anna trained for the race", occurred=occurred) == (
+        f"remember@0 'anna trained for the race' {rendered}"
+    )
+
+
+def test_remember_writes_its_times_between_the_anchors_and_the_vector():
+    """The times follow the anchors, ``said`` before ``occurred``, and the vector is last."""
+    got = build_remember(
+        "anna ran the race",
+        graph=3,
+        topics=["sport"],
+        entities=["anna"],
+        said=date(2023, 5, 8),
+        occurred=[date(2023, 5, 7)],
+        with_vector=True,
+    )
+    assert got == (
+        "remember@3 'anna ran the race' topic:sport entity:anna "
+        f"said:'2023-05-08' occurred:'2023-05-07' vec:${VECTOR_PARAM}"
+    )
+
+
+@pytest.mark.parametrize(
+    "occurred",
+    [
+        date(2023, 5, 7),
+        datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc),
+        Interval(start=datetime(2023, 5, 20, tzinfo=timezone.utc), end=None),
+        "2023-05-07",
+    ],
+)
+def test_one_time_where_occurred_wants_a_sequence_is_rejected(occurred):
+    """``occurred=date(...)`` is refused by name, with the fix in the message.
+
+    A fact can have happened more than once, so ``occurred`` takes a sequence
+    where ``said`` takes one time. One time on its own is the mistake that
+    difference invites. Left to the loop, it would fail as "not iterable", and
+    a string would be read one character at a time.
+    """
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build_remember("anna ran the race", occurred=occurred)
+    assert str(exc_info.value) == (
+        f"occurred must be a sequence of times, not one value: {occurred!r}; "
+        f"did you mean [{occurred!r}]?"
+    )
+
+
+@pytest.mark.parametrize(
+    ("build", "args", "kwargs", "kind", "text"),
+    [
+        (build_remember, ("a fact",), {"said": "2023-05-08"}, "said", "2023-05-08"),
+        (
+            build_remember,
+            ("a fact",),
+            {"occurred": ["2023-05-07"]},
+            "occurred",
+            "2023-05-07",
+        ),
+        (build_recall, (["anna"],), {"since": "7d"}, "since", "7d"),
+        (build_recall, (["anna"],), {"until": "2023-05-09"}, "until", "2023-05-09"),
+    ],
+)
+def test_a_time_given_as_text_is_rejected(build, args, kwargs, kind, text):
+    """A string is never read as a time, and the message names both ways out.
+
+    A string could be a day, a moment in some zone, or a duration such as
+    ``7d``. Telling them apart is parsing FQL, which is the server's job. The
+    builders write a time from a ``date`` or a ``datetime``. Anything else is
+    written as FQL and sent with ``client.query``.
+    """
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build(*args, **kwargs)
+    assert str(exc_info.value) == (
+        f"{kind} cannot be written from the str {text!r}; give a date or a "
+        "datetime, or write the query as FQL and send it with client.query"
+    )
+
+
+@pytest.mark.parametrize(
+    "start, end",
+    [
+        (date(2023, 5, 1), date(2023, 5, 3)),
+        (datetime(2023, 5, 1, tzinfo=timezone.utc), date(2023, 5, 3)),
+        (date(2023, 5, 1), None),
+    ],
+)
+def test_an_interval_with_a_day_at_an_edge_is_rejected(start, end):
+    """An interval runs between two moments, so a ``date`` at an edge is refused.
+
+    An interval excludes its end, and a range of days holds its last day.
+    Written as ``'2023-05-01'..'2023-05-03'``, the fact would cover the 3rd, a
+    day the interval never held. The message names the fix: a whole day is a
+    ``date`` on its own, and a longer span runs between two datetimes.
+    """
+    span = Interval(start=start, end=end)
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build_remember("anna trained for the race", occurred=[span])
+    assert str(exc_info.value) == (
+        f"occurred takes an Interval between two datetimes, got {span!r}; "
+        "a whole day is given as a date on its own"
+    )
+
+
+@pytest.mark.parametrize(
+    "kwargs, expected",
+    [
+        ({"since": date(2023, 5, 7)}, "recall@0 anna since:'2023-05-07'"),
+        ({"until": date(2023, 5, 9)}, "recall@0 anna until:'2023-05-09'"),
+        (
+            {"since": date(2023, 5, 7), "until": date(2023, 5, 9)},
+            "recall@0 anna since:'2023-05-07' until:'2023-05-09'",
+        ),
+        (
+            {"since": datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc)},
+            "recall@0 anna since:'2023-05-07T18:30:00+00:00'",
+        ),
+        (
+            {"until": datetime(2023, 5, 7, 18, 30)},
+            "recall@0 anna until:'2023-05-07T18:30:00+00:00'",
+        ),
+    ],
+)
+def test_a_recall_bound_is_written_as_the_time_it_names(kwargs, expected):
+    """A bound is written as a remember's time is, ``since`` before ``until``.
+
+    One rule on both sides means a fact stored with ``said=date(2023, 5, 7)``
+    and a recall bounded by that date name the same day.
+    """
+    assert build_recall(["anna"], **kwargs) == expected
+
+
+@pytest.mark.parametrize(
+    "when, rendered",
+    [
+        (When("regatta"), "(when regatta)"),
+        (When("regatta", "harbour"), "(when regatta harbour)"),
+        (When("regatta", clock="happened"), "(when:happened regatta)"),
+        (When("regatta", clock="said"), "(when:said regatta)"),
+        (When("regatta", clock="written"), "(when:written regatta)"),
+        (
+            When(query="when did anna's race start"),
+            "(when 'when did anna''s race start')",
+        ),
+        (
+            When(topics=["sailing"], entities=["anna smith"]),
+            "(when topic:sailing entity:'anna smith')",
+        ),
+        (When("regatta", top=3, depth=1), "(when regatta top:3 depth:1)"),
+        (When("e-mail"), "(when 'e-mail')"),
+    ],
+)
+def test_a_when_is_written_in_parentheses_as_the_search_it_runs(when, rendered):
+    """A when is ``(when ...)`` around a recall's own search, on either bound.
+
+    The parentheses are what make it a bound: the server rejects a bare
+    ``when`` after ``since:``. Inside them the search is written as a recall's
+    is, so a value is quoted by the same rule in both places. A clock is glued
+    to the word with a colon. None is written unless one was given, which
+    leaves the default to the server.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FraiseWarning)
+        assert build_recall(["anna"], since=when) == f"recall@0 anna since:{rendered}"
+        assert build_recall(["anna"], until=when) == f"recall@0 anna until:{rendered}"
+
+
+def test_a_reserved_word_keyword_in_a_when_is_quoted_and_warns():
+    """A when's keywords are search words too: a reserved one is quoted, and warns.
+
+    ``When("said", "regatta")`` asks for the facts that hold the word "said".
+    Bare, the server would read it as the ``said:`` clause and reject the
+    query. The warning names the caller's line, as a recall's does.
+    """
+    with pytest.warns(FraiseWarning, match="is a reserved word") as record:
+        got = build_recall(["anna"], until=When("said", "regatta"))
+    assert got == "recall@0 anna until:(when 'said' regatta)"
+    assert record[0].filename == __file__
+
+
+def test_recall_writes_its_bounds_after_the_search_and_before_the_vector():
+    """The bounds follow ``top`` and ``depth``, and the vector placeholder is last."""
+    got = build_recall(
+        ["anna"],
+        graph=2,
+        query="what did anna do",
+        topics=["sport"],
+        entities=["anna"],
+        top=5,
+        depth=1,
+        since=date(2023, 5, 1),
+        until=When("regatta"),
+        with_vector=True,
+    )
+    assert got == (
+        "recall@2 'what did anna do' anna topic:sport entity:anna top:5 depth:1 "
+        f"since:'2023-05-01' until:(when regatta) vec:${VECTOR_PARAM}"
+    )
+
+
+def test_a_when_with_nothing_to_search_with_is_rejected():
+    """A when needs a seed for the reason a recall does: it has nothing to search from."""
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build_recall(["anna"], until=When())
+    assert str(exc_info.value) == (
+        "a when needs at least one seed: keywords, a query, or a topic/entity anchor"
+    )
+
+
+@pytest.mark.parametrize("clock", ["heard", "Said"])
+def test_a_when_naming_an_unknown_clock_is_rejected(clock):
+    """A clock the grammar does not read is refused, and the message lists the three.
+
+    The clock is written into the query as it is given. A misspelt one would
+    come back as the server's parse error, about a string the caller never
+    wrote. It is lower case, as the grammar writes it.
+    """
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build_recall(["anna"], since=When("regatta", clock=clock))
+    assert str(exc_info.value) == (
+        f"clock must be one of happened, said, written, got {clock!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"top": 0}, "top must be positive, got 0"),
+        ({"depth": -1}, "depth must be non-negative, got -1"),
+        (
+            {"topics": "sailing"},
+            "topic must be a sequence of strings, not a string: 'sailing'; "
+            "did you mean ['sailing']?",
+        ),
+    ],
+)
+def test_a_when_is_held_to_a_recalls_own_limits(kwargs, message):
+    """What a recall refuses in its own search, a when refuses in its.
+
+    A when's search is written through the same path as the recall around it.
+    So a ``top`` of zero, a negative ``depth`` or a bare string of anchors
+    fails the same way in either place.
+    """
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build_recall(["anna"], until=When("regatta", **kwargs))
+    assert str(exc_info.value) == message
+
+
+@pytest.mark.parametrize(
     "kwargs",
     [
         {},
@@ -286,6 +620,56 @@ def test_every_remember_the_builder_emits_parses(kwargs, client, query_graph):
     """Every shape build_remember can produce is accepted by the live parser."""
     text = build_remember(
         "the barometer falls before a storm", graph=query_graph, **kwargs
+    )
+    client.query(text)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"said": date(2023, 5, 8)},
+        {"said": datetime(2023, 5, 8, 9, 30, tzinfo=timezone.utc)},
+        {
+            "said": datetime(
+                2023, 5, 8, 23, 30, 15, 250000, tzinfo=timezone(timedelta(hours=-7))
+            )
+        },
+        {"said": datetime(2023, 5, 8, 9, 30)},
+        {"occurred": [date(2023, 5, 7)]},
+        {"occurred": [datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc)]},
+        {
+            "occurred": [
+                Interval(
+                    start=datetime(2023, 5, 1, tzinfo=timezone.utc),
+                    end=datetime(2023, 6, 1, tzinfo=timezone.utc),
+                )
+            ]
+        },
+        {
+            "occurred": [
+                Interval(start=datetime(2023, 5, 20, tzinfo=timezone.utc), end=None)
+            ]
+        },
+        {"occurred": [date(2023, 5, 1), date(2023, 5, 28)]},
+        {
+            "topics": ["weather"],
+            "entities": ["barometer"],
+            "said": date(2023, 5, 8),
+            "occurred": [date(2023, 5, 7)],
+        },
+    ],
+)
+@pytest.mark.integration
+def test_every_dated_remember_the_builder_emits_parses(kwargs, client, query_graph):
+    """Every way the builder writes a time is a time the live parser reads.
+
+    The builder writes a moment as Python prints it: ``+00:00`` where FQL
+    examples write ``Z``, and microseconds where the moment has them. Only the
+    server can say those are time literals, and that a range or an open ``..``
+    is one where ``occurred:`` takes it.
+    """
+    text = build_remember(
+        "the clockprobe ticks in the hall", graph=query_graph, **kwargs
     )
     client.query(text)
 
@@ -319,6 +703,49 @@ def test_every_remember_the_builder_emits_parses(kwargs, client, query_graph):
 def test_every_recall_the_builder_emits_parses(kwargs, client, query_graph):
     """Every keyword-seeded shape build_recall can produce is accepted."""
     text = build_recall(graph=query_graph, **kwargs)
+    body = client.query(text)
+    assert "results" in body
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"since": date(2023, 5, 7)},
+        {"until": date(2023, 5, 9)},
+        {"since": date(2023, 5, 7), "until": date(2023, 5, 9)},
+        {"since": datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc)},
+        {
+            "until": datetime(
+                2023, 5, 8, 23, 30, 15, 250000, tzinfo=timezone(timedelta(hours=-7))
+            )
+        },
+        {"since": datetime(2023, 5, 7, 18, 30)},
+        {"until": When("clockprobe")},
+        {"since": When("clockprobe", clock="happened")},
+        {"since": When("clockprobe", clock="said")},
+        {"until": When("clockprobe", clock="written", top=3)},
+        {"until": When(query="when did the clockprobe tick")},
+        {"since": When(topics=["weather"], entities=["barometer"], depth=1)},
+        {"since": When("clockprobe"), "until": When("barometer", clock="said")},
+        {
+            "since": date(2023, 5, 1),
+            "until": When("clockprobe"),
+            "topics": ["weather"],
+            "top": 3,
+            "depth": 1,
+        },
+    ],
+)
+@pytest.mark.integration
+def test_every_bounded_recall_the_builder_emits_parses(kwargs, client, query_graph):
+    """Every bound the builder writes is one the live parser reads.
+
+    A bound is a time written as a remember's is, or a when in parentheses.
+    The when is the form only a server can vouch for: its clock glued on with a
+    colon, a recall's own clauses inside the parentheses, and one on each bound
+    of the same recall.
+    """
+    text = build_recall(["barometer"], graph=query_graph, **kwargs)
     body = client.query(text)
     assert "results" in body
 
@@ -432,6 +859,9 @@ def test_a_recall_seeded_without_keywords_parses(kwargs, client, query_graph, en
         ["barometer", "since"],
         ["barometer", "depth", "entity"],
         ["storm", "recall"],
+        ["when", "said"],
+        ["barometer", "occurred"],
+        ["When"],
     ],
 )
 @pytest.mark.integration

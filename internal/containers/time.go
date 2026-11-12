@@ -27,29 +27,126 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
-// TimeValue is a time bound that resolves itself against now. It hashes itself
-// with the same Hasher[K, string] as its enclosing query, the way Recall and
-// Remember do.
+// Interval is a span of time, half-open: it holds Start and every instant up
+// to End, End itself excluded. An interval whose End equals its Start is that
+// one instant. One whose End is zero has no end, so the zero Interval is all
+// of time. A fact holds intervals for when what it states happened, and every
+// [TimeValue] resolves to one, so a bound and a fact compare by overlap
+// whatever precision each was written at.
+type Interval struct {
+	Start time.Time `json:"start"`
+	End   time.Time `json:"end,omitzero"`
+}
+
+// Overlaps reports whether i and o share an instant. A recall's window and a
+// fact's interval are compared with it, so a fact that happened over a month
+// is inside every window that takes in part of that month.
+func (i Interval) Overlaps(o Interval) bool {
+	return i.startsWithin(o) && o.startsWithin(i)
+}
+
+// startsWithin reports whether i has begun by the time o is over: always when
+// o has no end, at or before o's instant when o is one, and strictly before
+// o's End otherwise, since End itself is outside o.
+func (i Interval) startsWithin(o Interval) bool {
+	switch {
+	case o.End.IsZero():
+		return true
+	case o.End.Equal(o.Start):
+		return !i.Start.After(o.Start)
+	default:
+		return i.Start.Before(o.End)
+	}
+}
+
+// Hull returns the smallest interval holding both i and o: from the earlier
+// Start to the later End, and without an end when either has none. A when
+// over several facts answers with the hull of what they hold.
+func (i Interval) Hull(o Interval) Interval {
+	hull := i
+	if o.Start.Before(hull.Start) {
+		hull.Start = o.Start
+	}
+	switch {
+	case hull.End.IsZero() || o.End.IsZero():
+		hull.End = time.Time{}
+	case o.End.After(hull.End):
+		hull.End = o.End
+	}
+	return hull
+}
+
+// Clock names one of the three times a fact carries: when what it states
+// happened, when it was said, and when the server wrote it. A fact given no
+// time of its own reads the next one down, happened then said then written,
+// so a fact written with no times reads the same on all three.
+type Clock uint8
+
+const (
+	// Happened is when what the fact states took place. It is the zero value,
+	// the clock a bound reads unless it names another.
+	Happened Clock = iota
+	// Said is when the fact was stated, the date of the message it came from.
+	Said
+	// Written is when the server stored the fact.
+	Written
+)
+
+// String returns the clock's name as a query spells it after when:.
+func (c Clock) String() string {
+	switch c {
+	case Said:
+		return "said"
+	case Written:
+		return "written"
+	default:
+		return "happened"
+	}
+}
+
+// ParseClock reads a clock's name as a query spells it after when:.
+func ParseClock(s string) (Clock, error) {
+	for _, c := range []Clock{Happened, Said, Written} {
+		if s == c.String() {
+			return c, nil
+		}
+	}
+	return Happened, fmt.Errorf("%w: %q (want said, happened or written)", ErrInvalidClock, s)
+}
+
+// Bound is one edge of a recall's time window as a graph receives it: the
+// instant At, compared with what each fact holds on Clock. A zero At is no
+// bound.
+type Bound struct {
+	At    time.Time
+	Clock Clock
+}
+
+// TimeValue is a time a query names: a bound of a recall's window, or one of
+// the times a remember gives its fact. It resolves itself against now to the
+// interval it names. It hashes itself with the same Hasher[K, string] as its
+// enclosing query, the way Recall and Remember do.
 type TimeValue[K comparable] interface {
-	Resolve(now time.Time) time.Time
-	// Hash keys the bound through h and renders the key for folding into an
+	Resolve(now time.Time) Interval
+	// Hash keys the value through h and renders the key for folding into an
 	// enclosing query's hash material. The material is lossless: a duration as
 	// Duration.String renders it, an instant in RFC3339Nano. Each type adds a
-	// distinct prefix, so different bounds never share material. If two did, a
+	// distinct prefix, so different values never share material. If two did, a
 	// recall would reuse the plan cached for another time window. String()
 	// cannot serve as material, because AbsoluteTime's RFC822 form drops
 	// seconds.
 	Hash(h hash.Hasher[K, string]) string
-	// Equal reports whether other is the same bound: the same type, with the
-	// same span or the same instant. The engine confirms a plan-cache hit
-	// with it, because two bounds may still share a key when their material
-	// does not. Equal must never hold for bounds that resolve differently, or
-	// a recall would run in another query's time window.
+	// Equal reports whether other is the same value: the same type, with the
+	// same span or the same instant at the same precision. The engine confirms
+	// a plan-cache hit with it, because two values may still share a key when
+	// their material does not. Equal must never hold for values that resolve
+	// differently, or a recall would run in another query's time window.
 	Equal(other TimeValue[K]) bool
 }
 
@@ -58,9 +155,31 @@ type TimeValue[K comparable] interface {
 // time it runs.
 type RelativeTime[K comparable] struct{ Dur time.Duration }
 
-// AbsoluteTime is a [TimeValue] at a fixed instant, as in since:2026-01-15. It
-// resolves to the same instant whenever the query runs.
-type AbsoluteTime[K comparable] struct{ T time.Time }
+// Precision is how much of the calendar a date literal names. A literal
+// resolves to the whole of what it names: '2023-05-07' to that day, '2023-05'
+// to that month, '2023' to that year, and a full timestamp to its instant.
+type Precision uint8
+
+const (
+	// Instant is a full timestamp. It is the zero value, so an AbsoluteTime
+	// built from a time alone is that one instant.
+	Instant Precision = iota
+	// Day is a calendar date, 2023-05-07.
+	Day
+	// Month is a calendar month, 2023-05.
+	Month
+	// Year is a calendar year, 2023.
+	Year
+)
+
+// AbsoluteTime is a [TimeValue] fixed on the calendar, as in
+// since:'2026-01-15'. T is where it starts and Precision how far it runs: an
+// instant, or the day, month or year starting at T. It resolves to the same
+// interval whenever the query runs.
+type AbsoluteTime[K comparable] struct {
+	T         time.Time
+	Precision Precision
+}
 
 func (r RelativeTime[K]) String() string {
 	return r.Dur.String()
@@ -71,21 +190,47 @@ func (a AbsoluteTime[K]) String() string {
 }
 
 // Resolve implements [TimeValue]: the instant Dur before now.
-func (r RelativeTime[K]) Resolve(now time.Time) time.Time { return now.Add(-r.Dur) }
+func (r RelativeTime[K]) Resolve(now time.Time) Interval {
+	at := now.Add(-r.Dur)
+	return Interval{Start: at, End: at}
+}
 
-// Resolve implements [TimeValue]: T, whatever now is.
-func (a AbsoluteTime[K]) Resolve(_ time.Time) time.Time { return a.T }
+// Resolve implements [TimeValue]: the instant T, or the day, month or year
+// that starts at T, whatever now is.
+func (a AbsoluteTime[K]) Resolve(_ time.Time) Interval {
+	switch a.Precision {
+	case Day:
+		return Interval{Start: a.T, End: a.T.AddDate(0, 0, 1)}
+	case Month:
+		return Interval{Start: a.T, End: a.T.AddDate(0, 1, 0)}
+	case Year:
+		return Interval{Start: a.T, End: a.T.AddDate(1, 0, 0)}
+	default:
+		return Interval{Start: a.T, End: a.T}
+	}
+}
 
 // Hash implements [TimeValue]. The material is "r" and the duration. No other
-// bound's material starts with "r".
+// value's material starts with "r".
 func (r RelativeTime[K]) Hash(h hash.Hasher[K, string]) string {
 	return fmt.Sprint(h.Hash("r" + r.Dur.String()))
 }
 
-// Hash implements [TimeValue]. The material is "a" and T in RFC3339Nano,
-// exact to the nanosecond.
+// Hash implements [TimeValue]. The material is "a", a letter for a precision
+// wider than an instant (d, m or y), and T in RFC3339Nano, exact to the
+// nanosecond. The letter keeps '2023-01-01' apart from '2023-01' and '2023',
+// which all start at the same T and resolve to different intervals.
 func (a AbsoluteTime[K]) Hash(h hash.Hasher[K, string]) string {
-	return fmt.Sprint(h.Hash("a" + a.T.Format(time.RFC3339Nano)))
+	var precision string
+	switch a.Precision {
+	case Day:
+		precision = "d"
+	case Month:
+		precision = "m"
+	case Year:
+		precision = "y"
+	}
+	return fmt.Sprint(h.Hash("a" + precision + a.T.Format(time.RFC3339Nano)))
 }
 
 // Equal implements [TimeValue]: other is a RelativeTime of the same span.
@@ -95,10 +240,64 @@ func (r RelativeTime[K]) Equal(other TimeValue[K]) bool {
 }
 
 // Equal implements [TimeValue]: other is an AbsoluteTime at the same instant,
-// whatever zone each was written in.
+// whatever zone each was written in, and of the same precision.
 func (a AbsoluteTime[K]) Equal(other TimeValue[K]) bool {
 	o, ok := other.(AbsoluteTime[K])
-	return ok && o.T.Equal(a.T)
+	return ok && o.T.Equal(a.T) && o.Precision == a.Precision
+}
+
+// RangeTime is a [TimeValue] running from one value to another, as in
+// '2023-05-07'..'2023-05-09': from the start of From to the end of To, so
+// both days are inside it. A nil To leaves it without an end, as in
+// '2023-05-07'.., for what began and is not over. A nil From starts it at
+// the beginning of time.
+type RangeTime[K comparable] struct {
+	From TimeValue[K]
+	To   TimeValue[K]
+}
+
+// Resolve implements [TimeValue]: from where From starts to where To ends,
+// each resolved against the same now.
+func (r RangeTime[K]) Resolve(now time.Time) Interval {
+	var span Interval
+	if r.From != nil {
+		span.Start = r.From.Resolve(now).Start
+	}
+	if r.To != nil {
+		span.End = r.To.Resolve(now).End
+	}
+	return span
+}
+
+// Hash implements [TimeValue]. The material is "s", then the rendered key of
+// From, length-prefixed, then that of To. The length keeps the two ends
+// apart whatever a key renders as, and an open end contributes nothing, so
+// 'a'.. and 'a'..'b' never share material.
+func (r RangeTime[K]) Hash(h hash.Hasher[K, string]) string {
+	var from, to string
+	if r.From != nil {
+		from = r.From.Hash(h)
+	}
+	if r.To != nil {
+		to = r.To.Hash(h)
+	}
+	var b strings.Builder
+	b.WriteByte('s')
+	b.WriteString(strconv.Itoa(len(from)))
+	b.WriteByte(':')
+	b.WriteString(from)
+	b.WriteString(to)
+	return fmt.Sprint(h.Hash(b.String()))
+}
+
+// Equal implements [TimeValue]: other is a RangeTime whose two ends are equal
+// to this one's, an open end matching only an open end.
+func (r RangeTime[K]) Equal(other TimeValue[K]) bool {
+	o, ok := other.(RangeTime[K])
+	if !ok || (r.From == nil) != (o.From == nil) || (r.To == nil) != (o.To == nil) {
+		return false
+	}
+	return (r.From == nil || r.From.Equal(o.From)) && (r.To == nil || r.To.Equal(o.To))
 }
 
 // TimeFilter is a [TimeValue] held as one plain value. It is the fixed instant
@@ -109,13 +308,14 @@ type TimeFilter[K comparable] struct {
 	IsAbs bool
 }
 
-// Resolve implements [TimeValue]: Abs when IsAbs is set, otherwise the instant
-// Dur before now.
-func (tf TimeFilter[K]) Resolve(now time.Time) time.Time {
+// Resolve implements [TimeValue]: the instant Abs when IsAbs is set, otherwise
+// the instant Dur before now.
+func (tf TimeFilter[K]) Resolve(now time.Time) Interval {
+	at := now.Add(-tf.Dur)
 	if tf.IsAbs {
-		return tf.Abs
+		at = tf.Abs
 	}
-	return now.Add(-tf.Dur)
+	return Interval{Start: at, End: at}
 }
 
 // Hash implements [TimeValue]. The material is "fa" and Abs in RFC3339Nano for
@@ -144,7 +344,9 @@ func (tf TimeFilter[K]) Equal(other TimeValue[K]) bool {
 }
 
 // ParseTimeValue converts a string into a TimeValue: a RelativeTime
-// ("7d", "30m", "1w") or an AbsoluteTime ("2026-01-15" or RFC3339).
+// ("7d", "30m", "1w") or an AbsoluteTime. An absolute value carries the
+// precision it was written at: a day ("2026-01-15"), a month ("2026-01"), a
+// year ("2026") or an RFC3339 instant.
 func ParseTimeValue[K comparable](s string) (TimeValue[K], error) {
 	if s == "" {
 		return nil, fmt.Errorf("%w: empty string", ErrInvalidTime)
@@ -168,10 +370,19 @@ func ParseTimeValue[K comparable](s string) (TimeValue[K], error) {
 		}
 	}
 
-	// Absolute: ISO date or RFC3339 datetime.
-	for _, layout := range []string{"2006-01-02", time.RFC3339} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return AbsoluteTime[K]{T: t}, nil
+	// Absolute: an ISO date, month or year, or an RFC3339 datetime. Each
+	// layout is tried whole, so "2026" is never a truncated date.
+	for _, form := range []struct {
+		layout    string
+		precision Precision
+	}{
+		{"2006-01-02", Day},
+		{"2006-01", Month},
+		{"2006", Year},
+		{time.RFC3339, Instant},
+	} {
+		if t, err := time.Parse(form.layout, s); err == nil {
+			return AbsoluteTime[K]{T: t, Precision: form.precision}, nil
 		}
 	}
 

@@ -91,10 +91,12 @@ func (s *Server[K, P]) handleStats() gin.HandlerFunc {
 // stream has run.
 //
 // explain selects the explain mode served on /api/v1/explain. It runs the same
-// pipeline, but each hit carries its per-source contribution breakdown. Writes
-// are rejected, since only a recall has a ranking to explain. One handler with
-// a flag, rather than two handlers, keeps the two routes from drifting apart in
-// how they parse, validate or schedule.
+// pipeline, but each hit carries its per-source contribution breakdown and its
+// recency factor, and a recall whose time bound holds a when carries that
+// when's answer. Writes are rejected, since only a recall has a ranking to
+// explain, and a when ranks as the recall it runs. One handler with a flag,
+// rather than two handlers, keeps the two routes from drifting apart in how
+// they parse, validate or schedule.
 //
 // A query is what a caller remembers, so its text is personal data. Only
 // Debug lines, which an operator opts into, carry it or an error that may
@@ -210,11 +212,15 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 				"hits", stream.Result.Count, "duration", time.Since(start))
 
 			// A successful write or read carries the warnings, so they are
-			// rendered once here for whichever branch below answers.
-			msgs := make([]string, len(warns))
-			for i, w := range warns {
-				msgs[i] = w.String()
+			// rendered once here for whichever branch below answers. The
+			// parser's come first, in the order of the text, then the ones
+			// raised while the stream committed, such as a when that matched
+			// no fact.
+			msgs := make([]string, 0, len(warns)+len(stream.Warnings))
+			for _, w := range warns {
+				msgs = append(msgs, w.String())
 			}
+			msgs = append(msgs, stream.Warnings...)
 
 			// A write answers in its own shape, not a read's envelope.
 			// WriteResponse says why the two must not be the same bytes.

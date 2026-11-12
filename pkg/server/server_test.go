@@ -33,6 +33,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/pkg/logger"
@@ -470,6 +473,306 @@ func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusNoContent, w.Body.String())
+	}
+}
+
+// readBody is a read's 200 response as a client decodes it: the result, with
+// the time a when answers with and the times each fact was given, and the
+// warnings beside it.
+type readBody struct {
+	Results  readResults `json:"results"`
+	Warnings []string    `json:"warnings"`
+}
+
+type readResults struct {
+	Count int        `json:"count"`
+	Start string     `json:"start"`
+	End   string     `json:"end"`
+	Hits  []readHit  `json:"hits"`
+	When  *readWhens `json:"when"`
+}
+
+type readWhens struct {
+	Since *readResults `json:"since"`
+	Until *readResults `json:"until"`
+}
+
+type readHit struct {
+	Value    string     `json:"value"`
+	Said     string     `json:"said"`
+	Occurred []readSpan `json:"occurred"`
+	Decay    float64    `json:"decay"`
+}
+
+type readSpan struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+// read posts query to target and decodes the 200 it must answer with.
+func (s *Server[K, P]) read(t *testing.T, target, query string) readBody {
+	t.Helper()
+	request, err := json.Marshal(map[string]string{"query": query})
+	if err != nil {
+		t.Fatalf("encoding %q: %v", query, err)
+	}
+	w := s.do(http.MethodPost, target, string(request))
+	if w.Code != http.StatusOK {
+		t.Fatalf("%s: status = %d, want %d (body: %s)", query, w.Code, http.StatusOK, w.Body.String())
+	}
+	var body readBody
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("%s: decoding %s: %v", query, w.Body.String(), err)
+	}
+	return body
+}
+
+// newTrainingServer returns a server whose graph 0 holds three dated facts
+// about anna: shoes bought on 1 May 2023 and told on 2 May, a marathon run on
+// 7 May and told on 8 May, and a rest taken from 9 May that is not over and
+// was told at no given time.
+func newTrainingServer(t *testing.T) *Server[uint64, float32] {
+	t.Helper()
+	s := newTestServer(t)
+	for _, statement := range []string{
+		"remember@0 'anna bought shoes' said:'2023-05-02' occurred:'2023-05-01'",
+		"remember@0 'anna ran the marathon' said:'2023-05-08' occurred:'2023-05-07'",
+		"remember@0 'anna rested' occurred:'2023-05-09'..",
+	} {
+		request, err := json.Marshal(map[string]string{"query": statement})
+		if err != nil {
+			t.Fatalf("encoding %q: %v", statement, err)
+		}
+		if w := s.do(http.MethodPost, "/api/v1/q", string(request)); w.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want %d (body: %s)", statement, w.Code, http.StatusOK, w.Body.String())
+		}
+	}
+	return s
+}
+
+// TestQueryWhenAnswersWithATime pins the response of a when statement. It is a
+// read's envelope whose result also carries the time the when answers with:
+// start and end, and no end for an answer that is not over. Each hit carries
+// the times its fact was given, said and occurred, and neither key for a time
+// the fact was not given.
+func TestQueryWhenAnswersWithATime(t *testing.T) {
+	s := newTrainingServer(t)
+	tests := map[string]readResults{
+		"when marathon": {
+			Count: 1,
+			Start: "2023-05-07T00:00:00Z",
+			End:   "2023-05-08T00:00:00Z",
+			Hits: []readHit{{
+				Value:    "anna ran the marathon",
+				Said:     "2023-05-08T00:00:00Z",
+				Occurred: []readSpan{{Start: "2023-05-07T00:00:00Z", End: "2023-05-08T00:00:00Z"}},
+			}},
+		},
+		"when:said marathon": {
+			Count: 1,
+			Start: "2023-05-08T00:00:00Z",
+			End:   "2023-05-08T00:00:00Z",
+			Hits: []readHit{{
+				Value:    "anna ran the marathon",
+				Said:     "2023-05-08T00:00:00Z",
+				Occurred: []readSpan{{Start: "2023-05-07T00:00:00Z", End: "2023-05-08T00:00:00Z"}},
+			}},
+		},
+		"when rested": {
+			Count: 1,
+			Start: "2023-05-09T00:00:00Z",
+			Hits: []readHit{{
+				Value:    "anna rested",
+				Occurred: []readSpan{{Start: "2023-05-09T00:00:00Z"}},
+			}},
+		},
+	}
+	for query, want := range tests {
+		t.Run(query, func(t *testing.T) {
+			got := s.read(t, "/api/v1/q", query)
+
+			if diff := cmp.Diff(want, got.Results); diff != "" {
+				t.Errorf("%s results mismatch (-want +got):\n%s", query, diff)
+			}
+			if len(got.Warnings) != 0 {
+				t.Errorf("%s warnings = %q, want none", query, got.Warnings)
+			}
+		})
+	}
+}
+
+// TestQueryRecallReadsItsBoundFromAWhen pins a nested when end to end: parsed,
+// planned, scheduled and committed as part of the recall that holds it. until
+// keeps the facts that happened before the answer, and since the ones that
+// happened after it. A when that names a clock moves the bound onto it:
+// since:(when:said marathon) keeps the facts told from 8 May on, and the rest
+// is one of them, since a fact told at no given time was told when it was
+// written.
+func TestQueryRecallReadsItsBoundFromAWhen(t *testing.T) {
+	s := newTrainingServer(t)
+	tests := map[string][]string{
+		"recall@0 anna until:(when marathon)":      {"anna bought shoes"},
+		"recall@0 anna since:(when marathon)":      {"anna rested"},
+		"recall@0 anna since:(when:said marathon)": {"anna ran the marathon", "anna rested"},
+	}
+	for query, want := range tests {
+		t.Run(query, func(t *testing.T) {
+			body := s.read(t, "/api/v1/q", query)
+
+			got := make([]string, len(body.Results.Hits))
+			for i, hit := range body.Results.Hits {
+				got[i] = hit.Value
+			}
+			if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+				t.Errorf("%s hits mismatch (-want +got):\n%s", query, diff)
+			}
+			if len(body.Warnings) != 0 {
+				t.Errorf("%s warnings = %q, want none", query, body.Warnings)
+			}
+		})
+	}
+}
+
+// TestQueryWarnsWhenAWhenMatchedNoFact pins the whole response for a when that
+// has no time to give. The query ran, so the answer is a 200 with an empty
+// result, and the warning says why it is empty: a recall whose bound went
+// unanswered returns no hits rather than search without the bound. The
+// parser's warnings come first, then the ones raised while the query ran.
+func TestQueryWarnsWhenAWhenMatchedNoFact(t *testing.T) {
+	const unanswered = "the when matched no fact, so it has no time to answer with"
+	s := newTrainingServer(t)
+	tests := map[string][]string{
+		"when zebras": {unanswered},
+		"recall@0 anna until:(when zebras)": {
+			"until: " + unanswered + "; the recall has no bound to read and returns no hits",
+		},
+		"recall@0 the anna since:(when zebras)": {
+			`parse warning at column 12: term "the" is a stop word: stored facts never contain it, so it cannot match`,
+			"since: " + unanswered + "; the recall has no bound to read and returns no hits",
+		},
+	}
+	for query, warnings := range tests {
+		t.Run(query, func(t *testing.T) {
+			request, err := json.Marshal(map[string]string{"query": query})
+			if err != nil {
+				t.Fatalf("encoding %q: %v", query, err)
+			}
+
+			w := s.do(http.MethodPost, "/api/v1/q", string(request))
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+			}
+			rendered, err := json.Marshal(warnings)
+			if err != nil {
+				t.Fatalf("encoding the warnings: %v", err)
+			}
+			want := `{"results":{"count":0,"hits":[]},"warnings":` + string(rendered) + `}`
+			if diff := cmp.Diff(want, strings.TrimSpace(w.Body.String())); diff != "" {
+				t.Errorf("body mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestQueryWhenOnAnEmptyGraphIsNoContent pins that a when is a read where the
+// empty graph is concerned. As a statement or in a bound, a when over a graph
+// that holds nothing is answered 204 with no body, as a recall is: the caller
+// has yet to write, and no warning about a missing match would say so.
+func TestQueryWhenOnAnEmptyGraphIsNoContent(t *testing.T) {
+	s := newTestServer(t)
+	queries := []string{
+		"when marathon",
+		"recall@0 anna until:(when marathon)",
+	}
+	for _, query := range queries {
+		t.Run(query, func(t *testing.T) {
+			w := s.do(http.MethodPost, "/api/v1/q", `{"query":"`+query+`"}`)
+
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusNoContent, w.Body.String())
+			}
+			if body := w.Body.String(); body != "" {
+				t.Errorf("body = %q, want it empty: 204 must not carry one", body)
+			}
+		})
+	}
+}
+
+// TestExplainCarriesTheWhenItsBoundRead pins what explain adds for the
+// temporal clauses. Each hit carries decay, the recency factor its relevance
+// was scaled by. A recall whose bound holds a when carries that when's result
+// under when, keyed by the bound: the fact it matched and the time it gave.
+// The plain query route carries neither, so an ordinary response does not
+// grow.
+func TestExplainCarriesTheWhenItsBoundRead(t *testing.T) {
+	const query = "recall@0 anna until:(when rested)"
+	marathon := readHit{
+		Value:    "anna ran the marathon",
+		Said:     "2023-05-08T00:00:00Z",
+		Occurred: []readSpan{{Start: "2023-05-07T00:00:00Z", End: "2023-05-08T00:00:00Z"}},
+	}
+	shoes := readHit{
+		Value:    "anna bought shoes",
+		Said:     "2023-05-02T00:00:00Z",
+		Occurred: []readSpan{{Start: "2023-05-01T00:00:00Z", End: "2023-05-02T00:00:00Z"}},
+	}
+	rested := readHit{
+		Value:    "anna rested",
+		Occurred: []readSpan{{Start: "2023-05-09T00:00:00Z"}},
+	}
+	byValue := cmpopts.SortSlices(func(a, b readHit) bool { return a.Value < b.Value })
+	withoutDecay := cmpopts.IgnoreFields(readHit{}, "Decay")
+	s := newTrainingServer(t)
+
+	t.Run("explain", func(t *testing.T) {
+		got := s.read(t, "/api/v1/explain", query).Results
+
+		want := readResults{
+			Count: 2,
+			Hits:  []readHit{shoes, marathon},
+			When: &readWhens{Until: &readResults{
+				Count: 1,
+				Start: "2023-05-09T00:00:00Z",
+				Hits:  []readHit{rested},
+			}},
+		}
+		if diff := cmp.Diff(want, got, byValue, withoutDecay); diff != "" {
+			t.Errorf("explain results mismatch (-want +got):\n%s", diff)
+		}
+		for _, hit := range got.Hits {
+			if hit.Decay <= 0 || hit.Decay > 1 {
+				t.Errorf("hit %q decay = %v, want a recency factor in (0, 1]", hit.Value, hit.Decay)
+			}
+		}
+	})
+
+	t.Run("query", func(t *testing.T) {
+		got := s.read(t, "/api/v1/q", query).Results
+
+		want := readResults{Count: 2, Hits: []readHit{shoes, marathon}}
+		if diff := cmp.Diff(want, got, byValue); diff != "" {
+			t.Errorf("query results mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// TestExplainAcceptsAWhen pins that explain serves every read. A when ranks
+// as the recall it runs, so it has a ranking to explain, and its answer comes
+// back with it. A remember stays refused: probing a ranking never writes.
+func TestExplainAcceptsAWhen(t *testing.T) {
+	s := newTrainingServer(t)
+
+	got := s.read(t, "/api/v1/explain", "when marathon").Results
+
+	if got.Start != "2023-05-07T00:00:00Z" || got.End != "2023-05-08T00:00:00Z" {
+		t.Errorf("explained when answered %q to %q, want 7 May to 8 May 2023", got.Start, got.End)
+	}
+	if len(got.Hits) != 1 || got.Hits[0].Decay <= 0 {
+		t.Errorf("explained when hits = %+v, want its one fact with a recency factor", got.Hits)
+	}
+	if w := s.do(http.MethodPost, "/api/v1/explain", `{"query":"remember@0 'anna slept' said:'2023-05-10'"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("explaining a remember: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
 	}
 }
 

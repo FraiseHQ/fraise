@@ -27,6 +27,8 @@ A lossless key is still a 64-bit hash, and two distinct queries can share one. S
 
 A bound vector enters the key as a nested hash of its exact values, so the same query with the same vector reuses its plan and a new vector is planned afresh. Vectors are still bound as [parameters](/docs/query-language/tokens/parameters) rather than written inline, which keeps them out of the lexer and the log.
 
+A `when` in a time bound enters the key the same way, as the nested hash of its own query and the clock it names. The times a `remember` gives its fact are the one part of a query the key leaves out: a fact remembered again with other times shares its key, and the equality check, which compares them, plans it afresh.
+
 ## Sizing the cache
 
 `cache-capacity` is a count of query plans, not bytes. The default 1000 is generous for agents that repeat a handful of query shapes. See [Engine settings](/docs/configuration/reference/engine).

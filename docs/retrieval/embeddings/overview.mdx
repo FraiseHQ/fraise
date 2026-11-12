@@ -21,10 +21,10 @@ That split is deliberate. Embedding models change often, cost money, and differ 
 
 A vector reaches the server as a request **parameter**, bound to a `vec:$v` reference in the query — never inline in the query text. The query string is lexed on every call and written to the log; a few thousand floats spliced into it would bloat every log line and put the lexer to work for nothing. See [Query endpoint](/docs/http-api/endpoints/query) for the request shape.
 
-## `vec:` on both commands
+## `vec:` on a write and on a search
 
 - on `remember`, the vector is the fact's embedding, stored and indexed with it;
-- on `recall`, it is a semantic seed: the vector index returns its nearest neighbours, which seed the search.
+- on `recall` and `when`, it is a semantic seed: the vector index returns its nearest neighbours, which seed the search.
 
 ## Vectors are a seed, not an answer
 

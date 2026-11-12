@@ -27,9 +27,15 @@
 // the query that holds it, so it hashes itself through that query's
 // [hash.Hasher]. The material is lossless: exact hex floats and RFC3339Nano
 // instants. Lossy material would let two different queries share one cached
-// plan. [ParseTimeValue] reads the since: and until: bounds. It refuses a
-// duration too long for a time.Duration rather than letting it wrap into the
-// future.
+// plan. [ParseTimeValue] reads the since: and until: bounds and the said: and
+// occurred: times. It refuses a duration too long for a time.Duration rather
+// than letting it wrap into the future.
+//
+// A [TimeValue] resolves to an [Interval], the span it names at the precision
+// it was written: a day, a month, a year, an instant, or a range between two
+// of them. A fact holds intervals too, so a bound and a fact compare by
+// overlap. [Clock] names which of a fact's three times is read, and [Bound]
+// is one edge of a recall's window on one clock.
 //
 // [Heap], [PriorityQueue] and [TopK] rank keys by score. Heap is a max-heap
 // with one item per key, so an item can be found and removed by key.

@@ -26,10 +26,10 @@ The unit tests parse recorded and hand-written bodies with no I/O. The tests
 marked ``integration`` parse what a live server sends.
 """
 
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from fraise_sdk.models import Contribution, GraphStats, Hit, RecallResult
+from fraise_sdk.models import Contribution, GraphStats, Hit, Interval, RecallResult
 
 
 def test_graph_stats_names_the_counts_for_what_they_count(stats_response):
@@ -172,6 +172,138 @@ def test_a_text_sighting_says_how_much_of_the_query_its_words_hold(held, want):
     """
     data = {"source": "text", "score": 1.5, "rank": 0, "count": 1}
     assert Contribution.from_json(data | held).held == want
+
+
+@pytest.mark.parametrize(
+    "data, want",
+    [
+        (
+            {"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"},
+            Interval(
+                start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+            ),
+        ),
+        (
+            {"start": "2023-05-20T00:00:00Z"},
+            Interval(start=datetime(2023, 5, 20, tzinfo=timezone.utc), end=None),
+        ),
+        (
+            {"start": "2023-05-07T18:30:00Z", "end": "2023-05-07T18:30:00Z"},
+            Interval(
+                start=datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 7, 18, 30, tzinfo=timezone.utc),
+            ),
+        ),
+        (
+            {
+                "start": "2023-05-07T18:30:00.123456+02:00",
+                "end": "2023-05-09T00:00:00+02:00",
+            },
+            Interval(
+                start=datetime(
+                    2023, 5, 7, 18, 30, 0, 123456, tzinfo=timezone(timedelta(hours=2))
+                ),
+                end=datetime(2023, 5, 9, tzinfo=timezone(timedelta(hours=2))),
+            ),
+        ),
+    ],
+)
+def test_a_span_parses_into_the_moments_it_runs_between(data, want):
+    """A span's edges parse into datetimes, and an end the server left out stays out.
+
+    The server omits the end of a span that has not ended. ``None`` says so,
+    where a made-up moment would close a span that is still open. A single
+    moment arrives with its end equal to its start, and parses that way.
+    """
+    assert Interval.from_json(data) == want
+
+
+def test_a_parsed_time_keeps_the_offset_it_was_written_with():
+    """A time parses in the offset the wire gives it, never moved to UTC.
+
+    Two datetimes at one instant are equal whatever their offsets, so the
+    comparison above cannot see this. The offset is what a reader takes the
+    date from: 23:30 at UTC-7 on the 8th is the 8th to whoever said it, and the
+    9th in UTC.
+    """
+    hit = Hit.from_json(
+        {
+            "value": "anna called late that night",
+            "said": "2023-05-08T23:30:00-07:00",
+            "occurred": [
+                {
+                    "start": "2023-05-01T00:00:00+02:00",
+                    "end": "2023-06-01T00:00:00+02:00",
+                }
+            ],
+            "score": 1.0,
+        }
+    )
+
+    assert hit.said is not None
+    assert hit.said.utcoffset() == timedelta(hours=-7)
+    assert hit.said.date() == date(2023, 5, 8)
+    assert hit.occurred is not None
+    assert hit.occurred[0].start.utcoffset() == timedelta(hours=2)
+    assert hit.occurred[0].end is not None
+    assert hit.occurred[0].end.utcoffset() == timedelta(hours=2)
+
+
+def test_a_hit_carries_the_times_its_fact_was_given():
+    """``said`` parses into a datetime and ``occurred`` into its spans, in order.
+
+    They are typed because a caller computes with them: sorting hits by when
+    they happened, or testing a span against a day. ``timestamp`` stays the
+    server's string, as it was before the fact had other times.
+    """
+    hit = Hit.from_json(
+        {
+            "value": "anna ran the charity race",
+            "timestamp": "2026-01-02T03:04:05.062614Z",
+            "said": "2023-05-08T09:30:00Z",
+            "occurred": [
+                {"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"},
+                {"start": "2023-05-20T00:00:00Z"},
+            ],
+            "score": 1.25,
+        }
+    )
+
+    assert hit == Hit(
+        value="anna ran the charity race",
+        score=1.25,
+        timestamp="2026-01-02T03:04:05.062614Z",
+        said=datetime(2023, 5, 8, 9, 30, tzinfo=timezone.utc),
+        occurred=[
+            Interval(
+                start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+            ),
+            Interval(start=datetime(2023, 5, 20, tzinfo=timezone.utc), end=None),
+        ],
+    )
+
+
+def test_a_hit_given_no_times_leaves_them_unset():
+    """A hit that arrives without ``said`` or ``occurred`` holds ``None`` for both.
+
+    The server omits a time the fact was not given, and a server that predates
+    the two fields never sends them. Either way the hit parses. ``None`` reads
+    as "not given", so a caller can tell a time a remember set from one it
+    would have to assume.
+    """
+    hit = Hit.from_json(
+        {
+            "value": "polly whistles at dawn",
+            "timestamp": "2026-01-02T03:04:05Z",
+            "score": 1.0,
+        }
+    )
+
+    assert hit.said is None
+    assert hit.occurred is None
+    assert hit.timestamp == "2026-01-02T03:04:05Z"
 
 
 def test_a_hit_reached_through_the_graph_alone_says_so(explain_response):
@@ -328,6 +460,61 @@ def test_hit_values_come_back_exactly_as_written(client, models_graph):
     client.remember(stored, graph=models_graph)
     result = client.recall("mudflats", graph=models_graph, depth=0)
     assert stored in [hit.value for hit in result]
+
+
+@pytest.mark.integration
+def test_a_facts_times_come_back_as_they_were_given(client, models_graph):
+    """The times a remember gives a fact are the times its hit holds.
+
+    The said moment is 23:30 at UTC-7, and the span runs between two moments at
+    UTC+2, with microseconds on its start. Each comes back as the same instant
+    in the same offset, because the server keeps the offset a time was written
+    with. A day comes back as the span from its midnight to the next, in UTC,
+    where a date is read. The spans keep the order they were given in.
+    """
+    stored = "the keeper logged the eclipseprobe from the lighthouse"
+    said = datetime(2023, 5, 8, 23, 30, tzinfo=timezone(timedelta(hours=-7)))
+    span = Interval(
+        start=datetime(
+            2023, 5, 7, 18, 30, 0, 123456, tzinfo=timezone(timedelta(hours=2))
+        ),
+        end=datetime(2023, 5, 9, tzinfo=timezone(timedelta(hours=2))),
+    )
+    client.remember(
+        stored, graph=models_graph, said=said, occurred=[date(2023, 5, 1), span]
+    )
+
+    result = client.recall("eclipseprobe", graph=models_graph, depth=0)
+
+    [hit] = [hit for hit in result.hits if hit.value == stored]
+    assert hit.said == said
+    assert hit.occurred == [
+        Interval(
+            start=datetime(2023, 5, 1, tzinfo=timezone.utc),
+            end=datetime(2023, 5, 2, tzinfo=timezone.utc),
+        ),
+        span,
+    ]
+    assert hit.said is not None
+    assert hit.said.utcoffset() == timedelta(hours=-7)
+    assert hit.occurred is not None
+    assert hit.occurred[1].start.utcoffset() == timedelta(hours=2)
+
+
+@pytest.mark.integration
+def test_a_fact_given_no_times_holds_none(tide_result):
+    """A fact its remember gave no times comes back with neither field set.
+
+    The tide facts were written with a value and anchors only. The server sends
+    no ``said`` and no ``occurred`` for them, where it could have sent a copy
+    of the written time. So a caller can tell a time that was given from one
+    that is assumed. ``timestamp`` is the one time every hit holds.
+    """
+    assert tide_result.hits
+    for hit in tide_result.hits:
+        assert hit.said is None
+        assert hit.occurred is None
+        assert hit.timestamp is not None
 
 
 @pytest.mark.integration

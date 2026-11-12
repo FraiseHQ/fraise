@@ -47,7 +47,8 @@ import pytest
 # Duplicate single-valued clauses. The clause switch assigns each clause
 # (r.depth = ...). A bare assignment would let the last occurrence win
 # silently, so a repeat is rejected. Repeated anchors are a different case and
-# stay legal, because anchors are a list by design.
+# stay legal, because anchors are a list by design. So is a repeated occurred:,
+# since what a fact states may have happened more than once.
 
 
 @pytest.mark.parametrize(
@@ -67,6 +68,10 @@ import pytest
         "recall ferry topic:harbour depth:1 depth:4",
         "remember@1 'the ferry docks at dawn' vec:$a vec:$b",
         "recall ferry depth:2 DEPTH:5",
+        "remember@1 'the ferry docks at dawn' said:'2023-05-08' said:'2023-05-09'",
+        "remember@1 'the ferry docks at dawn' said:7d occurred:8d said:9d",
+        "recall ferry until:(when zebras) since:(when zebras) until:7d",
+        "when zebras top:1 top:2",
     ],
 )
 def test_duplicate_single_valued_clause_is_rejected(query, text, assert_rejected):
@@ -183,6 +188,8 @@ def test_empty_data_is_rejected(query, text, assert_rejected):
         "recall vec",
         "recall topic",
         "recall entity",
+        "recall said",
+        "recall occurred",
     ],
 )
 def test_leading_reserved_word_is_rejected(query, text, assert_rejected):
@@ -204,6 +211,8 @@ def test_leading_reserved_word_is_rejected(query, text, assert_rejected):
         "recall update",
         "recall remember",
         "recall recall",
+        "recall when",
+        "when when",
     ],
 )
 def test_leading_command_word_is_rejected_with_the_quote(query, text, assert_rejected):
@@ -238,6 +247,9 @@ def test_leading_command_word_is_rejected_with_the_quote(query, text, assert_rej
         "recall ferry bridge since",
         "recall@1 ferry top",
         "recall ferry topic:harbour top",
+        "recall ferry said",
+        "recall ferry occurred",
+        "when ferry top",
     ],
 )
 def test_trailing_reserved_word_error_is_actionable(query, text):
@@ -294,11 +306,37 @@ def test_reserved_word_as_a_term_names_both_fixes(query, text, column, fixes):
 
 
 @pytest.mark.parametrize(
+    "text,column,word",
+    [
+        ("recall said", 11, "said"),
+        ("recall said 7d", 11, "said"),
+        ("recall ferry occurred", 21, "occurred"),
+        ("when zebras said", 16, "said"),
+    ],
+)
+def test_remember_clause_word_as_a_term_names_only_the_quote(query, text, column, word):
+    """said and occurred among a search's terms get the quote and no clause.
+
+    They are clauses of a remember. A search has no said: to write, so offering
+    one would send the caller into the next rejection. The quote is the only
+    repair that works, and the message names it alone.
+    """
+    status, body = query(text)
+    assert status == 400, f"{text!r}: expected 400, got {status} — {body!r}"
+    assert body.get("error") == (
+        f'parse error at column {column}: term "{word}" is also a keyword: '
+        f"quote it ('{word}') to search for the word"
+    ), f"{text!r}: error {body.get('error')!r}"
+
+
+@pytest.mark.parametrize(
     "text,fix",
     [
         ("recall zebras since:7d topic food", "write topic:food"),
         ("recall zebras top:5 depth 2", "write depth:2"),
         ("remember@1 'zebras eat grass' topic food entity:x", "write topic:food"),
+        ("remember@1 'zebras eat grass' said '2023-05-08'", "write said:'2023-05-08'"),
+        ("remember@1 'zebras eat grass' topic:food occurred 7d", "write occurred:7d"),
     ],
 )
 def test_keyword_after_a_clause_is_a_missing_colon(query, text, fix, assert_rejected):
@@ -330,6 +368,10 @@ def test_keyword_after_a_clause_is_a_missing_colon(query, text, fix, assert_reje
         "recall ferry topic:top entity:since",
         "recall@1 ferry topic:top",
         "recall ferry topic:'since'",
+        "recall ferry topic:when",
+        "recall ferry topic:said",
+        "recall ferry entity:occurred",
+        "when zebras topic:when",
     ],
 )
 def test_reserved_word_in_value_position_is_data(query, text, assert_accepted):
@@ -355,6 +397,13 @@ def test_reserved_word_in_value_position_is_data(query, text, assert_accepted):
         ("recall ferry depth:since", "invalid depth value"),
         ("recall ferry top:top", "invalid top value"),
         ("recall ferry top:vec", "invalid top value"),
+        ("recall ferry until:said", "invalid until value"),
+        ("recall ferry since:occurred", "invalid since value"),
+        ("remember@1 'the ferry docks at dawn' said:top", "invalid said value"),
+        (
+            "remember@1 'the ferry docks at dawn' occurred:since",
+            "invalid occurred value",
+        ),
     ],
 )
 def test_reserved_word_where_a_value_is_required_names_the_clause(
@@ -398,7 +447,42 @@ def test_recall_clause_on_a_remember_names_the_command(
     assert_rejected(
         status,
         body,
-        f"{clause}: is a recall clause: a remember takes only topic:, entity: and vec:",
+        f"{clause}: is a recall clause: a remember takes only topic:, entity:, vec:, "
+        "said: and occurred:",
+        text,
+    )
+    assert f"write {clause}:<value>" not in body["error"], (
+        f"{text!r}: error {body['error']!r} repeats the clause back as the fix"
+    )
+
+
+@pytest.mark.parametrize(
+    "text,clause",
+    [
+        ("recall ferry said:'2023-05-08'", "said"),
+        ("recall ferry occurred:'2023-05-07'", "occurred"),
+        ("recall ferry topic:harbour occurred:'2023-05-07'..'2023-05-09'", "occurred"),
+        ("recall ferry Said:'2023-05-08'", "said"),
+        ("when zebras said:'2023-05-08'", "said"),
+        ("recall ferry until:(when zebras occurred:'2023-05-07')", "occurred"),
+    ],
+)
+def test_remember_clause_on_a_search_names_the_bounds(
+    query, text, clause, assert_rejected
+):
+    """A remember's time clause on a recall or a when is a 400 naming the bounds.
+
+    said: and occurred: give a fact its times. A caller who writes one on a
+    search wants the facts of that time, which is what since: and until: ask
+    for. The error says so. The keyword repair would tell the caller to write
+    the clause they just wrote.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        f"{clause}: is a remember clause: it gives a fact its time, and a search is "
+        "bounded with since: and until:",
         text,
     )
     assert f"write {clause}:<value>" not in body["error"], (
@@ -582,6 +666,13 @@ def test_unterminated_phrase_is_reported_as_such(query, text, assert_rejected):
         ("recall ferry since:", "expected"),
         # an unquoted date: the message shows the quoted form that parses
         ("recall ferry since:2026-01-15", "a quoted date like '2026-01-15'"),
+        # an unquoted year reads as a number, and a month splits at its hyphen
+        ("recall ferry since:2023", "a quoted date like '2026-01-15'"),
+        ("recall ferry until:2023-05", "a quoted date like '2026-01-15'"),
+        ("recall ferry since:'2023-5'", "invalid since value"),
+        ("recall ferry since:'23'", "invalid since value"),
+        ("recall ferry since:'2023-13'", "invalid since value"),
+        ("recall ferry until:'May 2023'", "invalid until value"),
     ],
 )
 def test_invalid_temporal_values_name_the_accepted_forms(
@@ -651,6 +742,220 @@ def test_valid_temporal_values_parse(query, text, assert_accepted):
     """
     status, body = query(text)
     assert_accepted(status, body, text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall ferry since:'2023'",
+        "recall ferry since:'2023-05'",
+        "recall ferry until:'2023-05'",
+        "recall ferry since:'2023' until:'2024'",
+        "recall ferry since:'2023-05-07'..'2023-05-09'",
+        "recall ferry until:'2023-05'..'2023-06'",
+        "recall ferry since:'2023'..'2023-05-09T10:00:00Z'",  # the ends need not match
+        "recall ferry since:'2023-05-07'..",
+        "recall ferry since:'2023-05-07'.. top:3",
+        "recall ferry since:'2023-05-07'..'2023-05-07'",  # a range may be one moment
+        "recall ferry until:'9999-12-31'",
+        "recall ferry since:'0000'",
+        "recall ferry since:'0000'..'9999'",
+    ],
+)
+def test_dates_of_any_precision_and_ranges_parse(query, text, assert_accepted):
+    """A quoted date names a day, a month or a year, and two dots join a range.
+
+    A date is as precise as it is written: '2023-05' is the whole of May. A
+    range joins two dates, or leaves its end open. Every one of these is a time
+    a bound can read. A bound is never written back on a hit, so it takes every
+    date a literal spells, the year 0000 and the last day of 9999 included,
+    which a fact's own time is refused.
+    """
+    status, body = query(text)
+    assert_accepted(status, body, text)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "recall ferry since:'2023-05-09'..'2023-05-08'",
+            "invalid since value: the range ends before it starts — write the "
+            "earlier date first",
+        ),
+        (
+            "recall ferry until:'2024'..'2023'",
+            "invalid until value: the range ends before it starts",
+        ),
+        (
+            "recall ferry since:7d..",
+            "invalid since value: a duration cannot start a range — a range joins "
+            "two quoted dates, as in '2023-05-07'..'2023-05-09'",
+        ),
+        (
+            "recall ferry since:'2023-05-08'..7d",
+            'invalid since value "7d": the end of a range is a quoted date',
+        ),
+        ("recall ferry since:'2023-05-08'..'soon'", 'invalid since value "soon"'),
+        ("recall ferry since:'2023-05-08'.. '2023-05-09'", "no space allowed after .."),
+        (
+            "recall ferry since:'2023-05-08' ..'2023-05-09'",
+            "no space allowed before ..",
+        ),
+    ],
+)
+def test_a_malformed_range_names_its_repair(query, text, expected, assert_rejected):
+    """A range that cannot be read says which end is wrong and how to write it.
+
+    A range is two quoted dates in order, glued by the dots. Each way of
+    getting that wrong has its own message: the ends swapped, a duration at
+    either end, a space around the dots. Swapping the ends silently would run a
+    window the caller did not write.
+    """
+    status, body = query(text)
+    assert_rejected(status, body, expected, text)
+
+
+# A remember's times. said: is the moment a fact was stated and occurred: a
+# span over which what it states took place. Each takes the time values a bound
+# takes. said: is one moment, so it is given once and takes no range. occurred:
+# may repeat. Neither takes a when: a fact's time is written out, never looked
+# up. The writes go to graph 1, on one fact, whose times no test reads.
+
+
+@pytest.mark.parametrize(
+    "clauses",
+    [
+        "said:'2023-05-08'",
+        "occurred:'2023-05-07'",
+        "said:'2023-05-08' occurred:'2023-05-07'",
+        "occurred:'2023-05-07' said:'2023-05-08'",
+        "occurred:'2023-05-01' occurred:'2023-05-28'",
+        "occurred:'2023-05-07' occurred:'2023-05-07'",
+        "occurred:'2023-05-10'..'2023-05-16'",
+        "occurred:'2023-05-20'..",
+        "occurred:'2023-05'",
+        "occurred:'2023'",
+        "said:'2023-05-08T10:00:00Z'",
+        "said:7d occurred:8d",
+        "occurred:'0001-01-02'",  # the first day a fact holds whole
+        "occurred:'9999-12-30'",  # and the last
+        "occurred:'9999-12-31T23:59:59Z'",
+        "occurred:'9999-12-31'..",
+        "topic:harbour said:'2023-05-08' entity:acme occurred:'2023-05-07'",
+    ],
+)
+def test_a_remember_takes_its_times(query, clauses, assert_accepted):
+    """said: and occurred: parse on a remember, in any order among its clauses.
+
+    occurred: repeats and takes a range, an open one included. Both take a date
+    of any precision, and a duration counted back from the write. A time may
+    be any instant after the first of the year 0001, up to the last of 9999.
+    """
+    text = f"remember@1 'the ferry sailed on a dated day' {clauses}"
+    status, body = query(text)
+    assert_accepted(status, body, text)
+
+
+@pytest.mark.parametrize(
+    "clauses,expected",
+    [
+        (
+            "said:'2023-05-08'..'2023-05-09'",
+            "said: is one moment, not a range: write the day the fact was said, as "
+            "in said:'2023-05-08', and give a span to occurred:",
+        ),
+        ("said:'2023-05-08'..", "said: is one moment, not a range"),
+        (
+            "said:(when zebras)",
+            "said: takes a time written out, as in said:'2023-05-07': a when only "
+            "bounds a recall, in since: and until:",
+        ),
+        (
+            "occurred:(when zebras)",
+            "occurred: takes a time written out, as in occurred:'2023-05-07': a "
+            "when only bounds a recall, in since: and until:",
+        ),
+        (
+            "occurred:'2023-05-09'..'2023-05-08'",
+            "invalid occurred value: the range ends before it starts — write the "
+            "earlier date first",
+        ),
+        ("occurred:7d..", "invalid occurred value: a duration cannot start a range"),
+        (
+            "occurred:'2023-05-08'..7d",
+            'invalid occurred value "7d": the end of a range is a quoted date',
+        ),
+        (
+            "occurred:'2023-5-8'",
+            'invalid occurred value "2023-5-8": expected a duration like 7d or a '
+            "quoted date like '2026-01-15'",
+        ),
+        (
+            "said:soon",
+            'invalid said value "soon": expected a duration like 7d or a quoted '
+            "date like '2026-01-15'",
+        ),
+        ("occurred:2023", 'invalid occurred value "2023"'),
+        ("said:", "invalid said value end of input"),
+        ("said :'2023-05-08'", "no space allowed before :"),
+        ("occurred: '2023-05-07'", "no space allowed after :"),
+    ],
+)
+def test_a_malformed_remember_time_names_its_repair(
+    query, clauses, expected, assert_rejected
+):
+    """A time a remember cannot read is a 400 saying how to write it.
+
+    The message names the clause and the value, as a bound's does. Two shapes
+    get a message of their own, because each is a caller reaching for the other
+    clause: a range on said:, which belongs on occurred:, and a when, which
+    bounds a recall and never dates a fact.
+    """
+    text = f"remember@1 'the ferry sailed on a dated day' {clauses}"
+    status, body = query(text)
+    assert_rejected(status, body, expected, text)
+
+
+@pytest.mark.parametrize(
+    "clauses",
+    [
+        "occurred:'9999'",
+        "occurred:'9999-12'",
+        "occurred:'9999-12-31'",
+        "occurred:'2023-05-07'..'9999'",
+        "said:'9999-12-31'",
+        "said:'9999-12-31T23:59:59-12:00'",  # the year after, in UTC
+        "occurred:'0000'",
+        "occurred:'0000-12-31'..'2023'",
+        "said:'0000-06-01T12:00:00Z'",
+        "occurred:'0001'",
+        "said:'0001-01-01'",
+        "said:'0001-01-01T00:00:00+14:00'",  # the year before, in UTC
+    ],
+)
+def test_a_remember_time_outside_the_years_a_hit_carries_is_rejected(
+    query, clauses, assert_rejected
+):
+    """A fact's time starts after the year 0001 does and ends before 9999 does.
+
+    A hit carries its fact's times as RFC 3339 text, which has no year after
+    9999. The last day, month and year of 9999 each end on the first instant of
+    the year after, so each is refused. Stored, one such fact would leave every
+    recall that returns it without a body. At the other end a year 0000 is text
+    not every client reads, and the instant the year 0001 starts on is the one
+    a fact given no time holds. An offset moves neither end. The message
+    carries the range, as every bound's does.
+    """
+    text = f"remember@1 'the ferry sailed on a dated day' {clauses}"
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        "out of range (a fact's time starts after the year 0001 does and ends "
+        "before the year 9999 does)",
+        text,
+    )
 
 
 # Graph selector. Every malformed selector gets a message of its own, not a
@@ -734,6 +1039,10 @@ def test_nul_outside_quotes_is_rejected_by_name(query, assert_rejected):
         ("recall zebras vec: $v", "no space allowed after :"),
         ("recall zebras vec:$ v", "no space allowed after $"),
         ("recall zebras : topic:food", "stray"),
+        ("when :said zebras", "no space allowed before :"),
+        ("when: said zebras", "no space allowed after :"),
+        ("recall zebras until: (when ferry)", "no space allowed after :"),
+        ("recall zebras until:( when ferry)", "no space allowed after ("),
     ],
 )
 def test_no_space_inside_a_command_or_clause(query, text, expected, assert_rejected):
@@ -765,10 +1074,10 @@ def test_no_space_inside_a_command_or_clause(query, text, expected, assert_rejec
     ],
 )
 def test_grouping_is_rejected_as_unsupported(query, text):
-    """Parentheses lex to LPAREN/RPAREN, and no rule accepts them.
+    """Parentheses group nothing: they only enclose a when in a time bound.
 
-    So the error says grouping is unsupported, not only which character it
-    found. "Encountered unexpected token: \"(\"" would leave the caller
+    So the error says grouping is unsupported, and where a parenthesis does
+    belong. "Encountered unexpected token: \"(\"" would leave the caller
     guessing.
     """
     status, body = query(text)
@@ -777,6 +1086,9 @@ def test_grouping_is_rejected_as_unsupported(query, text):
     assert "group" in message or "not supported" in message, (
         f"{text!r}: error {body.get('error')!r} should say grouping is "
         "unsupported, not blame the character"
+    )
+    assert "only encloses a when in a time bound" in message, (
+        f"{text!r}: error {body.get('error')!r} should say what a parenthesis is for"
     )
 
 
@@ -812,6 +1124,9 @@ def test_second_command_is_rejected_as_one_per_instruction(query, text):
     [
         ("recall ferry recall bridge", "recall"),
         ("recall ferry remember 'x'", "remember"),
+        ("recall ferry when bridge", "when"),
+        ("when zebras when ferry", "when"),
+        ("when zebras recall", "recall"),
     ],
 )
 def test_command_word_among_the_terms_is_a_word_to_quote(
@@ -824,6 +1139,180 @@ def test_command_word_among_the_terms_is_a_word_to_quote(
     status, body = query(text)
     assert_rejected(
         status, body, f"term \"{word}\" is also a command: quote it ('{word}')", text
+    )
+
+
+# The when command. A when is a recall that answers with a time, so it takes a
+# recall's terms and clauses. The clock it reads is glued to the command with a
+# colon, and it takes no graph selector. In parentheses it is the value of a
+# since: or until: bound, where it reads the graph of the recall around it. A
+# when holds no when.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "when zebras",
+        "when:happened zebras",
+        "when:said zebras",
+        "when:written zebras",
+        "when zebras ferry",
+        "when 'the ferry docks'",
+        "when zebras topic:harbour entity:acme",
+        "when topic:harbour",
+        "when zebras top:3",
+        "when zebras topic:harbour depth:1 top:3",
+        "when zebras since:7d until:'2026-01-15'",
+        "when:said zebras since:'2023-05'..'2023-06'",
+        "when  zebras ",
+    ],
+)
+def test_a_when_takes_what_a_recall_takes(query, text, assert_accepted):
+    """A when parses with every term and clause a recall takes.
+
+    It is a recall whose answer is a time, so nothing a recall accepts is
+    refused here, its own literal time bounds included.
+    """
+    status, body = query(text)
+    assert_accepted(status, body, text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "recall ferry until:(when zebras)",
+        "recall ferry since:(when zebras)",
+        "recall ferry since:(when:said zebras) until:(when:written zebras)",
+        "recall ferry since:(when zebras) until:7d",
+        "recall@1 ferry until:(when zebras)",
+        "recall ferry until:(when zebras topic:harbour top:3)",
+        "recall ferry until:(when zebras since:'2023' until:'2024')",
+        "recall ferry top:3 until:(when 'the ferry docks') topic:harbour",
+        "recall topic:harbour until:(when zebras)",
+        "recall ferry until:(when zebras )",
+    ],
+)
+def test_a_time_bound_takes_a_when(query, text, assert_accepted):
+    """since: and until: each take a when in parentheses, whatever the other is.
+
+    The when keeps every clause it takes as a statement, and the recall around
+    it keeps its own, on either side of the bound.
+    """
+    status, body = query(text)
+    assert_accepted(status, body, text)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "when@1 zebras",
+            "a when takes no graph selector: in a time bound it reads the graph of "
+            "the recall that holds it, and on its own the default graph",
+        ),
+        ("when:said@1 zebras", "a when takes no graph selector"),
+        ("recall@1 ferry until:(when@1 zebras)", "a when takes no graph selector"),
+        (
+            "when:heard zebras",
+            'invalid clock "heard": a when reads said, happened or written, as in '
+            "when:said",
+        ),
+        ("when:Said zebras", 'invalid clock "Said": a when reads said, happened'),
+        ("when:occurred zebras", 'invalid clock "occurred"'),
+        ("when:'said' zebras", "a clock is not quoted — write when:said"),
+        ("recall ferry until:(when:heard zebras)", 'invalid clock "heard"'),
+        ("when:said:written zebras", "expected a space after the command"),
+    ],
+)
+def test_a_malformed_when_command_names_its_repair(
+    query, text, expected, assert_rejected
+):
+    """A when with a selector or an unknown clock is a 400 naming what it takes.
+
+    A when has no graph of its own to select: the message says which graph it
+    reads instead. A clock is one of three lower-case words, and the message
+    lists them.
+    """
+    status, body = query(text)
+    assert_rejected(status, body, expected, text)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "recall ferry until:(recall zebras)",
+            '"recall" cannot stand in a time bound: only a when answers with a '
+            "time — write until:(when <terms>)",
+        ),
+        (
+            "recall ferry since:(remember 'zebras')",
+            '"remember" cannot stand in a time bound: only a when answers with a '
+            "time — write since:(when <terms>)",
+        ),
+        (
+            "recall ferry until:(zebras)",
+            'expected a when after "(", found "zebras": a time bound\'s parentheses '
+            "hold the when whose answer is the bound — write until:(when <terms>)",
+        ),
+        ("recall ferry until:((when zebras))", 'expected a when after "(", found "("'),
+        ("recall ferry until:()", 'expected a when after "(", found ")"'),
+        ("recall ferry until:(", 'expected a when after "(", found end of input'),
+        ("recall ferry until:(When zebras)", 'expected a when after "(", found "When"'),
+        (
+            "recall ferry until:(when zebras",
+            'expected ")" to close the when, found end of input',
+        ),
+        (
+            "recall ferry until:(when zebras top:3",
+            'expected ")" to close the when, found end of input',
+        ),
+        ("recall ferry until:(when)", 'expected a space after the command, found ")"'),
+        (
+            "recall ferry since:when zebras",
+            'invalid since value "when": a when is written in parentheses — write '
+            "since:(when <terms>)",
+        ),
+        ("recall ferry until:(when zebras) bridge", 'unexpected "bridge"'),
+    ],
+)
+def test_a_malformed_when_bound_names_its_repair(
+    query, text, expected, assert_rejected
+):
+    """A time bound's parentheses hold one well-formed when, and nothing else.
+
+    Each message shows the form that parses, with the caller's own clause in
+    it. Only a when answers with a time, so another command there is named and
+    refused. A term after the bound is refused too: a recall's terms come
+    before its clauses.
+    """
+    status, body = query(text)
+    assert_rejected(status, body, expected, text)
+
+
+@pytest.mark.parametrize(
+    "text,clause",
+    [
+        ("when ferry until:(when zebras)", "until"),
+        ("when ferry since:(when zebras)", "since"),
+        ("recall ferry until:(when zebras until:(when ferry))", "until"),
+        ("recall ferry since:(when zebras until:(when ferry))", "until"),
+    ],
+)
+def test_a_when_holds_no_when(query, text, clause, assert_rejected):
+    """A when's own bounds are written out: nesting stops at one level.
+
+    A when inside a when is a 400 at the inner one, as a statement and inside a
+    recall's bound alike. The message names the bound to rewrite and shows a
+    date in it.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        f"a when holds no when: write {clause}: as a duration or a quoted date, as "
+        f"in {clause}:'2023-05-07'",
+        text,
     )
 
 
@@ -953,6 +1442,15 @@ def test_anchor_only_recall_is_reachable(query, text, assert_accepted):
         "recall",
         "remember",
         "recall@",
+        "when",
+        "when:",
+        "when:said",
+        "when@",
+        "recall ferry until:(",
+        "recall ferry until:()",
+        "recall ferry until:)",
+        "remember@1 'the ferry docks at dawn' said:",
+        "remember@1 'the ferry docks at dawn' occurred:..",
     ],
 )
 def test_degenerate_input_is_a_clean_client_error(query, text):

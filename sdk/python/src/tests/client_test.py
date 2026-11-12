@@ -27,11 +27,20 @@ Setup lives in conftest.py, and this file holds only assertions.
 """
 
 import warnings
+from collections import deque
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
 import requests
-from fraise_sdk import FraiseAPIError, FraiseClient, FraiseError, FraiseWarning
+from fraise_sdk import (
+    FraiseAPIError,
+    FraiseClient,
+    FraiseError,
+    FraiseWarning,
+    Interval,
+    When,
+)
 from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
 from fraise_sdk.models import GraphStats
@@ -127,6 +136,7 @@ def test_recall_parses_hits(session, respond, sent):
         (["polly"], {"entities": ["polly"], "depth": 2}),
         ([], {"query": "where does the parrot sleep", "topics": ["birds"], "top": 3}),
         (["kettle"], {"graph": 4, "vector": [0.5, 0.5]}),
+        (["anna"], {"since": date(2023, 5, 1), "until": When("regatta")}),
     ],
 )
 def test_explain_sends_the_recall_query_to_the_explain_route(
@@ -813,6 +823,221 @@ def test_recall_never_extracts(session, callable_extractor):
     extractor.assert_not_called()
 
 
+def test_remember_sends_the_times_a_fact_is_given(session, query_url):
+    """``said`` and ``occurred`` travel in the query, after the anchors.
+
+    The server reads a fact's times from its remember and from nowhere else, so
+    one posted string is the whole write.
+    """
+    FraiseClient().remember(
+        "anna ran the race",
+        graph=3,
+        topics=["sport"],
+        said=datetime(2023, 5, 8, 9, 30, tzinfo=timezone.utc),
+        occurred=[date(2023, 5, 7)],
+    )
+
+    session.post.assert_called_once_with(
+        query_url,
+        json={
+            "query": "remember@3 'anna ran the race' topic:sport "
+            "said:'2023-05-08T09:30:00+00:00' occurred:'2023-05-07'"
+        },
+        timeout=DEFAULT_TIMEOUT_SECONDS,
+    )
+
+
+def test_recall_sends_its_bounds(session, query_url):
+    """``since`` and ``until`` travel in the query, a when as the search it runs.
+
+    A when is not a request of its own. It is written into the recall it
+    bounds, so the server answers both in one round trip and reads the when
+    from the graph of that recall.
+    """
+    FraiseClient().recall(
+        "anna", graph=7, since=date(2023, 5, 1), until=When("regatta", clock="said")
+    )
+
+    session.post.assert_called_once_with(
+        query_url,
+        json={"query": "recall@7 anna since:'2023-05-01' until:(when:said regatta)"},
+        timeout=DEFAULT_TIMEOUT_SECONDS,
+    )
+
+
+@pytest.mark.parametrize(
+    "call, args, kwargs",
+    [
+        (FraiseClient.remember, ("anna ran the race",), {"said": "2023-05-08"}),
+        (FraiseClient.remember, ("anna ran the race",), {"occurred": date(2023, 5, 7)}),
+        (FraiseClient.recall, ("anna",), {"since": "7d"}),
+        (FraiseClient.recall, ("anna",), {"until": When()}),
+        (FraiseClient.explain, ("anna",), {"until": When("regatta", clock="heard")}),
+    ],
+)
+def test_a_time_the_builder_refuses_never_reaches_the_wire(session, call, args, kwargs):
+    """A time the builder cannot write raises before anything is posted.
+
+    The builder refuses a time given as text, one time where ``occurred`` wants
+    a sequence, and a when it cannot write, each by name. The client raises
+    that error in the caller's own stack trace. Posted, the same mistake would
+    come back as the server's parse error about a string the caller never saw.
+    """
+    with pytest.raises(FraiseQueryError):
+        call(FraiseClient(), *args, **kwargs)
+    session.post.assert_not_called()
+
+
+def test_a_datetime_with_no_time_zone_is_sent_as_utc_and_says_so(session, sent):
+    """A naive datetime is read as UTC, and the client warns at the caller's line.
+
+    Nothing in a stored fact says which zone a naive time was meant in. A
+    caller whose clock is not on UTC would file the fact hours from where they
+    meant, and learn of it when a bound missed the fact. So the reading is
+    named at the call that can still change it, with the value it was given.
+    """
+    with pytest.warns(FraiseWarning) as record:
+        FraiseClient().remember("anna ran the race", said=datetime(2023, 5, 8, 9, 30))
+
+    assert [str(warning.message) for warning in record] == [
+        "datetime.datetime(2023, 5, 8, 9, 30) has no time zone, so it was read as "
+        "UTC; give it a tzinfo to place it in another zone. A client reports this "
+        "once, however many it is given"
+    ]
+    assert record[0].filename == __file__
+    assert sent(session)["query"] == (
+        "remember@0 'anna ran the race' said:'2023-05-08T09:30:00+00:00'"
+    )
+
+
+@pytest.mark.parametrize(
+    "call, args, kwargs",
+    [
+        (
+            FraiseClient.remember,
+            ("anna ran the race",),
+            {"occurred": [datetime(2023, 5, 7, 18, 30)]},
+        ),
+        (
+            FraiseClient.remember,
+            ("anna ran the race",),
+            {
+                "occurred": [
+                    Interval(
+                        start=datetime(2023, 5, 1, tzinfo=timezone.utc),
+                        end=datetime(2023, 6, 1),
+                    )
+                ]
+            },
+        ),
+        (
+            FraiseClient.remember,
+            ("anna ran the race",),
+            {
+                "said": date(2023, 5, 8),
+                "occurred": (
+                    date(2023, 5, 7),
+                    Interval(start=datetime(2023, 5, 20), end=None),
+                ),
+            },
+        ),
+        (
+            FraiseClient.remember,
+            ("anna ran the race",),
+            {"occurred": deque([datetime(2023, 5, 7, 18, 30)])},
+        ),
+        (FraiseClient.recall, ("anna",), {"since": datetime(2023, 5, 1)}),
+        (FraiseClient.recall, ("anna",), {"until": datetime(2023, 5, 9)}),
+        (FraiseClient.explain, ("anna",), {"since": datetime(2023, 5, 1)}),
+    ],
+)
+def test_a_naive_datetime_is_found_wherever_a_time_is_given(
+    session, call, args, kwargs
+):
+    """Every argument that takes a time is searched for a naive datetime.
+
+    The builder reads one as UTC wherever it sits: in ``occurred``, at either
+    edge of an interval, behind other times in the sequence, in a sequence
+    that is not a list, or on a recall's bound. A place the client did not
+    look would be read as UTC in silence.
+    """
+    with pytest.warns(FraiseWarning, match="has no time zone"):
+        call(FraiseClient(), *args, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "call, args, kwargs",
+    [
+        (FraiseClient.remember, ("anna ran the race",), {"said": date(2023, 5, 8)}),
+        (
+            FraiseClient.remember,
+            ("anna ran the race",),
+            {"said": datetime(2023, 5, 8, 9, 30, tzinfo=timezone.utc)},
+        ),
+        (
+            FraiseClient.remember,
+            ("anna ran the race",),
+            {
+                "occurred": [
+                    date(2023, 5, 7),
+                    Interval(
+                        start=datetime(
+                            2023, 5, 20, tzinfo=timezone(timedelta(hours=-7))
+                        ),
+                        end=None,
+                    ),
+                ]
+            },
+        ),
+        (
+            FraiseClient.recall,
+            ("anna",),
+            {
+                "since": date(2023, 5, 1),
+                "until": datetime(2023, 5, 9, tzinfo=timezone(timedelta(hours=2))),
+            },
+        ),
+        (FraiseClient.recall, ("anna",), {"until": When("regatta")}),
+    ],
+)
+def test_a_time_that_says_where_it_is_warns_about_nothing(session, call, args, kwargs):
+    """A date, a datetime that carries its zone, and a when are all silent.
+
+    A date has no clock time to place, an aware datetime says where it is, and
+    a when holds no time of the caller's at all. A caller who escalates
+    warnings to errors must be able to pass any of them.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        call(FraiseClient(), *args, **kwargs)
+
+
+def test_a_client_warns_of_a_naive_datetime_once(session):
+    """A client's first naive datetime warns, and every later one is silent.
+
+    An ingestion loop that stamps each message with a naive time would
+    otherwise print one warning per fact, all saying the same thing. One call
+    that holds several warns once too. The count is the client's own, so
+    another client says it again: it may be serving another caller.
+    """
+    client = FraiseClient()
+    with pytest.warns(FraiseWarning, match="has no time zone") as record:
+        client.remember(
+            "anna ran the race",
+            said=datetime(2023, 5, 8, 9, 30),
+            occurred=[datetime(2023, 5, 7, 18, 30), datetime(2023, 5, 7, 19)],
+        )
+    assert len(record) == 1
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        client.remember("anna won the race", said=datetime(2023, 5, 8, 11))
+        client.recall("anna", since=datetime(2023, 5, 1))
+
+    with pytest.warns(FraiseWarning, match="has no time zone"):
+        FraiseClient().recall("anna", until=datetime(2023, 5, 9))
+
+
 @pytest.mark.integration
 def test_client_works_as_a_context_manager(fraise_url):
     """A client built by ``with`` reaches the server inside the block."""
@@ -1072,6 +1297,115 @@ def test_an_unambiguous_recall_carries_no_warnings(client, round_trip_graph, no_
         result = client.recall(no_match, graph=round_trip_graph)
 
     assert result.warnings == []
+
+
+@pytest.mark.parametrize(
+    "kwargs, kept",
+    [
+        ({}, ["dawnmark", "noonmark", "duskmark"]),
+        ({"since": date(2023, 5, 5)}, ["noonmark", "duskmark"]),
+        ({"until": date(2023, 5, 8)}, ["dawnmark", "noonmark"]),
+        ({"since": date(2023, 5, 5), "until": date(2023, 5, 8)}, ["noonmark"]),
+        ({"until": date(2023, 5, 7)}, ["dawnmark"]),
+        (
+            {"since": datetime(2023, 5, 7, 12, tzinfo=timezone.utc)},
+            ["noonmark", "duskmark"],
+        ),
+        ({"until": When("noonmark")}, ["dawnmark"]),
+        ({"since": When("noonmark")}, ["duskmark"]),
+        ({"until": When("noonmark", clock="said")}, ["duskmark"]),
+        ({"since": When("noonmark", clock="said")}, ["dawnmark", "noonmark"]),
+        ({"since": When("noonmark", clock="written")}, ["noonmark", "duskmark"]),
+        ({"since": When("dawnmark"), "until": When("duskmark")}, ["noonmark"]),
+    ],
+)
+@pytest.mark.integration
+def test_a_bound_keeps_the_facts_inside_its_window(
+    kwargs, kept, client, timeline_graph, timeline_word, timeline_facts
+):
+    """``since`` and ``until`` keep the facts whose time falls inside the window.
+
+    The timeline happened dawn, noon, dusk, on 3, 7 and 10 May, and was said
+    dusk, noon, dawn, on 6, 8 and 20 May. A date or a datetime bounds when a
+    fact happened. A window holds its start and stops short of its end: the
+    race, which fills the 7th, is out of ``until`` the 7th and in ``until`` the
+    8th, and a ``since`` at noon on the 7th still finds it.
+
+    A when bounds on the clock it names. ``until`` reads where its answer
+    starts and ``since`` where it ends, so the race is in neither window of
+    ``When("noonmark")``. Asked when it was said, the same when splits the
+    timeline the other way: only the mooring was said before the race was. A
+    moment is its own start and end, so ``since`` a said or written time keeps
+    the fact the when found.
+    """
+    result = client.recall(timeline_word, graph=timeline_graph, **kwargs)
+
+    assert sorted(hit.value for hit in result) == sorted(
+        timeline_facts[word] for word in kept
+    )
+
+
+@pytest.mark.integration
+def test_a_when_no_fact_answers_returns_nothing_and_says_why(
+    client, timeline_graph, timeline_word, no_match
+):
+    """A when that finds no fact leaves the recall no bound, and the result says so.
+
+    The recall returns nothing. Run without the bound, it would answer a
+    question the caller did not ask, with hits from any time. The warning is
+    what tells this apart from a bound that kept no fact.
+    """
+    with pytest.warns(FraiseWarning, match="the when matched no fact"):
+        result = client.recall(
+            timeline_word, graph=timeline_graph, until=When(no_match)
+        )
+
+    assert result.count == 0
+    assert result.warnings == [
+        "until: the when matched no fact, so it has no time to answer with; "
+        "the recall has no bound to read and returns no hits"
+    ]
+
+
+@pytest.mark.integration
+def test_a_day_given_as_a_date_comes_back_as_that_day_in_utc(
+    client, timeline_graph, timeline_facts
+):
+    """A ``date`` is read in UTC: the whole day it happened, the midnight it was said.
+
+    ``occurred`` holds spans, so the day comes back from its midnight to the
+    next. ``said`` is one moment, so the day comes back as its first.
+    """
+    result = client.recall("noonmark", graph=timeline_graph)
+
+    [hit] = [hit for hit in result.hits if hit.value == timeline_facts["noonmark"]]
+    assert hit.said == datetime(2023, 5, 8, tzinfo=timezone.utc)
+    assert hit.occurred == [
+        Interval(
+            start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+            end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+        )
+    ]
+
+
+@pytest.mark.integration
+def test_a_naive_datetime_is_stored_as_utc(fraise_url, round_trip_graph):
+    """A datetime with no time zone lands on the server as that clock time in UTC.
+
+    The unit tests pin what the client sends and that it warns. This pins what
+    the warning says happened. The test builds its own client, because the
+    session's shared one may already have given its one warning.
+    """
+    fact = "the purser rang the naiveprobe bell"
+    with FraiseClient(fraise_url) as fraise:
+        with pytest.warns(FraiseWarning, match="has no time zone"):
+            fraise.remember(
+                fact, graph=round_trip_graph, said=datetime(2023, 5, 8, 9, 30)
+            )
+        result = fraise.recall("naiveprobe", graph=round_trip_graph)
+
+    [hit] = [hit for hit in result.hits if hit.value == fact]
+    assert hit.said == datetime(2023, 5, 8, 9, 30, tzinfo=timezone.utc)
 
 
 @pytest.mark.integration

@@ -8,7 +8,7 @@ Memory is only one of many things competing for a model's context, but whatever 
 
 ## Facts
 
-A **fact** is one self-contained statement — `'acme moved to annual billing'` — stored exactly as written, with the time it was written. It is what a `remember` writes and what a `recall` returns.
+A **fact** is one self-contained statement — `'acme moved to annual billing'` — stored exactly as written, with the time it was written and, when its `remember` gives them, when it was said and when what it states happened. It is what a `remember` writes and what a `recall` returns.
 
 ## Anchors: topics and entities
 
@@ -20,7 +20,7 @@ Anchors are optional on a write: a fact with none is stored and reachable by tex
 
 Facts, topics and entities are the vertices of a **memory graph**; its edges link each fact to the entities it mentions and the topics it is about. Every fact is also indexed for full-text search and, when a vector is supplied with it, for vector search — three representations of one store, which a single recall searches together (see [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval)).
 
-The graph is **temporal** because newer memories outrank older ones by default — see [Temporality](/docs/retrieval/memory-model/temporality).
+The graph is **temporal** because newer memories outrank older ones by default, and because every fact is dated: a recall can be bounded by when things happened, and a `when` asks for the date itself — see [Temporality](/docs/retrieval/memory-model/temporality).
 
 One instance holds several independent graphs, 8 by default, addressed with `@N`: one per user, per session or per agent. See [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
 

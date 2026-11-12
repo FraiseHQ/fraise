@@ -27,6 +27,10 @@ client.check_compatibility()       # warns on mismatch, returns bool
 client.check_compatibility(strict=True)  # raises FraiseError on mismatch
 ```
 
+## Fact times
+
+A fact's `said` and `occurred` times travel on a hit only when the fact was given them, and only from a server that keeps them. The Python SDK reads both absences alike: `Hit.said` and `Hit.occurred` are `None`, and `Hit.timestamp`, which every server returns, is when the fact was written. A server whose grammar has no `said:`, `occurred:` or `when` rejects a query that uses one with a parse error, which the SDK raises as `FraiseAPIError` with the server's message. An SDK released before these fields ignores them on a hit.
+
 ## Updating this table on release
 
 When cutting an SDK release that starts relying on newer server behaviour:

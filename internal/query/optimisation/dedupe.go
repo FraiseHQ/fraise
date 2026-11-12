@@ -26,23 +26,42 @@ import "github.com/FraiseHQ/fraise/internal/query"
 
 // Dedupe drops repeated keywords, entities and topics from a [query.Recall]. It
 // keeps the first occurrence of each, in order, so the search sees each term
-// and anchor once.
+// and anchor once. A [query.When] searches through a recall, and a recall may
+// hold a query in each of its time bounds. Dedupe reaches both.
 type Dedupe[K comparable, P float32 | float64] struct{}
 
 // Optimise implements [Optimisation]. It returns a copy of a recall with its
-// lists deduplicated, and leaves the recall as parsed. It returns any other
-// query untouched.
+// lists deduplicated, and leaves the recall as parsed. A when comes back as a
+// copy over its deduplicated recall. It returns any other query untouched.
 func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
-
-	if v, ok := q.(*query.Recall[K, P]); ok {
-		out := *v
-		out.Keywords = dedupeStrings(v.Keywords)
-		out.Entities = dedupeStrings(v.Entities)
-		out.Topics = dedupeStrings(v.Topics)
+	switch v := q.(type) {
+	case *query.Recall[K, P]:
+		out := d.recall(*v)
 		return &out
+	case *query.When[K, P]:
+		out := *v
+		out.Recall = d.recall(v.Recall)
+		return &out
+	default:
+		return q
 	}
+}
 
-	return q
+// recall returns r with its lists deduplicated. r is the stage's own copy. A
+// query nested in a time bound is replaced by its optimised copy, so the
+// output shares no query with the recall as parsed, and selecting a graph for
+// one leaves the other where it was.
+func (d *Dedupe[K, P]) recall(r query.Recall[K, P]) query.Recall[K, P] {
+	r.Keywords = dedupeStrings(r.Keywords)
+	r.Entities = dedupeStrings(r.Entities)
+	r.Topics = dedupeStrings(r.Topics)
+	if nested := r.Parameters.Since.Query; nested != nil {
+		r.Parameters.Since.Query = d.Optimise(nested)
+	}
+	if nested := r.Parameters.Until.Query; nested != nil {
+		r.Parameters.Until.Query = d.Optimise(nested)
+	}
+	return r
 }
 
 func dedupeStrings(in []string) []string {

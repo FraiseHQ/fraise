@@ -35,7 +35,19 @@ hits = fraise.recall(graph=6, vector=embedding)  # seeded only by the vector
 
 A recall needs a seed, not a keyword: a vector or a `topics`/`entities` anchor is one on its own, so `fraise.recall(topics=["birds"])` — everything about a topic — is a query in its own right.
 
-The typed helpers take any value and write the FQL for you: a topic, entity or keyword is quoted whenever it is not letters and digits only, such as `e-mail` or `new york`, and a keyword is also quoted when it spells a reserved word such as `since` — with a `FraiseWarning`, since `recall("since", "7d")` may have meant a `since:7d` bound rather than the word. Anything they do not cover, such as a `since:`/`until:` time bound, goes through the raw `fraise.query("recall@3 ...")` escape hatch, which sends the FQL exactly as written and leaves the checking to the server.
+A fact can carry when it was said and when what it states happened, and a recall can be bounded by time. `remember` takes `said=` and `occurred=`; `recall` and `explain` take `since=` and `until=`, each a `date`, a `datetime` or a `When`, a search whose best match gives the bound its time:
+
+```python
+from datetime import date
+from fraise_sdk import When
+
+fraise.remember("anna ran the charity race", entities=["anna"], said=date(2023, 5, 8), occurred=[date(2023, 5, 7)])
+earlier = fraise.recall("anna", until=When("charity race"))  # what happened before the race
+```
+
+Each hit carries `said` and `occurred`, `None` on a fact that was given none, beside `timestamp`, when it was written. A `datetime` with no time zone is read as UTC, with a `FraiseWarning` the first time a client is given one. See [Temporality](https://docs.getfraise.dev/docs/retrieval/memory-model/temporality) for what each time means and which one a bound reads.
+
+The typed helpers take any value and write the FQL for you: a topic, entity or keyword is quoted whenever it is not letters and digits only, such as `e-mail` or `new york`, and a keyword is also quoted when it spells a reserved word such as `since` — with a `FraiseWarning`, since `recall("since", "7d")` may have meant a `since:7d` bound rather than the word. Anything they do not cover, such as a bound counted back from now (`since:7d`), goes through the raw `fraise.query("recall@3 ...")` escape hatch, which sends the FQL exactly as written and leaves the checking to the server.
 
 Some queries run but carry something that cannot help them — a keyword that is an English stop word, e.g. `fraise.recall("ferry", "the")`: stored facts never contain "the", so it cannot match. The server answers them and attaches a warning; the SDK lists it on `result.warnings` and re-emits it as a `FraiseWarning`:
 

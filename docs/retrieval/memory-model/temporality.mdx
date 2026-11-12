@@ -1,16 +1,57 @@
 ---
 title: "Temporality"
-description: "How age decays a fact's score, and how since/until differ from decay by being absolute constraints"
+description: "The three times a fact carries, which clause reads which, how age decays a score, and how since/until bound a recall absolutely"
 navIcon: "⏳"
 ---
 
-Every fact carries the time it was written, and a recall's score decays with that age on an exponential half-life (`half-life`, 90 days by default): the score is multiplied by
+A fact carries three times: when it was **written**, when it was **said**, and when what it states **happened**. *"I ran the charity race yesterday"*, said on 8 May and stored from a transcript a year later, happened on 7 May, was said on 8 May and was written on the day of the import. Each time answers its own question — when did she run, what had she told me by then, what did I learn this week — so a fact keeps all three, and every clause that reads a time reads a named one.
+
+## Three times on a fact
+
+| Time | Set by | Holds |
+|---|---|---|
+| written | the server, each time it stores the fact | one instant |
+| said | `said:` on the `remember`, once | one instant |
+| happened | `occurred:` on the `remember`, once for each time it happened | one or more spans |
+
+```text
+remember 'anna ran the charity race' entity:anna said:'2023-05-08' occurred:'2023-05-07'
+remember 'anna trained for the race' entity:anna said:'2023-05-08' occurred:'2023-04'
+remember 'anna ran the harbour drills' entity:anna said:'2023-06-02' occurred:'2023-05-01' occurred:'2023-05-28'
+remember 'anna moors the boat at the east quay' entity:anna said:'2023-06-02' occurred:'2023-05-20'..
+```
+
+A date names the whole of what it spells: `'2023-05-07'` is that day, `'2023-04'` that month and `'2023'` that year, so a fact that only says "in April" is stored as April and not as its first day. A range, `'2023-05-10'..'2023-05-16'`, runs from the start of its first date to the end of its last, and one left open, `'2023-05-20'..`, has begun and is not over. [Literals](/docs/query-language/tokens/literals#time-values) lists every form.
+
+No clause sets the written time. Remembering a fact again writes it again: it takes the new write time and the times the new `remember` gives it, in place of the ones it held.
+
+## A time that was not given
+
+**A fact given no time on a clock reads the next one: happened reads said, and said reads written.** A fact remembered with `said:` alone happened when it was said, and one remembered with neither was said, and happened, when it was written. So no fact is undated: a time bound and a `when` read every fact in the graph, whatever its writer knew about it.
+
+## Which clause reads which
+
+| Reader | Reads |
+|---|---|
+| recency decay | written |
+| the order of hits that score the same | happened, the later one first |
+| `since:` and `until:` given a duration or a date | happened |
+| `since:` and `until:` given a `when` | the time that `when` names |
+| `when`, `when:happened` | happened |
+| `when:said` | said |
+| `when:written` | written |
+
+A hit carries the three as its fact holds them: `timestamp` is the written time, and `said` and `occurred` are there when the fact was given them. See [Query endpoint](/docs/http-api/endpoints/query#response).
+
+## Decay reads the written time
+
+A recall's score decays with the age of its fact, counted from when the fact was written, on an exponential half-life (`half-life`, 90 days by default): the score is multiplied by
 
 $$
 0.5^{\, \text{age} / \text{half-life}}
 $$
 
-So a fact twice the half-life old contributes a quarter of its score.
+So a fact twice the half-life old contributes a quarter of its score. The age is how long ago the agent learned the fact, not how long ago it took place: a fact written today about a race two years back is fresh memory, and remembering a fact again makes it fresh again.
 
 ## Decay is ranking, not filtering
 
@@ -22,18 +63,22 @@ This is the "temporal" in temporal memory graph: recency is a first-class rankin
 
 Filtering is what the time bounds are for, and they are absolute constraints rather than nudges: **a fact outside the window does not appear at any score.**
 
-Bounds are written as a duration read as "ago", or as a quoted date:
+Bounds are written as a duration read as "ago", as a quoted date, or as a `when` in parentheses:
 
 ```text
 recall billing since:7d
 recall billing since:'2026-01-15' until:'2026-02-01'
+recall anna until:(when 'charity race')
 ```
 
-| Form | Example | Meaning |
+| Form | Example | The bound is |
 |---|---|---|
-| duration | `since:7d` | no older than seven days |
-| date | `since:'2026-01-15'` | on or after that day |
-| date and time | `since:'2026-01-15T10:00:00Z'` | on or after that instant |
+| duration | `since:7d` | the instant seven days ago |
+| day | `since:'2026-01-15'` | the start of that day |
+| month | `since:'2026-01'` | the start of that month |
+| year | `since:'2026'` | the start of that year |
+| date and time | `since:'2026-01-15T10:00:00Z'` | that instant |
+| `when` | `since:(when 'charity race')` | where the time the `when` answers with ends |
 
 <Note title="Dates are quoted" type="warning">
 
@@ -41,12 +86,41 @@ recall billing since:'2026-01-15' until:'2026-02-01'
 
 </Note>
 
+## A window compares by overlap
+
+The window opens at `since:` and closes just before `until:`, and **a fact is inside it when a time the fact holds overlaps it**. So `since:` keeps what was said, or was still happening, at or after its bound, and `until:` keeps what had begun before its bound.
+
+| Fact | `since:'2023-05-07'` | `until:'2023-05-07'` |
+|---|---|---|
+| happened on 6 May | out | in |
+| happened on 7 May | in | out |
+| happened over the week of 1 to 9 May | in | in |
+| began on 20 April and is not over | in | in |
+
+A fact that happened more than once is inside when any one of those times is. The 7th itself is outside `until:'2023-05-07'`, which closes the window as that day begins; `until:'2023-05-08'` takes it in, so the window for that one day is `since:'2023-05-07' until:'2023-05-08'`.
+
+## A bound read from memory
+
+A date an agent does not know is one the graph may hold. A `when` asks for the time of what it matches, and written in parentheses it is the bound:
+
+```text
+recall anna until:(when 'charity race')
+recall anna since:(when 'charity race')
+recall anna until:(when:said 'charity race')
+```
+
+`until:` reads where the answer starts and `since:` where it ends, each compared on the time the `when` names: the first is what happened before the race, the second what happened after it, and the third what had been said before the race was told. [Commands](/docs/query-language/foundations/commands) covers `when` in full.
+
 ## Choosing between them
 
 | You want | Use |
 |---|---|
 | recent facts preferred, older ones still reachable | the default decay |
 | a hard window, nothing outside it | `since:` / `until:` |
+| a window drawn around something remembered | `since:(when …)` / `until:(when …)` |
+| the date of something remembered | `when` |
+| facts dated by the conversation they came from | `said:` on the `remember` |
+| facts dated by what they describe | `occurred:` on the `remember` |
 | no recency preference at all | a negative `half-life`, such as `-1h` |
 
 `half-life` is an operator setting, not a query clause — see [Engine settings](/docs/configuration/reference/engine).
