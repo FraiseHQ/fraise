@@ -26,13 +26,16 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -134,6 +137,80 @@ func TestQueryMalformedBody(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// TestQueryTextThatIsNotUTF8IsRejected pins that a query whose text decoding
+// altered is rejected with 400 instead of stored. encoding/json replaces
+// invalid UTF-8, and a \u escape for half a surrogate pair, with U+FFFD
+// without an error, and the parser rejects U+FFFD. A fact written with either
+// would be stored as text its client never sent.
+func TestQueryTextThatIsNotUTF8IsRejected(t *testing.T) {
+	bodies := map[string]string{
+		"invalid bytes":                  "{\"query\":\"recall \xff\xfe\"}",
+		"lone high surrogate":            `{"query":"remember 'a \ud800' topic:t"}`,
+		"lone low surrogate":             `{"query":"remember 'a \udc00' topic:t"}`,
+		"high surrogate before a letter": `{"query":"remember 'a \ud800\u0041' topic:t"}`,
+		"pair in the wrong order":        `{"query":"remember 'a \ude00\ud83d' topic:t"}`,
+	}
+
+	for name, body := range bodies {
+		t.Run(name, func(t *testing.T) {
+			s := newTestServer(t)
+
+			w := s.do(http.MethodPost, "/api/v1/q", body)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			if want := "not UTF-8 text"; !strings.Contains(w.Body.String(), want) {
+				t.Errorf("body = %q, want it to contain %q", w.Body.String(), want)
+			}
+		})
+	}
+}
+
+// TestQueryEscapedTextRoundTrips is the other half of the pair: an escape that
+// does spell UTF-8 text is stored as that text and returned unchanged. A
+// surrogate pair is one character, and an escaped backslash before "u" starts
+// no escape.
+func TestQueryEscapedTextRoundTrips(t *testing.T) {
+	cases := map[string]struct {
+		phrase string
+		want   string
+	}{
+		"surrogate pair":    {`smile \ud83d\ude00`, "smile \U0001F600"},
+		"escaped backslash": {`path \\ud800`, `path \ud800`},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newTestServer(t)
+			if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 '`+tc.phrase+`' topic:t"}`); w.Code != http.StatusOK {
+				t.Fatalf("write: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+			}
+
+			w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 topic:t"}`)
+			if w.Code != http.StatusOK {
+				t.Fatalf("recall: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+			}
+			var resp struct {
+				Results struct {
+					Hits []struct {
+						Value string `json:"value"`
+					} `json:"hits"`
+				} `json:"results"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decoding %s: %v", w.Body.String(), err)
+			}
+			if len(resp.Results.Hits) != 1 {
+				t.Fatalf("hits = %d, want 1 (body: %s)", len(resp.Results.Hits), w.Body.String())
+			}
+			if got := resp.Results.Hits[0].Value; got != tc.want {
+				t.Errorf("stored fact = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -446,5 +523,95 @@ func TestStatsEndpoint(t *testing.T) {
 	if g0.ForestEntries < g0.Vectors || g0.ForestEntries > 2*g0.Vectors {
 		t.Errorf("graphs[0].forest_entries = %d, want within [vectors, 2*vectors] = [%d, %d]",
 			g0.ForestEntries, g0.Vectors, 2*g0.Vectors)
+	}
+}
+
+// captureStdout swaps os.Stdout for a pipe while fn runs and returns what was
+// written to it. The log handler captures os.Stdout when it is built, so fn
+// must build and install the logger too, not just log through one.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("creating pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = original }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing pipe: %v", err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading captured output: %v", err)
+	}
+	return string(out)
+}
+
+// TestQueryLogsCarryShapeNotContent pins that a remembered fact never reaches
+// the log at the default level. A query is what a caller remembers, and stdout
+// lands in every log aggregator the server runs under, so the text there is
+// personal data copied out of the store. At INFO the log still says that the
+// query ran, with its graph, hit count and duration. The text appears only at
+// DEBUG, where an operator has opted in. That covers the errors too: a parse
+// error that quotes the query, and a write that fails at commit, which the
+// scheduler and the handler log at Error. The DEBUG row keeps the marker visible, so the INFO row's absence
+// comes from the level and not from a query that never ran.
+func TestQueryLogsCarryShapeNotContent(t *testing.T) {
+	const private = "zzprivate"
+
+	cases := map[string]struct {
+		level       string
+		wantContent bool
+	}{
+		"info hides the text":  {level: config.LogLevelInfo, wantContent: false},
+		"debug shows the text": {level: config.LogLevelDebug, wantContent: true},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.New()
+			cfg.Log.Level = tc.level
+			t.Cleanup(func() { logger.SetDefault(nil) })
+
+			got := captureStdout(t, func() {
+				logger.SetDefault(logger.NewLogger(cfg))
+				s := newTestServerCfg(t, cfg)
+
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 '`+private+` anna sent the invoice'"}`); w.Code != http.StatusOK {
+					t.Fatalf("remember: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 `+private+`"}`); w.Code != http.StatusOK {
+					t.Fatalf("recall: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
+				// The second quoted phrase is unexpected, and the parse error
+				// quotes it back.
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna' '`+private+` second fact'"}`); w.Code != http.StatusBadRequest {
+					t.Fatalf("unparsable: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+				}
+				// The first vector fixes the graph's dimension at 3, so the
+				// second fails at commit, past the parser, and its error is
+				// logged at Error by the scheduler and the handler.
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'vec one' vec:$v","parameters":{"v":[0.1,0.2,0.3]}}`); w.Code != http.StatusOK {
+					t.Fatalf("first vector: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 '`+private+` vector fact' vec:$v","parameters":{"v":[0.1,0.2,0.3,0.4]}}`); w.Code != http.StatusBadRequest {
+					t.Fatalf("mismatched vector: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+				}
+			})
+
+			if gotContent := strings.Contains(got, private); gotContent != tc.wantContent {
+				t.Errorf("log contains %q = %t, want %t; log:\n%s", private, gotContent, tc.wantContent, got)
+			}
+			for _, want := range []string{`msg="Query executed"`, "graph=0", "hits=1", "duration=", `msg="Rejecting unparsable query"`} {
+				if !strings.Contains(got, want) {
+					t.Errorf("log is missing %q; log:\n%s", want, got)
+				}
+			}
+		})
 	}
 }

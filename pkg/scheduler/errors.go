@@ -28,6 +28,10 @@ var (
 	// ErrShutdown is returned when work is submitted to a scheduler that is
 	// stopping, stopped or was never started.
 	ErrShutdown = errors.New("scheduler: shut down")
+	// ErrNoDatabase is returned by Start when no database is attached. The
+	// scheduler opens one write lane per graph, so it cannot start without
+	// knowing how many graphs there are.
+	ErrNoDatabase = errors.New("scheduler: no database attached")
 	// ErrEnqueueStream is returned, wrapping the context's error, when the
 	// caller's context ends before its stream is queued.
 	ErrEnqueueStream = errors.New("scheduler: could not add stream to queue")

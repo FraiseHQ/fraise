@@ -46,9 +46,14 @@ func TestDedupeOptimiseRecall(t *testing.T) {
 	if !ok {
 		t.Fatalf("Optimise returned %T, want *query.Recall", out)
 	}
-	// Dedupe works in place and returns the same query value.
-	if recall != in {
-		t.Errorf("Optimise returned a different pointer; want the input deduped in place")
+	// Dedupe returns a copy and leaves the recall as parsed. The engine caches
+	// the parsed recall beside the copy and confirms every later hit against
+	// it, so a rewrite in place would make "a a" match only "a".
+	if recall == in {
+		t.Errorf("Optimise returned its input; want a deduplicated copy")
+	}
+	if want := []string{"a", "b", "a", "c", "b"}; !reflect.DeepEqual(in.Keywords, want) {
+		t.Errorf("input Keywords = %v, want %v (untouched)", in.Keywords, want)
 	}
 	if want := []string{"a", "b", "c"}; !reflect.DeepEqual(recall.Keywords, want) {
 		t.Errorf("Keywords = %v, want %v", recall.Keywords, want)

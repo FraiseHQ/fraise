@@ -1,13 +1,13 @@
 ---
 title: "[scheduler]"
-description: "Workers, queue depth and enqueue timeout — one setting in three parts"
+description: "Read workers, queue depth and enqueue timeout — one setting in three parts"
 navLabel: "Scheduler"
 ---
 
 | Setting | Flag | Default | Meaning |
 |-------------------|--------------------|-------------------------|-----------------------------------------------|
-| `workers` | `-workers` | `max(2, GOMAXPROCS(0))` | worker goroutines executing streams, at least `1` |
-| `buffer-size` | `-buffer-size` | `200` | queue depth |
+| `workers` | `-workers` | `max(2, GOMAXPROCS(0))` | worker goroutines executing reads, at least `1` |
+| `buffer-size` | `-buffer-size` | `200` | depth of the read queue, and of each graph's write lane |
 | `enqueue-timeout` | `-enqueue-timeout` | `2s` | how long a submit waits for room before a 429 |
 
 ```toml
@@ -18,7 +18,9 @@ buffer-size = 128
 
 ## The three are one setting
 
-`workers` bounds how much **executes** at once, `buffer-size` bounds how much **waits**, and `enqueue-timeout` bounds how long a caller is willing to wait to become one of the waiting. Raising the first two without the third just moves where requests pile up.
+`workers` bounds how many reads **execute** at once, `buffer-size` bounds how much **waits**, and `enqueue-timeout` bounds how long a caller is willing to wait to become one of the waiting. Raising the first two without the third just moves where requests pile up.
+
+Writes take no worker: each graph has a writer of its own, which its exclusive lock would serialise anyway. So a write never holds a worker, nor waits behind reads for one.
 
 ## Why the default tracks core count
 
@@ -26,12 +28,12 @@ Reads take `RLock` and run concurrently, so tracking the machine's core count av
 
 ## Tuning against 429s
 
-- Raise `workers` when workers are idle waiting on graph locks, not when they are busy.
+- Raise `workers` when reads are shed and workers are idle waiting on graph locks, not when they are busy.
 - Raising `buffer-size` absorbs bursts; it does not add throughput, and a deep queue only delays the 429 while raising latency.
 - Keep `enqueue-timeout` well under the caller's own timeout, or you will shed work the client has already given up on.
 
 <Note title="One hot graph" type="warning">
 
-  Writes to the *same* graph serialise. If one graph is hot, more workers will not help — spread the load across graphs. See [Load and backpressure](/docs/operations/runbook/backpressure) and [Concurrency](/docs/architecture/concurrency/multi-graph).
+  Writes to the *same* graph serialise on its one writer. If one graph is hot, more workers will not help — spread the load across graphs. See [Load and backpressure](/docs/operations/runbook/backpressure) and [Concurrency](/docs/architecture/concurrency/multi-graph).
 
 </Note>

@@ -15,13 +15,15 @@ The cache key is the whole parsed query — graph, terms, anchors, time bounds, 
 
 - exact hex floats,
 - RFC3339Nano timestamps,
-- `|`-delimited `tag=` segments, with lists NUL-delimited.
+- `|`-delimited `tag=` segments, with every string length-prefixed (`5:alice`) so no fact, phrase or anchor can spell a delimiter.
 
 <Note title="The hashing invariant" type="note">
 
   **Two queries that would produce different results must never hash alike**, which is why nothing in the key is derived from a lossy `String()`.
 
 </Note>
+
+A lossless key is still a 64-bit hash, and two distinct queries can share one. So the cache keeps each query as parsed beside its plan, and a hit is used only when that query equals the request; otherwise the request is planned afresh and takes the entry over.
 
 A bound vector enters the key as a nested hash of its exact values, so the same query with the same vector reuses its plan and a new vector is planned afresh. Vectors are still bound as [parameters](/docs/query-language/tokens/parameters) rather than written inline, which keeps them out of the lexer and the log.
 

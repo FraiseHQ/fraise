@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.3.7](https://github.com/FraiseHQ/fraise/compare/v0.3.6...v0.3.7) (2026-11-05)
+
+
+### Bug fixes
+
+* keep distinct queries off one plan-cache entry ([#603](https://github.com/FraiseHQ/fraise/issues/603)) ([0e88f61](https://github.com/FraiseHQ/fraise/commit/0e88f615f543061509a845612859ea941a32c055))
+* keep query text out of logs above debug ([#602](https://github.com/FraiseHQ/fraise/issues/602)) ([5889b76](https://github.com/FraiseHQ/fraise/commit/5889b76db06b75f7e7b10b814ad98a73067273c3))
+* reject query text that is not UTF-8 ([#604](https://github.com/FraiseHQ/fraise/issues/604)) ([e3c1430](https://github.com/FraiseHQ/fraise/commit/e3c1430f18587e1ad1deca27238446245f39ce5b))
+
+
+### Performance
+
+* count a hub's members instead of pooling each ([#606](https://github.com/FraiseHQ/fraise/issues/606)) ([dd09176](https://github.com/FraiseHQ/fraise/commit/dd09176080ba053721a0c15b4c1864763ae282da))
+* run writes on one writer per graph, apart from the read workers ([#607](https://github.com/FraiseHQ/fraise/issues/607)) ([552a99d](https://github.com/FraiseHQ/fraise/commit/552a99d7e92481b473c875c926b13de40496b0fd))
+
+## [0.3.6](https://github.com/FraiseHQ/fraise/compare/v0.3.5...v0.3.6) (2026-10-29)
+
+
+### Bug fixes
+
+* score each channel against the recall's pool ([#580](https://github.com/FraiseHQ/fraise/issues/580)) ([7cd4de6](https://github.com/FraiseHQ/fraise/commit/7cd4de65232acec14639be1785f8448be651ffac))
+
+
+### Performance
+
+* keep writes flat as posting lists and vectors grow ([#591](https://github.com/FraiseHQ/fraise/issues/591)) ([b3f52ff](https://github.com/FraiseHQ/fraise/commit/b3f52ffb1062c8b6e744abc1681ff79015745c06))
+* read the text index once for every reading ([#588](https://github.com/FraiseHQ/fraise/issues/588)) ([3ed2df3](https://github.com/FraiseHQ/fraise/commit/3ed2df34995d8a2017e7d75cba64e1ee126689e5))
+
+
+### Maintenance
+
+* **main:** release python 0.3.0 ([#553](https://github.com/FraiseHQ/fraise/issues/553)) ([cc32c97](https://github.com/FraiseHQ/fraise/commit/cc32c9774d78ad00871a0598b345a2aa8bd9fee5))
+
 ## [0.3.5](https://github.com/FraiseHQ/fraise/compare/v0.3.4...v0.3.5) (2026-10-25)
 
 

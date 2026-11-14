@@ -23,10 +23,12 @@
 // Package engine turns a parsed query into a plan the scheduler can run.
 //
 // [Engine.Plan] looks a query up in the plan cache by its Hash. On a miss it
-// runs the optimisation pipeline and caches the optimised query, so a repeated
-// query skips optimisation. The cache key must be lossless. Two queries that
-// would return different results must never share a key, or a hit would answer
-// with another query's plan.
+// runs the optimisation pipeline and caches the optimised query beside the
+// parsed one, so a repeated query skips optimisation. The cache key must be
+// lossless. Two queries that would return different results must never share
+// key material, or a hit would answer with another query's plan. A lossless
+// key can still collide in its 64 bits, so a hit stands only when the cached
+// parsed query is Equal to the request.
 //
 // [Engine.Apply] hands the planned stream to the scheduler. The scheduler runs
 // it under its graph's lock: shared for a read, exclusive for a write. The

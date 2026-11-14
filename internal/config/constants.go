@@ -63,13 +63,14 @@ const (
 	// allocated but never reachable.
 	DefaultNumGraph int = 8
 
-	// MinWorkersCount is the floor of the default scheduler worker count,
+	// MinWorkersCount is the floor of the default scheduler read worker count,
 	// max(MinWorkersCount, runtime.GOMAXPROCS(0)). Reads take RLock and run
 	// concurrently. Fewer workers than cores queues reads for nothing, and
 	// more workers than cores buys nothing.
 	MinWorkersCount int = 2
 
-	// DefaultBufferSize is the capacity of the scheduler's stream queue.
+	// DefaultBufferSize is the capacity of the scheduler's read queue, and of
+	// each graph's write lane.
 	DefaultBufferSize uint = 200
 
 	// DefaultEnqueueTimeout bounds how long a submit waits for space in a full

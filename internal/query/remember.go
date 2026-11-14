@@ -23,6 +23,7 @@
 package query
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -67,20 +68,37 @@ func (r *Remember[K, P]) SetGraphID(id uint8) {
 // and every field that changes what gets written, the bound vector included.
 // Hashing only Value would make these two collide: "remember@3 'x' topic:a" and
 // "remember@5 'x' topic:b". The second would then reuse the first's plan and
-// write to the wrong graph under the wrong topic.
+// write to the wrong graph under the wrong topic. The value and every anchor
+// are length-prefixed, because a fact may hold any byte, the delimiters
+// included. Otherwise "remember 'x|en=y'" and "remember 'x' entity:'y|en='"
+// would share material, and the second would write the first's fact.
 func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")
 	b.WriteString(strconv.Itoa(int(r.context.GraphID)))
 	b.WriteString("|v=")
-	b.WriteString(r.Value)
+	writeStrings(&b, []string{r.Value})
 	b.WriteString("|en=")
-	b.WriteString(strings.Join(r.Entities, "\x00"))
+	writeStrings(&b, r.Entities)
 	b.WriteString("|to=")
-	b.WriteString(strings.Join(r.Topics, "\x00"))
+	writeStrings(&b, r.Topics)
 	b.WriteString("|vec=")
 	b.WriteString(r.Vector.Hash(h))
 	return h.Hash(b.String())
+}
+
+// Equal implements [Query]: other is a remember with every field Hash folds in
+// the same. The engine runs a cached plan only for an equal query, so Equal
+// must never hold for two remembers that write differently. A remember equal
+// under a key another remember planned would write that remember's fact.
+func (r Remember[K, P]) Equal(other Query[K, P]) bool {
+	o, ok := other.(*Remember[K, P])
+	return ok &&
+		o.context == r.context &&
+		o.Value == r.Value &&
+		slices.Equal(o.Entities, r.Entities) &&
+		slices.Equal(o.Topics, r.Topics) &&
+		o.Vector.Equal(r.Vector)
 }
 
 // IsWrite implements [Query]. A remember writes, so it runs under the graph's

@@ -8,7 +8,7 @@ SIGINT or SIGTERM starts a graceful shutdown:
 1. the HTTP server stops accepting;
 2. in-flight requests get up to `shutdown-grace` to finish;
 3. the scheduler refuses new work;
-4. workers drain what they already accepted before exiting.
+4. workers and writers drain what they already accepted before exiting.
 
 <Note title="Accepted work runs" type="note">
 
@@ -32,7 +32,7 @@ A clean shutdown protects in-flight requests; what happens to the data is covere
 
 ## The mechanism
 
-The queue itself is never closed. Closing it would panic a `Submit` that is mid-send; closing a separate `quit` channel refuses new work without that race, and unparks any `Submit` waiting on a full queue. `Stop` then drains any straggler a `Submit` raced into the buffer as `quit` closed, single-threaded once the workers are gone.
+The queues themselves are never closed. Closing one would panic a `Submit` that is mid-send; closing a separate `quit` channel refuses new work without that race, and unparks any `Submit` waiting on a full queue. `Stop` then drains any straggler a `Submit` raced into a queue as `quit` closed, single-threaded once the workers and writers are gone.
 
 The full protocol is in [Scheduler internals](/docs/architecture/concurrency/scheduler-internals).
 

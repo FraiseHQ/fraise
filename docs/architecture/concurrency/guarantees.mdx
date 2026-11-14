@@ -15,18 +15,18 @@ Every operation on a graph goes through its read-write lock:
 
 Operations on different graphs are fully independent:
 
-- 4 workers can write to 4 different graphs in parallel;
+- each graph has a writer of its own, so writes to 4 different graphs run in parallel;
 - each write holds only its own graph's lock.
 
 ## Stream ordering within a graph
 
-The queue is FIFO: workers take streams in the order they were submitted. Execution order is not guaranteed, because several workers take from the queue at once and whichever reaches the graph's lock first runs first — `sync.RWMutex` makes no promise that acquisition follows arrival. **Streams in flight at the same time have no order between them, even on the same graph.**
+Writes to one graph run in the order the scheduler accepted them: each graph's writes wait on a lane of their own, and a single writer runs them one at a time. That is the order they reached the scheduler, which for requests in flight at the same time is not necessarily the order a client sent them. Reads have no order between them, and none against the writes in flight on their graph: several workers take reads at once, and whichever reaches the graph's lock first runs first — `sync.RWMutex` makes no promise that acquisition follows arrival. **Streams in flight at the same time have no order a client can rely on, even on the same graph.**
 
 What is guaranteed is that a request is answered only after its stream has been applied. An acknowledged write is therefore visible to every request sent after the acknowledgement.
 
 <Note title="Ordering is the caller's" type="warning">
 
-  When a sequence of writes matters, send each one after the previous one has answered. Running with `workers = 1` orders execution globally, at the cost of all concurrency.
+  When a sequence of writes matters, send each one after the previous one has answered.
 
 </Note>
 
@@ -36,7 +36,7 @@ What is guaranteed is that a request is answered only after its stream has been 
 
 <Mermaid
   chart='flowchart TD
-  setup["4 workers, 8 graphs"] --> a1["Agent 1 submits write to graph 0"]
+  setup["8 graphs, one writer each"] --> a1["Agent 1 submits write to graph 0"]
   setup --> a2["Agent 2 submits write to graph 1"]
   setup --> a3["Agent 3 submits write to graph 2"]
   setup --> a4["Agent 4 submits write to graph 3"]
@@ -50,7 +50,7 @@ What is guaranteed is that a request is answered only after its stream has been 
 
 <Mermaid
   chart='flowchart TD
-  setup["4 workers, 8 graphs"] --> a1["Agent 1 submits write to graph 0"]
+  setup["8 graphs, one writer each"] --> a1["Agent 1 submits write to graph 0"]
   setup --> a2["Agent 2 submits write to graph 0"]
   setup --> a3["Agent 3 submits write to graph 0"]
   setup --> a4["Agent 4 submits write to graph 0"]
@@ -64,7 +64,7 @@ What is guaranteed is that a request is answered only after its stream has been 
 
 1. **Distribute data** — use multiple graphs; partition by agent, conversation, or domain.
 2. **Minimize lock hold time** — writes commit in place, so hold time is proportional to the fact being written; keep each fact to one self-contained statement.
-3. **Watch for 429s** — they mean the queue is filling up; consider raising `buffer-size` or `workers`. If one *graph* is hot, more workers will not help — spread the load across graphs, which is what they are for.
+3. **Watch for 429s** — they mean a queue is filling up; consider raising `buffer-size`, or `workers` when reads are what is shed. If one *graph* is hot, more workers will not help — its writes have one writer whatever `workers` says; spread the load across graphs, which is what they are for.
 
 ## Future considerations
 

@@ -28,6 +28,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/index/nlp/stopwords"
@@ -76,6 +77,19 @@ type parser[K comparable, P float32 | float64] struct {
 // vector nil. Rejecting that is the query layer's call, beside its other
 // limits.
 func Parse[K comparable, P float32 | float64](q string, params map[string][]P) (cmd CommandNode, warns []Warning, err error) {
+	// A query is UTF-8 text. An invalid byte ranges as U+FFFD, the character
+	// JSON decoding puts in place of invalid UTF-8 and of a lone surrogate, so
+	// rejecting it catches all three on every path. A fact stored with one
+	// would hold text its client never wrote, and could not be recalled by the
+	// text it was written with.
+	col := 0
+	for _, r := range q {
+		col++
+		if r == utf8.RuneError {
+			return nil, nil, &Error{Pos: lexer.Position{Column: col}, Msg: "not UTF-8 text: an invalid byte, a lone surrogate, or U+FFFD in place of one"}
+		}
+	}
+
 	p := &parser[K, P]{l: lexer.New(q), params: params}
 	// prime cur and peek
 	p.next()

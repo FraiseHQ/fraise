@@ -33,7 +33,7 @@ It is logged and the defaults stand. The defaults plus flags are a complete conf
 
 1. Configuration is resolved: defaults, then file, then flags, then validation.
 2. The database allocates `num-graphs` graphs — the count never grows afterwards.
-3. The scheduler creates its queue and spawns `workers` goroutines.
+3. The scheduler creates its read queue and one write lane per graph, and spawns `workers` read goroutines and one writer per graph.
 4. The HTTP server binds `port` and starts answering `GET /`.
 
 <Note title="Nothing to warm up" type="success">

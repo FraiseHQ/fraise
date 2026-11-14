@@ -50,13 +50,16 @@ type ConfigSet struct {
 }
 
 // SchedulerConfig is the scheduler section. It sets how many workers run
-// queries, and how much queued work the scheduler accepts before it turns
+// reads, and how much queued work the scheduler accepts before it turns
 // clients away.
 type SchedulerConfig struct {
-	// Workers is the number of worker goroutines that run reads and writes.
+	// Workers is the number of worker goroutines that run reads. Writes run on
+	// one writer per graph instead, since a graph's exclusive lock serialises
+	// them anyway.
 	Workers int `toml:"workers"`
 
-	// BufferSize is the capacity of the scheduler's stream queue.
+	// BufferSize is the capacity of the scheduler's read queue, and of each
+	// graph's write lane.
 	BufferSize uint `toml:"buffer-size"`
 
 	// EnqueueTimeout is the maximum time a submit waits for space in a full
@@ -274,8 +277,8 @@ func New() *ConfigSet {
 	flagSet.StringVar(&config.configFile, "config", DefaultConfigFile, "Path to the TOML config file")
 
 	defaultWorkers := max(MinWorkersCount, runtime.GOMAXPROCS(0))
-	flagSet.IntVar(&config.Scheduler.Workers, "workers", defaultWorkers, "Worker goroutines executing streams")
-	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Queue depth: streams waiting for a worker")
+	flagSet.IntVar(&config.Scheduler.Workers, "workers", defaultWorkers, "Worker goroutines executing reads")
+	flagSet.UintVar(&config.Scheduler.BufferSize, "buffer-size", DefaultBufferSize, "Queue depth: reads waiting for a worker, and writes waiting on each graph")
 	flagSet.DurationVar(&config.Scheduler.EnqueueTimeout, "enqueue-timeout", DefaultEnqueueTimeout, "Max wait for queue space before rejecting a query")
 
 	flagSet.IntVar(&config.Server.Port, "port", DefaultPort, "Server port")

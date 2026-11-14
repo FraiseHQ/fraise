@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/FraiseHQ/fraise/internal/index"
 	"github.com/FraiseHQ/fraise/internal/query"
@@ -94,8 +95,16 @@ func (s *Server[K, P]) handleStats() gin.HandlerFunc {
 // are rejected, since only a recall has a ranking to explain. One handler with
 // a flag, rather than two handlers, keeps the two routes from drifting apart in
 // how they parse, validate or schedule.
+//
+// A query is what a caller remembers, so its text is personal data. Only
+// Debug lines, which an operator opts into, carry it or an error that may
+// quote it. Every line above Debug carries the query's shape alone: graph,
+// read or write, hit count and duration. A line that leaks the text at Info,
+// Warn or Error copies every fact into whatever collects the server's stdout.
 func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		start := time.Now()
+
 		var req HandleQueryRequest[P]
 		if err := c.ShouldBindJSON(&req); err != nil {
 			logger.Warn("Rejecting malformed query request body", "error", err)
@@ -110,8 +119,12 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 		// a stop word among its terms. They are returned with the results.
 		q, warns, err := query.Parse[K, P](req.Query, req.Parameters, s.Config)
 
+		// A parse error quotes the token it blames, which can be a whole
+		// quoted fact, so it is logged at Debug with the text it came from.
+		// The client still reads it in the response.
 		if err != nil {
-			logger.Warn("Rejecting unparsable query", "query", req.Query, "error", err)
+			logger.Debug("Query failed to parse", "error", err)
+			logger.Warn("Rejecting unparsable query")
 			status, msg := errorToResponse(err)
 			c.JSON(status, ErrorResponse{Error: msg})
 			return
@@ -121,7 +134,7 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 		// explain free of side effects, so probing a ranking can never mutate a
 		// graph.
 		if explain && q.IsWrite() {
-			logger.Warn("Rejecting write query on explain endpoint", "query", req.Query)
+			logger.Warn("Rejecting write query on explain endpoint", "graph", q.GetGraphID())
 			c.JSON(http.StatusBadRequest, ErrorResponse{
 				Error: "explain applies to recall queries only",
 			})
@@ -143,7 +156,8 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 		stream, err := s.Engine.Plan(q)
 
 		if err != nil {
-			logger.Error("Failed to plan query", "query", req.Query, "error", err)
+			logger.Error("Failed to plan query",
+				"graph", q.GetGraphID(), "write", q.IsWrite(), "error", err)
 			status, msg := errorToResponse(err)
 			c.JSON(status, ErrorResponse{Error: msg})
 			return
@@ -161,33 +175,39 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 		// wait on its completion.
 		if err := s.Engine.Apply(c.Request.Context(), stream); err != nil {
 			if errors.Is(err, scheduler.ErrShutdown) {
-				logger.Warn("Rejecting query, server shutting down", "query", req.Query)
+				logger.Warn("Rejecting query, server shutting down",
+					"graph", q.GetGraphID(), "write", q.IsWrite())
 				c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "server shutting down"})
 				return
 			}
 			// The queue stayed full past the enqueue timeout. Shed load with a
 			// 429 so clients back off instead of piling up blocked requests.
 			if errors.Is(err, scheduler.ErrQueueFull) {
-				logger.Warn("Rejecting query, scheduler queue full", "query", req.Query)
+				logger.Warn("Rejecting query, scheduler queue full",
+					"graph", q.GetGraphID(), "write", q.IsWrite())
 				c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: "server overloaded, retry later"})
 				return
 			}
 			// The request context was cancelled before the stream was enqueued,
 			// because the client disconnected. No live connection is left to
 			// answer.
-			logger.Warn("Query not enqueued", "query", req.Query, "error", err)
+			logger.Warn("Query not enqueued",
+				"graph", q.GetGraphID(), "write", q.IsWrite(), "error", err)
 			return
 		}
 
 		select {
 		case <-stream.Done():
 			if stream.Err != nil {
-				logger.Error("Query execution failed", "query", req.Query, "error", stream.Err)
+				logger.Error("Query execution failed",
+					"graph", q.GetGraphID(), "write", q.IsWrite(), "error", stream.Err)
 				status, msg := errorToResponse(stream.Err)
 				c.JSON(status, ErrorResponse{Error: msg})
 				return
 			}
-			logger.Info("Query executed", "query", req.Query, "graph", q.GetGraphID())
+			logger.Info("Query executed",
+				"graph", q.GetGraphID(), "write", q.IsWrite(),
+				"hits", stream.Result.Count, "duration", time.Since(start))
 
 			// A successful write or read carries the warnings, so they are
 			// rendered once here for whichever branch below answers.
@@ -222,7 +242,8 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 			}
 			c.JSON(http.StatusOK, resp)
 		case <-c.Request.Context().Done():
-			logger.Warn("Client disconnected before query completed", "query", req.Query)
+			logger.Warn("Client disconnected before query completed",
+				"graph", q.GetGraphID(), "write", q.IsWrite(), "duration", time.Since(start))
 			return
 		}
 	}

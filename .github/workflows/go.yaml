@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           version-file: "pyproject.toml"
       - name: Lint
@@ -118,7 +118,7 @@ jobs:
 
       # The signs block in .goreleaser.yaml uses cosign to sign checksums.txt
       # keylessly, in the release step below.
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
       # The formula is pushed to FraiseHQ/homebrew-tap, which GITHUB_TOKEN
       # cannot write to. fraise-bot mints a token for that repository alone.

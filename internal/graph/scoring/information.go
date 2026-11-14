@@ -101,29 +101,44 @@ func NewInformationScorer[K comparable, P float32 | float64]() *InformationScore
 // Observe returns a scorer bound to one query. Bound without a candidate pool,
 // it folds each seed's own seed mass, which is what the traversal aggregates
 // before the pool exists. Bound with the pool, it reads every candidate's
-// channels in o.Keys order, for each channel's mean and spread.
+// channels in o.Keys order, then each group's once for all its members, for
+// each channel's mean and spread.
 func (s *InformationScorer[K, P]) Observe(o Observation[K, P]) Scorer[K, P] {
 	bound := &InformationScorer[K, P]{excess: ExcessScorer[K, P]{background: o.Background, missed: o.TextMissed}}
-	if o.Candidates == nil || len(o.Keys) == 0 {
+	members := len(o.Keys)
+	for _, group := range o.Groups {
+		members += len(group.Members)
+	}
+	if members == 0 {
 		return bound
 	}
 	bound.pooled = true
 	// Two passes, the mean first and then the spread about it, so a channel
 	// that holds one value over the whole pool has a spread of exactly zero
-	// rather than a rounding error's worth.
-	n := P(len(o.Keys))
-	values := make([][3]P, len(o.Keys))
-	for i, key := range o.Keys {
+	// rather than a rounding error's worth. A group weighs as many candidates
+	// as it has members.
+	n := P(members)
+	values := make([][3]P, 0, len(o.Keys)+len(o.Groups))
+	weights := make([]P, 0, len(o.Keys)+len(o.Groups))
+	for _, key := range o.Keys {
 		text, vector, _, graph := bound.excess.fold(o.Candidates[key])
-		values[i] = [3]P{text, vector, graph}
-		for c, v := range values[i] {
-			bound.mean[c] += v / n
+		values = append(values, [3]P{text, vector, graph})
+		weights = append(weights, 1)
+	}
+	for _, group := range o.Groups {
+		text, vector, _, graph := bound.excess.fold(group.Contributions)
+		values = append(values, [3]P{text, vector, graph})
+		weights = append(weights, P(len(group.Members)))
+	}
+	for i, value := range values {
+		for c, v := range value {
+			bound.mean[c] += weights[i] * v / n
 		}
 	}
 	var spread [3]P
-	for _, value := range values {
+	for i, value := range values {
 		for c, v := range value {
-			spread[c] += (v - bound.mean[c]) * (v - bound.mean[c]) / n
+			spread[c] += weights[i] * (v - bound.mean[c]) * (v - bound.mean[c]) / n
 		}
 	}
 	for c, variance := range spread {

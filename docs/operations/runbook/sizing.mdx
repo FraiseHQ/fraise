@@ -14,7 +14,7 @@ description: "Memory is the constraint — what a vector costs, what a graph cos
 | facts, entities, relationships | nothing — there is no eviction |
 | vector forest entries | `flush-factor × live vectors` per tree, enforced by rebuilds |
 | the plan cache | `cache-capacity` entries (LRU) |
-| the scheduler queue | `buffer-size`, then 429s |
+| the scheduler queues | `buffer-size` each, then 429s |
 
 <Note title="Memory is the only limit" type="warning">
 

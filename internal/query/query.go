@@ -25,6 +25,8 @@ package query
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/FraiseHQ/fraise/internal/config"
@@ -36,8 +38,9 @@ import (
 )
 
 // Query is an executable Fraise query: a parsed command bound to the graph it
-// targets. Hash keys it in the engine's plan cache. The cache shares one query
-// object across every request that hashes alike, so a Query carries no
+// targets. Hash keys it in the engine's plan cache, and Equal confirms a hit,
+// because a 64-bit key can be shared by two distinct queries. The cache shares
+// one query object across every request that is equal, so a Query carries no
 // per-request state. Plan builds the [Stream] that runs it for one request.
 // IsWrite tells the scheduler which lock [Stream.Commit] needs on the graph
 // that GetGraphID selects.
@@ -45,6 +48,7 @@ type Query[K comparable, P float32 | float64] interface {
 	Plan(config *config.ConfigSet) (*Stream[K, P], error)
 	GetGraphID() uint8
 	hash.Hashable[K, string]
+	Equal(other Query[K, P]) bool
 	IsWrite() bool
 	SetGraphID(id uint8)
 }
@@ -60,11 +64,36 @@ type QueryParameters[K comparable] struct {
 	Until containers.TimeValue[K]
 }
 
+// Equal reports whether other bounds the search the same way: the same Top and
+// Depth, and time bounds that are both absent or [containers.TimeValue.Equal].
+func (p QueryParameters[K]) Equal(other QueryParameters[K]) bool {
+	return p.Top == other.Top &&
+		p.Depth == other.Depth &&
+		(p.Since == nil) == (other.Since == nil) &&
+		(p.Since == nil || p.Since.Equal(other.Since)) &&
+		(p.Until == nil) == (other.Until == nil) &&
+		(p.Until == nil || p.Until.Equal(other.Until))
+}
+
 // QueryContext holds where a query runs, not what it asks. GraphID is the graph
 // its selector names. [Recall] and [Remember] hold it in an unexported field,
 // so it changes only through SetGraphID.
 type QueryContext struct {
 	GraphID uint8
+}
+
+// writeStrings folds user text into a query's hash material, each string as
+// its byte length, a colon, then the string itself. A fact, phrase or anchor
+// may hold any byte, so no delimiter can bound it. The length does: the
+// material decodes back to exactly one list, so two queries share it only when
+// they hold the same strings. An empty list writes nothing, and a list of one
+// empty string writes "0:", so the two stay apart.
+func writeStrings(b *strings.Builder, ss []string) {
+	for _, s := range ss {
+		b.WriteString(strconv.Itoa(len(s)))
+		b.WriteByte(':')
+		b.WriteString(s)
+	}
 }
 
 // QueryResult is the outcome of a committed stream as the server returns it:

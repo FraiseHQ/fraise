@@ -3,27 +3,25 @@
 #
 # The base is a plain minimal Ubuntu, not a python image. uv supplies both the
 # interpreter and the resolver, so nothing here needs a preinstalled Python or
-# pip. The Claude Agent SDK drives Claude through the Claude Code CLI, so this
-# image also needs Node.js and the `claude` binary.
+# pip. uv itself ships as a static binary, copied from its published image. The
+# Claude Agent SDK drives Claude through the Claude Code CLI, and its wheel
+# bundles the `claude` binary, so the image needs no Node.js.
 FROM ubuntu@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /uvx /usr/local/bin/
 
-# Node.js for the Claude Code CLI comes from the distro repos, then the CLI
-# itself. ca-certificates also lets uv fetch the standalone interpreter over
-# TLS. DL3008/DL3016: this demo image should track the current CLI and distro
-# packages. Pinned versions here would go stale silently.
-# hadolint ignore=DL3008,DL3016
+# ca-certificates is the one thing uv needs that Ubuntu lacks. Without it, the
+# TLS fetch of the standalone interpreter fails.
+# hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nodejs npm ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && npm install -g @anthropic-ai/claude-code
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # UV_LINK_MODE=copy, because the cache and the venv are on different layers,
 # where uv's default hardlinking cannot work. VIRTUAL_ENV and PATH put the
-# venv's interpreter first, so a bare `python` resolves to it.
+# venv's interpreter first, so the bare `python` in CMD resolves to it.
 ENV UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \

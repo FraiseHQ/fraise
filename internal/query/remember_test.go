@@ -62,10 +62,10 @@ func TestRememberHash(t *testing.T) {
 	}
 	h := &fakeHasher{}
 
-	// Hash folds in the graph, the value, the delimited entity and topic lists
-	// and the bound vector. Writes that differ in any of these get distinct
-	// cache keys.
-	const want = "g=2|v=hello world|en=alice|to=greeting|vec=H(0x1p-01)"
+	// Hash folds in the graph, the length-prefixed value, entity and topic
+	// lists and the bound vector. Writes that differ in any of these get
+	// distinct cache keys.
+	const want = "g=2|v=11:hello world|en=5:alice|to=8:greeting|vec=H(0x1p-01)"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -75,18 +75,25 @@ func TestRememberHash(t *testing.T) {
 }
 
 // TestRememberHashDistinguishesGraphAndTags pins the contract. Writes that
-// differ only in graph, entities, topics or the bound vector must not share a
-// cache key. Otherwise the engine reuses another write's plan and writes to the
-// wrong graph or tags, or with the wrong embedding.
+// differ only in graph, entities, topics, the bound vector or where the fact
+// ends and its anchors begin must not share a cache key. Otherwise the engine
+// reuses another write's plan and writes the wrong fact, to the wrong graph or
+// tags, or with the wrong embedding. "value-spells-entity" and
+// "entity-ends-value" are the pair a delimited value let collide.
 func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 	base := func() Remember[string, float32] {
 		return Remember[string, float32]{Value: "the parrot is turquoise"}
 	}
 	variants := map[string]Remember[string, float32]{
-		"base":   base(),
-		"graph":  func() Remember[string, float32] { r := base(); r.context.GraphID = 5; return r }(),
-		"topic":  func() Remember[string, float32] { r := base(); r.Topics = []string{"birds"}; return r }(),
-		"entity": func() Remember[string, float32] { r := base(); r.Entities = []string{"polly"}; return r }(),
+		"base":                base(),
+		"graph":               func() Remember[string, float32] { r := base(); r.context.GraphID = 5; return r }(),
+		"topic":               func() Remember[string, float32] { r := base(); r.Topics = []string{"birds"}; return r }(),
+		"entity":              func() Remember[string, float32] { r := base(); r.Entities = []string{"polly"}; return r }(),
+		"value-spells-entity": {Value: "x|en=y"},
+		"entity-ends-value":   {Value: "x", Entities: []string{"y|en="}},
+		"entities-joined":     {Value: "x", Entities: []string{"ab"}},
+		"entities-split":      {Value: "x", Entities: []string{"a", "b"}},
+		"entities-nul":        {Value: "x", Entities: []string{"a\x00b"}},
 		"vector-a": func() Remember[string, float32] {
 			r := base()
 			r.Vector = containers.NewVector[string]([]float32{1, 0})
@@ -106,6 +113,47 @@ func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 			t.Errorf("hash collision: %q and %q both produced %q", name, other, key)
 		}
 		seen[key] = name
+	}
+}
+
+// TestRememberEqual pins the check the engine confirms a plan-cache hit with.
+// A remember differing from base in any field Hash folds in is not equal to
+// it, so a key it happens to share with base never writes base's fact, to
+// base's graph. A recall is never equal to a remember.
+func TestRememberEqual(t *testing.T) {
+	base := func() *Remember[string, float32] {
+		return &Remember[string, float32]{
+			Value:    "the parrot is turquoise",
+			Entities: []string{"polly"},
+			Topics:   []string{"birds"},
+			Vector:   containers.NewVector[string]([]float32{1, 0}),
+			context:  QueryContext{GraphID: 2},
+		}
+	}
+	with := func(f func(r *Remember[string, float32])) *Remember[string, float32] {
+		r := base()
+		f(r)
+		return r
+	}
+	tests := map[string]struct {
+		other Query[string, float32]
+		want  bool
+	}{
+		"same":      {base(), true},
+		"graph":     {with(func(r *Remember[string, float32]) { r.context.GraphID = 3 }), false},
+		"value":     {with(func(r *Remember[string, float32]) { r.Value = "the parrot is green" }), false},
+		"entities":  {with(func(r *Remember[string, float32]) { r.Entities = []string{"polly", "kiwi"} }), false},
+		"topics":    {with(func(r *Remember[string, float32]) { r.Topics = nil }), false},
+		"vector":    {with(func(r *Remember[string, float32]) { r.Vector = containers.NewVector[string]([]float32{0, 1}) }), false},
+		"no vector": {with(func(r *Remember[string, float32]) { r.Vector = containers.Vector[string, float32]{} }), false},
+		"recall":    {&Recall[string, float32]{Keywords: []string{"the parrot is turquoise"}, context: QueryContext{GraphID: 2}}, false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := base().Equal(tt.other); got != tt.want {
+				t.Errorf("Equal() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

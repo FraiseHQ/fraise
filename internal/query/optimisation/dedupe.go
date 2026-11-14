@@ -29,15 +29,17 @@ import "github.com/FraiseHQ/fraise/internal/query"
 // and anchor once.
 type Dedupe[K comparable, P float32 | float64] struct{}
 
-// Optimise implements [Optimisation]. It rewrites a recall's lists in place and
-// returns the same query. It returns any other query untouched.
+// Optimise implements [Optimisation]. It returns a copy of a recall with its
+// lists deduplicated, and leaves the recall as parsed. It returns any other
+// query untouched.
 func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
 
 	if v, ok := q.(*query.Recall[K, P]); ok {
-		v.Keywords = dedupeStrings(v.Keywords)
-		v.Entities = dedupeStrings(v.Entities)
-		v.Topics = dedupeStrings(v.Topics)
-		return v
+		out := *v
+		out.Keywords = dedupeStrings(v.Keywords)
+		out.Entities = dedupeStrings(v.Entities)
+		out.Topics = dedupeStrings(v.Topics)
+		return &out
 	}
 
 	return q
