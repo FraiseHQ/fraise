@@ -128,6 +128,12 @@ _EXPLAINED_HITS = {
 
 
 @pytest.fixture
+def hits():
+    """The two-hit recall as the daemon answers it, the mock client's default."""
+    return _HITS
+
+
+@pytest.fixture
 def explained_hits():
     """The two-hit recall as the daemon answers it explained."""
     return _EXPLAINED_HITS
