@@ -50,6 +50,13 @@ SERVER_MAX_EXCLUSIVE = (0, 4, 0)
 # Name bound to the out-of-band vector in the request parameters.
 VECTOR_PARAM = "v"
 
+# Names bound to the vectors of the whens in a recall's since and until. Each
+# when is a search of its own, so it takes its own vector beside the recall's.
+# A name is a bare word that is not reserved, so neither can be the clause's
+# own word: $since would read as the keyword, not as a name.
+SINCE_VECTOR_PARAM = "vsince"
+UNTIL_VECTOR_PARAM = "vuntil"
+
 # The highest graph a query can name. The selector is a uint8, so the builders
 # refuse a larger one before anything is sent. Which graphs up to it exist
 # depends on the server's num-graphs setting. Only the server checks that.
@@ -72,17 +79,25 @@ KEYWORDS = frozenset(
         "remember",
         "forget",
         "update",
+        "when",
         "topic",
         "entity",
         "since",
         "until",
         "top",
         "depth",
+        "said",
+        "occurred",
         "vec",
         "explain",
         "describe",
     }
 )
+
+# The times of a fact a when can read: when what it states happened, when it
+# was said, and when it was written. The grammar reads no other name after
+# ``when:``, so the builder refuses one before anything is sent.
+CLOCKS = ("happened", "said", "written")
 
 # The Claude integration's server and tool names. Claude sees a tool as
 # ``mcp__<server>__<tool>``. So the mcp_servers key and the allowed_tools

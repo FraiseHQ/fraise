@@ -25,6 +25,7 @@ package graph
 import (
 	"time"
 
+	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/hash"
 )
 
@@ -33,8 +34,17 @@ import (
 // and named entities reach them through [IsAbout] and [Mentions] edges.
 // Hasher is the graph's hasher, carried so Key can derive the fact's key on
 // its own.
+//
+// A fact tells time on three clocks. Timestamp is when it was written, which
+// the server sets. Said is when the statement was made, and Occurred the
+// intervals over which what it states took place. Both are the writer's to
+// give, and a fact given neither reads the same on every clock (see
+// [Fact.Intervals]).
 type Fact[K comparable] struct {
 	NodeAttributes
+	Said     time.Time
+	Occurred []containers.Interval
+
 	Hasher hash.Hasher[K, string] `json:"-"`
 }
 
@@ -64,6 +74,60 @@ func (f Fact[K]) GetAttributes() *NodeAttributes {
 // reading the same text is a different node (see Node).
 func (f Fact[K]) Hash(h hash.Hasher[K, string]) K {
 	return h.Hash("fact:" + f.Value)
+}
+
+// Intervals returns when the fact holds on clock c. A clock the fact was given
+// no time on reads the next one: happened falls back to said, and said to
+// written. So a time window and a when query read every fact, whatever it was
+// told at write time, and a fact given no times answers with its timestamp on
+// all three. Said and written are single instants, an interval that ends where
+// it starts.
+func (f Fact[K]) Intervals(c containers.Clock) []containers.Interval {
+	if c == containers.Happened && len(f.Occurred) > 0 {
+		return f.Occurred
+	}
+	at := f.Timestamp
+	if c != containers.Written && !f.Said.IsZero() {
+		at = f.Said
+	}
+	return []containers.Interval{{Start: at, End: at}}
+}
+
+// within reports whether the fact lies inside the window since and until
+// draw, each on the clock it names. A zero bound is open. Each bound draws
+// half of the window: since everything from its instant on, until everything
+// before its instant. The fact is inside when one of its intervals overlaps
+// both halves, so a fact that happened over a week is inside any window
+// touching the week, and one that happened twice, either side of the window,
+// is outside it. Bounds on two clocks each read an interval on their own.
+// The halves stay two intervals because until never takes in its own
+// instant: joined into one, bounds that coincide would read as that instant,
+// and a fact beginning on it would enter a window that until alone keeps it
+// out of. Every site that windows a search asks here, so the seeds, the pool
+// and the ranking agree on which facts a recall can return.
+func (f Fact[K]) within(since containers.Bound, until containers.Bound) bool {
+	opens := containers.Interval{Start: since.At}
+	closes := containers.Interval{End: until.At}
+	if since.Clock != until.Clock {
+		return f.overlaps(since.Clock, opens) && f.overlaps(until.Clock, closes)
+	}
+	for _, interval := range f.Intervals(since.Clock) {
+		if interval.Overlaps(opens) && interval.Overlaps(closes) {
+			return true
+		}
+	}
+	return false
+}
+
+// overlaps reports whether one of the fact's intervals on clock c overlaps
+// window.
+func (f Fact[K]) overlaps(c containers.Clock, window containers.Interval) bool {
+	for _, interval := range f.Intervals(c) {
+		if interval.Overlaps(window) {
+			return true
+		}
+	}
+	return false
 }
 
 // NamedEntity is an anchor vertex for a person, place or thing that facts

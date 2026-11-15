@@ -26,6 +26,8 @@ A complete, Docker-runnable agent lives in `examples/claude-agent-sdk` in the Fr
 
 It exposes two tools, `recall_memory` and `remember_fact`, and `allowed_tools()` returns their fully qualified names under the default server name, `fraise_memory`. Register the server under another key and pass the same key to both: `memory_server(fraise, name=key)` and `allowed_tools(key)`. `graph=` binds both tools to one memory graph, and an `embedder=` makes them send a vector with every call — they send none otherwise.
 
+`recall_memory` answers with one line for each fact, best first, each led by its dates: when the fact was said and when what it states happened. It is the line [`fraise mcp`](/docs/integrations/mcp#what-a-recall-reads-like) prints, so a model reads its memory the same way through either.
+
 ## The system prompt does the rest
 
 The tools carry their own schemas; the policy is yours to state. *"Remember durable facts the user shares, and recall them when relevant"* is the short version — [Context engineering](/docs/getting-started/context-engineering) is the longer one.

@@ -85,7 +85,7 @@ func keys(nodes []graph.Node[uint64]) []uint64 {
 // search runs g.Search and spreads the result into the parallel slices the
 // assertions read: nodes, scores and contributions in rank order, and the
 // background rate.
-func search[P float32 | float64](g *graph.InMemoryGraph[uint64, P], keywords []string, vector containers.Vector[uint64, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) ([]graph.Node[uint64], []P, [][]scoring.Contribution[uint64, P], P, error) {
+func search[P float32 | float64](g *graph.InMemoryGraph[uint64, P], keywords []string, vector containers.Vector[uint64, P], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) ([]graph.Node[uint64], []P, [][]scoring.Contribution[uint64, P], P, error) {
 	result, err := g.Search(keywords, vector, topics, entities, depth, top, since, until)
 	return result.Nodes(), result.Scores(), result.Contributions(), result.Background, err
 }
@@ -358,7 +358,7 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact1, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact3, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
-	nodes, scores, _, _, _ := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if len(nodes) != 1 || nodes[0].GetValue() != "alice works at acme" {
 		t.Fatalf("Search(acme) = %v, want [alice works at acme]", values(nodes))
 	}
@@ -371,7 +371,7 @@ func TestInMemoryGraphSearchByKeywords(t *testing.T) {
 	// transmits the direct hit's mass to its other member, which rides in
 	// behind it. The unconnected fact stays out.
 	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
-	nodes, _, _, _, _ = search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, []string{"alice"}, 2, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, _ = search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, []string{"alice"}, 2, 10, containers.Bound{}, containers.Bound{})
 	want := []string{"alice works at acme", "alice lives in paris"}
 	if diff := cmp.Diff(want, values(nodes)); diff != "" {
 		t.Errorf("Search(acme, entity=alice, depth=2) mismatch (-want +got), the named entity lifts its other member:\n%s", diff)
@@ -393,7 +393,7 @@ func TestInMemoryGraphSearchByVector(t *testing.T) {
 		t.Fatalf("vector Insert = %v, want nil", err)
 	}
 
-	nodes, _, _, _, _ := search(g, nil, containers.NewVector[uint64]([]float64{0.9, 0.1}), nil, nil, 0, 1, time.Time{}, time.Time{})
+	nodes, _, _, _, _ := search(g, nil, containers.NewVector[uint64]([]float64{0.9, 0.1}), nil, nil, 0, 1, containers.Bound{}, containers.Bound{})
 	if len(nodes) != 1 || nodes[0].GetValue() != "alpha" {
 		t.Errorf("Search(vector near alpha) = %v, want [alpha]", values(nodes))
 	}
@@ -411,14 +411,14 @@ func TestInMemoryGraphSearchRejectsAVectorOfTheWrongDimension(t *testing.T) {
 	mustSet(t, g, fact)
 
 	narrow := containers.NewVector[uint64]([]float64{1, 0})
-	if _, _, _, _, err := search(g, []string{"alpha"}, narrow, nil, nil, 0, 10, time.Time{}, time.Time{}); err != nil {
+	if _, _, _, _, err := search(g, []string{"alpha"}, narrow, nil, nil, 0, 10, containers.Bound{}, containers.Bound{}); err != nil {
 		t.Fatalf("Search on a graph with no vectors = %v, want nil: there is no dimension to disagree with", err)
 	}
 
 	if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64]([]float64{1, 0, 0})); err != nil {
 		t.Fatalf("vector Insert = %v, want nil", err)
 	}
-	nodes, _, _, _, err := search(g, []string{"alpha"}, narrow, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, err := search(g, []string{"alpha"}, narrow, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if !errors.Is(err, index.ErrInvalidDimension) {
 		t.Fatalf("Search(2-d vector on a 3-d index) = %v, want ErrInvalidDimension", err)
 	}
@@ -447,7 +447,7 @@ func TestInMemoryGraphSearchAnchorKeepsMatchesFiledElsewhere(t *testing.T) {
 
 	for name, depth := range map[string]int{"depth 0": 0, "depth 1": 1, "depth 2": 2} {
 		t.Run(name, func(t *testing.T) {
-			nodes, _, _, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, depth, 10, time.Time{}, time.Time{})
+			nodes, _, _, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, []string{"work"}, nil, depth, 10, containers.Bound{}, containers.Bound{})
 			got := values(nodes)
 			sort.Strings(got)
 			want := []string{"alice plays tennis", "alice works at acme"}
@@ -498,7 +498,7 @@ func TestInMemoryGraphSearchNamedAnchorSeedsItsOwnMatches(t *testing.T) {
 
 	for name, depth := range map[string]int{"depth 1": 1, "depth 2": 2} {
 		t.Run(name, func(t *testing.T) {
-			nodes, _, _, _, err := search(g, []string{"zebra"}, containers.Vector[uint64, float64]{}, []string{"b"}, nil, depth, 10, time.Time{}, time.Time{})
+			nodes, _, _, _, err := search(g, []string{"zebra"}, containers.Vector[uint64, float64]{}, []string{"b"}, nil, depth, 10, containers.Bound{}, containers.Bound{})
 			if err != nil {
 				t.Fatalf("Search(zebra, topic=b) = %v, want nil", err)
 			}
@@ -531,7 +531,7 @@ func TestInMemoryGraphSearchWindowFiltersBeforeSeeding(t *testing.T) {
 	}
 
 	until := recent.Add(-24 * time.Hour)
-	nodes, _, _, _, err := search(g, []string{"zebra"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, until)
+	nodes, _, _, _, err := search(g, []string{"zebra"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{At: until})
 	if err != nil {
 		t.Fatalf("Search(zebra, until) = %v, want nil", err)
 	}
@@ -571,7 +571,7 @@ func TestInMemoryGraphSearchNamedAnchorSeedsItsOwnNearest(t *testing.T) {
 	sort.Strings(underB)
 
 	query := containers.NewVector[uint64]([]float64{1, 0, 0})
-	nodes, _, _, _, err := search(g, nil, query, []string{"b"}, nil, 2, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, err := search(g, nil, query, []string{"b"}, nil, 2, 10, containers.Bound{}, containers.Bound{})
 	if err != nil {
 		t.Fatalf("Search(vec, topic=b) = %v, want nil", err)
 	}
@@ -593,14 +593,134 @@ func TestInMemoryGraphSearchTimeFilter(t *testing.T) {
 	mustSet(t, g, mkFact(g, "alice ancient fact", old))
 	mustSet(t, g, mkFact(g, "alice recent fact", recent))
 
-	nodes, _, _, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{})
+	nodes, _, _, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{At: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}, containers.Bound{})
 	if len(nodes) != 1 || nodes[0].GetValue() != "alice recent fact" {
 		t.Errorf("Search(alice, since=2025) = %v, want [alice recent fact]", values(nodes))
 	}
 
-	nodes, _, _, _, _ = search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+	nodes, _, _, _, _ = search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{At: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)})
 	if len(nodes) != 1 || nodes[0].GetValue() != "alice ancient fact" {
 		t.Errorf("Search(alice, until=2025) = %v, want [alice ancient fact]", values(nodes))
+	}
+}
+
+// TestInMemoryGraphSearchWindowReadsTheClockTheBoundNames pins which of a
+// fact's times a bound compares, and that it compares by overlap. Five facts
+// match the query alike and differ only in the times they were given:
+//
+//	undated  written 20 May, no other time
+//	told     written 1 June, said 8 May
+//	race     written 1 June, said 8 May, happened on 7 May
+//	trip     written 1 June, said 25 May, happened 10 to 17 May
+//	twice    written 1 June, happened on 1 May and on 28 May
+//
+// A bound with no clock reads happened, which falls back to said and then to
+// the timestamp, so undated and told are still placed. An interval is inside
+// a window it touches and outside one it only borders, since both are
+// half-open. A fact that happened twice is inside only when one occurrence is:
+// two occurrences either side of the window do not add up to one within it.
+// Bounds that coincide still close before their instant: what was under way
+// then is inside, and what begins on it is outside, as it is outside the until
+// bound alone. Read as that one instant instead, a since bound added to a
+// recall would bring back a fact its until bound had left out. Bounds on two
+// clocks are tested each on its own.
+func TestInMemoryGraphSearchWindowReadsTheClockTheBoundNames(t *testing.T) {
+	may := func(day int) time.Time { return time.Date(2023, 5, day, 0, 0, 0, 0, time.UTC) }
+	june := time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC)
+	g := noDecayGraph()
+	for _, fact := range []graph.Fact[uint64]{
+		{NodeAttributes: graph.NodeAttributes{Value: "lap undated", Timestamp: may(20)}},
+		{NodeAttributes: graph.NodeAttributes{Value: "lap told", Timestamp: june}, Said: may(8)},
+		{NodeAttributes: graph.NodeAttributes{Value: "lap race", Timestamp: june}, Said: may(8), Occurred: []containers.Interval{{Start: may(7), End: may(8)}}},
+		{NodeAttributes: graph.NodeAttributes{Value: "lap trip", Timestamp: june}, Said: may(25), Occurred: []containers.Interval{{Start: may(10), End: may(17)}}},
+		{NodeAttributes: graph.NodeAttributes{Value: "lap twice", Timestamp: june}, Occurred: []containers.Interval{{Start: may(1), End: may(2)}, {Start: may(28), End: may(29)}}},
+	} {
+		fact.Hasher = g.GetHasher()
+		mustSet(t, g, fact)
+	}
+
+	tests := map[string]struct {
+		since containers.Bound
+		until containers.Bound
+		want  []string
+	}{
+		"no bound keeps every fact": {
+			want: []string{"lap race", "lap told", "lap trip", "lap twice", "lap undated"},
+		},
+		"since reads happened": {
+			since: containers.Bound{At: may(9)},
+			want:  []string{"lap trip", "lap twice", "lap undated"},
+		},
+		"until reads happened": {
+			until: containers.Bound{At: may(9)},
+			want:  []string{"lap race", "lap told", "lap twice"},
+		},
+		"an interval the window touches is inside": {
+			since: containers.Bound{At: may(16)},
+			until: containers.Bound{At: may(18)},
+			want:  []string{"lap trip"},
+		},
+		"an interval ending where the window starts is outside": {
+			since: containers.Bound{At: may(17)},
+			until: containers.Bound{At: may(21)},
+			want:  []string{"lap undated"},
+		},
+		"an instant starting where the window ends is outside": {
+			since: containers.Bound{At: may(18)},
+			until: containers.Bound{At: may(20)},
+			want:  []string{},
+		},
+		"two occurrences either side of the window are outside": {
+			since: containers.Bound{At: may(3)},
+			until: containers.Bound{At: may(27)},
+			want:  []string{"lap race", "lap told", "lap trip", "lap undated"},
+		},
+		"a window of one instant keeps what was happening then": {
+			since: containers.Bound{At: may(12)},
+			until: containers.Bound{At: may(12)},
+			want:  []string{"lap trip"},
+		},
+		"a window of one instant leaves out an interval beginning on it": {
+			since: containers.Bound{At: may(10)},
+			until: containers.Bound{At: may(10)},
+			want:  []string{},
+		},
+		"a window of one instant leaves out an instant on it": {
+			since: containers.Bound{At: may(20)},
+			until: containers.Bound{At: may(20)},
+			want:  []string{},
+		},
+		"a window closing before it opens keeps what ran across both bounds": {
+			since: containers.Bound{At: may(16)},
+			until: containers.Bound{At: may(11)},
+			want:  []string{"lap trip"},
+		},
+		"the said clock reads said, then the timestamp": {
+			since: containers.Bound{At: may(21), Clock: containers.Said},
+			want:  []string{"lap trip", "lap twice"},
+		},
+		"the written clock reads the timestamp alone": {
+			until: containers.Bound{At: may(30), Clock: containers.Written},
+			want:  []string{"lap undated"},
+		},
+		"bounds on two clocks each read their own": {
+			since: containers.Bound{At: may(9)},
+			until: containers.Bound{At: may(26), Clock: containers.Said},
+			want:  []string{"lap trip", "lap undated"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			nodes, _, _, _, err := search(g, []string{"lap"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, tc.since, tc.until)
+			if err != nil {
+				t.Fatalf("Search(lap) = %v, want nil", err)
+			}
+			got := values(nodes)
+			sort.Strings(got)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("Search(lap, since %v, until %v) mismatch (-want +got):\n%s", tc.since, tc.until, diff)
+			}
+		})
 	}
 }
 
@@ -629,7 +749,7 @@ func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 			g := newGraph()
 			mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now().Add(-tc.age)))
 
-			_, scores, _, _, _ := search(g, []string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+			_, scores, _, _, _ := search(g, []string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 			if len(scores) != 1 {
 				t.Fatalf("Search returned %d scores, want 1", len(scores))
 			}
@@ -665,7 +785,7 @@ func TestNewGraphInstallsStemmingTokenizer(t *testing.T) {
 	g := newGraph()
 	mustSet(t, g, mkFact(g, "jules blogs about lighthouses", time.Now()))
 
-	nodes, _, _, _, _ := search(g, []string{"blogging"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, _ := search(g, []string{"blogging"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if len(nodes) != 1 || nodes[0].GetValue() != "jules blogs about lighthouses" {
 		t.Fatalf("Search(blogging) = %v, want the blogs fact — inflections must unify", values(nodes))
 	}
@@ -683,7 +803,7 @@ func TestNewGraphSelectsConfiguredRelevanceModel(t *testing.T) {
 	g := graph.NewGraph[uint64, float64](cfg)
 	mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now()))
 
-	_, scores, _, _, _ := search(g, []string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	_, scores, _, _, _ := search(g, []string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if len(scores) != 1 || scores[0] != 1 {
 		t.Fatalf("Search scores under matchcount = %v, want exactly [1]", scores)
 	}
@@ -713,7 +833,7 @@ func TestSetScorerInstallsFold(t *testing.T) {
 	g.SetScorer(constScorer{score: 7})
 	mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now()))
 
-	_, scores, _, _, _ := search(g, []string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	_, scores, _, _, _ := search(g, []string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if len(scores) != 1 || scores[0] != 7 {
 		t.Fatalf("Search scores = %v, want the installed fold's [7]", scores)
 	}
@@ -729,7 +849,7 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 	mustSet(t, g, mkFact(g, "comet sighted in march", time.Now().Add(-10*halflife)))
 	mustSet(t, g, mkFact(g, "comet sighted today", time.Now()))
 
-	nodes, scores, _, _, _ := search(g, []string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := search(g, []string{"comet"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if len(nodes) != 2 {
 		t.Fatalf("Search(comet) returned %d nodes, want 2", len(nodes))
 	}
@@ -769,7 +889,7 @@ func TestInMemoryGraphSearchRecencyKeepsRelevance(t *testing.T) {
 			mustSet(t, g, mkFact(g, "harbour cranes at dawn", now))
 			mustSet(t, g, mkFact(g, "pilot boat on watch", now))
 
-			nodes, scores, _, _, _ := search(g, []string{"glacier", "survey"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+			nodes, scores, _, _, _ := search(g, []string{"glacier", "survey"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("Search(glacier survey, half-life=%v) = %v (scores %v), want %v", tc.halflife, got, scores, tc.want)
 			}
@@ -787,7 +907,7 @@ func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	g := graph.NewGraph[uint64, float64](cfg)
 	mustSet(t, g, mkFact(g, "glacier survey notes", time.Now().Add(-365*24*time.Hour)))
 
-	_, scores, _, _, _ := search(g, []string{"glacier"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	_, scores, _, _, _ := search(g, []string{"glacier"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if len(scores) != 1 {
 		t.Fatalf("Search returned %d scores, want 1", len(scores))
 	}
@@ -795,6 +915,61 @@ func TestInMemoryGraphSearchDecayDisabled(t *testing.T) {
 	covered := float64(int(idf * 1024))
 	if want := idf * covered / (covered + 1); scores[0] != want {
 		t.Errorf("score with decay disabled = %v, want exactly the BM25 mass %v", scores[0], want)
+	}
+}
+
+// TestInMemoryGraphSearchHitCarriesItsDecay pins the factor an explain
+// reports beside each hit: Score is the fold's relevance scaled by Decay, and
+// Decay is 0.5^(age/half-life) of the written timestamp. The fact was said
+// and happened years before it was written, and neither moves the factor: a
+// memory fades from when it was last asserted, so a note written today about
+// last year ranks as a fresh note. The relevance is the lone fact's BM25 mass
+// (see TestInMemoryGraphSearchRecencyDecayFactor).
+func TestInMemoryGraphSearchHitCarriesItsDecay(t *testing.T) {
+	halflife := testConfig().Engine.Halflife
+
+	tests := map[string]struct {
+		halflife time.Duration
+		age      time.Duration
+		want     float64
+	}{
+		"a fresh fact is not decayed":       {halflife, 0, 1},
+		"one half-life halves it":           {halflife, halflife, 0.5},
+		"a disabled half-life never decays": {0, halflife, 1},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.Engine.Halflife = tc.halflife
+			g := graph.NewGraph[uint64, float64](cfg)
+			written := time.Now().Add(-tc.age)
+			mustSet(t, g, graph.Fact[uint64]{
+				NodeAttributes: graph.NodeAttributes{Value: "aurora over the fjord", Timestamp: written},
+				Said:           written.Add(-2 * halflife),
+				Occurred:       []containers.Interval{{Start: written.Add(-4 * halflife), End: written.Add(-3 * halflife)}},
+				Hasher:         g.GetHasher(),
+			})
+
+			result, err := g.Search([]string{"aurora"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
+			if err != nil {
+				t.Fatalf("Search(aurora) = %v, want nil", err)
+			}
+			if len(result.Hits) != 1 {
+				t.Fatalf("Search(aurora) returned %d hits, want 1", len(result.Hits))
+			}
+			// The fact ages slightly between Set and Search, so allow a small
+			// tolerance around the exact factor.
+			hit := result.Hits[0]
+			if math.Abs(hit.Decay-tc.want) > 1e-3 {
+				t.Errorf("Decay = %v, want ~%v (0.5^(age/half-life) of the written timestamp)", hit.Decay, tc.want)
+			}
+			idf := math.Log(1 + 0.5/1.5)
+			covered := float64(int(idf * 1024))
+			relevance := idf * covered / (covered + 1)
+			if math.Abs(hit.Score-relevance*hit.Decay) > 1e-12 {
+				t.Errorf("Score = %v, want the BM25 mass %v scaled by Decay %v", hit.Score, relevance, hit.Decay)
+			}
+		})
 	}
 }
 
@@ -820,7 +995,7 @@ func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
 
 	// The premise of the test. The three single-match facts score equally to
 	// the bit, so only the key can order them.
-	if _, scores, _, _, _ := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, time.Time{}, time.Time{}); len(scores) != 4 || scores[1] != scores[2] || scores[2] != scores[3] {
+	if _, scores, _, _, _ := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 10, containers.Bound{}, containers.Bound{}); len(scores) != 4 || scores[1] != scores[2] || scores[2] != scores[3] {
 		t.Fatalf("Search(acme) scores = %v, want four hits whose last three tie", scores)
 	}
 
@@ -838,10 +1013,61 @@ func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			for i := 0; i < 20; i++ {
-				nodes, _, _, _, _ := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 1, tc.top, time.Time{}, time.Time{})
+				nodes, _, _, _, _ := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 1, tc.top, containers.Bound{}, containers.Bound{})
 				if got := keys(nodes); !reflect.DeepEqual(got, tc.want) {
 					t.Fatalf("Search(acme, top=%d) keys = %v on call %d, want %v every call (%v)", tc.top, got, i+1, tc.want, values(nodes))
 				}
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchOrdersTiesByWhenTheyHappened pins the middle of the
+// total order: of facts whose scores tie, the one that happened latest ranks
+// first, and the key orders only facts that happened together. Four facts
+// match the query term alike and were written in one instant, so relevance
+// and decay tie to the bit and only the times they were given tell them
+// apart. The undated fact happened when it was written, which is the latest
+// of the four. A fact that happened twice is placed by its latest occurrence.
+// Truncation keeps the newest of the tie, where key order would keep an
+// arbitrary pair.
+func TestInMemoryGraphSearchOrdersTiesByWhenTheyHappened(t *testing.T) {
+	g := newGraph()
+	now := time.Now()
+	year := func(y int) containers.Interval {
+		return containers.Interval{Start: time.Date(y, 1, 1, 0, 0, 0, 0, time.UTC), End: time.Date(y+1, 1, 1, 0, 0, 0, 0, time.UTC)}
+	}
+	for _, fact := range []graph.Fact[uint64]{
+		{NodeAttributes: graph.NodeAttributes{Value: "acme alpha line", Timestamp: now}, Occurred: []containers.Interval{year(2019)}},
+		{NodeAttributes: graph.NodeAttributes{Value: "acme beta line", Timestamp: now}, Said: time.Date(2021, 6, 1, 0, 0, 0, 0, time.UTC)},
+		{NodeAttributes: graph.NodeAttributes{Value: "acme gamma line", Timestamp: now}},
+		{NodeAttributes: graph.NodeAttributes{Value: "acme delta line", Timestamp: now}, Occurred: []containers.Interval{year(2018), year(2022)}},
+	} {
+		fact.Hasher = g.GetHasher()
+		mustSet(t, g, fact)
+	}
+
+	// The premise of the test. The four facts score equally to the bit, so
+	// only when they happened can order them.
+	if _, scores, _, _, _ := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{}); len(scores) != 4 || scores[0] != scores[3] {
+		t.Fatalf("Search(acme) scores = %v, want four hits that tie", scores)
+	}
+
+	tests := map[string]struct {
+		top  int
+		want []string
+	}{
+		"tied facts rank newest happened first":  {10, []string{"acme gamma line", "acme delta line", "acme beta line", "acme alpha line"}},
+		"truncation keeps the newest of the tie": {2, []string{"acme gamma line", "acme delta line"}},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			nodes, _, _, _, err := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 0, tc.top, containers.Bound{}, containers.Bound{})
+			if err != nil {
+				t.Fatalf("Search(acme, top=%d) = %v, want nil", tc.top, err)
+			}
+			if diff := cmp.Diff(tc.want, values(nodes)); diff != "" {
+				t.Errorf("Search(acme, top=%d) mismatch (-want +got):\n%s", tc.top, diff)
 			}
 		})
 	}
@@ -854,7 +1080,7 @@ func TestInMemoryGraphSearchTopTruncation(t *testing.T) {
 	mustSet(t, g, mkFact(g, "shared term two", now))
 	mustSet(t, g, mkFact(g, "shared term three", now))
 
-	nodes, scores, _, _, _ := search(g, []string{"shared"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 2, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := search(g, []string{"shared"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 2, containers.Bound{}, containers.Bound{})
 	if len(nodes) != 2 || len(scores) != 2 {
 		t.Errorf("Search(top=2) returned %d nodes and %d scores, want 2 and 2", len(nodes), len(scores))
 	}
@@ -935,7 +1161,7 @@ func TestSearchBM25Floor(t *testing.T) {
 		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	}
 
-	nodes, scores, _, _, _ := search(g, []string{"comet"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := search(g, []string{"comet"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, 1, 10, containers.Bound{}, containers.Bound{})
 	readings, readingScores, err := g.GetTextIndex().Search("comet", 10)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
@@ -956,7 +1182,7 @@ func TestSearchScoresNeverBelowTextMass(t *testing.T) {
 	g := noDecayGraph()
 	stormGraph(t, g)
 
-	nodes, scores, _, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, containers.Bound{}, containers.Bound{})
 	readings, readingScores, err := g.GetTextIndex().Search("barometer storm", 20)
 	if err != nil {
 		t.Fatalf("text Search = %v, want nil", err)
@@ -985,7 +1211,7 @@ func TestSearchHubSilenceAndEarnedPreemption(t *testing.T) {
 	g := noDecayGraph()
 	calm, memos := stormGraph(t, g)
 
-	nodes, _, contributions, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, contributions, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, 2, 20, containers.Bound{}, containers.Bound{})
 	if background <= 0 {
 		t.Fatalf("background = %v, want positive: two anchors are touched", background)
 	}
@@ -1023,7 +1249,7 @@ func TestSearchNamedHubTransmits(t *testing.T) {
 	g := noDecayGraph()
 	calm, memos := stormGraph(t, g)
 
-	nodes, _, contributions, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, contributions, _, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"archive"}, nil, 2, 20, containers.Bound{}, containers.Bound{})
 	byValue := make(map[string][]scoring.Contribution[uint64, float64], len(nodes))
 	for i, node := range nodes {
 		byValue[node.GetValue()] = contributions[i]
@@ -1093,7 +1319,7 @@ func TestSearchRanksANamedHubsMembersNewestFirst(t *testing.T) {
 
 			want := []string{"the pump failed at noon", "shift handover one", "shift handover two", "shift handover three"}
 			for range 10 {
-				nodes, _, contributions, _, err := search(g, []string{"pump"}, containers.Vector[uint64, float64]{}, []string{"log"}, nil, 1, 4, now.Add(-24*time.Hour), time.Time{})
+				nodes, _, contributions, _, err := search(g, []string{"pump"}, containers.Vector[uint64, float64]{}, []string{"log"}, nil, 1, 4, containers.Bound{At: now.Add(-24 * time.Hour)}, containers.Bound{})
 				if err != nil {
 					t.Fatalf("Search = %v, want nil", err)
 				}
@@ -1172,7 +1398,7 @@ func TestSearchDepthLanes(t *testing.T) {
 		return false
 	}
 	search := func(depth int) ([]string, [][]scoring.Contribution[uint64, float64], float64) {
-		nodes, _, contribs, bg, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, depth, 20, time.Time{}, time.Time{})
+		nodes, _, contribs, bg, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, depth, 20, containers.Bound{}, containers.Bound{})
 		return values(nodes), contribs, bg
 	}
 
@@ -1223,7 +1449,7 @@ func TestSearchDepthOnePrecisionBar(t *testing.T) {
 		return false
 	}
 	search := func(depth int) []string {
-		nodes, _, _, _, _ := search(g, []string{"tide"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, depth, 20, time.Time{}, time.Time{})
+		nodes, _, _, _, _ := search(g, []string{"tide"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, depth, 20, containers.Bound{}, containers.Bound{})
 		return values(nodes)
 	}
 
@@ -1249,7 +1475,7 @@ func TestSearchFairSeeding(t *testing.T) {
 		mustSet(t, g, mkFact(g, "lighthouse entry "+string(rune('a'+i)), now))
 	}
 
-	nodes, _, _, _, _ := search(g, []string{"lighthouse"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 15, time.Time{}, time.Time{})
+	nodes, _, _, _, _ := search(g, []string{"lighthouse"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 15, containers.Bound{}, containers.Bound{})
 	if len(nodes) != 15 {
 		t.Fatalf("Search(top=15) returned %d hits, want all 15 — the seed budget must widen to top", len(nodes))
 	}
@@ -1293,7 +1519,7 @@ func TestSearchAnchorsDoNotConsumeSeedBudget(t *testing.T) {
 		}
 	}
 
-	nodes, _, _, _, _ := search(g, []string{"billing"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 12, time.Time{}, time.Time{})
+	nodes, _, _, _, _ := search(g, []string{"billing"}, containers.Vector[uint64, float64]{}, nil, nil, 1, 12, containers.Bound{}, containers.Bound{})
 	if len(nodes) != 12 {
 		t.Fatalf("Search(top=12) returned %d hits, want all 12 — anchors took seed slots no fact could then use", len(nodes))
 	}
@@ -1312,7 +1538,7 @@ func TestSearchSizesAllocationsOnCandidates(t *testing.T) {
 	const top = 1 << 20
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	nodes, _, _, _, err := search(g, []string{"heron"}, containers.Vector[uint64, float64]{}, nil, nil, 0, top, time.Time{}, time.Time{})
+	nodes, _, _, _, err := search(g, []string{"heron"}, containers.Vector[uint64, float64]{}, nil, nil, 0, top, containers.Bound{}, containers.Bound{})
 	runtime.ReadMemStats(&after)
 	if err != nil {
 		t.Fatalf("Search(top=%d) = %v, want nil", top, err)
@@ -1333,9 +1559,9 @@ func TestSearchDeterminism(t *testing.T) {
 	g := noDecayGraph()
 	stormGraph(t, g)
 
-	firstNodes, firstScores, _, firstBackground, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
+	firstNodes, firstScores, _, firstBackground, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, containers.Bound{}, containers.Bound{})
 	for i := 0; i < 20; i++ {
-		nodes, scores, _, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, time.Time{}, time.Time{})
+		nodes, scores, _, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, containers.Bound{}, containers.Bound{})
 		if !reflect.DeepEqual(keys(nodes), keys(firstNodes)) || !reflect.DeepEqual(scores, firstScores) || background != firstBackground {
 			t.Fatalf("call %d returned a different ranking, scores or background: %v %v %v vs %v %v %v",
 				i+1, keys(nodes), scores, background, keys(firstNodes), firstScores, firstBackground)
@@ -1378,7 +1604,7 @@ func vectorHybridSearchAtPrecision[P float32 | float64](t *testing.T) {
 	// The query sits nearest the "beta" embedding, so beta must rank first.
 	// There are no keywords, so the vector index is the only seed source.
 	query := containers.NewVector[uint64]([]P{0.1, 0.9, 0.1})
-	nodes, scores, _, _, _ := search(g, nil, query, nil, nil, 1, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _, _ := search(g, nil, query, nil, nil, 1, 10, containers.Bound{}, containers.Bound{})
 
 	if len(nodes) == 0 {
 		t.Fatalf("Search returned no results, want the nearest fact")
@@ -1449,7 +1675,7 @@ func anchorGraph(t *testing.T) (g *graph.InMemoryGraph[uint64, float64], harbour
 // purpose. A test that passes through it also proves the lane is inert when
 // the anchors seed.
 func searchByAnchors(g *graph.InMemoryGraph[uint64, float64], topics, entities []string, top int, since, until time.Time) ([]graph.Node[uint64], []float64, [][]scoring.Contribution[uint64, float64], float64, error) {
-	return search(g, nil, containers.Vector[uint64, float64]{}, topics, entities, 2, top, since, until)
+	return search(g, nil, containers.Vector[uint64, float64]{}, topics, entities, 2, top, containers.Bound{At: since}, containers.Bound{At: until})
 }
 
 // TestInMemoryGraphSearchSeedsFromAnchorMembersNewestFirst pins the
@@ -1514,7 +1740,7 @@ func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
 	// Beside a term, the same anchors neither seed nor filter. "dawn" is in a
 	// harbour fact that mentions no pilot, and it comes back alone: the
 	// anchors' other members are not seeded on their names.
-	nodes, _, _, _, _ = search(g, []string{"dawn"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, []string{"pilot"}, 0, 10, time.Time{}, time.Time{})
+	nodes, _, _, _, _ = search(g, []string{"dawn"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, []string{"pilot"}, 0, 10, containers.Bound{}, containers.Bound{})
 	if diff := cmp.Diff([]string{harbourDawn}, values(nodes)); diff != "" {
 		t.Errorf("Search(dawn, topic=harbour, entity=pilot) mismatch (-want +got), beside a term the anchors filter nothing:\n%s", diff)
 	}
@@ -1615,7 +1841,7 @@ func TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey(t *testing.T) {
 func TestInMemoryGraphSearchWithATermSeedsFromText(t *testing.T) {
 	g, _, _ := anchorGraph(t)
 
-	nodes, _, contributions, _, _ := search(g, []string{"cranes"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, contributions, _, _ := search(g, []string{"cranes"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if want := []string{harbourCranes}; !reflect.DeepEqual(values(nodes), want) {
 		t.Fatalf("Search(cranes, topic=harbour) = %v, want the one text match %v", values(nodes), want)
 	}
@@ -1653,7 +1879,7 @@ func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			nodes, _, _, _, err := search(g, tc.keywords, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+			nodes, _, _, _, err := search(g, tc.keywords, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 			if err != nil {
 				t.Fatalf("Search(%v) error = %v, want nil", tc.keywords, err)
 			}
@@ -1677,7 +1903,7 @@ func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
 	g := noDecayGraph()
 	calm, _ := stormGraph(t, g)
 
-	nodes, _, contributions, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, contributions, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, nil, nil, 2, 20, containers.Bound{}, containers.Bound{})
 	if background != 0 {
 		t.Errorf("background = %v without an anchor named, want 0: the traversal must not run", background)
 	}
@@ -1694,7 +1920,7 @@ func TestSearchWithoutAnchorsSkipsTheGraph(t *testing.T) {
 		}
 	}
 
-	nodes, _, _, background, _ = search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, time.Time{}, time.Time{})
+	nodes, _, _, background, _ = search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 2, 20, containers.Bound{}, containers.Bound{})
 	if background <= 0 {
 		t.Fatalf("background = %v with the topics named, want positive: the traversal runs through a named anchor", background)
 	}
@@ -1726,7 +1952,7 @@ func TestInMemoryGraphSearchNamedAnchorIsTheAnchorTheDoorOpens(t *testing.T) {
 	mustSet(t, g, graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 
 	named := func(topics []string, entities []string) []scoring.Contribution[uint64, float64] {
-		nodes, _, contributions, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, topics, entities, 2, 10, time.Time{}, time.Time{})
+		nodes, _, contributions, _, _ := search(g, []string{"alice"}, containers.Vector[uint64, float64]{}, topics, entities, 2, 10, containers.Bound{}, containers.Bound{})
 		if len(nodes) != 1 {
 			t.Fatalf("Search(alice, topics=%v, entities=%v) = %v, want [alice works at acme]", topics, entities, values(nodes))
 		}
@@ -1760,14 +1986,14 @@ func TestInMemoryGraphSearchPoolsWhatTheRecallCanReturn(t *testing.T) {
 	mustSet(t, g, mkFact(g, "the kettle whistles", now))
 	mustSet(t, g, mkFact(g, "the kettle boils over the stove while the cook reads", now.Add(-48*time.Hour)))
 
-	nodes, scores, contributions, _, _ := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, now.Add(-24*time.Hour), time.Time{})
+	nodes, scores, contributions, _, _ := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{At: now.Add(-24 * time.Hour)}, containers.Bound{})
 	if diff := cmp.Diff([]string{"the kettle whistles"}, values(nodes)); diff != "" {
 		t.Fatalf("Search(kettle, since a day ago) mismatch (-want +got):\n%s", diff)
 	}
 	if got, want := scores[0], contributions[0][0].Score; got != want {
 		t.Errorf("score = %v, want the text mass %v: a pool of one is the recall's one fact", got, want)
 	}
-	if _, all, contributions, _, _ := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{}); all[0] == contributions[0][0].Score {
+	if _, all, contributions, _, _ := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{}); all[0] == contributions[0][0].Score {
 		t.Errorf("score = %v with both facts returnable, want the z-score over the two, not the text mass", all[0])
 	}
 }
@@ -1791,7 +2017,7 @@ func TestInMemoryGraphSearchOrdersEqualMatchesByAge(t *testing.T) {
 		mustSet(t, g, mkFact(g, value, now.Add(-age)))
 	}
 
-	nodes, scores, _, _, err := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, scores, _, _, err := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -1834,7 +2060,7 @@ func TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst(t *testing.T) {
 	file("the stove is warm", kitchen)
 	weak := file("a kettle sits in the shed among tools and old garden chairs", shed)
 
-	nodes, _, contributions, background, err := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, []string{"kitchen"}, nil, 2, 0, time.Time{}, time.Time{})
+	nodes, _, contributions, background, err := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, []string{"kitchen"}, nil, 2, 0, containers.Bound{}, containers.Bound{})
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -1874,7 +2100,7 @@ func TestInMemoryGraphSearchRecordsTheShareTheWordsHold(t *testing.T) {
 	mustSet(t, g, part)
 	mustSet(t, g, mkFact(g, "the oven hums", now))
 
-	nodes, _, contributions, _, _ := search(g, []string{"kettle", "whistles"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+	nodes, _, contributions, _, _ := search(g, []string{"kettle", "whistles"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	held := map[uint64]float64{}
 	for i, node := range nodes {
 		for _, c := range contributions[i] {
@@ -2022,7 +2248,7 @@ func BenchmarkSearch(b *testing.B) {
 		b.Run("depth"+strconv.Itoa(depth), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, _, _, _, err := search(g, query, none, []string{"topic7"}, nil, depth, 10, time.Time{}, time.Time{}); err != nil {
+				if _, _, _, _, err := search(g, query, none, []string{"topic7"}, nil, depth, 10, containers.Bound{}, containers.Bound{}); err != nil {
 					b.Fatalf("Search = %v, want nil", err)
 				}
 			}
@@ -2031,7 +2257,7 @@ func BenchmarkSearch(b *testing.B) {
 	b.Run("vector", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			if _, _, _, _, err := search(g, nil, vector, []string{"topic7"}, nil, 1, 10, time.Time{}, time.Time{}); err != nil {
+			if _, _, _, _, err := search(g, nil, vector, []string{"topic7"}, nil, 1, 10, containers.Bound{}, containers.Bound{}); err != nil {
 				b.Fatalf("Search = %v, want nil", err)
 			}
 		}
@@ -2039,7 +2265,7 @@ func BenchmarkSearch(b *testing.B) {
 	b.Run("conversation", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			if _, _, _, _, err := search(conversation, terms, none, []string{"conversation"}, nil, 1, 10, time.Time{}, time.Time{}); err != nil {
+			if _, _, _, _, err := search(conversation, terms, none, []string{"conversation"}, nil, 1, 10, containers.Bound{}, containers.Bound{}); err != nil {
 				b.Fatalf("Search = %v, want nil", err)
 			}
 		}
@@ -2058,8 +2284,8 @@ func vectorWeightGraph(t *testing.T) (*graph.InMemoryGraph[uint64, float64], gra
 	mustSet(t, g, text)
 	vector := mkFact(g, "release scheduled end of week", now)
 	mustSet(t, g, vector)
-	for fact, v := range map[graph.Fact[uint64]][]float64{text: {0, 1}, vector: {1, 0}} {
-		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](v)); err != nil {
+	for key, v := range map[uint64][]float64{text.Key(): {0, 1}, vector.Key(): {1, 0}} {
+		if err := g.GetVectorIndex().Insert(key, containers.NewVector[uint64](v)); err != nil {
 			t.Fatalf("vector Insert = %v, want nil", err)
 		}
 	}
@@ -2073,7 +2299,7 @@ func vectorWeightGraph(t *testing.T) (*graph.InMemoryGraph[uint64, float64], gra
 // weakness gives it. raw is the similarity its vector contribution records.
 func vectorScore(t *testing.T, g *graph.InMemoryGraph[uint64, float64], keywords []string, topics []string, since time.Time, key uint64) (weighted, raw float64) {
 	t.Helper()
-	nodes, scores, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), topics, nil, 0, 10, since, time.Time{})
+	nodes, scores, contributions, _, err := search(g, keywords, containers.NewVector[uint64]([]float64{1, 0}), topics, nil, 0, 10, containers.Bound{At: since}, containers.Bound{})
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
@@ -2149,8 +2375,8 @@ func TestInMemoryGraphSearchWeightsVectorsByTheHitsTheRecallKeeps(t *testing.T) 
 	for fact, topic := range map[*graph.Fact[uint64]]*graph.Topic[uint64]{&text: ops, &vector: ops, &full: other} {
 		mustSet(t, g, graph.IsAbout[uint64]{Fact: fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
 	}
-	for fact, v := range map[graph.Fact[uint64]][]float64{text: {0, 1}, full: {0, 1}, vector: {1, 0}} {
-		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](v)); err != nil {
+	for key, v := range map[uint64][]float64{text.Key(): {0, 1}, full.Key(): {0, 1}, vector.Key(): {1, 0}} {
+		if err := g.GetVectorIndex().Insert(key, containers.NewVector[uint64](v)); err != nil {
 			t.Fatalf("vector Insert = %v, want nil", err)
 		}
 	}
@@ -2205,7 +2431,7 @@ func scoreCutoffAt[P float32 | float64](t *testing.T) {
 	file("another one anchor", "a")
 
 	// The premise of the test: the scores are 3, 2, 1, 1 before any cutoff.
-	_, premise, _, _, _ := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, 10, time.Time{}, time.Time{})
+	_, premise, _, _, _ := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, 10, containers.Bound{}, containers.Bound{})
 	if diff := cmp.Diff([]P{3, 2, 1, 1}, premise); diff != "" {
 		t.Fatalf("Search(topics a b c) scores before any cutoff mismatch (-want +got):\n%s", diff)
 	}
@@ -2225,7 +2451,7 @@ func scoreCutoffAt[P float32 | float64](t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			cfg.DB.MinScoreRatio = tc.ratio
-			nodes, got, contributions, _, err := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, time.Time{}, time.Time{})
+			nodes, got, contributions, _, err := search(g, nil, containers.Vector[uint64, P]{}, []string{"a", "b", "c"}, nil, 0, tc.top, containers.Bound{}, containers.Bound{})
 			if err != nil {
 				t.Fatalf("Search() error = %v, want nil", err)
 			}
@@ -2283,7 +2509,7 @@ func TestInMemoryGraphSearchScoreCutoffIgnoresDecay(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			cfg.DB.MinScoreRatio = tc.ratio
-			nodes, scores, _, _, err := search(g, nil, containers.Vector[uint64, float64]{}, []string{"a", "b"}, nil, 0, 10, time.Time{}, time.Time{})
+			nodes, scores, _, _, err := search(g, nil, containers.Vector[uint64, float64]{}, []string{"a", "b"}, nil, 0, 10, containers.Bound{}, containers.Bound{})
 			if err != nil {
 				t.Fatalf("Search() error = %v, want nil", err)
 			}
@@ -2328,7 +2554,7 @@ func TestInMemoryGraphSearchWindowScoresAnExchange(t *testing.T) {
 		return g
 	}
 	search := func(g *graph.InMemoryGraph[uint64, float64]) map[string]float64 {
-		nodes, scores, _, _, err := search(g, []string{"deploy", "friday"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+		nodes, scores, _, _, err := search(g, []string{"deploy", "friday"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 		if err != nil {
 			t.Fatalf("Search = %v, want nil", err)
 		}
@@ -2377,7 +2603,7 @@ func TestInMemoryGraphSearchWindowFollowsWrites(t *testing.T) {
 		return fact
 	}
 	hits := func() []string {
-		nodes, _, _, _, err := search(g, []string{"deploy"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, time.Time{}, time.Time{})
+		nodes, _, _, _, err := search(g, []string{"deploy"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 		if err != nil {
 			t.Fatalf("Search = %v, want nil", err)
 		}

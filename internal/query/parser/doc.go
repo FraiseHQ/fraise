@@ -23,9 +23,16 @@
 // Package parser turns one FQL instruction into a typed command node.
 //
 // [Parse] reads the lexer's tokens through a two-token window. It returns a
-// [CommandNode], either a [RecallCommandNode] or a [RememberCommandNode]. Their
-// clauses are [FieldNode] values. Nodes keep their source tokens, so String
-// prints a query that parses back to the same node.
+// [CommandNode]: a [RecallCommandNode], a [RememberCommandNode] or a
+// [WhenCommandNode]. Their clauses are [FieldNode] values. Nodes keep their
+// source tokens, so String prints a query that parses back to the same node.
+//
+// A when is a query whose answer is a time. It stands alone as a statement, and
+// it stands in a recall's since: or until: inside parentheses, where its answer
+// is the bound. The parenthesised form is a [SubqueryNode]. Parse reads it with
+// the production that reads a whole instruction, so the nested command is an
+// ordinary [CommandNode]. What a bound may hold is checked on that command once
+// it is parsed.
 //
 // This package owns only the grammar. The query layer reads commands through
 // their accessors and enforces the configured limits. Vectors never appear in

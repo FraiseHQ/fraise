@@ -30,6 +30,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
@@ -48,6 +50,7 @@ type fakeGraph struct {
 	sets             int
 	puts             int
 	searchCalled     bool
+	since, until     containers.Bound
 
 	searchNodes      []graph.Node[string]
 	searchScores     []float32
@@ -64,8 +67,9 @@ func (g *fakeGraph) RUnlock() { g.runlocks++ }
 func (g *fakeGraph) Set(node graph.Node[string]) error             { g.sets++; return nil }
 func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; return nil }
 
-func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (graph.Result[string, float32], error) {
+func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) (graph.Result[string, float32], error) {
 	g.searchCalled = true
+	g.since, g.until = since, until
 	if g.searchErr != nil {
 		return graph.Result[string, float32]{}, g.searchErr
 	}
@@ -95,14 +99,27 @@ func (g *fakeGraph) Size() int                                          { return
 func (g *fakeGraph) Stats() graph.GraphStats                            { return graph.GraphStats{} }
 func (g *fakeGraph) IsEmpty() bool                                      { return false }
 
+// clockOf is what a time the server makes is read on: the zone it prints in,
+// and whether it still holds the monotonic reading time.Now gave it.
+type clockOf struct {
+	Zone      string
+	Monotonic bool
+}
+
+// clockOfTime reads t's clock. Round(0) strips the monotonic reading and
+// nothing else, so t differs from it exactly when t holds one.
+func clockOfTime(t time.Time) clockOf {
+	return clockOf{Zone: t.Location().String(), Monotonic: t != t.Round(0)}
+}
+
 func newStream(q Query[string, float32]) *Stream[string, float32] {
 	return &Stream[string, float32]{Query: q, done: make(chan struct{})}
 }
 
-// readQuery builds a Recall. Its nil time bounds resolve to the zero time, so
-// Commit's read path can call Since and Until safely. It returns a *Recall
+// readQuery builds a Recall. Its absent time bounds resolve to the zero bound,
+// so Commit's read path can call Since and Until safely. It returns a *Recall
 // because Plan and SetGraphID have pointer receivers. So only *Recall satisfies
-// Query, and Commit's read path asserts *Recall.
+// Query, and Commit reads a *Recall.
 func readQuery() *Recall[string, float32] {
 	return &Recall[string, float32]{Keywords: []string{"x"}}
 }
@@ -275,9 +292,79 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	}
 
 	// A recall whose since: window covers only the re-assertion.
-	result, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, windowStart, time.Time{})
+	result, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, containers.Bound{At: windowStart}, containers.Bound{})
 	if len(result.Hits) != 1 {
 		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(result.Hits))
+	}
+}
+
+// TestStreamCommitWriteStampsTimesInUTC pins the zone of the times a write
+// makes: the written timestamp, and a said: and an occurred: given as
+// durations, which count back from it. A time carries its zone to the
+// response, which prints its day, and a date in a bound is a UTC day. Stamped
+// in the host's zone, a fact written on a host east of UTC in the hours its
+// date is ahead of UTC's would print a day that since: that day leaves out.
+// The zone's name tells the two apart on any host: a time read from the
+// host's clock is in Local, even on a host set to UTC.
+//
+// None of the times keeps the monotonic reading time.Now carries. Two times
+// that both hold one compare by it alone, and the monotonic clock stops while
+// the host sleeps: a fact said 20h ago on a laptop that slept would sort, and
+// fall inside a when's window, as though it were said before facts written
+// ahead of the sleep.
+func TestStreamCommitWriteStampsTimesInUTC(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+	q, _, err := Parse[uint64, float32]("remember 'dora docked the ferry' said:7d occurred:3d", nil, config.New())
+	if err != nil {
+		t.Fatalf("Parse() err = %v", err)
+	}
+
+	if err := NewStream[uint64, float32](q).Commit(g); err != nil {
+		t.Fatalf("Commit() err = %v", err)
+	}
+
+	key := graph.Fact[uint64]{
+		NodeAttributes: graph.NodeAttributes{Value: "dora docked the ferry"},
+		Hasher:         g.GetHasher(),
+	}.Key()
+	fact, ok := g.Get(key).(graph.Fact[uint64])
+	if !ok {
+		t.Fatalf("Get() = %T, want the stored graph.Fact", g.Get(key))
+	}
+	got := map[string]clockOf{
+		"written":  clockOfTime(fact.Timestamp),
+		"said":     clockOfTime(fact.Said),
+		"occurred": clockOfTime(fact.Occurred[0].Start),
+	}
+	want := map[string]clockOf{"written": {Zone: "UTC"}, "said": {Zone: "UTC"}, "occurred": {Zone: "UTC"}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("clocks mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestStreamCommitReadResolvesBoundsInUTC pins that a bound written as a
+// duration resolves on a clock read in UTC, as a write's times are. A when
+// answered from such a bound, and the window the recall searches, then name
+// the days a date bound would. Neither bound keeps a monotonic reading, so it
+// compares with stored times by the wall clock, as a literal bound does.
+func TestStreamCommitReadResolvesBoundsInUTC(t *testing.T) {
+	g := &fakeGraph{}
+	q, _, err := Parse[string, float32]("recall x since:7d until:1d", nil, config.New())
+	if err != nil {
+		t.Fatalf("Parse() err = %v", err)
+	}
+
+	if err := newStream(q).Commit(g); err != nil {
+		t.Fatalf("Commit() err = %v", err)
+	}
+
+	got := map[string]clockOf{
+		"since": clockOfTime(g.since.At),
+		"until": clockOfTime(g.until.At),
+	}
+	want := map[string]clockOf{"since": {Zone: "UTC"}, "until": {Zone: "UTC"}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("clocks mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -396,7 +483,7 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, time.Time{}, time.Time{})
+			result, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, containers.Bound{}, containers.Bound{})
 			nodes := result.Nodes()
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
@@ -462,7 +549,7 @@ func BenchmarkRecallCommit(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				r := &Recall[uint64, float32]{
 					Keywords:   []string{"fact", "number"},
-					Parameters: QueryParameters[uint64]{Top: 10},
+					Parameters: QueryParameters[uint64, float32]{Top: 10},
 				}
 				s := NewStream[uint64, float32](r)
 				if err := s.Commit(g); err != nil {
@@ -527,7 +614,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	}
 
 	t.Run("a topic alone lists its members", func(t *testing.T) {
-		r := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		r := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
 		if got, want := sorted(hitValues(r)), sorted(facts); !reflect.DeepEqual(got, want) {
 			t.Fatalf("Search(topic=deploys) = %v, want every fact filed under the topic %v and no other", got, want)
 		}
@@ -549,8 +636,8 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	})
 
 	t.Run("a topic and an entity double the mass of a fact under both", func(t *testing.T) {
-		single := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
-		both := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Entities: []string{"ops"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		single := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
+		both := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Entities: []string{"ops"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
 		if got, want := sorted(hitValues(both)), sorted(facts); !reflect.DeepEqual(got, want) {
 			t.Fatalf("Search(topic=deploys, entity=ops) = %v, want the union %v, each fact once", got, want)
 		}
@@ -574,7 +661,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	})
 
 	t.Run("a term beside the anchor searches", func(t *testing.T) {
-		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64]{Top: 10}})
+		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
 		if got, want := hitValues(r), []string{"the deploy key lives in vault"}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: beside a term the anchor does not list", got, want)
 		}

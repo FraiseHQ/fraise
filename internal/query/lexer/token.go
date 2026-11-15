@@ -61,16 +61,21 @@ const (
 	DESCRIBE
 	EXPLAIN
 
-	// RECALL, REMEMBER, FORGET and UPDATE are the commands.
+	// RECALL, REMEMBER, FORGET, UPDATE and WHEN are the commands.
 	RECALL
 	REMEMBER
 	FORGET
 	UPDATE
+	WHEN
 
 	// PLUS, TILDE and MINUS are the operators.
 	PLUS
 	TILDE
 	MINUS
+
+	// RANGE is the '..' that joins the two ends of a time range, as in
+	// '2023-05-07'..'2023-05-09'. A lone '.' is a SPECIAL.
+	RANGE
 
 	// LPAREN and RPAREN are the punctuation.
 	LPAREN
@@ -98,13 +103,16 @@ const (
 	EOL
 	NEWLINE
 
-	// TOPIC, ENTITY, SINCE, UNTIL, TOP and DEPTH are the fields.
+	// TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, SAID and OCCURRED are the
+	// fields.
 	TOPIC
 	ENTITY
 	SINCE
 	UNTIL
 	TOP
 	DEPTH
+	SAID
+	OCCURRED
 
 	// VEC is the vector field. Its value is a parameter reference ($name).
 	VEC
@@ -119,6 +127,7 @@ var TokenMap = map[TokenType]string{
 	REMEMBER:   "remember",
 	FORGET:     "forget",
 	UPDATE:     "update",
+	WHEN:       "when",
 	COLON:      ":",
 	LPAREN:     "(",
 	RPAREN:     ")",
@@ -129,12 +138,15 @@ var TokenMap = map[TokenType]string{
 	PLUS:       "+",
 	TILDE:      "~",
 	MINUS:      "-",
+	RANGE:      "..",
 	TOPIC:      "topic",
 	ENTITY:     "entity",
 	SINCE:      "since",
 	UNTIL:      "until",
 	TOP:        "top",
 	DEPTH:      "depth",
+	SAID:       "said",
+	OCCURRED:   "occurred",
 	LITERAL:    "literal",
 	VEC:        "vec",
 	EOL:        "eol",
@@ -151,6 +163,7 @@ var KeywordsMap = map[string]TokenType{
 	"remember": REMEMBER,
 	"forget":   FORGET,
 	"update":   UPDATE,
+	"when":     WHEN,
 	"explain":  EXPLAIN,
 	"describe": DESCRIBE,
 	"topic":    TOPIC,
@@ -159,6 +172,8 @@ var KeywordsMap = map[string]TokenType{
 	"until":    UNTIL,
 	"top":      TOP,
 	"depth":    DEPTH,
+	"said":     SAID,
+	"occurred": OCCURRED,
 	"vec":      VEC,
 }
 
@@ -168,20 +183,20 @@ var KeywordsMap = map[string]TokenType{
 // names the anchor "top". Among a recall's terms it is an error.
 func (t TokenType) IsKeyword() bool {
 	switch t {
-	case RECALL, REMEMBER, FORGET, UPDATE, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, VEC, EXPLAIN, DESCRIBE:
+	case RECALL, REMEMBER, FORGET, UPDATE, WHEN, TOPIC, ENTITY, SINCE, UNTIL, TOP, DEPTH, SAID, OCCURRED, VEC, EXPLAIN, DESCRIBE:
 		return true
 	default:
 		return false
 	}
 }
 
-// IsCommand reports whether t is a command verb: recall, remember, forget or
-// update. A query is one instruction. So the parser reports a command word
-// after the first position as a second command or a word to quote. It never
-// reports one as a stray token or the start of a clause.
+// IsCommand reports whether t is a command verb: recall, remember, forget,
+// update or when. A query is one instruction. So the parser reports a command
+// word after the first position as a second command or a word to quote. It
+// never reports one as a stray token or the start of a clause.
 func (t TokenType) IsCommand() bool {
 	switch t {
-	case RECALL, REMEMBER, FORGET, UPDATE:
+	case RECALL, REMEMBER, FORGET, UPDATE, WHEN:
 		return true
 	default:
 		return false

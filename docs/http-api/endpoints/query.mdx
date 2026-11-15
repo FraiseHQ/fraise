@@ -47,6 +47,47 @@ A successful recall carries ranked hits, highest score first — relevance after
 
 </Note>
 
+### A hit carries the times its fact holds
+
+| Field | Meaning |
+|---|---|
+| `value` | the fact, exactly as it was written |
+| `timestamp` | when the fact was written |
+| `said` | when it was said; absent when its `remember` gave no `said:` |
+| `occurred` | the times what it states happened, each a `start` and an `end`; absent when its `remember` gave no `occurred:` |
+| `score` | relevance after recency decay |
+
+```json
+{
+  "value": "anna ran the charity race",
+  "timestamp": "2026-11-12T00:53:42.421Z",
+  "said": "2023-05-08T00:00:00Z",
+  "occurred": [{"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"}],
+  "score": 2.1206
+}
+```
+
+A span holds its `start` and ends just before its `end`, so the day of 7 May runs to the first instant of the 8th. One moment has the two equal, and a span that is not over has no `end`.
+
+**An absent time was not given, and the fact reads the next one**: with no `occurred` it happened when it was said, and with no `said` it was said at its `timestamp`. Leaving the key out is what lets a client tell a time that was stated from one it falls back to. See [Temporality](/docs/retrieval/memory-model/temporality).
+
+### A `when` answers with a time
+
+A `when` returns the same shape, with the time it answers with as `start` and `end` on `results`, beside the hits that time was read from:
+
+```json
+{
+  "results": {
+    "count": 1,
+    "hits": ["..."],
+    "start": "2023-05-07T00:00:00Z",
+    "end": "2023-05-08T00:00:00Z"
+  }
+}
+```
+
+The two are a span like any other: equal for one moment, and with no `end` for an answer that is not over. A `when` that matched no fact has neither, and says so in a warning. See [Commands](/docs/query-language/foundations/commands).
+
 ### A write is acknowledged, not answered with results
 
 A write has no result set. It returns 200 with an acknowledgement of its own:
@@ -73,7 +114,7 @@ A 204 carries no `warnings` either, since it carries no body — what a phrasing
 
 ## Warnings
 
-A query that ran but carries something it should not, such as a mis-cased keyword or a stop word among its terms, has a `warnings` array beside its results, or beside a write's `status`. The key is absent when there is nothing to say, so a clean response shape is unchanged. See [Warnings](/docs/query-language/reference/warnings).
+A query that ran but carries something it should not, such as a mis-cased keyword, a stop word among its terms or a `when` that no fact answers, has a `warnings` array beside its results, or beside a write's `status`. The key is absent when there is nothing to say, so a clean response shape is unchanged. See [Warnings](/docs/query-language/reference/warnings).
 
 ## Errors
 

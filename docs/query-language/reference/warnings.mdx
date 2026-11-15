@@ -3,7 +3,7 @@ title: "Warnings"
 description: "The query shapes that run but carry a warning, and the neighbouring shapes that stay silent"
 ---
 
-An error rejects a query; a warning accompanies one that ran. A query that could mean two things is never a warning — the parser does not guess, so `recall since 7d`, one `:` away from `recall since:7d`, is an [error](/docs/http-api/errors) naming both repairs. A warning is only ever about a query with exactly one reading that carries something it should not: a keyword spelled against the language, or a term or clause that, in that query, has nothing to act on. The hits are real and complete either way; the warning says what to change so the next query is clean.
+An error rejects a query; a warning accompanies one that ran. A query that could mean two things is never a warning — the parser does not guess, so `recall since 7d`, one `:` away from `recall since:7d`, is an [error](/docs/http-api/errors) naming both repairs. A warning is only ever about a query with exactly one reading that carries something it should not: a keyword spelled against the language, a term or clause that, in that query, has nothing to act on, or a `when` that found no fact to read a time from. The result is what that one reading returns either way; the warning says what to change so the next query is clean.
 
 Warnings travel beside the results, never instead of them, and the key is absent when there is nothing to say — the response shape of a clean query is unchanged:
 
@@ -14,21 +14,22 @@ Warnings travel beside the results, never instead of them, and the key is absent
 }
 ```
 
-Each entry is positioned like a parse error — `parse warning at column N:`, the column naming the last character of the token it is about — and says how to resolve it from the message alone.
+Each entry says how to resolve it from the message alone. One the parser raises is positioned like a parse error — `parse warning at column N:`, the column naming the last character of the token it is about. One raised while the query runs, a `when` that no fact answers, has no column and names the time bound it stands in instead.
 
 ## Queries that warn
 
-Four shapes warn: a mis-cased clause, and three that carry something with nothing to act on.
+Five shapes warn: a mis-cased keyword, three that carry something with nothing to act on, and a `when` that no fact answers.
 
-### 1. A clause whose keyword is not lower case
+### 1. A mis-cased keyword glued to its `:`
 
-A word glued to a `:` has exactly one reading, so the clause runs — see [Keywords](/docs/query-language/tokens/keywords) for why erroring there would report the shallower of two problems. But this language is lower case, and accepting the spelling in silence teaches the opposite. The warning names the clause that ran, and there is one per mis-cased clause so a query with several can be fixed in a single pass.
+A word glued to a `:` has exactly one reading, so the clause runs — see [Keywords](/docs/query-language/tokens/keywords) for why erroring there would report the shallower of two problems. But this language is lower case, and accepting the spelling in silence teaches the opposite. The warning names what ran, and there is one per mis-cased keyword so a query with several can be fixed in a single pass.
 
 | query | reading that runs | what it warns about |
 |----------------------------|--------------------------|----------------------------------------|
 | `recall x TOP:3` | `top:3` | `TOP` is syntax, and syntax is lower case |
 | `recall x Topic:food` | `topic:food` | the same, on an anchor key |
 | `remember 'a' Entity:bob` | `entity:bob` | the same, on a write |
+| `WHEN:said race` | `when:said race` | the same, on a command glued to its clock |
 
 <Note title="Anchor values are data" type="note">
 
@@ -43,6 +44,7 @@ A word glued to a `:` has exactly one reading, so the clause runs — see [Keywo
 | query | reading that runs | what it warns about |
 |---------------------------|------------------------------------|------------------------------------------------|
 | `recall parrot depth:2` | a text search for "parrot" | `depth:2` has no effect without an anchor |
+| `when parrot depth:2` | the same search, answering with a time | the same, on a `when` |
 | `recall parrot topic:birds depth:2` | — | nothing: the anchor gives the lane a graph to act through |
 
 See [Retrieval lanes](/docs/retrieval/ranking/depth).
@@ -70,6 +72,25 @@ Stored facts are cleaned of English stop words on their way into the index, so a
 
 When every search term is a stop word and the recall carries no phrase and no vector, nothing can match at all. That is an [error](/docs/http-api/errors), not a warning — an empty result would read like a miss — and a named anchor does not change it: `recall the topic:birds` is meant as `recall topic:birds`.
 
+### 5. A `when` that no fact answers
+
+A `when` answers with the time of what it matches, so one that matches nothing has no time to give. On its own it returns no hits, and the warning says why the result carries no time. In a time bound it leaves the recall no bound to read. Running the recall without the bound would answer a wider question than the one asked, so it returns no hits, and the warning names the bound:
+
+```json
+{
+  "results": {"count": 0, "hits": []},
+  "warnings": ["until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits"]
+}
+```
+
+| query | reading that runs | what it warns about |
+|---------------------------|------------------------------------|------------------------------------------------|
+| `when regatta` | the search, matching nothing | the `when` has no time to answer with |
+| `recall anna until:(when regatta)` | the `when`, and no search of the recall's own | the same, under `until:` |
+| `recall anna since:(when regatta) until:(when gala)` | both `when`s | each, under its own bound |
+
+See [Commands](/docs/query-language/foundations/commands).
+
 ## Queries that stay silent
 
 Every neighbouring shape has one reading and nothing inert in it, so it carries no warning — the grammar either runs it silently or rejects it outright:
@@ -78,7 +99,8 @@ Every neighbouring shape has one reading and nothing inert in it, so it carries 
 - `recall x since:7d` — an actual clause is what it says it is.
 - `entity:top`, `entity:Top` — value position: after a field's `:` only a value can appear, so there is nothing to mistake it for.
 - `recall 'the'` — a phrase is a seed whatever its words.
+- `recall anna until:(when 'charity race')` — a `when` that found its fact is a bound like any other.
 - `recall since 7d`, `recall x since 7d` — a bare reserved word among the terms is an **error** naming both repairs, not a warning; running either reading would answer a question the caller may not have asked.
 - `recall x Since 7d` — the same, mis-cased: an error naming the casing.
 
-The bar keeps warnings rare and the list short: a shape joins it only when the query has exactly one reading and something in it is spelled against the language or has nothing to act on. Anything that could be read two ways is settled as an error.
+The bar keeps warnings rare and the list short: a shape joins it only when the query has exactly one reading and something in it is spelled against the language, has nothing to act on, or found nothing to read. Anything that could be read two ways is settled as an error.

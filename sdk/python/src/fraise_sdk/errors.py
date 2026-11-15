@@ -38,7 +38,8 @@ class FraiseWarning(UserWarning):
     emit one before sending. ``recall("since", "7d")`` warns, because it
     searches the word "since", one ``:`` away from a ``since:7d`` bound. A
     failed extraction warns too, because the fact is stored without the
-    extracted anchors.
+    extracted anchors. So does the first datetime with no time zone a client
+    is given, because it was read as UTC.
 
     It is emitted through :mod:`warnings`, so it is visible by default and can
     be silenced by category::

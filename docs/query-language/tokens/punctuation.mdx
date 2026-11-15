@@ -1,6 +1,6 @@
 ---
 title: "Punctuation"
-description: "The four characters that carry meaning in FQL, and the ones that are lexed but never accepted"
+description: "The four characters that carry meaning in FQL, the parentheses and range dots of a time value, and the ones that are lexed but never accepted"
 ---
 
 Four characters carry meaning. Each one is a single token, and each one also ends the word before it — which is why they never need whitespace around them, and why a term cannot contain one.
@@ -12,9 +12,20 @@ Four characters carry meaning. Each one is a single token, and each one also end
 | `$` | introduces a parameter reference (`vec:$v`) |
 | `@` | selects the graph, glued to the command (`recall@3`) |
 
+## In a time value
+
+Two more are syntax in a time value and nowhere else:
+
+| Characters | Meaning |
+|-----------|-------------------------------------------------------------|
+| `(` `)` | enclose the `when` whose answer is a bound (`until:(when 'charity race')`) |
+| `..` | joins the two ends of a date range (`occurred:'2023-05-10'..'2023-05-16'`) |
+
+Away from a time value each is rejected with a message naming its one use: there are no boolean operators to group, so `recall (a b)` is an error, and so is `recall a..b`. Parentheses hold one `when` and never nest. See [Literals](/docs/query-language/tokens/literals#time-values).
+
 ## Lexed but never accepted
 
-`(`, `)`, `+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears. So is every other character that is not a letter or a digit — `;`, `,`, `.`, `_`, `!`, an emoji, a NUL — outside a phrase: each is a token of its own, rejected by name (`";" is only allowed inside a quoted phrase`), and each is data inside quotes. Space, tab, carriage return and newline are the only exceptions: they separate words and instructions.
+`+`, `-` and `~` are also lexed as tokens, but no production accepts them: a query containing one is rejected wherever it appears. So is every other character that is not a letter or a digit — `;`, `,`, a single `.`, `_`, `!`, an emoji, a NUL — outside a phrase: each is a token of its own, rejected by name (`";" is only allowed inside a quoted phrase`), and each is data inside quotes. Space, tab, carriage return and newline are the only exceptions: they separate words and instructions.
 
 <Note title="Punctuation inside a word" type="warning">
 

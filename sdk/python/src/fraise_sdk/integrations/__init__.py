@@ -22,9 +22,13 @@
 
 """Integrations that expose Fraise memory as tools for agent libraries.
 
-Each submodule targets one library and needs its optional extra.
+Each library has its own submodule, which needs that library's optional extra.
 :mod:`fraise_sdk.integrations.openai_agents` needs ``fraise-sdk[openai]``, and
 :mod:`fraise_sdk.integrations.claude_agents` needs ``fraise-sdk[anthropic]``.
 The top-level package does not import them, so ``import fraise_sdk`` stays free
 of those heavy, optional dependencies.
+
+:mod:`fraise_sdk.integrations.render` is the line every recall tool prints for
+a fact. It needs no extra, so a tool written for another library can print the
+same line.
 """

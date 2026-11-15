@@ -149,6 +149,36 @@ func Test_SpecialCharacters(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
+		// Two dots are one token, the operator between the ends of a time
+		// range. It needs no space around it, like every other symbol.
+		"two dots are the range operator": {
+			input: "'2023-05-07'..'2023-05-09'",
+			want: []lexer.Token{
+				{Type: lexer.PHRASE, Literal: "2023-05-07"},
+				{Type: lexer.RANGE, Literal: ".."},
+				{Type: lexer.PHRASE, Literal: "2023-05-09"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		// One dot is no operator. It stays a special character, so a word
+		// still ends at it and v1.2 is rejected by name.
+		"a lone dot is special": {
+			input: "v1.2",
+			want: []lexer.Token{
+				{Type: lexer.LITERAL, Literal: "v1"},
+				{Type: lexer.SPECIAL, Literal: "."},
+				{Type: lexer.LITERAL, Literal: "2"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		"a third dot is left over": {
+			input: "...",
+			want: []lexer.Token{
+				{Type: lexer.RANGE, Literal: ".."},
+				{Type: lexer.SPECIAL, Literal: "."},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -173,11 +203,14 @@ func Test_AllKeyLITERALs(t *testing.T) {
 		"remember": {want: lexer.REMEMBER},
 		"forget":   {want: lexer.FORGET},
 		"update":   {want: lexer.UPDATE},
+		"when":     {want: lexer.WHEN},
 		"topic":    {want: lexer.TOPIC},
 		"since":    {want: lexer.SINCE},
 		"until":    {want: lexer.UNTIL},
 		"top":      {want: lexer.TOP},
 		"depth":    {want: lexer.DEPTH},
+		"said":     {want: lexer.SAID},
+		"occurred": {want: lexer.OCCURRED},
 		"vec":      {want: lexer.VEC},
 	}
 
@@ -218,6 +251,8 @@ func Test_KeyLITERALsAsSubstrings(t *testing.T) {
 		"forgetme":    {},
 		"andthen":     {},
 		"topical":     {},
+		"whenever":    {},
+		"happened":    {},
 	}
 
 	for input := range tests {
@@ -444,6 +479,45 @@ func Test_ComplexQueries(t *testing.T) {
 				{Type: lexer.EOL, Literal: ""},
 			},
 		},
+		// A when in a bound is a query in parentheses. After when's ':' the
+		// clock is a value, and said arrives typed as the field it also is.
+		"a when inside a bound": {
+			input: "recall she until:(when:said 'race')",
+			want: []lexer.Token{
+				{Type: lexer.RECALL, Literal: "recall"},
+				{Type: lexer.WHITESPACE, Literal: " "},
+				{Type: lexer.LITERAL, Literal: "she"},
+				{Type: lexer.WHITESPACE, Literal: " "},
+				{Type: lexer.UNTIL, Literal: "until"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.LPAREN, Literal: "("},
+				{Type: lexer.WHEN, Literal: "when"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.SAID, Literal: "said"},
+				{Type: lexer.WHITESPACE, Literal: " "},
+				{Type: lexer.PHRASE, Literal: "race"},
+				{Type: lexer.RPAREN, Literal: ")"},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
+		"a remember with its times": {
+			input: "remember 'ran the race' said:'2023-05-08' occurred:'2023-05-07'..",
+			want: []lexer.Token{
+				{Type: lexer.REMEMBER, Literal: "remember"},
+				{Type: lexer.WHITESPACE, Literal: " "},
+				{Type: lexer.PHRASE, Literal: "ran the race"},
+				{Type: lexer.WHITESPACE, Literal: " "},
+				{Type: lexer.SAID, Literal: "said"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.PHRASE, Literal: "2023-05-08"},
+				{Type: lexer.WHITESPACE, Literal: " "},
+				{Type: lexer.OCCURRED, Literal: "occurred"},
+				{Type: lexer.COLON, Literal: ":"},
+				{Type: lexer.PHRASE, Literal: "2023-05-07"},
+				{Type: lexer.RANGE, Literal: ".."},
+				{Type: lexer.EOL, Literal: ""},
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -585,6 +659,22 @@ func TestPhrasePosIsLastCharacter(t *testing.T) {
 	}
 	if want := 17; got.Pos.Column != want {
 		t.Errorf("phrase Pos.Column = %d, want %d (its closing quote)", got.Pos.Column, want)
+	}
+}
+
+// TestRangePosIsLastCharacter pins the same rule for the one symbol two
+// characters long. Its Pos is its second dot.
+func TestRangePosIsLastCharacter(t *testing.T) {
+	// In "'a'..'b'", the dots are the 4th and 5th characters.
+	l := lexer.New("'a'..'b'")
+	l.Next() // 'a'
+
+	got := l.Next()
+	if got.Type != lexer.RANGE {
+		t.Fatalf("got %v %q, want a RANGE", got.Type, got.Literal)
+	}
+	if want := 5; got.Pos.Column != want {
+		t.Errorf("range Pos.Column = %d, want %d (its second dot)", got.Pos.Column, want)
 	}
 }
 

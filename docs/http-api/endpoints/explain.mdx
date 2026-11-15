@@ -1,10 +1,10 @@
 ---
 title: "POST /api/v1/explain — explained recall"
-description: "The same pipeline as /q, with the per-source contributions each hit's score was folded from"
+description: "The same pipeline as /q, with the per-source contributions each hit's score was folded from, its recency decay, and what a when in a time bound answered"
 navLabel: "Explain"
 ---
 
-The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for recalls only**: each hit also carries `contributions`, the per-source sightings its score was folded from, and the result carries the query's `background` rate, omitted when it is zero.
+The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for reads only**, a `recall` or a `when`: each hit also carries `contributions`, the per-source sightings its score was folded from, and `decay`, the recency factor that score was scaled by. The result carries the query's `background` rate, omitted when it is zero, and, for a recall bounded by a `when`, what each `when` answered.
 
 Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
 
@@ -17,6 +17,7 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
         "value": "the parrot sleeps in the kitchen",
         "timestamp": "2026-10-27T18:18:29.467Z",
         "score": 2.4656,
+        "decay": 1,
         "contributions": [
           { "source": "text",  "score": 1.4572, "rank": 0, "count": 1, "held": 1 },
           { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
@@ -26,6 +27,7 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
         "value": "polly says hello to every visitor",
         "timestamp": "2026-10-27T18:18:29.528Z",
         "score": 2.3019,
+        "decay": 1,
         "contributions": [
           { "source": "text",  "score": 0.1145, "rank": 3, "count": 1 },
           { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
@@ -35,6 +37,7 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
         "value": "the parrot eats sunflower seeds",
         "timestamp": "2026-10-27T18:18:29.498Z",
         "score": 1.7510,
+        "decay": 1,
         "contributions": [
           { "source": "text",  "score": 0.8757, "rank": 1, "count": 1, "held": 0.5 },
           { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
@@ -44,6 +47,7 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
         "value": "the kitchen window faces east",
         "timestamp": "2026-10-27T18:18:29.556Z",
         "score": 1,
+        "decay": 1,
         "contributions": [
           { "source": "text",  "score": 0.3461, "rank": 2, "count": 1, "held": 0.5 }
         ]
@@ -54,7 +58,7 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
 }
 ```
 
-That is `recall parrot kitchen entity:polly` over four facts, three of them filed under `polly`, in the default lane and fold.
+That is `recall parrot kitchen entity:polly` over four facts, three of them filed under `polly` and all four written a moment before, in the default lane and fold.
 
 ## A contribution
 
@@ -78,6 +82,45 @@ An `anchor` sighting belongs to a recall seeded by its anchors alone: the fact w
 `score` on the hit remains the final value — after the fold and recency decay — so **the contributions explain its ingredients rather than summing to it.** The default fold measures each hit against the recall's whole pool, so the contributions explain a score exactly only when the recall returns every candidate, and a recall with a vector also needs the [vector weight](/docs/configuration/reference/database#vector-weight), which the payload does not carry.
 
 </Note>
+
+## Decay
+
+`decay` is the recency factor the hit's relevance was multiplied by to give its `score`: 1 for a fact just written, 0.5 for one a half-life old, and 1 on every hit when decay is turned off. It reads the time the fact was written, never when it was said or happened, so a fact stored today about a race two years back decays as today's memory. Dividing `score` by `decay` gives the relevance the fold produced, which tells a fact that ranks low for its age from one that ranks low for its match. See [Temporality](/docs/retrieval/memory-model/temporality).
+
+## A bound read from a `when`
+
+A recall bounded by a `when` carries a `when` object on its result. Under `since` and `until` it holds the whole explained result of the `when` in that bound: the hits the bound was read from, with their own contributions, and the `start` and `end` it answered with. A bound written out has no entry, and a recall that holds no `when` has no `when` key.
+
+```json
+{
+  "results": {
+    "count": 2,
+    "hits": ["..."],
+    "when": {
+      "until": {
+        "count": 1,
+        "hits": [
+          {
+            "value": "anna ran the charity race",
+            "timestamp": "2026-11-12T00:55:47.761Z",
+            "said": "2023-05-08T00:00:00Z",
+            "occurred": [{"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"}],
+            "score": 2.1199,
+            "decay": 1,
+            "contributions": [
+              { "source": "text", "score": 2.6895, "rank": 0, "count": 1, "held": 1 }
+            ]
+          }
+        ],
+        "start": "2023-05-07T00:00:00Z",
+        "end": "2023-05-08T00:00:00Z"
+      }
+    }
+  }
+}
+```
+
+That is `recall anna until:(when 'charity race')`: the bound was read from the race, which happened on 7 May, so the recall kept what had begun before that day. A `when` that matched no fact shows here with no hits and no time, beside the [warning](/docs/query-language/reference/warnings) the response carries.
 
 ## Writes are rejected
 

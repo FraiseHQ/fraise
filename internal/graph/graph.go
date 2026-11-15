@@ -23,8 +23,6 @@
 package graph
 
 import (
-	"time"
-
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/hash"
@@ -49,10 +47,14 @@ type GraphStats struct {
 }
 
 // Hit is one entry of a search result. It holds a fact, its final score after
-// recency decay, and the contributions the score was folded from.
+// recency decay, and the contributions the score was folded from. Decay is the
+// recency factor the fold's relevance was scaled by to give Score, so a reader
+// of an explain can tell a fact ranked low for its age from one ranked low for
+// its match.
 type Hit[K comparable, P float32 | float64] struct {
 	Node          Node[K]
 	Score         P
+	Decay         P
 	Contributions []scoring.Contribution[K, P]
 }
 
@@ -189,8 +191,12 @@ type Graph[K comparable, P float32 | float64] interface {
 	//               at either. The round runs only when a topic or entity is
 	//               named.
 	//   - top:      maximum number of results
-	//   - since:    inclusive lower time bound; zero is unbounded
-	//   - until:    exclusive upper time bound; zero is unbounded
+	//   - since:    inclusive lower time bound; a zero bound is open
+	//   - until:    exclusive upper time bound; a zero bound is open
+	//
+	// Each bound reads the clock it names (see [Fact.Intervals]), and a fact
+	// is inside the window when one of its intervals on that clock overlaps
+	// it. Recency decay reads the written clock whatever the bounds name.
 	//
 	// With no keywords and no vector, the named topics and entities seed the
 	// search themselves. This answers questions like "what do I know about
@@ -206,7 +212,7 @@ type Graph[K comparable, P float32 | float64] interface {
 	// index.ErrInvalidDimension, rather than a text-only answer that ignores
 	// the vector. A graph with nothing indexed is not an error. It returns no
 	// hits.
-	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (Result[K, P], error)
+	Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) (Result[K, P], error)
 
 	// The graph's read-write lock, exposed so a caller can hold one lock
 	// across a sequence of calls (e.g. Get then Put). The usual

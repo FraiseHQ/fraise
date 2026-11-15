@@ -42,7 +42,7 @@ The message names the fix. Common cases:
 
 ### A reserved word as a search term
 
-Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `vec`, in any casing, is syntax wherever a search term stands. `recall since 7d` is one `:` away from `recall since:7d`, and running either reading would answer a question the caller may not have asked, so it is an error naming both repairs, spelled with the word written after the keyword:
+Any of `recall`, `remember`, `when`, `forget`, `update`, `topic`, `entity`, `since`, `until`, `top`, `depth`, `said`, `occurred`, `vec`, in any casing, is syntax wherever a search term stands. `recall since 7d` is one `:` away from `recall since:7d`, and running either reading would answer a question the caller may not have asked, so it is an error naming both repairs, spelled with the word written after the keyword:
 
 ```json
 {"error": "parse error at column 12: term \"since\" is also a keyword: write since:7d if a filter was meant, or quote it ('since') to search the word"}
@@ -53,7 +53,8 @@ Any of `recall`, `remember`, `forget`, `update`, `topic`, `entity`, `since`, `un
 | `recall since 7d` | `since:7d` for a time bound, or `'since'` to search the word |
 | `recall top` | `top:<value>`, or `'top'`: nothing follows, so the value is a placeholder |
 | `recall Top shelf` | the same two repairs, and the casing |
-| `recall recall` | only the quote: a command has no clause reading |
+| `recall recall`, `recall when` | only the quote: a command has no clause reading |
+| `recall what she said` | only the quote: `said:` and `occurred:` are clauses of a `remember`, with no reading in a search |
 
 Once a clause has started, a keyword without its `:` has one reading left, so the message names only the clause: `recall zebras since:7d topic food` answers `write topic:food`. See [Keywords](/docs/query-language/tokens/keywords).
 

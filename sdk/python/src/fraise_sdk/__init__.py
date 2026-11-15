@@ -28,6 +28,8 @@ __all__ = [
     "FraiseError",
     "FraiseQueryError",
     "FraiseWarning",
+    "Interval",
+    "When",
 ]
 
 from fraise_sdk.client import FraiseClient
@@ -37,3 +39,5 @@ from fraise_sdk.errors import (
     FraiseQueryError,
     FraiseWarning,
 )
+from fraise_sdk.models import Interval
+from fraise_sdk.query import When

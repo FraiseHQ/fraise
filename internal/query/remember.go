@@ -37,11 +37,19 @@ import (
 // when one is bound. Facts are keyed by value, so remembering a stored fact
 // again refreshes its timestamp rather than duplicating it (see
 // [Stream.Commit]).
+//
+// Said and Occurred are the times the writer gives the fact: when it was
+// stated, and each span over which what it states took place. Either may be
+// absent, and the fact then reads the next clock down (see
+// [graph.Fact.Intervals]). They are resolved when the write commits, so a
+// duration counts back from the moment the fact is stored.
 type Remember[K comparable, P float32 | float64] struct {
 	Value    string
 	Entities []string
 	Topics   []string
 	Vector   containers.Vector[K, P]
+	Said     containers.TimeValue[K]
+	Occurred []containers.TimeValue[K]
 
 	context QueryContext
 }
@@ -65,13 +73,22 @@ func (r *Remember[K, P]) SetGraphID(id uint8) {
 }
 
 // Hash keys the query for the plan cache. It must fold in the graph selector
-// and every field that changes what gets written, the bound vector included.
+// and every field that changes what gets written, the bound vector and the
+// times included.
 // Hashing only Value would make these two collide: "remember@3 'x' topic:a" and
 // "remember@5 'x' topic:b". The second would then reuse the first's plan and
 // write to the wrong graph under the wrong topic. The value and every anchor
 // are length-prefixed, because a fact may hold any byte, the delimiters
 // included. Otherwise "remember 'x|en=y'" and "remember 'x' entity:'y|en='"
 // would share material, and the second would write the first's fact.
+//
+// Said and Occurred fold in through their own Hash, as a recall's bounds do,
+// and Occurred is length-prefixed so its spans keep their boundaries. Their
+// material keeps the offset a time was written in. Equal compares instants
+// whatever their zone, so without it "said:'2023-05-09T00:30:00+09:00'" and
+// "said:'2023-05-08T15:30:00Z'" would share a key and pass Equal. The second
+// would run the first's plan and store the first's offset, and the day a hit
+// prints would depend on what the cache held.
 func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")
@@ -82,15 +99,26 @@ func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	writeStrings(&b, r.Entities)
 	b.WriteString("|to=")
 	writeStrings(&b, r.Topics)
+	b.WriteString("|sa=")
+	if r.Said != nil {
+		b.WriteString(r.Said.Hash(h))
+	}
+	b.WriteString("|oc=")
+	occurred := make([]string, len(r.Occurred))
+	for i, span := range r.Occurred {
+		occurred[i] = span.Hash(h)
+	}
+	writeStrings(&b, occurred)
 	b.WriteString("|vec=")
 	b.WriteString(r.Vector.Hash(h))
 	return h.Hash(b.String())
 }
 
 // Equal implements [Query]: other is a remember with every field Hash folds in
-// the same. The engine runs a cached plan only for an equal query, so Equal
-// must never hold for two remembers that write differently. A remember equal
-// under a key another remember planned would write that remember's fact.
+// the same, and the same Said and Occurred. The engine runs a cached plan only
+// for an equal query, so Equal must never hold for two remembers that write
+// differently. A remember equal under a key another remember planned would
+// write that remember's fact, at that remember's times.
 func (r Remember[K, P]) Equal(other Query[K, P]) bool {
 	o, ok := other.(*Remember[K, P])
 	return ok &&
@@ -98,7 +126,10 @@ func (r Remember[K, P]) Equal(other Query[K, P]) bool {
 		o.Value == r.Value &&
 		slices.Equal(o.Entities, r.Entities) &&
 		slices.Equal(o.Topics, r.Topics) &&
-		o.Vector.Equal(r.Vector)
+		o.Vector.Equal(r.Vector) &&
+		(o.Said == nil) == (r.Said == nil) &&
+		(o.Said == nil || o.Said.Equal(r.Said)) &&
+		slices.EqualFunc(o.Occurred, r.Occurred, containers.TimeValue[K].Equal)
 }
 
 // IsWrite implements [Query]. A remember writes, so it runs under the graph's

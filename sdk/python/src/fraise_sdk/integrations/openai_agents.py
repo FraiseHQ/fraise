@@ -49,6 +49,7 @@ from typing import Annotated
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.constants import DEFAULT_TOP, MAX_DEPTH
 from fraise_sdk.errors import FraiseError
+from fraise_sdk.integrations.render import render_hit
 from fraise_sdk.providers import Embedder, EmbedderLike, resolve_embedder
 
 try:
@@ -109,15 +110,15 @@ def recall_tool(
             return "Nothing has been stored in memory yet."
         if not result.hits:
             return "No stored facts matched those keywords."
-        return "\n".join(
-            f"- {hit.value} (relevance {hit.score:.3f})" for hit in result.hits
-        )
+        return "\n".join(render_hit(hit) for hit in result.hits)
 
     return function_tool(
         recall_memory,
         name_override=name,
         description_override="Search the assistant's long-term memory for facts "
-        "related to some keywords and return them ranked by relevance.",
+        "related to some keywords and return them ranked by relevance. Each "
+        "fact comes back with its dates in front: when it was said and when "
+        "what it states happened, as one date where the two are the same.",
     )
 
 

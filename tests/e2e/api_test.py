@@ -24,7 +24,9 @@
 
 Covers the health check, malformed request bodies, query strings the parser
 must reject as client errors, and the grammar boundary that keeps reserved
-words usable as ordinary data.
+words usable as ordinary data. It also covers the shapes a response takes: the
+three answers of a write, an empty graph and a miss, the times a hit carries,
+and the time a when adds to its results.
 """
 
 import pytest
@@ -327,6 +329,7 @@ def test_query_keeps_keyword_colon_as_a_field(query, text):
     [
         "Recall zebras",  # command position: commands are lower case
         "REMEMBER 'a shouted fact' topic:x",
+        "When zebras",  # every command, the one that answers with a time included
         "recall zebras Since 7d",  # would read as a three-term search without the check
         "recall zebras Since 7d 30d",  # the shifted time-bound shape, through the casing door
         "recall zebras Depth 2",  # the same shape on a modifier
@@ -398,6 +401,12 @@ def test_miscased_clause_before_a_colon_is_that_clause(query, text):
         ("recall@0 zebras TOP:3", "TOP"),
         ("recall@0 zebras Topic:food", "Topic"),
         ("recall@0 zebras Since:7d", "Since"),
+        ("recall@0 zebras Until:(when ferry)", "Until"),
+        ("remember@1 'the ferry sailed on a dated day' Said:'2023-05-08'", "Said"),
+        (
+            "remember@1 'the ferry sailed on a dated day' OCCURRED:'2023-05-07'",
+            "OCCURRED",
+        ),
     ],
 )
 def test_a_miscased_clause_runs_but_warns(query, text, keyword):
@@ -416,6 +425,25 @@ def test_a_miscased_clause_runs_but_warns(query, text, keyword):
     joined = " ".join(str(w) for w in warnings)
     assert "lower case" in joined, joined
     assert f'"{keyword}"' in joined, joined
+
+
+def test_a_miscased_when_before_its_clock_runs_but_warns(query):
+    """A mis-cased when glued to its clock runs as the command, with a warning.
+
+    A command is forgiven its casing where a clause is: before a colon. `When
+    zebras` has no colon and stays a 400. `WHEN:said` can only be the command
+    naming its clock, so it runs, and the warning names the spelling that ran
+    and what it ran as. The parse warning comes first, then what the when had
+    to say once it ran: it matched no fact.
+    """
+    status, body = query("WHEN:said zzznomatchzzz")
+
+    assert status == 200, body.get("error")
+    assert body["warnings"] == [
+        'parse warning at column 4: keyword "WHEN" is not lower case: it ran as '
+        "the when command, but keywords are syntax and are written lower case",
+        "the when matched no fact, so it has no time to answer with",
+    ]
 
 
 def test_a_miscased_anchor_value_is_data_and_stays_silent(query):
@@ -567,6 +595,8 @@ def test_depth_without_an_anchor_runs_but_warns(query, text):
         ("recall zebras since:soon top:3", "soon"),
         ("recall zebras depth:abc top:3", "abc"),
         ("recall@abc zebras top:3", "abc"),
+        ("recall zebras until:(when:heard ferry) top:3", "heard"),
+        ("recall zebras until:(when ferry top:abc) depth:1", "abc"),
     ],
 )
 def test_parse_error_column_points_at_the_offending_token(query, text, blame):
@@ -577,7 +607,9 @@ def test_parse_error_column_points_at_the_offending_token(query, text, blame):
     runs a token ahead of the parser. A column taken from it would point an
     error quoting `food` at the end of the next token. Every case here keeps a
     token to the right of the bad one, because only then do the two positions
-    differ.
+    differ. A token inside a when in a time bound is counted from the start of
+    the whole query, not from the parenthesis, since the caret is drawn under
+    the text the caller sent.
     """
     status, body = query(text)
     error = body.get("error", "")
@@ -671,3 +703,102 @@ def test_a_recall_that_matched_nothing_on_a_populated_graph_stays_200(query):
     assert status == 200, body.get("error")
     assert body["results"]["count"] == 0
     assert body["results"]["hits"] == []
+
+
+def test_a_recall_bounded_by_a_when_on_an_empty_graph_is_still_204(query):
+    """A when in a bound does not change what an empty graph answers.
+
+    Graph 8 is never written to. The when finds no fact there, and on a
+    populated graph the recall would say so in a warning beside its empty
+    result. Here the answer stays the 204: nothing has been stored, and a 204
+    carries no body to put a warning in.
+    """
+    status, body = query("recall@8 zebras until:(when zebras)")
+
+    assert status == 204, body.get("error")
+    assert body == {}
+
+
+# A hit names the times its fact was given, and only those. A fact holds up to
+# three: the moment it was written, the moment it was said, and the spans over
+# which what it states happened. "timestamp" is the first and is always there.
+# "said" and "occurred" appear when a remember gave them, and are left out when
+# it did not. A client reads an absent field as "not given" and falls back
+# itself: happened to said, said to written. A when adds the time it answers
+# with to the result envelope, as "start" and "end".
+
+
+@pytest.mark.parametrize(
+    ("key", "times"),
+    [
+        ("briefing", {}),
+        ("protest", {"said": "2023-05-08T00:00:00Z"}),
+        (
+            "regatta",
+            {
+                "said": "2023-05-08T00:00:00Z",
+                "occurred": [
+                    {"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"}
+                ],
+            },
+        ),
+        (
+            "drills",
+            {
+                "occurred": [
+                    {"start": "2023-05-01T00:00:00Z", "end": "2023-05-02T00:00:00Z"},
+                    {"start": "2023-05-28T00:00:00Z", "end": "2023-05-29T00:00:00Z"},
+                ],
+            },
+        ),
+        ("mooring", {"occurred": [{"start": "2023-05-20T00:00:00Z"}]}),
+        (
+            "cruise",
+            {
+                "said": "2023-05-25T00:00:00Z",
+                "occurred": [
+                    {"start": "2023-05-10T00:00:00Z", "end": "2023-05-17T00:00:00Z"}
+                ],
+            },
+        ),
+    ],
+)
+def test_a_hit_carries_the_times_its_fact_was_given_and_no_others(
+    key, times, timeline_graph, timeline_facts, query
+):
+    """A hit's said and occurred are what the remember gave, absent otherwise.
+
+    The fields are the fact's own, not the fallback a bound would read. The
+    protest happened when it was said, and its hit still has no occurred. A
+    day is the span from its midnight to the next. A range ends after its last
+    day. A span still open has a start and no end key. A fact that happened
+    twice lists both spans, in the order they were given.
+    """
+    status, body = query(f"recall@{timeline_graph} {key}")
+
+    assert status == 200, body.get("error")
+    [hit] = body["results"]["hits"]
+    assert hit["value"] == timeline_facts[key]
+    assert set(hit) == {"value", "timestamp", "score"} | set(times), hit
+    assert {field: hit[field] for field in times} == times
+
+
+def test_a_when_adds_its_time_to_the_result_envelope(timeline_graph, query):
+    """A when answers in a recall's envelope, plus the start and end of its time.
+
+    The hits are the facts the time was read from, in a recall's shape, so one
+    parser reads both. A recall's results carry no start and no end. A when
+    whose fact is still going on has a start and no end key.
+    """
+    status, body = query("when regatta")
+    assert status == 200, body.get("error")
+    assert set(body) == {"results"}
+    assert set(body["results"]) == {"count", "hits", "start", "end"}
+
+    status, body = query("when mooring")
+    assert status == 200, body.get("error")
+    assert set(body["results"]) == {"count", "hits", "start"}
+
+    status, body = query(f"recall@{timeline_graph} regatta")
+    assert status == 200, body.get("error")
+    assert set(body["results"]) == {"count", "hits"}

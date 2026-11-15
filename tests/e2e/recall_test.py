@@ -25,7 +25,9 @@
 Covers the store-then-find round trip, how anchors transmit or stay silent, how
 top shapes a recall's results, and text-index matching across facts. It also
 covers recall through topic:/entity: anchors, including anchors whose value is
-a grammar keyword, and the case folding of terms and anchor values.
+a grammar keyword, and the case folding of terms and anchor values. The last
+section covers the three times a fact holds: which of them a time bound reads,
+and the when command, which answers with one.
 """
 
 import pytest
@@ -659,3 +661,322 @@ def test_a_named_anchors_lifted_facts_are_cut_by_top(
     assert truncated == full[:top], (
         f"top:{top} must be the first {top} of the full ranking {full}; got {truncated}"
     )
+
+
+# A fact's three times. A fact is written at one moment, was said at another,
+# and states something that happened at a third. A remember gives the last two
+# with said: and occurred:. A fact reads the next time down for one it was not
+# given: happened falls back to said, and said to written. A time bound keeps
+# the facts that happened inside its window. A when answers with the time of
+# the fact it finds, on the clock it names, and a bound can read that answer.
+# The dated timeline (conftest) holds one fact for each way of holding a time.
+
+
+@pytest.mark.parametrize(
+    ("clause", "keys"),
+    [
+        ("since:'2023-05-10'", ["briefing", "drills", "mooring", "cruise"]),
+        ("until:'2023-05-08'", ["regatta", "drills"]),
+        ("since:'2023-05-08' until:'2023-05-11'", ["protest", "cruise"]),
+        ("since:'2023-05-16' until:'2023-05-17'", ["cruise"]),
+        ("since:'2023-05-17' until:'2023-05-20'", []),
+        ("since:'2023-05-29'", ["briefing", "mooring"]),
+        ("until:'2023-05-02'", ["drills"]),
+        ("until:'2023-05-01'", []),
+        ("since:'2023-05-12' until:'2023-05-12'", ["cruise"]),
+        ("since:'2023-05-10' until:'2023-05-10'", []),
+        ("since:'2023-05-08' until:'2023-05-08'", []),
+    ],
+)
+def test_a_time_bound_keeps_the_facts_that_happened_in_its_window(
+    clause, keys, timeline_graph, timeline_keyword, timeline_facts, recall_ranking
+):
+    """since: and until: read when a fact happened, not when it was written.
+
+    Every fact here was written moments ago, so a window in May 2023 would hold
+    none of them on the written time. A fact is in the window when one of its
+    spans overlaps it, and the window runs from since: up to until:, which it
+    leaves out. So the regatta of the 7th is before the 8th, and the protest
+    said on the 8th is not. The cruise's last day is the 16th. The mooring is
+    still held, so it is in every window that opens after it was taken. The
+    drills happened twice and need one of their two days inside. The protest
+    was given no occurred:, so it happened when it was said. The briefing was
+    given no time at all, so it happened when it was written.
+
+    until: leaves its moment out when since: names the same one too. Such a
+    window holds the cruise on the 12th, when it was under way, and not on the
+    10th, the day it began, nor the protest on the 8th, the moment it was said.
+    Each of those until: alone leaves out, and a since: beside it only narrows.
+    """
+    hits = recall_ranking(f"recall@{timeline_graph} {timeline_keyword} {clause}")
+    assert sorted(hits) == sorted(timeline_facts[key] for key in keys), (
+        f"{clause}: want {keys}, got {hits}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("clause", "keys"),
+    [
+        (
+            "since:'2023-05'",
+            ["briefing", "protest", "regatta", "drills", "mooring", "cruise"],
+        ),
+        ("until:'2023-05'", []),
+        ("since:'2023-06'", ["briefing", "mooring"]),
+        ("until:'2023-06'", ["protest", "regatta", "drills", "mooring", "cruise"]),
+        (
+            "since:'2023' until:'2024'",
+            ["protest", "regatta", "drills", "mooring", "cruise"],
+        ),
+        ("since:'2024'", ["briefing", "mooring"]),
+        (
+            "since:'2023-05-07'..'2023-05-09'",
+            ["briefing", "protest", "regatta", "drills", "mooring", "cruise"],
+        ),
+        ("until:'2023-05-07'..'2023-05-09'", ["drills"]),
+    ],
+)
+def test_a_dated_bound_sits_where_the_time_it_names_starts(
+    clause, keys, timeline_graph, timeline_keyword, timeline_facts, recall_ranking
+):
+    """A bound written as a month, a year or a range is where that time starts.
+
+    '2023-05' names the whole of May, and a bound sits at its first moment:
+    since: opens the window there and until: closes it there. So until:'2023-05'
+    holds nothing of May, and until:'2023-06' holds all of it. A range reads
+    the same way, from its first date.
+    """
+    hits = recall_ranking(f"recall@{timeline_graph} {timeline_keyword} {clause}")
+    assert sorted(hits) == sorted(timeline_facts[key] for key in keys), (
+        f"{clause}: want {keys}, got {hits}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("clause", "keys"),
+    [
+        ("until:(when regatta)", ["drills"]),
+        (
+            "since:(when regatta)",
+            ["briefing", "protest", "drills", "mooring", "cruise"],
+        ),
+        ("since:(when regatta) until:(when cruise)", ["protest"]),
+        ("until:(when:said cruise)", ["protest", "regatta"]),
+        ("since:(when:said cruise)", ["briefing", "drills", "mooring", "cruise"]),
+        ("until:(when:written regatta)", ["briefing", "protest"]),
+        ("since:(when:written regatta)", ["regatta", "drills", "mooring", "cruise"]),
+        ("since:(when mooring)", ["briefing", "drills", "mooring"]),
+        ("until:(when mooring)", ["protest", "regatta", "drills", "cruise"]),
+        ("since:(when drills)", ["briefing", "mooring"]),
+        ("until:(when drills)", []),
+        ("since:(when regatta cruise top:2)", ["briefing", "drills", "mooring"]),
+        ("until:(when regatta cruise top:2)", ["drills"]),
+    ],
+)
+def test_a_bound_reads_the_time_a_when_answers_with(
+    clause, keys, timeline_graph, timeline_keyword, timeline_facts, recall_ranking
+):
+    """A when in a bound stands for the time its fact holds, on the when's clock.
+
+    until: closes the window where that time starts, and since: opens it where
+    the time ends. "Before the regatta" stops short of it, and "after the
+    regatta" starts once it is over. The window then compares on the clock the
+    when read. On said, the facts told before the cruise was reported are the
+    two said on the 8th, whatever day they happened. On written, the window
+    follows the order the facts were stored in. The mooring has no end, so
+    since: opens where it starts. The drills happened twice, and their time
+    runs from the first day to the last. So does the time of a when that keeps
+    two facts: it runs from the regatta to the end of the cruise.
+    """
+    hits = recall_ranking(f"recall@{timeline_graph} {timeline_keyword} {clause}")
+    assert sorted(hits) == sorted(timeline_facts[key] for key in keys), (
+        f"{clause}: want {keys}, got {hits}"
+    )
+
+
+def test_a_when_in_a_bound_reads_the_graph_of_its_recall(
+    timeline_graph, harbour_graph, harbour_keyword, harbour_facts, recall_ranking
+):
+    """A when in a bound reads the graph its recall selected.
+
+    The when takes no selector of its own. Both graphs hold a regatta: the
+    harbour's in March 2024, the default graph's in May 2023. Read from the
+    harbour's graph, each bound keeps the one fact on its side of the harbour's
+    regatta. Read from the default graph, until: would hold nothing and since:
+    all three.
+    """
+    recall = f"recall@{harbour_graph} {harbour_keyword}"
+    assert recall_ranking(f"{recall} until:(when regatta)") == [harbour_facts["shoals"]]
+    assert recall_ranking(f"{recall} since:(when regatta)") == [harbour_facts["buoys"]]
+
+
+@pytest.mark.parametrize("bound", ["since", "until"])
+def test_a_bound_whose_when_matched_nothing_empties_the_recall(
+    bound, timeline_graph, timeline_keyword, query
+):
+    """A when that finds no fact leaves its bound unread, and the recall empty.
+
+    Run without the bound, the recall would answer a wider question than the
+    one asked, and nothing would say so. So it returns no hits, and the warning
+    names the bound and the reason. The recall's own term matches six facts.
+    """
+    status, body = query(
+        f"recall@{timeline_graph} {timeline_keyword} {bound}:(when zzznomatchzzz)"
+    )
+    assert status == 200, body.get("error")
+    assert body == {
+        "results": {"count": 0, "hits": []},
+        "warnings": [
+            f"{bound}: the when matched no fact, so it has no time to answer with; "
+            "the recall has no bound to read and returns no hits"
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("text", "key", "start", "end"),
+    [
+        ("when regatta", "regatta", "2023-05-07T00:00:00Z", "2023-05-08T00:00:00Z"),
+        (
+            "when:happened regatta",
+            "regatta",
+            "2023-05-07T00:00:00Z",
+            "2023-05-08T00:00:00Z",
+        ),
+        (
+            "when:said regatta",
+            "regatta",
+            "2023-05-08T00:00:00Z",
+            "2023-05-08T00:00:00Z",
+        ),
+        ("when cruise", "cruise", "2023-05-10T00:00:00Z", "2023-05-17T00:00:00Z"),
+        ("when:said cruise", "cruise", "2023-05-25T00:00:00Z", "2023-05-25T00:00:00Z"),
+        ("when drills", "drills", "2023-05-01T00:00:00Z", "2023-05-29T00:00:00Z"),
+        ("when protest", "protest", "2023-05-08T00:00:00Z", "2023-05-08T00:00:00Z"),
+        ("when mooring", "mooring", "2023-05-20T00:00:00Z", None),
+    ],
+)
+def test_a_when_answers_with_the_time_of_the_fact_it_finds(
+    text, key, start, end, timeline_graph, timeline_facts, query
+):
+    """A when returns one fact and the time it holds on the clock asked for.
+
+    With no clock, a when reads when the fact happened. A day runs from its
+    midnight to the next, so the regatta of the 7th ends on the 8th, and the
+    cruise, whose last day is the 16th, ends on the 17th. A moment starts and
+    ends at once, as the day a fact was said does. The drills happened twice,
+    and their time runs from the first day to the end of the last. The protest
+    was given no occurred:, so it happened when it was said. The mooring is
+    still held: its time has a start and no end.
+
+    A when on its own reads the default graph, which is the timeline's.
+    """
+    status, body = query(text)
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert [hit["value"] for hit in results["hits"]] == [timeline_facts[key]]
+    assert (results.get("start"), results.get("end")) == (start, end), results
+
+
+@pytest.mark.parametrize(
+    "text", ["when:written regatta", "when briefing", "when:said briefing"]
+)
+def test_a_when_answers_with_the_written_time_when_it_is_the_one_to_read(
+    text, timeline_graph, query
+):
+    """The moment a fact was written answers for a clock it has no time on.
+
+    when:written asks for that moment by name, whatever times the fact was
+    given. The briefing was given none, so it was said, and it happened, at the
+    moment it was stored. Each answer is that one moment, the hit's own
+    timestamp, as start and as end.
+    """
+    status, body = query(text)
+    assert status == 200, body.get("error")
+    results = body["results"]
+    [hit] = results["hits"]
+    assert results["start"] == results["end"] == hit["timestamp"], results
+
+
+def test_a_when_keeps_one_fact_unless_top_asks_for_more(
+    timeline_graph, timeline_keyword, timeline_facts, recall_count, query
+):
+    """A when keeps its best fact, and top: widens its time over several.
+
+    A recall of the timeline's keyword returns all six facts, and a when of it
+    returns one, with that fact's time. With top:2 over the regatta and the
+    cruise, the when keeps both, and its time runs from the start of the first
+    to the end of the last. Over the whole timeline, the time opens with the
+    first drills and has no end, because the mooring has none.
+    """
+    assert recall_count(f"recall@{timeline_graph} {timeline_keyword}") == len(
+        timeline_facts
+    )
+    assert recall_count(f"when {timeline_keyword}") == 1
+
+    status, body = query("when regatta cruise top:2")
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert sorted(hit["value"] for hit in results["hits"]) == sorted(
+        [timeline_facts["regatta"], timeline_facts["cruise"]]
+    )
+    assert (results["start"], results["end"]) == (
+        "2023-05-07T00:00:00Z",
+        "2023-05-17T00:00:00Z",
+    )
+
+    status, body = query(f"when {timeline_keyword} top:{len(timeline_facts)}")
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert results["count"] == len(timeline_facts)
+    assert results["start"] == "2023-05-01T00:00:00Z"
+    assert "end" not in results, results
+
+
+def test_a_when_that_matches_nothing_has_no_time_and_says_so(timeline_graph, query):
+    """A when that finds no fact answers with no hits, no time and a warning.
+
+    The graph is populated, so the answer is a 200. It is the empty result of a
+    recall that missed, with no start and no end, and the warning says the when
+    has no time to give.
+    """
+    status, body = query("when zzznomatchzzz")
+    assert status == 200, body.get("error")
+    assert body == {
+        "results": {"count": 0, "hits": []},
+        "warnings": ["the when matched no fact, so it has no time to answer with"],
+    }
+
+
+def test_remembering_a_fact_again_replaces_its_times(query):
+    """A fact stated again takes the times of the last statement.
+
+    A fact is keyed by its value, so each remember here is the same fact. Said
+    on the 8th about the 7th, then said on the 9th with no occurred:, it
+    carries the 9th alone. Stated a third time with no time at all, it carries
+    none. The fact sits among graph 1's loose remembers, and the last write
+    leaves it as a rerun finds it.
+    """
+    fact = "the reassertprobe ferry was repainted"
+    statements = [
+        (
+            "said:'2023-05-08' occurred:'2023-05-07'",
+            {
+                "said": "2023-05-08T00:00:00Z",
+                "occurred": [
+                    {"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"}
+                ],
+            },
+        ),
+        ("said:'2023-05-09'", {"said": "2023-05-09T00:00:00Z"}),
+        ("", {}),
+    ]
+    for clauses, want in statements:
+        status, body = query(f"remember@1 '{fact}' {clauses}".rstrip())
+        assert status == 200, body.get("error")
+
+        status, body = query("recall@1 reassertprobe")
+        assert status == 200, body.get("error")
+        [hit] = body["results"]["hits"]
+        got = {key: hit[key] for key in ("said", "occurred") if key in hit}
+        assert got == want, f"after {clauses!r}: want {want}, got {got}"

@@ -535,10 +535,10 @@ func (g *InMemoryGraph[K, P]) dropSequence(anchor K) {
 
 // Search implements [Graph.Search]. It collects candidates and folds each
 // with the installed scorer. It applies the time window and recency decay,
-// then keeps the top hits. Hits rank by score descending, then key ascending,
-// so identical queries return identical hits. Hits below the
-// db.min-score-ratio cutoff are dropped.
-func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (Result[K, P], error) {
+// then keeps the top hits. Hits rank by score descending, then by when they
+// happened, newest first, then key ascending, so identical queries return
+// identical hits. Hits below the db.min-score-ratio cutoff are dropped.
+func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) (Result[K, P], error) {
 	// A. Collection gathers every observation of every candidate as
 	// Contributions, plus the query's background rate and its text's
 	// weakness. Observations come from text and vector seeds, anchor
@@ -585,13 +585,13 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	// D. Rank and truncate to top. Map iteration order is random, so
 	// identical queries return identical hits only under a total order:
-	// score descending, then key ascending. Without the key tie-break,
-	// truncation would keep an arbitrary subset of a tied group. TopK costs
-	// O(n log top) rather than the O(n log n) of a full sort, and a
-	// non-positive top keeps every match. A group's members share one
-	// relevance and differ only by age, so each is offered at the group's
-	// score decayed by its own.
-	ranker := containers.NewTopK[K, P](top, comparator.OrderedComparator[K])
+	// score descending, then newest happened, then key ascending. Without
+	// the key tie-break, truncation would keep an arbitrary subset of a tied
+	// group. TopK costs O(n log top) rather than the O(n log n) of a full
+	// sort, and a non-positive top keeps every match. A group's members
+	// share one relevance and differ only by age, so each is offered at the
+	// group's score decayed by its own.
+	ranker := containers.NewTopK[K, P](top, g.newestFirst)
 	for _, key := range kept {
 		ranker.Offer(key, ranked[key])
 	}
@@ -621,7 +621,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 
 	// E. Score cutoff (db.min-score-ratio), then the answer.
 	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
-	result := Result[K, P]{Background: background, Hits: g.hits(rankedKeys, rankedScores, candidates)}
+	result := Result[K, P]{Background: background, Hits: g.hits(rankedKeys, rankedScores, candidates, now)}
 
 	logger.Debug("Graph search completed",
 		"candidates", pooled, "grouped", pooled-len(kept), "returned", len(result.Hits))
@@ -657,13 +657,44 @@ func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.S
 }
 
 // hits turns a ranking into fact hits, each carrying the contributions its
-// score was folded from.
-func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Candidates[K, P]) []Hit[K, P] {
+// score was folded from and the recency factor it was decayed by at now, the
+// moment the ranking was aged at.
+func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Candidates[K, P], now time.Time) []Hit[K, P] {
 	out := make([]Hit[K, P], len(keys))
 	for i, key := range keys {
-		out[i] = Hit[K, P]{Node: g.Nodes()[key], Score: scores[i], Contributions: candidates[key]}
+		node := g.Nodes()[key]
+		out[i] = Hit[K, P]{
+			Node:          node,
+			Score:         scores[i],
+			Decay:         g.decay(1, node.GetTimestamp(), now),
+			Contributions: candidates[key],
+		}
 	}
 	return out
+}
+
+// newestFirst breaks a ranking tie between two facts: the one that happened
+// later comes first, and two that happened together order by key, so the
+// order stays total. A fact that happened more than once is placed by its
+// latest occurrence.
+func (g *InMemoryGraph[K, P]) newestFirst(a K, b K) int {
+	if c := g.lastHappened(b).Compare(g.lastHappened(a)); c != 0 {
+		return c
+	}
+	return comparator.OrderedComparator(a, b)
+}
+
+// lastHappened returns the latest start among the intervals key's fact
+// happened over.
+func (g *InMemoryGraph[K, P]) lastHappened(key K) time.Time {
+	fact, _ := g.Nodes()[key].(Fact[K])
+	var latest time.Time
+	for _, interval := range fact.Intervals(containers.Happened) {
+		if interval.Start.After(latest) {
+			latest = interval.Start
+		}
+	}
+	return latest
 }
 
 // collect runs the retrieval stages and pools their observations into one
@@ -699,7 +730,7 @@ func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Cand
 // Topic and entity names are resolved to anchor keys once per query. So
 // gatherMembers, the anchored reading and findNeighbours agree on which node
 // a name denotes, and membership is a key lookup.
-func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since time.Time, until time.Time) (scoring.Candidates[K, P], []scoring.Group[K, P], P, P, error) {
+func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) (scoring.Candidates[K, P], []scoring.Group[K, P], P, P, error) {
 	topicKeys, entityKeys := g.anchorKeys(topics, entities)
 	candidates := make(scoring.Candidates[K, P])
 	if len(keywords) == 0 && vector.Empty() {
@@ -709,17 +740,15 @@ func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vecto
 	// An unbounded window hands the indexes a nil keep, so a recall naming no
 	// anchor pays nothing per posting.
 	var window func(K) bool
-	if !since.IsZero() || !until.IsZero() {
+	if !since.At.IsZero() || !until.At.IsZero() {
 		window = func(key K) bool {
-			node, ok := g.Nodes()[key]
-			return ok && within(node.GetTimestamp(), since, until)
+			return g.returnable(key, since, until)
 		}
 	}
 	keeps := []func(K) bool{window}
 	if named := slices.Concat(topicKeys, entityKeys); len(named) > 0 && !g.filesEvery(named) {
 		keeps = append(keeps, func(key K) bool {
-			node, ok := g.Nodes()[key]
-			return ok && within(node.GetTimestamp(), since, until) && g.filedUnder(key, named)
+			return g.returnable(key, since, until) && g.filedUnder(key, named)
 		})
 	}
 	seeds, missed, err := g.gatherSeeds(keywords, vector, keeps, candidates, top)
@@ -1202,29 +1231,19 @@ func (g *InMemoryGraph[K, P]) filedUnder(key K, anchors []K) bool {
 
 // timeFilter keeps the facts inside [since, until), where a zero bound is
 // open, and decays each kept score by its recency at now (see decay). So of
-// two equally relevant facts, the more recent ranks first. now is the one
-// moment the whole ranking is aged at, grouped members included.
-func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Time, until time.Time, now time.Time) ([]K, map[K]P) {
+// two equally relevant facts, the more recently written ranks first. now is
+// the one moment the whole ranking is aged at, grouped members included.
+func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since containers.Bound, until containers.Bound, now time.Time) ([]K, map[K]P) {
 	kept := make([]K, 0, len(keys))
 	for _, key := range keys {
-		node, ok := g.Nodes()[key]
-		if !ok {
-			delete(scores, key)
-			continue
-		}
 		// Only facts are hits. Anchors seed and transmit but are never
 		// returned.
-		if _, isFact := node.(Fact[K]); !isFact {
-			delete(scores, key)
-			continue
-		}
-		ts := node.GetTimestamp()
-		if !within(ts, since, until) {
+		if !g.returnable(key, since, until) {
 			delete(scores, key)
 			continue
 		}
 
-		scores[key] = g.decay(scores[key], ts, now)
+		scores[key] = g.decay(scores[key], g.Nodes()[key].GetTimestamp(), now)
 		kept = append(kept, key)
 	}
 	return kept, scores
@@ -1232,7 +1251,10 @@ func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since time.Ti
 
 // decay scales score by its fact's recency at now: score × 0.5^(age/half-life).
 // The half-life is Engine.Halflife, and a non-positive value disables decay.
-// A future timestamp counts as age zero, so decay never raises a score.
+// A future timestamp counts as age zero, so decay never raises a score. ts is
+// when the fact was written, whichever clock the recall's bounds read: a
+// memory fades from the moment it was last asserted, not from the date of
+// what it tells.
 func (g *InMemoryGraph[K, P]) decay(score P, ts time.Time, now time.Time) P {
 	halflife := g.config.Engine.Halflife
 	if halflife > 0 {
@@ -1244,22 +1266,19 @@ func (g *InMemoryGraph[K, P]) decay(score P, ts time.Time, now time.Time) P {
 }
 
 // returnable reports whether key is a fact inside [since, until), a
-// candidate the recall can return.
-func (g *InMemoryGraph[K, P]) returnable(key K, since time.Time, until time.Time) bool {
-	node, ok := g.Nodes()[key]
-	if !ok {
-		return false
+// candidate the recall can return. The seeding asks it of every posting, so
+// the indexes seed only facts the window keeps and the text's weakness reads
+// only text hits the recall can return. The pool and the ranking ask it of
+// every candidate, bounded recall or not, so with both bounds open the node's
+// kind answers and no fact is read.
+func (g *InMemoryGraph[K, P]) returnable(key K, since containers.Bound, until containers.Bound) bool {
+	node := g.Nodes()[key]
+	if since.At.IsZero() && until.At.IsZero() {
+		_, isFact := node.(Fact[K])
+		return isFact
 	}
-	_, isFact := node.(Fact[K])
-	return isFact && within(node.GetTimestamp(), since, until)
-}
-
-// within reports whether ts lies in [since, until). A zero bound is open.
-// timeFilter and the seeding both use it, so they agree on the window. The
-// indexes seed only facts the window keeps. The text's weakness reads only text
-// hits the recall can return.
-func within(ts time.Time, since time.Time, until time.Time) bool {
-	return (since.IsZero() || !ts.Before(since)) && (until.IsZero() || ts.Before(until))
+	fact, isFact := node.(Fact[K])
+	return isFact && fact.within(since, until)
 }
 
 // IsEmpty reports whether the graph holds no nodes. Callers ask it under the

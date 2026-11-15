@@ -43,6 +43,7 @@ import json
 import math
 import os
 import time
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -732,6 +733,39 @@ _TIDE_FACTS = {
     "neap": "a neap tide follows the first quarter",
 }
 
+# Three facts that share one word, each with a word of its own and no anchor,
+# so a recall reaches them through the text alone. Each holds the day it
+# happened and the day it was said, in that order, and the two orders disagree.
+# They happened dawn, noon, dusk: on 3, 7 and 10 May. They were said dusk, noon,
+# dawn: the mooring was planned ahead, on the 6th, the race was told the day
+# after, on the 8th, and the caulking was reported late, on the 20th. A bound
+# that read the wrong clock would therefore keep a different set of facts.
+_TIMELINE_WORD = "keelprobe"
+_TIMELINE_FACTS = {
+    "dawnmark": (
+        "the dawnmark crew caulked the keelprobe hull",
+        date(2023, 5, 3),
+        date(2023, 5, 20),
+    ),
+    "noonmark": (
+        "the noonmark crew raced the keelprobe hull",
+        date(2023, 5, 7),
+        date(2023, 5, 8),
+    ),
+    "duskmark": (
+        "the duskmark crew will moor the keelprobe hull",
+        date(2023, 5, 10),
+        date(2023, 5, 6),
+    ),
+}
+
+
+# Words for the race that no fact on the timeline holds. On the vector graph the
+# race is stored with their vector, as an embedder reading the two wordings
+# alike would have stored it, so a when worded this way finds the race by its
+# vector alone.
+_RACE_PARAPHRASE = "sculling contest"
+
 
 def _encode(text: str) -> list[float]:
     """Encode ``text`` as a deterministic unit vector of _VECTOR_DIM floats.
@@ -851,6 +885,26 @@ def instrument_facts():
         A mapping of keyword to the fact containing it.
     """
     return dict(_INSTRUMENT_FACTS)
+
+
+@pytest.fixture(scope="session")
+def timeline_word():
+    """The word every fact on the timeline holds.
+
+    Returns:
+        The keyword that recalls the whole timeline.
+    """
+    return _TIMELINE_WORD
+
+
+@pytest.fixture(scope="session")
+def timeline_facts():
+    """The facts on the timeline, each under the word only it holds.
+
+    Returns:
+        A mapping of keyword to the fact containing it.
+    """
+    return {word: value for word, (value, _, _) in _TIMELINE_FACTS.items()}
 
 
 @pytest.fixture(scope="session")
@@ -980,6 +1034,27 @@ def instrument_graph(client):
 
 
 @pytest.fixture(scope="module")
+def timeline_graph(client):
+    """Write the timeline to the round-trip graph and return its id.
+
+    Each fact is written with the day it happened and the day it was said. The
+    facts go in the order they happened, so the order the server wrote them in,
+    its own clock, is that order too. A fact remembered again takes the times
+    of the later write, so a rerun against a long-lived server leaves the
+    timeline as it was.
+
+    Args:
+        client: the plain client to write through.
+
+    Returns:
+        The graph id holding the timeline.
+    """
+    for value, happened, said in _TIMELINE_FACTS.values():
+        client.remember(value, graph=_ROUND_TRIP_GRAPH, said=said, occurred=[happened])
+    return _ROUND_TRIP_GRAPH
+
+
+@pytest.fixture(scope="module")
 def vector_graph(embedding_client):
     """Fix the vector graph's embedding dimension with a real write, return its id.
 
@@ -995,6 +1070,42 @@ def vector_graph(embedding_client):
     """
     embedding_client.remember("the tuning fork sounds a natural A", graph=_VECTOR_GRAPH)
     return _VECTOR_GRAPH
+
+
+@pytest.fixture(scope="session")
+def race_paraphrase():
+    """Words for the race that no fact on the timeline holds.
+
+    Returns:
+        The phrase the race's vector on the vector graph is encoded from.
+    """
+    return _RACE_PARAPHRASE
+
+
+@pytest.fixture(scope="module")
+def vector_timeline_graph(embedding_client, vector_graph):
+    """Write the timeline to the vector graph, the race under its paraphrase.
+
+    Every fact but the race is embedded from its own text. The race is stored
+    with the vector of _RACE_PARAPHRASE, so a search worded as the paraphrase
+    matches it by vector and by nothing else.
+
+    Args:
+        embedding_client: the client whose embedder encodes the other facts.
+        vector_graph: the graph whose dimension is already established.
+
+    Returns:
+        The graph id holding the timeline.
+    """
+    for word, (value, happened, said) in _TIMELINE_FACTS.items():
+        embedding_client.remember(
+            value,
+            graph=vector_graph,
+            said=said,
+            occurred=[happened],
+            vector=_encode(_RACE_PARAPHRASE) if word == "noonmark" else None,
+        )
+    return vector_graph
 
 
 @pytest.fixture(scope="module")

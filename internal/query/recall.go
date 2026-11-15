@@ -44,16 +44,33 @@ type Recall[K comparable, P float32 | float64] struct {
 	Entities []string
 	Topics   []string
 
-	Parameters QueryParameters[K]
+	Parameters QueryParameters[K, P]
 
 	context QueryContext
 }
 
 // Plan implements [Query]. A recall needs nothing prepared before the search,
 // which runs in [Stream.Commit] under the graph's shared lock. So the plan is a
-// fresh stream.
+// fresh stream. A query nested in a time bound is planned here too, and its
+// stream hangs on the recall's. The engine and the scheduler then handle one
+// stream, and the nested one runs inside its commit.
 func (r *Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
-	return NewStream(r), nil
+	stream := NewStream[K, P](r)
+	if q := r.Parameters.Since.Query; q != nil {
+		nested, err := q.Plan(config)
+		if err != nil {
+			return nil, err
+		}
+		stream.Since = nested
+	}
+	if q := r.Parameters.Until.Query; q != nil {
+		nested, err := q.Plan(config)
+		if err != nil {
+			return nil, err
+		}
+		stream.Until = nested
+	}
+	return stream, nil
 }
 
 // GetGraphID implements [Query]: it returns the graph the recall reads.
@@ -62,17 +79,27 @@ func (r Recall[K, P]) GetGraphID() uint8 {
 }
 
 // SetGraphID implements [Query]: it selects the graph the recall reads. Hash
-// folds the graph in, so it is set before the query is hashed.
+// folds the graph in, so it is set before the query is hashed. A query nested
+// in a time bound reads the graph of the recall that holds it, so it is given
+// the same one.
 func (r *Recall[K, P]) SetGraphID(id uint8) {
 	r.context.GraphID = id
+	if q := r.Parameters.Since.Query; q != nil {
+		q.SetGraphID(id)
+	}
+	if q := r.Parameters.Until.Query; q != nil {
+		q.SetGraphID(id)
+	}
 }
 
 // Hash keys the query for the plan cache. It must fold in everything that
 // changes the result set. Two recalls that differ only in graph, depth, top,
 // time bounds or the bound vector must not collide. Otherwise the cache would
-// hand back another query's plan. Every keyword and anchor is length-prefixed,
-// because a phrase may hold any byte, the delimiters included. So ["ab"] and
-// ["a","b"] do not hash alike, and no keyword can spell the segments after it.
+// hand back another query's plan. A time bound folds in as [TimeOperand.Hash]
+// renders it, so a query nested in one contributes its own key. Every keyword
+// and anchor is length-prefixed, because a phrase may hold any byte, the
+// delimiters included. So ["ab"] and ["a","b"] do not hash alike, and no
+// keyword can spell the segments after it.
 func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")
@@ -88,13 +115,9 @@ func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	b.WriteString("|t=")
 	b.WriteString(strconv.Itoa(r.Parameters.Top))
 	b.WriteString("|s=")
-	if s := r.Parameters.Since; s != nil {
-		b.WriteString(s.Hash(h))
-	}
+	b.WriteString(r.Parameters.Since.Hash(h))
 	b.WriteString("|u=")
-	if u := r.Parameters.Until; u != nil {
-		b.WriteString(u.Hash(h))
-	}
+	b.WriteString(r.Parameters.Until.Hash(h))
 	b.WriteString("|vec=")
 	b.WriteString(r.Vector.Hash(h))
 	return h.Hash(b.String())
@@ -121,20 +144,26 @@ func (r Recall[K, P]) IsWrite() bool {
 	return false
 }
 
-// Since resolves the query's lower time bound. It returns the zero time,
-// meaning no bound, when the query has no since clause.
-func (r Recall[K, P]) Since(now time.Time) time.Time {
-	if r.Parameters.Since == nil {
-		return time.Time{}
+// Since resolves the lower time bound the query writes out: the start of the
+// time its since clause names, compared with when each fact happened. It
+// returns the zero bound, meaning none, when the query has no since clause.
+// A since that holds a nested query is read from that query's answer, in
+// [Stream.Commit], and has nothing to resolve here.
+func (r Recall[K, P]) Since(now time.Time) containers.Bound {
+	if r.Parameters.Since.Value == nil {
+		return containers.Bound{}
 	}
-	return r.Parameters.Since.Resolve(now)
+	return containers.Bound{At: r.Parameters.Since.Value.Resolve(now).Start}
 }
 
-// Until resolves the query's upper time bound. It returns the zero time,
-// meaning no bound, when the query has no until clause.
-func (r Recall[K, P]) Until(now time.Time) time.Time {
-	if r.Parameters.Until == nil {
-		return time.Time{}
+// Until resolves the upper time bound the query writes out: the start of the
+// time its until clause names, compared with when each fact happened. It
+// returns the zero bound, meaning none, when the query has no until clause.
+// An until that holds a nested query is read from that query's answer, in
+// [Stream.Commit], and has nothing to resolve here.
+func (r Recall[K, P]) Until(now time.Time) containers.Bound {
+	if r.Parameters.Until.Value == nil {
+		return containers.Bound{}
 	}
-	return r.Parameters.Until.Resolve(now)
+	return containers.Bound{At: r.Parameters.Until.Value.Resolve(now).Start}
 }

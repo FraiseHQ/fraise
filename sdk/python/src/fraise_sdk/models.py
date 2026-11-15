@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 @dataclass(frozen=True)
@@ -114,8 +115,42 @@ class Contribution:
 
 
 @dataclass(frozen=True)
+class Interval:
+    """A span of time, which holds its start and excludes its end.
+
+    ``end`` equal to ``start`` is a single moment. ``end`` of ``None`` is a
+    span that has not ended. Both edges are datetimes that carry their time
+    zone, as the server returns them.
+
+    It is the shape of each span in a hit's ``occurred``, and what
+    :meth:`~fraise_sdk.client.FraiseClient.remember` takes in ``occurred`` for
+    a span between two moments. A whole month is the span from its first
+    midnight to the next month's, and a recall tool prints it back as that
+    month.
+    """
+
+    start: datetime
+    end: datetime | None
+
+    @classmethod
+    def from_json(cls, data: dict) -> Interval:  # noqa: D102
+        end = data.get("end")
+        return cls(
+            start=datetime.fromisoformat(data["start"]),
+            end=datetime.fromisoformat(end) if end else None,
+        )
+
+
+@dataclass(frozen=True)
 class Hit:
     """One recalled fact and how strongly it matched the query.
+
+    A fact holds three times. ``timestamp`` is when the server wrote it, and
+    every hit has it. ``said`` is when the fact was said, and ``occurred`` each
+    span over which what it states happened. Those two are the times its
+    remember gave it, and each is ``None`` on a fact given none, or from a
+    server too old to hold them. A fact given no ``occurred`` happened when it
+    was said, and one given no ``said`` was said when it was written.
 
     ``contributions`` is the per-source breakdown of the score.
     :meth:`~fraise_sdk.client.FraiseClient.explain` fills it. It is empty on a
@@ -126,9 +161,13 @@ class Hit:
     score: float
     timestamp: str | None = None
     contributions: list[Contribution] = field(default_factory=list)
+    said: datetime | None = None
+    occurred: list[Interval] | None = None
 
     @classmethod
     def from_json(cls, data: dict) -> Hit:  # noqa: D102
+        said = data.get("said")
+        occurred = data.get("occurred")
         return cls(
             value=data["value"],
             score=float(data["score"]),
@@ -136,6 +175,8 @@ class Hit:
             contributions=[
                 Contribution.from_json(c) for c in data.get("contributions") or []
             ],
+            said=datetime.fromisoformat(said) if said else None,
+            occurred=[Interval.from_json(s) for s in occurred] if occurred else None,
         )
 
 

@@ -37,4 +37,8 @@
 // to their members. A [scoring.Scorer] then folds each candidate's
 // contributions. Graph methods take no lock. Callers hold the graph's read or
 // write lock around the calls they compose.
+//
+// A [Fact] tells time on three clocks: when it was written, when it was said
+// and when what it states happened ([Fact.Intervals]). Each bound of a search's
+// time window reads the clock it names. Recency decay always reads written.
 package graph

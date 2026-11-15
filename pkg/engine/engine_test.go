@@ -26,8 +26,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/FraiseHQ/fraise/internal/config"
+	"github.com/FraiseHQ/fraise/internal/graph"
 	"github.com/FraiseHQ/fraise/internal/hash"
 	"github.com/FraiseHQ/fraise/internal/query"
 	"github.com/FraiseHQ/fraise/pkg/db"
@@ -253,5 +257,61 @@ func TestPlanConfirmsAHitByEquality(t *testing.T) {
 	}
 	if cached, _ := e.Cache.Get(0); cached.Parsed != second {
 		t.Error("the colliding query did not take the cache entry over")
+	}
+}
+
+// TestPlanRunsARememberWithItsOwnTimes pins the plan cache against a fact
+// re-asserted at the same instant in another offset. Equality compares
+// instants whatever their zone, so it cannot tell the two remembers apart. The
+// key can: a remember's times fold into it in the offset they were written in.
+// Sharing a key, the second would run the first's plan and store the first's
+// offset, and a hit would print the 9th where the caller said the 8th. With
+// keys of their own, the second is planned as itself, and its offset is the
+// one the fact holds.
+func TestPlanRunsARememberWithItsOwnTimes(t *testing.T) {
+	cfg := config.New()
+	e := newEngine(t, cfg)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	defer e.Stop()
+
+	run := func(text string) (query.Query[uint64, float32], *query.Stream[uint64, float32]) {
+		t.Helper()
+		q, _, err := query.Parse[uint64, float32](text, nil, cfg)
+		if err != nil {
+			t.Fatalf("Parse(%q) returned error: %v", text, err)
+		}
+		stream, err := e.Plan(q)
+		if err != nil {
+			t.Fatalf("Plan(%q) returned error: %v", text, err)
+		}
+		if err := e.Apply(context.Background(), stream); err != nil {
+			t.Fatalf("Apply(%q) returned error: %v", text, err)
+		}
+		<-stream.Done()
+		if stream.Err != nil {
+			t.Fatalf("%q failed: %v", text, stream.Err)
+		}
+		return q, stream
+	}
+
+	first, _ := run("remember 'the parrot is turquoise' said:'2023-05-09T00:30:00+09:00'")
+	second, _ := run("remember 'the parrot is turquoise' said:'2023-05-08T15:30:00Z'")
+	if first.Hash(e.Hasher) == second.Hash(e.Hasher) {
+		t.Fatal("the two remembers share a key, so the second would run the first's plan")
+	}
+
+	_, recalled := run("recall parrot")
+
+	if len(recalled.Result.Hits) != 1 {
+		t.Fatalf("recall returned %d hits, want the one fact remembered", len(recalled.Result.Hits))
+	}
+	fact, ok := recalled.Result.Hits[0].Node.(graph.Fact[uint64])
+	if !ok {
+		t.Fatalf("recall returned a %T, want a fact", recalled.Result.Hits[0].Node)
+	}
+	if diff := cmp.Diff("2023-05-08T15:30:00Z", fact.Said.Format(time.RFC3339)); diff != "" {
+		t.Errorf("Said mismatch (-want +got):\n%s", diff)
 	}
 }

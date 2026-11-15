@@ -1,6 +1,6 @@
 ---
 title: "Grammar"
-description: "The complete EBNF grammar of the Fraise Query Language, v2"
+description: "The complete EBNF grammar of the Fraise Query Language, v3"
 navIcon: "📜"
 ---
 
@@ -8,10 +8,10 @@ The normative grammar. Everything else in this section is commentary on it.
 
 ```ebnf
 (* ============================================================ *)
-(* Fraise Query Language (FQL) — v2                             *)
+(* Fraise Query Language (FQL) — v3                             *)
 (* ============================================================ *)
 
-query           = recall_query | remember_query | forget_query | update_query ;
+query           = recall_query | remember_query | when_query | forget_query | update_query ;
 
 (* ------------------------------------------------------------ *)
 (* RECALL                                                       *)
@@ -56,15 +56,32 @@ depth_field     = 'depth' ':' integer ;        (* retrieval lane: 0 floor, 1 pre
 top_field       = 'top'   ':' integer ;        (* result limit, default 10; both are bounded *)
 vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
 
+(* A when is a recall that answers with a time: the span its hits  *)
+(* hold on the clock it names. Its top defaults to 1, the time of  *)
+(* its best match; asked for more, it answers with the span from   *)
+(* the earliest of its hits' times to the latest. It takes no      *)
+(* graph selector: in a time bound it reads the graph of the       *)
+(* recall that holds it, and on its own the default graph.         *)
+when_query      = when_cmd recall_body ;
+when_cmd        = 'when' ( ':' clock )? ;      (* clock glued to verb: when:said — no whitespace around ':' *)
+clock           = 'said' | 'happened' | 'written' ;   (* default happened; read as a clock only after 'when:' *)
+
 (* ------------------------------------------------------------ *)
 (* REMEMBER                                                     *)
 (* ------------------------------------------------------------ *)
 
-(* Asserts a fact (phrase), the anchors it is filed under, and    *)
-(* optionally its embedding. Anchors are not required: a fact with *)
-(* none is stored and reachable by text search alone.              *)
-remember_query  = remember_cmd phrase (anchor_field | vec_field)* ;
+(* Asserts a fact (phrase), the anchors it is filed under, the    *)
+(* times it was said and happened, and optionally its embedding.   *)
+(* Anchors are not required: a fact with none is stored and        *)
+(* reachable by text search alone. Nor are the times: a fact given *)
+(* no occurred: happened when it was said, and one given no said:  *)
+(* was said when it was written. Anchors and occurred: may repeat, *)
+(* an occurred: for each time the fact happened; a second said: or *)
+(* vec: is a duplicate-clause error.                               *)
+remember_query  = remember_cmd phrase (anchor_field | vec_field | said_field | occurred_field)* ;
 remember_cmd    = 'remember' graph_selector? ;   (* graph glued to verb: remember@8 — no whitespace around '@' *)
+said_field      = 'said' ':' time_value ;        (* when the fact was stated: one moment, never a range *)
+occurred_field  = 'occurred' ':' time_value ;    (* when what it states happened: a moment or a span *)
 
 (* ------------------------------------------------------------ *)
 (* FORGET                                                       *)
@@ -81,16 +98,16 @@ forget_field    = anchor_field | since_field | until_field ;
 
 update_query    = update_cmd phrase phrase? update_field* ;   (* at least one of: second phrase, update_field *)
 update_cmd      = 'update' graph_selector? ;
-update_field    = anchor_field | vec_field ;
+update_field    = anchor_field | vec_field | said_field | occurred_field ;
 
 (* ------------------------------------------------------------ *)
 (* RESERVED WORDS                                               *)
 (* ------------------------------------------------------------ *)
 
 reserved_word   = command | prefix | field_name ;
-command         = 'recall' | 'remember' | 'forget' | 'update' ;
+command         = 'recall' | 'remember' | 'when' | 'forget' | 'update' ;
 prefix          = 'explain' | 'describe' ;
-field_name      = 'topic' | 'entity' | 'since' | 'until' | 'top' | 'depth' | 'vec' ;
+field_name      = 'topic' | 'entity' | 'since' | 'until' | 'top' | 'depth' | 'said' | 'occurred' | 'vec' ;
 
 (* ------------------------------------------------------------ *)
 (* SHARED                                                       *)
@@ -104,8 +121,9 @@ graph_selector  = '@' integer ;                (* default 0; glued to the comman
 
 (* Outside a phrase a word is letters and digits only. Space, tab *)
 (* and CR separate words, a newline ends the instruction, and     *)
-(* ':' "'" '$' '@' are syntax; every other character is special   *)
-(* and is rejected by name. A value that needs one is quoted.     *)
+(* ':' "'" '$' '@' are syntax, as are '(' ')' and '..' in a time  *)
+(* value; every other character is special and is rejected by     *)
+(* name. A value that needs one is quoted.                        *)
 (* A query is UTF-8 text. U+FFFD, the mark of text lost to a bad  *)
 (* encoding, is rejected wherever it appears, in a phrase too.    *)
 bare_word         = ?[\p{L}\p{Nd}]+? ;         (* letters in any script, and digits *)
@@ -113,11 +131,29 @@ phrase            = "'" { ?[^']? | "''" } "'" ; (* opaque: any char but U+FFFD i
 identifier        = bare_word ;                (* folded to lower case on the way in *)
 quoted_identifier = "'" { ?[^']? | "''" } "'" ; (* same opaque rule as phrase *)
 integer           = ?[0-9]+? ;                 (* non-negative; '-' is its own token *)
-time_value        = duration | "'" absolute_time "'" ;   (* an absolute time carries '-', so it is quoted *)
+
+(* SEMANTIC RULE: a time value is a duration, a date, a range of  *)
+(* dates or a when in parentheses, and a clause takes the forms   *)
+(* that suit it. since: and until: on a recall take all four; on  *)
+(* a when they take no subquery, so parentheses never nest. said: *)
+(* is one moment: a duration or a date. occurred: is a moment or  *)
+(* a span: a duration, a date or a range. A date names the whole  *)
+(* of what it spells: a day, a month, a year or an instant. A     *)
+(* range runs from the start of its first date to the end of its  *)
+(* second, which may not end before the first starts; with no     *)
+(* second date it has no end. A time given to said: or occurred:  *)
+(* starts after the year 0001 does and ends before the year 9999  *)
+(* does: see Bounds.                                              *)
+time_value        = duration | date | date_range | subquery ;
 duration          = integer time_unit ;        (* at most ~292 years, e.g. 106751d: see Bounds *)
 time_unit         = 's' | 'm' | 'h' | 'd' | 'w' ;
-absolute_time     = iso_date | rfc3339 ;
-iso_date          = ?\d{4}-\d{2}-\d{2}? ;
+date              = "'" absolute_time "'" ;    (* an absolute time carries '-', so it is quoted *)
+date_range        = date '..' date? ;          (* '..' glued to its dates: no whitespace around it *)
+subquery          = '(' when_query ')' ;       (* '(' glued to the when: no whitespace after it *)
+absolute_time     = iso_date | iso_month | iso_year | rfc3339 ;
+iso_date          = ?\d{4}-\d{2}-\d{2}? ;      (* that day *)
+iso_month         = ?\d{4}-\d{2}? ;            (* that month *)
+iso_year          = ?\d{4}? ;                  (* that year *)
 rfc3339           = ?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})? ;
 param_ref         = '$' param_name ;
 param_name        = bare_word ;                (* matched exactly against a key of the request's parameters: never folded *)
@@ -125,7 +161,7 @@ param_name        = bare_word ;                (* matched exactly against a key 
 
 ## Status
 
-The grammar above is all of v2. Which of it a server accepts depends on its version; the words are reserved from the first v2 release whether or not their production is implemented, so adding a production later is never a breaking change.
+The grammar above is all of v3. Which of it a server accepts depends on its version; the words are reserved from the first v3 release whether or not their production is implemented, so adding a production later is never a breaking change.
 
 | Production | Reserved since | Planned for | Issue |
 | --- | --- | --- | --- |
@@ -133,7 +169,7 @@ The grammar above is all of v2. Which of it a server accepts depends on its vers
 | `prefix` `'explain'` on `recall_query` | 0.3.0 | 0.4.0 | [#433](https://github.com/FraiseHQ/fraise/issues/433) |
 | `prefix` `'describe'` on `recall_query` | 0.3.0 | 0.4.0 | [#434](https://github.com/FraiseHQ/fraise/issues/434) |
 
-A server that reserves a production but does not accept it answers a query opening with its word with `expected a command (recall, remember), found "<word>"`; a server that accepts it answers as the production says. The conformance suite carries one row per production and per status, so an SDK can tell the two apart.
+A server that reserves a production but does not accept it answers a query opening with its word with `expected a command (recall, remember, when), found "<word>"`; a server that accepts it answers as the production says. The conformance suite carries one row per production and per status, so an SDK can tell the two apart.
 
 ## Reading it
 

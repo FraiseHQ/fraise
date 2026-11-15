@@ -11,10 +11,10 @@ A query hashes itself into a key (`internal/hash`), and an LRU of `cache-capacit
 
 ## The cache key is lossless
 
-The cache key is the whole parsed query — graph, terms, anchors, time bounds, `depth`, `top` and any bound vector — built from lossless material:
+The cache key is the whole parsed query — graph, terms, anchors, time bounds, the times a `remember` gives its fact, `depth`, `top` and any bound vector — built from lossless material:
 
 - exact hex floats,
-- RFC3339Nano timestamps,
+- RFC3339Nano timestamps, which keep the offset a time was written in,
 - `|`-delimited `tag=` segments, with every string length-prefixed (`5:alice`) so no fact, phrase or anchor can spell a delimiter.
 
 <Note title="The hashing invariant" type="note">
@@ -26,6 +26,8 @@ The cache key is the whole parsed query — graph, terms, anchors, time bounds, 
 A lossless key is still a 64-bit hash, and two distinct queries can share one. So the cache keeps each query as parsed beside its plan, and a hit is used only when that query equals the request; otherwise the request is planned afresh and takes the entry over.
 
 A bound vector enters the key as a nested hash of its exact values, so the same query with the same vector reuses its plan and a new vector is planned afresh. Vectors are still bound as [parameters](/docs/query-language/tokens/parameters) rather than written inline, which keeps them out of the lexer and the log.
+
+A `when` in a time bound enters the key the same way, as the nested hash of its own query and the clock it names. The `said:` and `occurred:` of a `remember` enter it as the bounds of a recall do, so a fact remembered again with other times is planned afresh. That includes the same instant written in another offset: equality compares instants, so the offset in the key is what keeps the second remember from storing the first one's.
 
 ## Sizing the cache
 
