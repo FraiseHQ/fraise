@@ -26,17 +26,17 @@ Releases are driven by [release-please](https://github.com/googleapis/release-pl
 
 ### 1. The release PR maintains itself
 
-Every push to `main` updates an open PR titled `chore(main): release X.Y.Z`. release-please derives the next version from the conventional-commit messages since the last release and writes, in that PR:
+Every push to `main` updates one open PR titled `chore: release main`, which releases every component with releasable commits since its last release: the server, the Python SDK and the MCP server. release-please derives each component's next version from the conventional-commit messages scoped to it and writes, in that PR:
 
-- `docs/changelog.md` — the grouped commit list for the new version.
+- `docs/changelog.md` — the grouped commit list for the new server version; `sdk/python/CHANGELOG.md` and `mcp/CHANGELOG.md` for the SDK and the MCP server.
 - `pkg/version/version.go` — the `Version` constant on the `x-release-please-version` annotated line. **Never edit this by hand.**
-- `.release-please-manifest.json` — the new current version.
+- `.release-please-manifest.json` — each component's new current version.
 
 Nothing is released while the PR sits open; it just tracks what the next release would be.
 
 ### 2. Merge the release PR
 
-Merging it **is** the release. release-please tags the merge commit `vX.Y.Z` and creates the GitHub Release with the changelog as its notes. That tag push then fires the `publish` job in `.github/workflows/go.yaml`, exactly as a hand-pushed tag used to:
+Merging it **is** the release. release-please tags the merge commit once per component it bumps (`vX.Y.Z`, `python/vX.Y.Z`, `mcp/vX.Y.Z`) and creates each GitHub Release with that component's changelog as its notes. The server's tag push then fires the `publish` job in `.github/workflows/go.yaml`, exactly as a hand-pushed tag used to:
 
 1. **test / cross-compile** — the full suite runs against the tagged commit.
 2. **Manual approval** — `publish` pauses on the `release` environment. A maintainer clicks **Approve** in the Actions UI. This is the last human gate before artifacts exist.
@@ -151,7 +151,7 @@ SDK tagging (after the version-bump PR is merged — the workflow rejects a tag 
 
 CI is split per component (`go.yaml`, `python.yaml`, `mcp.yaml`), each path-filtered to its own files; `mcp.yaml` also runs on SDK changes, since the MCP server is built on the SDK. Branch-protection note: only mark the **Go** jobs as required checks globally — path-filtered SDK checks would otherwise show "expected" forever on server-only PRs.
 
-Every tag is a pointer to a commit on `main`; each component versions and releases on its own clock. Milestones are named like the tags.
+Every tag is a pointer to a commit on `main`; each component versions on its own clock, and the components bumped since the last release ship together from the one release PR. Milestones are named like the tags.
 
 ### Cross-component (protocol) changes
 
