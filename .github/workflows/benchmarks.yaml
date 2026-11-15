@@ -33,8 +33,8 @@ permissions:
 jobs:
   gate:
     # One name on every pull request, the name branch protection requires.
-    # The server's release pull request runs every gate. Any other pull
-    # request runs the gates its changes can affect.
+    # The release pull request runs every gate. Any other pull request runs
+    # the gates its changes can affect.
     name: Benchmark gate
     # benchstat compares only runs on the same CPU, and ubuntu-latest hands
     # out more than one model. Every Arm runner is a Cobalt 100, so this gate
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     env:
-      RELEASE: ${{ github.head_ref == 'release-please--branches--main--components--fraise' }}
+      RELEASE: ${{ github.head_ref == 'release-please--branches--main' }}
     permissions:
       contents: read
       actions: read # the nightly baseline
