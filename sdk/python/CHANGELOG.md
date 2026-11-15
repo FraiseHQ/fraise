@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/FraiseHQ/fraise/compare/python/v0.3.1...python/v0.4.0) (2026-11-15)
+
+
+### Features
+
+* **mcp:** add the python mcp server with client-side embeddings ([#594](https://github.com/FraiseHQ/fraise/issues/594)) ([c9dd475](https://github.com/FraiseHQ/fraise/commit/c9dd47502083328b28bf1cbbfb30b5372e9983cd))
+
 ## [0.3.1](https://github.com/FraiseHQ/fraise/compare/python/v0.3.0...python/v0.3.1) (2026-11-05)
 
 
