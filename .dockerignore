@@ -6,6 +6,7 @@ sdk
 # The example images install the SDK from source, so sdk/python stays in the
 # build context. The rest of sdk/ stays out.
 !sdk/python
+mcp
 docs
 assets
 examples

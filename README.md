@@ -226,14 +226,14 @@ curl -X POST localhost:9876/api/v1/q \
 
 ### MCP
 
-`fraise mcp` is a stdio MCP server — a thin bridge to a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, and needs no flags when the daemon is on its default address.
+`fraise-mcp` is a stdio MCP server for a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, each taking one FQL statement, and embeds every statement's text locally, so retrieval is hybrid (text, graph and vector) out of the box while the model writes plain FQL. It runs with [uv](https://docs.astral.sh/uv/)'s `uvx`, with nothing else to install, and needs no flags when the daemon is on its default address.
 
-Start the daemon first (`brew services start fraise`, or `systemctl --user start fraise` on Linux), then register the bridge with whichever coding agent you use.
+Start the daemon first (`brew services start fraise`, or `systemctl --user start fraise` on Linux), then register the server with whichever coding agent you use.
 
 #### Claude Code
 
 ```sh
-claude mcp add fraise -- fraise mcp
+claude mcp add fraise -- uvx fraise-mcp
 ```
 
 That registers it for the current project; add `--scope user` to make it available in every project instead.
@@ -241,15 +241,15 @@ That registers it for the current project; add `--scope user` to make it availab
 #### Codex
 
 ```sh
-codex mcp add fraise -- fraise mcp
+codex mcp add fraise -- uvx fraise-mcp
 ```
 
 Or write it into `~/.codex/config.toml` directly:
 
 ```toml
 [mcp_servers.fraise]
-command = "fraise"
-args = ["mcp"]
+command = "uvx"
+args = ["fraise-mcp"]
 ```
 
 #### OpenCode
@@ -262,7 +262,7 @@ Add it to `opencode.json` in your project root:
   "mcp": {
     "fraise": {
       "type": "local",
-      "command": ["fraise", "mcp"]
+      "command": ["uvx", "fraise-mcp"]
     }
   }
 }
@@ -273,12 +273,14 @@ Add it to `opencode.json` in your project root:
 ```json
 {
   "mcpServers": {
-    "fraise": { "command": "fraise", "args": ["mcp"] }
+    "fraise": { "command": "uvx", "args": ["fraise-mcp"] }
   }
 }
 ```
 
-The bridge describes itself over MCP: each tool arrives with a description and a full JSON schema for its arguments and results — the FQL shapes, a worked example, what a score means — so a client knows what `recall` and `remember` do and how to call them without being told. What a tool description cannot carry is the policy: the habit of reaching for memory unprompted, and the judgement about what is worth keeping. That belongs in the file your agent already reads — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex and OpenCode — and two habits are enough: recall before answering anything that leans on earlier decisions or preferences, and remember only facts that will still matter in a later session, one self-contained fact per call with the topics and entities that will make it findable.
+The `fraise` binary also carries the two tools without the embedding: `fraise mcp` sends each statement as written, searching by text and graph, with no Python. See [MCP](https://docs.getfraise.dev/docs/integrations/mcp) for the embedding model, the settings, and the built-in bridge.
+
+The server describes itself over MCP: each tool arrives with a description and a schema for its one argument — the FQL shapes, a worked example, what a score means — so a client knows what `recall` and `remember` do and how to call them without being told. What a tool description cannot carry is the policy: the habit of reaching for memory unprompted, and the judgement about what is worth keeping. That belongs in the file your agent already reads — `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex and OpenCode — and two habits are enough: recall before answering anything that leans on earlier decisions or preferences, and remember only facts that will still matter in a later session, one self-contained fact per call with the topics and entities that will make it findable.
 
 ### SDKs
 

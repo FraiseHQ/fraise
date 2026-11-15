@@ -1,6 +1,5 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "separate-pull-requests": true,
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
     { "type": "fix", "section": "Bug fixes" },
@@ -45,6 +44,7 @@
         "docker-compose.yaml",
         "docs",
         "examples",
+        "mcp",
         "pyproject.toml",
         "release-please-config.json",
         "sdk",
@@ -78,6 +78,30 @@
           "type": "toml",
           "path": "/uv.lock",
           "jsonpath": "$.package[?(@.name.value=='fraise-sdk')].version"
+        },
+        {
+          "type": "generic",
+          "path": "/mcp/pyproject.toml"
+        }
+      ]
+    },
+    "mcp": {
+      "release-type": "python",
+      "package-name": "fraise-mcp",
+      "component": "mcp",
+      "tag-separator": "/",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "/uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='fraise-mcp')].version"
+        },
+        {
+          "type": "json",
+          "path": "/server.json",
+          "jsonpath": "$.packages[?(@.registryType=='pypi')].version"
         }
       ]
     }

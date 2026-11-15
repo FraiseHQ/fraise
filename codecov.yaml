@@ -17,6 +17,10 @@ flags:
     paths:
       - sdk/python/
     carryforward: true
+  mcp:
+    paths:
+      - mcp/
+    carryforward: true
 
 comment:
   layout: "diff, flags, files"

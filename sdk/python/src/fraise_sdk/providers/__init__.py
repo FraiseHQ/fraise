@@ -28,8 +28,10 @@ extra. Import them from those modules, not from this package.
 :mod:`fraise_sdk.providers.openai` has ``OpenAIEmbedder`` and
 ``OpenAIExtractor``, and needs ``fraise-sdk[openai]``.
 :mod:`fraise_sdk.providers.huggingface` has ``HuggingFaceEmbedder``, and needs
-``fraise-sdk[huggingface]``. Keeping them out of this package keeps
-``import fraise_sdk`` free of vendor SDKs.
+``fraise-sdk[huggingface]``. :mod:`fraise_sdk.providers.fastembed` has
+``FastEmbedEmbedder``, which runs locally, and needs ``fraise-sdk[fastembed]``.
+Keeping them out of this package keeps ``import fraise_sdk`` free of vendor
+SDKs.
 """
 
 from fraise_sdk.providers.base import (

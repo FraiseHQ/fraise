@@ -42,6 +42,31 @@
           "description": "URL of the running Fraise daemon the bridge forwards to. The daemon runs separately, like a database behind a connection URL: on the host (brew services start fraise, or systemctl --user start fraise), or as its own container with port 9876 published. Inside this container 127.0.0.1 is the bridge itself, so the default names the host."
         }
       ]
+    },
+    {
+      "registryType": "pypi",
+      "identifier": "fraise-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "FRAISE_ADDR",
+          "default": "http://localhost:9876",
+          "description": "URL of the running Fraise daemon the server forwards to. The daemon runs separately, like a database behind a connection URL: on the host (brew services start fraise, or systemctl --user start fraise), or as its own container with port 9876 published."
+        },
+        {
+          "name": "FRAISE_EMBEDDING_MODEL",
+          "default": "BAAI/bge-small-en-v1.5",
+          "description": "fastembed model each statement's text is embedded with, locally. A graph's first vector fixes its dimension, so a graph keeps the model it was first written with."
+        },
+        {
+          "name": "FRAISE_NO_VECTORS",
+          "description": "Set to 1 to send every statement on text alone."
+        }
+      ]
     }
   ]
 }

@@ -287,3 +287,5 @@ Follow `CONTRIBUTING.md` for PR instructions: branch naming, commit message
 format, and the review process.
 
 The repository merges by squash only: each pull request lands on `main` as a single commit titled after the pull request, the commit release-please reads. Stacked pull requests therefore don't work here. Squashing the lower one rewrites its commits into a new commit, and the one above it, still carrying the originals, then conflicts with `main` on every line both touched. Branch every pull request from `main`, and when a change depends on another that is still open, wait for that one to merge first.
+
+**Never edit a changelog.** `docs/changelog.md`, `sdk/python/CHANGELOG.md` and `mcp/CHANGELOG.md` belong to release-please, which writes them from the squash-commit titles on `main`. That holds in every pull request, release pull requests included: a commit pushed onto a release branch to fix its CI touches the code and its pins, never the changelog. A hand-written entry is either overwritten by the next release pull request or ships a line no commit backs. To change what a release says, change the title of the pull request it comes from.
