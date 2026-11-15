@@ -33,4 +33,4 @@ The model is any text model [fastembed](https://qdrant.github.io/fastembed/examp
 
 ## What gets embedded
 
-A `remember` embeds its fact. A `recall` embeds its search terms, the words and phrases before its first clause. The server appends `vec:$v` and binds the vector beside the statement. A recall with no terms, where anchors alone seed the search, is sent as written, and so is any statement the server cannot read that far: the daemon checks every statement, and its error messages come back to the model as tool errors.
+A `remember` embeds its fact. A `recall` embeds its search terms, the words and phrases before its first clause. An `explain recall …` embeds the same terms as the recall it prefixes, which it ranks exactly alike. The server appends `vec:$v` and binds the vector beside the statement. A recall with no terms, where anchors alone seed the search, is sent as written, and so is any statement the server cannot read that far: the daemon checks every statement, and its error messages come back to the model as tool errors.

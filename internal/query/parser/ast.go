@@ -109,10 +109,15 @@ type RecallBodyNode[K comparable, P float32 | float64] struct {
 }
 
 // RecallCommandNode is a parsed recall: the verb, its graph selector, and the
-// body it searches by.
+// body it searches by. The grammar makes the prefix part of the recall
+// (prefix? recall_cmd recall_body), so an explained recall is this node too,
+// its prefix held in a slot that is the zero node on a plain recall. The slot
+// sits on the command, not on the body a when shares, because only a recall
+// has a ranking to explain. See [RecallCommandNode.Explain].
 type RecallCommandNode[K comparable, P float32 | float64] struct {
 	RecallBodyNode[K, P]
 
+	prefix   PrefixNode
 	key      lexer.Token
 	selector GraphSelectorNode
 	pos      lexer.Position
@@ -129,6 +134,15 @@ type WhenCommandNode[K comparable, P float32 | float64] struct {
 	clock ClockNode
 	pos   lexer.Position
 	end   lexer.Position
+}
+
+// Explain reports whether the recall was written with the explain prefix,
+// asking for what the ranking did beside the hits. Presence is the parsed
+// prefix token, as with [RecallBodyNode.HasTop]. The prefix changes the
+// answer's envelope, never the search, so the query layer carries it as a flag
+// on the recall it builds from the rest of the node.
+func (r RecallCommandNode[K, P]) Explain() bool {
+	return r.prefix.key.Type == lexer.EXPLAIN
 }
 
 // Terms returns the recall's search terms in source order, folded to lower
@@ -460,6 +474,14 @@ type TimeValueNode[K comparable] struct {
 	end      lexer.Position
 }
 
+// PrefixNode is the prefix a recall is written with (explain), standing before
+// the verb. A recall without one holds the zero node.
+type PrefixNode struct {
+	key lexer.Token
+	pos lexer.Position
+	end lexer.Position
+}
+
 // ClauseNode is the occurrence marker an anchor clause can carry. It holds the
 // [ClauseType] and the prefix token it was written with. String prints that
 // token in front of the anchor.
@@ -632,7 +654,13 @@ func (n RecallCommandNode[K, P]) Selector() uint8 {
 }
 
 func (n RecallCommandNode[K, P]) String() string {
-	s := []string{n.key.Literal + n.selector.String()}
+	var s []string
+
+	if n.Explain() {
+		s = append(s, n.prefix.String())
+	}
+
+	s = append(s, n.key.Literal+n.selector.String())
 
 	if body := n.RecallBodyNode.String(); body != "" {
 		s = append(s, body)
@@ -803,6 +831,26 @@ func (n TimeValueNode[K]) Value() containers.TimeValue[K] {
 // written out.
 func (n TimeValueNode[K]) Query() CommandNode {
 	return n.subquery.Query()
+}
+
+// String prints the prefix as written, or nothing when the recall has none. So
+// an explained recall's String parses back to an explained recall, and a plain
+// one's to a plain one.
+func (n PrefixNode) String() string {
+	if !n.key.Type.IsPrefix() {
+		return ""
+	}
+	return n.key.Literal
+}
+
+// Pos implements [AstNode].
+func (n PrefixNode) Pos() lexer.Position {
+	return n.pos
+}
+
+// End implements [AstNode].
+func (n PrefixNode) End() lexer.Position {
+	return n.end
 }
 
 // Clause returns the anchor's occurrence marker, or nil when it has none.

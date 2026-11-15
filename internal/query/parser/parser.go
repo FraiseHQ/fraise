@@ -538,6 +538,8 @@ func (p *parser[K, P]) parseQuery() (CommandNode, error) {
 		return (*p).parseRecall()
 	case lexer.WHEN:
 		return (*p).parseWhen()
+	case lexer.EXPLAIN:
+		return p.parseExplain()
 	default:
 		return nil, p.errf(p.cur.Pos, "expected a command (recall, remember, when), found %s", p.cur.Describe())
 	}
@@ -630,6 +632,59 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[K, P], error) {
 	r.anchors = anchors
 
 	return &r, nil
+}
+
+// parseExplain reads a recall written with the explain prefix. The prefix
+// stands at the head of the statement, followed by a blank as a verb is, then
+// by recall, the one command with a ranking to explain: a when answers with a
+// time, and a remember stores a fact. It decides on the token after the prefix
+// alone. So each way of misplacing the prefix is named at the token it blames,
+// rather than surfacing as an error in the recall after it, or as a statement
+// that opens with no command. A prefix among a recall's terms is not read
+// here: it is a word to quote (see errKeywordAsTerm).
+func (p *parser[K, P]) parseExplain() (*RecallCommandNode[K, P], error) {
+	prefix := p.take()
+
+	switch {
+	case p.afterBlank().Type.IsEndOfLine():
+		return nil, p.errf(prefix.Pos, "%s needs a recall after it — write explain recall <terms>", prefix.Describe())
+	case p.cur.Type == lexer.AT:
+		// The caller meant a selector. It belongs to the verb, so the repair
+		// moves the number written after the '@' there.
+		graph := "<graph>"
+		if p.peek.Type == lexer.LITERAL {
+			graph = p.peek.Literal
+		}
+		return nil, p.errf(p.cur.Pos, "%s starts a graph selector, which is glued to the verb, not the prefix — write explain recall@%s", p.cur.Describe(), graph)
+	case p.cur.Type != lexer.WHITESPACE:
+		return nil, p.errf(p.cur.Pos, "expected a space after the prefix, found %s", p.cur.Describe())
+	}
+	p.next()
+
+	switch {
+	case p.cur.Type == lexer.RECALL:
+		r, err := p.parseRecall()
+		if err != nil {
+			return nil, err
+		}
+		r.prefix = PrefixNode{key: prefix}
+		return r, nil
+	case p.cur.Type.IsPrefix():
+		return nil, p.errf(p.cur.Pos, "%s is a second prefix: a statement takes one — drop one", p.cur.Describe())
+	case p.cur.Type == lexer.WHEN:
+		return nil, p.errf(p.cur.Pos, "%s answers with a time and has no ranking to explain: the explain prefix stands only before recall — drop the prefix", p.cur.Describe())
+	case p.cur.Type.IsCommand():
+		return nil, p.errf(p.cur.Pos, "%s has no ranking to explain: the explain prefix stands only before recall — drop the prefix", p.cur.Describe())
+	}
+
+	// A token with a diagnosis of its own keeps it, as in a value slot. It is
+	// not reported as the wrong word after the prefix.
+	switch p.cur.Type {
+	case lexer.ILLEGAL, lexer.LPAREN, lexer.RPAREN, lexer.NUL,
+		lexer.SPECIAL, lexer.PLUS, lexer.TILDE, lexer.MINUS:
+		return nil, p.errUnexpected(p.cur)
+	}
+	return nil, p.errf(p.cur.Pos, "expected recall after the explain prefix, found %s", p.cur.Describe())
 }
 
 func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {

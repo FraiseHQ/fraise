@@ -82,15 +82,16 @@ func TestRecallHash(t *testing.T) {
 			Since: TimeOperand[string, float32]{Value: containers.RelativeTime[string]{Dur: time.Hour}},
 			Until: TimeOperand[string, float32]{Value: containers.AbsoluteTime[string]{T: time.Date(2026, time.June, 18, 12, 0, 0, 0, time.UTC)}},
 		},
+		Explain: true,
 		context: QueryContext{GraphID: 3},
 	}
 	h := &fakeHasher{}
 
 	// Hash folds in the graph, the length-prefixed keyword, entity and topic
-	// lists, depth, top, the time bounds and the bound vector. Queries that
-	// differ in any of these get distinct cache keys.
+	// lists, depth, top, the time bounds, the bound vector and the explain
+	// flag. Queries that differ in any of these get distinct cache keys.
 	const want = "g=3|kw=2:qu3:ick|en=5:alice|to=7:weather|d=2|t=5" +
-		"|s=H(r1h0m0s)|u=H(a2026-06-18T12:00:00Z)|vec=H(0x1p-01\x000x1p-02)"
+		"|s=H(r1h0m0s)|u=H(a2026-06-18T12:00:00Z)|vec=H(0x1p-01\x000x1p-02)|ex=1"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -99,10 +100,13 @@ func TestRecallHash(t *testing.T) {
 	}
 }
 
+// TestRecallHashEmpty pins the material of the zero recall. A plain recall
+// still writes its flag, ex=0, so the material of every recall ends with one
+// and an explained recall's is never the plain one's with a suffix missing.
 func TestRecallHashEmpty(t *testing.T) {
 	var r Recall[string, float32]
 	h := &fakeHasher{}
-	const want = "g=0|kw=|en=|to=|d=0|t=0|s=|u=|vec=H()"
+	const want = "g=0|kw=|en=|to=|d=0|t=0|s=|u=|vec=H()|ex=0"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -132,7 +136,7 @@ func TestRecallHashFoldsInANestedQuery(t *testing.T) {
 	h := &fakeHasher{}
 
 	const want = "g=3|kw=5:alice|en=|to=|d=0|t=5|s=" +
-		"|u=qH(c=1|r=H(g=3|kw=4:race|en=|to=|d=0|t=1|s=|u=|vec=H()))|vec=H()"
+		"|u=qH(c=1|r=H(g=3|kw=4:race|en=|to=|d=0|t=1|s=|u=|vec=H()|ex=0))|vec=H()|ex=0"
 	got := r.Hash(h)
 	if diff := cmp.Diff("H("+want+")", got); diff != "" {
 		t.Errorf("Hash() mismatch (-want +got):\n%s", diff)
@@ -143,10 +147,11 @@ func TestRecallHashFoldsInANestedQuery(t *testing.T) {
 }
 
 // TestRecallHashDistinguishesParameters pins the contract. Recalls that differ
-// only in graph, depth, top, time bounds, the bound vector or how their text
-// splits into keywords and anchors must not share a cache key. Otherwise the
-// engine hands back another query's plan. A depth:2 query could get a depth:1
-// result, results seeded by another query's vector, or another query's terms.
+// only in graph, depth, top, time bounds, the bound vector, how their text
+// splits into keywords and anchors, or the explain prefix must not share a
+// cache key. Otherwise the engine hands back another query's plan. A depth:2
+// query could get a depth:1 result, results seeded by another query's vector,
+// another query's terms, or a plain answer to an explained recall.
 func TestRecallHashDistinguishesParameters(t *testing.T) {
 	base := func() Recall[string, float32] {
 		return Recall[string, float32]{Keywords: []string{"mercury"}}
@@ -245,6 +250,17 @@ func TestRecallHashDistinguishesParameters(t *testing.T) {
 			r.Vector = containers.NewVector[string]([]float32{0, 1})
 			return r
 		}(),
+		"explained": func() Recall[string, float32] {
+			r := base()
+			r.Explain = true
+			return r
+		}(),
+		"explained-depth": func() Recall[string, float32] {
+			r := base()
+			r.Explain = true
+			r.Parameters.Depth = 2
+			return r
+		}(),
 	}
 
 	seen := make(map[string]string)
@@ -260,7 +276,9 @@ func TestRecallHashDistinguishesParameters(t *testing.T) {
 // TestRecallEqual pins the check the engine confirms a plan-cache hit with.
 // A recall differing from base in any field Hash folds in is not equal to it,
 // so a key it happens to share with base never runs base's plan. Keyword order
-// counts, as it does in the material. A remember is never equal to a recall.
+// counts, as it does in the material. The explain flag counts too, so a plain
+// recall is never answered in an explained one's envelope. A remember is never
+// equal to a recall.
 func TestRecallEqual(t *testing.T) {
 	base := func() *Recall[string, float32] {
 		return &Recall[string, float32]{
@@ -307,6 +325,7 @@ func TestRecallEqual(t *testing.T) {
 		"no until":  {with(func(r *Recall[string, float32]) { r.Parameters.Until = TimeOperand[string, float32]{} }), false},
 		"vector":    {with(func(r *Recall[string, float32]) { r.Vector = containers.NewVector[string]([]float32{0, 1}) }), false},
 		"no vector": {with(func(r *Recall[string, float32]) { r.Vector = containers.Vector[string, float32]{} }), false},
+		"explained": {with(func(r *Recall[string, float32]) { r.Explain = true }), false},
 		"remember":  {&Remember[string, float32]{Value: "mercury venus", context: QueryContext{GraphID: 2}}, false},
 	}
 	for name, tt := range tests {
@@ -519,5 +538,30 @@ func TestRecallPlan(t *testing.T) {
 	case <-s.Done():
 		t.Error("Plan() stream is already done; it must stay open until committed")
 	default:
+	}
+}
+
+// TestRecallPlanCarriesTheExplainFlag pins where an explained recall's stream
+// gets its flag. Commit reads the stream's, and the stream is built per
+// request, so Plan copies the recall's. A plain recall must plan a plain
+// stream: the explain blocks cost the read path work and widen the response.
+func TestRecallPlanCarriesTheExplainFlag(t *testing.T) {
+	cases := map[string]struct {
+		explain bool
+	}{
+		"plain":     {false},
+		"explained": {true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := Recall[string, float32]{Keywords: []string{"mercury"}, Explain: tc.explain}
+			s, err := r.Plan(nil)
+			if err != nil {
+				t.Fatalf("Plan() err = %v, want nil", err)
+			}
+			if got, want := s.Explain, tc.explain; got != want {
+				t.Errorf("Plan() stream.Explain = %v, want %v", got, want)
+			}
+		})
 	}
 }

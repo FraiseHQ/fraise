@@ -52,7 +52,9 @@ RECALL_DESCRIPTION = (
     "Anchors alone — topic:/entity: with no search terms — seed the search with "
     "every fact filed under them, scored one unit per named anchor and decayed by "
     "age, newest first under a single anchor: the way to see what is stored under "
-    "a topic before you know what to search for."
+    "a topic before you know what to search for. A recall may also be written "
+    "explain recall …: it ranks exactly as the recall it prefixes and returns the "
+    "same facts."
 )
 
 RECALL_QUERY = (

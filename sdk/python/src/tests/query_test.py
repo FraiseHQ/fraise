@@ -129,6 +129,47 @@ def test_recall_requires_a_seed():
 
 
 @pytest.mark.parametrize(
+    "kwargs, want",
+    [
+        (
+            {"keywords": ["polly"], "entities": ["polly"], "depth": 2},
+            "explain recall@0 polly entity:polly depth:2",
+        ),
+        (
+            {
+                "keywords": ["anna"],
+                "until": When("regatta"),
+                "with_vector": True,
+                "with_until_vector": True,
+            },
+            "explain recall@0 anna until:(when regatta vec:$vuntil) vec:$v",
+        ),
+    ],
+)
+def test_an_explained_recall_is_the_recall_behind_the_prefix(kwargs, want):
+    """``explain`` writes the prefix, one space, then the recall it would build.
+
+    The server reads the prefix only at the head of the statement, followed by
+    whitespace and the verb, so anywhere else it would be a term or an error.
+    Everything after it is the plain recall, so the explained ranking is the
+    one the plain recall returns. A when in a bound takes no prefix of its
+    own: it is explained with the recall, and a prefix inside its parentheses
+    is a parse error.
+    """
+    assert build_recall(explain=True, **kwargs) == want
+
+
+def test_an_explained_recall_still_requires_a_seed():
+    """The prefix seeds nothing, so a recall given only it is still refused here.
+
+    Were the prefix counted as a part of the recall, ``explain recall@1`` would
+    slip past the check and fail on the server instead, after a round trip.
+    """
+    with pytest.raises(FraiseQueryError, match="at least one seed"):
+        build_recall(graph=1, explain=True)
+
+
+@pytest.mark.parametrize(
     ("build", "args", "param", "kind"),
     [
         (build_remember, ("a fact",), "topics", "topic"),
@@ -728,14 +769,28 @@ def test_every_dated_remember_the_builder_emits_parses(kwargs, client, query_gra
             "topics": ["my project"],
             "entities": ["anna smith"],
         },
+        {"keywords": ["barometer"], "explain": True},
+        {
+            "keywords": ["barometer", "storm"],
+            "topics": ["weather"],
+            "entities": ["barometer"],
+            "top": 3,
+            "depth": 2,
+            "explain": True,
+        },
     ],
 )
 @pytest.mark.integration
 def test_every_recall_the_builder_emits_parses(kwargs, client, query_graph):
-    """Every keyword-seeded shape build_recall can produce is accepted."""
+    """Every keyword-seeded shape build_recall can produce is accepted.
+
+    The query's ``explain`` block comes back exactly when the builder wrote
+    the prefix, so the server read the prefix as the prefix, not as a term.
+    """
     text = build_recall(graph=query_graph, **kwargs)
     body = client.query(text)
     assert "results" in body
+    assert ("explain" in body["results"]) is kwargs.get("explain", False)
 
 
 @pytest.mark.parametrize(
@@ -765,6 +820,8 @@ def test_every_recall_the_builder_emits_parses(kwargs, client, query_graph):
             "top": 3,
             "depth": 1,
         },
+        {"until": When("clockprobe"), "explain": True},
+        {"since": date(2023, 5, 7), "explain": True},
     ],
 )
 @pytest.mark.integration
@@ -774,11 +831,13 @@ def test_every_bounded_recall_the_builder_emits_parses(kwargs, client, query_gra
     A bound is a time written as a remember's is, or a when in parentheses.
     The when is the form only a server can vouch for: its clock glued on with a
     colon, a recall's own clauses inside the parentheses, and one on each bound
-    of the same recall.
+    of the same recall. Behind the explain prefix, the query's ``explain``
+    block comes back, and the server read the prefix as the prefix.
     """
     text = build_recall(["barometer"], graph=query_graph, **kwargs)
     body = client.query(text)
     assert "results" in body
+    assert ("explain" in body["results"]) is kwargs.get("explain", False)
 
 
 @pytest.mark.integration
@@ -861,6 +920,8 @@ def test_the_vector_placeholder_is_really_bound_not_ignored(client, query_graph)
         {"with_vector": True},
         {"topics": ["weather"], "entities": ["barometer"]},
         {"topics": ["weather"], "top": 3, "depth": 2},
+        {"topics": ["weather"], "explain": True},
+        {"with_vector": True, "explain": True},
     ],
 )
 @pytest.mark.integration
@@ -871,7 +932,8 @@ def test_a_recall_seeded_without_keywords_parses(kwargs, client, query_graph, en
     seed, and builds ``recall@2 topic:weather`` (or ``vec:$v``, or
     ``entity:...``). If the grammar disagreed, ``client.recall(topics=[...])``
     and ``client.recall(vector=[...])`` would need a keyword the caller does
-    not mean. Those are pure anchor search and pure semantic search.
+    not mean. Those are pure anchor search and pure semantic search. Behind
+    the explain prefix, each is the same recall, explained.
     """
     text = build_recall(graph=query_graph, **kwargs)
     parameters = (

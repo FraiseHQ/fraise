@@ -34,6 +34,10 @@
 // ordinary [CommandNode]. What a bound may hold is checked on that command once
 // it is parsed.
 //
+// A recall may open with the explain prefix, which its [RecallCommandNode]
+// holds. No other command takes it, and neither does a bound's parentheses: a
+// when answers with a time and has no ranking to explain.
+//
 // This package owns only the grammar. The query layer reads commands through
 // their accessors and enforces the configured limits. Vectors never appear in
 // the query text. A vec:$name clause looks its vector up in the params map

@@ -27,9 +27,11 @@ package server
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,6 +40,7 @@ import (
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/hash"
+	"github.com/FraiseHQ/fraise/internal/query"
 	"github.com/FraiseHQ/fraise/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
@@ -478,18 +481,24 @@ func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
 
 // readBody is a read's 200 response as a client decodes it: the result, with
 // the time a when answers with and the times each fact was given, and the
-// warnings beside it.
+// warnings beside it. Of an explained recall's blocks it reads what the
+// temporal clauses add: each hit's recency factor and the answer of each when
+// a bound read.
 type readBody struct {
 	Results  readResults `json:"results"`
 	Warnings []string    `json:"warnings"`
 }
 
 type readResults struct {
-	Count int        `json:"count"`
-	Start string     `json:"start"`
-	End   string     `json:"end"`
-	Hits  []readHit  `json:"hits"`
-	When  *readWhens `json:"when"`
+	Count   int          `json:"count"`
+	Start   string       `json:"start"`
+	End     string       `json:"end"`
+	Hits    []readHit    `json:"hits"`
+	Explain *readExplain `json:"explain"`
+}
+
+type readExplain struct {
+	When *readWhens `json:"when"`
 }
 
 type readWhens struct {
@@ -498,10 +507,14 @@ type readWhens struct {
 }
 
 type readHit struct {
-	Value    string     `json:"value"`
-	Said     string     `json:"said"`
-	Occurred []readSpan `json:"occurred"`
-	Decay    float64    `json:"decay"`
+	Value    string          `json:"value"`
+	Said     string          `json:"said"`
+	Occurred []readSpan      `json:"occurred"`
+	Explain  *readHitExplain `json:"explain"`
+}
+
+type readHitExplain struct {
+	Decay float64 `json:"decay"`
 }
 
 type readSpan struct {
@@ -727,12 +740,15 @@ func TestQueryWhenOnAnEmptyGraphIsNoContent(t *testing.T) {
 	}
 }
 
-// TestExplainCarriesTheWhenItsBoundRead pins what explain adds for the
-// temporal clauses. Each hit carries decay, the recency factor its relevance
-// was scaled by. A recall whose bound holds a when carries that when's result
-// under when, keyed by the bound: the fact it matched and the time it gave.
-// The plain query route carries neither, so an ordinary response does not
-// grow.
+// TestExplainCarriesTheWhenItsBoundRead pins what an explained recall adds for
+// the temporal clauses. Each hit's block carries decay, the recency factor its
+// relevance was scaled by. A recall whose bound holds a when carries that
+// when's result under when in its own block, keyed by the bound: the fact it
+// matched and the time it gave. The nested when explains itself with the
+// recall, so its result carries its own blocks. The prefix asks for it on
+// /api/v1/q, and the deprecated alias answers the plain recall the same way.
+// The plain recall on /api/v1/q carries neither block, so an ordinary
+// response does not grow.
 func TestExplainCarriesTheWhenItsBoundRead(t *testing.T) {
 	const query = "recall@0 anna until:(when rested)"
 	marathon := readHit{
@@ -750,32 +766,46 @@ func TestExplainCarriesTheWhenItsBoundRead(t *testing.T) {
 		Occurred: []readSpan{{Start: "2023-05-09T00:00:00Z"}},
 	}
 	byValue := cmpopts.SortSlices(func(a, b readHit) bool { return a.Value < b.Value })
-	withoutDecay := cmpopts.IgnoreFields(readHit{}, "Decay")
-	s := newTrainingServer(t)
-
-	t.Run("explain", func(t *testing.T) {
-		got := s.read(t, "/api/v1/explain", query).Results
-
-		want := readResults{
-			Count: 2,
-			Hits:  []readHit{shoes, marathon},
-			When: &readWhens{Until: &readResults{
-				Count: 1,
-				Start: "2023-05-09T00:00:00Z",
-				Hits:  []readHit{rested},
-			}},
-		}
-		if diff := cmp.Diff(want, got, byValue, withoutDecay); diff != "" {
-			t.Errorf("explain results mismatch (-want +got):\n%s", diff)
-		}
-		for _, hit := range got.Hits {
-			if hit.Decay <= 0 || hit.Decay > 1 {
-				t.Errorf("hit %q decay = %v, want a recency factor in (0, 1]", hit.Value, hit.Decay)
+	withoutBlock := cmpopts.IgnoreFields(readHit{}, "Explain")
+	decayed := func(t *testing.T, hits []readHit) {
+		t.Helper()
+		for _, hit := range hits {
+			if hit.Explain == nil || hit.Explain.Decay <= 0 || hit.Explain.Decay > 1 {
+				t.Errorf("hit %q explain = %+v, want a block whose decay is a recency factor in (0, 1]", hit.Value, hit.Explain)
 			}
 		}
-	})
+	}
+	s := newTrainingServer(t)
 
-	t.Run("query", func(t *testing.T) {
+	explained := map[string]struct{ target, query string }{
+		"the prefix": {"/api/v1/q", "explain " + query},
+		"the alias":  {"/api/v1/explain", query},
+	}
+	for name, tc := range explained {
+		t.Run(name, func(t *testing.T) {
+			got := s.read(t, tc.target, tc.query).Results
+
+			want := readResults{
+				Count: 2,
+				Hits:  []readHit{shoes, marathon},
+				Explain: &readExplain{When: &readWhens{Until: &readResults{
+					Count:   1,
+					Start:   "2023-05-09T00:00:00Z",
+					Hits:    []readHit{rested},
+					Explain: &readExplain{},
+				}}},
+			}
+			if diff := cmp.Diff(want, got, byValue, withoutBlock); diff != "" {
+				t.Errorf("explained results mismatch (-want +got):\n%s", diff)
+			}
+			decayed(t, got.Hits)
+			if got.Explain != nil && got.Explain.When != nil && got.Explain.When.Until != nil {
+				decayed(t, got.Explain.When.Until.Hits)
+			}
+		})
+	}
+
+	t.Run("plain", func(t *testing.T) {
 		got := s.read(t, "/api/v1/q", query).Results
 
 		want := readResults{Count: 2, Hits: []readHit{shoes, marathon}}
@@ -785,9 +815,10 @@ func TestExplainCarriesTheWhenItsBoundRead(t *testing.T) {
 	})
 }
 
-// TestExplainAcceptsAWhen pins that explain serves every read. A when ranks
-// as the recall it runs, so it has a ranking to explain, and its answer comes
-// back with it. A remember stays refused: probing a ranking never writes.
+// TestExplainAcceptsAWhen pins that the deprecated alias serves every read. A
+// when ranks as the recall it runs, so the alias explains it as that recall,
+// and its answer comes back with it. A remember stays refused: probing a
+// ranking never writes.
 func TestExplainAcceptsAWhen(t *testing.T) {
 	s := newTrainingServer(t)
 
@@ -796,11 +827,293 @@ func TestExplainAcceptsAWhen(t *testing.T) {
 	if got.Start != "2023-05-07T00:00:00Z" || got.End != "2023-05-08T00:00:00Z" {
 		t.Errorf("explained when answered %q to %q, want 7 May to 8 May 2023", got.Start, got.End)
 	}
-	if len(got.Hits) != 1 || got.Hits[0].Decay <= 0 {
+	if len(got.Hits) != 1 || got.Hits[0].Explain == nil || got.Hits[0].Explain.Decay <= 0 {
 		t.Errorf("explained when hits = %+v, want its one fact with a recency factor", got.Hits)
 	}
 	if w := s.do(http.MethodPost, "/api/v1/explain", `{"query":"remember@0 'anna slept' said:'2023-05-10'"}`); w.Code != http.StatusBadRequest {
 		t.Errorf("explaining a remember: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+// explainFacts are the facts the explain tests recall from: two filed under
+// anna, one of them holding the word invoice. explainedRecall seeds from that
+// match and runs the anchor round through anna, so its envelope carries every
+// key an explained recall can.
+var explainFacts = []string{
+	`remember@0 'anna sent the invoice' entity:anna`,
+	`remember@0 'anna paid the rent' entity:anna`,
+}
+
+const explainedRecall = "recall@0 invoice entity:anna depth:2"
+
+// seedExplainFacts writes explainFacts to graph 0 of s.
+func seedExplainFacts(t *testing.T, s *Server[uint64, float32]) {
+	t.Helper()
+	for _, q := range explainFacts {
+		body, _ := json.Marshal(HandleQueryRequest[float32]{Query: q})
+		if w := s.do(http.MethodPost, "/api/v1/q", string(body)); w.Code != http.StatusOK {
+			t.Fatalf("seeding %q: status = %d, want %d (body: %s)", q, w.Code, http.StatusOK, w.Body.String())
+		}
+	}
+}
+
+// postQuery sends q to target on s and returns the recorder.
+func postQuery(t *testing.T, s *Server[uint64, float32], target, q string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(HandleQueryRequest[float32]{Query: q})
+	if err != nil {
+		t.Fatalf("encoding %q: %v", q, err)
+	}
+	return s.do(http.MethodPost, target, string(body))
+}
+
+// explainKeys reads which explain keys a recall response carries: the query
+// block's, nil without one, and each hit's block's, nil for a hit without
+// one. The values move with the data and the clock. The keys are the
+// envelope's contract.
+func explainKeys(t *testing.T, body []byte) ([]string, [][]string) {
+	t.Helper()
+	var resp struct {
+		Results struct {
+			Hits []struct {
+				Explain map[string]json.RawMessage `json:"explain"`
+			} `json:"hits"`
+			Explain map[string]json.RawMessage `json:"explain"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("recall body is not valid JSON: %v (body: %s)", err, body)
+	}
+	keys := func(m map[string]json.RawMessage) []string {
+		if m == nil {
+			return nil
+		}
+		return slices.Sorted(maps.Keys(m))
+	}
+	hits := make([][]string, len(resp.Results.Hits))
+	for i, hit := range resp.Results.Hits {
+		hits[i] = keys(hit.Explain)
+	}
+	return keys(resp.Results.Explain), hits
+}
+
+// TestQueryExplainCarriesTheBlocks pins which recalls answer in the explained
+// envelope. On /api/v1/q a statement explains by its own prefix: each hit
+// carries its block, seed, decay and contributions, and the results the
+// query's, whose admission bars are there only when the anchor round ran. A
+// plain recall carries no explain key at either level, so it costs no
+// response tokens. The deprecated alias answers a recall as the prefixed
+// statement, with the prefix written or not.
+func TestQueryExplainCarriesTheBlocks(t *testing.T) {
+	hit := []string{"contributions", "decay", "seed"}
+	cases := map[string]struct {
+		target string
+		query  string
+		recall []string
+		hit    []string
+	}{
+		"the prefix explains on /q": {
+			target: "/api/v1/q", query: "explain " + explainedRecall,
+			recall: []string{"admission", "background", "seeds", "terms", "timings"}, hit: hit,
+		},
+		"a plain recall on /q carries no block": {
+			target: "/api/v1/q", query: explainedRecall,
+		},
+		"a recall naming no anchor runs no round and has no bars": {
+			target: "/api/v1/q", query: "explain recall@0 invoice",
+			recall: []string{"background", "seeds", "terms", "timings"}, hit: hit,
+		},
+		"the alias explains a plain recall": {
+			target: "/api/v1/explain", query: explainedRecall,
+			recall: []string{"admission", "background", "seeds", "terms", "timings"}, hit: hit,
+		},
+		"the alias explains a prefixed recall": {
+			target: "/api/v1/explain", query: "explain " + explainedRecall,
+			recall: []string{"admission", "background", "seeds", "terms", "timings"}, hit: hit,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newTestServer(t)
+			seedExplainFacts(t, s)
+
+			w := postQuery(t, s, tc.target, tc.query)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+			}
+
+			recall, hits := explainKeys(t, w.Body.Bytes())
+			if len(hits) == 0 {
+				t.Fatalf("no hits, want the invoice match at least (body: %s)", w.Body.String())
+			}
+			if diff := cmp.Diff(tc.recall, recall); diff != "" {
+				t.Errorf("results.explain keys mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(slices.Repeat([][]string{tc.hit}, len(hits)), hits); diff != "" {
+				t.Errorf("hits[].explain keys mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// explainedHit is a hit as a client decodes it from an explained recall.
+type explainedHit struct {
+	Value   string                     `json:"value"`
+	Score   float32                    `json:"score"`
+	Explain *query.HitExplain[float32] `json:"explain"`
+}
+
+// explainedBody is an explained recall's response as a client decodes it,
+// into the wire types the server encodes from.
+type explainedBody struct {
+	Results struct {
+		Count   int                                   `json:"count"`
+		Hits    []explainedHit                        `json:"hits"`
+		Explain *query.RecallExplain[uint64, float32] `json:"explain"`
+	} `json:"results"`
+}
+
+// TestExplainAliasAnswersAsThePrefix pins the deprecated alias to the
+// statement that replaces it. A recall sent to /api/v1/explain, with the
+// prefix or without, answers exactly as the prefixed recall does on
+// /api/v1/q: the same hits, seeds, contributions, rate, bars and terms. So a
+// caller moving off the alias reads the same envelope. Only the scores and the
+// recency factors, which decay moves between requests, and the timings, which
+// are wall time, are left out.
+func TestExplainAliasAnswersAsThePrefix(t *testing.T) {
+	decode := func(t *testing.T, w *httptest.ResponseRecorder) explainedBody {
+		t.Helper()
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+		}
+		var body explainedBody
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("recall body is not valid JSON: %v (body: %s)", err, w.Body.String())
+		}
+		return body
+	}
+	cases := map[string]struct{}{
+		explainedRecall:              {},
+		"explain " + explainedRecall: {},
+	}
+
+	for q := range cases {
+		t.Run(q, func(t *testing.T) {
+			s := newTestServer(t)
+			seedExplainFacts(t, s)
+
+			want := decode(t, postQuery(t, s, "/api/v1/q", "explain "+explainedRecall))
+			got := decode(t, postQuery(t, s, "/api/v1/explain", q))
+
+			if diff := cmp.Diff(want, got,
+				cmpopts.IgnoreFields(explainedHit{}, "Score"),
+				cmpopts.IgnoreFields(query.HitExplain[float32]{}, "Decay"),
+				cmpopts.IgnoreFields(query.RecallExplain[uint64, float32]{}, "Timings"),
+			); diff != "" {
+				t.Errorf("alias answer mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestExplainAnswersWithoutAnEnvelope pins the explained recalls and the
+// misplaced prefixes that answer with no envelope at all. A prefix before a
+// remember or a when is a parse error on either route, blamed at the verb's
+// column, since only a recall has a ranking to explain: a remember stores a
+// fact and a when answers with a time. The alias rejects a write it
+// is sent plainly, so probing a ranking there never mutates a graph. An
+// explained recall of a graph that holds nothing is a 204 like any recall,
+// on either route: there is nothing to explain.
+func TestExplainAnswersWithoutAnEnvelope(t *testing.T) {
+	const (
+		prefixedWrite = `{"error":"parse error at column 16: \"remember\" has no ranking to explain: the explain prefix stands only before recall — drop the prefix"}`
+		prefixedWhen  = `{"error":"parse error at column 12: \"when\" answers with a time and has no ranking to explain: the explain prefix stands only before recall — drop the prefix"}`
+	)
+	cases := map[string]struct {
+		target string
+		query  string
+		status int
+		body   string
+	}{
+		"a prefixed remember on /q": {
+			target: "/api/v1/q", query: "explain remember@0 'anna sent the invoice'",
+			status: http.StatusBadRequest, body: prefixedWrite,
+		},
+		"a prefixed remember on the alias": {
+			target: "/api/v1/explain", query: "explain remember@0 'anna sent the invoice'",
+			status: http.StatusBadRequest, body: prefixedWrite,
+		},
+		"a prefixed when on /q": {
+			target: "/api/v1/q", query: "explain when invoice",
+			status: http.StatusBadRequest, body: prefixedWhen,
+		},
+		"a prefixed when on the alias": {
+			target: "/api/v1/explain", query: "explain when invoice",
+			status: http.StatusBadRequest, body: prefixedWhen,
+		},
+		"a remember on the alias": {
+			target: "/api/v1/explain", query: "remember@0 'anna sent the invoice'",
+			status: http.StatusBadRequest, body: `{"error":"explain applies to recall queries only"}`,
+		},
+		"an explained recall of an empty graph on /q": {
+			target: "/api/v1/q", query: "explain " + explainedRecall,
+			status: http.StatusNoContent,
+		},
+		"a recall of an empty graph on the alias": {
+			target: "/api/v1/explain", query: explainedRecall,
+			status: http.StatusNoContent,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := newTestServer(t)
+
+			w := postQuery(t, s, tc.target, tc.query)
+
+			if w.Code != tc.status {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, tc.status, w.Body.String())
+			}
+			if diff := cmp.Diff(tc.body, strings.TrimSpace(w.Body.String())); diff != "" {
+				t.Errorf("body mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestExplainStaysWithItsRequest pins that the explain flag never leaks
+// between requests. The plan cache hands one query object to every equal
+// request, and the alias raises the flag on a request's stream after
+// planning. So a recall answers in the envelope its own statement and route
+// ask for, whatever the requests before it asked: explained on the alias or
+// with the prefix, plain otherwise, in any order.
+func TestExplainStaysWithItsRequest(t *testing.T) {
+	s := newTestServer(t)
+	seedExplainFacts(t, s)
+	requests := []struct{ target, query string }{
+		{"/api/v1/q", "explain " + explainedRecall},
+		{"/api/v1/q", explainedRecall},
+		{"/api/v1/explain", explainedRecall},
+		{"/api/v1/q", explainedRecall},
+		{"/api/v1/q", "explain " + explainedRecall},
+		{"/api/v1/explain", "explain " + explainedRecall},
+		{"/api/v1/q", explainedRecall},
+	}
+	want := []bool{true, false, true, false, true, true, false}
+
+	got := make([]bool, len(requests))
+	for i, r := range requests {
+		w := postQuery(t, s, r.target, r.query)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s %q: status = %d, want %d (body: %s)", r.target, r.query, w.Code, http.StatusOK, w.Body.String())
+		}
+		recall, _ := explainKeys(t, w.Body.Bytes())
+		got[i] = recall != nil
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("explained per request mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -891,7 +1204,9 @@ func captureStdout(t *testing.T, fn func()) string {
 // DEBUG, where an operator has opted in. That covers the errors too: a parse
 // error that quotes the query, and a write that fails at commit, which the
 // scheduler and the handler log at Error. The DEBUG row keeps the marker visible, so the INFO row's absence
-// comes from the level and not from a query that never ran.
+// comes from the level and not from a query that never ran. The deprecated
+// explain alias warns once per request, at any level, and the warning names
+// the replacement, never the query.
 func TestQueryLogsCarryShapeNotContent(t *testing.T) {
 	const private = "zzprivate"
 
@@ -919,6 +1234,9 @@ func TestQueryLogsCarryShapeNotContent(t *testing.T) {
 				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 `+private+`"}`); w.Code != http.StatusOK {
 					t.Fatalf("recall: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
 				}
+				if w := s.do(http.MethodPost, "/api/v1/explain", `{"query":"recall@0 `+private+`"}`); w.Code != http.StatusOK {
+					t.Fatalf("alias recall: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
 				// The second quoted phrase is unexpected, and the parse error
 				// quotes it back.
 				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna' '`+private+` second fact'"}`); w.Code != http.StatusBadRequest {
@@ -942,6 +1260,10 @@ func TestQueryLogsCarryShapeNotContent(t *testing.T) {
 				if !strings.Contains(got, want) {
 					t.Errorf("log is missing %q; log:\n%s", want, got)
 				}
+			}
+			deprecation := `level=WARN msg="Deprecated explain endpoint called: send explain recall to /api/v1/q instead" removal=0.5.0`
+			if n := strings.Count(got, deprecation); n != 1 {
+				t.Errorf("log carries the alias deprecation %d times, want once for the one alias request; log:\n%s", n, got)
 			}
 		})
 	}

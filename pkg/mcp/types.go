@@ -34,11 +34,12 @@ import (
 // bridge forwards its input as the request body and returns the response body
 // as its output. pkg/server and internal/query define the wire contract. The
 // request is a HandleQueryRequest. A recall answers {"results": QueryResult}
-// and a write answers {"status": "ok"}, each with optional warnings.
-// Explain-mode fields (background, the answer of each when a bound read,
-// per-hit contributions and decay) belong to /api/v1/explain, which the bridge
-// does not call. If either wire shape moves, these move with it in the same
-// change.
+// and a write answers {"status": "ok"}, each with optional warnings. A recall
+// written with the explain prefix answers in the explained envelope, an
+// explain block on each hit and one on the results, the answer of each when
+// its bounds read among it, and the mirrors keep both, so a programmatic
+// client reads the ranking's account from the structured content. If either
+// wire shape moves, these move with it in the same change.
 
 // parametersSchema mirrors HandleQueryRequest.Parameters. Vector placeholders
 // (vec:$name) are bound out of band by name, so large vector literals never
@@ -72,11 +73,123 @@ var intervalSchema = &jsonschema.Schema{
 	Required: []string{"start"},
 }
 
-// hitSchema mirrors Hit.MarshalJSON: the stored fact, its three times, and its
-// score (relevance after recency decay). Only the write time is always there.
-// The other two are the ones the writer gave, so a fact given neither carries
-// neither. The score is on the scorer's own scale. It is an ordering, not a
-// probability, and nothing caps it at 1.0.
+// contributionSchema mirrors query.HitContribution: one source's sighting of
+// a hit, with that source's raw mass and, through an anchor, the anchor it
+// came through.
+var contributionSchema = &jsonschema.Schema{
+	Type: "object",
+	Properties: map[string]*jsonschema.Schema{
+		"source": {
+			Type:        "string",
+			Description: "The source that saw the fact: text, vector, graph or anchor.",
+		},
+		"score": {
+			Type:        "number",
+			Description: "That source's raw mass: the match mass for text, the similarity for vector, the funding anchor's whole observed mass for graph, one unit for anchor.",
+		},
+		"rank": {
+			Type:        "integer",
+			Description: "The fact's place in the source's ranking, 0 first.",
+		},
+		"via": {
+			Type:        "string",
+			Description: "The topic or entity a graph or anchor sighting came through.",
+		},
+		"degree": {
+			Type:        "integer",
+			Description: "How many facts are filed under that anchor.",
+		},
+		"count": {
+			Type:        "integer",
+			Description: "How many seeds funded the sighting.",
+		},
+		"named": {
+			Type:        "boolean",
+			Description: "True when the statement named the anchor, which then passes its mass on without a fair share.",
+		},
+		"held": {
+			Type:        "number",
+			Description: "On a text sighting, the share of the query's information the fact's own words hold.",
+		},
+	},
+	Required: []string{"source", "score", "rank", "count"},
+}
+
+// hitExplainSchema mirrors query.HitExplain: whether the hit seeded the
+// recall, the recency factor its relevance was decayed by, and the
+// contributions its relevance was folded from.
+var hitExplainSchema = &jsonschema.Schema{
+	Type:        "object",
+	Description: "Present only on an explained recall: how this fact reached the ranking.",
+	Properties: map[string]*jsonschema.Schema{
+		"seed": {
+			Type:        "boolean",
+			Description: "Whether the fact seeded the recall: a top text or vector match, or a member of a named anchor when anchors alone seed. A fact that is no seed and has graph contributions alone came in through an anchor the seeds funded.",
+		},
+		"decay": {
+			Type:        "number",
+			Description: "The recency factor the fact's relevance was scaled by to give its score, in (0, 1]: it tells a fact ranked low for its age from one ranked low for its match.",
+		},
+		"contributions": {
+			Type:        "array",
+			Description: "One entry per sighting of the fact, the ingredients its score was folded from.",
+			Items:       contributionSchema,
+		},
+	},
+	Required: []string{"seed", "decay", "contributions"},
+}
+
+// recallExplainSchema mirrors query.RecallExplain: what an explained recall
+// measured about its query as a whole, and what the whens in its bounds
+// answered. A nested answer is a results envelope of its own, so when refers
+// back to the results schema rather than holding a copy: a schema is a tree,
+// and a nested when explains itself as its recall does, blocks and all.
+var recallExplainSchema = &jsonschema.Schema{
+	Type:        "object",
+	Description: "Present only on an explained recall: what the search measured about the query as a whole.",
+	Properties: map[string]*jsonschema.Schema{
+		"background": {
+			Type:        "number",
+			Description: "The background rate: seed mass per unit of anchor degree over every anchor the round touched, 0 when no round ran.",
+		},
+		"admission": {
+			Type:                 "object",
+			Description:          "Per depth, 1 and 2, the bar per unit of degree an anchor the statement did not name had to exceed to pass its mass on. Absent when no anchor round ran.",
+			AdditionalProperties: &jsonschema.Schema{Type: "number"},
+		},
+		"seeds": {
+			Type:                 "object",
+			Description:          "How many distinct facts each source (text, vector, anchor, graph) seeded.",
+			AdditionalProperties: &jsonschema.Schema{Type: "integer"},
+		},
+		"terms": {
+			Type:        "array",
+			Description: "The query's terms as the text index read them, after stop-word removal and stemming, including terms no fact holds.",
+			Items:       &jsonschema.Schema{Type: "string"},
+		},
+		"timings": {
+			Type:                 "object",
+			Description:          "Wall time each source took, in nanoseconds.",
+			AdditionalProperties: &jsonschema.Schema{Type: "integer"},
+		},
+		"when": {
+			Type:        "object",
+			Description: "Present only when a since:/until: bound holds a when: the results that when answered, under the bound that holds it, showing which fact the bound was read from and the time it gave.",
+			Properties: map[string]*jsonschema.Schema{
+				"since": {Ref: "#/properties/results"},
+				"until": {Ref: "#/properties/results"},
+			},
+		},
+	},
+	Required: []string{"background", "seeds", "terms", "timings"},
+}
+
+// hitSchema mirrors Hit.MarshalJSON: the stored fact, its three times, its
+// score (relevance after recency decay) and, on an explained recall, its
+// explain block. Only the write time is always there. The other two are the
+// ones the writer gave, so a fact given neither carries neither. The score is
+// on the scorer's own scale. It is an ordering, not a probability, and nothing
+// caps it at 1.0.
 var hitSchema = &jsonschema.Schema{
 	Type: "object",
 	Properties: map[string]*jsonschema.Schema{
@@ -103,6 +216,7 @@ var hitSchema = &jsonschema.Schema{
 			Type:        "number",
 			Description: "Raw relevance in the scorer's own units: an ordering, not a probability, with no upper bound. When anchors alone seed the search it is one unit per named anchor the fact is filed under, decayed by age.",
 		},
+		"explain": hitExplainSchema,
 	},
 	Required: []string{"value", "timestamp", "score"},
 }
@@ -133,7 +247,7 @@ var (
 		Properties: map[string]*jsonschema.Schema{
 			"query": {
 				Type:        "string",
-				Description: "A full FQL recall: search terms, then optional topic:/entity: anchors (beside terms they lift the facts filed under them through the graph and filter nothing, so the recall runs at depth:1 at least), top:N result cap, depth:0-2 retrieval lane (the graph is searched only beside a topic:/entity:), since:/until: time bounds, vec:$name for an optional vector seed. A bare term or value is letters and digits only; quote anything else: 'e-mail', topic:'machine-learning'. A search term that spells a keyword (when, said, top, since...) is quoted too: 'when'. Example: recall@2 barometer storm topic:weather top:5 depth:1 since:7d. A bound keeps the facts that happened on its side of a time: since: from it on, until: before it. The time is a span back from now (since:7d), a quoted date, month or year (since:'2026-01-15', until:'2026-02', since:'2025'), or a when in parentheses, which is the time another fact holds: until:(when 'the regatta') keeps what happened before the regatta began, and since:(when 'the regatta') what happened once it was over. A when searches as a recall does and reads its best match. It reads when that fact happened unless it names another of its times, as in since:(when:said 'the regatta') or when:written. A when can also be the whole query: when 'the regatta' answers with the time itself and the fact it was read from. It takes no @N: in a bound it reads the graph of its recall, and on its own the default graph. Anchors alone, with no terms and no vec:, seed the search with every fact filed under those topics/entities, scored one unit per named anchor and decayed by age, so newest first under one anchor (depth: has no effect). Example: recall@2 topic:weather top:20",
+				Description: "A full FQL recall: search terms, then optional topic:/entity: anchors (beside terms they lift the facts filed under them through the graph and filter nothing, so the recall runs at depth:1 at least), top:N result cap, depth:0-2 retrieval lane (the graph is searched only beside a topic:/entity:), since:/until: time bounds, vec:$name for an optional vector seed. A bare term or value is letters and digits only; quote anything else: 'e-mail', topic:'machine-learning'. A search term that spells a keyword (when, said, top, since...) is quoted too: 'when'. Example: recall@2 barometer storm topic:weather top:5 depth:1 since:7d. A bound keeps the facts that happened on its side of a time: since: from it on, until: before it. The time is a span back from now (since:7d), a quoted date, month or year (since:'2026-01-15', until:'2026-02', since:'2025'), or a when in parentheses, which is the time another fact holds: until:(when 'the regatta') keeps what happened before the regatta began, and since:(when 'the regatta') what happened once it was over. A when searches as a recall does and reads its best match. It reads when that fact happened unless it names another of its times, as in since:(when:said 'the regatta') or when:written. A when can also be the whole query: when 'the regatta' answers with the time itself and the fact it was read from. It takes no @N: in a bound it reads the graph of its recall, and on its own the default graph. Anchors alone, with no terms and no vec:, seed the search with every fact filed under those topics/entities, scored one unit per named anchor and decayed by age, so newest first under one anchor (depth: has no effect). Example: recall@2 topic:weather top:20. Prefix a recall with explain to have the result also say how the ranking was reached; it ranks exactly as the recall it prefixes, and a when takes no prefix. Example: explain recall@2 barometer topic:weather depth:2",
 			},
 			"parameters": parametersSchema,
 		},
@@ -172,6 +286,7 @@ var (
 						Format:      "date-time",
 						Description: "Where that time ends, itself excluded: equal to start for a single moment, absent for a time that has not ended.",
 					},
+					"explain": recallExplainSchema,
 				},
 				Required: []string{"count", "hits"},
 			},
@@ -182,31 +297,79 @@ var (
 )
 
 // Hit is one recalled fact as the query endpoint serializes it
-// (Hit.MarshalJSON in internal/query): the stored value, its times and its raw
-// score. Said and Occurred are the times its remember gave it, and stay zero
-// for a fact given none. The server leaves them off the wire then, and
-// omitzero and omitempty leave them off the structured output the same way.
-// Scores are float64 whatever the daemon's precision. JSON numbers decode to
-// float64, and the bridge never does arithmetic on them.
+// (Hit.MarshalJSON in internal/query): the stored value, its times, its raw
+// score and, on an explained recall, its explain block. Said and Occurred are
+// the times its remember gave it, and stay zero for a fact given none. The
+// server leaves them off the wire then, and omitzero and omitempty leave them
+// off the structured output the same way. Scores are float64 whatever the
+// daemon's precision. JSON numbers decode to float64, and the bridge never
+// does arithmetic on them.
 type Hit struct {
 	Value     string                `json:"value"`
 	Timestamp time.Time             `json:"timestamp"`
 	Said      time.Time             `json:"said,omitzero"`
 	Occurred  []containers.Interval `json:"occurred,omitempty"`
 	Score     float64               `json:"score"`
+	Explain   *HitExplain           `json:"explain,omitempty"`
 }
 
-// Result is the results envelope of a recall response: the hit count and the
-// ranked hits, best first. Start and End are the time a when answers with, an
-// interval that holds Start and excludes End. A recall leaves both zero, and
-// End alone is zero for an answer that has not ended. Only reads carry a
-// Result. A write is acknowledged with a status token instead
-// (RememberOutput).
+// HitExplain is a hit's explain block (query.HitExplain): whether the hit
+// seeded the recall, the recency factor its relevance was decayed by, and the
+// contributions its relevance was folded from. Only an explained recall
+// carries one.
+type HitExplain struct {
+	Seed          bool           `json:"seed"`
+	Decay         float64        `json:"decay"`
+	Contributions []Contribution `json:"contributions"`
+}
+
+// Contribution is one source's sighting of a hit (query.HitContribution). The
+// unsigned integers of the wire type decode to int, and masses to float64,
+// as a hit's score does.
+type Contribution struct {
+	Source string  `json:"source"`
+	Score  float64 `json:"score"`
+	Rank   int     `json:"rank"`
+	Via    string  `json:"via,omitempty"`
+	Degree int     `json:"degree,omitempty"`
+	Count  int     `json:"count"`
+	Named  bool    `json:"named,omitempty"`
+	Held   float64 `json:"held,omitempty"`
+}
+
+// RecallExplain is the results' explain block (query.RecallExplain): what an
+// explained recall measured about its query as a whole, and what the whens in
+// its bounds answered. Admission is keyed by depth, seeds and timings by
+// source name, and timings are nanoseconds, as the daemon writes them.
+type RecallExplain struct {
+	Background float64                  `json:"background"`
+	Admission  map[int]float64          `json:"admission,omitempty"`
+	Seeds      map[string]int           `json:"seeds"`
+	Terms      []string                 `json:"terms"`
+	Timings    map[string]time.Duration `json:"timings"`
+	When       *NestedResults           `json:"when,omitempty"`
+}
+
+// NestedResults is what the whens in an explained recall's bounds answered
+// (query.NestedResults), each under the bound that holds it. A nested answer
+// is a results envelope of its own, explained as its recall is.
+type NestedResults struct {
+	Since *Result `json:"since,omitempty"`
+	Until *Result `json:"until,omitempty"`
+}
+
+// Result is the results envelope of a recall response: the hit count, the
+// ranked hits, best first, and on an explained recall its explain block. Start
+// and End are the time a when answers with, an interval that holds Start and
+// excludes End. A recall leaves both zero, and End alone is zero for an answer
+// that has not ended. Only reads carry a Result. A write is acknowledged with
+// a status token instead (RememberOutput).
 type Result struct {
-	Count int       `json:"count"`
-	Hits  []Hit     `json:"hits"`
-	Start time.Time `json:"start,omitzero"`
-	End   time.Time `json:"end,omitzero"`
+	Count   int            `json:"count"`
+	Hits    []Hit          `json:"hits"`
+	Start   time.Time      `json:"start,omitzero"`
+	End     time.Time      `json:"end,omitzero"`
+	Explain *RecallExplain `json:"explain,omitempty"`
 }
 
 // RecallInput is the recall tool's argument payload, forwarded verbatim as the

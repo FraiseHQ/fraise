@@ -78,6 +78,60 @@ _HITS = {
     }
 }
 
+# The same recall explained: the daemon adds a block to each hit and one to
+# the results. The model's text is the same either way.
+_EXPLAINED_HITS = {
+    "results": {
+        "count": 2,
+        "hits": [
+            {
+                "value": "the barometer falls before the storm",
+                "timestamp": "2026-10-01T09:00:00Z",
+                "score": 1.23456,
+                "explain": {
+                    "seed": True,
+                    "decay": 1.0,
+                    "contributions": [
+                        {"source": "text", "score": 0.61, "rank": 0, "count": 1},
+                    ],
+                },
+            },
+            {
+                "value": "the harbour closes in a gale",
+                "timestamp": "2026-09-30T09:00:00Z",
+                "score": 0.5,
+                "explain": {
+                    "seed": False,
+                    "decay": 0.5,
+                    "contributions": [
+                        {
+                            "source": "graph",
+                            "score": 0.61,
+                            "rank": 0,
+                            "via": "weather",
+                            "degree": 2,
+                            "count": 1,
+                        },
+                    ],
+                },
+            },
+        ],
+        "explain": {
+            "background": 0.3,
+            "admission": {"1": 0.6, "2": 0.3},
+            "seeds": {"anchor": 0, "graph": 0, "text": 1, "vector": 1},
+            "terms": ["storm"],
+            "timings": {"anchor": 0, "graph": 3042, "text": 63917, "vector": 21000},
+        },
+    }
+}
+
+
+@pytest.fixture
+def explained_hits():
+    """The two-hit recall as the daemon answers it explained."""
+    return _EXPLAINED_HITS
+
 
 @pytest.fixture
 def fraise_client():

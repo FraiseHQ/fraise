@@ -65,7 +65,7 @@ func newWhen(clock containers.Clock, id uint8, top int, keywords ...string) *que
 func TestWhenHash(t *testing.T) {
 	w := newWhen(containers.Said, 3, 1, "race")
 
-	const want = "H(c=1|r=H(g=3|kw=4:race|en=|to=|d=0|t=1|s=|u=|vec=H()))"
+	const want = "H(c=1|r=H(g=3|kw=4:race|en=|to=|d=0|t=1|s=|u=|vec=H()|ex=0))"
 	if diff := cmp.Diff(want, w.Hash(fakeHasher{})); diff != "" {
 		t.Errorf("Hash() mismatch (-want +got):\n%s", diff)
 	}
@@ -207,7 +207,9 @@ func timeline(t *testing.T) (graph.Graph[uint64, float32], *config.ConfigSet) {
 }
 
 // commit runs q the way a request does: parsed, planned, then committed
-// against g. It returns the committed stream.
+// against g. explain asks for the explain blocks as the deprecated alias does,
+// on top of what the statement's own prefix asks for, never in place of it. It
+// returns the committed stream.
 func commit(t *testing.T, g graph.Graph[uint64, float32], cfg *config.ConfigSet, q string, explain bool) *query.Stream[uint64, float32] {
 	t.Helper()
 	parsed, _, err := query.Parse[uint64, float32](q, nil, cfg)
@@ -218,7 +220,9 @@ func commit(t *testing.T, g graph.Graph[uint64, float32], cfg *config.ConfigSet,
 	if err != nil {
 		t.Fatalf("Plan(%q) = %v, want nil", q, err)
 	}
-	stream.Explain = explain
+	if explain {
+		stream.Explain = true
+	}
 	if err := stream.Commit(g); err != nil {
 		t.Fatalf("Commit(%q) = %v, want nil", q, err)
 	}
@@ -448,11 +452,13 @@ func TestRecallWithAnUnansweredBoundReturnsNoHits(t *testing.T) {
 	}
 }
 
-// TestRecallExplainsTheWhenItsBoundRead pins the when resolution in explain
-// mode. The recall's result carries the result of each nested query under the
-// bound that holds it: the fact the when matched and the time it gave. Each
-// hit carries the recency factor its relevance was scaled by. Without explain
-// the result carries neither, so an ordinary response does not grow.
+// TestRecallExplainsTheWhenItsBoundRead pins the when resolution on an
+// explained recall. The recall's explain block carries the result of each
+// nested query under the bound that holds it: the fact the when matched and
+// the time it gave. The nested query explains itself with the recall, so its
+// hits carry their own blocks. Each hit carries, in its block, the recency
+// factor its relevance was scaled by. A plain recall carries no block at
+// either level, so an ordinary response does not grow.
 func TestRecallExplainsTheWhenItsBoundRead(t *testing.T) {
 	type resolution struct {
 		Time containers.Interval
@@ -461,27 +467,35 @@ func TestRecallExplainsTheWhenItsBoundRead(t *testing.T) {
 	g, cfg := timeline(t)
 	for _, explain := range []bool{true, false} {
 		t.Run(fmt.Sprintf("explain=%v", explain), func(t *testing.T) {
-			stream := commit(t, g, cfg, "recall lap until:(when trip)", explain)
+			q := "recall lap until:(when trip)"
+			if explain {
+				q = "explain " + q
+			}
+			stream := commit(t, g, cfg, q, false)
 
 			if !explain {
-				if stream.Result.When != nil {
-					t.Errorf("Result.When = %+v without explain, want nil", stream.Result.When)
+				if stream.Result.Explain != nil {
+					t.Errorf("Result.Explain = %+v without explain, want nil", stream.Result.Explain)
 				}
 				for i, hit := range stream.Result.Hits {
-					if hit.Decay != 0 {
-						t.Errorf("Hits[%d].Decay = %v without explain, want 0 (omitted on the wire)", i, hit.Decay)
+					if hit.Explain != nil {
+						t.Errorf("Hits[%d].Explain = %+v without explain, want nil (omitted on the wire)", i, hit.Explain)
 					}
 				}
 				return
 			}
 
-			if stream.Result.When == nil || stream.Result.When.Until == nil {
-				t.Fatalf("Result.When = %+v, want the result of the when in until", stream.Result.When)
+			if stream.Result.Explain == nil {
+				t.Fatal("Result.Explain = nil, want the explain block of an explained recall")
 			}
-			if stream.Result.When.Since != nil {
-				t.Errorf("Result.When.Since = %+v, want nil: since holds no query", stream.Result.When.Since)
+			when := stream.Result.Explain.When
+			if when == nil || when.Until == nil {
+				t.Fatalf("Result.Explain.When = %+v, want the result of the when in until", when)
 			}
-			nested := stream.Result.When.Until
+			if when.Since != nil {
+				t.Errorf("Result.Explain.When.Since = %+v, want nil: since holds no query", when.Since)
+			}
+			nested := when.Until
 			want := resolution{
 				Time: containers.Interval{Start: may(10), End: may(17)},
 				Hits: []string{"lap trip spring"},
@@ -491,17 +505,26 @@ func TestRecallExplainsTheWhenItsBoundRead(t *testing.T) {
 				Hits: hitValues(nested),
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
-				t.Errorf("Result.When.Until mismatch (-want +got):\n%s", diff)
+				t.Errorf("Result.Explain.When.Until mismatch (-want +got):\n%s", diff)
 			}
-			if len(nested.Hits) == 1 && nested.Hits[0].Decay <= 0 {
-				t.Errorf("Result.When.Until.Hits[0].Decay = %v, want the when explained as its recall is", nested.Hits[0].Decay)
+			if nested.Explain == nil {
+				t.Errorf("Result.Explain.When.Until.Explain = nil, want the when explained as its recall is")
+			}
+			for i, hit := range nested.Hits {
+				if hit.Explain == nil || hit.Explain.Decay <= 0 {
+					t.Errorf("Result.Explain.When.Until.Hits[%d].Explain = %+v, want the when's hit explained with its recency factor", i, hit.Explain)
+				}
 			}
 			if len(stream.Result.Hits) == 0 {
 				t.Fatal("the recall returned no hits, want the facts before the trip")
 			}
 			for i, hit := range stream.Result.Hits {
-				if hit.Decay <= 0 || hit.Decay > 1 {
-					t.Errorf("Hits[%d].Decay = %v, want a recency factor in (0, 1]", i, hit.Decay)
+				if hit.Explain == nil {
+					t.Errorf("Hits[%d].Explain = nil, want the hit's block", i)
+					continue
+				}
+				if hit.Explain.Decay <= 0 || hit.Explain.Decay > 1 {
+					t.Errorf("Hits[%d].Explain.Decay = %v, want a recency factor in (0, 1]", i, hit.Explain.Decay)
 				}
 			}
 		})

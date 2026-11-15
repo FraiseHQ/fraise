@@ -92,6 +92,29 @@ def test_a_recall_with_terms_carries_the_vector_of_its_terms(
     )
 
 
+def test_an_explained_recall_carries_the_vector_of_its_terms(
+    server_over, fraise_client, embedder, vector, explained_hits, call_tool
+):
+    """The prefix is stepped over: its terms are encoded, the statement sent whole.
+
+    The daemon parses the prefix, so the statement reaches it as written, with
+    vec:$v appended and the vector of the recall's own terms bound beside it.
+    The model reads the same ranked facts as from the plain recall: the explain
+    blocks the daemon answers with are not rendered.
+    """
+    fraise_client.query.return_value = explained_hits
+    got = call_tool(server_over(), "recall", "explain recall storm topic:weather")
+    embedder.assert_called_once_with("storm")
+    fraise_client.query.assert_called_once_with(
+        "explain recall storm topic:weather vec:$v", parameters={"v": vector}
+    )
+    assert not got.is_error
+    assert got.content[0].text == (
+        "- the barometer falls before the storm (relevance 1.235)\n"
+        "- the harbour closes in a gale (relevance 0.500)"
+    )
+
+
 def test_a_remember_carries_the_vector_of_its_fact(
     server_over, fraise_client, embedder, vector, call_tool
 ):
@@ -168,6 +191,16 @@ def test_the_tools_take_one_fql_string_and_never_mention_vectors(
         assert list(tool.input_schema["properties"]) == ["query"]
         assert tool.input_schema["properties"]["query"]["type"] == "string"
         assert "vec" not in str(tool.description) + str(tool.input_schema)
+
+
+def test_the_recall_description_names_the_explain_prefix(server_over, list_tools):
+    """The recall tool says a recall may be written with the explain prefix.
+
+    A model learns the statements the tool accepts only from its description,
+    so the prefix is named there.
+    """
+    tools = {tool.name: tool for tool in list_tools(server_over())}
+    assert "explain recall" in str(tools["recall"].description)
 
 
 def test_an_embedding_failure_is_a_tool_error_naming_it(
