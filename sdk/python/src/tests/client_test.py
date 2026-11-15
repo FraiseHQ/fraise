@@ -558,6 +558,57 @@ def test_recall_query_phrase_overrides_keywords_for_embedding(
     )
 
 
+@pytest.mark.parametrize(
+    "kwargs, query, parameters",
+    [
+        (
+            {"until": When("regatta")},
+            "recall@6 anna until:(when regatta vec:$vuntil) vec:$v",
+            {"v": [4.0] * 4, "vuntil": [7.0] * 4},
+        ),
+        (
+            {"since": When("regatta", query="charity event")},
+            "recall@6 anna since:(when 'charity event' regatta vec:$vsince) vec:$v",
+            {"v": [4.0] * 4, "vsince": [13.0] * 4},
+        ),
+        (
+            {"until": When("regatta"), "vector": [0.5]},
+            "recall@6 anna until:(when regatta vec:$vuntil) vec:$v",
+            {"v": [0.5], "vuntil": [7.0] * 4},
+        ),
+        (
+            {"until": When(topics=["sport"])},
+            "recall@6 anna until:(when topic:sport) vec:$v",
+            {"v": [4.0] * 4},
+        ),
+        (
+            {"until": When("regatta"), "embed": False},
+            "recall@6 anna until:(when regatta)",
+            None,
+        ),
+    ],
+)
+def test_configured_embedder_encodes_a_when_as_its_own_vector(
+    session, sent, callable_embedder, kwargs, query, parameters
+):
+    """A when's text is encoded as a recall's is and bound under its bound's name.
+
+    The embedder returns the length of what it encodes, so each vector names
+    the text it came from: ``anna`` is 4, ``regatta`` 7, ``charity event`` 13.
+    A when's query phrase wins over its keywords, as a recall's does. An
+    explicit ``vector`` is the recall's alone, and the when keeps its own. A
+    when with no text to encode, anchored only, is sent without one, and
+    ``embed=False`` skips the when as it skips the recall. Unencoded, a when
+    worded differently from its fact matches nothing, and the recall it
+    bounds returns no hits.
+    """
+    FraiseClient(embedder=callable_embedder()).recall("anna", graph=6, **kwargs)
+    want = {"query": query}
+    if parameters is not None:
+        want["parameters"] = parameters
+    assert sent(session) == want
+
+
 def test_explicit_vector_wins_over_embedder(session, sent, callable_embedder):
     """An explicit vector is sent as given, and the embedder is not called."""
     embedder = callable_embedder()
@@ -1421,6 +1472,50 @@ def test_a_configured_embedder_stores_and_finds_a_fact_by_vector(
     embedding_client.remember(fact, graph=vector_graph)
     result = embedding_client.recall("barometer", graph=vector_graph, query=fact)
     assert fact in [h.value for h in result]
+
+
+@pytest.mark.integration
+def test_a_when_finds_a_fact_worded_differently_by_its_vector(
+    embedding_client,
+    vector_timeline_graph,
+    timeline_word,
+    timeline_facts,
+    race_paraphrase,
+):
+    """A when worded as no fact is still answered, by the vector it is sent with.
+
+    The race was stored with the vector of words it does not hold, as an
+    embedder that read the two wordings alike would have stored it. So the
+    when's words match nothing, and only its vector can find the race. The
+    recall keeps what happened before the race began: the caulking.
+    """
+    result = embedding_client.recall(
+        timeline_word,
+        graph=vector_timeline_graph,
+        until=When(query=race_paraphrase),
+    )
+
+    assert [hit.value for hit in result] == [timeline_facts["dawnmark"]]
+
+
+@pytest.mark.integration
+def test_a_when_sent_without_its_vector_matches_by_its_words_alone(
+    embedding_client, vector_timeline_graph, timeline_word, race_paraphrase
+):
+    """With ``embed=False`` the same when matches no fact, and the recall says so.
+
+    This is the control for the test above: the words alone do not find the
+    race, so the vector is what did.
+    """
+    with pytest.warns(FraiseWarning, match="the when matched no fact"):
+        result = embedding_client.recall(
+            timeline_word,
+            graph=vector_timeline_graph,
+            until=When(query=race_paraphrase),
+            embed=False,
+        )
+
+    assert result.count == 0
 
 
 @pytest.mark.integration

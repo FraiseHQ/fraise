@@ -80,7 +80,7 @@ A range joins two dates: a duration is neither end of one.
 
 A bound and `said:` are each one instant. `said:` keeps where its value starts, so `said:'2023-05-08'` is the first instant of the 8th. `since:` and `until:` read where a date or a range starts, and from a `when` they read its answer: `until:` where it starts and `since:` where it ends. `occurred:` keeps the whole span. See [Temporality](/docs/retrieval/memory-model/temporality) for how a window compares with a fact's times, and [Commands](/docs/query-language/foundations/commands) for `when`.
 
-**A fact's time lies inside the years 0001 to 9999.** `said:` and `occurred:` take a time that starts after the year 0001 does and ends before the year 9999 does, and reject any other with the range in the message: the first day `occurred:` holds whole is `'0001-01-02'` and the last is `'9999-12-30'`. Inside that range every time a fact holds is written back on a hit as RFC3339 text any client reads. A bound is never written back, so `since:` and `until:` take every date a literal spells.
+**A fact's time lies inside the years 0001 to 9999.** `said:` and `occurred:` take a time that starts after the year 0001 does and ends before the year 9999 does, and reject any other with the range in the message: the first day `occurred:` holds whole is `'0001-01-02'` and the last is `'9999-12-30'`. Its offset is under 24 hours, from `-23:59` to `+23:59`, so `said:'2023-05-09T08:00:00+24:00'` is rejected too. Inside that range every time a fact holds is written back on a hit as RFC3339 text any client reads. A bound is never written back, so `since:` and `until:` take every date a literal spells.
 
 <Note title="Dates are quoted" type="warning">
 

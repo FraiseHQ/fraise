@@ -353,13 +353,13 @@ func TestParseRecallBindsVector(t *testing.T) {
 // vector as a recall does, as a statement and nested in a bound, so the
 // placeholder of a nested when is checked with the query that holds it.
 func TestParseRecallMissingParameter(t *testing.T) {
-	queries := []string{
-		"recall@0 amelia vec:$v",
-		"when amelia vec:$v",
-		"recall@0 amelia until:(when race vec:$v)",
+	queries := map[string]struct{}{
+		"recall@0 amelia vec:$v":                   {},
+		"when amelia vec:$v":                       {},
+		"recall@0 amelia until:(when race vec:$v)": {},
 	}
 
-	for _, q := range queries {
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			got, _, err := query.Parse[string, float32](q, nil, config.New())
 			if !errors.Is(err, query.ErrMissingParameter) {

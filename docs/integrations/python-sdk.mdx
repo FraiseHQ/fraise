@@ -96,7 +96,7 @@ client.remember("the parrot is turquoise", topics=["birds"])   # encoded for you
 client.recall(query="colourful birds")                         # encoded for you
 ```
 
-A client without an embedder still works: it writes and recalls without vectors, on text and graph structure alone. Per call, `embed=True` forces encoding and `embed=False` skips it, and an explicit `vector=` always wins. See [Producing vectors](/docs/retrieval/embeddings/producing-vectors).
+A client without an embedder still works: it writes and recalls without vectors, on text and graph structure alone. Per call, `embed=True` forces encoding and `embed=False` skips it, and an explicit `vector=` always wins. A `When` in `since` or `until` is a search of its own, so its text is encoded too and sent as a vector of its own: it finds a fact worded differently from it, and `vector=` stays the recall's. See [Producing vectors](/docs/retrieval/embeddings/producing-vectors).
 
 ## With an extractor
 

@@ -30,6 +30,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
@@ -48,6 +50,7 @@ type fakeGraph struct {
 	sets             int
 	puts             int
 	searchCalled     bool
+	since, until     containers.Bound
 
 	searchNodes      []graph.Node[string]
 	searchScores     []float32
@@ -66,6 +69,7 @@ func (g *fakeGraph) Put(key string, node graph.Node[string]) error { g.puts++; r
 
 func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, float32], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) (graph.Result[string, float32], error) {
 	g.searchCalled = true
+	g.since, g.until = since, until
 	if g.searchErr != nil {
 		return graph.Result[string, float32]{}, g.searchErr
 	}
@@ -94,6 +98,19 @@ func (g *fakeGraph) Order() int                                         { return
 func (g *fakeGraph) Size() int                                          { return 0 }
 func (g *fakeGraph) Stats() graph.GraphStats                            { return graph.GraphStats{} }
 func (g *fakeGraph) IsEmpty() bool                                      { return false }
+
+// clockOf is what a time the server makes is read on: the zone it prints in,
+// and whether it still holds the monotonic reading time.Now gave it.
+type clockOf struct {
+	Zone      string
+	Monotonic bool
+}
+
+// clockOfTime reads t's clock. Round(0) strips the monotonic reading and
+// nothing else, so t differs from it exactly when t holds one.
+func clockOfTime(t time.Time) clockOf {
+	return clockOf{Zone: t.Location().String(), Monotonic: t != t.Round(0)}
+}
 
 func newStream(q Query[string, float32]) *Stream[string, float32] {
 	return &Stream[string, float32]{Query: q, done: make(chan struct{})}
@@ -278,6 +295,76 @@ func TestStreamCommitReassertRefreshesRecency(t *testing.T) {
 	result, _ := g.Search([]string{"deploy"}, containers.Vector[uint64, float32]{}, nil, nil, 0, 10, containers.Bound{At: windowStart}, containers.Bound{})
 	if len(result.Hits) != 1 {
 		t.Errorf("Search(since=post-first-write) returned %d hits, want the re-asserted fact", len(result.Hits))
+	}
+}
+
+// TestStreamCommitWriteStampsTimesInUTC pins the zone of the times a write
+// makes: the written timestamp, and a said: and an occurred: given as
+// durations, which count back from it. A time carries its zone to the
+// response, which prints its day, and a date in a bound is a UTC day. Stamped
+// in the host's zone, a fact written on a host east of UTC in the hours its
+// date is ahead of UTC's would print a day that since: that day leaves out.
+// The zone's name tells the two apart on any host: a time read from the
+// host's clock is in Local, even on a host set to UTC.
+//
+// None of the times keeps the monotonic reading time.Now carries. Two times
+// that both hold one compare by it alone, and the monotonic clock stops while
+// the host sleeps: a fact said 20h ago on a laptop that slept would sort, and
+// fall inside a when's window, as though it were said before facts written
+// ahead of the sleep.
+func TestStreamCommitWriteStampsTimesInUTC(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+	q, _, err := Parse[uint64, float32]("remember 'dora docked the ferry' said:7d occurred:3d", nil, config.New())
+	if err != nil {
+		t.Fatalf("Parse() err = %v", err)
+	}
+
+	if err := NewStream[uint64, float32](q).Commit(g); err != nil {
+		t.Fatalf("Commit() err = %v", err)
+	}
+
+	key := graph.Fact[uint64]{
+		NodeAttributes: graph.NodeAttributes{Value: "dora docked the ferry"},
+		Hasher:         g.GetHasher(),
+	}.Key()
+	fact, ok := g.Get(key).(graph.Fact[uint64])
+	if !ok {
+		t.Fatalf("Get() = %T, want the stored graph.Fact", g.Get(key))
+	}
+	got := map[string]clockOf{
+		"written":  clockOfTime(fact.Timestamp),
+		"said":     clockOfTime(fact.Said),
+		"occurred": clockOfTime(fact.Occurred[0].Start),
+	}
+	want := map[string]clockOf{"written": {Zone: "UTC"}, "said": {Zone: "UTC"}, "occurred": {Zone: "UTC"}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("clocks mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestStreamCommitReadResolvesBoundsInUTC pins that a bound written as a
+// duration resolves on a clock read in UTC, as a write's times are. A when
+// answered from such a bound, and the window the recall searches, then name
+// the days a date bound would. Neither bound keeps a monotonic reading, so it
+// compares with stored times by the wall clock, as a literal bound does.
+func TestStreamCommitReadResolvesBoundsInUTC(t *testing.T) {
+	g := &fakeGraph{}
+	q, _, err := Parse[string, float32]("recall x since:7d until:1d", nil, config.New())
+	if err != nil {
+		t.Fatalf("Parse() err = %v", err)
+	}
+
+	if err := newStream(q).Commit(g); err != nil {
+		t.Fatalf("Commit() err = %v", err)
+	}
+
+	got := map[string]clockOf{
+		"since": clockOfTime(g.since.At),
+		"until": clockOfTime(g.until.At),
+	}
+	want := map[string]clockOf{"since": {Zone: "UTC"}, "until": {Zone: "UTC"}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("clocks mismatch (-want +got):\n%s", diff)
 	}
 }
 

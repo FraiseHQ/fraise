@@ -73,7 +73,8 @@ func (r *Remember[K, P]) SetGraphID(id uint8) {
 }
 
 // Hash keys the query for the plan cache. It must fold in the graph selector
-// and every field that changes what gets written, the bound vector included.
+// and every field that changes what gets written, the bound vector and the
+// times included.
 // Hashing only Value would make these two collide: "remember@3 'x' topic:a" and
 // "remember@5 'x' topic:b". The second would then reuse the first's plan and
 // write to the wrong graph under the wrong topic. The value and every anchor
@@ -81,10 +82,13 @@ func (r *Remember[K, P]) SetGraphID(id uint8) {
 // included. Otherwise "remember 'x|en=y'" and "remember 'x' entity:'y|en='"
 // would share material, and the second would write the first's fact.
 //
-// Said and Occurred stay out of the material. A fact stated again with new
-// times is the same write under the same key, and takes the place of the one
-// cached before it. Equal tells the two apart, so the new times are the ones
-// written.
+// Said and Occurred fold in through their own Hash, as a recall's bounds do,
+// and Occurred is length-prefixed so its spans keep their boundaries. Their
+// material keeps the offset a time was written in. Equal compares instants
+// whatever their zone, so without it "said:'2023-05-09T00:30:00+09:00'" and
+// "said:'2023-05-08T15:30:00Z'" would share a key and pass Equal. The second
+// would run the first's plan and store the first's offset, and the day a hit
+// prints would depend on what the cache held.
 func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")
@@ -95,6 +99,16 @@ func (r Remember[K, P]) Hash(h hash.Hasher[K, string]) K {
 	writeStrings(&b, r.Entities)
 	b.WriteString("|to=")
 	writeStrings(&b, r.Topics)
+	b.WriteString("|sa=")
+	if r.Said != nil {
+		b.WriteString(r.Said.Hash(h))
+	}
+	b.WriteString("|oc=")
+	occurred := make([]string, len(r.Occurred))
+	for i, span := range r.Occurred {
+		occurred[i] = span.Hash(h)
+	}
+	writeStrings(&b, occurred)
 	b.WriteString("|vec=")
 	b.WriteString(r.Vector.Hash(h))
 	return h.Hash(b.String())

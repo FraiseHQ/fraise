@@ -30,7 +30,7 @@ import warnings
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from fraise_sdk.constants import VECTOR_PARAM
+from fraise_sdk.constants import SINCE_VECTOR_PARAM, UNTIL_VECTOR_PARAM, VECTOR_PARAM
 from fraise_sdk.errors import FraiseAPIError, FraiseQueryError, FraiseWarning
 from fraise_sdk.models import Interval
 from fraise_sdk.query import When, build_recall, build_remember
@@ -552,6 +552,37 @@ def test_recall_writes_its_bounds_after_the_search_and_before_the_vector():
     assert got == (
         "recall@2 'what did anna do' anna topic:sport entity:anna top:5 depth:1 "
         f"since:'2023-05-01' until:(when regatta) vec:${VECTOR_PARAM}"
+    )
+
+
+def test_a_when_vector_is_written_inside_its_when():
+    """Each when's placeholder closes its own search, under its bound's name.
+
+    A when is a search of its own, so its vector seeds it, not the recall.
+    Written outside the parentheses, it would be the recall's second vector.
+    Under one shared name, the since and until whens would search with the
+    same vector, whatever each was worded as.
+    """
+    got = build_recall(
+        ["anna"],
+        since=When("dawn"),
+        until=When("regatta"),
+        with_vector=True,
+        with_since_vector=True,
+        with_until_vector=True,
+    )
+    assert got == (
+        f"recall@0 anna since:(when dawn vec:${SINCE_VECTOR_PARAM}) "
+        f"until:(when regatta vec:${UNTIL_VECTOR_PARAM}) vec:${VECTOR_PARAM}"
+    )
+
+
+def test_a_bound_vector_for_a_time_is_rejected():
+    """A time is not a search, so there is nowhere to write a vector for it."""
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build_recall(["anna"], until=date(2023, 5, 7), with_until_vector=True)
+    assert str(exc_info.value) == (
+        "until is a time, not a when, so it has no search to bind a vector to"
     )
 
 

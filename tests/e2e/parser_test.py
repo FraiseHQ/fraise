@@ -958,6 +958,35 @@ def test_a_remember_time_outside_the_years_a_hit_carries_is_rejected(
     )
 
 
+@pytest.mark.parametrize(
+    "clauses",
+    [
+        "said:'2023-05-09T08:00:00+24:00'",
+        "said:'2023-05-09T08:00:00+23:60'",
+        "occurred:'2023-05-07'..'2023-05-09T00:00:00-24:00'",
+    ],
+)
+def test_a_remember_time_with_an_offset_of_a_day_is_rejected(
+    query, clauses, assert_rejected
+):
+    """A fact's time is written with an offset under 24 hours.
+
+    RFC 3339 text has no offset of 24 hours or more, though the server's time
+    parser reads one. Stored, such a fact would turn every response carrying it
+    into an empty 200, taking the other hits with it, and a client would read
+    that as a graph holding nothing.
+    """
+    text = f"remember@1 'the ferry sailed at a far offset' {clauses}"
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        "out of range (a fact's time is written with an offset under 24 hours, "
+        "from -23:59 to +23:59)",
+        text,
+    )
+
+
 # Graph selector. Every malformed selector gets a message of its own, not a
 # generic token error. These tests pin each one.
 

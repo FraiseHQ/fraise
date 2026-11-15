@@ -261,11 +261,13 @@ func TestPlanConfirmsAHitByEquality(t *testing.T) {
 }
 
 // TestPlanRunsARememberWithItsOwnTimes pins the plan cache against a fact
-// re-asserted with another time. A remember's key leaves its times out, so the
-// same fact said on two days shares one key. Trusting the key, Plan would run
-// the first remember's plan for the second and store the first day again. A
-// hit is confirmed by equality, which compares the times. So the second is
-// planned as itself, and its day is the one the fact holds.
+// re-asserted at the same instant in another offset. Equality compares
+// instants whatever their zone, so it cannot tell the two remembers apart. The
+// key can: a remember's times fold into it in the offset they were written in.
+// Sharing a key, the second would run the first's plan and store the first's
+// offset, and a hit would print the 9th where the caller said the 8th. With
+// keys of their own, the second is planned as itself, and its offset is the
+// one the fact holds.
 func TestPlanRunsARememberWithItsOwnTimes(t *testing.T) {
 	cfg := config.New()
 	e := newEngine(t, cfg)
@@ -294,10 +296,10 @@ func TestPlanRunsARememberWithItsOwnTimes(t *testing.T) {
 		return q, stream
 	}
 
-	first, _ := run("remember 'the parrot is turquoise' said:'2023-05-08'")
-	second, _ := run("remember 'the parrot is turquoise' said:'2023-05-25'")
-	if first.Hash(e.Hasher) != second.Hash(e.Hasher) {
-		t.Fatal("the two remembers have different keys, so the second never met the first's cache entry")
+	first, _ := run("remember 'the parrot is turquoise' said:'2023-05-09T00:30:00+09:00'")
+	second, _ := run("remember 'the parrot is turquoise' said:'2023-05-08T15:30:00Z'")
+	if first.Hash(e.Hasher) == second.Hash(e.Hasher) {
+		t.Fatal("the two remembers share a key, so the second would run the first's plan")
 	}
 
 	_, recalled := run("recall parrot")
@@ -309,8 +311,7 @@ func TestPlanRunsARememberWithItsOwnTimes(t *testing.T) {
 	if !ok {
 		t.Fatalf("recall returned a %T, want a fact", recalled.Result.Hits[0].Node)
 	}
-	want := time.Date(2023, time.May, 25, 0, 0, 0, 0, time.UTC)
-	if diff := cmp.Diff(want, fact.Said); diff != "" {
+	if diff := cmp.Diff("2023-05-08T15:30:00Z", fact.Said.Format(time.RFC3339)); diff != "" {
 		t.Errorf("Said mismatch (-want +got):\n%s", diff)
 	}
 }

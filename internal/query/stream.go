@@ -141,7 +141,16 @@ func (s *Stream[K, P]) write(g graph.Graph[K, P], remember *Remember[K, P]) erro
 	// One reading of the clock stamps the fact and resolves the times it was
 	// given. So a time given as a duration counts back from the instant the
 	// fact is written, and a fact said "now" is said when it is written.
-	now := time.Now()
+	// The clock is read in UTC, the zone a date in a bound is a day of. A
+	// time carries its zone to the response, so one stamped in the host's
+	// zone would print a day that a bound on that day does not select for
+	// the hours the host's date differs from UTC's. UTC also strips the
+	// monotonic reading time.Now carries, which Add would keep. Two times
+	// that both carry one compare by it alone, and the monotonic clock
+	// stops while the host sleeps. So a fact said 20h ago on a laptop that
+	// slept would compare as earlier than facts written before the sleep,
+	// and differently from a literal copied from its printed time.
+	now := time.Now().UTC()
 	fact := graph.Fact[K]{
 		NodeAttributes: graph.NodeAttributes{
 			Value:     remember.Value,
@@ -252,8 +261,11 @@ func (s *Stream[K, P]) read(g graph.Graph[K, P], recall *Recall[K, P]) error {
 		"top", recall.Parameters.Top)
 
 	// One reading of the clock resolves both bounds, so a window written as
-	// two durations is exactly as wide as they say.
-	now := time.Now()
+	// two durations is exactly as wide as they say. It is read in UTC, as a
+	// write's is, so a bound written as a duration prints the day a date
+	// bound would name, and carries no monotonic reading: it compares with
+	// stored times by the wall clock, as a literal bound does.
+	now := time.Now().UTC()
 	since, until := recall.Since(now), recall.Until(now)
 	answered := true
 	if s.Since != nil {

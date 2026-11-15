@@ -45,6 +45,6 @@
 // Stream, and parse warnings are returned beside the query.
 // For the same reason, Equal covers every field that changes what a query
 // reads or writes. Otherwise a cache hit would run another query's plan. Hash
-// covers the same fields, save the times a remember gives its fact: a fact
-// stated again with other times keeps its key and takes the cached entry over.
+// covers the same fields, in material that keeps what Equal may not see, such
+// as the offset a remember's time was written in.
 package query

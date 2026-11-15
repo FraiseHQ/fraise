@@ -1106,10 +1106,14 @@ func TestRememberTimeErrors(t *testing.T) {
 // it without a body. The other end is refused for what reads it: a year 0000 is
 // text not every client parses, and the first instant of the year 0001 is the
 // zero time, which would read as a fact given no time. An offset moves neither
-// end: a time is held to the range as it is written and in UTC. A bound is never
+// end: a time is held to the range as it is written and in UTC. The offset is
+// held too: RFC 3339 text has none of 24 hours or more, which time.Parse still
+// reads, and one stored would leave every response carrying the fact empty.
+// A bound is never
 // written back, so since: and until: keep every date a literal can spell.
 func TestFactTimesStayInsideTheYearsAHitCarries(t *testing.T) {
 	const outOfRange = "out of range (a fact's time starts after the year 0001 does and ends before the year 9999 does)"
+	const offsetOutOfRange = "out of range (a fact's time is written with an offset under 24 hours, from -23:59 to +23:59)"
 	cases := map[string]struct {
 		want string // "" when the query must parse
 	}{
@@ -1136,7 +1140,16 @@ func TestFactTimesStayInsideTheYearsAHitCarries(t *testing.T) {
 		"remember 'a' occurred:'0001-01-02T00:00:00+14:00'..'0000-12-31T23:59:59-11:00'": {"invalid occurred value: " + outOfRange},
 		"remember 'a' occurred:'9999-12-31T00:00:00+14:00'..'9999-12-31T23:59:59-00:01'": {"invalid occurred value: " + outOfRange},
 		"remember 'a' said:'2023-05-08' occurred:'2023-05-07' occurred:'9999-12-31'":     {"invalid occurred value: " + outOfRange},
-		"remember 'a' occurred:'2023-05-07' said:'0001-01-01' topic:harbour":             {"invalid said value: " + outOfRange},
+		// An offset of 24 hours or more, which RFC 3339 text cannot carry.
+		"remember 'a' said:'2023-05-09T08:00:00+24:00'":                      {"invalid said value: " + offsetOutOfRange},
+		"remember 'a' said:'2023-05-09T08:00:00-24:00'":                      {"invalid said value: " + offsetOutOfRange},
+		"remember 'a' said:'2023-05-09T08:00:00+23:60'":                      {"invalid said value: " + offsetOutOfRange},
+		"remember 'a' occurred:'2023-05-07T00:00:00+24:00'..":                {"invalid occurred value: " + offsetOutOfRange},
+		"remember 'a' occurred:'2023-05-07'..'2023-05-09T00:00:00-24:00'":    {"invalid occurred value: " + offsetOutOfRange},
+		"remember 'a' said:'2023-05-09T08:00:00+23:59'":                      {""},
+		"remember 'a' occurred:'2023-05-07'..'2023-05-09T00:00:00-23:59'":    {""},
+		"recall x since:'2023-05-09T08:00:00+24:00'":                         {""},
+		"remember 'a' occurred:'2023-05-07' said:'0001-01-01' topic:harbour": {"invalid said value: " + outOfRange},
 		// The first and last times a fact holds.
 		"remember 'a' occurred:'9999-12-30'":                     {""},
 		"remember 'a' occurred:'9999-11'":                        {""},
@@ -1214,6 +1227,10 @@ func TestRememberClauseOnAReadIsRefused(t *testing.T) {
 		"recall she said it": {15, `term "said" is also a keyword: quote it ('said') to search for the word`},
 		"recall occurred":    {15, `term "occurred" is also a keyword: quote it ('occurred') to search for the word`},
 		"when race said":     {14, `term "said" is also a keyword: quote it ('said') to search for the word`},
+		// The same word mis-cased, which casing does not un-reserve.
+		"recall what anna Said": {21, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
+		"recall OCCURRED":       {15, `mis-cased keyword "OCCURRED": keywords are lower case — quote it ('OCCURRED') to search for the word`},
+		"when race Said":        {14, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
 	}
 
 	for query, tc := range cases {
@@ -2108,6 +2125,13 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 		"recall describe ferry":      {`term "describe" is also a prefix: quote it ('describe') to search for the word`},
 		"recall ferry explain:ferry": {`"explain" is a prefix and starts no clause here: quote it ('explain') to search for the word`},
 		"remember 'a' describe":      {`"describe" is a prefix and starts no clause here: quote it ('describe') to search for the word`},
+		// Mis-cased, a command word or a prefix still has no clause reading.
+		// A question that opens with "When" is the likeliest way to meet one.
+		"recall When did anna run the race": {`mis-cased keyword "When": keywords are lower case — quote it ('When') to search for the word`},
+		"recall zebras Recall food":         {`mis-cased keyword "Recall": keywords are lower case — quote it ('Recall') to search for the word`},
+		"recall ferry Explain":              {`mis-cased keyword "Explain": keywords are lower case — quote it ('Explain') to search for the word`},
+		// On a remember, said is a clause, so mis-cased it keeps that repair.
+		"remember 'a fact' Said '2023-05-08'": {`mis-cased keyword "Said": keywords are lower case — write said:<value> if a clause was meant`},
 		// A keyword with nothing after it can never finish a clause, so it is
 		// the word the caller forgot to quote.
 		"recall zebras top":   {"write top:<value> if a filter was meant, or quote it ('top')"},

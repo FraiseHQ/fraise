@@ -244,11 +244,29 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 	case tok.Type.IsKeyword():
 		return p.errKeywordAsClause(tok)
 	case tok.IsMisCasedKeyword():
-		return p.errf(tok.Pos, "mis-cased keyword %q: keywords are lower case — write %s:%s if a clause was meant, or quote it ('%s') to search for the word",
-			tok.Literal, strings.ToLower(tok.Literal), p.clausePlaceholder(tok), tok.Literal)
+		return p.errMisCasedKeyword(tok, false)
 	default:
 		return p.errf(tok.Pos, "unexpected %s", tok.Describe())
 	}
+}
+
+// errMisCasedKeyword rejects a keyword written with upper case where it cannot
+// be read as one. Casing does not un-reserve a word, so the message gives the
+// repairs its lower-cased spelling would get, and names the casing. The word
+// is read by that spelling, as errKeywordAsTerm and errKeywordAsClause read it
+// by type. A word with no clause reading gets only the quote, or the caller
+// would be sent from one rejection to the next: a command word or a prefix
+// anywhere, and said or occurred among the terms of a search (amongTerms),
+// where they are clauses of a remember. "recall When did anna run" is a
+// question that opens with the word, not a when:<value> clause.
+func (p *parser[K, P]) errMisCasedKeyword(tok lexer.Token, amongTerms bool) error {
+	kind := lexer.KeywordsMap[strings.ToLower(tok.Literal)]
+	if kind.IsCommand() || kind.IsPrefix() || (amongTerms && (kind == lexer.SAID || kind == lexer.OCCURRED)) {
+		return p.errf(tok.Pos, "mis-cased keyword %q: keywords are lower case — quote it ('%s') to search for the word",
+			tok.Literal, tok.Literal)
+	}
+	return p.errf(tok.Pos, "mis-cased keyword %q: keywords are lower case — write %s:%s if a clause was meant, or quote it ('%s') to search for the word",
+		tok.Literal, strings.ToLower(tok.Literal), p.clausePlaceholder(tok), tok.Literal)
 }
 
 // errKeywordAsClause rejects a reserved word where a clause must start, without
@@ -844,7 +862,7 @@ func (p *parser[K, P]) parseTerms() ([]LiteralFieldNode, error) {
 		case p.cur.Type == lexer.WHITESPACE:
 			p.next()
 		case p.cur.IsMisCasedKeyword():
-			return nil, p.errUnexpected(p.cur)
+			return nil, p.errMisCasedKeyword(p.cur, true)
 		case !p.isValue():
 			// Terms end at a clause, or at a token the clause loop diagnoses.
 			return terms, nil
@@ -1023,12 +1041,22 @@ func (p *parser[K, P]) parseTimeValue(cmd lexer.Token) (lexer.Token, TimeValueNo
 	// carries it unwritable. A bound is never written back, and keeps every date
 	// a literal can spell. A duration counts back from the write by 292 years at
 	// most, and stays inside those years too.
+	//
+	// The offset is held the same way. RFC 3339 text has no offset of 24 hours
+	// or more, yet time.Parse reads +24:00, -24:00 and +23:60. A fact holding
+	// one would leave every response that carries it unwritable: an empty 200
+	// that takes the other hits with it, which a client reads as no memories.
 	if cmd.Type == lexer.REMEMBER && !relative {
 		span := value.value.Resolve(time.Time{})
 		early := span.Start.Year() < 1 || span.End.Year() < 1 || !span.Start.After(time.Time{})
 		late := span.Start.UTC().Year() > 9999 || span.End.UTC().Year() > 9999
 		if early || late {
 			return lexer.Token{}, TimeValueNode[K]{}, p.errf(tok.Pos, "invalid %s value: out of range (a fact's time starts after the year 0001 does and ends before the year 9999 does)", clause)
+		}
+		_, start := span.Start.Zone()
+		_, end := span.End.Zone()
+		if day := int((24 * time.Hour).Seconds()); start >= day || start <= -day || end >= day || end <= -day {
+			return lexer.Token{}, TimeValueNode[K]{}, p.errf(tok.Pos, "invalid %s value: out of range (a fact's time is written with an offset under 24 hours, from -23:59 to +23:59)", clause)
 		}
 	}
 

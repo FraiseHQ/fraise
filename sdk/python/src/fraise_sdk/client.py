@@ -376,7 +376,10 @@ class FraiseClient:
         For semantic search, a vector is attached as in :meth:`remember`. An
         explicit ``vector`` wins. Otherwise, if the client has an embedder, it
         encodes the ``query`` phrase, or the space-joined ``keywords`` when
-        there is no query. ``embed`` overrides this per call.
+        there is no query. ``embed`` overrides this per call. A ``When`` in
+        ``since`` or ``until`` is encoded the same way from its own text and
+        sent as a vector of its own, so it finds a fact worded differently
+        from it. An explicit ``vector`` is the recall's alone.
 
         Any warnings the server attached are listed on the result's
         ``warnings`` and emitted as :class:`FraiseWarning`. A warning means the
@@ -471,6 +474,20 @@ class FraiseClient:
         """
         embed_text = query if query is not None else " ".join(keywords)
         resolved = self._resolve_vector(vector, embed_text, embed)
+        # A when is a search of its own, so its text is embedded as the
+        # recall's is and bound under the name of the bound it sits in.
+        bound_vectors = {
+            param: self._resolve_vector(
+                None,
+                bound.query if bound.query is not None else " ".join(bound.keywords),
+                embed,
+            )
+            for param, bound in (
+                (_query.SINCE_VECTOR_PARAM, since),
+                (_query.UNTIL_VECTOR_PARAM, until),
+            )
+            if isinstance(bound, When)
+        }
         text = _query.build_recall(
             keywords=list(keywords),
             graph=graph,
@@ -482,9 +499,18 @@ class FraiseClient:
             since=since,
             until=until,
             with_vector=resolved is not None,
+            with_since_vector=bound_vectors.get(_query.SINCE_VECTOR_PARAM) is not None,
+            with_until_vector=bound_vectors.get(_query.UNTIL_VECTOR_PARAM) is not None,
         )
         self._warn_naive(since, until)
-        parameters = {_query.VECTOR_PARAM: resolved} if resolved is not None else None
+        parameters = {
+            param: bound
+            for param, bound in (
+                (_query.VECTOR_PARAM, resolved),
+                *bound_vectors.items(),
+            )
+            if bound is not None
+        }
         status, body = self._post(
             text,
             parameters=parameters,

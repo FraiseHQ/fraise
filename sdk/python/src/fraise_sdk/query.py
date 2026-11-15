@@ -56,7 +56,15 @@ from datetime import date, datetime, timezone
 from typing import Literal
 
 from fraise_sdk.compat import warn
-from fraise_sdk.constants import CLOCKS, KEYWORDS, MAX_GRAPH, SDK_FILES, VECTOR_PARAM
+from fraise_sdk.constants import (
+    CLOCKS,
+    KEYWORDS,
+    MAX_GRAPH,
+    SDK_FILES,
+    SINCE_VECTOR_PARAM,
+    UNTIL_VECTOR_PARAM,
+    VECTOR_PARAM,
+)
 from fraise_sdk.errors import FraiseQueryError, FraiseWarning
 from fraise_sdk.models import Interval
 
@@ -80,6 +88,13 @@ class When:
     Without a clock it is ``happened``.
 
     A when names no graph. It reads the graph of the recall it bounds.
+
+    On a client with an embedder, a when's text is embedded as a recall's is,
+    its ``query`` phrase or else its keywords joined by spaces. Its vector
+    seeds its search beside its words, so a when worded differently from the
+    fact it means still finds that fact. The recall's ``embed`` applies to it
+    as to the recall, so ``embed=False`` sends the when's words alone. The
+    recall's ``vector`` is the recall's own and is never bound to a when.
     """
 
     keywords: tuple[str, ...]
@@ -324,18 +339,26 @@ def _span(kind: str, value: date | datetime | Interval) -> str:
     return f"{start}..{_time(kind, value.end)}"
 
 
-def _bound(kind: str, value: date | datetime | When) -> str:
+def _bound(
+    kind: str, value: date | datetime | When, vector_param: str | None = None
+) -> str:
     """Render a ``since`` or ``until`` value: a time, or a when in parentheses.
 
-    A when is written ``(when[:<clock>] <search>)``, its search rendered as a
-    recall's is. It needs a seed for the same reason a recall does.
+    A when is written ``(when[:<clock>] <search> [vec:$<name>])``, its search
+    rendered as a recall's is. It needs a seed for the same reason a recall
+    does, and a vector counts as one. ``vector_param`` names the parameter its
+    vector is bound to, so a when's vector is never read as the recall's.
 
     Raises:
         FraiseQueryError: if a when names a clock the grammar does not read or
-            has nothing to search with, or the value cannot be written as a
-            time.
+            has nothing to search with, if a vector is given for a time, or if
+            the value cannot be written as a time.
     """
     if not isinstance(value, When):
+        if vector_param is not None:
+            raise FraiseQueryError(
+                f"{kind} is a time, not a when, so it has no search to bind a vector to"
+            )
         return _time(kind, value)
     if value.clock is not None and value.clock not in CLOCKS:
         raise FraiseQueryError(
@@ -349,6 +372,8 @@ def _bound(kind: str, value: date | datetime | When) -> str:
         value.top,
         value.depth,
     )
+    if vector_param is not None:
+        body.append(f"vec:${vector_param}")
     if not body:
         raise FraiseQueryError(
             "a when needs at least one seed: keywords, a query, or a "
@@ -411,6 +436,8 @@ def build_recall(
     since: date | datetime | When | None = None,
     until: date | datetime | When | None = None,
     with_vector: bool = False,
+    with_since_vector: bool = False,
+    with_until_vector: bool = False,
 ) -> str:
     """Build a ``recall`` query string over ``graph``.
 
@@ -425,6 +452,12 @@ def build_recall(
     ``since`` from its time on, ``until`` before it. Each is a ``date``, a
     ``datetime``, or a :class:`When`, the time another fact holds.
 
+    Set ``with_vector`` when the request parameters carry the recall's vector,
+    and ``with_since_vector`` or ``with_until_vector`` when they carry the
+    vector of the when in that bound. Each placeholder is written where the
+    search it seeds is: ``vec:$v`` at the end of the recall, ``vec:$vsince``
+    and ``vec:$vuntil`` inside their when.
+
     A recall needs at least one seed: a query phrase, keywords, a vector, or a
     topic or entity anchor. A call given nothing but ``graph`` is rejected
     here. A call given only ``top``, ``depth`` or a bound is built as written,
@@ -435,14 +468,17 @@ def build_recall(
             positive, or ``depth`` is negative. Also raised when a value cannot
             be written as FQL: an empty value, a bare string where a sequence
             is wanted, a graph outside 0–255, a time that is neither a date
-            nor a datetime, or a when with no seed.
+            nor a datetime, a when with no seed, or a bound vector for a
+            bound that is a time.
     """
     parts = [f"recall{_selector(graph)}"]
     parts += _body(keywords, query, topics, entities, top, depth)
     if since is not None:
-        parts.append(f"since:{_bound('since', since)}")
+        param = SINCE_VECTOR_PARAM if with_since_vector else None
+        parts.append(f"since:{_bound('since', since, param)}")
     if until is not None:
-        parts.append(f"until:{_bound('until', until)}")
+        param = UNTIL_VECTOR_PARAM if with_until_vector else None
+        parts.append(f"until:{_bound('until', until, param)}")
     if with_vector:
         parts.append(f"vec:${VECTOR_PARAM}")
 

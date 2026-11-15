@@ -68,7 +68,7 @@ func TestRememberHash(t *testing.T) {
 	// Hash folds in the graph, the length-prefixed value, entity and topic
 	// lists and the bound vector. Writes that differ in any of these get
 	// distinct cache keys.
-	const want = "g=2|v=11:hello world|en=5:alice|to=8:greeting|vec=H(0x1p-01)"
+	const want = "g=2|v=11:hello world|en=5:alice|to=8:greeting|sa=|oc=|vec=H(0x1p-01)"
 	if got := r.Hash(h); got != "H("+want+")" {
 		t.Errorf("Hash() = %q, want %q", got, "H("+want+")")
 	}
@@ -77,53 +77,49 @@ func TestRememberHash(t *testing.T) {
 	}
 }
 
-// TestRememberHashLeavesTheTimesOut pins that the times a remember gives its
-// fact are no part of its cache key. A fact stated again with other times is
-// the same write, of the same fact to the same graph under the same anchors.
-// It takes the key of the write before it, and Equal, which tells the two
-// apart, makes the engine plan it and cache it in the earlier one's place.
-func TestRememberHashLeavesTheTimesOut(t *testing.T) {
-	day := func(d int) containers.TimeValue[string] {
-		return containers.AbsoluteTime[string]{T: time.Date(2023, time.May, d, 0, 0, 0, 0, time.UTC), Precision: containers.Day}
+// TestRememberHashFoldsInTheTimes pins the material of the times a remember
+// gives its fact. Said is its time's own key, and Occurred the keys of its
+// spans, each length-prefixed. A time's key keeps the offset it was written
+// in, so a fact stated again at the same instant in another offset gets a key
+// of its own, and its own offset is the one stored.
+func TestRememberHashFoldsInTheTimes(t *testing.T) {
+	tokyo := time.FixedZone("", 9*60*60)
+	r := Remember[string, float32]{
+		Value: "rosa rows",
+		Said:  containers.AbsoluteTime[string]{T: time.Date(2023, time.May, 9, 0, 30, 0, 0, tokyo)},
+		Occurred: []containers.TimeValue[string]{
+			containers.AbsoluteTime[string]{T: time.Date(2023, time.May, 7, 0, 0, 0, 0, time.UTC), Precision: containers.Day},
+			containers.RelativeTime[string]{Dur: 2 * time.Hour},
+		},
+		context: QueryContext{GraphID: 2},
 	}
-	tests := map[string]struct {
-		said     containers.TimeValue[string]
-		occurred []containers.TimeValue[string]
-	}{
-		"no times":          {},
-		"said":              {said: day(8)},
-		"occurred":          {occurred: []containers.TimeValue[string]{day(7)}},
-		"said and occurred": {said: day(8), occurred: []containers.TimeValue[string]{day(7), day(9)}},
-	}
-	const want = "H(g=2|v=11:hello world|en=5:alice|to=8:greeting|vec=H(0x1p-01))"
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			r := Remember[string, float32]{
-				Value:    "hello world",
-				Entities: []string{"alice"},
-				Topics:   []string{"greeting"},
-				Vector:   containers.NewVector[string]([]float32{0.5}),
-				Said:     tc.said,
-				Occurred: tc.occurred,
-				context:  QueryContext{GraphID: 2},
-			}
 
-			if diff := cmp.Diff(want, r.Hash(&fakeHasher{})); diff != "" {
-				t.Errorf("Hash() mismatch (-want +got):\n%s", diff)
-			}
-		})
+	const want = "H(g=2|v=9:rosa rows|en=|to=|sa=H(a2023-05-09T00:30:00+09:00)|oc=25:H(ad2023-05-07T00:00:00Z)10:H(r2h0m0s)|vec=H())"
+	if diff := cmp.Diff(want, r.Hash(&fakeHasher{})); diff != "" {
+		t.Errorf("Hash() mismatch (-want +got):\n%s", diff)
 	}
 }
 
-// TestRememberHashDistinguishesGraphAndTags pins the contract. Writes that
-// differ only in graph, entities, topics, the bound vector or where the fact
-// ends and its anchors begin must not share a cache key. Otherwise the engine
-// reuses another write's plan and writes the wrong fact, to the wrong graph or
-// tags, or with the wrong embedding. "value-spells-entity" and
-// "entity-ends-value" are the pair a delimited value let collide.
-func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
+// TestRememberHashDistinguishesGraphTagsAndTimes pins the contract. Writes
+// that differ only in graph, entities, topics, the bound vector, the times or
+// where the fact ends and its anchors begin must not share a cache key.
+// Otherwise the engine reuses another write's plan and writes the wrong fact,
+// to the wrong graph or tags, with the wrong embedding or at the wrong times.
+// "value-spells-entity" and "entity-ends-value" are the pair a delimited value
+// let collide. "said-utc" and "said-tokyo" are one instant in two offsets,
+// which Equal does not tell apart.
+func TestRememberHashDistinguishesGraphTagsAndTimes(t *testing.T) {
 	base := func() Remember[string, float32] {
 		return Remember[string, float32]{Value: "the parrot is turquoise"}
+	}
+	at := func(t time.Time) containers.TimeValue[string] {
+		return containers.AbsoluteTime[string]{T: t}
+	}
+	instant := time.Date(2023, time.May, 8, 15, 30, 0, 0, time.UTC)
+	with := func(said containers.TimeValue[string], occurred ...containers.TimeValue[string]) Remember[string, float32] {
+		r := base()
+		r.Said, r.Occurred = said, occurred
+		return r
 	}
 	variants := map[string]Remember[string, float32]{
 		"base":                base(),
@@ -145,6 +141,11 @@ func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 			r.Vector = containers.NewVector[string]([]float32{0, 1})
 			return r
 		}(),
+		"said-utc":          with(at(instant)),
+		"said-tokyo":        with(at(instant.In(time.FixedZone("", 9*60*60)))),
+		"said-as-occurred":  with(nil, at(instant)),
+		"occurred-one":      with(nil, at(instant), at(instant.Add(time.Hour))),
+		"occurred-reversed": with(nil, at(instant.Add(time.Hour)), at(instant)),
 	}
 
 	seen := make(map[string]string)
@@ -160,9 +161,8 @@ func TestRememberHashDistinguishesGraphAndTags(t *testing.T) {
 // TestRememberEqual pins the check the engine confirms a plan-cache hit with.
 // A remember differing from base in any field Hash folds in is not equal to
 // it, so a key it happens to share with base never writes base's fact, to
-// base's graph. Nor is one that gives the fact other times. Those share base's
-// key by design, so Equal alone keeps a fact stated again from being written
-// with the times of the statement cached before it. A recall is never equal to
+// base's graph. Nor is one that gives the fact other times, so a key it shares
+// with base never writes the fact at base's times. A recall is never equal to
 // a remember.
 func TestRememberEqual(t *testing.T) {
 	day := func(d int) containers.TimeValue[string] {

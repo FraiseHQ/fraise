@@ -675,17 +675,45 @@ func TestQueryWarnsWhenAWhenMatchedNoFact(t *testing.T) {
 	}
 }
 
+// TestQueryRememberRestatedInAnotherOffsetStoresIt pins that a fact stated
+// again at the same instant, written in another offset, is stored in the
+// offset the second remember gives. A hit prints the day in its stored offset,
+// so keeping the first offset would print the 9th where the caller said the
+// 8th. Both remembers pass through the plan cache, which must not answer the
+// second with the first's plan: what a remember writes cannot depend on what
+// the cache holds.
+func TestQueryRememberRestatedInAnotherOffsetStoresIt(t *testing.T) {
+	s := newTestServer(t)
+	for _, statement := range []string{
+		"remember@2 'rosa rows' said:'2023-05-09T00:30:00+09:00'",
+		"remember@2 'rosa rows' said:'2023-05-08T15:30:00Z'",
+	} {
+		if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"`+statement+`"}`); w.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want %d (body: %s)", statement, w.Code, http.StatusOK, w.Body.String())
+		}
+	}
+
+	hits := s.read(t, "/api/v1/q", "recall@2 rosa").Results.Hits
+	got := make([]string, len(hits))
+	for i, hit := range hits {
+		got[i] = hit.Said
+	}
+	if diff := cmp.Diff([]string{"2023-05-08T15:30:00Z"}, got); diff != "" {
+		t.Errorf("said mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // TestQueryWhenOnAnEmptyGraphIsNoContent pins that a when is a read where the
 // empty graph is concerned. As a statement or in a bound, a when over a graph
 // that holds nothing is answered 204 with no body, as a recall is: the caller
 // has yet to write, and no warning about a missing match would say so.
 func TestQueryWhenOnAnEmptyGraphIsNoContent(t *testing.T) {
 	s := newTestServer(t)
-	queries := []string{
-		"when marathon",
-		"recall@0 anna until:(when marathon)",
+	queries := map[string]struct{}{
+		"when marathon":                       {},
+		"recall@0 anna until:(when marathon)": {},
 	}
-	for _, query := range queries {
+	for query := range queries {
 		t.Run(query, func(t *testing.T) {
 			w := s.do(http.MethodPost, "/api/v1/q", `{"query":"`+query+`"}`)
 

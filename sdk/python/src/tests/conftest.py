@@ -729,6 +729,13 @@ _TIMELINE_FACTS = {
 }
 
 
+# Words for the race that no fact on the timeline holds. On the vector graph the
+# race is stored with their vector, as an embedder reading the two wordings
+# alike would have stored it, so a when worded this way finds the race by its
+# vector alone.
+_RACE_PARAPHRASE = "sculling contest"
+
+
 def _encode(text: str) -> list[float]:
     """Encode ``text`` as a deterministic unit vector of _VECTOR_DIM floats.
 
@@ -1032,6 +1039,42 @@ def vector_graph(embedding_client):
     """
     embedding_client.remember("the tuning fork sounds a natural A", graph=_VECTOR_GRAPH)
     return _VECTOR_GRAPH
+
+
+@pytest.fixture(scope="session")
+def race_paraphrase():
+    """Words for the race that no fact on the timeline holds.
+
+    Returns:
+        The phrase the race's vector on the vector graph is encoded from.
+    """
+    return _RACE_PARAPHRASE
+
+
+@pytest.fixture(scope="module")
+def vector_timeline_graph(embedding_client, vector_graph):
+    """Write the timeline to the vector graph, the race under its paraphrase.
+
+    Every fact but the race is embedded from its own text. The race is stored
+    with the vector of _RACE_PARAPHRASE, so a search worded as the paraphrase
+    matches it by vector and by nothing else.
+
+    Args:
+        embedding_client: the client whose embedder encodes the other facts.
+        vector_graph: the graph whose dimension is already established.
+
+    Returns:
+        The graph id holding the timeline.
+    """
+    for word, (value, happened, said) in _TIMELINE_FACTS.items():
+        embedding_client.remember(
+            value,
+            graph=vector_graph,
+            said=said,
+            occurred=[happened],
+            vector=_encode(_RACE_PARAPHRASE) if word == "noonmark" else None,
+        )
+    return vector_graph
 
 
 @pytest.fixture(scope="module")
