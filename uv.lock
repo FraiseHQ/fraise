@@ -424,7 +424,7 @@ requires-dist = [{ name = "pre-commit", specifier = ">=4.7.0" }]
 
 [[package]]
 name = "fraise-mcp"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "mcp" }
 dependencies = [
     { name = "fraise-sdk", extra = ["fastembed"] },
