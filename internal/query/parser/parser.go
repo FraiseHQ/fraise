@@ -256,12 +256,13 @@ func (p *parser[K, P]) errUnexpected(tok lexer.Token) error {
 // is read by that spelling, as errKeywordAsTerm and errKeywordAsClause read it
 // by type. A word with no clause reading gets only the quote, or the caller
 // would be sent from one rejection to the next: a command word or a prefix
-// anywhere, and said or occurred among the terms of a search (amongTerms),
-// where they are clauses of a remember. "recall When did anna run" is a
-// question that opens with the word, not a when:<value> clause.
-func (p *parser[K, P]) errMisCasedKeyword(tok lexer.Token, amongTerms bool) error {
+// anywhere, and said or occurred anywhere in a recall or a when (search),
+// where they are clauses of a remember. Only a remember reads Said '2023' as
+// a said: it meant. "recall When did anna run" is a question that opens with
+// the word, not a when:<value> clause.
+func (p *parser[K, P]) errMisCasedKeyword(tok lexer.Token, search bool) error {
 	kind := lexer.KeywordsMap[strings.ToLower(tok.Literal)]
-	if kind.IsCommand() || kind.IsPrefix() || (amongTerms && (kind == lexer.SAID || kind == lexer.OCCURRED)) {
+	if kind.IsCommand() || kind.IsPrefix() || (search && (kind == lexer.SAID || kind == lexer.OCCURRED)) {
 		return p.errf(tok.Pos, "mis-cased keyword %q: keywords are lower case — quote it ('%s') to search for the word",
 			tok.Literal, tok.Literal)
 	}
@@ -723,9 +724,13 @@ func (p *parser[K, P]) parseRecallBody(cmd lexer.Token) (RecallBodyNode[K, P], e
 	// rejected. An anchor is a list, so a repeat adds to it.
 	for !p.isAtEnd() {
 		// said and occurred start no clause of a search, however they are
-		// written. They are refused before the repairs below can offer one.
+		// written. They are refused before the repairs below can offer one,
+		// and a mis-cased spelling gets the quote alone, as the word does.
 		if p.cur.Type == lexer.SAID || p.cur.Type == lexer.OCCURRED {
 			return RecallBodyNode[K, P]{}, p.errRememberClauseOnRead(p.cur)
+		}
+		if kind := lexer.KeywordsMap[strings.ToLower(p.cur.Literal)]; p.cur.IsMisCasedKeyword() && (kind == lexer.SAID || kind == lexer.OCCURRED) {
+			return RecallBodyNode[K, P]{}, p.errMisCasedKeyword(p.cur, true)
 		}
 		if p.isDanglingKeyword() {
 			return RecallBodyNode[K, P]{}, p.errKeywordAsClause(p.cur)

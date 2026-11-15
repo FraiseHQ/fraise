@@ -1227,10 +1227,15 @@ func TestRememberClauseOnAReadIsRefused(t *testing.T) {
 		"recall she said it": {15, `term "said" is also a keyword: quote it ('said') to search for the word`},
 		"recall occurred":    {15, `term "occurred" is also a keyword: quote it ('occurred') to search for the word`},
 		"when race said":     {14, `term "said" is also a keyword: quote it ('said') to search for the word`},
-		// The same word mis-cased, which casing does not un-reserve.
-		"recall what anna Said": {21, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
-		"recall OCCURRED":       {15, `mis-cased keyword "OCCURRED": keywords are lower case — quote it ('OCCURRED') to search for the word`},
-		"when race Said":        {14, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
+		// The same word mis-cased, which casing does not un-reserve, among the
+		// terms and after a clause alike.
+		"recall what anna Said":              {21, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
+		"recall anna topic:x Said":           {24, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
+		"when race topic:x Occurred":         {26, `mis-cased keyword "Occurred": keywords are lower case — quote it ('Occurred') to search for the word`},
+		"recall anna until:(when race) Said": {34, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
+		"recall x topic:y Said '2023'":       {21, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
+		"recall OCCURRED":                    {15, `mis-cased keyword "OCCURRED": keywords are lower case — quote it ('OCCURRED') to search for the word`},
+		"when race Said":                     {14, `mis-cased keyword "Said": keywords are lower case — quote it ('Said') to search for the word`},
 	}
 
 	for query, tc := range cases {
