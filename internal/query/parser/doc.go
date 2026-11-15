@@ -23,9 +23,10 @@
 // Package parser turns one FQL instruction into a typed command node.
 //
 // [Parse] reads the lexer's tokens through a two-token window. It returns a
-// [CommandNode]: a [RecallCommandNode], a [RememberCommandNode] or a
-// [WhenCommandNode]. Their clauses are [FieldNode] values. Nodes keep their
-// source tokens, so String prints a query that parses back to the same node.
+// [CommandNode]: a [RecallCommandNode], a [RememberCommandNode], a
+// [WhenCommandNode] or a [DescribeCommandNode]. Their clauses are [FieldNode]
+// values. Nodes keep their source tokens, so String prints a query that parses
+// back to the same node.
 //
 // A when is a query whose answer is a time. It stands alone as a statement, and
 // it stands in a recall's since: or until: inside parentheses, where its answer
@@ -33,6 +34,12 @@
 // the production that reads a whole instruction, so the nested command is an
 // ordinary [CommandNode]. What a bound may hold is checked on that command once
 // it is parsed.
+//
+// A describe is a prefix in front of a recall: the query answers with the
+// shape of what the recall reaches rather than its facts. The recall it holds
+// is a whole [RecallCommandNode], selector included, and its body may be empty
+// or name no seed, which describes the whole graph. One prefix stands in front
+// of a statement, and only in front of a recall.
 //
 // This package owns only the grammar. The query layer reads commands through
 // their accessors and enforces the configured limits. Vectors never appear in

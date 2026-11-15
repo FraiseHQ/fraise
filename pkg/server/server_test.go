@@ -26,6 +26,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -477,19 +478,44 @@ func TestQueryEmptyGraphIsPerGraph(t *testing.T) {
 }
 
 // readBody is a read's 200 response as a client decodes it: the result, with
-// the time a when answers with and the times each fact was given, and the
-// warnings beside it.
+// the time a when answers with, the catalogue a describe answers with and the
+// times each fact was given, and the warnings beside it.
 type readBody struct {
 	Results  readResults `json:"results"`
 	Warnings []string    `json:"warnings"`
 }
 
 type readResults struct {
-	Count int        `json:"count"`
-	Start string     `json:"start"`
-	End   string     `json:"end"`
-	Hits  []readHit  `json:"hits"`
-	When  *readWhens `json:"when"`
+	Count     int            `json:"count"`
+	Start     string         `json:"start"`
+	End       string         `json:"end"`
+	Hits      []readHit      `json:"hits"`
+	When      *readWhens     `json:"when"`
+	Catalogue *readCatalogue `json:"catalogue"`
+}
+
+// readCatalogue is a describe's catalogue as a client decodes it. A time the
+// response leaves out decodes as nil, so a catalogue of no fact reads apart
+// from one whose facts hold a time.
+type readCatalogue struct {
+	Graph    int         `json:"graph"`
+	Scope    string      `json:"scope"`
+	Facts    int         `json:"facts"`
+	Anchors  int         `json:"anchors"`
+	Happened *readSpan   `json:"happened"`
+	Said     *readSpan   `json:"said"`
+	Written  *readSpan   `json:"written"`
+	Topics   []readEntry `json:"topics"`
+	Entities []readEntry `json:"entities"`
+}
+
+// readEntry is one topic or entity of a readCatalogue.
+type readEntry struct {
+	Value    string    `json:"value"`
+	Facts    int       `json:"facts"`
+	Happened *readSpan `json:"happened"`
+	Said     *readSpan `json:"said"`
+	Written  *readSpan `json:"written"`
 }
 
 type readWhens struct {
@@ -727,6 +753,326 @@ func TestQueryWhenOnAnEmptyGraphIsNoContent(t *testing.T) {
 	}
 }
 
+// newCatalogueServer returns a server whose graph 0 holds five dated facts,
+// written in this order. The heron nests by the lake on 1 May 2023, told on 2
+// May, filed under birds, lake and heron. It catches a fish on 7 May, told on
+// 8 May, filed under birds and heron. The swan crosses the water over June,
+// told on 2 June, filed under birds and swan. The ferry leaves, told on 4 July
+// and given no occurred:, so it happened that day, filed under travel. The
+// tide turns, told on 20 April, filed under nothing.
+func newCatalogueServer(t *testing.T) *Server[uint64, float32] {
+	t.Helper()
+	s := newTestServer(t)
+	for _, statement := range []string{
+		"remember@0 'the heron nests by the lake' topic:birds topic:lake entity:heron said:'2023-05-02' occurred:'2023-05-01'",
+		"remember@0 'the heron caught a fish' topic:birds entity:heron said:'2023-05-08' occurred:'2023-05-07'",
+		"remember@0 'the swan crossed the water' topic:birds entity:swan said:'2023-06-02' occurred:'2023-06'",
+		"remember@0 'the ferry left the harbour' topic:travel said:'2023-07-04'",
+		"remember@0 'the tide turned at dawn' said:'2023-04-20'",
+	} {
+		request, err := json.Marshal(map[string]string{"query": statement})
+		if err != nil {
+			t.Fatalf("encoding %q: %v", statement, err)
+		}
+		if w := s.do(http.MethodPost, "/api/v1/q", string(request)); w.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want %d (body: %s)", statement, w.Code, http.StatusOK, w.Body.String())
+		}
+	}
+	return s
+}
+
+// TestQueryDescribeAnswersWithACatalogue pins what a describe answers on the
+// query route: a read's envelope with no hit and a count of zero, and beside
+// them the catalogue of every fact its recall reaches. A recall that names no
+// seed reaches every fact of the graph, the tide filed under nothing among
+// them, and anchors alone every fact filed under one of them. Each anchor
+// counts the facts of the set filed under it, so under topic:birds the heron
+// counts the two of its facts that are birds. top: caps the topics and the
+// entities listed and not the facts counted, and anchors counts them all
+// before the cap. since:, until: and a when in a bound keep the facts a
+// recall would keep. A describe that reaches no fact of a populated graph
+// stays a 200, with empty lists and no time, as a recall's miss does. The
+// written times are the instants of the test, so TestQueryDescribeBodyIsPinned
+// pins them instead.
+func TestQueryDescribeAnswersWithACatalogue(t *testing.T) {
+	span := func(start, end string) *readSpan {
+		return &readSpan{Start: start + "T00:00:00Z", End: end + "T00:00:00Z"}
+	}
+	nests := span("2023-05-01", "2023-05-02")
+	toldNests := span("2023-05-02", "2023-05-02")
+	ferry := span("2023-07-04", "2023-07-04")
+	june := span("2023-06-01", "2023-07-01")
+	toldSwan := span("2023-06-02", "2023-06-02")
+	birds := readEntry{Value: "birds", Facts: 3, Happened: span("2023-05-01", "2023-07-01"), Said: span("2023-05-02", "2023-06-02")}
+	lake := readEntry{Value: "lake", Facts: 1, Happened: nests, Said: toldNests}
+	travel := readEntry{Value: "travel", Facts: 1, Happened: ferry, Said: ferry}
+	heron := readEntry{Value: "heron", Facts: 2, Happened: span("2023-05-01", "2023-05-08"), Said: span("2023-05-02", "2023-05-08")}
+	swan := readEntry{Value: "swan", Facts: 1, Happened: june, Said: toldSwan}
+	whole := readCatalogue{
+		Facts:    5,
+		Anchors:  5,
+		Happened: span("2023-04-20", "2023-07-04"),
+		Said:     span("2023-04-20", "2023-07-04"),
+		Topics:   []readEntry{birds, lake, travel},
+		Entities: []readEntry{heron, swan},
+	}
+	answered := func(c readCatalogue) readBody {
+		return readBody{Results: readResults{Hits: []readHit{}, Catalogue: &c}}
+	}
+
+	tests := map[string]readBody{
+		"describe recall":   answered(whole),
+		"describe recall@0": answered(whole),
+		"describe recall@0 topic:birds": answered(readCatalogue{
+			Scope:    "topic:birds",
+			Facts:    3,
+			Anchors:  4,
+			Happened: birds.Happened,
+			Said:     birds.Said,
+			Topics:   []readEntry{birds, lake},
+			Entities: []readEntry{heron, swan},
+		}),
+		"describe recall@0 topic:travel topic:lake": answered(readCatalogue{
+			Scope:    "topic:travel topic:lake",
+			Facts:    2,
+			Anchors:  4,
+			Happened: span("2023-05-01", "2023-07-04"),
+			Said:     span("2023-05-02", "2023-07-04"),
+			Topics: []readEntry{
+				{Value: "birds", Facts: 1, Happened: nests, Said: toldNests},
+				lake,
+				travel,
+			},
+			Entities: []readEntry{{Value: "heron", Facts: 1, Happened: nests, Said: toldNests}},
+		}),
+		"describe recall@0 top:1": answered(readCatalogue{
+			Scope:    "top:1",
+			Facts:    5,
+			Anchors:  5,
+			Happened: whole.Happened,
+			Said:     whole.Said,
+			Topics:   []readEntry{birds},
+			Entities: []readEntry{heron},
+		}),
+		"describe recall@0 since:'2023-06'": answered(readCatalogue{
+			Scope:    "since:'2023-06'",
+			Facts:    2,
+			Anchors:  3,
+			Happened: span("2023-06-01", "2023-07-04"),
+			Said:     span("2023-06-02", "2023-07-04"),
+			Topics: []readEntry{
+				{Value: "birds", Facts: 1, Happened: june, Said: toldSwan},
+				travel,
+			},
+			Entities: []readEntry{swan},
+		}),
+		"describe recall@0 until:(when swan)": answered(readCatalogue{
+			Scope:    "until:(when swan)",
+			Facts:    3,
+			Anchors:  3,
+			Happened: span("2023-04-20", "2023-05-08"),
+			Said:     span("2023-04-20", "2023-05-08"),
+			Topics: []readEntry{
+				{Value: "birds", Facts: 2, Happened: heron.Happened, Said: heron.Said},
+				lake,
+			},
+			Entities: []readEntry{heron},
+		}),
+		"describe recall@0 zzznomatchzzz": answered(readCatalogue{
+			Scope:    "zzznomatchzzz",
+			Topics:   []readEntry{},
+			Entities: []readEntry{},
+		}),
+		"describe recall@0 until:(when zebras)": {
+			Results: readResults{Hits: []readHit{}, Catalogue: &readCatalogue{
+				Scope:    "until:(when zebras)",
+				Topics:   []readEntry{},
+				Entities: []readEntry{},
+			}},
+			Warnings: []string{"until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits"},
+		},
+	}
+	withoutWritten := cmp.Options{
+		cmpopts.IgnoreFields(readCatalogue{}, "Written"),
+		cmpopts.IgnoreFields(readEntry{}, "Written"),
+	}
+	s := newCatalogueServer(t)
+
+	for query, want := range tests {
+		t.Run(query, func(t *testing.T) {
+			got := s.read(t, "/api/v1/q", query)
+
+			if diff := cmp.Diff(want, got, withoutWritten); diff != "" {
+				t.Errorf("%s mismatch (-want +got):\n%s", query, diff)
+			}
+		})
+	}
+}
+
+// TestQueryDescribeBodyIsPinned pins the whole body of one describe, byte for
+// byte: the keys and their order, an empty hit array and a count of zero
+// beside the catalogue, the scope as the server read it with the value folded
+// to lower case, the anchors counted before top: caps each list, and every
+// time to the instant. The MCP bridge mirrors this shape (Catalogue in
+// pkg/mcp) and returns it as its recall tool's output, so if this test has to
+// change, the bridge changes with it. A fact is written at the time of the
+// test, so the written times are read off a recall of the same two facts.
+func TestQueryDescribeBodyIsPinned(t *testing.T) {
+	s := newCatalogueServer(t)
+	w := s.do(http.MethodPost, "/api/v1/q", `{"query":"recall@0 entity:heron"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("recall: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+	var recalled struct {
+		Results struct {
+			Hits []struct {
+				Value     string `json:"value"`
+				Timestamp string `json:"timestamp"`
+			} `json:"hits"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &recalled); err != nil {
+		t.Fatalf("decoding %s: %v", w.Body.String(), err)
+	}
+	written := make(map[string]string, len(recalled.Results.Hits))
+	for _, hit := range recalled.Results.Hits {
+		written[hit.Value] = hit.Timestamp
+	}
+
+	// Both facts are filed under birds and heron, so the two anchors hold the
+	// times the whole set holds. The heron nested before it caught the fish,
+	// and was written first.
+	times := `"happened":{"start":"2023-05-01T00:00:00Z","end":"2023-05-08T00:00:00Z"},` +
+		`"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00Z"},` +
+		`"written":{"start":"` + written["the heron nests by the lake"] + `","end":"` + written["the heron caught a fish"] + `"}`
+	want := `{"results":{"count":0,"hits":[],"catalogue":{"graph":0,"scope":"entity:heron top:1","facts":2,"anchors":3,` + times +
+		`,"topics":[{"value":"birds","facts":2,` + times + `}]` +
+		`,"entities":[{"value":"heron","facts":2,` + times + `}]}}}`
+
+	w = s.do(http.MethodPost, "/api/v1/q", `{"query":"describe recall@0 entity:Heron top:1"}`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+	if diff := cmp.Diff(want, strings.TrimSpace(w.Body.String())); diff != "" {
+		t.Errorf("body mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestQueryDescribeCountsWhatItsRecallReaches pins the set a describe of a
+// search counts: every fact its recall would rank, not the first top: of
+// them. The recall runs with the widest top the server allows, so the two
+// agree however the ranking admits and orders the facts. The describe asks
+// for top:1, which caps only the anchors it lists.
+func TestQueryDescribeCountsWhatItsRecallReaches(t *testing.T) {
+	s := newCatalogueServer(t)
+	terms := map[string]struct{}{
+		"heron": {},
+		"fish":  {},
+		"swan":  {},
+	}
+	for term := range terms {
+		t.Run(term, func(t *testing.T) {
+			recalled := s.read(t, "/api/v1/q", fmt.Sprintf("recall@0 %s top:%d", term, s.Config.DB.MaxTop))
+			described := s.read(t, "/api/v1/q", "describe recall@0 "+term+" top:1")
+
+			if described.Results.Catalogue == nil {
+				t.Fatalf("describe results = %+v, want a catalogue", described.Results)
+			}
+			got, want := described.Results.Catalogue.Facts, len(recalled.Results.Hits)
+			if want < 2 {
+				t.Fatalf("the recall of %q returned %d facts, want at least 2 for top:1 to leave some out", term, want)
+			}
+			if got != want {
+				t.Errorf("describe of %q counted %d facts, want the %d its recall ranks", term, got, want)
+			}
+		})
+	}
+}
+
+// TestQueryDescribeOnAnEmptyGraphIsNoContent pins that a describe is a read
+// where the empty graph is concerned. A describe of a graph that holds
+// nothing, whole, windowed or scoped, is answered 204 with no body, as a
+// recall is: the caller has yet to write, and a catalogue of no fact would
+// not say so. Graph 1 holds a fact, so the answer is read off the graph the
+// recall selects and not the store as a whole.
+func TestQueryDescribeOnAnEmptyGraphIsNoContent(t *testing.T) {
+	s := newTestServer(t)
+	if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@1 'the heron nests by the lake' topic:birds"}`); w.Code != http.StatusOK {
+		t.Fatalf("seeding write: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+	}
+	queries := map[string]struct{}{
+		"describe recall":                {},
+		"describe recall@0":              {},
+		"describe recall@3":              {},
+		"describe recall@0 since:'2023'": {},
+		"describe recall@0 heron":        {},
+		"describe recall@0 topic:birds":  {},
+	}
+	for query := range queries {
+		t.Run(query, func(t *testing.T) {
+			w := s.do(http.MethodPost, "/api/v1/q", `{"query":"`+query+`"}`)
+
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusNoContent, w.Body.String())
+			}
+			if body := w.Body.String(); body != "" {
+				t.Errorf("body = %q, want it empty: 204 must not carry one", body)
+			}
+		})
+	}
+}
+
+// TestQueryDescribeMisshapenIsBadRequest pins that a describe the server
+// cannot run is answered 400 with the message that says how to write it, the
+// parser's own for a statement it rejects. describe stands in front of a
+// recall alone, once, and takes no graph selector of its own, so describe
+// recall@8 is out of range as recall@8 is. The recall behind it may name no
+// seed, but a bare recall still must, and a stop word alone still searches
+// for nothing. top: is range-checked as a recall's is. A time bound reads a
+// when, so a describe inside one is refused there.
+func TestQueryDescribeMisshapenIsBadRequest(t *testing.T) {
+	s := newCatalogueServer(t)
+	tests := map[string]string{
+		"describe":                    "describe needs a recall to describe: write describe recall for the whole graph, or describe recall <terms> for what a search reaches",
+		"describe ":                   "describe needs a recall to describe: write describe recall for the whole graph, or describe recall <terms> for what a search reaches",
+		"describe@1 recall":           "a describe takes no graph selector: it describes the graph its recall reads — write the selector on the recall, as in describe recall@2",
+		"describe remember 'a heron'": `describe stands in front of a recall, not "remember": only a recall reaches a set of facts to describe`,
+		"describe when heron":         `describe stands in front of a recall, not "when": only a recall reaches a set of facts to describe`,
+		"describe describe recall":    `"describe" cannot follow describe: a statement takes one prefix`,
+		"describe explain recall":     `"explain" cannot follow describe: a statement takes one prefix`,
+		"describe heron":              `expected recall after describe, found "heron"`,
+		"Describe:recall heron":       `expected a space after describe, found ":"`,
+		"describe recall the":         `term "the" is a stop word and the only search term`,
+		"describe recall top:0":       fmt.Sprintf("top:0 out of range (1-%d)", s.Config.DB.MaxTop),
+		"describe recall@8":           "graph 8 does not exist",
+		"recall":                      "expected a space after the command, found end of input",
+		"explain recall heron":        `expected a command (recall, remember, when, describe recall), found "explain"`,
+		"recall@0 heron since:(describe recall heron)": `expected a when after "(", found "describe"`,
+	}
+	for query, want := range tests {
+		t.Run(query, func(t *testing.T) {
+			request, err := json.Marshal(map[string]string{"query": query})
+			if err != nil {
+				t.Fatalf("encoding %q: %v", query, err)
+			}
+
+			w := s.do(http.MethodPost, "/api/v1/q", string(request))
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			var got ErrorResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decoding %s: %v", w.Body.String(), err)
+			}
+			if !strings.Contains(got.Error, want) {
+				t.Errorf("error = %q, want it to contain %q", got.Error, want)
+			}
+		})
+	}
+}
+
 // TestExplainCarriesTheWhenItsBoundRead pins what explain adds for the
 // temporal clauses. Each hit carries decay, the recency factor its relevance
 // was scaled by. A recall whose bound holds a when carries that when's result
@@ -891,7 +1237,9 @@ func captureStdout(t *testing.T, fn func()) string {
 // DEBUG, where an operator has opted in. That covers the errors too: a parse
 // error that quotes the query, and a write that fails at commit, which the
 // scheduler and the handler log at Error. The DEBUG row keeps the marker visible, so the INFO row's absence
-// comes from the level and not from a query that never ran.
+// comes from the level and not from a query that never ran. A describe answers
+// with the topics and entities its facts are filed under, and its line at INFO
+// carries the same shape as a recall's, never an anchor it names or lists.
 func TestQueryLogsCarryShapeNotContent(t *testing.T) {
 	const private = "zzprivate"
 
@@ -932,6 +1280,22 @@ func TestQueryLogsCarryShapeNotContent(t *testing.T) {
 				}
 				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 '`+private+` vector fact' vec:$v","parameters":{"v":[0.1,0.2,0.3,0.4]}}`); w.Code != http.StatusBadRequest {
 					t.Fatalf("mismatched vector: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
+				}
+				// A describe answers with the anchors its facts are filed
+				// under, so the private value, filed as a topic and an
+				// entity, is in its answer whether it names the anchor or
+				// describes the whole graph. The describe the parser rejects
+				// is quoted back in its error.
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"remember@0 'anna filed the invoice' topic:`+private+` entity:`+private+`"}`); w.Code != http.StatusOK {
+					t.Fatalf("filed remember: status = %d, want %d (body: %s)", w.Code, http.StatusOK, w.Body.String())
+				}
+				for _, query := range []string{"describe recall@0 topic:" + private, "describe recall@0"} {
+					if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"`+query+`"}`); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), private) {
+						t.Fatalf("%s: status = %d, want %d with the anchor in the catalogue (body: %s)", query, w.Code, http.StatusOK, w.Body.String())
+					}
+				}
+				if w := s.do(http.MethodPost, "/api/v1/q", `{"query":"describe `+private+`"}`); w.Code != http.StatusBadRequest {
+					t.Fatalf("unparsable describe: status = %d, want %d (body: %s)", w.Code, http.StatusBadRequest, w.Body.String())
 				}
 			})
 

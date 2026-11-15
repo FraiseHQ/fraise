@@ -43,7 +43,7 @@ A successful recall carries ranked hits, highest score first — relevance after
 
 <Note title="Count is not a total" type="warning">
 
-`count` is how many hits were **returned**, not how many exist — a recall is capped by `top:` and by `default-top`.
+`count` is how many hits were **returned**, not how many exist — a recall is capped by `top:` and by `default-top`. How many facts a recall reaches is what a [`describe`](#a-describe-answers-with-a-catalogue) of it counts.
 
 </Note>
 
@@ -88,6 +88,47 @@ A `when` returns the same shape, with the time it answers with as `start` and `e
 
 The two are a span like any other: equal for one moment, and with no `end` for an answer that is not over. A `when` that matched no fact has neither, and says so in a warning. See [Commands](/docs/query-language/foundations/commands).
 
+### A `describe` answers with a catalogue
+
+A `describe` returns the same envelope with no hits: `count` is 0 and `hits` is `[]`, since it returns no fact, and `catalogue` on `results` carries the shape of every fact its recall reaches:
+
+```json
+{
+  "results": {
+    "count": 0,
+    "hits": [],
+    "catalogue": {
+      "graph": 0,
+      "scope": "topic:sailing top:2",
+      "facts": 3,
+      "anchors": 4,
+      "happened": {"start": "2023-05-01T00:00:00Z"},
+      "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00Z"},
+      "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217465Z"},
+      "topics": [
+        {"value": "sailing", "facts": 3, "happened": {"start": "2023-05-01T00:00:00Z"}, "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00Z"}, "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217465Z"}}
+      ],
+      "entities": [
+        {"value": "anna", "facts": 3, "happened": {"start": "2023-05-01T00:00:00Z"}, "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00Z"}, "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217465Z"}},
+        {"value": "east quay", "facts": 1, "happened": {"start": "2023-05-20T00:00:00Z"}, "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-06-02T00:00:00Z"}, "written": {"start": "2026-11-15T13:37:18.201439Z", "end": "2026-11-15T13:37:18.201439Z"}}
+      ]
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `graph` | the graph described, the one the recall's selector names |
+| `scope` | the recall's body as the server read it: terms and anchors folded to lower case, clauses in one fixed order; empty for the whole graph |
+| `facts` | how many facts the recall reaches: every candidate it would rank, not its first `top:` |
+| `anchors` | how many topics and entities those facts are filed under, before the lists are capped |
+| `happened` | from the earliest start to the latest end of what the facts state took place; no `end` when one of them is not over |
+| `said`, `written` | from the first fact said, or written, to the last |
+| `topics`, `entities` | the anchors the facts are filed under, the most filed first and ties by value, at most `top:` of each kind; each has its `value`, the `facts` filed under it and the three times of those facts |
+
+A fact given no time on a clock reads the next one, as a bound reads it, so a set written with no times reads the same on all three. The times are left out when the recall reached no fact, while `topics` and `entities` are always there, `[]` when there is none. Under a describe of one anchor, every other anchor counts the facts it shares with the one named. See [Commands](/docs/query-language/foundations/commands).
+
 ### A write is acknowledged, not answered with results
 
 A write has no result set. It returns 200 with an acknowledgement of its own:
@@ -100,12 +141,18 @@ The `status` key is what tells a write apart from a read. It is a fixed token ra
 
 ### An empty graph answers 204
 
-A recall of a graph that holds nothing comes back `204 No Content`, with no body at all. It is a success, not an error: there was nothing to search.
+A recall or a `describe` of a graph that holds nothing comes back `204 No Content`, with no body at all. It is a success, not an error: there was nothing to search.
 
 This is deliberately distinct from a recall that searched a populated graph and matched none of it, which stays 200 with an empty result set:
 
 ```json
 {"results": {"count": 0, "hits": []}}
+```
+
+A `describe` that reached no fact of a populated graph stays 200 the same way, with a catalogue that counts none:
+
+```json
+{"results": {"count": 0, "hits": [], "catalogue": {"graph": 0, "scope": "zebra", "facts": 0, "anchors": 0, "topics": [], "entities": []}}}
 ```
 
 The two call for different responses from the caller. A 204 says no fact has ever been written to this graph, so no rephrasing of the query would have helped; a 200 with no hits says the facts are there and the query missed them. Collapsing them sends a caller debugging a question when it should be checking whether it ever wrote.

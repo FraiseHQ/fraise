@@ -35,7 +35,6 @@ from fraise_mcp.statement import embedding_text, with_vector
         ("recall x topic:top", "x"),
         ("recall Kraków 2026", "Kraków 2026"),
         ("explain recall barometer", "barometer"),
-        ("describe recall barometer topic:weather", "barometer"),
         ("recall  barometer\t", "barometer"),
         ("remember 'a fact'\n", "a fact"),
         ("recall zebras \n  \n\t", "zebras"),
@@ -59,6 +58,8 @@ def test_the_fact_or_the_terms_are_encoded(statement, want):
         "recall topic:weather",
         "recall@2 topic:weather entity:harbour top:20",
         "describe recall",
+        "describe recall barometer topic:weather",
+        "describe recall@2 'favourite colour'",
         "recall barometer vec:$q",
         "recall barometer VEC:$q",
         "remember 'the barometer falls' vec:$q",
@@ -81,8 +82,10 @@ def test_a_statement_the_reader_cannot_follow_takes_no_vector(statement):
     """Anything but a readable remember or a recall with terms is sent as written.
 
     An anchor-only recall would become a scored search with a vector beside
-    it. A statement binding a vector already would bind a second. The rest are
-    errors, and the server's message must be about what the model wrote.
+    it. A describe would reach every fact that holds a vector, since a vector
+    ranks them all, rather than the facts its terms match. A statement binding
+    a vector already would bind a second. The rest are errors, and the
+    server's message must be about what the model wrote.
     """
     assert embedding_text(statement) is None
 

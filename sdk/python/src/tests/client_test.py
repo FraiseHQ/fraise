@@ -43,7 +43,7 @@ from fraise_sdk import (
 )
 from fraise_sdk.constants import DEFAULT_TIMEOUT_SECONDS
 from fraise_sdk.errors import FraiseQueryError
-from fraise_sdk.models import GraphStats
+from fraise_sdk.models import Catalogue, CatalogueEntry, GraphStats
 from fraise_sdk.providers import Anchor, Context
 
 
@@ -169,6 +169,188 @@ def test_explain_returns_each_hit_with_its_contributions(
     assert result.count == 3
     assert all(hit.contributions for hit in result)
     assert result.background == 0.4857013396824596
+
+
+@pytest.mark.parametrize(
+    "keywords, kwargs",
+    [
+        (["polly"], {"entities": ["polly"], "depth": 2}),
+        ([], {"query": "where does the parrot sleep", "topics": ["birds"], "top": 3}),
+        (["kettle"], {"graph": 4, "vector": [0.5, 0.5]}),
+        (["anna"], {"since": date(2023, 5, 1), "until": When("regatta")}),
+    ],
+)
+def test_describe_sends_the_recall_query_with_describe_in_front(
+    session, query_url, keywords, kwargs
+):
+    """describe posts what recall posts, ``describe`` in front, to the same route.
+
+    The three share one path, so a catalogue always pictures the search recall
+    would run. If describe sent a different query string, vector or timeout,
+    the shape a caller reads would be the shape of a different search.
+    """
+    client = FraiseClient()
+    client.recall(*keywords, **kwargs)
+    client.describe(*keywords, **kwargs)
+
+    recalled, described = session.post.call_args_list
+    assert recalled.args == described.args == (query_url,)
+    query = recalled.kwargs["json"]["query"]
+    assert described.kwargs == recalled.kwargs | {
+        "json": recalled.kwargs["json"] | {"query": f"describe {query}"}
+    }
+
+
+def test_describe_of_a_graph_alone_needs_no_seed(session, query_url):
+    """``describe(graph=3)`` posts the bare describe, where recall would refuse.
+
+    Nothing to search from is the describe of the whole graph, so the client
+    sends it as it is and leaves the answer to the server.
+    """
+    FraiseClient().describe(graph=3)
+
+    session.post.assert_called_once_with(
+        query_url,
+        json={"query": "describe recall@3"},
+        timeout=DEFAULT_TIMEOUT_SECONDS,
+    )
+
+
+@pytest.mark.parametrize(
+    "keywords, kwargs, want",
+    [
+        (
+            ["anna"],
+            {"until": When("regatta")},
+            {"query": "describe recall@6 anna until:(when regatta)"},
+        ),
+        (
+            ["anna"],
+            {"until": When("regatta"), "embed": True},
+            {
+                "query": "describe recall@6 anna until:(when regatta vec:$vuntil) vec:$v",
+                "parameters": {"v": [4.0] * 4, "vuntil": [7.0] * 4},
+            },
+        ),
+        ([], {"topics": ["sport"]}, {"query": "describe recall@6 topic:sport"}),
+        ([], {}, {"query": "describe recall@6"}),
+    ],
+)
+def test_describe_embeds_only_when_asked(
+    session, sent, callable_embedder, keywords, kwargs, want
+):
+    """A describe sends a vector only when ``embed=True`` asks for one.
+
+    A vector ranks every fact that holds one, so a describe sent with one would
+    describe every such fact instead of the facts its words match. A configured
+    embedder therefore stays idle unless the call asks, and then encodes the
+    describe's text and its whens as a recall's: the embedder returns the
+    length of what it encodes, so ``anna`` is 4 and ``regatta`` 7.
+    """
+    FraiseClient(embedder=callable_embedder()).describe(*keywords, graph=6, **kwargs)
+
+    assert sent(session) == want
+
+
+def test_describe_parses_the_catalogue(session, respond, sent, describe_response):
+    """A recorded describe parses into a Catalogue, each anchor an entry, each time a span.
+
+    The counts, the order the server listed the anchors in and every span
+    arrive typed. The happened span has no end, because one fact has not
+    ended. The said span ends at a written moment, because the fact given no
+    times was said when it was written.
+    """
+    respond(session, describe_response)
+
+    catalogue = FraiseClient().describe(entities=["polly"])
+
+    may = {day: datetime(2023, 5, day, tzinfo=timezone.utc) for day in (1, 7, 8, 10)}
+    first, second, last = (
+        datetime(2026, 11, 15, 13, 37, 6, micro, tzinfo=timezone.utc)
+        for micro in (377159, 378198, 378845)
+    )
+    assert sent(session)["query"] == "describe recall@0 entity:polly"
+    assert catalogue == Catalogue(
+        graph=0,
+        scope="entity:polly",
+        facts=3,
+        anchors=4,
+        happened=Interval(start=may[1], end=None),
+        said=Interval(start=may[8], end=last),
+        written=Interval(start=first, end=last),
+        topics=[
+            CatalogueEntry(
+                value="diet",
+                facts=1,
+                happened=Interval(start=may[1], end=None),
+                said=Interval(start=may[10], end=may[10]),
+                written=Interval(start=second, end=second),
+            ),
+            CatalogueEntry(
+                value="sounds",
+                facts=1,
+                happened=Interval(start=may[7], end=may[8]),
+                said=Interval(start=may[8], end=may[8]),
+                written=Interval(start=first, end=first),
+            ),
+        ],
+        entities=[
+            CatalogueEntry(
+                value="polly",
+                facts=3,
+                happened=Interval(start=may[1], end=None),
+                said=Interval(start=may[8], end=last),
+                written=Interval(start=first, end=last),
+            ),
+            CatalogueEntry(
+                value="kitchen",
+                facts=1,
+                happened=Interval(start=last, end=last),
+                said=Interval(start=last, end=last),
+                written=Interval(start=last, end=last),
+            ),
+        ],
+    )
+    assert bool(catalogue) is True
+
+
+def test_describe_of_an_empty_graph_is_marked_empty(session, respond_no_content):
+    """A 204 gives an empty catalogue of the graph asked about, marked ``empty``.
+
+    The status line says the graph holds nothing, and a 204 has no body to
+    name the graph. The catalogue names it anyway, from the call, so a caller
+    describing several graphs can tell which one is empty.
+    """
+    respond_no_content(session)
+
+    catalogue = FraiseClient().describe(graph=8)
+
+    assert catalogue == Catalogue(
+        graph=8, scope="", facts=0, anchors=0, topics=[], entities=[], empty=True
+    )
+    assert bool(catalogue) is False
+
+
+def test_describe_surfaces_server_warnings(
+    session, respond, sent, warned_describe_response
+):
+    """A server warning on a describe is listed on the catalogue and emitted.
+
+    The armed response is ``describe recall@0 ferry the``, recorded. It ran and
+    reached nothing, and the server flagged the stop word that can never
+    match. The graph holds facts, so the catalogue is not ``empty``: the query
+    is what to change. The warning names the caller's line, not the SDK's.
+    """
+    respond(session, warned_describe_response)
+
+    with pytest.warns(FraiseWarning, match="is a stop word") as record:
+        catalogue = FraiseClient().describe("ferry", "the")
+
+    assert sent(session)["query"] == "describe recall@0 ferry the"
+    assert record[0].filename == __file__
+    assert catalogue.warnings == warned_describe_response["warnings"]
+    assert catalogue.facts == 0
+    assert catalogue.empty is False
 
 
 def test_recall_empty_results(session):
@@ -1154,6 +1336,172 @@ def test_explain_breaks_down_the_ranking_recall_returns(
     assert "text" in {c.source for c in explained.hits[0].contributions}
     assert explained.background is not None
     assert recalled.background is None
+
+
+@pytest.mark.integration
+def test_a_describe_of_the_whole_graph_counts_every_fact_and_anchor(
+    client, stats_graph
+):
+    """A describe of a graph alone counts all of it, exactly, anchors most filed first.
+
+    The stats graph is claimed, so its counts are exact. Three facts: two filed
+    under topic:birds and entity:heron, one of those under entity:egret too,
+    and one filed under nothing, still counted. None was given a time, so each
+    reads the moment it was written on every clock, and the three spans are
+    the same span.
+    """
+    catalogue = client.describe(graph=stats_graph)
+
+    assert (catalogue.graph, catalogue.scope) == (stats_graph, "")
+    assert (catalogue.facts, catalogue.anchors) == (3, 3)
+    assert [(e.value, e.facts) for e in catalogue.topics] == [("birds", 2)]
+    assert [(e.value, e.facts) for e in catalogue.entities] == [
+        ("heron", 2),
+        ("egret", 1),
+    ]
+    assert catalogue.written is not None
+    assert catalogue.happened == catalogue.said == catalogue.written
+    assert catalogue.empty is False
+    assert catalogue.warnings == []
+
+
+@pytest.mark.integration
+def test_a_describe_of_one_entity_counts_the_facts_each_anchor_shares_with_it(
+    client, stats_graph
+):
+    """Under an entity alone, every anchor beside it counts the facts they share.
+
+    The heron files two facts in the graph, but only one of them is the
+    egret's, so beside the egret it counts one: its own count is read from a
+    describe of the heron. The egret and the heron tie, so they are listed by
+    value.
+    """
+    catalogue = client.describe(graph=stats_graph, entities=["egret"])
+
+    assert catalogue.scope == "entity:egret"
+    assert (catalogue.facts, catalogue.anchors) == (1, 3)
+    assert [(e.value, e.facts) for e in catalogue.topics] == [("birds", 1)]
+    assert [(e.value, e.facts) for e in catalogue.entities] == [
+        ("egret", 1),
+        ("heron", 1),
+    ]
+
+
+@pytest.mark.integration
+def test_top_caps_the_anchors_a_describe_lists_never_what_it_counts(
+    client, stats_graph
+):
+    """``top`` caps the topics and the entities listed, and nothing it counts.
+
+    Under describe ``top`` is how many anchors of each kind to list. The facts
+    and the anchors are still counted in full, so a caller knows how much the
+    list left out.
+    """
+    catalogue = client.describe(graph=stats_graph, top=1)
+
+    assert catalogue.scope == "top:1"
+    assert (catalogue.facts, catalogue.anchors) == (3, 3)
+    assert [e.value for e in catalogue.topics] == ["birds"]
+    assert [e.value for e in catalogue.entities] == ["heron"]
+
+
+@pytest.mark.parametrize(
+    "kwargs, facts, happened, said",
+    [
+        (
+            {},
+            3,
+            Interval(
+                start=datetime(2023, 5, 3, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 11, tzinfo=timezone.utc),
+            ),
+            Interval(
+                start=datetime(2023, 5, 6, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 20, tzinfo=timezone.utc),
+            ),
+        ),
+        (
+            {"since": date(2023, 5, 5)},
+            2,
+            Interval(
+                start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 11, tzinfo=timezone.utc),
+            ),
+            Interval(
+                start=datetime(2023, 5, 6, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+            ),
+        ),
+        (
+            {"until": When("noonmark")},
+            1,
+            Interval(
+                start=datetime(2023, 5, 3, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 4, tzinfo=timezone.utc),
+            ),
+            Interval(
+                start=datetime(2023, 5, 20, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 20, tzinfo=timezone.utc),
+            ),
+        ),
+    ],
+)
+@pytest.mark.integration
+def test_a_describe_of_a_search_spans_the_times_its_facts_hold(
+    kwargs, facts, happened, said, client, timeline_graph, timeline_word
+):
+    """A describe's spans run from the earliest of its facts' times to the latest.
+
+    The timeline happened on 3, 7 and 10 May, each a whole day, and was said on
+    20, 8 and 6 May, each a moment, so the two clocks order it differently: the
+    happened span ends where the mooring's day does, and the said span where
+    the caulking was reported. A bound keeps the facts a recall would keep, and
+    the spans cover those alone. The facts are filed under nothing, so no
+    anchor is listed.
+
+    NOTE: the said span ends at the last moment said, which an ``Interval``
+    excludes: the server's hull of two moments ends at the later one rather
+    than past it, as a ``when`` over several hits does. Once the hull holds a
+    moment beyond its end, the expected ``said`` ends move past that moment.
+    """
+    catalogue = client.describe(timeline_word, graph=timeline_graph, **kwargs)
+
+    assert (catalogue.facts, catalogue.anchors) == (facts, 0)
+    assert catalogue.happened == happened
+    assert catalogue.said == said
+    assert (catalogue.topics, catalogue.entities) == ([], [])
+
+
+@pytest.mark.integration
+def test_a_describe_that_reached_nothing_on_a_populated_graph_is_not_empty(
+    client, stats_graph, no_match
+):
+    """A describe that matched nothing counts nothing, and the graph is not empty.
+
+    The graph holds facts, so the search is what to change, and ``empty`` is
+    False. No fact was reached, so no span is set and the catalogue is false.
+    """
+    catalogue = client.describe(no_match, graph=stats_graph)
+
+    assert catalogue.empty is False
+    assert (catalogue.facts, catalogue.anchors) == (0, 0)
+    assert catalogue.happened is None
+    assert bool(catalogue) is False
+
+
+@pytest.mark.integration
+def test_a_describe_of_an_empty_graph_says_the_graph_is_empty(client, empty_graph):
+    """A describe of a graph nothing was ever written to sets ``empty``.
+
+    The server answers 204, as for any read of that graph. The catalogue still
+    names the graph, so a caller learns which graph holds nothing, not just
+    that something did.
+    """
+    catalogue = client.describe(graph=empty_graph)
+
+    assert catalogue.empty is True
+    assert (catalogue.graph, catalogue.facts) == (empty_graph, 0)
+    assert bool(catalogue) is False
 
 
 @pytest.mark.integration

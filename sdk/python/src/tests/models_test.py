@@ -29,7 +29,15 @@ marked ``integration`` parse what a live server sends.
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from fraise_sdk.models import Contribution, GraphStats, Hit, Interval, RecallResult
+from fraise_sdk.models import (
+    Catalogue,
+    CatalogueEntry,
+    Contribution,
+    GraphStats,
+    Hit,
+    Interval,
+    RecallResult,
+)
 
 
 def test_graph_stats_names_the_counts_for_what_they_count(stats_response):
@@ -354,6 +362,92 @@ def test_a_plain_recall_carries_no_breakdown():
 
     assert result.hits[0].contributions == []
     assert result.background is None
+
+
+def test_a_catalogue_entry_parses_its_count_and_times(describe_response):
+    """An anchor's entry parses its count and a typed span on each clock.
+
+    The diet fact has happened since 1 May with no end, and the server omits
+    the end of a span that has not ended. ``None`` says so, as on a hit's
+    ``occurred``. Its said and written spans are single moments, each ending
+    where it starts.
+    """
+    entry = CatalogueEntry.from_json(
+        describe_response["results"]["catalogue"]["topics"][0]
+    )
+
+    assert entry == CatalogueEntry(
+        value="diet",
+        facts=1,
+        happened=Interval(start=datetime(2023, 5, 1, tzinfo=timezone.utc), end=None),
+        said=Interval(
+            start=datetime(2023, 5, 10, tzinfo=timezone.utc),
+            end=datetime(2023, 5, 10, tzinfo=timezone.utc),
+        ),
+        written=Interval(
+            start=datetime(2026, 11, 15, 13, 37, 6, 378198, tzinfo=timezone.utc),
+            end=datetime(2026, 11, 15, 13, 37, 6, 378198, tzinfo=timezone.utc),
+        ),
+    )
+
+
+def test_a_catalogue_of_no_fact_holds_no_times(warned_describe_response):
+    """A describe that reached no fact parses with every time ``None``.
+
+    The server leaves the spans out when the set holds no fact, since there is
+    no time to report. ``None`` says so, and the anchor lists are empty lists,
+    never ``None``, so a caller can iterate them unguarded.
+    """
+    catalogue = Catalogue.from_json(warned_describe_response["results"]["catalogue"])
+
+    assert catalogue == Catalogue(
+        graph=0, scope="ferry the", facts=0, anchors=0, topics=[], entities=[]
+    )
+    assert catalogue.happened is None
+    assert catalogue.said is None
+    assert catalogue.written is None
+
+
+@pytest.mark.parametrize(
+    "catalogue, want",
+    [
+        ({"facts": 0, "anchors": 0, "topics": [], "entities": []}, False),
+        ({"facts": 1, "anchors": 0, "topics": [], "entities": []}, True),
+        (
+            {
+                "facts": 2,
+                "anchors": 1,
+                "topics": [{"value": "birds", "facts": 2}],
+                "entities": [],
+            },
+            True,
+        ),
+    ],
+)
+def test_a_catalogue_is_true_when_it_reached_a_fact(catalogue, want):
+    """``bool(catalogue)`` reports whether any fact was reached, anchors or not.
+
+    A graph of facts filed under nothing is still memory worth recalling from,
+    so a describe that lists no anchor but counts a fact is true.
+    """
+    assert bool(Catalogue.from_json({"graph": 0, "scope": ""} | catalogue)) is want
+
+
+def test_a_catalogue_of_a_204_names_the_graph_it_was_asked_about():
+    """A 204 has no catalogue, so the graph comes from the caller and ``empty`` is set.
+
+    The status line says the graph holds nothing, and the body that would name
+    the graph is absent. The caller sent the query, so it passes the graph in,
+    and the catalogue still says which graph is empty. Every count is zero and
+    the warnings an empty list.
+    """
+    catalogue = Catalogue.from_json({}, graph=8, empty=True)
+
+    assert catalogue == Catalogue(
+        graph=8, scope="", facts=0, anchors=0, topics=[], entities=[], empty=True
+    )
+    assert catalogue.warnings == []
+    assert bool(catalogue) is False
 
 
 @pytest.mark.integration

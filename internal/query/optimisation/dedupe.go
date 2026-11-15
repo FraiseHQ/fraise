@@ -26,19 +26,25 @@ import "github.com/FraiseHQ/fraise/internal/query"
 
 // Dedupe drops repeated keywords, entities and topics from a [query.Recall]. It
 // keeps the first occurrence of each, in order, so the search sees each term
-// and anchor once. A [query.When] searches through a recall, and a recall may
-// hold a query in each of its time bounds. Dedupe reaches both.
+// and anchor once. A [query.When] and a [query.Describe] search through a
+// recall, and a recall may hold a query in each of its time bounds. Dedupe
+// reaches all of them.
 type Dedupe[K comparable, P float32 | float64] struct{}
 
 // Optimise implements [Optimisation]. It returns a copy of a recall with its
-// lists deduplicated, and leaves the recall as parsed. A when comes back as a
-// copy over its deduplicated recall. It returns any other query untouched.
+// lists deduplicated, and leaves the recall as parsed. A when or a describe
+// comes back as a copy over its deduplicated recall. It returns any other
+// query untouched.
 func (d *Dedupe[K, P]) Optimise(q query.Query[K, P]) query.Query[K, P] {
 	switch v := q.(type) {
 	case *query.Recall[K, P]:
 		out := d.recall(*v)
 		return &out
 	case *query.When[K, P]:
+		out := *v
+		out.Recall = d.recall(v.Recall)
+		return &out
+	case *query.Describe[K, P]:
 		out := *v
 		out.Recall = d.recall(v.Recall)
 		return &out

@@ -36,7 +36,7 @@ hits = fraise.recall(graph=6, vector=embedding)  # seeded only by the vector
 
 A recall needs a seed, not a keyword: a vector or a `topics`/`entities` anchor is one on its own, so `fraise.recall(topics=["birds"])` — everything about a topic — is a query in its own right.
 
-A fact can carry when it was said and when what it states happened, and a recall can be bounded by time. `remember` takes `said=` and `occurred=`; `recall` and `explain` take `since=` and `until=`, each a `date`, a `datetime` or a `When`, a search whose best match gives the bound its time:
+A fact can carry when it was said and when what it states happened, and a recall can be bounded by time. `remember` takes `said=` and `occurred=`; `recall`, `explain` and `describe` take `since=` and `until=`, each a `date`, a `datetime` or a `When`, a search whose best match gives the bound its time:
 
 ```python
 from datetime import date
@@ -70,6 +70,17 @@ for hit in result:
 ```
 
 A hit whose only contribution is `graph` was reached through an anchor without matching the query itself. See [Explain](https://docs.getfraise.dev/docs/http-api/endpoints/explain) for how the contributions fold into the score.
+
+To learn how memory is filed before a first recall, `describe` takes the same arguments as `recall` and returns a `Catalogue` instead of hits: how many facts the recall reaches — every one it would rank, not its first `top` — when they happened, and the topics and entities they are filed under, with how many of the facts each one files. It needs no seed, so `describe()` with nothing but a graph describes the whole graph:
+
+```python
+catalogue = fraise.describe(graph=3)
+print(catalogue.facts, catalogue.anchors)
+for entry in catalogue.topics + catalogue.entities:
+    print(entry.value, entry.facts, entry.happened)
+```
+
+`top=` caps how many topics, and how many entities, are listed, and `since=`/`until=` bound the facts counted. A describe sends no vector unless `embed=True` or `vector=` asks for one: a vector ranks every fact that holds one, so it would reach all of them. `bool(catalogue)` reports whether the recall reached any fact, and `catalogue.empty` that the graph holds nothing at all. See [Commands](https://docs.getfraise.dev/docs/query-language/foundations/commands) for what each form of a describe reaches.
 
 ## Embeddings (optional)
 
@@ -154,4 +165,4 @@ See [`examples/claude-agent-sdk/`](../../examples/claude-agent-sdk) for a comple
 - A fact value is stored inside a single-quoted phrase where every character is literal; the SDK escapes apostrophes for you, so `remember("it's blue")` stores the text exactly as written.
 - Keywords, topics, and entities may contain spaces and punctuation: a value that is not one plain word (letters and digits only) is quoted for you, and so is a keyword that spells a reserved word.
 - The first vector written to a graph fixes that graph's embedding dimension; later writes to the same graph must match it.
-- `FraiseClient` defaults to a 30s request timeout (`timeout=` on the constructor or on individual `query`/`remember`/`recall`/`explain` calls overrides it); a request that exceeds it raises `FraiseError` naming the timeout, distinct from the error raised when the server can't be reached at all.
+- `FraiseClient` defaults to a 30s request timeout (`timeout=` on the constructor or on individual `query`/`remember`/`recall`/`explain`/`describe` calls overrides it); a request that exceeds it raises `FraiseError` naming the timeout, distinct from the error raised when the server can't be reached at all.

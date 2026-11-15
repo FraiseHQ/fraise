@@ -53,9 +53,11 @@ claim a graph:
                                             recall_test.py)
     7  planet star
        + lantern/almanac depth-lane probe
-       + tidepool + saltmarsh anchor probes (recall_test.py)
+       + tidepool + saltmarsh anchor probes (recall_test.py, api_test.py)
        never given a vector: vectors_test.py and parser_test.py
        recall the planet star with one
+       described whole: recall_test.py counts every fact and
+       anchor here, so a probe added to it moves those counts
     8  never written: the empty-graph probes (api_test.py, and the
        SDK suite's empty_graph fixture)
     9  the SDK suite's exact stats counts (its stats_graph fixture);
@@ -281,6 +283,28 @@ def recall_ranking(query):
         return [hit["value"] for hit in body["results"]["hits"]]
 
     return _recall_ranking
+
+
+@pytest.fixture(scope="session")
+def catalogue_of(query):
+    """Callable running a describe that must succeed and returning its catalogue.
+
+    A describe answers in a recall's envelope with no fact in it, so the
+    callable also checks that the count is zero and the hits empty, whatever
+    the catalogue beside them holds.
+
+    Returns:
+        ``callable(text) -> dict``, the catalogue as the server sent it.
+    """
+
+    def _catalogue_of(text: str) -> dict:
+        status, body = query(text)
+        assert status == 200, body.get("error")
+        results = body["results"]
+        assert (results["count"], results["hits"]) == (0, []), results
+        return results["catalogue"]
+
+    return _catalogue_of
 
 
 @pytest.fixture(scope="session")

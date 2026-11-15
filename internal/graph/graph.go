@@ -190,7 +190,9 @@ type Graph[K comparable, P float32 | float64] interface {
 	//               above its fair share (recall). A named anchor transmits
 	//               at either. The round runs only when a topic or entity is
 	//               named.
-	//   - top:      maximum number of results
+	//   - top:      maximum number of results. A non-positive top keeps
+	//               every match, which is how a describe reads the whole
+	//               set its recall reaches.
 	//   - since:    inclusive lower time bound; a zero bound is open
 	//   - until:    exclusive upper time bound; a zero bound is open
 	//

@@ -4,7 +4,7 @@ description: "The same pipeline as /q, with the per-source contributions each hi
 navLabel: "Explain"
 ---
 
-The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for reads only**, a `recall` or a `when`: each hit also carries `contributions`, the per-source sightings its score was folded from, and `decay`, the recency factor that score was scaled by. The result carries the query's `background` rate, omitted when it is zero, and, for a recall bounded by a `when`, what each `when` answered.
+The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for reads only**, a `recall` or a `when`: each hit also carries `contributions`, the per-source sightings its score was folded from, and `decay`, the recency factor that score was scaled by. The result carries the query's `background` rate, omitted when it is zero, and, for a recall bounded by a `when`, what each `when` answered. A `describe` is a read as well, and answers here with the catalogue it answers with on `/q`: it returns no hit, so it has no score to break down.
 
 Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
 

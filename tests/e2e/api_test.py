@@ -26,7 +26,7 @@ Covers the health check, malformed request bodies, query strings the parser
 must reject as client errors, and the grammar boundary that keeps reserved
 words usable as ordinary data. It also covers the shapes a response takes: the
 three answers of a write, an empty graph and a miss, the times a hit carries,
-and the time a when adds to its results.
+the time a when adds to its results, and the catalogue a describe answers with.
 """
 
 import pytest
@@ -802,3 +802,102 @@ def test_a_when_adds_its_time_to_the_result_envelope(timeline_graph, query):
     status, body = query(f"recall@{timeline_graph} regatta")
     assert status == 200, body.get("error")
     assert set(body["results"]) == {"count", "hits"}
+
+
+# A describe answers in a recall's envelope, with a catalogue in place of the
+# facts: its count is zero and its hits are empty, since it returns no fact. The
+# catalogue's keys are the contract a client parses. A catalogue that counts no
+# fact has no time to give, so its times are left out, as a when that matched
+# nothing leaves out its start. An empty graph answers a describe with the 204
+# it answers a recall with.
+
+
+def test_a_describe_answers_with_a_catalogue_beside_no_hits(tidepool_graph, query):
+    """A describe's results hold a zero count, empty hits and the catalogue.
+
+    The catalogue names the graph and the scope it describes, counts the facts
+    and the anchors, holds the time on each of the three clocks, and lists the
+    topics and the entities. Each anchor carries its value, its count and its
+    own three times. The facts were given no times, so each clock holds the
+    moments they were written: a closed interval, with an end.
+    """
+    status, body = query(f"describe recall@{tidepool_graph} topic:tidepool")
+
+    assert status == 200, body.get("error")
+    assert set(body) == {"results"}
+    results = body["results"]
+    assert set(results) == {"count", "hits", "catalogue"}
+    assert (results["count"], results["hits"]) == (0, [])
+
+    catalogue = results["catalogue"]
+    assert set(catalogue) == {
+        "graph",
+        "scope",
+        "facts",
+        "anchors",
+        "happened",
+        "said",
+        "written",
+        "topics",
+        "entities",
+    }
+    assert (catalogue["graph"], catalogue["scope"]) == (
+        tidepool_graph,
+        "topic:tidepool",
+    )
+    entries = catalogue["topics"] + catalogue["entities"]
+    assert entries, catalogue
+    for entry in entries:
+        assert set(entry) == {"value", "facts", "happened", "said", "written"}, entry
+    for times in (catalogue, *entries):
+        for clock in ("happened", "said", "written"):
+            assert set(times[clock]) == {"start", "end"}, times
+
+
+def test_a_describe_that_reached_no_fact_has_no_times(query):
+    """A describe that counts no fact on a populated graph is a 200 with no times.
+
+    Its lists stay, empty, so a client reads both keys from every catalogue.
+    The scope comes back as the server read the body.
+    """
+    status, body = query("describe recall@1 zzznomatchzzz")
+
+    assert status == 200, body.get("error")
+    assert body == {
+        "results": {
+            "count": 0,
+            "hits": [],
+            "catalogue": {
+                "graph": 1,
+                "scope": "zzznomatchzzz",
+                "facts": 0,
+                "anchors": 0,
+                "topics": [],
+                "entities": [],
+            },
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "describe recall@8",
+        "describe recall@8 zebras",
+        "describe recall@8 topic:zebras",
+        "describe recall@8 since:(when zebras)",
+    ],
+)
+def test_a_describe_of_an_empty_graph_is_204_with_no_body(query, text):
+    """Graph 8 is never written to, so a describe of it answers 204.
+
+    A catalogue of no fact would look like a describe whose scope missed. A
+    caller describing a graph to learn how it is filed must learn instead that
+    nothing has been stored there. Each way a describe reaches its facts, the
+    whole graph, a search and an anchor's members, answers so, and so does
+    one bounded by a when.
+    """
+    status, body = query(text)
+
+    assert status == 204, body.get("error")
+    assert body == {}

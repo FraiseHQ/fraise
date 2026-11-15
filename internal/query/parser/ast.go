@@ -57,7 +57,8 @@ type AstNode interface {
 	End() lexer.Position
 }
 
-// CommandNode is a parsed command: a recall, a remember or a when.
+// CommandNode is a parsed command: a recall, a remember, a when, or a describe
+// in front of a recall.
 type CommandNode interface {
 	AstNode
 	Selector() uint8
@@ -129,6 +130,19 @@ type WhenCommandNode[K comparable, P float32 | float64] struct {
 	clock ClockNode
 	pos   lexer.Position
 	end   lexer.Position
+}
+
+// DescribeCommandNode is a parsed describe: the prefix, and the recall whose
+// reach it describes. The recall is a whole command, verb and selector
+// included, so a described recall reads as the recall it would be on its own.
+// Its body may hold no seed, which describes the whole graph. The recall is
+// held by value, as a when holds its body, so every node of the type has one
+// to read.
+type DescribeCommandNode[K comparable, P float32 | float64] struct {
+	key    lexer.Token
+	recall RecallCommandNode[K, P]
+	pos    lexer.Position
+	end    lexer.Position
 }
 
 // Terms returns the recall's search terms in source order, folded to lower
@@ -681,6 +695,37 @@ func (n WhenCommandNode[K, P]) Pos() lexer.Position {
 
 // End implements [AstNode].
 func (n WhenCommandNode[K, P]) End() lexer.Position {
+	return n.end
+}
+
+// Selector implements [CommandNode]. A describe reads the graph its recall
+// reads, so the selector is the recall's: describe recall@2 describes graph 2.
+func (n DescribeCommandNode[K, P]) Selector() uint8 {
+	return n.recall.Selector()
+}
+
+// Recall returns the recall the describe holds.
+func (n DescribeCommandNode[K, P]) Recall() RecallCommandNode[K, P] {
+	return n.recall
+}
+
+func (n DescribeCommandNode[K, P]) String() string {
+	s := []string{n.key.Literal}
+
+	if recall := n.recall.String(); recall != "" {
+		s = append(s, recall)
+	}
+
+	return strings.Join(s, " ")
+}
+
+// Pos implements [AstNode].
+func (n DescribeCommandNode[K, P]) Pos() lexer.Position {
+	return n.pos
+}
+
+// End implements [AstNode].
+func (n DescribeCommandNode[K, P]) End() lexer.Position {
 	return n.end
 }
 

@@ -28,6 +28,8 @@ agent's tool call does.
 
 from datetime import datetime
 
+import pytest
+
 
 def test_remember_then_recall_round_trips_a_fact(mcp):
     """A fact stored through the bridge is found through the bridge.
@@ -290,3 +292,68 @@ def test_anchor_only_recall_returns_what_is_filed_under_the_anchor(mcp):
     hits = found["structuredContent"]["results"]["hits"]
     assert {hit["value"] for hit in hits} == set(facts)
     assert all(hit["score"] > 0 for hit in hits), hits
+
+
+@pytest.mark.parametrize(
+    ("text", "scope"),
+    [
+        ("describe recall@6", ""),
+        ("describe recall@6 topic:seabirds", "topic:seabirds"),
+    ],
+)
+def test_a_describe_through_the_recall_tool_answers_with_its_catalogue(
+    mcp, text, scope
+):
+    """A describe sent as the query comes back as a catalogue on both faces.
+
+    The structured results hold the daemon's catalogue beside no hits, for a
+    client. The text leads with the describe as the daemon read it and what it
+    counted, then lists each kind's anchors with when their facts happened, for
+    a model choosing what to recall next. Graph 6 holds the two facts and
+    nothing else, so the whole graph and the topic describe the same set.
+    """
+    for fact, day in (
+        ("the shearwater skims the swell", "2023-08-01"),
+        ("the shearwater returns to its burrow at night", "2023-08-03"),
+    ):
+        stored = mcp.call(
+            "remember",
+            {
+                "query": f"remember@6 '{fact}' topic:seabirds entity:shearwater "
+                f"occurred:'{day}'"
+            },
+        )
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call("recall", {"query": text})
+    assert not found.get("isError", False), found
+
+    results = found["structuredContent"]["results"]
+    assert (results["count"], results["hits"]) == (0, [])
+    catalogue = results["catalogue"]
+    happened = {"start": "2023-08-01T00:00:00Z", "end": "2023-08-04T00:00:00Z"}
+    assert {key: catalogue[key] for key in ("graph", "scope", "facts", "anchors")} == {
+        "graph": 6,
+        "scope": scope,
+        "facts": 2,
+        "anchors": 2,
+    }
+    assert catalogue["happened"] == happened
+    for kind, value in (("topics", "seabirds"), ("entities", "shearwater")):
+        [entry] = catalogue[kind]
+        assert (entry["value"], entry["facts"], entry["happened"]) == (
+            value,
+            2,
+            happened,
+        ), kind
+
+    lines = found["content"][0]["text"].splitlines()
+    assert (
+        lines[0] == f"{text}: 2 facts under 2 anchors, happened 2023-08-01..2023-08-03"
+    )
+    assert lines[1:] == [
+        "topics:",
+        "- [2023-08-01..2023-08-03] seabirds: 2 facts",
+        "entities:",
+        "- [2023-08-01..2023-08-03] shearwater: 2 facts",
+    ]

@@ -23,9 +23,14 @@
 package mcp
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 )
@@ -72,5 +77,70 @@ func TestNewForwardsToAddr(t *testing.T) {
 
 	if want := "http://10.0.0.5:9876"; s.baseURL != want {
 		t.Errorf("baseURL = %q, want %q", s.baseURL, want)
+	}
+}
+
+// TestRecallToolTeachesDescribe pins that the recall tool tells a model about
+// describe recall in both places a model reads it: the tool's description and
+// its query's. Each says that this tool runs a describe, so a model looking for
+// one reaches for the tool it has rather than one it lacks. A model writes only
+// the statements its tools show it, and a describe is the one to run before it
+// knows how memory is filed. The tools are listed through an MCP client, so
+// what is pinned is what a model is sent, not a string in this package.
+func TestRecallToolTeachesDescribe(t *testing.T) {
+	ctx := context.Background()
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	if _, err := New(parsed(t)).Server.Connect(ctx, serverTransport, nil); err != nil {
+		t.Fatalf("connecting the bridge = %v, want nil", err)
+	}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("connecting a client = %v, want nil", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	listed, err := session.ListTools(ctx, &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("listing the tools = %v, want nil", err)
+	}
+	var recall *mcp.Tool
+	for _, tool := range listed.Tools {
+		if tool.Name == "recall" {
+			recall = tool
+		}
+	}
+	if recall == nil {
+		t.Fatalf("tools = %+v, want recall among them", listed.Tools)
+	}
+	schema, err := json.Marshal(recall.InputSchema)
+	if err != nil {
+		t.Fatalf("encoding the input schema = %v, want nil", err)
+	}
+	var input struct {
+		Properties struct {
+			Query struct {
+				Description string `json:"description"`
+			} `json:"query"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(schema, &input); err != nil {
+		t.Fatalf("decoding the input schema %s = %v, want nil", schema, err)
+	}
+
+	descriptions := map[string]struct {
+		description string
+		runs        string
+	}{
+		"tool":  {recall.Description, "This tool also runs describe"},
+		"query": {input.Properties.Query.Description, "which this tool runs as it runs a recall"},
+	}
+	for name, tc := range descriptions {
+		t.Run(name, func(t *testing.T) {
+			for _, want := range []string{"describe recall", tc.runs} {
+				if !strings.Contains(tc.description, want) {
+					t.Errorf("%s description = %q, want it to contain %q", name, tc.description, want)
+				}
+			}
+		})
 	}
 }
