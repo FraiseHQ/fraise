@@ -645,7 +645,7 @@ def test_check_compatibility_strict_raises_when_the_version_is_unknown(session):
         FraiseClient().check_compatibility(strict=True)
 
 
-@pytest.mark.parametrize("version", ["0.2.2", "99.0.0", "0.0.9", "0.1", "abc", "x.y.z"])
+@pytest.mark.parametrize("version", ["0.3.7", "99.0.0", "0.0.9", "0.1", "abc", "x.y.z"])
 def test_check_compatibility_warns_outside_the_supported_range(
     session, respond_get, version
 ):
@@ -668,7 +668,7 @@ def test_check_compatibility_strict_raises_outside_the_supported_range(
         FraiseClient().check_compatibility(strict=True)
 
 
-@pytest.mark.parametrize("version", ["0.3.1", "v0.3.15", "v0.3.0"])
+@pytest.mark.parametrize("version", ["0.4.1", "v0.4.15", "v0.4.0"])
 def test_check_compatibility_accepts_a_supported_version(session, respond_get, version):
     """An in-range version answers True with no warning.
 
