@@ -6,7 +6,7 @@
 # pip. uv itself ships as a static binary, copied from its published image. The
 # Claude Agent SDK drives Claude through the Claude Code CLI, and its wheel
 # bundles the `claude` binary, so the image needs no Node.js.
-FROM ubuntu@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
+FROM ubuntu@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /uvx /usr/local/bin/
 
