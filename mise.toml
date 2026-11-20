@@ -41,6 +41,15 @@ run = "uv build --out-dir dist"
 description = "Build the Go server and both Python packages"
 run = [{ task = "build:go" }, { task = "build:py" }, { task = "build:mcp" }]
 
+[tasks."build:examples"]
+description = "Build the example images: the ones named, or every one under examples/"
+usage = 'arg "[example]..." help="an example under examples/, e.g. claude-agent-sdk"'
+run = '''
+for example in ${usage_example:-$(for dockerfile in examples/*/Dockerfile; do basename "$(dirname "$dockerfile")"; done)}; do
+  docker build -f "examples/$example/Dockerfile" .
+done
+'''
+
 [tasks."test:go"]
 description = "Run the Go tests"
 alias = "test"
@@ -197,11 +206,14 @@ description = "Format all code"
 depends = ["fmt:*"]
 
 # All linting runs through pre-commit (.pre-commit-config.yaml), so local runs
-# and CI run the same hooks. Each lint task but lint itself runs one slice, and
-# CI calls those directly.
+# and CI run the same hooks. lint runs the hooks no language owns: whitespace,
+# line endings, merge markers, private keys and JSON. lint:go, lint:py and
+# lint:docker each run their own, and lint:all runs every hook. CI calls each
+# slice in a job of its own.
 [tasks.lint]
-description = "Lint all code via pre-commit (every hook)"
-run = "pre-commit run --all-files"
+description = "Lint with the pre-commit hooks no language owns"
+env = { SKIP = "golangci-lint-full,ruff,ruff-format,ty,hadolint-docker" }
+run = "pre-commit run --all-files --show-diff-on-failure"
 
 [tasks."lint:go"]
 description = "Lint Go via golangci-lint (pre-commit)"
@@ -219,55 +231,71 @@ run = [
 description = "Lint the Dockerfiles via hadolint (pre-commit)"
 run = "pre-commit run --all-files --show-diff-on-failure hadolint-docker"
 
+[tasks."lint:all"]
+description = "Lint all code via pre-commit (every hook)"
+run = "pre-commit run --all-files"
+
 [tasks.check]
 description = "Format and lint all code, then run the Go tests"
-run = [{ task = "fmt" }, { task = "lint" }, { task = "test:go" }]
+run = [{ task = "fmt" }, { task = "lint:all" }, { task = "test:go" }]
 
 [tasks."check:all"]
 description = "Format, lint and test everything"
-run = [{ task = "fmt" }, { task = "lint" }, { task = "test:all" }]
+run = [{ task = "fmt" }, { task = "lint:all" }, { task = "test:all" }]
 
 # A release tag names the version it publishes. Each release job checks its
 # tag before anything is published: the server's must be on main, and a Python
-# package's must name the package's own version.
+# package's must name the package's own version. The tag defaults to the one
+# CI runs for, GITHUB_REF_NAME.
 [tasks."check:tag:go"]
-description = "Check that the release tag in GITHUB_REF_NAME (vX.Y.Z) is well formed and on main"
+description = "Check that a server release tag (vX.Y.Z) is well formed and on main"
+usage = 'arg "<tag>" help="the release tag, vX.Y.Z" env="GITHUB_REF_NAME"'
 shell = "bash -c"
 run = '''
-if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
-  echo "::error::bad tag '$GITHUB_REF_NAME' — expected vX.Y.Z or vX.Y.Z-alpha.N/-beta.N/-rc.N"; exit 1
+if [[ ! "$usage_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+  echo "::error::bad tag '$usage_tag' — expected vX.Y.Z or vX.Y.Z-alpha.N/-beta.N/-rc.N"; exit 1
 fi
 git fetch origin main
-if ! git merge-base --is-ancestor HEAD origin/main; then
-  echo "::error::tag ${GITHUB_REF_NAME} is not on main"; exit 1
+if ! git merge-base --is-ancestor "$usage_tag" origin/main; then
+  echo "::error::tag $usage_tag is not on main"; exit 1
 fi
 '''
 
 [tasks."check:tag:py"]
-description = "Check that the release tag in GITHUB_REF_NAME (python/vX.Y.Z) names the Python SDK's version"
+description = "Check that a Python SDK release tag (python/vX.Y.Z) names the SDK's version"
+usage = 'arg "<tag>" help="the release tag, python/vX.Y.Z" env="GITHUB_REF_NAME"'
 dir = "{{config_root}}/sdk/python"
 shell = "bash -c"
 run = '''
-raw="${GITHUB_REF_NAME#python/v}"
+raw="${usage_tag#python/v}"
 if [[ ! "$raw" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
-  echo "::error::bad tag '$GITHUB_REF_NAME' — expected python/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
+  echo "::error::bad tag '$usage_tag' — expected python/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
 fi
 version=$(uv version --short)
 [ "$raw" = "$version" ] || { echo "::error::tag maps to $raw != pyproject $version"; exit 1; }
 '''
 
 [tasks."check:tag:mcp"]
-description = "Check that the release tag in GITHUB_REF_NAME (mcp/vX.Y.Z) names fraise-mcp's version"
+description = "Check that a fraise-mcp release tag (mcp/vX.Y.Z) names fraise-mcp's version"
+usage = 'arg "<tag>" help="the release tag, mcp/vX.Y.Z" env="GITHUB_REF_NAME"'
 dir = "{{config_root}}/mcp"
 shell = "bash -c"
 run = '''
-raw="${GITHUB_REF_NAME#mcp/v}"
+raw="${usage_tag#mcp/v}"
 if [[ ! "$raw" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
-  echo "::error::bad tag '$GITHUB_REF_NAME' — expected mcp/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
+  echo "::error::bad tag '$usage_tag' — expected mcp/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
 fi
 version=$(uv version --short)
 [ "$raw" = "$version" ] || { echo "::error::tag maps to $raw != pyproject $version"; exit 1; }
 '''
+
+# govulncheck reports the known vulnerabilities the code can reach, in its
+# dependencies and in the standard library of the Go it is built with, the
+# one this file pins.
+[tasks."check:vuln"]
+description = "Check the Go module for known vulnerabilities its code can reach"
+tools = { "go:golang.org/x/vuln/cmd/govulncheck" = "1.10.0" }
+run = "govulncheck ./..."
 
 [tasks."clean:go"]
 description = "Clean the Go build artifacts"
@@ -304,12 +332,15 @@ run = "goreleaser release --clean"
 # Without it the provenance is still published, but Scorecard keeps flagging
 # the release.
 [tasks."release:go:provenance"]
-description = "Attach a provenance bundle to the GitHub Release of the tag in GITHUB_REF_NAME (set GH_TOKEN)"
-usage = 'arg "<bundle>" help="the Sigstore bundle actions/attest-build-provenance wrote"'
+description = "Attach a provenance bundle to a server release on GitHub (set GH_TOKEN)"
+usage = '''
+arg "<bundle>" help="the Sigstore bundle actions/attest-build-provenance wrote"
+flag "--tag <tag>" required=#true help="the release tag, vX.Y.Z" env="GITHUB_REF_NAME"
+'''
 tools = { gh = "2" }
 run = '''
-cp "$usage_bundle" "fraise_${GITHUB_REF_NAME}.intoto.jsonl"
-gh release upload "$GITHUB_REF_NAME" "fraise_${GITHUB_REF_NAME}.intoto.jsonl" --clobber
+cp "$usage_bundle" "fraise_${usage_tag}.intoto.jsonl"
+gh release upload "$usage_tag" "fraise_${usage_tag}.intoto.jsonl" --clobber
 '''
 
 [tasks."release:py"]
@@ -324,6 +355,66 @@ depends = ["build:mcp"]
 dir = "{{config_root}}/mcp"
 run = "uv publish"
 
+# The MCP registry record is the release's server.json, read as data and never
+# run: whoever publishes it holds the credential for io.github.FraiseHQ/*, and
+# mcp-publisher runs with it, which is why mise.lock pins it by checksum.
+# release-please writes the record's version in the commit it tags (an
+# extra-file in release-please-config.json), so a version other than the
+# tag's means that bump broke, and the record would publish under a version no
+# release carries. The record names its image without a tag, and the
+# release's is appended here; docker.yaml derives the image's from the same
+# ref, so it is the tag's by construction. The registry proves ownership by
+# reading the io.modelcontextprotocol.server.name label off that image.
+[tasks."release:registry"]
+description = "Publish a server release's server.json record to the MCP registry (set GH_TOKEN; logs in with GitHub OIDC)"
+usage = '''
+arg "<tag>" help="the server release, vX.Y.Z"
+flag "--ref <commit>" help="read server.json at this commit rather than at the tag"
+'''
+tools = { gh = "2", jq = "1.8", "github:modelcontextprotocol/registry" = { version = "1.8.1", asset_pattern = "mcp-publisher_*" } }
+run = '''
+version="${usage_tag#v}"
+record="$(mktemp -d)"
+cd "$record"
+gh api -H "Accept: application/vnd.github.raw+json" "repos/FraiseHQ/fraise/contents/server.json?ref=${usage_ref:-$usage_tag}" > server.json
+recorded="$(jq -r .version server.json)"
+if [ "$recorded" != "$version" ]; then
+  echo "::error::server.json declares version $recorded, tag $usage_tag names $version — check the release-please extra-files entry"
+  exit 1
+fi
+jq --arg v "$version" '(.packages[] | select(.registryType == "oci") | .identifier) |= . + ":" + $v' server.json > pinned.json
+mv pinned.json server.json
+cat server.json
+mcp-publisher validate
+mcp-publisher login github-oidc
+mcp-publisher publish
+'''
+
+# A mirror, not a merge: a page deleted from docs/ disappears from the
+# website's contents/docs too, so that tree is exactly docs/ at this commit.
+# The GitHub App bot that pushes the sync also authors it, so the website's
+# history names the bot, not a workflow it cannot see. Nothing is committed
+# when nothing changed.
+[tasks."docs:sync"]
+description = "Mirror docs/ into a FraiseHQ/www checkout, then commit and push it as a GitHub App's bot (set GH_TOKEN)"
+usage = '''
+arg "<www>" help="the FraiseHQ/www checkout, on the branch to push"
+flag "--bot <slug>" required=#true help="the GitHub App whose bot authors the commit, e.g. fraise-bot"
+'''
+tools = { gh = "2" }
+run = '''
+rsync --archive --delete docs/ "$usage_www/contents/docs/"
+git -C "$usage_www" add contents/docs
+if git -C "$usage_www" diff --cached --quiet; then
+  echo "contents/docs already matches docs/"
+  exit 0
+fi
+bot="${usage_bot}[bot]"
+email="$(gh api "/users/$bot" --jq .id)+$bot@users.noreply.github.com"
+git -C "$usage_www" -c user.name="$bot" -c user.email="$email" commit --quiet -m "docs: sync from FraiseHQ/fraise@$(git rev-parse HEAD)"
+git -C "$usage_www" push origin HEAD
+'''
+
 [tasks.all]
 description = "Full rebuild: clean, install, build and test everything"
 run = [{ task = "clean" }, { task = "install" }, { task = "build:all" }, { task = "test:all" }]
@@ -334,4 +425,4 @@ run = [{ task = "build:go" }, { task = "test:go:short" }]
 
 [tasks.ci]
 description = "CI pipeline: install, lint and test"
-run = [{ task = "install" }, { task = "lint" }, { task = "test:go" }]
+run = [{ task = "install" }, { task = "lint:all" }, { task = "test:go" }]

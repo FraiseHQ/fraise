@@ -46,7 +46,7 @@ mise run test:all    # everything: Go + Python
 
 mise asks you to trust `mise.toml` the first time. uv brings the Python in `.python-version`, and pre-commit the linters it runs, the first time each is needed.
 
-Run the server locally with `mise run dev`. Handy tasks: `mise run lint` (all components), `mise run fmt` (auto-format), `mise run test:e2e` (end-to-end suite via docker compose). Run `mise tasks` to see the rest.
+Run the server locally with `mise run dev`. Handy tasks: `mise run lint:all` (every linter), `mise run fmt` (auto-format), `mise run test:e2e` (end-to-end suite via docker compose). Run `mise tasks` to see the rest.
 
 If you'd rather not install anything locally, run the server straight from the published container image:
 
@@ -66,7 +66,7 @@ docker run --rm -p 9876:9876 ghcr.io/fraisehq/fraise:edge
 4. Run the checks locally:
 
    ```bash
-   mise run lint
+   mise run lint:all
    mise run test:all
    ```
 

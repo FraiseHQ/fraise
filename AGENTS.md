@@ -87,7 +87,7 @@ These apply to every component:
 - Every source file starts with the MIT license header (copy from a neighbor).
 - Doc comments state the contract and the *why*, not the mechanics — e.g.
   `Hash` comments explain what must not collide and what breaks if it does.
-- Formatting and linting are non-negotiable, whatever the language: `mise run lint` is the gate and it must be clean before a PR.
+- Formatting and linting are non-negotiable, whatever the language: `mise run lint:all` is the gate and it must be clean before a PR.
 - **No banner comments.** No section dividers or ruler lines in any file, whatever the language: no `# -- embedding ---`, no `// --- helpers ---`, no `# =====` box around a label. A banner names a grouping the code's own order and names already show, and it rots silently as definitions move across it. A comment explaining the code below it is fine; written as a plain comment, without the rulers.
 - Markdown prose is never hard-wrapped: one paragraph is one source line, however long — the same for a list item and for a blockquote line. Editors and renderers do the wrapping; hard breaks mid-paragraph make the file read as compacted and ragged, and turn every later edit into a rewrap diff. Code blocks, tables and the GitHub issue templates keep their own line structure. This applies to README.md, everything under docs/, and every other prose .md in the tree.
 
@@ -274,7 +274,7 @@ The toolchain and the tasks live in `mise.toml`: `mise install` installs the too
 - `mise run test:integration:py` — the `integration`-marked half of the SDK suite (`sdk/python/src/tests -m integration`), driven by a locally-run pytest against the same daemon.
 - `mise run test:integration` — the server + MCP bridge suite (`tests/integration/`): builds the binary and drives it as daemon *and* as `fraise mcp` over stdio. Needs Go, not docker.
 - `mise run bench --bench-baseline=<dir>` — the benchmark gates (`tests/perf`): the working tree's Go benchmarks against a nightly run's outputs, through benchstat; without a baseline they measure and pass.
-- `mise run lint`, `mise run fmt`, `mise run build` — quality and build entry points.
+- `mise run lint:all`, `mise run fmt`, `mise run build` — quality and build entry points.
 
 When a change alters a contract (an interface method, hash material, a wire
 format), update every implementor and every exact-format test in the same
