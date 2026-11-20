@@ -297,6 +297,21 @@ description = "Release the Go server with GoReleaser (set GITHUB_TOKEN and HOMEB
 tools = { goreleaser = "2", cosign = "3.1.4" }
 run = "goreleaser release --clean"
 
+# actions/attest-build-provenance records the release's attestation in
+# GitHub's attestations API, which `gh attestation verify` reads. Scorecard's
+# Signed-Releases check reads release assets instead, so the same bundle is
+# attached to the release under the .intoto.jsonl name the check matches on.
+# Without it the provenance is still published, but Scorecard keeps flagging
+# the release.
+[tasks."release:go:provenance"]
+description = "Attach a provenance bundle to the GitHub Release of the tag in GITHUB_REF_NAME (set GH_TOKEN)"
+usage = 'arg "<bundle>" help="the Sigstore bundle actions/attest-build-provenance wrote"'
+tools = { gh = "2" }
+run = '''
+cp "$usage_bundle" "fraise_${GITHUB_REF_NAME}.intoto.jsonl"
+gh release upload "$GITHUB_REF_NAME" "fraise_${GITHUB_REF_NAME}.intoto.jsonl" --clobber
+'''
+
 [tasks."release:py"]
 description = "Release the Python SDK to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)"
 depends = ["build:py"]

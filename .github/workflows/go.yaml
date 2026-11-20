@@ -127,14 +127,7 @@ jobs:
         with:
           subject-path: dist/*.tar.gz, dist/*.zip, dist/checksums.txt
 
-      # The step above records the attestation in GitHub's attestations API,
-      # which `gh attestation verify` reads. Scorecard's Signed-Releases check
-      # reads release assets instead. So the same bundle is attached under the
-      # .intoto.jsonl name the check matches on. Without this step the
-      # provenance is still published, but Scorecard keeps flagging the release.
       - name: Attach provenance to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cp "${{ steps.attest.outputs.bundle-path }}" "fraise_${GITHUB_REF_NAME}.intoto.jsonl"
-          gh release upload "$GITHUB_REF_NAME" "fraise_${GITHUB_REF_NAME}.intoto.jsonl" --clobber
+        run: mise run release:go:provenance "${{ steps.attest.outputs.bundle-path }}"
