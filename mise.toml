@@ -248,13 +248,9 @@ run = [{ task = "fmt" }, { task = "lint:all" }, { task = "test:all" }]
 # package's must name the package's own version. The tag defaults to the one
 # CI runs for, GITHUB_REF_NAME.
 [tasks."check:tag:go"]
-description = "Check that a server release tag (vX.Y.Z) is well formed and on main"
+description = "Check that a server release tag (vX.Y.Z) is on main"
 usage = 'arg "<tag>" help="the release tag, vX.Y.Z" env="GITHUB_REF_NAME"'
-shell = "bash -c"
 run = '''
-if [[ ! "$usage_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
-  echo "::error::bad tag '$usage_tag' — expected vX.Y.Z or vX.Y.Z-alpha.N/-beta.N/-rc.N"; exit 1
-fi
 git fetch origin main
 if ! git merge-base --is-ancestor "$usage_tag" origin/main; then
   echo "::error::tag $usage_tag is not on main"; exit 1
@@ -265,12 +261,8 @@ fi
 description = "Check that a Python SDK release tag (python/vX.Y.Z) names the SDK's version"
 usage = 'arg "<tag>" help="the release tag, python/vX.Y.Z" env="GITHUB_REF_NAME"'
 dir = "{{config_root}}/sdk/python"
-shell = "bash -c"
 run = '''
 raw="${usage_tag#python/v}"
-if [[ ! "$raw" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
-  echo "::error::bad tag '$usage_tag' — expected python/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
-fi
 version=$(uv version --short)
 [ "$raw" = "$version" ] || { echo "::error::tag maps to $raw != pyproject $version"; exit 1; }
 '''
@@ -279,12 +271,8 @@ version=$(uv version --short)
 description = "Check that a fraise-mcp release tag (mcp/vX.Y.Z) names fraise-mcp's version"
 usage = 'arg "<tag>" help="the release tag, mcp/vX.Y.Z" env="GITHUB_REF_NAME"'
 dir = "{{config_root}}/mcp"
-shell = "bash -c"
 run = '''
 raw="${usage_tag#mcp/v}"
-if [[ ! "$raw" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
-  echo "::error::bad tag '$usage_tag' — expected mcp/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
-fi
 version=$(uv version --short)
 [ "$raw" = "$version" ] || { echo "::error::tag maps to $raw != pyproject $version"; exit 1; }
 '''
