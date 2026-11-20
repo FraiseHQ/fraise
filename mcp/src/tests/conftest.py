@@ -161,10 +161,11 @@ def server_over(fraise_client, embedder):
 _FRAISE_URL = os.environ.get("FRAISE_URL", "http://localhost:9876")
 _WAIT_TIMEOUT_SECONDS = 30
 
-# The suite runs against a daemon of its own (make test-integration-mcp brings
-# one up), so it claims graphs without the e2e allocation map. The first vector
-# written to a graph fixes its dimension, so the graph the default model writes
-# to is never written with another. The control graph never takes a vector.
+# The suite runs against a daemon of its own (mise run test:integration:mcp
+# brings one up), so it claims graphs without the e2e allocation map. The first
+# vector written to a graph fixes its dimension, so the graph the default model
+# writes to is never written with another. The control graph never takes a
+# vector.
 _VECTOR_GRAPH = 0
 _CONTROL_GRAPH = 1
 

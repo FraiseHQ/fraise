@@ -114,13 +114,13 @@ checksum:
 # package, so one signature covers the whole set. The output is
 # checksums.txt.sigstore.json, a Sigstore bundle that holds the signature and
 # the signing certificate. .sigstore.json is one of the suffixes OpenSSF
-# Scorecard's Signed-Releases check looks for. Signing needs cosign on PATH and
-# id-token: write on the publishing job (see .github/workflows/go.yaml).
-# Without the OIDC token, signing fails the release rather than shipping it
-# unsigned.
+# Scorecard's Signed-Releases check looks for. Signing needs cosign on PATH,
+# which the release:go task in mise.toml provides, and id-token: write on the
+# publishing job (see .github/workflows/go.yaml). Without the OIDC token,
+# signing fails the release rather than shipping it unsigned.
 #
-# --bundle is the only output flag to use here. cosign 3, which
-# sigstore/cosign-installer v4 installs, defaults to --new-bundle-format. That
+# --bundle is the only output flag to use here. cosign 3, which the release:go
+# task pins, defaults to --new-bundle-format. That
 # format ignores --output-signature and --output-certificate. With no bundle
 # path to write, cosign resolves an empty filename and aborts the release.
 signs:

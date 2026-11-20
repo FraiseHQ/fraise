@@ -14,6 +14,7 @@ on:
       - "go.sum"
       - Dockerfile.fraise
       - docker-compose.yaml
+      - mise.toml
       - ".github/workflows/mcp.yaml"
   pull_request:
     paths:
@@ -24,6 +25,7 @@ on:
       - "go.sum"
       - Dockerfile.fraise
       - docker-compose.yaml
+      - mise.toml
       - ".github/workflows/mcp.yaml"
 
 concurrency:
@@ -40,9 +42,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
       - name: Lint
-        run: make lint-py
+        run: mise run lint:py
 
   unit:
     name: Unit tests (py${{ matrix.python }})
@@ -55,15 +57,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Install the latest version of uv and set the python version
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
-        with:
-          python-version: ${{ matrix.python }}
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
 
       # Only the server's unit tests: a mocked client and embedder, so no
       # daemon and no model download.
       - name: Unit tests with coverage
-        run: make coverage-mcp
+        env:
+          UV_PYTHON: ${{ matrix.python }}
+        run: mise run coverage:mcp
 
       # Uploaded under the `mcp` flag so the server's coverage is reported
       # separately from the SDK's and the Go server's (see codecov.yaml).
@@ -90,14 +91,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      # fraise runs in a container, and Go builds inside the image. So only uv
-      # is needed here, to run pytest against it.
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
-        with:
-          python-version: ${{ matrix.python }}
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
 
+      # fraise runs in a container, and Go builds inside the image. pytest
+      # runs here, on the matrix's Python.
       - name: Run fraise-mcp integration tests
-        run: make test-integration-mcp
+        env:
+          UV_PYTHON: ${{ matrix.python }}
+        run: mise run test:integration:mcp
 
   publish-mcp:
     name: Publish to PyPI
@@ -109,30 +110,13 @@ jobs:
     environment: release
     permissions:
       id-token: write # PyPI trusted publishing, with no token secret
-    defaults:
-      run:
-        working-directory: mcp
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
 
       - name: Version must match tag
-        run: |
-          RAW="${GITHUB_REF_NAME#mcp/v}"
-          if [[ ! "$RAW" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
-            echo "::error::bad tag '$GITHUB_REF_NAME' — expected mcp/vX.Y.Z or -alpha.N/-beta.N/-rc.N"; exit 1
-          fi
-          PKG_VERSION=$(uv run python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          [ "$RAW" = "$PKG_VERSION" ] || { echo "::error::tag maps to $RAW != pyproject $PKG_VERSION"; exit 1; }
+        run: mise run check:tag:mcp
 
-      # --out-dir is required here. This is a uv workspace, so a bare
-      # `uv build` writes to the workspace root's dist/ from any member
-      # directory. `uv publish` below globs dist/* relative to this job's
-      # working-directory (mcp), so it would find nothing.
-      - name: Build
-        run: uv build --out-dir dist
-
-      - name: Release
-        run: uv publish
+      - name: Build and release
+        run: mise run release:mcp

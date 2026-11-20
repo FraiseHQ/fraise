@@ -22,7 +22,12 @@ repos:
     hooks:
     # -full lints the whole module. The plain hook lints only the diff against
     # HEAD, which is empty in CI.
+    # pre-commit does not count a go under the home directory, where mise
+    # installs it, as the system's, and builds the hook with the latest Go
+    # release instead, which can be newer than golangci-lint reads. system
+    # builds it with the go on PATH, the one go.mod targets.
     - id: golangci-lint-full
+      language_version: system
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.0

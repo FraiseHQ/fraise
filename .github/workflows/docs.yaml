@@ -42,16 +42,7 @@ jobs:
           repositories: www
           permission-contents: write
 
-      # The bot that pushes the sync commit also authors it. So www's history
-      # names fraise-bot, not a workflow www cannot see.
-      - name: Resolve fraise-bot's commit identity
-        id: fraise-bot-user
-        env:
-          GH_TOKEN: ${{ steps.fraise-bot.outputs.token }}
-          SLUG: ${{ steps.fraise-bot.outputs.app-slug }}
-        run: echo "id=$(gh api "/users/${SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
-
-      # checkout keeps the token in the clone's git config. The push below
+      # checkout keeps the token in the clone's git config. The sync's push
       # authenticates with it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -60,19 +51,10 @@ jobs:
           token: ${{ steps.fraise-bot.outputs.token }}
           path: www
 
-      # A mirror, not a merge. A page deleted here disappears there, so
-      # contents/docs is exactly docs/ at this commit.
-      - name: Mirror docs/ into contents/docs
-        run: rsync --archive --delete docs/ www/contents/docs/
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
 
-      # Stages contents/docs, deletions included. Commits only when something
-      # changed, and pushes to www's main.
-      - uses: stefanzweifel/git-auto-commit-action@d0b01107b5db882071f96de5dd4b54961ea93f4c
-        with:
-          repository: www
-          branch: main
-          file_pattern: contents/docs
-          commit_message: "docs: sync from FraiseHQ/fraise@${{ github.sha }}"
-          commit_user_name: ${{ steps.fraise-bot.outputs.app-slug }}[bot]
-          commit_user_email: ${{ steps.fraise-bot-user.outputs.id }}+${{ steps.fraise-bot.outputs.app-slug }}[bot]@users.noreply.github.com
-          commit_author: ${{ steps.fraise-bot.outputs.app-slug }}[bot] <${{ steps.fraise-bot-user.outputs.id }}+${{ steps.fraise-bot.outputs.app-slug }}[bot]@users.noreply.github.com>
+      - name: Sync docs/ to www
+        env:
+          GH_TOKEN: ${{ steps.fraise-bot.outputs.token }}
+          BOT: ${{ steps.fraise-bot.outputs.app-slug }}
+        run: mise run docs:sync www --bot "$BOT"

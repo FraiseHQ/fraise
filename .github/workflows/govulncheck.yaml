@@ -16,7 +16,7 @@ jobs:
   vulncheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f
-        with:
-          go-version-file: go.mod
-          go-package: ./...
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+      - name: govulncheck
+        run: mise run check:vuln
