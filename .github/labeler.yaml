@@ -27,7 +27,7 @@ area:ci:
   - changed-files:
       - any-glob-to-any-file:
           - .github/**
-          - Makefile
+          - mise.toml
           - .pre-commit-config.yaml
           - docker-compose*
           - tests/**

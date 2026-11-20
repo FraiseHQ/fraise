@@ -43,7 +43,7 @@ identical vectors, unless a pull request changes one of the two. That pull
 request embeds anew, while the nightly baseline it is compared with used the
 old vectors.
 
-Run with the tests member's ``embeddings`` extra (``make perf-vectors``):
+Run with the tests member's ``embeddings`` extra (``mise run perf:vectors``):
 
     python tools/embed_locomo.py <locomo.json> <vectors.json>
 """

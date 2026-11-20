@@ -13,10 +13,10 @@ dependencies = [
     "requests>=2.32.5",
 ]
 
-# Optional. Only the `embeddings`-marked test and `make perf-vectors` need it.
-# Both load a real HuggingFace model through the vanilla transformers API. It
-# stays out of the base deps so the default e2e run stays torch-free. Install
-# it with `uv sync --extra embeddings`.
+# Optional. Only the `embeddings`-marked test and `mise run perf:vectors` need
+# it. Both load a real HuggingFace model through the vanilla transformers API.
+# It stays out of the base deps so the default e2e run stays torch-free.
+# Install it with `uv sync --extra embeddings`.
 [project.optional-dependencies]
 embeddings = [
     "transformers>=5.20.1",

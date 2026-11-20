@@ -87,8 +87,7 @@ These apply to every component:
 - Every source file starts with the MIT license header (copy from a neighbor).
 - Doc comments state the contract and the *why*, not the mechanics — e.g.
   `Hash` comments explain what must not collide and what breaks if it does.
-- Formatting and linting are non-negotiable, whatever the language: `make lint`
-  is the gate and it must be clean before a PR.
+- Formatting and linting are non-negotiable, whatever the language: `mise run lint:all` is the gate and it must be clean before a PR.
 - **No banner comments.** No section dividers or ruler lines in any file, whatever the language: no `# -- embedding ---`, no `// --- helpers ---`, no `# =====` box around a label. A banner names a grouping the code's own order and names already show, and it rots silently as definitions move across it. A comment explaining the code below it is fine; written as a plain comment, without the rulers.
 - Markdown prose is never hard-wrapped: one paragraph is one source line, however long — the same for a list item and for a blockquote line. Editors and renderers do the wrapping; hard breaks mid-paragraph make the file read as compacted and ragged, and turn every later edit into a rewrap diff. Code blocks, tables and the GitHub issue templates keep their own line structure. This applies to README.md, everything under docs/, and every other prose .md in the tree.
 
@@ -105,7 +104,7 @@ These apply to every component:
   and that assignment is the check: the build fails there if the method set
   drifts. A type assigned to its interface nowhere would be dead code, which
   is assumed never to exist here — delete the type, don't guard it.
-- `gofmt` is mandatory; `make lint-go` runs golangci-lint.
+- `gofmt` is mandatory; `mise run lint:go` runs golangci-lint.
 
 ### Python
 
@@ -127,7 +126,7 @@ These apply to every component:
   its own: its tests sit together, in the order the source module defines what
   they exercise.
 
-  Integration tests live in the same mirrored file as the module's unit tests, after them, and every one carries `@pytest.mark.integration`: `-m "not integration"` is the unit run and touches nothing live (`make test-py`), `-m integration` drives the daemon `make test-integration-py` brings up. The live fixtures they use sit in the same `conftest.py` as the mocked ones, after them — a fixture only instantiates when a test asks, so the unit run never waits on a health check.
+  Integration tests live in the same mirrored file as the module's unit tests, after them, and every one carries `@pytest.mark.integration`: `-m "not integration"` is the unit run and touches nothing live (`mise run test:py`), `-m integration` drives the daemon `mise run test:integration:py` brings up. The live fixtures they use sit in the same `conftest.py` as the mocked ones, after them — a fixture only instantiates when a test asks, so the unit run never waits on a health check.
 
   The point is that the tests for a given module are findable from its path
   alone, without grepping. Three consequences are intended, not accidents:
@@ -255,11 +254,11 @@ These apply to every component:
   `Returns:` / `Raises:` sections, as in
   `sdk/python/src/fraise_sdk/integrations/openai_agents.py`. Not NumPy, not
   reST field lists. Enforced by `convention = "google"` in `pyproject.toml`.
-- `ruff` formats and lints (`make lint-py`); `ty` type-checks.
+- `ruff` formats and lints (`mise run lint:py`); `ty` type-checks.
 
 ### TypeScript
 
-There is no TypeScript SDK, and nothing in the tree anticipates one: no `sdk/typescript/`, no `biome.json`, no `make *-ts` targets.
+There is no TypeScript SDK, and nothing in the tree anticipates one: no `sdk/typescript/`, no `biome.json`, no `*:ts` tasks in `mise.toml`.
 Don't add scaffolding for it ahead of the code. When the SDK does land, this
 section should answer the same questions the Python one does — test file naming,
 where tests live relative to the source, the module/barrel-file rule — and
@@ -267,14 +266,15 @@ where tests live relative to the source, the module/barrel-file rule — and
 
 ## Commands
 
-- `make test` / `make test-go` — Go unit tests; `make coverage-go` for coverage.
-- `make test-py` — Python SDK unit tests.
-- `make test-e2e` — end-to-end suite; runs pytest locally against the fraise
-  image brought up as a daemon via `docker-compose.yaml`.
-- `make test-integration-py` — the `integration`-marked half of the SDK suite (`sdk/python/src/tests -m integration`), driven by a locally-run pytest against the same daemon.
-- `make test-integration` — the server + MCP bridge suite (`tests/integration/`): builds the binary and drives it as daemon *and* as `fraise mcp` over stdio. Needs Go, not docker.
-- `make bench BENCH_BASELINE=<dir>` — the benchmark gates (`tests/perf`): the working tree's Go benchmarks against a nightly run's outputs, through benchstat; without a baseline they measure and pass.
-- `make lint`, `make fmt`, `make build` — quality and build entry points.
+The toolchain and the tasks live in `mise.toml`: `mise install` installs the toolchain, `mise run install` the Go and Python dependencies, and `mise tasks` lists every task.
+
+- `mise run test` / `mise run test:go` — Go unit tests; `mise run coverage:go` for coverage.
+- `mise run test:py` — Python SDK unit tests.
+- `mise run test:e2e` — end-to-end suite; runs pytest locally against the fraise image brought up as a daemon via `docker-compose.yaml`.
+- `mise run test:integration:py` — the `integration`-marked half of the SDK suite (`sdk/python/src/tests -m integration`), driven by a locally-run pytest against the same daemon.
+- `mise run test:integration` — the server + MCP bridge suite (`tests/integration/`): builds the binary and drives it as daemon *and* as `fraise mcp` over stdio. Needs Go, not docker.
+- `mise run bench --bench-baseline=<dir>` — the benchmark gates (`tests/perf`): the working tree's Go benchmarks against a nightly run's outputs, through benchstat; without a baseline they measure and pass.
+- `mise run lint:all`, `mise run fmt`, `mise run build` — quality and build entry points.
 
 When a change alters a contract (an interface method, hash material, a wire
 format), update every implementor and every exact-format test in the same

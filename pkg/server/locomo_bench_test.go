@@ -158,7 +158,7 @@ func vectorOf(b *testing.B, vectors map[string][]float64, text string) []float64
 	}
 	v, ok := vectors[text]
 	if !ok {
-		b.Fatalf("FRAISE_LOCOMO_VECTORS has no vector for %q: rebuild it with make perf-vectors", text)
+		b.Fatalf("FRAISE_LOCOMO_VECTORS has no vector for %q: rebuild it with mise run perf:vectors", text)
 	}
 	return v
 }

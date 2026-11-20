@@ -1,0 +1,416 @@
+# The toolchain for working on fraise, and the tasks that build, test and lint
+# it. `mise install` sets up the toolchain, `mise run <task>` runs a task, and
+# `mise tasks` lists them. Arguments after a task's name go to its last command:
+# `mise run test:go -run TestRecall`.
+#
+# go follows the minor version go.mod targets, and uv the range pyproject.toml's
+# required-version allows. Python is left to uv, which reads .python-version.
+# The linters (golangci-lint, ruff, ty, hadolint) are pinned in
+# .pre-commit-config.yaml, and pre-commit installs them. CI installs the same
+# toolchain from this file.
+[tools]
+go = "1.26"
+uv = "0.12"
+pre-commit = "4.7.0"
+
+# The ldflags set the same pkg/version symbols GoReleaser sets on a release (see
+# .goreleaser.yaml), so a local build reports its real version.
+[tasks."build:go"]
+description = "Build the Go server binary"
+alias = "build"
+run = '''
+pkg=github.com/FraiseHQ/fraise/pkg/version
+mkdir -p bin
+go build -ldflags "-X '$pkg.Version=$(git describe --always --tags)' -X '$pkg.Commit=$(git rev-parse --short HEAD)' -X '$pkg.Date=$(git log -1 --format=%cI)'" -o bin/fraise ./cmd/server
+'''
+
+# This is a uv workspace, so a bare `uv build` writes to the workspace root's
+# dist/ from any member directory. --out-dir keeps each package in a dist/ of
+# its own, where `uv publish` run from the package finds it.
+[tasks."build:py"]
+description = "Build the Python SDK into sdk/python/dist"
+dir = "{{config_root}}/sdk/python"
+run = "uv build --out-dir dist"
+
+[tasks."build:mcp"]
+description = "Build the Python MCP server (fraise-mcp) into mcp/dist"
+dir = "{{config_root}}/mcp"
+run = "uv build --out-dir dist"
+
+[tasks."build:all"]
+description = "Build the Go server and both Python packages"
+run = [{ task = "build:go" }, { task = "build:py" }, { task = "build:mcp" }]
+
+[tasks."build:examples"]
+description = "Build the example images: the ones named, or every one under examples/"
+usage = 'arg "[example]..." help="an example under examples/, e.g. claude-agent-sdk"'
+run = '''
+for example in ${usage_example:-$(for dockerfile in examples/*/Dockerfile; do basename "$(dirname "$dockerfile")"; done)}; do
+  docker build -f "examples/$example/Dockerfile" .
+done
+'''
+
+[tasks."test:go"]
+description = "Run the Go tests"
+alias = "test"
+run = "go test ./..."
+
+[tasks."test:go:short"]
+description = "Run the Go tests in short mode"
+run = "go test -short ./..."
+
+[tasks."test:go:bench"]
+description = "Run the Go benchmarks"
+run = "go test -bench=. -benchmem ./..."
+
+[tasks."test:py"]
+description = "Run the Python SDK unit tests (integration-marked tests excluded)"
+run = 'uv run --package fraise-sdk --all-extras pytest sdk/python/src/tests -m "not integration"'
+
+[tasks."test:mcp"]
+description = "Run the fraise-mcp unit tests (integration-marked tests excluded)"
+run = 'uv run --package fraise-mcp --extra dev pytest mcp/src/tests -m "not integration"'
+
+[tasks."test:all"]
+description = "Run the Go tests and both Python packages' unit tests"
+run = [{ task = "test:go" }, { task = "test:py" }, { task = "test:mcp" }]
+
+[tasks."test:watch"]
+description = "Run the Go tests whenever a Go file changes"
+tools = { "go:github.com/cespare/reflex" = "0.3.2" }
+run = '''reflex -r '\.go$' -s -- go test -v ./...'''
+
+# The suites below run pytest locally against fraise in docker, published on
+# FRAISE_E2E_PORT (9877 unless set). A failing suite dumps the server's logs
+# before the container is torn down, which discards them: pytest says which
+# assertion broke, and the container says why, a panic, a rejected write or a
+# bad config.
+[tasks."test:e2e"]
+description = "Run the end-to-end tests against fraise in docker"
+run = '''
+port=${FRAISE_E2E_PORT:-9877}
+FRAISE_PORT=$port docker compose -f docker-compose.yaml up --build --detach fraise
+trap 'status=$?; [ $status -eq 0 ] || docker compose -f docker-compose.yaml logs --no-color --tail=200 fraise; docker compose -f docker-compose.yaml down --remove-orphans' EXIT
+trap 'exit 130' INT TERM
+FRAISE_URL=http://localhost:$port uv run --package tests pytest tests/e2e -v
+'''
+
+[tasks."test:integration:py"]
+description = "Run the Python SDK integration tests (marked `integration`) against fraise in docker"
+run = '''
+port=${FRAISE_E2E_PORT:-9877}
+FRAISE_PORT=$port docker compose -f docker-compose.yaml up --build --detach fraise
+trap 'status=$?; [ $status -eq 0 ] || docker compose -f docker-compose.yaml logs --no-color --tail=200 fraise; docker compose -f docker-compose.yaml down --remove-orphans' EXIT
+trap 'exit 130' INT TERM
+FRAISE_URL=http://localhost:$port uv run --package fraise-sdk --all-extras pytest sdk/python/src/tests -m integration -vvv
+'''
+
+[tasks."test:integration:mcp"]
+description = "Run the fraise-mcp integration tests (marked `integration`) against fraise in docker"
+run = '''
+port=${FRAISE_E2E_PORT:-9877}
+FRAISE_PORT=$port docker compose -f docker-compose.yaml up --build --detach fraise
+trap 'status=$?; [ $status -eq 0 ] || docker compose -f docker-compose.yaml logs --no-color --tail=200 fraise; docker compose -f docker-compose.yaml down --remove-orphans' EXIT
+trap 'exit 130' INT TERM
+FRAISE_URL=http://localhost:$port uv run --package fraise-mcp --extra dev pytest mcp/src/tests -m integration -vvv
+'''
+
+[tasks."test:integration"]
+description = "Run the server + MCP bridge integration tests (pytest drives the built binary over stdio)"
+depends = ["build:go"]
+env = { FRAISE_BIN = "{{config_root}}/bin/fraise" }
+run = "uv run --package tests pytest tests/integration -vvv"
+
+[tasks."coverage:go"]
+description = "Run the Go tests with a coverage report in coverage.txt"
+run = "go test -v -race -coverprofile=coverage.txt -covermode=atomic ./..."
+
+[tasks."coverage:py"]
+description = "Run the Python SDK unit tests with a coverage report in coverage-py.xml (integration-marked tests excluded)"
+run = 'uv run --package fraise-sdk --all-extras pytest sdk/python/src/tests -m "not integration" --cov=fraise_sdk --cov-report=xml:coverage-py.xml --cov-report=term'
+
+[tasks."coverage:mcp"]
+description = "Run the fraise-mcp unit tests with a coverage report in coverage-mcp.xml (integration-marked tests excluded)"
+run = 'uv run --package fraise-mcp --extra dev pytest mcp/src/tests -m "not integration" --cov=fraise_mcp --cov-report=xml:coverage-mcp.xml --cov-report=term'
+
+[tasks.coverage]
+description = "Run every coverage report"
+run = [{ task = "coverage:go" }, { task = "coverage:py" }, { task = "coverage:mcp" }]
+
+# The benchmarks are Go benchmarks beside the code they measure. The gates on
+# them are pytest tests in tests/perf. The gates run them on the working tree
+# and compare them, through benchstat, with a nightly run's outputs, the
+# directory --bench-baseline names. Each run leaves its own outputs in bin/perf
+# under the same names, so a nightly run's bin/perf is the next baseline.
+# --bench-changed-since takes a git ref: only the gates whose packages changed
+# since that ref run, and a pull request passes its base. --bench-always,
+# repeatable, names a path whose change since that ref runs every gate. The
+# gate workflow names them.
+[tasks.bench]
+description = "Run the pull request gates, against the nightly run --bench-baseline names if one is given"
+run = 'uv run --package tests pytest --import-mode=importlib tests/perf -m "bench and not nightly" --bench-out=bin/perf'
+
+[tasks."bench:nightly"]
+description = "Run every gate, HTTP latency included, against the nightly run --bench-baseline names if one is given"
+run = "uv run --package tests pytest --import-mode=importlib tests/perf -m bench --bench-out=bin/perf"
+
+# The history takes one sample per benchmark, as a trend, not a comparison.
+# It takes retrieval quality as {name, unit, value} JSON, so it is charted as
+# bigger-is-better. github-action-benchmark's own go parser treats every unit
+# as smaller-is-better. A retrieval value is a benchmark metric whose unit has
+# an @ in its name. Each series is built from the outputs the night has. A gate
+# that failed wrote none, so only its own series is left out.
+[tasks."bench:history"]
+description = "Shape the run in bin/perf for the history github-action-benchmark keeps"
+run = '''
+latency=$(ls bin/perf/internal-*.txt bin/perf/pkg-server-BenchmarkHTTP.txt 2>/dev/null || true)
+if [ -n "$latency" ]; then
+  awk '!/^Benchmark/ || !seen[$1]++' $latency > bin/perf/history-latency.txt
+else
+  echo "No latency output to record"
+fi
+retrieval=$(ls bin/perf/pkg-server-BenchmarkRetrievalQuality.txt 2>/dev/null || true)
+if [ -n "$retrieval" ]; then
+  awk '/^Benchmark/ { name = $1; sub(/-[0-9]+$/, "", name);
+      for (i = 3; i < NF; i += 2) if ($(i + 1) ~ /@/)
+        printf "%s{\"name\":\"%s - %s\",\"unit\":\"%s\",\"value\":%s}", (n++ ? "," : "["), name, $(i + 1), $(i + 1), $i }
+    END { print (n ? "]" : "[]") }' $retrieval > bin/perf/history-retrieval.json
+else
+  echo "No retrieval output to record"
+fi
+'''
+
+[tasks."perf:vectors"]
+description = "Embed the LoCoMo sample once, for the runs that seed with vectors"
+run = "uv run --package tests --extra embeddings python tools/embed_locomo.py tests/perf/data/locomo-conv-26.json bin/perf/locomo-vectors.json"
+
+[tasks.dev]
+description = "Run the development server"
+run = "go run ./cmd/server"
+
+[tasks.install]
+description = "Install the Go and Python dependencies"
+run = ["go mod download", "cd sdk/python && uv sync"]
+
+[tasks."fmt:go"]
+description = "Format the Go code"
+run = "go fmt ./..."
+
+[tasks."fmt:py"]
+description = "Format the Python SDK with ruff"
+dir = "{{config_root}}/sdk/python"
+run = 'uv run ruff format 2>/dev/null || echo "Ruff not configured"'
+
+[tasks.fmt]
+description = "Format all code"
+depends = ["fmt:*"]
+
+# All linting runs through pre-commit (.pre-commit-config.yaml), so local runs
+# and CI run the same hooks. lint runs the hooks no language owns: whitespace,
+# line endings, merge markers, private keys and JSON. lint:go, lint:py and
+# lint:docker each run their own, and lint:all runs every hook. CI calls each
+# slice in a job of its own.
+[tasks.lint]
+description = "Lint with the pre-commit hooks no language owns"
+env = { SKIP = "golangci-lint-full,ruff,ruff-format,ty,hadolint-docker" }
+run = "pre-commit run --all-files --show-diff-on-failure"
+
+[tasks."lint:go"]
+description = "Lint Go via golangci-lint (pre-commit)"
+run = "pre-commit run --all-files --show-diff-on-failure golangci-lint-full"
+
+[tasks."lint:py"]
+description = "Lint Python via ruff and ty (pre-commit)"
+run = [
+  "pre-commit run --all-files --show-diff-on-failure ruff",
+  "pre-commit run --all-files --show-diff-on-failure ruff-format",
+  "pre-commit run --all-files --show-diff-on-failure ty",
+]
+
+[tasks."lint:docker"]
+description = "Lint the Dockerfiles via hadolint (pre-commit)"
+run = "pre-commit run --all-files --show-diff-on-failure hadolint-docker"
+
+[tasks."lint:all"]
+description = "Lint all code via pre-commit (every hook)"
+run = "pre-commit run --all-files"
+
+[tasks.check]
+description = "Format and lint all code, then run the Go tests"
+run = [{ task = "fmt" }, { task = "lint:all" }, { task = "test:go" }]
+
+[tasks."check:all"]
+description = "Format, lint and test everything"
+run = [{ task = "fmt" }, { task = "lint:all" }, { task = "test:all" }]
+
+# A release tag names the version it publishes. Each release job checks its
+# tag before anything is published: the server's must be on main, and a Python
+# package's must name the package's own version. The tag defaults to the one
+# CI runs for, GITHUB_REF_NAME.
+[tasks."check:tag:go"]
+description = "Check that a server release tag (vX.Y.Z) is on main"
+usage = 'arg "<tag>" help="the release tag, vX.Y.Z" env="GITHUB_REF_NAME"'
+run = '''
+git fetch origin main
+if ! git merge-base --is-ancestor "$usage_tag" origin/main; then
+  echo "::error::tag $usage_tag is not on main"; exit 1
+fi
+'''
+
+[tasks."check:tag:py"]
+description = "Check that a Python SDK release tag (python/vX.Y.Z) names the SDK's version"
+usage = 'arg "<tag>" help="the release tag, python/vX.Y.Z" env="GITHUB_REF_NAME"'
+dir = "{{config_root}}/sdk/python"
+run = '''
+raw="${usage_tag#python/v}"
+version=$(uv version --short)
+[ "$raw" = "$version" ] || { echo "::error::tag maps to $raw != pyproject $version"; exit 1; }
+'''
+
+[tasks."check:tag:mcp"]
+description = "Check that a fraise-mcp release tag (mcp/vX.Y.Z) names fraise-mcp's version"
+usage = 'arg "<tag>" help="the release tag, mcp/vX.Y.Z" env="GITHUB_REF_NAME"'
+dir = "{{config_root}}/mcp"
+run = '''
+raw="${usage_tag#mcp/v}"
+version=$(uv version --short)
+[ "$raw" = "$version" ] || { echo "::error::tag maps to $raw != pyproject $version"; exit 1; }
+'''
+
+# govulncheck reports the known vulnerabilities the code can reach, in its
+# dependencies and in the standard library of the Go it is built with, the
+# one this file pins.
+[tasks."check:vuln"]
+description = "Check the Go module for known vulnerabilities its code can reach"
+tools = { "go:golang.org/x/vuln/cmd/govulncheck" = "1.10.0" }
+run = "govulncheck ./..."
+
+[tasks."clean:go"]
+description = "Clean the Go build artifacts"
+run = ["go clean", "rm -rf bin coverage.txt"]
+
+[tasks."clean:py"]
+description = "Clean the Python build artifacts"
+run = '''
+rm -rf sdk/python/dist sdk/python/.pytest_cache sdk/python/__pycache__
+rm -rf mcp/dist mcp/.pytest_cache mcp/__pycache__
+rm -f coverage-py.xml coverage-mcp.xml .coverage
+find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+find . -type f -name '*.pyc' -delete 2>/dev/null || true
+'''
+
+[tasks.clean]
+description = "Clean all build artifacts"
+depends = ["clean:*"]
+
+# Each component releases on its own tag, and each release task publishes
+# one. release-please has already created the server's GitHub Release, with
+# its notes: GoReleaser only appends the binaries and checksums to it, signs
+# the checksums with cosign (the signs block in .goreleaser.yaml), and pushes
+# the Homebrew formula with HOMEBREW_TAP_TOKEN.
+[tasks."release:go"]
+description = "Release the Go server with GoReleaser (set GITHUB_TOKEN and HOMEBREW_TAP_TOKEN)"
+tools = { goreleaser = "2", cosign = "3.1.4" }
+run = "goreleaser release --clean"
+
+# actions/attest-build-provenance records the release's attestation in
+# GitHub's attestations API, which `gh attestation verify` reads. Scorecard's
+# Signed-Releases check reads release assets instead, so the same bundle is
+# attached to the release under the .intoto.jsonl name the check matches on.
+# Without it the provenance is still published, but Scorecard keeps flagging
+# the release.
+[tasks."release:go:provenance"]
+description = "Attach a provenance bundle to a server release on GitHub (set GH_TOKEN)"
+usage = '''
+arg "<bundle>" help="the Sigstore bundle actions/attest-build-provenance wrote"
+flag "--tag <tag>" required=#true help="the release tag, vX.Y.Z" env="GITHUB_REF_NAME"
+'''
+tools = { gh = "2" }
+run = '''
+cp "$usage_bundle" "fraise_${usage_tag}.intoto.jsonl"
+gh release upload "$usage_tag" "fraise_${usage_tag}.intoto.jsonl" --clobber
+'''
+
+[tasks."release:py"]
+description = "Release the Python SDK to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)"
+depends = ["build:py"]
+dir = "{{config_root}}/sdk/python"
+run = "uv publish"
+
+[tasks."release:mcp"]
+description = "Release fraise-mcp to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)"
+depends = ["build:mcp"]
+dir = "{{config_root}}/mcp"
+run = "uv publish"
+
+# The MCP registry record is the release's server.json, read as data and never
+# run: whoever publishes it holds the credential for io.github.FraiseHQ/*, and
+# mcp-publisher runs with it, which is why mise.lock pins it by checksum.
+# release-please writes the record's version in the commit it tags (an
+# extra-file in release-please-config.json), so a version other than the
+# tag's means that bump broke, and the record would publish under a version no
+# release carries. The record names its image without a tag, and the
+# release's is appended here; docker.yaml derives the image's from the same
+# ref, so it is the tag's by construction. The registry proves ownership by
+# reading the io.modelcontextprotocol.server.name label off that image.
+[tasks."release:registry"]
+description = "Publish a server release's server.json record to the MCP registry (set GH_TOKEN; logs in with GitHub OIDC)"
+usage = '''
+arg "<tag>" help="the server release, vX.Y.Z"
+flag "--ref <commit>" help="read server.json at this commit rather than at the tag"
+'''
+tools = { gh = "2", jq = "1.8", "github:modelcontextprotocol/registry" = { version = "1.8.1", asset_pattern = "mcp-publisher_*" } }
+run = '''
+version="${usage_tag#v}"
+record="$(mktemp -d)"
+cd "$record"
+gh api -H "Accept: application/vnd.github.raw+json" "repos/FraiseHQ/fraise/contents/server.json?ref=${usage_ref:-$usage_tag}" > server.json
+recorded="$(jq -r .version server.json)"
+if [ "$recorded" != "$version" ]; then
+  echo "::error::server.json declares version $recorded, tag $usage_tag names $version — check the release-please extra-files entry"
+  exit 1
+fi
+jq --arg v "$version" '(.packages[] | select(.registryType == "oci") | .identifier) |= . + ":" + $v' server.json > pinned.json
+mv pinned.json server.json
+cat server.json
+mcp-publisher validate
+mcp-publisher login github-oidc
+mcp-publisher publish
+'''
+
+# A mirror, not a merge: a page deleted from docs/ disappears from the
+# website's contents/docs too, so that tree is exactly docs/ at this commit.
+# The GitHub App bot that pushes the sync also authors it, so the website's
+# history names the bot, not a workflow it cannot see. Nothing is committed
+# when nothing changed.
+[tasks."docs:sync"]
+description = "Mirror docs/ into a FraiseHQ/www checkout, then commit and push it as a GitHub App's bot (set GH_TOKEN)"
+usage = '''
+arg "<www>" help="the FraiseHQ/www checkout, on the branch to push"
+flag "--bot <slug>" required=#true help="the GitHub App whose bot authors the commit, e.g. fraise-bot"
+'''
+tools = { gh = "2" }
+run = '''
+rsync --archive --delete docs/ "$usage_www/contents/docs/"
+git -C "$usage_www" add contents/docs
+if git -C "$usage_www" diff --cached --quiet; then
+  echo "contents/docs already matches docs/"
+  exit 0
+fi
+bot="${usage_bot}[bot]"
+email="$(gh api "/users/$bot" --jq .id)+$bot@users.noreply.github.com"
+git -C "$usage_www" -c user.name="$bot" -c user.email="$email" commit --quiet -m "docs: sync from FraiseHQ/fraise@$(git rev-parse HEAD)"
+git -C "$usage_www" push origin HEAD
+'''
+
+[tasks.all]
+description = "Full rebuild: clean, install, build and test everything"
+run = [{ task = "clean" }, { task = "install" }, { task = "build:all" }, { task = "test:all" }]
+
+[tasks.quick]
+description = "Quick development cycle: build and test Go (short mode)"
+run = [{ task = "build:go" }, { task = "test:go:short" }]
+
+[tasks.ci]
+description = "CI pipeline: install, lint and test"
+run = [{ task = "install" }, { task = "lint:all" }, { task = "test:go" }]
