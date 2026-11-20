@@ -195,7 +195,7 @@ class _MCPClient:
 def fraise_binary(tmp_path_factory):
     """Path to the fraise binary.
 
-    It is FRAISE_BIN when set, which CI builds once with make build-go.
+    It is FRAISE_BIN when set, which CI builds once with mise run build:go.
     Otherwise it is a fresh `go build` into a session temp dir.
     """
     prebuilt = os.environ.get("FRAISE_BIN")

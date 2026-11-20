@@ -23,8 +23,8 @@
 """Shared fixtures for the Fraise end-to-end suite.
 
 The suite targets the server named by FRAISE_URL, or http://localhost:9876 when
-it is unset. `make test-e2e` points it at the port docker compose publishes.
-The suite waits for the server's health check before any test runs.
+it is unset. `mise run test:e2e` points it at the port docker compose
+publishes. The suite waits for the server's health check before any test runs.
 
 Graph allocation. Tests pin their writes to fixed graphs, so result counts stay
 exact. A fact is keyed by its value, so the counts also hold across reruns

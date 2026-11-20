@@ -34,12 +34,7 @@ jobs:
       actions: read # the previous baseline and history
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
-        with:
-          version-file: "pyproject.toml"
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
 
       # A missing baseline is not an error. The gates then measure and pass,
       # as on the first night.
@@ -66,12 +61,12 @@ jobs:
       - name: Embed LoCoMo
         if: steps.vectors.outputs.cache-hit != 'true'
         continue-on-error: true
-        run: make perf-vectors
+        run: mise run perf:vectors
 
       - name: Gate
         env:
           FRAISE_LOCOMO_VECTORS: ${{ hashFiles('bin/perf/locomo-vectors.json') != '' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
-        run: make bench-nightly BENCH_BASELINE=${{ steps.baseline.outputs.found_artifact == 'true' && 'bin/perf/baseline' || '' }}
+        run: mise run bench:nightly ${{ steps.baseline.outputs.found_artifact == 'true' && '--bench-baseline=bin/perf/baseline' || '' }}
 
       - name: Save the baseline
         if: always()
@@ -105,7 +100,7 @@ jobs:
           if_no_artifact_found: warn
       - name: Shape the history
         if: always()
-        run: make bench-history
+        run: mise run bench:history
       - name: Record latency
         if: always()
         uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2

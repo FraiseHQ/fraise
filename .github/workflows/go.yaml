@@ -11,6 +11,7 @@ on:
       - "go.mod"
       - "go.sum"
       - ".golangci.yaml"
+      - "mise.toml"
       - ".github/workflows/go.yaml"
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - "go.mod"
       - "go.sum"
       - ".golangci.yaml"
+      - "mise.toml"
       - ".github/workflows/go.yaml"
 
 concurrency:
@@ -32,14 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
-        with:
-          version-file: "pyproject.toml"
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
       - name: Lint
-        run: make lint-go
+        run: mise run lint:go
 
   test:
     name: Test Go
@@ -47,15 +44,13 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
 
       - name: Test
-        run: make test-go
+        run: mise run test:go
 
       - name: Coverage
-        run: make coverage-go
+        run: mise run coverage:go
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
@@ -74,14 +69,12 @@ jobs:
         goarch: [amd64, arm64]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
       - env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-        run: make build-go
+        run: mise run build:go
 
   publish:
     name: Release
@@ -98,27 +91,12 @@ jobs:
       id-token: write # cosign keyless signing + provenance, both via OIDC
       attestations: write # actions/attest-build-provenance
     steps:
-      - name: Validate tag format
-        run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
-            echo "::error::bad tag '$GITHUB_REF_NAME' — expected vX.Y.Z or vX.Y.Z-alpha.N/-beta.N/-rc.N"; exit 1
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - name: Verify tag is on main
-        run: |
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::tag ${GITHUB_REF_NAME} is not on main"; exit 1
-          fi
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-
-      # The signs block in .goreleaser.yaml uses cosign to sign checksums.txt
-      # keylessly, in the release step below.
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+      - name: Tag must be well formed and on main
+        run: mise run check:tag:go
 
       # The formula is pushed to FraiseHQ/homebrew-tap, which GITHUB_TOKEN
       # cannot write to. fraise-bot mints a token for that repository alone.
@@ -135,16 +113,13 @@ jobs:
       # Release, and its notes are the entry release-please added to
       # docs/changelog.md. GoReleaser only appends binaries and checksums to
       # it (release.mode: keep-existing).
-      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
+      - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISCORD_WEBHOOK_ID: ${{ secrets.DISCORD_WEBHOOK_ID }}
           DISCORD_WEBHOOK_TOKEN: ${{ secrets.DISCORD_WEBHOOK_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ steps.fraise-bot.outputs.token }}
+        run: mise run release:go
 
       - name: Attest release binaries
         id: attest
