@@ -54,12 +54,7 @@ jobs:
           # The checkout is the merge of the pull request into its base.
           # Its first parent is the base, which the gates diff against.
           fetch-depth: 2
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
-        with:
-          version-file: "pyproject.toml"
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
 
       # A missing baseline is not an error. The gates then measure and pass.
       - name: Download the nightly baseline
@@ -86,7 +81,7 @@ jobs:
       - name: Embed LoCoMo
         if: steps.vectors.outputs.cache-hit != 'true'
         continue-on-error: true
-        run: make perf-vectors
+        run: mise run perf:vectors
 
       # A regression fails this step and the check, and the required check
       # blocks the merge. A pull request runs only the gates whose packages it
@@ -94,22 +89,22 @@ jobs:
       - name: Gate
         env:
           FRAISE_LOCOMO_VECTORS: ${{ hashFiles('bin/perf/locomo-vectors.json') != '' && format('{0}/bin/perf/locomo-vectors.json', github.workspace) || '' }}
-          # What the benchmarks run or read that no package's source shows.
-          # A change to any of these runs every gate. They are the module's
-          # dependencies, the LoCoMo sample, the server configuration the
-          # benchmarks start with, and the embeddings they seed with. The
-          # gates and what runs them change no number, so they are not here.
-          BENCH_ALWAYS: >-
-            go.mod
-            go.sum
-            tests/perf/data/
-            tests/perf/fraise.config.toml
-            tools/embed_locomo.py
+        # --bench-always names what the benchmarks run or read that no
+        # package's source shows. A change to any of these runs every gate.
+        # They are the toolchain and the module's dependencies, the LoCoMo
+        # sample, the server configuration the benchmarks start with, and the
+        # embeddings they seed with. The gates and what runs them change no
+        # number, so they are not here.
         run: >-
-          make bench
-          BENCH_BASELINE=${{ steps.baseline.outputs.found_artifact == 'true' && 'bin/perf/baseline' || '' }}
-          BENCH_CHANGED_SINCE=${{ env.RELEASE != 'true' && 'HEAD^1' || '' }}
-          BENCH_ALWAYS="$BENCH_ALWAYS"
+          mise run bench
+          ${{ steps.baseline.outputs.found_artifact == 'true' && '--bench-baseline=bin/perf/baseline' || '' }}
+          ${{ env.RELEASE != 'true' && '--bench-changed-since=HEAD^1' || '' }}
+          --bench-always=mise.toml
+          --bench-always=go.mod
+          --bench-always=go.sum
+          --bench-always=tests/perf/data/
+          --bench-always=tests/perf/fraise.config.toml
+          --bench-always=tools/embed_locomo.py
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

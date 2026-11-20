@@ -196,7 +196,7 @@ sha256sum --ignore-missing -c checksums.txt   # macOS: shasum -a 256 --ignore-mi
 ```sh
 git clone https://github.com/FraiseHQ/fraise
 cd fraise
-make dev
+go run ./cmd/server
 ```
 
 ### Your first memory

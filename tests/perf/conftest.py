@@ -504,7 +504,7 @@ def pytest_sessionfinish(session, exitstatus):
         if kind == "Failed":
             lines += [
                 "> [!TIP]",
-                f"> To accept a regression worth what it costs, label the pull request `{_ACCEPT_LABEL}` and say why in the *{_ACCEPT_SECTION}* section of its description. See [Accepting a regression](https://docs.getfraise.dev/docs/operations/benchmarks#accepting-a-regression).",
+                f"> To accept a regression worth what it costs, label the pull request `{_ACCEPT_LABEL}` and say why in the *{_ACCEPT_SECTION}* section of its description. See [Accepting a regression](https://github.com/FraiseHQ/fraise/blob/main/CONTRIBUTING.md#accepting-a-regression).",
                 "",
             ]
     skipped = sorted(

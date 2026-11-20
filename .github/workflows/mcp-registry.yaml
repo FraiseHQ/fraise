@@ -36,58 +36,17 @@ jobs:
       contents: read
       id-token: write # mcp-publisher login github-oidc
     steps:
-      # The record as the tagged commit carries it, fetched as one file. The
-      # job holds a credential that publishes under io.github.FraiseHQ/*, so
-      # it checks out nothing: the only thing it takes from the release is
-      # data, read by jq and mcp-publisher, never a script.
-      - name: Fetch server.json from the release
+      # The job holds a credential that publishes under io.github.FraiseHQ/*,
+      # so it runs nothing the release carries. A workflow_run job checks out
+      # main, and its tasks are what run: release:registry takes only the
+      # record from the release, as data, read at the tagged commit by jq and
+      # mcp-publisher.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+
+      - name: Publish server.json to the MCP registry
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          gh api -H "Accept: application/vnd.github.raw+json" \
-            "repos/$GITHUB_REPOSITORY/contents/server.json?ref=$SHA" > server.json
-
-      # Pinned by digest, like every action above is pinned by commit. This
-      # binary runs with the credential that publishes under
-      # io.github.FraiseHQ/*, so a release asset swapped under the same tag
-      # must fail here rather than run. Bumping the version means bumping the
-      # digest with it; dependabot does not see this pin.
-      - name: Install mcp-publisher
-        run: |
-          curl -fsSLo mcp-publisher.tgz "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz"
-          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher.tgz" | sha256sum -c
-          tar xzf mcp-publisher.tgz mcp-publisher
-
-      # release-please writes the record's version in the commit it tags, as
-      # an extra-file in release-please-config.json. So the version must
-      # already be the tag's: a mismatch means that bump broke, and the record
-      # would publish under a version no release carries. The record carries
-      # the version once, there: its image identifier has no tag in the tree,
-      # and the release's is appended here. It is the tag's version by
-      # construction, since docker.yaml derives it from the same ref with
-      # type=semver,pattern={{version}}.
-      - name: Pin the release image
-        env:
           TAG: ${{ github.event.workflow_run.head_branch }}
-        run: |
-          version="${TAG#v}"
-          recorded="$(jq -r .version server.json)"
-          if [ "$recorded" != "$version" ]; then
-            echo "::error::server.json declares version $recorded, tag $TAG names $version — check the release-please extra-files entry"
-            exit 1
-          fi
-          jq --arg v "$version" \
-            '(.packages[] | select(.registryType == "oci") | .identifier) |= . + ":" + $v' \
-            server.json > server.json.tmp
-          mv server.json.tmp server.json
-          cat server.json
-
-      - name: Validate
-        run: ./mcp-publisher validate
-
-      - name: Authenticate to the MCP registry
-        run: ./mcp-publisher login github-oidc
-
-      - name: Publish
-        run: ./mcp-publisher publish
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: mise run release:registry "$TAG" --ref "$SHA"
