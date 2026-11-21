@@ -128,7 +128,7 @@ func TestRecallReturnsTheResponseBodyKeyForKey(t *testing.T) {
 // explain key on the way. The rendered text is the ranked facts
 // either way: the explanation is for the client, not the model's prose.
 func TestRecallKeepsTheExplainBlocks(t *testing.T) {
-	const text = "- [2026-01-02] the barometer falls before the storm (relevance 1.250)\n- [2026-01-01] the harbour closes in a gale (relevance 0.500)"
+	const want = "- [2026-01-02] the barometer falls before the storm (relevance 1.250)\n- [2026-01-01] the harbour closes in a gale (relevance 0.500)"
 	cases := map[string]struct {
 		query string
 		body  string
@@ -194,14 +194,14 @@ func TestRecallKeepsTheExplainBlocks(t *testing.T) {
 			if diff := cmp.Diff("/api/v1/q "+string(in), posted); diff != "" {
 				t.Errorf("daemon request mismatch (-want +got):\n%s", diff)
 			}
-			structured, err := json.Marshal(out)
+			got, err := json.Marshal(out)
 			if err != nil {
 				t.Fatalf("Marshal(structured output) = %v, want nil", err)
 			}
-			if diff := cmp.Diff(tc.body, string(structured)); diff != "" {
+			if diff := cmp.Diff(tc.body, string(got)); diff != "" {
 				t.Errorf("structured output mismatch (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(text, res.Content[0].(*mcp.TextContent).Text); diff != "" {
+			if diff := cmp.Diff(want, res.Content[0].(*mcp.TextContent).Text); diff != "" {
 				t.Errorf("rendered text mismatch (-want +got):\n%s", diff)
 			}
 		})
