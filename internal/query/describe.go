@@ -27,6 +27,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
@@ -152,7 +153,8 @@ type CatalogueEntry struct {
 // the facts hold on it (see [graph.Fact.Intervals]). Happened runs from the
 // earliest start to the latest end of what the facts state took place, and has
 // no end when one of them has none. Said and written run from the first fact
-// to the last. A fact given no time on a clock reads the next one down, so a
+// to the last. A span ending on an instant ends a microsecond past it, so it
+// holds the fact that instant is the time of. A fact given no time on a clock reads the next one down, so a
 // set written with no times reads the same on all three. Each is left out
 // when the set holds no fact.
 type Times struct {
@@ -162,7 +164,15 @@ type Times struct {
 }
 
 // hold widens the times to take in a fact, given as what it holds on each
-// clock. An empty set holds no interval yet, and takes the fact's own.
+// clock. An empty set holds no interval yet, and takes the fact's own, so a
+// set of one instant stays that instant. A span that takes in more holds each
+// instant in it, and a half-open span excludes its End, so an instant joins
+// as the microsecond from it: a span whose last fact is an instant ends just
+// past it. Were it to end on the instant, the span would say its own last
+// fact lies outside it, and every renderer, reading the moment before End,
+// would drop that fact's day. A microsecond is the finest step every client
+// reads back: Python's datetime keeps no nanoseconds, so a nanosecond past
+// the instant would read as the instant itself.
 func (t *Times) hold(intervals func(containers.Clock) []containers.Interval) {
 	for clock, span := range map[containers.Clock]*containers.Interval{
 		containers.Happened: &t.Happened,
@@ -170,9 +180,17 @@ func (t *Times) hold(intervals func(containers.Clock) []containers.Interval) {
 		containers.Written:  &t.Written,
 	} {
 		for _, interval := range intervals(clock) {
-			if span.Start.IsZero() {
+			switch {
+			case span.Start.IsZero():
 				*span = interval
 				continue
+			case span.Start.Equal(interval.Start) && span.End.Equal(interval.End):
+				continue
+			}
+			for _, edge := range []*containers.Interval{span, &interval} {
+				if edge.End.Equal(edge.Start) {
+					edge.End = edge.Start.Add(time.Microsecond)
+				}
 			}
 			*span = span.Hull(interval)
 		}

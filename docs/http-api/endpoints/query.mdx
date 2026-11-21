@@ -103,13 +103,13 @@ A `describe` returns the same envelope with no hits: `count` is 0 and `hits` is 
       "facts": 3,
       "anchors": 4,
       "happened": {"start": "2023-05-01T00:00:00Z"},
-      "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00Z"},
-      "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217465Z"},
+      "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00.000001Z"},
+      "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217466Z"},
       "topics": [
-        {"value": "sailing", "facts": 3, "happened": {"start": "2023-05-01T00:00:00Z"}, "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00Z"}, "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217465Z"}}
+        {"value": "sailing", "facts": 3, "happened": {"start": "2023-05-01T00:00:00Z"}, "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00.000001Z"}, "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217466Z"}}
       ],
       "entities": [
-        {"value": "anna", "facts": 3, "happened": {"start": "2023-05-01T00:00:00Z"}, "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00Z"}, "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217465Z"}},
+        {"value": "anna", "facts": 3, "happened": {"start": "2023-05-01T00:00:00Z"}, "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00.000001Z"}, "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217466Z"}},
         {"value": "east quay", "facts": 1, "happened": {"start": "2023-05-20T00:00:00Z"}, "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-06-02T00:00:00Z"}, "written": {"start": "2026-11-15T13:37:18.201439Z", "end": "2026-11-15T13:37:18.201439Z"}}
       ]
     }
@@ -127,7 +127,7 @@ A `describe` returns the same envelope with no hits: `count` is 0 and `hits` is 
 | `said`, `written` | from the first fact said, or written, to the last |
 | `topics`, `entities` | the anchors the facts are filed under, the most filed first and ties by value, at most `top:` of each kind; each has its `value`, the `facts` filed under it and the three times of those facts |
 
-A fact given no time on a clock reads the next one, as a bound reads it, so a set written with no times reads the same on all three. The times are left out when the recall reached no fact, while `topics` and `entities` are always there, `[]` when there is none. Under a describe of one anchor, every other anchor counts the facts it shares with the one named. See [Commands](/docs/query-language/foundations/commands).
+A span's `end` lies outside it, so a span whose last fact holds a single moment ends a microsecond past that moment, the finest step every client reads back. A fact given no time on a clock reads the next one, as a bound reads it, so a set written with no times reads the same on all three. The times are left out when the recall reached no fact, while `topics` and `entities` are always there, `[]` when there is none. Under a describe of one anchor, every other anchor counts the facts it shares with the one named. See [Commands](/docs/query-language/foundations/commands).
 
 ### A write is acknowledged, not answered with results
 

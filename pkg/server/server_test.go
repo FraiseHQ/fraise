@@ -33,6 +33,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -798,21 +799,26 @@ func TestQueryDescribeAnswersWithACatalogue(t *testing.T) {
 	span := func(start, end string) *readSpan {
 		return &readSpan{Start: start + "T00:00:00Z", End: end + "T00:00:00Z"}
 	}
+	// A span whose last fact holds an instant ends a microsecond past it, so
+	// it holds that fact.
+	through := func(start, end string) *readSpan {
+		return &readSpan{Start: start + "T00:00:00Z", End: end + "T00:00:00.000001Z"}
+	}
 	nests := span("2023-05-01", "2023-05-02")
 	toldNests := span("2023-05-02", "2023-05-02")
 	ferry := span("2023-07-04", "2023-07-04")
 	june := span("2023-06-01", "2023-07-01")
 	toldSwan := span("2023-06-02", "2023-06-02")
-	birds := readEntry{Value: "birds", Facts: 3, Happened: span("2023-05-01", "2023-07-01"), Said: span("2023-05-02", "2023-06-02")}
+	birds := readEntry{Value: "birds", Facts: 3, Happened: span("2023-05-01", "2023-07-01"), Said: through("2023-05-02", "2023-06-02")}
 	lake := readEntry{Value: "lake", Facts: 1, Happened: nests, Said: toldNests}
 	travel := readEntry{Value: "travel", Facts: 1, Happened: ferry, Said: ferry}
-	heron := readEntry{Value: "heron", Facts: 2, Happened: span("2023-05-01", "2023-05-08"), Said: span("2023-05-02", "2023-05-08")}
+	heron := readEntry{Value: "heron", Facts: 2, Happened: span("2023-05-01", "2023-05-08"), Said: through("2023-05-02", "2023-05-08")}
 	swan := readEntry{Value: "swan", Facts: 1, Happened: june, Said: toldSwan}
 	whole := readCatalogue{
 		Facts:    5,
 		Anchors:  5,
-		Happened: span("2023-04-20", "2023-07-04"),
-		Said:     span("2023-04-20", "2023-07-04"),
+		Happened: through("2023-04-20", "2023-07-04"),
+		Said:     through("2023-04-20", "2023-07-04"),
 		Topics:   []readEntry{birds, lake, travel},
 		Entities: []readEntry{heron, swan},
 	}
@@ -836,8 +842,8 @@ func TestQueryDescribeAnswersWithACatalogue(t *testing.T) {
 			Scope:    "topic:travel topic:lake",
 			Facts:    2,
 			Anchors:  4,
-			Happened: span("2023-05-01", "2023-07-04"),
-			Said:     span("2023-05-02", "2023-07-04"),
+			Happened: through("2023-05-01", "2023-07-04"),
+			Said:     through("2023-05-02", "2023-07-04"),
 			Topics: []readEntry{
 				{Value: "birds", Facts: 1, Happened: nests, Said: toldNests},
 				lake,
@@ -858,8 +864,8 @@ func TestQueryDescribeAnswersWithACatalogue(t *testing.T) {
 			Scope:    "since:'2023-06'",
 			Facts:    2,
 			Anchors:  3,
-			Happened: span("2023-06-01", "2023-07-04"),
-			Said:     span("2023-06-02", "2023-07-04"),
+			Happened: through("2023-06-01", "2023-07-04"),
+			Said:     through("2023-06-02", "2023-07-04"),
 			Topics: []readEntry{
 				{Value: "birds", Facts: 1, Happened: june, Said: toldSwan},
 				travel,
@@ -871,7 +877,7 @@ func TestQueryDescribeAnswersWithACatalogue(t *testing.T) {
 			Facts:    3,
 			Anchors:  3,
 			Happened: span("2023-04-20", "2023-05-08"),
-			Said:     span("2023-04-20", "2023-05-08"),
+			Said:     through("2023-04-20", "2023-05-08"),
 			Topics: []readEntry{
 				{Value: "birds", Facts: 2, Happened: heron.Happened, Said: heron.Said},
 				lake,
@@ -941,10 +947,15 @@ func TestQueryDescribeBodyIsPinned(t *testing.T) {
 
 	// Both facts are filed under birds and heron, so the two anchors hold the
 	// times the whole set holds. The heron nested before it caught the fish,
-	// and was written first.
+	// and was written first. The said and written spans end on an instant, so
+	// each ends a microsecond past it and holds the fish.
+	caught, err := time.Parse(time.RFC3339Nano, written["the heron caught a fish"])
+	if err != nil {
+		t.Fatalf("parsing the fish's timestamp: %v", err)
+	}
 	times := `"happened":{"start":"2023-05-01T00:00:00Z","end":"2023-05-08T00:00:00Z"},` +
-		`"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00Z"},` +
-		`"written":{"start":"` + written["the heron nests by the lake"] + `","end":"` + written["the heron caught a fish"] + `"}`
+		`"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00.000001Z"},` +
+		`"written":{"start":"` + written["the heron nests by the lake"] + `","end":"` + caught.Add(time.Microsecond).Format(time.RFC3339Nano) + `"}`
 	want := `{"results":{"count":0,"hits":[],"catalogue":{"graph":0,"scope":"entity:heron top:1","facts":2,"anchors":3,` + times +
 		`,"topics":[{"value":"birds","facts":2,` + times + `}]` +
 		`,"entities":[{"value":"heron","facts":2,` + times + `}]}}}`

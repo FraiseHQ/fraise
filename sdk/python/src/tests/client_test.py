@@ -1428,7 +1428,7 @@ def test_top_caps_the_anchors_a_describe_lists_never_what_it_counts(
             ),
             Interval(
                 start=datetime(2023, 5, 6, tzinfo=timezone.utc),
-                end=datetime(2023, 5, 20, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 20, 0, 0, 0, 1, tzinfo=timezone.utc),
             ),
         ),
         (
@@ -1440,7 +1440,7 @@ def test_top_caps_the_anchors_a_describe_lists_never_what_it_counts(
             ),
             Interval(
                 start=datetime(2023, 5, 6, tzinfo=timezone.utc),
-                end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+                end=datetime(2023, 5, 8, 0, 0, 0, 1, tzinfo=timezone.utc),
             ),
         ),
         (
@@ -1465,15 +1465,12 @@ def test_a_describe_of_a_search_spans_the_times_its_facts_hold(
 
     The timeline happened on 3, 7 and 10 May, each a whole day, and was said on
     20, 8 and 6 May, each a moment, so the two clocks order it differently: the
-    happened span ends where the mooring's day does, and the said span where
-    the caulking was reported. A bound keeps the facts a recall would keep, and
-    the spans cover those alone. The facts are filed under nothing, so no
-    anchor is listed.
-
-    NOTE: the said span ends at the last moment said, which an ``Interval``
-    excludes: the server's hull of two moments ends at the later one rather
-    than past it, as a ``when`` over several hits does. Once the hull holds a
-    moment beyond its end, the expected ``said`` ends move past that moment.
+    happened span ends where the mooring's day does, and the said span a
+    microsecond past the moment the caulking was reported: an ``Interval``
+    excludes its end, so a span of several moments ends just past the last to
+    hold it. A single moment stays that moment. A bound keeps the facts a
+    recall would keep, and the spans cover those alone. The facts are filed
+    under nothing, so no anchor is listed.
     """
     catalogue = client.describe(timeline_word, graph=timeline_graph, **kwargs)
 

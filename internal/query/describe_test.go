@@ -25,6 +25,7 @@ package query_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -234,8 +235,10 @@ func aviary(t *testing.T) (graph.Graph[uint64, float32], *config.ConfigSet) {
 }
 
 // written returns the hull of the instants g wrote the facts with values at:
-// from the first written to the last. The server stamps a fact when it stores
-// it, so a test reads the written clock back rather than spelling it.
+// from the first written to just past the last, which a span of more than one
+// instant holds by ending a microsecond after it. A single fact's is its own
+// instant. The server stamps a fact when it stores it, so a test reads the
+// written clock back rather than spelling it.
 func written(t *testing.T, g graph.Graph[uint64, float32], values ...string) containers.Interval {
 	t.Helper()
 	var hull containers.Interval
@@ -252,6 +255,9 @@ func written(t *testing.T, g graph.Graph[uint64, float32], values ...string) con
 			hull.End = at
 		}
 	}
+	if hull.End.After(hull.Start) {
+		hull.End = hull.End.Add(time.Microsecond)
+	}
 	return hull
 }
 
@@ -259,6 +265,13 @@ func written(t *testing.T, g graph.Graph[uint64, float32], values ...string) con
 // midnight on day end, which the interval leaves out.
 func span(start, end int) containers.Interval {
 	return containers.Interval{Start: may(start), End: may(end)}
+}
+
+// through returns the interval from midnight UTC on day start of May 2023 to
+// just past the instant at midnight on day end: the span of facts whose last
+// holds that instant, which a span ends a microsecond after.
+func through(start, end int) containers.Interval {
+	return containers.Interval{Start: may(start), End: may(end).Add(time.Microsecond)}
 }
 
 // ignoreTimes narrows a catalogue comparison to its counts and its lists, for
@@ -275,13 +288,9 @@ var ignoreTimes = cmp.Options{
 // said to written, so a fact given no time widens all three to the instant it
 // was written. The lists lead with the anchor filing most facts, ties by
 // value. The answer carries no hit and a zero count, and the selector names
-// the graph the catalogue is of.
-//
-// NOTE: a span whose last fact holds a single instant ends at that instant,
-// which the half-open interval leaves out: [containers.Interval.Hull] ends the
-// hull of two instants at the later one, not past it, and a when over several
-// hits answers the same way. Once Hull holds an instant beyond its end, these
-// ends move past the last fact's instant.
+// the graph the catalogue is of. A span whose last fact holds an instant ends
+// just past it, so the span holds that fact; an anchor filing one fact holds
+// that fact's own times.
 func TestDescribeCataloguesTheWholeGraph(t *testing.T) {
 	g, cfg := aviary(t)
 	const (
@@ -300,18 +309,18 @@ func TestDescribeCataloguesTheWholeGraph(t *testing.T) {
 			Facts:   4,
 			Anchors: 7,
 			Times: query.Times{
-				Happened: containers.Interval{Start: may(7), End: leaked.End},
-				Said:     containers.Interval{Start: may(8), End: leaked.End},
+				Happened: containers.Interval{Start: may(7), End: leaked.End.Add(time.Microsecond)},
+				Said:     containers.Interval{Start: may(8), End: leaked.End.Add(time.Microsecond)},
 				Written:  written(t, g, nests, fish, dives, leaks),
 			},
 			Topics: []query.CatalogueEntry{
-				{Value: "birds", Facts: 3, Times: query.Times{Happened: span(7, 20), Said: span(8, 20), Written: written(t, g, nests, fish, dives)}},
-				{Value: "fishing", Facts: 2, Times: query.Times{Happened: span(10, 20), Said: span(12, 20), Written: written(t, g, fish, dives)}},
+				{Value: "birds", Facts: 3, Times: query.Times{Happened: through(7, 20), Said: through(8, 20), Written: written(t, g, nests, fish, dives)}},
+				{Value: "fishing", Facts: 2, Times: query.Times{Happened: through(10, 20), Said: through(12, 20), Written: written(t, g, fish, dives)}},
 				{Value: "boats", Facts: 1, Times: at(leaked)},
 				{Value: "lake", Facts: 1, Times: query.Times{Happened: span(7, 8), Said: span(8, 8), Written: written(t, g, nests)}},
 			},
 			Entities: []query.CatalogueEntry{
-				{Value: "heron", Facts: 2, Times: query.Times{Happened: span(7, 12), Said: span(8, 12), Written: written(t, g, nests, fish)}},
+				{Value: "heron", Facts: 2, Times: query.Times{Happened: span(7, 12), Said: through(8, 12), Written: written(t, g, nests, fish)}},
 				{Value: "kingfisher", Facts: 1, Times: query.Times{Happened: span(20, 20), Said: span(20, 20), Written: written(t, g, dives)}},
 				{Value: "otto", Facts: 1, Times: at(leaked)},
 			},
@@ -731,7 +740,7 @@ func TestDescribeOfAFactNotOverHasNoEnd(t *testing.T) {
 
 	want := query.Times{
 		Happened: containers.Interval{Start: may(7)},
-		Said:     span(8, 21),
+		Said:     through(8, 21),
 		Written:  written(t, g, "the heron nests", "the heron moved in"),
 	}
 	got := stream.Result.Catalogue
