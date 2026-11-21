@@ -222,6 +222,14 @@ def test_describe_of_a_graph_alone_needs_no_seed(session, query_url):
         (
             ["anna"],
             {"until": When("regatta")},
+            {
+                "query": "describe recall@6 anna until:(when regatta vec:$vuntil)",
+                "parameters": {"vuntil": [7.0] * 4},
+            },
+        ),
+        (
+            ["anna"],
+            {"until": When("regatta"), "embed": False},
             {"query": "describe recall@6 anna until:(when regatta)"},
         ),
         (
@@ -239,13 +247,16 @@ def test_describe_of_a_graph_alone_needs_no_seed(session, query_url):
 def test_describe_embeds_only_when_asked(
     session, sent, callable_embedder, keywords, kwargs, want
 ):
-    """A describe sends a vector only when ``embed=True`` asks for one.
+    """A describe sends a vector of its own only when ``embed=True`` asks for one.
 
     A vector ranks every fact that holds one, so a describe sent with one would
     describe every such fact instead of the facts its words match. A configured
-    embedder therefore stays idle unless the call asks, and then encodes the
-    describe's text and its whens as a recall's: the embedder returns the
-    length of what it encodes, so ``anna`` is 4 and ``regatta`` 7.
+    embedder therefore leaves the describe's text alone unless the call asks.
+    Its whens are encoded as a recall's are, unless ``embed=False`` turns the
+    embedder off: a when answers with its best match, and without its vector
+    that can be another fact, so the describe would count a window the recall
+    does not search. The embedder returns the length of what it encodes, so
+    ``anna`` is 4 and ``regatta`` 7.
     """
     FraiseClient(embedder=callable_embedder()).describe(*keywords, graph=6, **kwargs)
 

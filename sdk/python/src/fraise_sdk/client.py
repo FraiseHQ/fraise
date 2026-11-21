@@ -482,11 +482,13 @@ class FraiseClient:
         filed under. ``top`` caps how many topics and how many entities are
         listed, and ``since`` and ``until`` bound the facts counted.
 
-        A describe sends no vector unless asked. A vector ranks every fact
-        that holds one, so a describe sent with one reaches each of them
-        rather than the facts its words match. Pass ``embed=True`` to have the
-        embedder encode the describe as :meth:`recall` would, or an explicit
-        ``vector``.
+        A describe sends no vector of its own unless asked. A vector ranks
+        every fact that holds one, so a describe sent with one reaches each of
+        them rather than the facts its words match. Pass ``embed=True`` to
+        have the embedder encode the describe as :meth:`recall` would, or an
+        explicit ``vector``. A ``When`` bound is embedded as :meth:`recall`
+        embeds it either way: it answers with its best match, so the describe
+        counts the window the recall would.
 
         Returns:
             The catalogue. ``empty`` is True when the graph holds nothing.
@@ -504,7 +506,7 @@ class FraiseClient:
             since=since,
             until=until,
             vector=vector,
-            embed=bool(embed),
+            embed=embed,
             timeout=timeout,
         )
         results = body.get("results") or {}
@@ -590,7 +592,12 @@ class FraiseClient:
             The response's status and decoded body.
         """
         embed_text = query if query is not None else " ".join(keywords)
-        resolved = self._resolve_vector(vector, embed_text, embed)
+        # A describe's own vector would reach every fact that holds one, so it
+        # is encoded only when asked. Its whens still pick their best match,
+        # and are encoded below as a recall's are.
+        resolved = self._resolve_vector(
+            vector, embed_text, bool(embed) if describe else embed
+        )
         # A when is a search of its own, so its text is embedded as the
         # recall's is and bound under the name of the bound it sits in.
         bound_vectors = {

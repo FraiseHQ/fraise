@@ -161,7 +161,7 @@ Unlike a recall, it needs no seed. Given nothing but `graph=` it describes the w
 
 A `Catalogue` carries the `graph` described and its `scope`, the recall's body as the server read it, empty for the whole graph; `facts`, how many facts the recall reaches; `anchors`, how many topics and entities they are filed under before the lists are capped; the `happened`, `said` and `written` spans of those facts, each an `Interval`; and `topics` and `entities`, lists of `CatalogueEntry`, each with a `value`, the `facts` filed under it and the same three spans. The spans are `None` when the recall reached no fact. `bool(catalogue)` tells you whether it reached any, and `catalogue.empty`, as on a `RecallResult`, that the graph holds nothing at all.
 
-`describe` sends no vector unless asked, even with an embedder configured. A vector ranks every fact stored with one, so a describe sent with one counts every such fact rather than the facts its words match. `embed=True` encodes it as `recall` would, and `vector=` sends one given explicitly.
+`describe` sends no vector unless asked, even with an embedder configured. A vector ranks every fact stored with one, so a describe sent with one counts every such fact rather than the facts its words match. `embed=True` encodes it as `recall` would, and `vector=` sends one given explicitly. A `When` bound is encoded as `recall` encodes it either way, since it answers with its best match: the describe counts the window the recall would.
 
 ## Counting what a graph holds
 

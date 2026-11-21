@@ -80,7 +80,7 @@ for entry in catalogue.topics + catalogue.entities:
     print(entry.value, entry.facts, entry.happened)
 ```
 
-`top=` caps how many topics, and how many entities, are listed, and `since=`/`until=` bound the facts counted. A describe sends no vector unless `embed=True` or `vector=` asks for one: a vector ranks every fact that holds one, so it would reach all of them. `bool(catalogue)` reports whether the recall reached any fact, and `catalogue.empty` that the graph holds nothing at all. See [Commands](https://docs.getfraise.dev/docs/query-language/foundations/commands) for what each form of a describe reaches.
+`top=` caps how many topics, and how many entities, are listed, and `since=`/`until=` bound the facts counted. A describe sends no vector of its own unless `embed=True` or `vector=` asks for one: a vector ranks every fact that holds one, so it would reach all of them. A `When` bound is embedded as `recall` embeds it, so the describe counts the window the recall would. `bool(catalogue)` reports whether the recall reached any fact, and `catalogue.empty` that the graph holds nothing at all. See [Commands](https://docs.getfraise.dev/docs/query-language/foundations/commands) for what each form of a describe reaches.
 
 ## Embeddings (optional)
 
