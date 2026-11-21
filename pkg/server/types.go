@@ -31,11 +31,11 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// HandleQueryRequest is the JSON body expected by the query and explain
-// endpoints. It carries the raw query string plus any out-of-band parameters
-// it references. Vector placeholders in the query (e.g. vec:$v) are bound by
-// name from Parameters, so the parser never has to handle large vector
-// literals inline.
+// HandleQueryRequest is the JSON body the query endpoint expects, and the
+// deprecated explain alias with it. It carries the raw query string plus any
+// out-of-band parameters it references. Vector placeholders in the query
+// (e.g. vec:$v) are bound by name from Parameters, so the parser never has to
+// handle large vector literals inline.
 type HandleQueryRequest[P float32 | float64] struct {
 	Query      string         `json:"query"`
 	Parameters map[string][]P `json:"parameters,omitempty"`

@@ -43,11 +43,16 @@ type Stream[K comparable, P float32 | float64] struct {
 	Result *QueryResult[K, P]
 	Err    error
 
-	// Explain asks the read path to attach each hit's contributions and the
-	// query's background rate to the result. It lives on the stream because a
-	// Query carries no per-request state (see Query). Hashing the flag into the
-	// query instead would widen the cache key for a bit that never changes the
-	// plan. The stream is built per request and never cached.
+	// Explain asks the read path to attach the explain blocks to the result:
+	// each hit's seed flag, recency factor and contributions, and what the
+	// search measured about the query as a whole, the answers of its nested
+	// queries among it. Commit reads it here, on the execution, because the
+	// stream is built per request and never cached. [Recall.Plan] sets it
+	// from the statement's explain prefix, which the recall's hash and
+	// equality carry, so a cached plan never answers one envelope with the
+	// other's. The deprecated explain alias route sets it for a plain recall
+	// after planning. A nested stream takes the flag of the stream that holds
+	// it when it commits.
 	Explain bool
 
 	// IsGraphEmpty is set when a read matched nothing in a graph that holds no
@@ -293,18 +298,21 @@ func (s *Stream[K, P]) read(g graph.Graph[K, P], recall *Recall[K, P]) error {
 		Hits:  make([]Hit[K, P], n),
 	}
 	if s.Explain {
-		// The background rate is per query, so it rides on the result rather
-		// than on each hit (see QueryResult.Background). So do the answers of
-		// the nested queries, which show where each bound was read from.
-		r.Background = result.Background
-		r.When = s.nestedResults()
+		// What the search measured about the query as a whole rides on the
+		// result, and what it decided about each fact on that fact's hit. So
+		// do the answers of the nested queries, which show where each bound
+		// was read from.
+		r.Explain = explainRecall(result, s.nestedResults())
 	}
 	for i, hit := range result.Hits {
 		r.Hits[i].Node = hit.Node
 		r.Hits[i].Score = hit.Score
 		if s.Explain {
-			r.Hits[i].Decay = hit.Decay
-			r.Hits[i].Contributions = resolveContributions(g, hit.Contributions)
+			r.Hits[i].Explain = &HitExplain[P]{
+				Seed:          hit.Seed,
+				Decay:         hit.Decay,
+				Contributions: resolveContributions(g, hit.Contributions),
+			}
 		}
 	}
 
@@ -479,6 +487,36 @@ func (s *Stream[K, P]) answer(clock containers.Clock) {
 		return
 	}
 	s.Result.Start, s.Result.End = answer.Start, answer.End
+}
+
+// explainRecall converts what the search measured about the query to its wire
+// form, beside when, what the queries nested in the recall's time bounds
+// answered. Seeds and timings are keyed by source name, every source listed,
+// the admission bars by depth from 1, and terms are never null. So an
+// explained recall always answers in one shape, whatever it asked for.
+func explainRecall[K comparable, P float32 | float64](result graph.Result[K, P], when *NestedResults[K, P]) *RecallExplain[K, P] {
+	out := &RecallExplain[K, P]{
+		Background: result.Background,
+		Seeds:      make(map[string]int, len(result.Seeds)),
+		Terms:      result.Terms,
+		Timings:    make(map[string]time.Duration, len(result.Timings)),
+		When:       when,
+	}
+	for i := range result.Seeds {
+		src := scoring.Source(i).String()
+		out.Seeds[src] = result.Seeds[i]
+		out.Timings[src] = result.Timings[i]
+	}
+	if len(result.Admission) > 1 {
+		out.Admission = make(map[int]P, len(result.Admission)-1)
+		for depth := 1; depth < len(result.Admission); depth++ {
+			out.Admission[depth] = result.Admission[depth]
+		}
+	}
+	if out.Terms == nil {
+		out.Terms = []string{}
+	}
+	return out
 }
 
 // resolveContributions converts a hit's contributions to their wire form. It

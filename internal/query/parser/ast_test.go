@@ -61,6 +61,33 @@ func TestGraphSelectorNode(t *testing.T) {
 	}
 }
 
+// TestPrefixNode pins the prefix slot of a recall. A written prefix prints as
+// written and the zero node prints nothing. So a plain recall's String gains
+// no stray word, and an explained one keeps its prefix on the way back.
+func TestPrefixNode(t *testing.T) {
+	cases := map[string]struct {
+		node PrefixNode
+		want string
+	}{
+		"explain": {PrefixNode{key: tok(lexer.EXPLAIN, "explain"), pos: pos(1), end: pos(7)}, "explain"},
+		"absent":  {PrefixNode{}, ""},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := tc.node.String(); got != tc.want {
+				t.Errorf("String() = %q, want %q", got, tc.want)
+			}
+			if got, want := tc.node.Pos(), tc.node.pos; got != want {
+				t.Errorf("Pos() = %v, want %v", got, want)
+			}
+			if got, want := tc.node.End(), tc.node.end; got != want {
+				t.Errorf("End() = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestRememberCommandNode(t *testing.T) {
 	sel := GraphSelectorNode{value: 5}
 	n := RememberCommandNode[uint64, float32]{

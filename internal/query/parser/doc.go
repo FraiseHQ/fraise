@@ -35,11 +35,13 @@
 // ordinary [CommandNode]. What a bound may hold is checked on that command once
 // it is parsed.
 //
-// A describe is a prefix in front of a recall: the query answers with the
-// shape of what the recall reaches rather than its facts. The recall it holds
-// is a whole [RecallCommandNode], selector included, and its body may be empty
-// or name no seed, which describes the whole graph. One prefix stands in front
-// of a statement, and only in front of a recall.
+// A recall may open with a prefix, and a statement takes one. The explain
+// prefix asks for what the ranking did beside the hits, and the recall's
+// [RecallCommandNode] holds it. A describe answers with the shape of what the
+// recall reaches rather than its facts: it holds a whole [RecallCommandNode],
+// selector included, whose body may be empty or name no seed, which describes
+// the whole graph. No other command takes a prefix, and neither does a bound's
+// parentheses: a when answers with a time and has no ranking to explain.
 //
 // This package owns only the grammar. The query layer reads commands through
 // their accessors and enforces the configured limits. Vectors never appear in

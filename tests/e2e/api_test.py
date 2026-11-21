@@ -597,6 +597,7 @@ def test_depth_without_an_anchor_runs_but_warns(query, text):
         ("recall@abc zebras top:3", "abc"),
         ("recall zebras until:(when:heard ferry) top:3", "heard"),
         ("recall zebras until:(when ferry top:abc) depth:1", "abc"),
+        ("recall zebras since:(explain recall ferry) top:3", "explain"),
     ],
 )
 def test_parse_error_column_points_at_the_offending_token(query, text, blame):
@@ -614,6 +615,45 @@ def test_parse_error_column_points_at_the_offending_token(query, text, blame):
     status, body = query(text)
     error = body.get("error", "")
     column = text.index(blame) + len(blame)
+
+    assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
+    assert f"parse error at column {column}:" in error, (
+        f"{text!r}: want column {column} (end of {blame!r}), got {error!r}"
+    )
+    assert f'"{blame}"' in error, (
+        f"{text!r}: the message should quote the token it blames, got {error!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "column", "blame"),
+    [
+        ("explain\nrecall zebras", 7, "explain"),
+        ("explain:recall zebras", 8, ":"),
+        ("explain'x' recall zebras", 10, "x"),
+        ("explain@2 recall zebras", 8, "@"),
+        ("explain explain recall zebras", 15, "explain"),
+        ("explain describe recall zebras", 16, "describe"),
+        ("explain remember@1 'x' topic:y", 16, "remember"),
+        ("explain forget 'x' topic:y", 14, "forget"),
+        ("explain when zebras top:3", 12, "when"),
+        ("explain zebras recall x", 14, "zebras"),
+        ("explain topic:x recall zebras", 13, "topic"),
+        ("describe explain recall zebras", 16, "explain"),
+    ],
+)
+def test_prefix_error_column_points_at_the_token_it_blames(query, text, column, blame):
+    """A misplaced explain prefix is a 400 at the last character of its culprit.
+
+    Each prefix error blames one token: the prefix itself, the token glued to
+    it, a second prefix, the verb it cannot explain, or whatever stands where
+    recall should. The columns are written out because a second prefix
+    repeats the first's spelling, so the blamed token is not the first of its
+    name. Every case keeps a token to the right of the bad one, so a column
+    taken from the lexer's read cursor, a token ahead, would differ.
+    """
+    status, body = query(text)
+    error = body.get("error", "")
 
     assert status == 400, f"{text!r} should be rejected, got {status}: {body}"
     assert f"parse error at column {column}:" in error, (
@@ -674,14 +714,17 @@ def test_an_accepted_write_is_acknowledged_not_answered_with_results(query):
     assert body == {"status": "ok"}
 
 
-def test_a_recall_of_an_empty_graph_is_204_with_no_body(query):
+@pytest.mark.parametrize("text", ["recall@8 zebras", "explain recall@8 zebras"])
+def test_a_recall_of_an_empty_graph_is_204_with_no_body(query, text):
     """Graph 8 is never written to, so a recall of it answers 204.
 
     A 204 must not carry a body, and none is needed. The whole answer is
     "nothing has been stored here". No result set could say that without also
-    looking like an ordinary miss.
+    looking like an ordinary miss. An explained recall answers the same: a
+    graph holding nothing has no ranking to explain, and an explain block
+    would make the answer a result set again.
     """
-    status, body = query("recall@8 zebras")
+    status, body = query(text)
 
     assert status == 204, body.get("error")
     assert body == {}

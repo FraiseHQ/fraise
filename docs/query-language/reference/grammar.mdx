@@ -17,7 +17,7 @@ query           = recall_query | remember_query | when_query | forget_query | up
 (* RECALL                                                       *)
 (* ------------------------------------------------------------ *)
 
-recall_query    = ( 'explain'? recall_cmd recall_body ) | describe_query ;
+recall_query    = ( 'explain'? recall_cmd recall_body ) | describe_query ;   (* whitespace after the prefix, as after the verb: explain recall@3 — the selector stays on the verb *)
 recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
 
 (* SEMANTIC RULE: a recall needs at least one *seed*, and the      *)
@@ -184,7 +184,6 @@ The grammar above is all of v3. Which of it a server accepts depends on its vers
 | Production | Reserved since | Planned for | Issue |
 | --- | --- | --- | --- |
 | `forget_query`, `update_query` | 0.3.0 | 0.5.0 | [#172](https://github.com/FraiseHQ/fraise/issues/172) |
-| `prefix` `'explain'` on `recall_query` | 0.3.0 | 0.4.0 | [#433](https://github.com/FraiseHQ/fraise/issues/433) |
 
 A server that reserves a production but does not accept it answers a query opening with its word with `expected a command (recall, remember, when, describe recall), found "<word>"`; a server that accepts it answers as the production says. The conformance suite carries one row per production and per status, so an SDK can tell the two apart.
 

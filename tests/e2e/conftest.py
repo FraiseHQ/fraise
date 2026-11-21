@@ -207,16 +207,18 @@ def query(base_url):
 
 
 @pytest.fixture(scope="session")
-def explain(base_url):
+def explain_alias(base_url):
     """Callable posting a raw query string to /api/v1/explain.
 
-    It sends the same request as the `query` fixture, to a different endpoint.
-    The response's hits carry a per-source contribution breakdown and their
-    decay, and its results carry the answer of each when a time bound read.
-    Returns (status_code, decoded JSON body).
+    The route is the deprecated alias of the explain prefix: it answers a
+    recall as /api/v1/q answers the same recall written as `explain recall`,
+    and a when as the explained recall it runs. It sends the same request as
+    the `query` fixture, to the alias. The alias is served through 0.4.x and
+    removed in 0.5.0, and this fixture and every test asking for it go with
+    it. Returns (status_code, decoded JSON body).
     """
 
-    def _explain(text: str, parameters: dict[str, object] | None = None):
+    def _explain_alias(text: str, parameters: dict[str, object] | None = None):
         data = {"query": text}
 
         if parameters:
@@ -229,7 +231,7 @@ def explain(base_url):
         )
         return response.status_code, _body(response)
 
-    return _explain
+    return _explain_alias
 
 
 @pytest.fixture(scope="session")
@@ -861,12 +863,13 @@ def storm_hub():
     return tuple(_STORM_HUB)
 
 
-def _information_scores(hits, background, missed=0.0):
-    """Recompute every hit's score from an explain payload under the
-    information fold, the server's default scorer.
+def _information_scores(results, missed=0.0):
+    """Recompute every hit's score from an explained recall's results under
+    the information fold, the server's default scorer.
 
     The pool is the hits themselves, so the recall must return every
-    candidate. Each hit's channels are read off its contributions: text its
+    candidate. The background rate is the query's explain block's. Each hit's
+    channels are read off the contributions in its explain block: text its
     text mass, vector its similarity, graph the hinged per-edge surpluses, an
     anchor the recall named owing no fair share. The seed mass the surpluses
     exclude is text plus (1 + missed) times the similarity. Each channel's z
@@ -875,9 +878,10 @@ def _information_scores(hits, background, missed=0.0):
     z_graph, e being 2 − held when z_vector clears √(2 ln n) and 1 otherwise.
     With no channel spreading the pool, a hit scores its seed mass.
     """
+    background = results["explain"]["background"]
     values, held = [], []
-    for hit in hits:
-        contributions = hit["contributions"]
+    for hit in results["hits"]:
+        contributions = hit["explain"]["contributions"]
         text = sum(c["score"] for c in contributions if c["source"] == "text")
         vector = sum(c["score"] for c in contributions if c["source"] == "vector")
         anchor = sum(c["score"] for c in contributions if c["source"] == "anchor")
@@ -916,13 +920,14 @@ def _information_scores(hits, background, missed=0.0):
 
 @pytest.fixture(scope="session")
 def information_scores():
-    """Callable recomputing an explain payload's scores under the information
+    """Callable recomputing an explained recall's scores under the information
     fold.
 
     Returns:
-        ``callable(hits, background, missed=0.0) -> list[float]``, one score
-        per hit in the order given; ``missed`` is the text's weakness,
-        (I_q − I_hit) / I_hit, 0 when the best text hit holds the question.
+        ``callable(results, missed=0.0) -> list[float]``, one score per hit
+        of ``results`` (the body's "results" object) in the order given;
+        ``missed`` is the text's weakness, (I_q − I_hit) / I_hit, 0 when the
+        best text hit holds the question.
     """
     return _information_scores
 

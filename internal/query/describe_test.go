@@ -68,7 +68,7 @@ func newRecall(id uint8, top int, keywords ...string) *query.Recall[string, floa
 func TestDescribeHash(t *testing.T) {
 	d := newDescribe(3, 5, "heron top:5", "heron")
 
-	const want = "H(p=describe|t=5|sc=11:heron top:5|r=H(g=3|kw=5:heron|en=|to=|d=0|t=0|s=|u=|vec=H()))"
+	const want = "H(p=describe|t=5|sc=11:heron top:5|r=H(g=3|kw=5:heron|en=|to=|d=0|t=0|s=|u=|vec=H()|ex=0))"
 	if diff := cmp.Diff(want, d.Hash(fakeHasher{})); diff != "" {
 		t.Errorf("Hash() mismatch (-want +got):\n%s", diff)
 	}

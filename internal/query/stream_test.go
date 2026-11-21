@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/containers"
@@ -42,8 +43,8 @@ import (
 
 // fakeGraph is a graph.Graph that shows how Stream drives the graph. It records
 // which lock Acquire and Release take, and whether the write path writes and
-// the read path searches. It also controls what Search returns. The other
-// methods return fixed answers.
+// the read path searches. It also controls what Search returns: searchResult
+// as given, or searchErr. The other methods return fixed answers.
 type fakeGraph struct {
 	locks, unlocks   int
 	rlocks, runlocks int
@@ -52,11 +53,8 @@ type fakeGraph struct {
 	searchCalled     bool
 	since, until     containers.Bound
 
-	searchNodes      []graph.Node[string]
-	searchScores     []float32
-	searchContribs   [][]scoring.Contribution[string, float32]
-	searchBackground float32
-	searchErr        error
+	searchResult graph.Result[string, float32]
+	searchErr    error
 }
 
 func (g *fakeGraph) Lock()    { g.locks++ }
@@ -73,14 +71,7 @@ func (g *fakeGraph) Search(keywords []string, vector containers.Vector[string, f
 	if g.searchErr != nil {
 		return graph.Result[string, float32]{}, g.searchErr
 	}
-	result := graph.Result[string, float32]{Background: g.searchBackground, Hits: make([]graph.Hit[string, float32], len(g.searchNodes))}
-	for i, node := range g.searchNodes {
-		result.Hits[i] = graph.Hit[string, float32]{Node: node, Score: g.searchScores[i]}
-		if i < len(g.searchContribs) {
-			result.Hits[i].Contributions = g.searchContribs[i]
-		}
-	}
-	return result, nil
+	return g.searchResult, nil
 }
 
 // GetHasher returns a fakeHasher rather than nil, because the write path
@@ -152,10 +143,9 @@ func TestStreamCommitReadSurfacesASearchError(t *testing.T) {
 }
 
 func TestStreamCommitReadBuildsResult(t *testing.T) {
-	g := &fakeGraph{
-		searchNodes:  []graph.Node[string]{nil, nil, nil},
-		searchScores: []float32{0.9, 0.8, 0.7},
-	}
+	g := &fakeGraph{searchResult: graph.Result[string, float32]{Hits: []graph.Hit[string, float32]{
+		{Score: 0.9}, {Score: 0.8}, {Score: 0.7},
+	}}}
 	s := newStream(readQuery())
 
 	if err := s.Commit(g); err != nil {
@@ -178,55 +168,124 @@ func TestStreamCommitReadBuildsResult(t *testing.T) {
 	}
 }
 
-// TestStreamCommitExplainAttachesContributions pins the explain switch on the
-// read path. With Explain set, the commit attaches each hit's contributions in
-// wire form and the background rate. Without it the hits stay bare, since nil
-// keeps contributions out of the ordinary response. The flag lives on the
-// stream, so this test sets it where the handler does.
-func TestStreamCommitExplainAttachesContributions(t *testing.T) {
-	contributions := [][]scoring.Contribution[string, float32]{
-		{{Src: scoring.SrcText, Score: 1, Rank: 0, Count: 1}},
-		{{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1}, {Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2, Named: true}},
-		{{Src: scoring.SrcAnchor, Score: 1, Via: "harbour-key", Degree: 4, Count: 1}},
+// TestStreamCommitExplainAttachesTheBlocks pins the explain switch on the read
+// path. An explained recall's result carries the query's block, what the
+// search measured, and each hit's, its seed flag, its recency factor and its
+// contributions in wire form. Seeds and timings list every source by name, the admission bars
+// are keyed by depth from 1, and terms are never null, so the envelope has one
+// shape whatever the recall asked for. A recall whose round never ran has no
+// admission key. A plain recall carries neither block, which keeps the
+// explain key off a plain response. The flag reaches Commit from the
+// statement's prefix, through Plan, or from the deprecated alias, which sets
+// it on the planned stream, and the two explain alike.
+func TestStreamCommitExplainAttachesTheBlocks(t *testing.T) {
+	// The fake stores no nodes, so a graph or anchor entry's via falls back to
+	// empty, as the contract says for a vanished anchor.
+	measured := graph.Result[string, float32]{
+		Hits: []graph.Hit[string, float32]{
+			{Score: 0.9, Decay: 1, Seed: true, Contributions: []scoring.Contribution[string, float32]{
+				{Src: scoring.SrcText, Score: 1, Rank: 0, Count: 1, Held: 0.5},
+			}},
+			{Score: 0.8, Decay: 0.5, Contributions: []scoring.Contribution[string, float32]{
+				{Src: scoring.SrcVector, Score: 0.5, Rank: 1, Count: 1},
+				{Src: scoring.SrcGraph, Score: 2, Via: "vela-key", Degree: 3, Count: 2, Named: true},
+			}},
+			{Score: 0.7, Decay: 0.25, Contributions: []scoring.Contribution[string, float32]{
+				{Src: scoring.SrcGraph, Score: 4, Via: "harbour-key", Degree: 4, Count: 1},
+			}},
+		},
+		Background: 0.25,
+		Admission:  []float32{0, 0.5, 0.25},
+		Seeds:      [scoring.SrcAnchor + 1]int{scoring.SrcText: 2, scoring.SrcVector: 1},
+		Terms:      []string{"pulsar", "vela"},
+		Timings: [scoring.SrcAnchor + 1]time.Duration{
+			scoring.SrcText:   41 * time.Microsecond,
+			scoring.SrcVector: 12 * time.Microsecond,
+			scoring.SrcGraph:  87 * time.Microsecond,
+		},
 	}
-	// The wire form names each source, and resolves the graph and anchor
-	// entries' anchor keys through Get. The fake stores no nodes, so via falls
-	// back to empty, as the contract says for a vanished anchor.
-	want := [][]HitContribution[float32]{
-		{{Source: "text", Score: 1, Rank: 0, Count: 1}},
-		{{Source: "vector", Score: 0.5, Rank: 1, Count: 1}, {Source: "graph", Score: 2, Degree: 3, Count: 2, Named: true}},
-		{{Source: "anchor", Score: 1, Degree: 4, Count: 1}},
+	explained := &QueryResult[string, float32]{
+		Count: 3,
+		Hits: []Hit[string, float32]{
+			{Score: 0.9, Explain: &HitExplain[float32]{Seed: true, Decay: 1, Contributions: []HitContribution[float32]{
+				{Source: "text", Score: 1, Rank: 0, Count: 1, Held: 0.5},
+			}}},
+			{Score: 0.8, Explain: &HitExplain[float32]{Decay: 0.5, Contributions: []HitContribution[float32]{
+				{Source: "vector", Score: 0.5, Rank: 1, Count: 1},
+				{Source: "graph", Score: 2, Degree: 3, Count: 2, Named: true},
+			}}},
+			{Score: 0.7, Explain: &HitExplain[float32]{Decay: 0.25, Contributions: []HitContribution[float32]{
+				{Source: "graph", Score: 4, Degree: 4, Count: 1},
+			}}},
+		},
+		Explain: &RecallExplain[string, float32]{
+			Background: 0.25,
+			Admission:  map[int]float32{1: 0.5, 2: 0.25},
+			Seeds:      map[string]int{"text": 2, "vector": 1, "graph": 0, "anchor": 0},
+			Terms:      []string{"pulsar", "vela"},
+			Timings: map[string]time.Duration{
+				"text": 41 * time.Microsecond, "vector": 12 * time.Microsecond, "graph": 87 * time.Microsecond, "anchor": 0,
+			},
+		},
+	}
+	plain := &QueryResult[string, float32]{
+		Count: 3,
+		Hits:  []Hit[string, float32]{{Score: 0.9}, {Score: 0.8}, {Score: 0.7}},
 	}
 
-	for _, explain := range []bool{true, false} {
-		t.Run(fmt.Sprintf("explain=%v", explain), func(t *testing.T) {
-			g := &fakeGraph{
-				searchNodes:      []graph.Node[string]{nil, nil, nil},
-				searchScores:     []float32{0.9, 0.8, 0.7},
-				searchContribs:   contributions,
-				searchBackground: 0.25,
+	// Anchors alone seed: no round runs, and no keyword means no terms.
+	anchorsAlone := graph.Result[string, float32]{
+		Hits: []graph.Hit[string, float32]{
+			{Score: 0.6, Decay: 0.75, Seed: true, Contributions: []scoring.Contribution[string, float32]{
+				{Src: scoring.SrcAnchor, Score: 1, Via: "harbour-key", Degree: 4, Count: 1},
+			}},
+		},
+		Seeds:   [scoring.SrcAnchor + 1]int{scoring.SrcAnchor: 1},
+		Timings: [scoring.SrcAnchor + 1]time.Duration{scoring.SrcAnchor: 5 * time.Microsecond},
+	}
+	anchorsAloneExplained := &QueryResult[string, float32]{
+		Count: 1,
+		Hits: []Hit[string, float32]{
+			{Score: 0.6, Explain: &HitExplain[float32]{Seed: true, Decay: 0.75, Contributions: []HitContribution[float32]{
+				{Source: "anchor", Score: 1, Degree: 4, Count: 1},
+			}}},
+		},
+		Explain: &RecallExplain[string, float32]{
+			Seeds:   map[string]int{"text": 0, "vector": 0, "graph": 0, "anchor": 1},
+			Terms:   []string{},
+			Timings: map[string]time.Duration{"text": 0, "vector": 0, "graph": 0, "anchor": 5 * time.Microsecond},
+		},
+	}
+
+	cases := map[string]struct {
+		prefix bool
+		alias  bool
+		search graph.Result[string, float32]
+		want   *QueryResult[string, float32]
+	}{
+		"the prefix explains":                {prefix: true, search: measured, want: explained},
+		"the alias explains a plain recall":  {alias: true, search: measured, want: explained},
+		"the alias explains a prefixed one":  {prefix: true, alias: true, search: measured, want: explained},
+		"a plain recall carries no block":    {search: measured, want: plain},
+		"a recall with no round has no bars": {prefix: true, search: anchorsAlone, want: anchorsAloneExplained},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			s, err := (&Recall[string, float32]{Keywords: []string{"x"}, Explain: tc.prefix}).Plan(config.New())
+			if err != nil {
+				t.Fatalf("Plan() err = %v", err)
 			}
-			s := newStream(readQuery())
-			s.Explain = explain
+			if tc.alias {
+				s.Explain = true
+			}
 
-			if err := s.Commit(g); err != nil {
+			if err := s.Commit(&fakeGraph{searchResult: tc.search}); err != nil {
 				t.Fatalf("Commit() err = %v", err)
 			}
 
-			if explain && s.Result.Background != 0.25 {
-				t.Errorf("Result.Background = %v, want the search's 0.25", s.Result.Background)
-			}
-			if !explain && s.Result.Background != 0 {
-				t.Errorf("Result.Background = %v without explain, want 0 (omitted on the wire)", s.Result.Background)
-			}
-			for i, hit := range s.Result.Hits {
-				if explain {
-					if !reflect.DeepEqual(hit.Contributions, want[i]) {
-						t.Errorf("Hits[%d].Contributions = %+v, want the wire form %+v", i, hit.Contributions, want[i])
-					}
-				} else if hit.Contributions != nil {
-					t.Errorf("Hits[%d].Contributions = %+v without explain, want nil", i, hit.Contributions)
-				}
+			if diff := cmp.Diff(tc.want, s.Result); diff != "" {
+				t.Errorf("Commit() result mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -568,10 +627,11 @@ func BenchmarkRecallCommit(b *testing.B) {
 // no term reaches Search with nil keywords and an empty vector. The seeding
 // must resolve the topic to the node Commit stored. Under any other key it
 // would seed nothing. Every fact filed under the topic comes back, and nothing
-// else. Each is scored from its unit anchor mass, and in explain mode each
-// breakdown names the topic it was found under. Naming the entity as well
-// doubles the mass of every fact filed under both. A term beside the anchor
-// seeds from the text index, and the anchor's members are not listed.
+// else. Each is scored from its unit anchor mass, and in explain mode each is
+// a seed whose breakdown names the topic it was found under. Naming the
+// entity as well doubles the mass of every fact filed under both. A term
+// beside the anchor seeds from the text index, and the anchor's members are
+// not listed.
 func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	// The window is off: the last case pins that a term beside an anchor
 	// does not list the anchor's members, and under the window the match's
@@ -612,6 +672,16 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 		sort.Strings(out)
 		return out
 	}
+	// The facts were written moments ago, so each hit's recency factor is
+	// just under 1 and moves with the clock. It is checked for its range,
+	// and the rest of the block exactly.
+	withoutDecay := cmpopts.IgnoreFields(HitExplain[float32]{}, "Decay")
+	checkDecay := func(t *testing.T, i int, explain *HitExplain[float32]) {
+		t.Helper()
+		if explain != nil && (explain.Decay <= 0 || explain.Decay > 1) {
+			t.Errorf("Hits[%d].Explain.Decay = %v, want a recency factor in (0, 1]", i, explain.Decay)
+		}
+	}
 
 	t.Run("a topic alone lists its members", func(t *testing.T) {
 		r := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
@@ -625,13 +695,14 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 			if i > 0 && hit.Score > r.Hits[i-1].Score {
 				t.Errorf("Hits[%d].Score = %v ranks above Hits[%d].Score = %v; want best first", i, hit.Score, i-1, r.Hits[i-1].Score)
 			}
-			want := []HitContribution[float32]{{Source: "anchor", Score: 1, Via: "deploys", Degree: 3, Count: 1}}
-			if !reflect.DeepEqual(hit.Contributions, want) {
-				t.Errorf("Hits[%d].Contributions = %+v, want the one anchor sighting resolved to its topic %+v", i, hit.Contributions, want)
+			want := &HitExplain[float32]{Seed: true, Contributions: []HitContribution[float32]{{Source: "anchor", Score: 1, Via: "deploys", Degree: 3, Count: 1}}}
+			checkDecay(t, i, hit.Explain)
+			if diff := cmp.Diff(want, hit.Explain, withoutDecay); diff != "" {
+				t.Errorf("Hits[%d].Explain mismatch (-want +got), want a seed with the one anchor sighting resolved to its topic:\n%s", i, diff)
 			}
 		}
-		if r.Background != 0 {
-			t.Errorf("Background = %v, want 0: anchor seeding observes no anchor", r.Background)
+		if r.Explain == nil || r.Explain.Background != 0 {
+			t.Errorf("Explain = %+v, want a background of 0: anchor seeding observes no anchor", r.Explain)
 		}
 	})
 
@@ -650,12 +721,13 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 			if hit.Score <= singleScore[value] {
 				t.Errorf("%q scores %v under both anchors, not above its %v under one", value, hit.Score, singleScore[value])
 			}
-			want := []HitContribution[float32]{
+			want := &HitExplain[float32]{Seed: true, Contributions: []HitContribution[float32]{
 				{Source: "anchor", Score: 1, Via: "deploys", Degree: 3, Count: 1},
 				{Source: "anchor", Score: 1, Via: "ops", Degree: 3, Count: 1},
-			}
-			if !reflect.DeepEqual(hit.Contributions, want) {
-				t.Errorf("Hits[%d].Contributions = %+v, want one sighting per named anchor %+v", i, hit.Contributions, want)
+			}}
+			checkDecay(t, i, hit.Explain)
+			if diff := cmp.Diff(want, hit.Explain, withoutDecay); diff != "" {
+				t.Errorf("Hits[%d].Explain mismatch (-want +got), want a seed with one sighting per named anchor:\n%s", i, diff)
 			}
 		}
 	})
@@ -665,7 +737,7 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 		if got, want := hitValues(r), []string{"the deploy key lives in vault"}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: beside a term the anchor does not list", got, want)
 		}
-		for _, c := range r.Hits[0].Contributions {
+		for _, c := range r.Hits[0].Explain.Contributions {
 			if c.Source == "anchor" {
 				t.Errorf("a text-seeded search recorded an anchor sighting %+v; anchors seed only on their own", c)
 			}

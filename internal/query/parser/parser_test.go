@@ -140,6 +140,13 @@ func FuzzParseNeverPanics(f *testing.F) {
 		"describe when race",
 		"Describe:recall x",
 		"recall x until:(describe recall y)",
+		"explain",
+		"explain recall x",
+		"explain explain recall",
+		"explain@2 recall x",
+		"explain remember 'x'",
+		"explain when race",
+		"recall x since:(explain recall race)",
 	} {
 		f.Add(seed)
 	}
@@ -191,6 +198,8 @@ func FuzzRoundTripAllCommands(f *testing.F) {
 		"describe recall since:30d",
 		"describe recall@2 zebras topic:fraise top:50 since:30d",
 		"describe recall x since:(when:said race) until:(when 'the race' topic:run)",
+		"explain recall@2 x topic:y depth:2",
+		"explain recall x since:(when:said race) until:(when lap)",
 	} {
 		f.Add(seed)
 	}
@@ -325,10 +334,10 @@ func TestRememberParser(t *testing.T) {
 
 // TestRecallParser checks that valid recall queries parse without error and
 // round-trip through String(). Fields are written in the order String() emits
-// them, so the reconstruction matches: terms, entities, topics, top, depth,
-// since, until. A value that was quoted comes back quoted. Printed bare,
-// 'e-mail' or '2026-01-15' would not parse. A bound comes back in the form it
-// was written in: a range with its dots, a when in its parentheses.
+// them, so the reconstruction matches: the prefix, terms, entities, topics,
+// top, depth, since, until. A value that was quoted comes back quoted. Printed
+// bare, 'e-mail' or '2026-01-15' would not parse. A bound comes back in the
+// form it was written in: a range with its dots, a when in its parentheses.
 func TestRecallParser(t *testing.T) {
 	queries := map[string]struct{}{
 		"recall anna":             {},
@@ -342,6 +351,11 @@ func TestRecallParser(t *testing.T) {
 		"recall anna since:'2023-05'..":                                              {},
 		"recall anna until:(when race)":                                              {},
 		"recall anna since:(when:said 'the race') until:(when race topic:run top:3)": {},
+		// The prefix prints before the verb, one blank between them.
+		"explain recall anna":           {},
+		"explain recall@2 anna topic:x": {},
+		"explain recall@2 anna bob entity:alice topic:job top:10 depth:5": {},
+		"explain recall anna until:(when race)":                           {},
 	}
 
 	for q := range queries {
@@ -805,9 +819,6 @@ func TestDescribeParserErrors(t *testing.T) {
 		"recall ":          {noSeed},
 		"recall top:5":     {noSeed},
 		"recall since:30d": {noSeed},
-		// explain is reserved and not implemented, so a query opening with it
-		// is answered as any word that is not a command.
-		"explain recall zebras": {`expected a command (recall, remember, when, describe recall), found "explain"`},
 	}
 
 	for query, tc := range cases {
@@ -1740,6 +1751,18 @@ func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
 		"describe explain recall zebras":                {"explain"},
 		"Describe:recall zebras":                        {":"},
 		"recall zebras until:(describe recall x) top:3": {"describe"},
+		// A misplaced explain prefix blames what stands where the recall
+		// should: a second prefix, another verb, a word, or a token glued to
+		// the prefix in the blank's place. A when answers with a time, so it
+		// is blamed as any other verb is.
+		"explain describe recall x":    {"describe"},
+		"explain remember 'x' topic:y": {"remember"},
+		"explain when race topic:y":    {"when"},
+		"explain zebras recall x":      {"zebras"},
+		"explain:recall zebras":        {":"},
+		// A time bound's parentheses hold a when, so the prefix is blamed
+		// there as any word that is not a command is.
+		"recall zebras since:(explain recall race)": {"explain"},
 	}
 
 	for query, tc := range cases {
@@ -1947,7 +1970,11 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 		"REMEMBER 'x' topic:y": {"expected a command"},
 		"When race":            {"expected a command"},
 		"WHEN race":            {"expected a command"},
-		// A prefix neither: describe decides what the query answers with.
+		// A prefix is no more inferred than a verb: mis-cased, it is a word
+		// at the head of the statement, and describe decides what the query
+		// answers with.
+		"Explain recall zebras":  {"expected a command"},
+		"EXPLAIN recall zebras":  {"expected a command"},
 		"Describe recall zebras": {"expected a command"},
 		"DESCRIBE recall zebras": {"expected a command"},
 	}
@@ -2467,6 +2494,129 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 	}
 }
 
+// TestExplainPrefixErrorsBlameTheirToken pins every way the explain prefix can
+// be misplaced, by exact message and column. The prefix opens a recall and
+// nothing else. So each message names what stands where the recall should, at
+// that token, with the repair an agent can make from it. A misplaced prefix
+// never surfaces as an error in the recall after it. Nor does it get the
+// "expected a command" answer, which is reserved for a statement that opens
+// with neither a command nor a prefix.
+func TestExplainPrefixErrorsBlameTheirToken(t *testing.T) {
+	const (
+		needsRecall = `"explain" needs a recall after it — write explain recall <terms>`
+		noRanking   = " has no ranking to explain: the explain prefix stands only before recall — drop the prefix"
+		notRecall   = "expected recall after the explain prefix, found "
+		notCommand  = "expected a command (recall, remember, when, describe recall), found "
+	)
+	cases := map[string]struct {
+		col int
+		msg string
+	}{
+		// Nothing to explain, so the prefix is blamed. A newline ends the
+		// instruction, so a recall on the next line is not the prefix's.
+		"explain":           {7, needsRecall},
+		"explain ":          {7, needsRecall},
+		"explain\n":         {7, needsRecall},
+		"explain \n":        {7, needsRecall},
+		"explain\nrecall x": {7, needsRecall},
+		// A token glued to the prefix is blamed where the blank should be.
+		"explain:recall x":    {8, `expected a space after the prefix, found ":"`},
+		"explain'x' recall y": {10, `expected a space after the prefix, found "x"`},
+		"explain\x00recall x": {8, `expected a space after the prefix, found "\x00"`},
+		// A selector belongs to the verb, so the repair moves it there.
+		"explain@2 recall x": {8, `"@" starts a graph selector, which is glued to the verb, not the prefix — write explain recall@2`},
+		// One prefix per statement, so the second is blamed.
+		"explain explain recall x":  {15, `"explain" is a second prefix: a statement takes one — drop one`},
+		"explain describe recall x": {16, `"describe" is a second prefix: a statement takes one — drop one`},
+		// Only a recall has a ranking, so another verb is blamed. A when
+		// answers with a time, and is told so.
+		"explain remember 'x'":   {16, `"remember"` + noRanking},
+		"explain forget 'x'":     {14, `"forget"` + noRanking},
+		"explain update 'x'":     {14, `"update"` + noRanking},
+		"explain when race":      {12, `"when" answers with a time and has no ranking to explain: the explain prefix stands only before recall — drop the prefix`},
+		"explain when:said race": {12, `"when" answers with a time and has no ranking to explain: the explain prefix stands only before recall — drop the prefix`},
+		// Anything else where the recall should stand. A mis-cased verb is a
+		// literal here as at the head, never inferred to be the command.
+		"explain x":           {9, notRecall + `"x"`},
+		"explain topic:x":     {13, notRecall + `"topic"`},
+		"explain Recall x":    {14, notRecall + `"Recall"`},
+		"explain @2 recall x": {9, notRecall + `"@"`},
+		// A token with a diagnosis of its own keeps it after the prefix.
+		"explain 'unclosed":    {17, "unterminated quoted phrase"},
+		"explain (recall x)":   {9, `grouping is not supported: "(" only encloses a when in a time bound, as in until:(when <terms>) — there are no boolean operators to group, and terms are already a union`},
+		"explain \x00recall x": {9, "a NUL character is only allowed inside a quoted phrase"},
+		"explain ;recall x":    {9, `";" is only allowed inside a quoted phrase`},
+		// Under the prefix a recall keeps its own errors, at its own tokens.
+		"explain recall":       {14, "expected a space after the command, found end of input"},
+		"explain recall top:3": {14, "a recall needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>"},
+		// Behind describe, explain is a second prefix, and describe names it.
+		"describe explain recall x": {16, `"explain" cannot follow describe: a statement takes one prefix`},
+		// No statement opens with a command or a prefix here.
+		"explainrecall x": {13, notCommand + `"explainrecall"`},
+		// A time bound's parentheses hold a when, so the prefix is no command
+		// there, and an explained recall cannot bound another.
+		"recall x since:(explain recall race)": {23, `expected a when after "(", found "explain": a time bound's parentheses hold the when whose answer is the bound — write since:(when <terms>)`},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
+			if cmd != nil {
+				t.Errorf("Parse(%q) = %v, want no command", query, cmd)
+			}
+			var got *parser.Error
+			if !errors.As(err, &got) {
+				t.Fatalf("Parse(%q) error %v is not a *parser.Error", query, err)
+			}
+			want := parser.Error{Pos: lexer.Position{Column: tc.col}, Msg: tc.msg}
+			if diff := cmp.Diff(want, *got); diff != "" {
+				t.Errorf("Parse(%q) error mismatch (-want +got):\n%s", query, diff)
+			}
+		})
+	}
+}
+
+// TestExplainReportsThePrefix pins what an explained recall parses to: the
+// recall it explains, with the prefix reported. The selector and terms are the
+// plain recall's, so the query layer builds the same search. Any run of blanks
+// separates the prefix from the verb, as it does the verb from the terms. A
+// quoted explain is a term, never the prefix.
+func TestExplainReportsThePrefix(t *testing.T) {
+	type recall struct {
+		Explain  bool
+		Selector uint8
+		Terms    []string
+	}
+	cases := map[string]struct {
+		want recall
+	}{
+		"recall x":                   {recall{Explain: false, Terms: []string{"x"}}},
+		"explain recall x":           {recall{Explain: true, Terms: []string{"x"}}},
+		"explain recall@2 x topic:y": {recall{Explain: true, Selector: 2, Terms: []string{"x"}}},
+		"explain  recall x":          {recall{Explain: true, Terms: []string{"x"}}},
+		"explain\trecall x":          {recall{Explain: true, Terms: []string{"x"}}},
+		"recall 'explain'":           {recall{Explain: false, Terms: []string{"explain"}}},
+		"explain recall 'explain'":   {recall{Explain: true, Terms: []string{"explain"}}},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			cmd, _, err := parser.Parse[uint64, float32](query, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", query, err)
+			}
+			rc, ok := cmd.(*parser.RecallCommandNode[uint64, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) = %T, want *parser.RecallCommandNode", query, cmd)
+			}
+			got := recall{Explain: rc.Explain(), Selector: rc.Selector(), Terms: rc.Terms()}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("Parse(%q) mismatch (-want +got):\n%s", query, diff)
+			}
+		})
+	}
+}
+
 // TestCommandWordsAreNeverOfferedAsClauses pins the repair for a command word
 // in a recall: quote it. The keyword advice ("write recall:<value> if a clause
 // was meant") would send the caller from one rejection to the next. No clause
@@ -2749,6 +2899,8 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 		"describe recall\n":                 {},
 		"describe recall@2\n":               {},
 		"describe recall zebras\n":          {},
+		// The prefix opens the instruction, so its newline ends it too.
+		"explain recall zebras\n": {},
 	}
 
 	for q := range accepted {
@@ -2769,6 +2921,8 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 		"describe recall\nrecall zebras":    {},
 		"describe recall zebras\nwhen race": {},
 		"recall zebras\ndescribe recall":    {},
+		// A second line is a second instruction after an explained recall too.
+		"explain recall zebras\nrecall food": {},
 	}
 
 	for q := range rejected {
@@ -3378,13 +3532,15 @@ func TestUnambiguousQueriesRunSilently(t *testing.T) {
 }
 
 // TestStringRoundTripsToTheSameCommand pins that String() prints a query that
-// parses back to the same command. The reconstruction, terms, anchors and fact
-// all stay the same. Every shape the tests from TestWhitespaceSeparatesWords on
-// accept is here. So is a quoted form of each reserved word, since a bare one
-// would not parse.
+// parses back to the same command. The reconstruction, prefix, terms, anchors
+// and fact all stay the same. Every shape the tests from
+// TestWhitespaceSeparatesWords on accept is here. So is a quoted form of each
+// reserved word, since a bare one would not parse. A prefix lost on the way
+// back would turn an explained recall into a plain one.
 func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 	// command holds what a round trip must not change.
 	type command struct {
+		Explain                 bool
 		Value                   string
 		Terms, Topics, Entities []string
 	}
@@ -3463,6 +3619,15 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 		"describe recall since:30d":                                                               {},
 		"describe recall 'Top' entity:'O''Brien'":                                                 {},
 		"describe recall x until:(when the race)":                                                 {},
+		// Any blank between the prefix and the verb reprints as one.
+		"explain recall zebras":               {},
+		"explain  recall zebras":              {},
+		"explain\trecall zebras":              {},
+		"explain recall zebras \n":            {},
+		"explain recall@2 zebras topic:food":  {},
+		"explain recall 'explain' entity:Top": {},
+		"explain recall topic:birds depth:2":  {},
+		"explain recall x until:(when race)":  {},
 	}
 
 	for q := range queries {
@@ -3483,8 +3648,8 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 			switch c := cmd.(type) {
 			case *parser.RecallCommandNode[uint64, float32]:
 				a := again.(*parser.RecallCommandNode[uint64, float32])
-				want = command{Terms: c.Terms(), Topics: c.Topics(), Entities: c.Entities()}
-				got = command{Terms: a.Terms(), Topics: a.Topics(), Entities: a.Entities()}
+				want = command{Explain: c.Explain(), Terms: c.Terms(), Topics: c.Topics(), Entities: c.Entities()}
+				got = command{Explain: a.Explain(), Terms: a.Terms(), Topics: a.Topics(), Entities: a.Entities()}
 			case *parser.RememberCommandNode[uint64, float32]:
 				a := again.(*parser.RememberCommandNode[uint64, float32])
 				want = command{Value: c.Value(), Topics: c.Topics(), Entities: c.Entities()}

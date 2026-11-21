@@ -289,6 +289,53 @@ func TestPipelineDeduplicatesWhen(t *testing.T) {
 	}
 }
 
+// TestDedupeOptimiseKeepsTheExplainFlag pins that an explained recall is
+// deduplicated like a plain one and stays explained. The engine plans the
+// optimised copy, so a copy that lost the flag would answer an explained recall
+// in the plain envelope, and one that skipped deduplication would explain a
+// search other than the one recall runs.
+func TestDedupeOptimiseKeepsTheExplainFlag(t *testing.T) {
+	cases := map[string]struct {
+		explain bool
+	}{
+		"plain":     {false},
+		"explained": {true},
+	}
+
+	allow := cmp.AllowUnexported(query.Recall[string, float32]{})
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			parsed := func() *query.Recall[string, float32] {
+				return &query.Recall[string, float32]{
+					Keywords: []string{"a", "a", "b"},
+					Topics:   []string{"t1", "t1"},
+					Explain:  tc.explain,
+				}
+			}
+			in := parsed()
+			d := &optimisation.Dedupe[string, float32]{}
+
+			out := d.Optimise(in)
+
+			got, ok := out.(*query.Recall[string, float32])
+			if !ok {
+				t.Fatalf("Optimise returned %T, want *query.Recall", out)
+			}
+			want := query.Recall[string, float32]{
+				Keywords: []string{"a", "b"},
+				Topics:   []string{"t1"},
+				Explain:  tc.explain,
+			}
+			if diff := cmp.Diff(want, *got, allow); diff != "" {
+				t.Errorf("Optimise mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(*parsed(), *in, allow); diff != "" {
+				t.Errorf("Optimise changed its input, want it left as parsed (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 // A query that is neither a *Recall, a *When nor a *Describe must be returned
 // untouched.
 func TestDedupeOptimisePassthrough(t *testing.T) {

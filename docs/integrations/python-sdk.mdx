@@ -131,20 +131,32 @@ The server carries the distinction in the status line — 204 for a graph holdin
 
 ## Explaining a ranking
 
-`explain` takes exactly the arguments of `recall` and sends the same query to [`/api/v1/explain`](/docs/http-api/endpoints/explain), which runs it through the same pipeline: the hits and their order are the ones `recall` returns, and each hit also carries `contributions`, the per-source sightings its score was folded from, while the result carries the query's `background` rate.
+`explain` takes exactly the arguments of `recall` and sends the same recall behind the `explain` prefix, `explain recall@0 polly entity:polly depth:2`, through `/api/v1/q`. The server runs it exactly as written, so the hits and their order are the ones `recall` returns, and the result also carries what the ranking did: an `explain` block on every hit, and one on the result for the query as a whole.
 
 ```python
 result = client.explain("polly", entities=["polly"], depth=2)
 for hit in result:
-    print(hit.value, hit.score)
-    for c in hit.contributions:
+    print(hit.value, hit.score, hit.explain.seed)
+    for c in hit.explain.contributions:
         print(" ", c.source, c.score, c.via)
-print(result.background)
+print(result.explain.background, result.explain.admission)
+print(result.explain.seeds, result.explain.terms, result.explain.timings)
 ```
 
-A `Contribution` has a `source` — `text`, `vector`, `graph` or `anchor` — with that source's raw `score`, the hit's `rank` in the source's own list and the `count` of seeds that funded it; a `graph` or `anchor` sighting also names the anchor it came through (`via`) and that anchor's `degree`, and a `graph` sighting through an anchor the recall named carries `named=True`. A hit whose only contribution is `graph` matched nothing itself and was reached through an anchor, which is what separates a multi-hop fact the graph reached and ranked low from one it never reached. The contributions are the ingredients of the final score, not shares of it; see [the explain endpoint](/docs/http-api/endpoints/explain) for how they fold together.
+A hit's `explain` is a `HitExplain`. `seed` says whether the hit was one of the recall's seeds: among the first `seed-size` facts of a text or vector reading (the first `top:` when that is larger), or a member of a named anchor when the anchors seed alone. `decay` is the recency factor its relevance was scaled by to give its score, which tells a fact that ranks low for its age from one that ranks low for its match. `contributions` lists the per-source sightings its relevance was folded from. A `Contribution` has a `source` — `text`, `vector`, `graph` or `anchor` — with that source's raw `score`, the hit's `rank` in the source's own list and the `count` of seeds that funded it; a `graph` or `anchor` sighting also names the anchor it came through (`via`) and that anchor's `degree`, a `graph` sighting through an anchor the recall named carries `named=True`, and a `text` sighting carries `held`, the share of the query's information the fact's own words hold. A hit that is no seed and whose only contribution is `graph` matched nothing itself and was admitted through an anchor, which is what separates a multi-hop fact the graph reached and ranked low from one it never reached. The contributions are the ingredients of the final score, not shares of it.
 
-On a plain `recall` the breakdown is not asked for: each hit's `contributions` is empty and `background` is `None`. Use `recall` when the ranking is all you need, since the breakdown costs response size.
+The result's `explain` is a `RecallExplain`, the search's own measurements of the query. `background` is the query's background rate, the seed mass per unit of anchor degree the anchor round observed. `admission` maps each depth to the bar per unit of degree an anchor the recall did not name had to clear to transmit, `{1: ..., 2: ...}`, and is empty when no anchor round ran. `seeds` counts the distinct facts each source seeded, and `timings` the wall time each source took in integer nanoseconds, both keyed `text`, `vector`, `anchor` and `graph`. `terms` lists the query's distinct terms as the text index read them, after stop-word cleaning and stemming, including any no stored fact holds, which is how a word that matched nothing shows. On a recall bounded by a `When`, `when` holds what each when answered, keyed by the bound that holds it, `since` or `until`. Each is a `RecallResult` of its own: its hits are the facts the bound was read from, with their times, its `start` and `end` are the time the when answered with, which is where the bound was cut, and it carries `explain` blocks of its own, since a when is explained with its recall. It is how a window drawn from the wrong fact shows, and it is empty when no bound holds a when.
+
+```python
+result = client.explain("anna", until=When("charity race"))
+bound = result.explain.when["until"]
+print(bound.start, bound.end)
+print([(hit.value, hit.occurred) for hit in bound], bound.explain.terms)
+```
+
+See [the explained recall](/docs/http-api/endpoints/explain) for the full schema and how the blocks fold into a score.
+
+On a plain `recall`, `explain` is `None` on the result and on every hit; use `recall` when the ranking is all you need, since the breakdown costs response size. An explained recall of a graph that holds nothing is answered 204 like any recall, so its result is `empty` and carries no `explain`. `client.query("explain recall@0 polly")` sends the statement as written and returns the raw body, and `RecallResult.from_json(body.get("results") or {}, body.get("warnings"))` types it, blocks included.
 
 ## Describing what memory holds
 

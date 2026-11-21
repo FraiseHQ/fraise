@@ -35,7 +35,9 @@ from fraise_sdk.models import (
     Contribution,
     GraphStats,
     Hit,
+    HitExplain,
     Interval,
+    RecallExplain,
     RecallResult,
 )
 
@@ -124,26 +126,35 @@ def test_from_json_carries_the_empty_graph_flag():
     assert bool(result) is False
 
 
-def test_an_explained_hit_carries_its_contributions(explain_response):
-    """Each hit parses its breakdown into typed contributions, in the order sent.
+def test_an_explained_hit_carries_its_seed_decay_and_contributions(explain_response):
+    """Each hit parses its block into a seed flag, a decay and typed contributions.
 
-    The first hit matched the text and was also reached through the polly
-    anchor. ``via`` and ``degree`` ride only on the graph sighting. A text
-    sighting involves no anchor, so it leaves them unset rather than zero.
+    The hit matched the text, so it seeded the recall, and was also reached
+    through the polly anchor the recall names. Its fact was written moments
+    before the recall, so its decay is just under 1. ``via`` and ``degree``
+    ride only on the graph sighting. A text sighting involves no anchor, so it
+    leaves them unset rather than zero.
     """
-    result = RecallResult.from_json(explain_response["results"], explain=True)
+    result = RecallResult.from_json(explain_response["results"])
 
-    assert result.hits[0].contributions == [
-        Contribution(source="text", score=1.0499527612542656, rank=0, count=1),
-        Contribution(
-            source="graph",
-            score=1.9820803996745116,
-            rank=0,
-            count=2,
-            via="polly",
-            degree=3,
-        ),
-    ]
+    assert result.hits[1].explain == HitExplain(
+        seed=True,
+        decay=0.9999996547997493,
+        contributions=[
+            Contribution(
+                source="text", score=0.48903447372503717, rank=0, count=1, held=1.0
+            ),
+            Contribution(
+                source="graph",
+                score=0.9225902466493349,
+                rank=0,
+                count=2,
+                via="polly",
+                degree=3,
+                named=True,
+            ),
+        ],
+    )
 
 
 @pytest.mark.parametrize(
@@ -314,54 +325,171 @@ def test_a_hit_given_no_times_leaves_them_unset():
     assert hit.timestamp == "2026-01-02T03:04:05Z"
 
 
-def test_a_hit_reached_through_the_graph_alone_says_so(explain_response):
-    """A graph-only hit matched nothing itself, so its one sighting is the graph's.
+def test_a_hit_admitted_by_transmission_says_so(explain_response):
+    """A hit that is no seed and has only a graph sighting was admitted by the graph.
 
-    Explain exists to tell this case apart. Here the graph reached the fact and
-    ranked it low. In the other case, the search never reached it at all.
+    Explain exists to tell this case apart. Here the graph reached a fact that
+    matched nothing itself, through the anchor the recall named. In the other
+    case, the search never reached it at all. ``seed`` is what separates it
+    from a fact that matched the text below the seed cut, which would carry a
+    text sighting too.
     """
-    result = RecallResult.from_json(explain_response["results"], explain=True)
+    result = RecallResult.from_json(explain_response["results"])
 
-    graph_only = result.hits[2]
-    assert graph_only.value == "the parrot sleeps in the kitchen"
-    assert [c.source for c in graph_only.contributions] == ["graph"]
-    assert graph_only.contributions[0].via == "polly"
-
-
-def test_an_explained_result_carries_the_background_rate(explain_response):
-    """The query-level background rate lands on the result, as a float."""
-    result = RecallResult.from_json(explain_response["results"], explain=True)
-
-    assert result.background == 0.4857013396824596
+    admitted = result.hits[0]
+    assert admitted.value == "the parrot sleeps in the kitchen"
+    assert admitted.explain is not None
+    assert admitted.explain.seed is False
+    assert [c.source for c in admitted.explain.contributions] == ["graph"]
+    assert admitted.explain.contributions[0].via == "polly"
 
 
-def test_an_omitted_background_is_zero_on_an_explained_result(
-    anchor_explain_response,
-):
-    """The server omits a background rate of zero, and explain reads it as 0.0.
+def test_an_explained_result_carries_what_the_search_measured(explain_response):
+    """The query's block parses whole: the rate, the bars, the seeds, terms, timings.
 
-    An anchor-only recall runs no traversal, so its background rate is zero and
-    the key is absent. On an explained result, the absence means zero, not a
-    missing value. ``None`` would read as "not asked for".
+    The admission bars arrive keyed by depth as JSON strings and are read back
+    as ints, so ``admission[1]`` is the depth-1 bar. The depth-1 bar is twice
+    the background rate and the depth-2 bar is the rate itself. Timings stay
+    integer nanoseconds. The term is the stem the text index read, not the word
+    the query wrote. The recall has no when in a bound, so the server sends no
+    ``when`` key, and its absence reads as empty.
     """
-    result = RecallResult.from_json(anchor_explain_response["results"], explain=True)
+    result = RecallResult.from_json(explain_response["results"])
 
-    assert result.background == 0.0
-    assert {c.source for hit in result for c in hit.contributions} == {"anchor"}
+    assert result.explain == RecallExplain(
+        background=0.30753008221644496,
+        admission={1: 0.6150601644328899, 2: 0.30753008221644496},
+        seeds={"anchor": 0, "graph": 0, "text": 2, "vector": 0},
+        terms=["polli"],
+        timings={"anchor": 0, "graph": 37958, "text": 24875, "vector": 0},
+        when={},
+    )
+
+
+def test_an_anchor_seeded_recall_runs_no_round(anchor_explain_response):
+    """A recall seeded by its anchor alone reports no bars and a zero rate.
+
+    No anchor round ran, so the server omits the admission bars, and their
+    absence reads as an empty mapping, not a failure. The background rate is
+    sent at zero, so 0.0 is the server's own figure. Every hit is a seed, the
+    anchor seeded every fact, and the recall had no terms to read.
+    """
+    result = RecallResult.from_json(anchor_explain_response["results"])
+
+    assert result.explain == RecallExplain(
+        background=0.0,
+        admission={},
+        seeds={"anchor": 3, "graph": 0, "text": 0, "vector": 0},
+        terms=[],
+        timings={"anchor": 2791, "graph": 0, "text": 0, "vector": 0},
+        when={},
+    )
+    explained = [hit.explain for hit in result.hits]
+    assert all(e is not None and e.seed for e in explained)
+    assert {c.source for e in explained if e for c in e.contributions} == {"anchor"}
+
+
+def test_a_hits_score_is_its_relevance_decayed(anchor_explain_response):
+    """The decay a hit's block carries is the factor its score was scaled by.
+
+    An anchor-seeded hit's relevance is the unit mass of its one sighting, so
+    its score is its decay exactly. A decay read from the wrong key, or a score
+    the server decayed twice, would break the equality, and a caller could not
+    tell a fact that ranks low for its age from one that ranks low for its
+    match.
+    """
+    result = RecallResult.from_json(anchor_explain_response["results"])
+
+    assert result.hits
+    for hit in result.hits:
+        assert hit.explain is not None
+        assert hit.score == hit.explain.decay
+
+
+def test_a_bounding_when_rides_inside_the_querys_block(when_explain_response):
+    """The when a bound was read from parses into a result of its own, explained too.
+
+    The recall keeps what happened before the regatta, so its one hit is the
+    river training, which carries the day it happened beside its block. Its
+    ``until`` was read from the regatta, and the when's result, keyed by the
+    bound that holds it, is a full result: its hit holds the times the
+    regatta was given, its ``start`` and ``end`` are the day the regatta
+    happened, the time the bound was cut at, and both its hit and the result
+    carry blocks of their own. The when names no anchor, so no round ran for
+    it. Its warnings ride on the recall's, so its own list is empty.
+    """
+    result = RecallResult.from_json(when_explain_response["results"])
+
+    [hit] = result.hits
+    assert hit.value == "anna trained on the river"
+    assert hit.occurred == [
+        Interval(
+            start=datetime(2023, 5, 1, tzinfo=timezone.utc),
+            end=datetime(2023, 5, 2, tzinfo=timezone.utc),
+        )
+    ]
+    assert hit.explain is not None
+    assert hit.explain.seed is True
+    assert result.explain is not None
+    assert result.explain.terms == ["train"]
+    assert result.explain.when == {
+        "until": RecallResult(
+            count=1,
+            hits=[
+                Hit(
+                    value="anna rowed in the regatta",
+                    score=0.9798525093475564,
+                    timestamp="2026-11-15T15:18:21.628696Z",
+                    said=datetime(2023, 5, 8, tzinfo=timezone.utc),
+                    occurred=[
+                        Interval(
+                            start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+                            end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+                        )
+                    ],
+                    explain=HitExplain(
+                        seed=True,
+                        decay=0.999999189512672,
+                        contributions=[
+                            Contribution(
+                                source="text",
+                                score=0.9798533035062422,
+                                rank=0,
+                                count=1,
+                                held=1.0,
+                            )
+                        ],
+                    ),
+                )
+            ],
+            explain=RecallExplain(
+                background=0.0,
+                admission={},
+                seeds={"anchor": 0, "graph": 0, "text": 1, "vector": 0},
+                terms=["regatta"],
+                timings={"anchor": 0, "graph": 0, "text": 17208, "vector": 0},
+                when={},
+            ),
+            start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+            end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+        )
+    }
 
 
 def test_a_plain_recall_carries_no_breakdown():
-    """Without explain there is no breakdown: no contributions, no background.
+    """Without the explain prefix there is no block, on the hits or the result.
 
-    ``background`` is ``None`` rather than 0.0 so a caller can tell a result
-    that was never explained from one whose background rate was zero.
+    ``explain`` is ``None`` rather than an empty block, so a caller can tell a
+    recall that was never explained from one whose search measured zeros. The
+    server sends no ``explain`` key on a plain recall, and that absence is the
+    only signal ``from_json`` reads.
     """
     result = RecallResult.from_json(
         {"count": 1, "hits": [{"value": "polly whistles at dawn", "score": 1.0}]}
     )
 
-    assert result.hits[0].contributions == []
-    assert result.background is None
+    assert result.hits[0].explain is None
+    assert result.explain is None
 
 
 def test_a_catalogue_entry_parses_its_count_and_times(describe_response):
@@ -545,6 +673,37 @@ def test_a_vector_recall_parses_the_same_shape(vector_tide_result):
     assert isinstance(vector_tide_result, RecallResult)
     assert all(isinstance(hit.score, float) for hit in vector_tide_result)
     assert all(hit.timestamp for hit in vector_tide_result)
+
+
+@pytest.mark.integration
+def test_an_explained_response_parses_into_the_declared_types(explained_tide_result):
+    """Both explain blocks a live server sends become the declared typed values.
+
+    The unit tests parse recorded bodies, which stop proving anything the day
+    the server's shape moves. Here the admission depths must come back as
+    ints, the seed counts and timings as ints, keyed by every source, and each
+    hit's decay as a factor in (0, 1] beside its contributions as typed
+    sightings. The recall's bounds hold no when, so nothing rides under
+    ``when``.
+    """
+    explain = explained_tide_result.explain
+    assert isinstance(explain, RecallExplain)
+    assert isinstance(explain.background, float)
+    assert set(explain.admission) == {1, 2}
+    assert all(isinstance(bar, float) for bar in explain.admission.values())
+    sources = {"text", "vector", "anchor", "graph"}
+    assert set(explain.seeds) == set(explain.timings) == sources
+    assert all(isinstance(n, int) for n in explain.seeds.values())
+    assert all(isinstance(ns, int) for ns in explain.timings.values())
+    assert explain.terms == ["tide"]
+    assert explain.when == {}
+    for hit in explained_tide_result.hits:
+        assert isinstance(hit.explain, HitExplain)
+        assert isinstance(hit.explain.seed, bool)
+        assert isinstance(hit.explain.decay, float)
+        assert 0 < hit.explain.decay <= 1
+        assert hit.explain.contributions
+        assert all(isinstance(c, Contribution) for c in hit.explain.contributions)
 
 
 @pytest.mark.integration

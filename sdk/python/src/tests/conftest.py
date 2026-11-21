@@ -62,136 +62,281 @@ def pytest_configure(config):
 
 
 _QUERY_URL = f"{DEFAULT_BASE_URL}/api/v1/q"
-_EXPLAIN_URL = f"{DEFAULT_BASE_URL}/api/v1/explain"
 _STATS_URL = f"{DEFAULT_BASE_URL}/api/v1/stats"
 _NO_HITS = {"results": {"count": 0, "hits": []}}
 
 # Recorded from a live server, not written by hand, so the parser is tested
-# against the shape the server really sends. The graph behind both explain
-# responses holds three facts filed under entity:polly. Two of them mention
-# "polly".
+# against the shape the server really sends. The graph behind the first two
+# explained recalls holds three facts filed under entity:polly, given no times.
+# Two of them mention "polly". Every hit's block carries the recency factor its
+# relevance was decayed by, just under 1 for a fact written moments before.
 #
-# `recall polly entity:polly depth:2`: two hits matched the text and were also
-# reached through the polly anchor. The third matched nothing itself and was
-# reached through the anchor alone, so it is a graph-only hit.
+# `explain recall polly entity:polly depth:2`: two hits matched the text, so
+# they seeded the recall, and were also reached through the polly anchor the
+# recall names. The third, which ranks first, matched nothing itself. It is no
+# seed, and the named anchor transmitted to it alone, so it is a graph-only
+# hit. One anchor round ran, so the query's block carries the admission bar at
+# both depths. The text index read "polly" as its stem.
 _EXPLAIN_RESPONSE = {
     "results": {
         "count": 3,
         "hits": [
             {
+                "value": "the parrot sleeps in the kitchen",
+                "timestamp": "2026-11-15T15:18:04.511686Z",
+                "score": 2.4066037621644507,
+                "explain": {
+                    "seed": False,
+                    "decay": 0.9999996492601004,
+                    "contributions": [
+                        {
+                            "source": "graph",
+                            "score": 0.9225902466493349,
+                            "rank": 0,
+                            "via": "polly",
+                            "degree": 3,
+                            "count": 2,
+                            "named": True,
+                        }
+                    ],
+                },
+            },
+            {
                 "value": "polly whistles at dawn",
-                "timestamp": "2026-09-30T22:57:46.062614+01:00",
-                "score": 1.0499525788004205,
-                "contributions": [
-                    {
-                        "source": "text",
-                        "score": 1.0499527612542656,
-                        "rank": 0,
-                        "count": 1,
-                    },
-                    {
-                        "source": "graph",
-                        "score": 1.9820803996745116,
-                        "rank": 0,
-                        "via": "polly",
-                        "degree": 3,
-                        "count": 2,
-                    },
-                ],
+                "timestamp": "2026-11-15T15:18:04.573832Z",
+                "score": 1.8301780333845115,
+                "explain": {
+                    "seed": True,
+                    "decay": 0.9999996547997493,
+                    "contributions": [
+                        {
+                            "source": "text",
+                            "score": 0.48903447372503717,
+                            "rank": 0,
+                            "count": 1,
+                            "held": 1,
+                        },
+                        {
+                            "source": "graph",
+                            "score": 0.9225902466493349,
+                            "rank": 0,
+                            "via": "polly",
+                            "degree": 3,
+                            "count": 2,
+                            "named": True,
+                        },
+                    ],
+                },
             },
             {
                 "value": "polly eats sunflower seeds",
-                "timestamp": "2026-09-30T22:57:46.021977+01:00",
-                "score": 0.9321274330290991,
-                "contributions": [
-                    {
-                        "source": "text",
-                        "score": 0.9321276384202458,
-                        "rank": 1,
-                        "count": 1,
-                    },
-                    {
-                        "source": "graph",
-                        "score": 1.9820803996745116,
-                        "rank": 0,
-                        "via": "polly",
-                        "degree": 3,
-                        "count": 2,
-                    },
-                ],
-            },
-            {
-                "value": "the parrot sleeps in the kitchen",
-                "timestamp": "2026-09-30T22:57:45.982021+01:00",
-                "score": 0.04374802007585447,
-                "contributions": [
-                    {
-                        "source": "graph",
-                        "score": 1.9820803996745116,
-                        "rank": 0,
-                        "via": "polly",
-                        "degree": 3,
-                        "count": 2,
-                    },
-                ],
+                "timestamp": "2026-11-15T15:18:04.543843Z",
+                "score": 1.5764253926973357,
+                "explain": {
+                    "seed": True,
+                    "decay": 0.9999996521265518,
+                    "contributions": [
+                        {
+                            "source": "text",
+                            "score": 0.4335557729242977,
+                            "rank": 1,
+                            "count": 1,
+                            "held": 1,
+                        },
+                        {
+                            "source": "graph",
+                            "score": 0.9225902466493349,
+                            "rank": 0,
+                            "via": "polly",
+                            "degree": 3,
+                            "count": 2,
+                            "named": True,
+                        },
+                    ],
+                },
             },
         ],
-        "background": 0.4857013396824596,
+        "explain": {
+            "background": 0.30753008221644496,
+            "admission": {"1": 0.6150601644328899, "2": 0.30753008221644496},
+            "seeds": {"anchor": 0, "graph": 0, "text": 2, "vector": 0},
+            "terms": ["polli"],
+            "timings": {"anchor": 0, "graph": 37958, "text": 24875, "vector": 0},
+        },
     }
 }
 
-# `recall entity:polly`: the anchor alone seeds it, so every hit is an anchor
-# sighting. The background rate is zero, so the server omits it.
+# `explain recall entity:polly`: the anchor alone seeds it, so every hit is a
+# seed and its one sighting is the anchor's. No anchor round ran, so the
+# background rate is zero and the admission bars are omitted. The recall has
+# no terms, so the text index read none.
 _ANCHOR_EXPLAIN_RESPONSE = {
     "results": {
         "count": 3,
         "hits": [
             {
                 "value": "polly whistles at dawn",
-                "timestamp": "2026-09-30T22:57:46.062614+01:00",
-                "score": 0.9999997409465425,
-                "contributions": [
-                    {
-                        "source": "anchor",
-                        "score": 1,
-                        "rank": 0,
-                        "via": "polly",
-                        "degree": 3,
-                        "count": 1,
-                    },
-                ],
+                "timestamp": "2026-11-15T15:18:04.573832Z",
+                "score": 0.9999996521191533,
+                "explain": {
+                    "seed": True,
+                    "decay": 0.9999996521191533,
+                    "contributions": [
+                        {
+                            "source": "anchor",
+                            "score": 1,
+                            "rank": 0,
+                            "via": "polly",
+                            "degree": 3,
+                            "count": 1,
+                        }
+                    ],
+                },
             },
             {
                 "value": "polly eats sunflower seeds",
-                "timestamp": "2026-09-30T22:57:46.021977+01:00",
-                "score": 0.999999694373341,
-                "contributions": [
-                    {
-                        "source": "anchor",
-                        "score": 1,
-                        "rank": 0,
-                        "via": "polly",
-                        "degree": 3,
-                        "count": 1,
-                    },
-                ],
+                "timestamp": "2026-11-15T15:18:04.543843Z",
+                "score": 0.9999996494459558,
+                "explain": {
+                    "seed": True,
+                    "decay": 0.9999996494459558,
+                    "contributions": [
+                        {
+                            "source": "anchor",
+                            "score": 1,
+                            "rank": 0,
+                            "via": "polly",
+                            "degree": 3,
+                            "count": 1,
+                        }
+                    ],
+                },
             },
             {
                 "value": "the parrot sleeps in the kitchen",
-                "timestamp": "2026-09-30T22:57:45.982021+01:00",
-                "score": 0.9999996485805727,
-                "contributions": [
-                    {
-                        "source": "anchor",
-                        "score": 1,
-                        "rank": 0,
-                        "via": "polly",
-                        "degree": 3,
-                        "count": 1,
-                    },
-                ],
+                "timestamp": "2026-11-15T15:18:04.511686Z",
+                "score": 0.9999996465795045,
+                "explain": {
+                    "seed": True,
+                    "decay": 0.9999996465795045,
+                    "contributions": [
+                        {
+                            "source": "anchor",
+                            "score": 1,
+                            "rank": 0,
+                            "via": "polly",
+                            "degree": 3,
+                            "count": 1,
+                        }
+                    ],
+                },
             },
         ],
+        "explain": {
+            "background": 0,
+            "seeds": {"anchor": 3, "graph": 0, "text": 0, "vector": 0},
+            "terms": [],
+            "timings": {"anchor": 2791, "graph": 0, "text": 0, "vector": 0},
+        },
+    }
+}
+
+# `explain recall@1 trained entity:anna depth:2 until:(when regatta)`, what
+# `client.explain("trained", graph=1, entities=["anna"], depth=2,
+# until=When("regatta"))` sends, over a graph of three dated facts filed under
+# entity:anna: training on the river on 2023-05-01, the regatta on 2023-05-07,
+# said the day after, and training for the marathon on 2023-05-20. The when
+# reads the regatta, so the recall keeps what happened before 2023-05-07: the
+# river training alone. The when is explained with the recall, so its result,
+# under `until` in the query's block, carries blocks of its own beside the
+# span it answered with.
+_WHEN_EXPLAIN_RESPONSE = {
+    "results": {
+        "count": 1,
+        "hits": [
+            {
+                "value": "anna trained on the river",
+                "timestamp": "2026-11-15T15:18:21.598533Z",
+                "occurred": [
+                    {"start": "2023-05-01T00:00:00Z", "end": "2023-05-02T00:00:00Z"}
+                ],
+                "score": 0.46902813657844644,
+                "explain": {
+                    "seed": True,
+                    "decay": 0.9999991868228068,
+                    "contributions": [
+                        {
+                            "source": "text",
+                            "score": 0.4690285179817402,
+                            "rank": 0,
+                            "count": 1,
+                            "held": 1,
+                        },
+                        {
+                            "source": "graph",
+                            "score": 0.4690285179817402,
+                            "rank": 0,
+                            "via": "anna",
+                            "degree": 3,
+                            "count": 1,
+                            "named": True,
+                        },
+                    ],
+                },
+            }
+        ],
+        "explain": {
+            "background": 0.15634283932724674,
+            "admission": {"1": 0.3126856786544935, "2": 0.15634283932724674},
+            "seeds": {"anchor": 0, "graph": 0, "text": 1, "vector": 0},
+            "terms": ["train"],
+            "timings": {"anchor": 0, "graph": 4584, "text": 3667, "vector": 0},
+            "when": {
+                "until": {
+                    "count": 1,
+                    "hits": [
+                        {
+                            "value": "anna rowed in the regatta",
+                            "timestamp": "2026-11-15T15:18:21.628696Z",
+                            "said": "2023-05-08T00:00:00Z",
+                            "occurred": [
+                                {
+                                    "start": "2023-05-07T00:00:00Z",
+                                    "end": "2023-05-08T00:00:00Z",
+                                }
+                            ],
+                            "score": 0.9798525093475564,
+                            "explain": {
+                                "seed": True,
+                                "decay": 0.999999189512672,
+                                "contributions": [
+                                    {
+                                        "source": "text",
+                                        "score": 0.9798533035062422,
+                                        "rank": 0,
+                                        "count": 1,
+                                        "held": 1,
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "start": "2023-05-07T00:00:00Z",
+                    "end": "2023-05-08T00:00:00Z",
+                    "explain": {
+                        "background": 0,
+                        "seeds": {"anchor": 0, "graph": 0, "text": 1, "vector": 0},
+                        "terms": ["regatta"],
+                        "timings": {
+                            "anchor": 0,
+                            "graph": 0,
+                            "text": 17208,
+                            "vector": 0,
+                        },
+                    },
+                }
+            },
+        },
     }
 }
 
@@ -360,14 +505,8 @@ _SERVER_WARNING = (
 
 @pytest.fixture(scope="session")
 def query_url():
-    """The URL a query is posted to, unless it is an explained recall."""
+    """The URL every query is posted to, an explained recall included."""
     return _QUERY_URL
-
-
-@pytest.fixture(scope="session")
-def explain_url():
-    """The URL an explained recall must be posted to."""
-    return _EXPLAIN_URL
 
 
 @pytest.fixture(scope="session")
@@ -384,13 +523,13 @@ def stats_response():
 
 @pytest.fixture
 def explain_response():
-    """A recorded explain response: two text-and-graph hits, one graph-only hit."""
+    """A recorded explained recall: two text-and-graph seeds, one graph-only hit."""
     return copy.deepcopy(_EXPLAIN_RESPONSE)
 
 
 @pytest.fixture
 def anchor_explain_response():
-    """A recorded explain response for an anchor-only recall, zero background."""
+    """A recorded explained recall seeded by an anchor alone, so no round ran."""
     return copy.deepcopy(_ANCHOR_EXPLAIN_RESPONSE)
 
 
@@ -404,6 +543,12 @@ def describe_response():
 def warned_describe_response():
     """A recorded describe that reached no fact, with a stop-word warning beside it."""
     return copy.deepcopy(_WARNED_DESCRIBE_RESPONSE)
+
+
+@pytest.fixture
+def when_explain_response():
+    """A recorded explained recall bounded by a when, whose result rides inside."""
+    return copy.deepcopy(_WHEN_EXPLAIN_RESPONSE)
 
 
 @pytest.fixture(scope="session")
@@ -1277,6 +1422,23 @@ def tide_result(client):
     for phrase in _TIDE_FACTS.values():
         client.remember(phrase, graph=_MODELS_GRAPH, topics=[_TIDE_TOPIC])
     return client.recall("tide", graph=_MODELS_GRAPH, depth=2)
+
+
+@pytest.fixture(scope="module")
+def explained_tide_result(client, tide_result):
+    """Return the RecallResult an explained, anchored recall of the tides parses.
+
+    It names the tide topic, so the anchor round runs and the query's block
+    carries every key the server sends. Each hit carries its own block.
+
+    Args:
+        client: the plain client to recall through.
+        tide_result: the plain recall, whose fixture stores the tide facts.
+
+    Returns:
+        The RecallResult the server produced for the explained recall.
+    """
+    return client.explain("tide", graph=_MODELS_GRAPH, topics=[_TIDE_TOPIC], depth=2)
 
 
 @pytest.fixture(scope="module")

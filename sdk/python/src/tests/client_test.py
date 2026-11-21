@@ -139,36 +139,69 @@ def test_recall_parses_hits(session, respond, sent):
         (["anna"], {"since": date(2023, 5, 1), "until": When("regatta")}),
     ],
 )
-def test_explain_sends_the_recall_query_to_the_explain_route(
-    session, query_url, explain_url, keywords, kwargs
+def test_explain_sends_the_recall_behind_the_explain_prefix(
+    session, query_url, keywords, kwargs
 ):
-    """explain posts exactly what recall posts, to the explain route instead.
+    """explain posts exactly what recall posts, prefixed, to the same route.
 
     The two share one builder, so an explanation is always of the ranking
-    recall would return. If they sent different query strings or vectors, the
-    breakdown would explain a different question.
+    recall would return. If they sent different recalls or vectors, the
+    breakdown would explain a different question. The prefix is the only
+    difference, and it travels in the statement, not in the route.
     """
     client = FraiseClient()
     client.recall(*keywords, **kwargs)
     client.explain(*keywords, **kwargs)
 
     recalled, explained = session.post.call_args_list
-    assert recalled.args == (query_url,)
-    assert explained.args == (explain_url,)
-    assert explained.kwargs == recalled.kwargs
+    assert recalled.args == explained.args == (query_url,)
+    prefixed = recalled.kwargs["json"] | {
+        "query": f"explain {recalled.kwargs['json']['query']}"
+    }
+    assert explained.kwargs == recalled.kwargs | {"json": prefixed}
 
 
-def test_explain_returns_each_hit_with_its_contributions(
+def test_explain_returns_the_blocks_of_every_hit_and_of_the_query(
     session, respond, explain_response
 ):
-    """Each hit carries its contributions. The result carries the background rate."""
+    """Each hit carries its seed flag and contributions, the result the search's.
+
+    The recorded recall seeded from two text matches and reached the third
+    fact through the graph alone, which ranks first, so the seed flags read
+    in that order.
+    """
     respond(session, explain_response)
 
     result = FraiseClient().explain("polly", entities=["polly"], depth=2)
 
     assert result.count == 3
-    assert all(hit.contributions for hit in result)
-    assert result.background == 0.4857013396824596
+    assert [hit.explain.seed for hit in result.hits if hit.explain] == [
+        False,
+        True,
+        True,
+    ]
+    assert all(hit.explain and hit.explain.contributions for hit in result.hits)
+    assert result.explain is not None
+    assert result.explain.background == 0.30753008221644496
+    assert result.explain.terms == ["polli"]
+
+
+def test_an_explained_recall_of_an_empty_graph_is_marked_empty(
+    session, respond_no_content
+):
+    """A 204 carries no body, so an explained recall of an empty graph has no block.
+
+    The server answers it as it answers any recall of a graph that holds
+    nothing. ``empty`` is what tells the caller why nothing came back, and
+    ``explain`` stays ``None``, because there was no search to report on.
+    """
+    respond_no_content(session)
+
+    result = FraiseClient().explain("polly")
+
+    assert result.empty is True
+    assert result.hits == []
+    assert result.explain is None
 
 
 @pytest.mark.parametrize(
@@ -1328,25 +1361,80 @@ def test_server_version_is_none_when_the_server_is_unreachable(dead_url):
 
 @pytest.mark.integration
 def test_explain_breaks_down_the_ranking_recall_returns(
-    instrument_graph, instrument_topic, client
+    instrument_graph, instrument_topic, instrument_facts, client
 ):
     """Against the live server, explain ranks what recall ranks and says why.
 
     Both run one pipeline, so the same arguments reach the same facts in the
     same order. Only explain carries the breakdown. Every hit it returns was
-    seen by at least one source. The test is read-only, since recalls write
+    seen by at least one source. "cello" matches one fact, which seeds the
+    recall, and the named topic admits the rest of the star, which are no
+    seeds. The topic is named, so the anchor round ran and the query's block
+    carries a bar for each depth. The test is read-only, since recalls write
     nothing.
     """
     kwargs = {"graph": instrument_graph, "topics": [instrument_topic], "depth": 2}
     recalled = client.recall("cello", **kwargs)
     explained = client.explain("cello", **kwargs)
 
-    assert [hit.value for hit in explained] == [hit.value for hit in recalled]
-    assert explained.count >= 1
-    assert all(hit.contributions for hit in explained)
-    assert "text" in {c.source for c in explained.hits[0].contributions}
-    assert explained.background is not None
-    assert recalled.background is None
+    assert [hit.value for hit in explained.hits] == [hit.value for hit in recalled.hits]
+    assert all(hit.explain is None for hit in recalled.hits)
+    assert recalled.explain is None
+
+    blocks = {hit.value: hit.explain for hit in explained.hits}
+    assert all(block and block.contributions for block in blocks.values())
+    assert {value for value, block in blocks.items() if block and block.seed} == {
+        instrument_facts["cello"]
+    }
+    assert explained.explain is not None
+    assert explained.explain.terms == ["cello"]
+    assert explained.explain.seeds["text"] == 1
+    assert set(explained.explain.admission) == {1, 2}
+    assert set(explained.explain.timings) == {"text", "vector", "anchor", "graph"}
+
+
+@pytest.mark.integration
+def test_explain_shows_the_fact_a_when_bound_was_read_from(
+    client, timeline_graph, timeline_word, timeline_facts
+):
+    """An explained recall bounded by a when carries what the when answered.
+
+    ``until=When("noonmark")`` keeps what happened before the race, so both
+    recalls find the caulking alone. Only the explained one says where the
+    bound came from: under ``until``, the when's own result, the race it read
+    with the day it happened on, which is also the time the result answers
+    with and the bound was cut at. The when is explained with the recall, so
+    its hit and its result carry blocks of their own, and its block lists the
+    term it searched.
+    """
+    kwargs = {"graph": timeline_graph, "until": When("noonmark")}
+    recalled = client.recall(timeline_word, **kwargs)
+    explained = client.explain(timeline_word, **kwargs)
+
+    assert [hit.value for hit in explained.hits] == [timeline_facts["dawnmark"]]
+    assert [hit.value for hit in recalled.hits] == [timeline_facts["dawnmark"]]
+    assert recalled.explain is None
+    assert explained.explain is not None
+    assert set(explained.explain.when) == {"until"}
+
+    bound = explained.explain.when["until"]
+    [read] = bound.hits
+    assert read.value == timeline_facts["noonmark"]
+    assert read.occurred == [
+        Interval(
+            start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+            end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+        )
+    ]
+    assert read.explain is not None
+    assert read.explain.seed is True
+    assert (bound.start, bound.end) == (
+        datetime(2023, 5, 7, tzinfo=timezone.utc),
+        datetime(2023, 5, 8, tzinfo=timezone.utc),
+    )
+    assert bound.explain is not None
+    assert bound.explain.terms == ["noonmark"]
+    assert bound.explain.when == {}
 
 
 @pytest.mark.integration

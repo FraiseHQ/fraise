@@ -387,24 +387,100 @@ func TestParseRecallNestsTheWhenInItsBound(t *testing.T) {
 	}
 }
 
+// TestParseExplainRecall pins what the explain prefix builds: the recall it
+// explains, flag set and nothing else changed. The graph, terms, anchors,
+// bounds and vector carry through as a plain recall's do, a when nested in a
+// bound included, which the prefix leaves unexplained: the stream explains it
+// with the recall that holds it. So the explained run is the plain one, and
+// its hits and their order are the ones recall returns.
+func TestParseExplainRecall(t *testing.T) {
+	params := map[string][]float32{"v": {0.1, 0.2, 0.3}}
+	queries := map[string]struct{}{
+		"recall@2 anna bob entity:alice topic:job":              {},
+		"recall anna top:5 depth:1 since:7d until:'2026-01-15'": {},
+		"recall topic:job vec:$v":                               {},
+		"recall@2 lap since:(when:said race) until:(when trip)": {},
+	}
+
+	for q := range queries {
+		t.Run(q, func(t *testing.T) {
+			plain, _, err := query.Parse[string, float32](q, params, config.New())
+			if err != nil {
+				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
+			}
+			explained, _, err := query.Parse[string, float32]("explain "+q, params, config.New())
+			if err != nil {
+				t.Fatalf("Parse(%q) returned unexpected error: %v", "explain "+q, err)
+			}
+
+			p, ok := plain.(*query.Recall[string, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *query.Recall", q, plain)
+			}
+			got, ok := explained.(*query.Recall[string, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *query.Recall", "explain "+q, explained)
+			}
+			if p.Explain {
+				t.Errorf("Parse(%q).Explain = true, want false: only the prefix explains", q)
+			}
+			want := *p
+			want.Explain = true
+			if diff := cmp.Diff(want, *got, cmp.AllowUnexported(query.Recall[string, float32]{})); diff != "" {
+				t.Errorf("Parse(%q) mismatch (-want +got):\n%s", "explain "+q, diff)
+			}
+		})
+	}
+}
+
+// TestRecallPlanCarriesTheExplainFlag pins where an explained recall's stream
+// gets its flag. Commit reads the stream's, and the stream is built per
+// request, so Plan copies the recall's. A plain recall must plan a plain
+// stream: the explain blocks cost the read path work and widen the response.
+func TestRecallPlanCarriesTheExplainFlag(t *testing.T) {
+	cases := map[string]struct {
+		explain bool
+	}{
+		"plain":     {false},
+		"explained": {true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := query.Recall[string, float32]{Keywords: []string{"mercury"}, Explain: tc.explain}
+			s, err := r.Plan(nil)
+			if err != nil {
+				t.Fatalf("Plan() err = %v, want nil", err)
+			}
+			if got, want := s.Explain, tc.explain; got != want {
+				t.Errorf("Plan() stream.Explain = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 // TestParseErrors checks that malformed or empty queries are rejected with
 // ErrParsingFailed and a nil query.
 func TestParseErrors(t *testing.T) {
-	queries := []string{
-		"",                               // empty input
-		"recall",                         // a recall must carry at least one seed
-		"recall top:3",                   // a modifier scopes a search; it cannot start one
-		"forget anna",                    // unknown command keyword
-		"when",                           // a when must carry at least one seed, as its recall does
-		"when@1 race",                    // a when takes no selector
-		"when:heard race",                // a clock the grammar does not name
-		"recall lap until:(recall race)", // only a when answers with a time
-		"when lap until:(when race)",     // a when holds no when
-		"remember 'lap' said:'2023-05-08' said:'2023-05-09'", // a fact is said once
-		"remember 'lap' occurred:(when race)",                // a remember is given its times
+	queries := map[string]struct{}{
+		"":                               {}, // empty input
+		"recall":                         {}, // a recall must carry at least one seed
+		"recall top:3":                   {}, // a modifier scopes a search; it cannot start one
+		"forget anna":                    {}, // unknown command keyword
+		"when":                           {}, // a when must carry at least one seed, as its recall does
+		"when@1 race":                    {}, // a when takes no selector
+		"when:heard race":                {}, // a clock the grammar does not name
+		"recall lap until:(recall race)": {}, // only a when answers with a time
+		"when lap until:(when race)":     {}, // a when holds no when
+		"remember 'lap' said:'2023-05-08' said:'2023-05-09'": {}, // a fact is said once
+		"remember 'lap' occurred:(when race)":                {}, // a remember is given its times
+		"explain":                                            {}, // the prefix needs a recall after it
+		"explain remember 'x'":                               {}, // only a recall has a ranking to explain
+		"explain when race":                                  {}, // a when answers with a time, not a ranking
+		"explain recall top:3":                               {}, // the prefix does not lift the recall's own rules
+		"recall lap since:(explain recall race)":             {}, // a time bound holds a when, never a recall
 	}
 
-	for _, q := range queries {
+	for q := range queries {
 		t.Run(q, func(t *testing.T) {
 			got, _, err := query.Parse[string, float32](q, nil, config.New())
 			if !errors.Is(err, query.ErrParsingFailed) {
@@ -502,34 +578,40 @@ func TestParseRecallMissingParameter(t *testing.T) {
 // the floor case. Presence-keyed parsing keeps it visible, so it is rejected
 // with the range error instead of silently answering with the default. A when
 // is held to the same ranges, as a statement and nested in a bound: the search
-// it runs costs what a recall's does.
+// it runs costs what a recall's does. The explain prefix lifts none of the
+// ceilings: an explained recall runs the search its plain form would, so it is
+// bound exactly as that form is.
 func TestParseRejectsOverLimits(t *testing.T) {
 	cfg := config.New()
 	cfg.DB.MaxTop = 10
 	cfg.DB.MaxDepth = 2
 	cfg.DB.MaxVectorDimension = 3
 
-	cases := []struct {
-		name   string
+	cases := map[string]struct {
 		query  string
 		params map[string][]float32
 	}{
-		{"top over ceiling", "recall@0 anna top:99", nil},
-		{"top under floor", "recall@0 anna top:0", nil},
-		{"depth over ceiling", "recall@0 anna depth:9", nil},
-		{"recall vector too long", "recall@0 anna vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
-		{"remember vector too long", "remember@0 'a fact' vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
-		{"when top over ceiling", "when anna top:99", nil},
-		{"when top under floor", "when anna top:0", nil},
-		{"when depth over ceiling", "when anna depth:9", nil},
-		{"when vector too long", "when anna vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
-		{"nested top over ceiling", "recall@0 anna until:(when race top:99)", nil},
-		{"nested depth over ceiling", "recall@0 anna since:(when race depth:9)", nil},
-		{"nested vector too long", "recall@0 anna until:(when race vec:$v)", map[string][]float32{"v": {1, 2, 3, 4}}},
+		"top over ceiling":                  {"recall@0 anna top:99", nil},
+		"top under floor":                   {"recall@0 anna top:0", nil},
+		"depth over ceiling":                {"recall@0 anna depth:9", nil},
+		"recall vector too long":            {"recall@0 anna vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
+		"remember vector too long":          {"remember@0 'a fact' vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
+		"when top over ceiling":             {"when anna top:99", nil},
+		"when top under floor":              {"when anna top:0", nil},
+		"when depth over ceiling":           {"when anna depth:9", nil},
+		"when vector too long":              {"when anna vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
+		"nested top over ceiling":           {"recall@0 anna until:(when race top:99)", nil},
+		"nested depth over ceiling":         {"recall@0 anna since:(when race depth:9)", nil},
+		"nested vector too long":            {"recall@0 anna until:(when race vec:$v)", map[string][]float32{"v": {1, 2, 3, 4}}},
+		"explained top over ceiling":        {"explain recall@0 anna top:99", nil},
+		"explained top under floor":         {"explain recall@0 anna top:0", nil},
+		"explained depth over ceiling":      {"explain recall@0 anna depth:9", nil},
+		"explained recall vector too long":  {"explain recall@0 anna vec:$v", map[string][]float32{"v": {1, 2, 3, 4}}},
+		"explained nested top over ceiling": {"explain recall@0 anna until:(when race top:99)", nil},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			got, _, err := query.Parse[string, float32](tc.query, tc.params, cfg)
 			if !errors.Is(err, query.ErrLimitExceeded) {
 				t.Errorf("Parse(%q) err = %v, want ErrLimitExceeded", tc.query, err)
@@ -540,12 +622,15 @@ func TestParseRejectsOverLimits(t *testing.T) {
 		})
 	}
 
-	// A request within every ceiling still parses cleanly.
+	// A request within every ceiling still parses cleanly, explained or not.
 	if _, _, err := query.Parse[string, float32]("recall@0 anna top:5 depth:1", nil, cfg); err != nil {
 		t.Errorf("within-limit recall returned error: %v", err)
 	}
 	if _, _, err := query.Parse[string, float32]("recall@0 anna until:(when race top:5 depth:1)", nil, cfg); err != nil {
 		t.Errorf("within-limit nested when returned error: %v", err)
+	}
+	if _, _, err := query.Parse[string, float32]("explain recall@0 anna top:5 depth:1", nil, cfg); err != nil {
+		t.Errorf("within-limit explained recall returned error: %v", err)
 	}
 }
 
@@ -587,13 +672,13 @@ func TestParseDescribeRejectsOverLimits(t *testing.T) {
 
 // marshalHit builds a Hit over a fact with a fixed timestamp and returns its
 // JSON. The fact needs no hasher: marshalling reads only value and timestamp.
-func marshalHit(t *testing.T, contributions []query.HitContribution[float32]) string {
+func marshalHit(t *testing.T, explain *query.HitExplain[float32]) string {
 	t.Helper()
 	var node graph.Node[string] = graph.Fact[string]{NodeAttributes: graph.NodeAttributes{
 		Value:     "the parrot is turquoise",
 		Timestamp: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 	}}
-	h := query.Hit[string, float32]{Node: node, Score: 0.5, Contributions: contributions}
+	h := query.Hit[string, float32]{Node: node, Score: 0.5, Explain: explain}
 	out, err := json.Marshal(h)
 	if err != nil {
 		t.Fatalf("Marshal(Hit) = %v, want nil", err)
@@ -601,40 +686,53 @@ func marshalHit(t *testing.T, contributions []query.HitContribution[float32]) st
 	return string(out)
 }
 
-// TestHitMarshalOmitsContributionsByDefault pins the ordinary wire shape. A hit
-// without contributions serialises as its value, timestamp and score alone,
-// with no "contributions" key.
-func TestHitMarshalOmitsContributionsByDefault(t *testing.T) {
-	got := marshalHit(t, nil)
-	want := `{"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5}`
-	if got != want {
-		t.Errorf("Marshal(Hit) = %s, want %s", got, want)
+// TestHitMarshal pins a hit's wire shape. A plain hit serialises as its value,
+// timestamp and score alone, with no explain key. An explained hit carries
+// its block after the score: seed, written when false too, the recency factor
+// its relevance was decayed by, and the contributions. Each contribution carries its source by name, its raw score,
+// rank and seed count. A graph entry also carries the funding anchor's value
+// under via, and its degree, and named when the query named that anchor. A
+// text entry carries held, the share of the query its fact's own words hold.
+// via, degree, named and held are omitted where they mean nothing.
+func TestHitMarshal(t *testing.T) {
+	const fact = `"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5`
+	cases := map[string]struct {
+		explain *query.HitExplain[float32]
+		want    string
+	}{
+		"a plain hit has no explain key": {
+			want: `{` + fact + `}`,
+		},
+		"a seed carries its contributions": {
+			explain: &query.HitExplain[float32]{Seed: true, Decay: 0.75, Contributions: []query.HitContribution[float32]{
+				{Source: "text", Score: 1, Rank: 0, Count: 1, Held: 0.5},
+				{Source: "text", Score: 0.25, Rank: 1, Count: 1},
+				{Source: "vector", Score: 0.5, Rank: 1, Count: 1},
+				{Source: "graph", Score: 2, Via: "weather", Degree: 3, Count: 2},
+				{Source: "graph", Score: 4, Via: "archive", Degree: 8, Count: 1, Named: true},
+			}},
+			want: `{` + fact + `,"explain":{"seed":true,"decay":0.75,"contributions":[` +
+				`{"source":"text","score":1,"rank":0,"count":1,"held":0.5},` +
+				`{"source":"text","score":0.25,"rank":1,"count":1},` +
+				`{"source":"vector","score":0.5,"rank":1,"count":1},` +
+				`{"source":"graph","score":2,"rank":0,"via":"weather","degree":3,"count":2},` +
+				`{"source":"graph","score":4,"rank":0,"via":"archive","degree":8,"count":1,"named":true}]}}`,
+		},
+		"a transmitted hit says it is no seed": {
+			explain: &query.HitExplain[float32]{Decay: 1, Contributions: []query.HitContribution[float32]{
+				{Source: "graph", Score: 2, Via: "weather", Degree: 3, Count: 2},
+			}},
+			want: `{` + fact + `,"explain":{"seed":false,"decay":1,"contributions":[` +
+				`{"source":"graph","score":2,"rank":0,"via":"weather","degree":3,"count":2}]}}`,
+		},
 	}
-}
 
-// TestHitMarshalSerializesContributions pins the explain wire shape. Each
-// contribution carries its source by name, its raw score, rank and seed count.
-// A graph entry also carries the funding anchor's value under via, and its
-// degree, and named when the query named that anchor. A text entry carries
-// held, the share of the query its fact's own words hold. via, degree, named
-// and held are omitted where they mean nothing.
-func TestHitMarshalSerializesContributions(t *testing.T) {
-	got := marshalHit(t, []query.HitContribution[float32]{
-		{Source: "text", Score: 1, Rank: 0, Count: 1, Held: 0.5},
-		{Source: "text", Score: 0.25, Rank: 1, Count: 1},
-		{Source: "vector", Score: 0.5, Rank: 1, Count: 1},
-		{Source: "graph", Score: 2, Via: "weather", Degree: 3, Count: 2},
-		{Source: "graph", Score: 4, Via: "archive", Degree: 8, Count: 1, Named: true},
-	})
-	want := `{"value":"the parrot is turquoise","timestamp":"2026-01-02T03:04:05Z","score":0.5,` +
-		`"contributions":[` +
-		`{"source":"text","score":1,"rank":0,"count":1,"held":0.5},` +
-		`{"source":"text","score":0.25,"rank":1,"count":1},` +
-		`{"source":"vector","score":0.5,"rank":1,"count":1},` +
-		`{"source":"graph","score":2,"rank":0,"via":"weather","degree":3,"count":2},` +
-		`{"source":"graph","score":4,"rank":0,"via":"archive","degree":8,"count":1,"named":true}]}`
-	if got != want {
-		t.Errorf("Marshal(Hit) = %s, want %s", got, want)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, marshalHit(t, tc.explain)); diff != "" {
+				t.Errorf("Marshal(Hit) mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -643,12 +741,13 @@ func TestHitMarshalSerializesContributions(t *testing.T) {
 // occurrence as its start and its end, and the end is left out of one that is
 // not over. They are the fact's own fields, not what a clock falls back to, so
 // a client can tell a fact said on a date from one that reads its timestamp.
-// decay is the recency factor of an explain response, and absent otherwise.
+// An explained hit's block follows the score, after the times, which are plain
+// data and never part of it.
 func TestHitMarshalCarriesTheTimesAFactWasGiven(t *testing.T) {
 	tests := map[string]struct {
 		said     time.Time
 		occurred []containers.Interval
-		decay    float32
+		explain  *query.HitExplain[float32]
 		want     string
 	}{
 		"said": {
@@ -678,10 +777,12 @@ func TestHitMarshalCarriesTheTimesAFactWasGiven(t *testing.T) {
 				`{"start":"2023-05-07T00:00:00Z","end":"2023-05-08T00:00:00Z"}],"score":0.5}`,
 		},
 		"explained": {
-			said:  may(8),
-			decay: 0.25,
+			said: may(8),
+			explain: &query.HitExplain[float32]{Seed: true, Decay: 0.25, Contributions: []query.HitContribution[float32]{
+				{Source: "text", Score: 1, Rank: 0, Count: 1},
+			}},
 			want: `{"value":"lap","timestamp":"2026-01-02T03:04:05Z","said":"2023-05-08T00:00:00Z",` +
-				`"score":0.5,"decay":0.25}`,
+				`"score":0.5,"explain":{"seed":true,"decay":0.25,"contributions":[{"source":"text","score":1,"rank":0,"count":1}]}}`,
 		},
 	}
 	for name, tc := range tests {
@@ -695,7 +796,7 @@ func TestHitMarshalCarriesTheTimesAFactWasGiven(t *testing.T) {
 				Occurred: tc.occurred,
 			}
 
-			got, err := json.Marshal(query.Hit[string, float32]{Node: node, Score: 0.5, Decay: tc.decay})
+			got, err := json.Marshal(query.Hit[string, float32]{Node: node, Score: 0.5, Explain: tc.explain})
 			if err != nil {
 				t.Fatalf("Marshal(Hit) = %v, want nil", err)
 			}
@@ -708,11 +809,16 @@ func TestHitMarshalCarriesTheTimesAFactWasGiven(t *testing.T) {
 }
 
 // TestQueryResultMarshal pins the response envelope. A recall's result is its
-// count and its hits. A when's also carries the time it answers with: start
-// and end, the end left out of an answer that is not over, and both left out
-// of a when that matched no fact. An explain response adds the background
-// rate, and under when the result of each query nested in a bound, keyed by
-// the bound that held it. A describe's carries a zero count, no hit and its
+// count and its hits, and a plain recall has no explain key. A when's also
+// carries the time it answers with: start and end, the end left out of an
+// answer that is not over, and both left out of a when that matched no fact.
+// An explained recall carries its query block after the hits: background,
+// written at zero too, the admission bars keyed by depth, seeds and timings
+// keyed by every source name, timings in integer nanoseconds, and under when
+// the result of each query nested in a bound, keyed by the bound that held it.
+// A recall whose round never ran omits admission, one with no terms writes an
+// empty list, never null, and one whose bounds hold no query omits when, so a
+// client reads one shape. A describe's carries a zero count, no hit and its
 // catalogue: the graph and the scope described, the facts and anchors
 // counted, the time the facts hold on each clock, then the topics and the
 // entities. The times are left out of a catalogue that reached no fact, and
@@ -751,33 +857,63 @@ func TestQueryResultMarshal(t *testing.T) {
 			want:   `{"count":1,"hits":[` + hit + `],"start":"2023-05-20T00:00:00Z"}`,
 		},
 		"explained": {
-			result: query.QueryResult[string, float32]{Count: 1, Hits: hits(), Background: 0.125},
-			want:   `{"count":1,"hits":[` + hit + `],"background":0.125}`,
+			result: query.QueryResult[string, float32]{Hits: []query.Hit[string, float32]{}, Explain: &query.RecallExplain[string, float32]{
+				Background: 1.5,
+				Admission:  map[int]float32{1: 3, 2: 1.5},
+				Seeds:      map[string]int{"text": 2, "vector": 1, "graph": 0, "anchor": 0},
+				Terms:      []string{"pulsar", "vela"},
+				Timings:    map[string]time.Duration{"text": 41 * time.Microsecond, "vector": 12 * time.Microsecond, "graph": 87 * time.Microsecond, "anchor": 0},
+			}},
+			want: `{"count":0,"hits":[],"explain":{"background":1.5,"admission":{"1":3,"2":1.5},` +
+				`"seeds":{"anchor":0,"graph":0,"text":2,"vector":1},"terms":["pulsar","vela"],` +
+				`"timings":{"anchor":0,"graph":87000,"text":41000,"vector":12000}}}`,
+		},
+		"explained with no round and no terms": {
+			result: query.QueryResult[string, float32]{Hits: []query.Hit[string, float32]{}, Explain: &query.RecallExplain[string, float32]{
+				Seeds:   map[string]int{"text": 0, "vector": 0, "graph": 0, "anchor": 3},
+				Terms:   []string{},
+				Timings: map[string]time.Duration{"text": 0, "vector": 0, "graph": 0, "anchor": 5 * time.Microsecond},
+			}},
+			want: `{"count":0,"hits":[],"explain":{"background":0,` +
+				`"seeds":{"anchor":3,"graph":0,"text":0,"vector":0},"terms":[],` +
+				`"timings":{"anchor":5000,"graph":0,"text":0,"vector":0}}}`,
 		},
 		"explained with a when in each bound": {
 			result: query.QueryResult[string, float32]{
-				Count:      1,
-				Hits:       hits(),
-				Background: 0.125,
-				When: &query.NestedResults[string, float32]{
-					Since: &query.QueryResult[string, float32]{Count: 1, Hits: hits(), Start: may(7), End: may(8)},
-					Until: &query.QueryResult[string, float32]{Hits: []query.Hit[string, float32]{}},
+				Count: 1,
+				Hits:  hits(),
+				Explain: &query.RecallExplain[string, float32]{
+					Background: 0.125,
+					Seeds:      map[string]int{"text": 1},
+					Terms:      []string{"lap"},
+					Timings:    map[string]time.Duration{"text": 0},
+					When: &query.NestedResults[string, float32]{
+						Since: &query.QueryResult[string, float32]{Count: 1, Hits: hits(), Start: may(7), End: may(8)},
+						Until: &query.QueryResult[string, float32]{Hits: []query.Hit[string, float32]{}},
+					},
 				},
 			},
-			want: `{"count":1,"hits":[` + hit + `],"background":0.125,"when":{` +
+			want: `{"count":1,"hits":[` + hit + `],"explain":{"background":0.125,` +
+				`"seeds":{"text":1},"terms":["lap"],"timings":{"text":0},"when":{` +
 				`"since":{"count":1,"hits":[` + hit + `],"start":"2023-05-07T00:00:00Z","end":"2023-05-08T00:00:00Z"},` +
-				`"until":{"count":0,"hits":[]}}}`,
+				`"until":{"count":0,"hits":[]}}}}`,
 		},
 		"explained with a when in until": {
 			result: query.QueryResult[string, float32]{
 				Count: 1,
 				Hits:  hits(),
-				When: &query.NestedResults[string, float32]{
-					Until: &query.QueryResult[string, float32]{Count: 1, Hits: hits(), Start: may(20)},
+				Explain: &query.RecallExplain[string, float32]{
+					Seeds:   map[string]int{"text": 1},
+					Terms:   []string{"lap"},
+					Timings: map[string]time.Duration{"text": 0},
+					When: &query.NestedResults[string, float32]{
+						Until: &query.QueryResult[string, float32]{Count: 1, Hits: hits(), Start: may(20)},
+					},
 				},
 			},
-			want: `{"count":1,"hits":[` + hit + `],"when":{` +
-				`"until":{"count":1,"hits":[` + hit + `],"start":"2023-05-20T00:00:00Z"}}}`,
+			want: `{"count":1,"hits":[` + hit + `],"explain":{"background":0,` +
+				`"seeds":{"text":1},"terms":["lap"],"timings":{"text":0},"when":{` +
+				`"until":{"count":1,"hits":[` + hit + `],"start":"2023-05-20T00:00:00Z"}}}}`,
 		},
 		"a describe": {
 			result: query.QueryResult[string, float32]{

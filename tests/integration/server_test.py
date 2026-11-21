@@ -178,3 +178,42 @@ def test_recall_output_schema_declares_the_catalogue_a_describe_answers_with(mcp
             assert entry["properties"][clock]["required"] == ["start"], (kind, clock)
     for clock in ("happened", "said", "written"):
         assert catalogue["properties"][clock]["required"] == ["start"], clock
+
+
+def test_recall_description_tells_the_model_the_explain_prefix(mcp):
+    """The recall tool names the explain prefix.
+
+    A recall written ``explain recall …`` ranks exactly as the plain recall,
+    and its structured result also carries how the ranking was reached. An
+    agent learns the statement exists only from the description it is given.
+    """
+    tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
+    assert "explain recall" in tools["recall"]["description"]
+
+
+def test_recall_output_schema_declares_the_explain_blocks(mcp):
+    """The recall output schema names the blocks an explained recall carries.
+
+    An explained recall's structured result carries a block on each hit and
+    one on the results, and a client validating against the schema must find
+    both. Neither is required: a plain recall carries no explain key at any
+    level. The hit's block holds the recency factor, and the results' the
+    answer of each when a bound read, which refers back to the results schema
+    because a nested when's answer is a results envelope of its own.
+    """
+    tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
+    results = tools["recall"]["outputSchema"]["properties"]["results"]
+    hit = results["properties"]["hits"]["items"]
+
+    assert "explain" not in results["required"]
+    assert "explain" not in hit["required"]
+    assert hit["properties"]["explain"]["required"] == [
+        "seed",
+        "decay",
+        "contributions",
+    ]
+    block = results["properties"]["explain"]
+    assert block["required"] == ["background", "seeds", "terms", "timings"]
+    assert block["properties"]["when"]["properties"]["until"] == {
+        "$ref": "#/properties/results"
+    }
