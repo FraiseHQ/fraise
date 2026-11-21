@@ -256,8 +256,9 @@ class RecallExplain:
     ``terms`` lists the query's distinct terms as the text index read them,
     after stop-word cleaning and stemming, in first-occurrence order. A term
     no stored fact holds is listed too, which is how a caller sees why a word
-    matched nothing. It is empty when the recall has no terms, or every
-    keyword is a stop word.
+    matched nothing. It is empty when the recall has no terms, when every
+    keyword is a stop word, or when a bound's when matched no fact, so the
+    recall had no bound to read and searched nothing.
 
     ``timings`` holds, per source, the wall time it took, in integer
     nanoseconds: ``text`` the text reading, ``vector`` the vector reading,
