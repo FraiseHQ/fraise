@@ -11,7 +11,7 @@ A query hashes itself into a key (`internal/hash`), and an LRU of `cache-capacit
 
 ## The cache key is lossless
 
-The cache key is the whole parsed query — graph, terms, anchors, time bounds, the times a `remember` gives its fact, `depth`, `top` and any bound vector — built from lossless material:
+The cache key is the whole parsed query — graph, terms, anchors, time bounds, the times a `remember` gives its fact, `depth`, `top`, any bound vector and the `explain` prefix — built from lossless material:
 
 - exact hex floats,
 - RFC3339Nano timestamps, which keep the offset a time was written in,

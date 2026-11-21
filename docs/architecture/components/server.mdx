@@ -3,7 +3,7 @@ title: "Server"
 description: "A deliberately thin HTTP surface: bind, validate, refuse, wait — and nothing that decides what an answer is"
 ---
 
-The HTTP surface is deliberately thin: four endpoints, and no behaviour of its own beyond validation. Handlers bind the request, hand the query string to the parser, refuse what the client got wrong, and wait for the stream to finish.
+The HTTP surface is deliberately thin: three endpoints and one deprecated alias, and no behaviour of its own beyond validation. Handlers bind the request, hand the query string to the parser, refuse what the client got wrong, and wait for the stream to finish.
 
 <Note title="Where answers are decided" type="note">
 
@@ -30,7 +30,7 @@ So an internal error never leaks through the wire. See [Errors](/docs/http-api/e
 |---|---|
 | `GET /` | health check and version handshake |
 | `POST /api/v1/q` | the one endpoint that reads and writes |
-| `POST /api/v1/explain` | the same pipeline, with per-source contributions |
+| `POST /api/v1/explain` | deprecated alias of an `explain recall` sent to `/api/v1/q`, removed in 0.5.0 |
 | `GET /api/v1/stats` | per-graph snapshot, computed on demand |
 
 Full request and response shapes are in the [HTTP API](/docs/http-api/endpoints/query) section.

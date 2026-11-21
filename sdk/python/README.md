@@ -61,15 +61,16 @@ warnings.filterwarnings("ignore", category=FraiseWarning)  # silence wholesale
 
 The query shapes that warn (and the neighbouring ones that stay silent) are catalogued in [Warnings](https://docs.getfraise.dev/docs/query-language/reference/warnings).
 
-To see why a fact ranked where it did, `explain` takes the same arguments as `recall` and returns the same ranking, with each hit's `contributions` — the text, vector, graph or anchor sightings its score was folded from — and the query's `background` rate on the result:
+To see why a fact ranked where it did, `explain` takes the same arguments as `recall` and sends the same recall behind the `explain` prefix (`explain recall@0 ...`), so it returns the same ranking. Each hit's `explain` says whether it seeded the recall, gives the recency factor its relevance was decayed by (`decay`) and lists its `contributions` — the text, vector, graph or anchor sightings that relevance was folded from — and the result's `explain` carries what the search measured about the query: its `background` rate, the `admission` bar at each depth, the facts each source seeded, the terms the text index read, the time each source took and, on a recall bounded by a `When`, what each when answered (`when`):
 
 ```python
 result = fraise.explain("polly", entities=["polly"], depth=2)
 for hit in result:
-    print(hit.value, [(c.source, c.score, c.via) for c in hit.contributions])
+    print(hit.value, hit.explain.seed, [(c.source, c.score, c.via) for c in hit.explain.contributions])
+print(result.explain.terms, result.explain.seeds)
 ```
 
-A hit whose only contribution is `graph` was reached through an anchor without matching the query itself. See [Explain](https://docs.getfraise.dev/docs/http-api/endpoints/explain) for how the contributions fold into the score.
+A hit that is no seed and whose only contribution is `graph` was admitted through an anchor without matching the query itself. On a plain `recall`, `explain` is `None` on the result and on every hit. See [Explained recall](https://docs.getfraise.dev/docs/http-api/endpoints/explain) for the full schema and how the contributions fold into the score.
 
 ## Embeddings (optional)
 

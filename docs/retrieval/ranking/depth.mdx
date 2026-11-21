@@ -51,3 +51,156 @@ An anchor beside a term or vector takes part only through what it transmits, and
 | `recall billing entity:acme depth:2` | the `depth:2` lane, through `acme` |
 
 A recall seeded by anchors alone — no term and no vector — takes its candidates straight from the facts filed under those anchors, so there is no further step for a lane to add.
+
+## An explained recall
+
+An [explained recall](/docs/http-api/endpoints/explain) shows a lane at work: the anchors the seeds reached, the bar each had to clear, and the facts that came in on what the anchors transmitted. Sixteen facts under four anchors, on a server with the [window](/docs/configuration/reference/database#window) off (`window-gamma = -1`), so every text sighting is a fact's own match:
+
+```text
+remember 'acme sent the march invoice' entity:acme topic:billing
+remember 'acme renewed its support contract' entity:acme
+remember 'the april invoice is overdue' topic:billing
+remember 'the may invoice was paid by card' topic:billing
+remember 'billing closes on the last friday of the month' topic:billing
+remember 'the supplier invoice arrived by post' topic:suppliers
+remember 'the supplier list is kept on the shared drive' topic:suppliers
+remember 'scan every invoice on the office printer' topic:office
+remember 'the office opens at eight' topic:office
+remember 'the office kitchen has a new kettle' topic:office
+remember 'office plants are watered on mondays' topic:office
+remember 'the office wifi password changed' topic:office
+remember 'visitors sign in at the office desk' topic:office
+remember 'the office closes for the holidays' topic:office
+remember 'the office fire drill is on thursday' topic:office
+remember 'the office lift is out of order' topic:office
+```
+
+The recall names `acme` beside a term and writes its lane:
+
+```text
+explain recall invoice entity:acme depth:1
+```
+
+```json
+{
+  "results": {
+    "count": 7,
+    "hits": [
+      {
+        "value": "acme renewed its support contract",
+        "timestamp": "2026-11-15T15:17:10.139478Z",
+        "score": 2.6592,
+        "explain": {
+          "seed": false,
+          "decay": 1,
+          "contributions": [
+            { "source": "graph", "score": 1.1202, "rank": 0, "via": "acme", "degree": 2, "count": 1, "named": true }
+          ]
+        }
+      },
+      {
+        "value": "billing closes on the last friday of the month",
+        "timestamp": "2026-11-15T15:17:10.140556Z",
+        "score": 2.2381,
+        "explain": {
+          "seed": false,
+          "decay": 1,
+          "contributions": [
+            { "source": "graph", "score": 3.4896, "rank": 0, "via": "billing", "degree": 4, "count": 3 }
+          ]
+        }
+      },
+      {
+        "value": "the april invoice is overdue",
+        "timestamp": "2026-11-15T15:17:10.139847Z",
+        "score": 1.8701,
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 1.2492, "rank": 0, "count": 1, "held": 1 },
+            { "source": "graph", "score": 3.4896, "rank": 0, "via": "billing", "degree": 4, "count": 3 }
+          ]
+        }
+      },
+      {
+        "value": "the supplier invoice arrived by post",
+        "timestamp": "2026-11-15T15:17:10.140896Z",
+        "score": 1.6183,
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 1.1202, "rank": 2, "count": 1, "held": 1 }
+          ]
+        }
+      },
+      {
+        "value": "the may invoice was paid by card",
+        "timestamp": "2026-11-15T15:17:10.140179Z",
+        "score": 1.6183,
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 1.1202, "rank": 3, "count": 1, "held": 1 },
+            { "source": "graph", "score": 3.4896, "rank": 0, "via": "billing", "degree": 4, "count": 3 }
+          ]
+        }
+      },
+      {
+        "value": "acme sent the march invoice",
+        "timestamp": "2026-11-15T15:17:10.138902Z",
+        "score": 1.6183,
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 1.1202, "rank": 1, "count": 1, "held": 1 },
+            { "source": "graph", "score": 3.4896, "rank": 0, "via": "billing", "degree": 4, "count": 3 },
+            { "source": "graph", "score": 1.1202, "rank": 0, "via": "acme", "degree": 2, "count": 1, "named": true }
+          ]
+        }
+      },
+      {
+        "value": "scan every invoice on the office printer",
+        "timestamp": "2026-11-15T15:17:10.141599Z",
+        "score": 1.4136,
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 1.0154, "rank": 4, "count": 1, "held": 1 }
+          ]
+        }
+      }
+    ],
+    "explain": {
+      "background": 0.3968,
+      "admission": { "1": 0.7936, "2": 0.3968 },
+      "seeds": { "anchor": 0, "graph": 0, "text": 5, "vector": 0 },
+      "terms": ["invoic"],
+      "timings": { "anchor": 0, "graph": 16792, "text": 12959, "vector": 0 }
+    }
+  }
+}
+```
+
+The text index read one term, `invoic`, the stem of `invoice`, and the five facts that hold it are the `text` seeds. Nothing else seeded: no vector was bound, named anchors seed only a recall with no term or vector, and the graph admits facts rather than seeding them.
+
+The seeds reached four anchors, each observing the mass of the seeds filed under it: `billing` holds three invoices, $1.1202 + 1.2492 + 1.1202 = 3.4896$, and `acme`, `suppliers` and `office` one each. So $\rho_0 = (1.1202 + 3.4896 + 1.1202 + 1.0154)/(2 + 4 + 2 + 9) = 0.3968$, the `background`, and `admission` holds the two bars per unit of degree, $2\rho_0 = 0.7936$ for `depth:1` and $\rho_0 = 0.3968$ for `depth:2`:
+
+| Anchor | Degree | Mass | Bar at `depth:1` | Bar at `depth:2` | At `depth:1` |
+|---|---|---|---|---|---|
+| `acme` | 2 | 1.1202 | none: named | none: named | transmits, since the recall names it |
+| `billing` | 4 | 3.4896 | 3.1743 | 1.5872 | transmits |
+| `suppliers` | 2 | 1.1202 | 1.5872 | 0.7936 | silent: over its fair share, short of twice it |
+| `office` | 9 | 1.0154 | 7.1422 | 3.5711 | silent: one match among nine facts |
+
+`billing` clears the bar and transmits to every fact filed under it. `billing closes on the last friday of the month` holds none of the words and comes back with `seed: false` and a single `graph` sighting through `billing`, unnamed: it was admitted by transmission. The bar decides only whether an anchor speaks; what it passes on is its surplus over the fair share, shared across its edges, so that fact receives $(3.4896 - 4 \times 0.3968)/4 = 0.4756$ of graph evidence. Beside it, `the april invoice is overdue` is a seed, and its own `text` sighting is part of the mass it receives a share of, so it gets $(3.4896 - 1.2492 - 4 \times 0.3968)/4 = 0.1633$: a fact never funds its own boost.
+
+`acme` speaks because the recall named it. `acme renewed its support contract` comes back on it alone, its `graph` sighting marked `named`, with $1.1202/2 = 0.5601$ and no fair share to clear. The march invoice is the seed that funded `acme`, so `acme` adds it nothing, though the sighting is listed.
+
+`suppliers` and `office` stay silent, and nothing reaches their other members: neither the supplier list nor any of the eight other office facts comes back, and the two matches filed there rank on their text alone. `admission` holds the next lane's bar as well: `suppliers` holds $1.1202$ against a fair share of $0.7936$, so the same recall at `depth:2` lets it transmit and brings back `the supplier list is kept on the shared drive`, while `office`, under even its fair share, stays silent in both lanes.
+
+How the graph evidence enters each score is the fold's: [Explained recall](/docs/http-api/endpoints/explain) defines every field of the envelope and reads the fold over an example.

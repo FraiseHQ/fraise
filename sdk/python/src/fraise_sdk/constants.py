@@ -26,11 +26,10 @@ import os
 DEFAULT_BASE_URL = "http://localhost:9876"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
-# The routes a query is posted to. The explain route runs a recall through the
-# same pipeline as the query route. It also returns each hit's contribution
-# breakdown. So a read sent to either route is the same query string.
+# The route every query is posted to. An explained recall is a recall written
+# behind the explain prefix, so it is a statement like any other and travels
+# the same route.
 QUERY_PATH = "/api/v1/q"
-EXPLAIN_PATH = "/api/v1/explain"
 
 # The per-graph snapshot route. The server computes it on demand from the live
 # graphs, one entry per allocated graph. So it reads the store, never a cache.

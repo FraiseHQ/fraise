@@ -525,7 +525,8 @@ func (p *pass[K, P]) rank(r *reading[K, P], k int, totalW P) ([]K, []P) {
 }
 
 // Information reports, in bits, how much information query carries and how
-// much of it each of keys holds, held[i] for keys[i]. A term's information is its surprisal in the index,
+// much of it each of keys holds, held[i] for keys[i], and the terms it read
+// the query as. A term's information is its surprisal in the index,
 // −log₂(df/N). N is the number of live documents, and df the number that
 // hold the term. It is the information in the event that a random document
 // holds the term. A rare term carries many bits, and a term every document
@@ -538,16 +539,26 @@ func (p *pass[K, P]) rank(r *reading[K, P], k int, totalW P) ([]K, []P) {
 // out of both sums. A key that is not indexed holds 0. The query is tokenized
 // and each term's postings found once, however many keys are asked about, so
 // a whole reading costs one pass over the query's terms.
-func (idx *BTreeIndex[K, P]) Information(query string, keys []K) (total P, held []P) {
+//
+// terms is the query as the index reads it: its distinct terms, as the
+// tokenizer makes them, in first-occurrence order. A term no live document
+// holds is listed too. It weighs in neither sum, and it is how a caller sees
+// that a word of the query matched nothing. The terms are the tokenizer's own
+// slice, filtered in place, so a recall that reads them allocates nothing
+// more.
+func (idx *BTreeIndex[K, P]) Information(query string, keys []K) (total P, held []P, terms []string) {
 	held = make([]P, len(keys))
 	n := float64(len(idx.documents))
 	probe := &postingList[K]{}
 	seen := make(map[string]struct{})
-	for _, term := range idx.tokenizer.Tokenize(query) {
+	tokens := idx.tokenizer.Tokenize(query)
+	terms = tokens[:0]
+	for _, term := range tokens {
 		if _, dup := seen[term]; dup {
 			continue
 		}
 		seen[term] = struct{}{}
+		terms = append(terms, term)
 		probe.term = term
 		list, ok := idx.tree.Find(probe)
 		if !ok || list.live == 0 {
@@ -561,7 +572,7 @@ func (idx *BTreeIndex[K, P]) Information(query string, keys []K) (total P, held 
 			}
 		}
 	}
-	return total, held
+	return total, held, terms
 }
 
 // Count reports the number of indexed documents.

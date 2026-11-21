@@ -118,7 +118,9 @@ func newCollectFixture(t *testing.T) *collectFixture {
 	// reach, and every rule below is the one an anchor the seeds discover
 	// obeys.
 	topicKeys, entityKeys := fx.g.anchorKeys([]string{"door"}, nil)
-	fx.background, fx.groups = fx.g.findNeighbours(fx.seeds, 0, fx.candidates, topicKeys, entityKeys, 2)
+	var result Result[uint64, float64]
+	fx.groups = fx.g.findNeighbours(fx.seeds, 0, fx.candidates, topicKeys, entityKeys, 2, &result)
+	fx.background = result.Background
 	return fx
 }
 
@@ -187,7 +189,7 @@ func TestCollectSilencesALoneAnchorExactly(t *testing.T) {
 		facts[1].Key(): {{Src: scoring.SrcText, Score: 0.8, Rank: 1, Count: 1}},
 	}
 	topicKeys, entityKeys := g.anchorKeys([]string{"door"}, nil)
-	_, groups := g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, 0, candidates, topicKeys, entityKeys, 2)
+	groups := g.findNeighbours([]uint64{facts[0].Key(), facts[1].Key()}, 0, candidates, topicKeys, entityKeys, 2, &Result[uint64, float64]{})
 
 	for i, f := range facts {
 		if got := graphContributions(candidates, groups, f.Key()); len(got) != 0 {
@@ -292,7 +294,7 @@ func TestCollectMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
 		s3: {{Src: scoring.SrcText, Score: 2, Rank: 2, Count: 1}},
 	}
 	topicKeys, entityKeys := g.anchorKeys([]string{"door"}, nil)
-	_, groups := g.findNeighbours([]uint64{s1, s2, s3}, 0, candidates, topicKeys, entityKeys, 2)
+	groups := g.findNeighbours([]uint64{s1, s2, s3}, 0, candidates, topicKeys, entityKeys, 2, &Result[uint64, float64]{})
 
 	got := graphContributions(candidates, groups, shared)
 	if len(got) != 2 {

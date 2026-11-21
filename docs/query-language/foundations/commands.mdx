@@ -1,10 +1,10 @@
 ---
 title: "Commands"
-description: "remember, recall and when — what each one requires, how a fact is given its times, what seeds a search, and how a graph selector is written"
+description: "remember, recall and when — what each one requires, how a fact is given its times, what seeds a search, how a graph selector is written, and the explain prefix"
 navIcon: "⌨️"
 ---
 
-FQL has three commands. A query is one of them, on one line.
+FQL has three commands, and a recall can take a prefix. A query is one command, on one line.
 
 ## `remember` — assert a fact
 
@@ -140,6 +140,22 @@ The `(` is glued to the `when`, and the parentheses hold one `when` and nothing 
 
 A `when` that no fact answers has no time to give. On its own it returns no hits and a [warning](/docs/query-language/reference/warnings); in a time bound it leaves the recall no bound to read, so the recall returns no hits and carries the warning under the bound's name.
 
+## `explain` — ask why a recall ranked as it did
+
+```text
+explain recall billing entity:acme depth:1
+```
+
+The prefix stands at the head of the statement and is followed by whitespace, then by the recall it explains:
+
+```ebnf
+recall_query  = prefix? recall_cmd recall_body ;
+```
+
+An explained recall runs exactly as the recall it prefixes, with the same hits in the same order, and its answer also carries what the ranking did: whether each hit seeded the recall, the recency decay its score was scaled by and the sightings that score was folded from, and for the query its background rate, admission bars, seeds per source, terms and timings, and what each `when` in its time bounds answered. See [Explained recall](/docs/http-api/endpoints/explain).
+
+A graph selector stays on the verb, `explain recall@3 auth topic:auth`. Only a recall has a ranking to explain, so the prefix before any other command is an error, a `when` included: it answers with a time. A second prefix is an error too, one statement taking one, and so is a prefix inside a time bound's parentheses: a `when` in a recall's bound is explained with the recall.
+
 ## Graph selectors
 
 A selector is glued to the verb, with no whitespace on either side of the `@`:
@@ -157,4 +173,4 @@ An absent selector means graph 0. A `when` takes no selector: in a time bound it
 
 ## Reserved but unimplemented
 
-`forget` and `update` are reserved by the lexer, but no command implements them: a query starting with either is rejected. In value position they behave like every other keyword — `entity:update` is the word "update".
+`forget` and `update` are reserved by the lexer, and so is the `describe` prefix, but nothing implements them: a query starting with any of them is rejected. In value position they behave like every other keyword — `entity:update` is the word "update".

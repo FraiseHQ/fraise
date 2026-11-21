@@ -195,6 +195,9 @@ func (s *Server[K, P]) setupRoutes() {
 	// rejected before it is buffered.
 	v1.POST("/q", limitBody(s.Config.Server.MaxBodyBytes), s.handleQuery(false))
 
+	// The deprecated alias of an explained recall on /q: it answers a recall
+	// as the statement with the explain prefix, in the same envelope. It is
+	// served through 0.4.x and removed in 0.5.0.
 	v1.POST("/explain", limitBody(s.Config.Server.MaxBodyBytes), s.handleQuery(true))
 
 	v1.GET("/stats", s.handleStats())

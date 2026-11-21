@@ -290,3 +290,91 @@ def test_anchor_only_recall_returns_what_is_filed_under_the_anchor(mcp):
     hits = found["structuredContent"]["results"]["hits"]
     assert {hit["value"] for hit in hits} == set(facts)
     assert all(hit["score"] > 0 for hit in hits), hits
+
+
+def test_an_explained_recall_carries_its_blocks_in_the_structured_content(mcp):
+    """``explain recall`` through the bridge keeps the daemon's explain blocks.
+
+    Each hit carries its seed flag, the recency factor its relevance was
+    decayed by and the contributions its score was folded from, and the
+    results carry the query's background rate, admission bars, seeds and
+    timings per source and the terms the text index read. The output schema
+    the SDK validates against admits them. The text the model reads stays the
+    ranked facts, and the same recall written plainly carries no explain key
+    at all. The daemon runs on its defaults, so the depth is written out: the
+    anchor round runs at depth 2 and both bars come back.
+    """
+    for phrase in (
+        "the osprey plunges for mackerel",
+        "the osprey nests on the bass rock",
+    ):
+        stored = mcp.call("remember", {"query": f"remember@4 '{phrase}' entity:osprey"})
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call(
+        "recall", {"query": "explain recall@4 mackerel entity:osprey depth:2"}
+    )
+    assert not found.get("isError", False), found
+
+    results = found["structuredContent"]["results"]
+    hits = {hit["value"]: hit for hit in results["hits"]}
+    assert hits["the osprey plunges for mackerel"]["explain"]["seed"] is True
+    for hit in results["hits"]:
+        assert set(hit["explain"]) == {"seed", "decay", "contributions"}, hit
+        assert 0 < hit["explain"]["decay"] <= 1, hit
+        assert hit["explain"]["contributions"], hit
+    explain = results["explain"]
+    assert set(explain) == {"background", "admission", "seeds", "terms", "timings"}
+    assert set(explain["admission"]) == {"1", "2"}
+    sources = {"text", "vector", "graph", "anchor"}
+    assert set(explain["seeds"]) == sources
+    assert set(explain["timings"]) == sources
+    assert explain["seeds"]["text"] >= 1
+    assert explain["terms"]
+
+    assert found["content"][0]["text"] == "\n".join(
+        f"- [{hit['timestamp'][:10]}] {hit['value']} (relevance {hit['score']:.3f})"
+        for hit in results["hits"]
+    )
+
+    plain = mcp.call("recall", {"query": "recall@4 mackerel entity:osprey depth:2"})
+    assert not plain.get("isError", False), plain
+    assert "explain" not in plain["structuredContent"]["results"]
+    assert all(
+        "explain" not in hit for hit in plain["structuredContent"]["results"]["hits"]
+    )
+
+
+def test_an_explained_recall_carries_the_answer_its_bound_read(mcp):
+    """An explained recall bounded by a when carries that when's answer.
+
+    Three facts on graph 6 happened a month apart. The recall's explain block
+    holds, under when, the result of the when its until: read: the fact it
+    matched and the time it gave. The when explains itself with the recall,
+    so its result and its hit carry their own blocks. The output schema the
+    SDK validates against admits the nested result, which refers back to the
+    results schema.
+    """
+    for fact, day in (
+        ("the puffin burrows were dug", "2023-05-01"),
+        ("the puffin eggs hatched", "2023-06-01"),
+        ("the puffin chicks fledged", "2023-07-01"),
+    ):
+        stored = mcp.call(
+            "remember", {"query": f"remember@6 '{fact}' occurred:'{day}'"}
+        )
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call(
+        "recall", {"query": "explain recall@6 puffin until:(when hatched)"}
+    )
+    assert not found.get("isError", False), found
+
+    results = found["structuredContent"]["results"]
+    assert [hit["value"] for hit in results["hits"]] == ["the puffin burrows were dug"]
+    until = results["explain"]["when"]["until"]
+    assert "since" not in results["explain"]["when"]
+    assert until["start"] == "2023-06-01T00:00:00Z"
+    assert [hit["value"] for hit in until["hits"]] == ["the puffin eggs hatched"]
+    assert set(until["hits"][0]["explain"]) == {"seed", "decay", "contributions"}
+    assert set(until["explain"]) >= {"background", "seeds", "terms", "timings"}

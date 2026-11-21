@@ -27,9 +27,9 @@ These functions do no I/O. The wire format lives here, and
 
     remember@<graph> '<value>' [topic:<t>]... [entity:<e>]...
                      [said:<time>] [occurred:<span>]... [vec:$<name>]
-    recall@<graph> ['<query>'] [<keyword>]... [topic:<t>]... [entity:<e>]...
-                   [top:<n>] [depth:<n>] [since:<bound>] [until:<bound>]
-                   [vec:$<name>]
+    [explain] recall@<graph> ['<query>'] [<keyword>]... [topic:<t>]...
+              [entity:<e>]... [top:<n>] [depth:<n>] [since:<bound>]
+              [until:<bound>] [vec:$<name>]
 
 A topic, entity or keyword is written bare when it is one plain word, letters
 and digits only. Otherwise it is quoted. A keyword that spells a reserved word
@@ -438,6 +438,7 @@ def build_recall(
     with_vector: bool = False,
     with_since_vector: bool = False,
     with_until_vector: bool = False,
+    explain: bool = False,
 ) -> str:
     """Build a ``recall`` query string over ``graph``.
 
@@ -463,6 +464,12 @@ def build_recall(
     here. A call given only ``top``, ``depth`` or a bound is built as written,
     and the server rejects it for the missing seed.
 
+    Set ``explain`` to write the recall behind the ``explain`` prefix
+    (``explain recall@<graph> ...``). The server runs it exactly as the plain
+    recall, so the hits and their order are the same, and its result also
+    carries what the ranking did. The prefix seeds nothing, so a call given
+    only it and ``graph`` is still rejected for the missing seed.
+
     Raises:
         FraiseQueryError: if nothing but ``graph`` is given, ``top`` is not
             positive, or ``depth`` is negative. Also raised when a value cannot
@@ -487,4 +494,6 @@ def build_recall(
             "recall needs at least one seed: keywords, a vector, or a "
             "topic/entity anchor"
         )
+    if explain:
+        parts.insert(0, "explain")
     return " ".join(parts)

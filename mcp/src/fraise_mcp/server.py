@@ -29,11 +29,17 @@ appends ``vec:$v`` and binds the vector out of band. So the tools carry
 hybrid retrieval without the model ever writing a vector. The daemon's error
 messages come back to the model as tool errors, so it can read them and
 correct its statement.
+
+A recall answers twice, as the built-in ``fraise mcp`` bridge does: rendered
+to text for the model, and as structured content, the daemon's response under
+the output schema below. The structured content is where the ``explain``
+blocks of an ``explain recall`` ride, which the text leaves out.
 """
 
 from __future__ import annotations
 
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, NotRequired, TypedDict
 
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.constants import VECTOR_PARAM
@@ -42,6 +48,7 @@ from fraise_sdk.models import RecallResult
 from fraise_sdk.providers.base import EmbedderLike
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
 from fraise_mcp.statement import embedding_text, with_vector
@@ -52,7 +59,9 @@ RECALL_DESCRIPTION = (
     "Anchors alone — topic:/entity: with no search terms — seed the search with "
     "every fact filed under them, scored one unit per named anchor and decayed by "
     "age, newest first under a single anchor: the way to see what is stored under "
-    "a topic before you know what to search for."
+    "a topic before you know what to search for. A recall may also be written "
+    "explain recall …: it ranks exactly as the recall it prefixes, and its "
+    "structured result also says how the ranking was reached."
 )
 
 RECALL_QUERY = (
@@ -81,6 +90,246 @@ REMEMBER_QUERY = (
     "letters and digits only is quoted too: topic:'machine-learning'. Example: "
     "remember@2 'the barometer falls before the storm' topic:weather entity:harbour"
 )
+
+
+class Interval(TypedDict):
+    """A span that holds start and excludes end; a single moment has the two equal."""
+
+    start: Annotated[datetime, Field(description="Where the span starts.")]
+    end: NotRequired[
+        Annotated[
+            datetime,
+            Field(
+                description="Where the span ends, itself excluded: equal to start "
+                "for a single moment, absent for a span that has not ended."
+            ),
+        ]
+    ]
+
+
+class Contribution(TypedDict):
+    """One source's sighting of a fact, with that source's raw mass."""
+
+    source: Annotated[
+        str,
+        Field(
+            description="The source that saw the fact: text, vector, graph or anchor."
+        ),
+    ]
+    score: Annotated[
+        float,
+        Field(
+            description="That source's raw mass: the match mass for text, the "
+            "similarity for vector, the funding anchor's whole observed mass for "
+            "graph, one unit for anchor."
+        ),
+    ]
+    rank: Annotated[
+        int, Field(description="The fact's place in the source's ranking, 0 first.")
+    ]
+    via: NotRequired[
+        Annotated[
+            str,
+            Field(
+                description="The topic or entity a graph or anchor sighting came "
+                "through."
+            ),
+        ]
+    ]
+    degree: NotRequired[
+        Annotated[int, Field(description="How many facts are filed under that anchor.")]
+    ]
+    count: Annotated[int, Field(description="How many seeds funded the sighting.")]
+    named: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="True when the statement named the anchor, which then "
+                "passes its mass on without a fair share."
+            ),
+        ]
+    ]
+    held: NotRequired[
+        Annotated[
+            float,
+            Field(
+                description="On a text sighting, the share of the query's "
+                "information the fact's own words hold."
+            ),
+        ]
+    ]
+
+
+class HitExplain(TypedDict):
+    """Present only on an explained recall: how this fact reached the ranking."""
+
+    seed: Annotated[
+        bool,
+        Field(
+            description="Whether the fact seeded the recall: a top text or vector "
+            "match, or a member of a named anchor when anchors alone seed. A fact "
+            "that is no seed and has graph contributions alone came in through an "
+            "anchor the seeds funded."
+        ),
+    ]
+    decay: Annotated[
+        float,
+        Field(
+            description="The recency factor the fact's relevance was scaled by to "
+            "give its score, in (0, 1]: it tells a fact ranked low for its age from "
+            "one ranked low for its match."
+        ),
+    ]
+    contributions: Annotated[
+        list[Contribution],
+        Field(
+            description="One entry per sighting of the fact, the ingredients its "
+            "score was folded from."
+        ),
+    ]
+
+
+class Hit(TypedDict):
+    """A recalled fact: its value, its times, its score and, explained, its block."""
+
+    value: Annotated[str, Field(description="The remembered fact, exactly as stored.")]
+    timestamp: Annotated[datetime, Field(description="When the fact was written.")]
+    said: NotRequired[
+        Annotated[
+            datetime,
+            Field(
+                description="When the fact was said, as its remember gave it with "
+                "said:. Absent when it gave none: the fact was then said when it "
+                "was written."
+            ),
+        ]
+    ]
+    occurred: NotRequired[
+        Annotated[
+            list[Interval],
+            Field(
+                description="Each span over which what the fact states happened, as "
+                "its remember gave them with occurred:. Absent when it gave none: "
+                "the fact then happened when it was said."
+            ),
+        ]
+    ]
+    score: Annotated[
+        float,
+        Field(
+            description="Raw relevance in the scorer's own units: an ordering, not "
+            "a probability, with no upper bound. When anchors alone seed the search "
+            "it is one unit per named anchor the fact is filed under, decayed by age."
+        ),
+    ]
+    explain: NotRequired[HitExplain]
+
+
+class NestedResults(TypedDict):
+    """The results each when in a since:/until: bound answered, under that bound."""
+
+    since: NotRequired[Results]
+    until: NotRequired[Results]
+
+
+class RecallExplain(TypedDict):
+    """Present only on an explained recall: what the search measured about the query as a whole."""
+
+    background: Annotated[
+        float,
+        Field(
+            description="The background rate: seed mass per unit of anchor degree "
+            "over every anchor the round touched, 0 when no round ran."
+        ),
+    ]
+    admission: NotRequired[
+        Annotated[
+            dict[str, float],
+            Field(
+                description="Per depth, 1 and 2, the bar per unit of degree an "
+                "anchor the statement did not name had to exceed to pass its mass "
+                "on. Absent when no anchor round ran."
+            ),
+        ]
+    ]
+    seeds: Annotated[
+        dict[str, int],
+        Field(
+            description="How many distinct facts each source (text, vector, anchor, "
+            "graph) seeded."
+        ),
+    ]
+    terms: Annotated[
+        list[str],
+        Field(
+            description="The query's terms as the text index read them, after "
+            "stop-word removal and stemming, including terms no fact holds."
+        ),
+    ]
+    timings: Annotated[
+        dict[str, int],
+        Field(description="Wall time each source took, in nanoseconds."),
+    ]
+    when: NotRequired[
+        Annotated[
+            NestedResults,
+            Field(
+                description="Present only when a since:/until: bound holds a when: "
+                "the results that when answered, under the bound that holds it, "
+                "showing which fact the bound was read from and the time it gave."
+            ),
+        ]
+    ]
+
+
+class Results(TypedDict):
+    """Ranked recall results, best first.
+
+    With anchors alone, each hit scores one unit per named anchor it is filed
+    under, decayed by age: newest first under a single anchor.
+    """
+
+    count: Annotated[
+        int, Field(description="Number of hits returned, after the top: cap.")
+    ]
+    hits: list[Hit]
+    start: NotRequired[
+        Annotated[
+            datetime,
+            Field(
+                description="Where the time a when answered with starts. Only a when "
+                "that matched a fact carries it."
+            ),
+        ]
+    ]
+    end: NotRequired[
+        Annotated[
+            datetime,
+            Field(
+                description="Where that time ends, itself excluded: equal to start "
+                "for a single moment, absent for a time that has not ended."
+            ),
+        ]
+    ]
+    explain: NotRequired[RecallExplain]
+
+
+# The output schema mirrors the query endpoint's read response, as the
+# built-in bridge's does, so a client reads the same structure from either
+# server. Each class's docstring is the description the schema publishes.
+class RecallOutput(TypedDict):
+    """The daemon's answer to the recall, with any warnings it attached."""
+
+    results: Results
+    warnings: NotRequired[
+        Annotated[
+            list[str],
+            Field(
+                description="Warnings the server attached; the query still ran and "
+                "the results stand."
+            ),
+        ]
+    ]
 
 
 def render(body: dict) -> str:
@@ -135,7 +384,7 @@ def build_server(
     """
     server = MCPServer(name="fraise", version=version)
 
-    def run(statement: str) -> str:
+    def run(statement: str) -> dict:
         text = embedding_text(statement) if embedder is not None else None
         parameters = None
         if embedder is not None and text is not None:
@@ -149,19 +398,30 @@ def build_server(
             parameters = {VECTOR_PARAM: vector}
             statement = with_vector(statement)
         try:
-            body = client.query(statement, parameters=parameters)
+            return client.query(statement, parameters=parameters)
         except FraiseAPIError as exc:
             raise ToolError(exc.message) from exc
         except FraiseError as exc:
             raise ToolError(str(exc)) from exc
-        return render(body)
 
-    def recall(query: Annotated[str, Field(description=RECALL_QUERY)]) -> str:
-        return run(query)
+    def recall(
+        query: Annotated[str, Field(description=RECALL_QUERY)],
+    ) -> Annotated[CallToolResult, RecallOutput]:
+        body = run(query)
+        # The schema requires results. A 204, the answer for a graph that holds
+        # nothing, has no body, and a write sent here answers with a status
+        # alone, so both read as the empty result: the text says which it was.
+        output: dict = {"results": body.get("results") or {"count": 0, "hits": []}}
+        if body.get("warnings"):
+            output["warnings"] = body["warnings"]
+        return CallToolResult(
+            content=[TextContent(type="text", text=render(body))],
+            structured_content=output,
+        )
 
     def remember(query: Annotated[str, Field(description=REMEMBER_QUERY)]) -> str:
-        return run(query)
+        return render(run(query))
 
-    server.add_tool(recall, description=RECALL_DESCRIPTION, structured_output=False)
+    server.add_tool(recall, description=RECALL_DESCRIPTION, structured_output=True)
     server.add_tool(remember, description=REMEMBER_DESCRIPTION, structured_output=False)
     return server

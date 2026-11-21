@@ -92,6 +92,117 @@ def test_a_recall_with_terms_carries_the_vector_of_its_terms(
     )
 
 
+def test_an_explained_recall_carries_the_vector_of_its_terms(
+    server_over, fraise_client, embedder, vector, explained_hits, call_tool
+):
+    """The prefix is stepped over: its terms are encoded, the statement sent whole.
+
+    The daemon parses the prefix, so the statement reaches it as written, with
+    vec:$v appended and the vector of the recall's own terms bound beside it.
+    The text reads the same ranked facts as the plain recall's: the explain
+    blocks ride in the structured content, not in the lines.
+    """
+    fraise_client.query.return_value = explained_hits
+    got = call_tool(server_over(), "recall", "explain recall storm topic:weather")
+    embedder.assert_called_once_with("storm")
+    fraise_client.query.assert_called_once_with(
+        "explain recall storm topic:weather vec:$v", parameters={"v": vector}
+    )
+    assert not got.is_error
+    assert got.content[0].text == (
+        "- the barometer falls before the storm (relevance 1.235)\n"
+        "- the harbour closes in a gale (relevance 0.500)"
+    )
+
+
+def test_a_recall_answers_the_daemons_response_as_structured_content(
+    server_over, hits, call_tool
+):
+    """The structured content is the daemon's response, beside the rendered lines.
+
+    A client reading the structure gets each hit's value, times and score as
+    the query endpoint returned them, as the built-in bridge hands them over.
+    """
+    got = call_tool(server_over(), "recall", "recall storm topic:weather")
+    assert not got.is_error
+    assert got.structured_content == hits
+
+
+def test_an_explained_recall_carries_its_explain_blocks_as_structured_content(
+    server_over, fraise_client, explained_hits, call_tool
+):
+    """An explain recall's blocks reach the client whole, per hit and per query.
+
+    The text leaves them out, so the structured content is the only way the
+    explanation reaches a model: dropping them there would make explain recall
+    answer exactly as the recall it prefixes.
+    """
+    fraise_client.query.return_value = explained_hits
+    got = call_tool(server_over(), "recall", "explain recall storm topic:weather")
+    assert not got.is_error
+    assert got.structured_content == explained_hits
+
+
+@pytest.mark.parametrize(
+    "body, want",
+    [
+        ({}, {"results": {"count": 0, "hits": []}}),
+        (
+            {"results": {"count": 0, "hits": []}, "warnings": ["'the' is a stop word"]},
+            {"results": {"count": 0, "hits": []}, "warnings": ["'the' is a stop word"]},
+        ),
+    ],
+)
+def test_a_recall_with_nothing_to_show_still_answers_its_schema(
+    server_over, fraise_client, call_tool, body, want
+):
+    """An empty graph's 204 reads as an empty result, and warnings ride beside it.
+
+    The 204 carries no body, but the output schema requires results, so a
+    client validating the structure would reject the call without them.
+    """
+    fraise_client.query.return_value = body
+    got = call_tool(server_over(), "recall", "recall storm")
+    assert not got.is_error
+    assert got.structured_content == want
+
+
+def test_the_recall_tool_publishes_the_bridges_output_schema(server_over, list_tools):
+    """The recall tool's output schema holds the query endpoint's read response.
+
+    It is the built-in bridge's schema: results required, each hit's explain
+    block and the query's, and the when results nested in the query's block
+    shaped as the results themselves. A remember answers in text alone.
+    """
+    tools = {tool.name: tool for tool in list_tools(server_over())}
+    schema = tools["recall"].output_schema
+    defs = schema["$defs"]
+    got = {
+        "output": schema["required"],
+        "results": defs["Results"]["required"],
+        "hit": defs["Hit"]["required"],
+        "hit explain": defs["Hit"]["properties"]["explain"],
+        "hit block": defs["HitExplain"]["required"],
+        "recall explain": defs["Results"]["properties"]["explain"],
+        "recall block": defs["RecallExplain"]["required"],
+        "when": defs["NestedResults"]["properties"],
+    }
+    assert got == {
+        "output": ["results"],
+        "results": ["count", "hits"],
+        "hit": ["value", "timestamp", "score"],
+        "hit explain": {"$ref": "#/$defs/HitExplain"},
+        "hit block": ["seed", "decay", "contributions"],
+        "recall explain": {"$ref": "#/$defs/RecallExplain"},
+        "recall block": ["background", "seeds", "terms", "timings"],
+        "when": {
+            "since": {"$ref": "#/$defs/Results"},
+            "until": {"$ref": "#/$defs/Results"},
+        },
+    }
+    assert tools["remember"].output_schema is None
+
+
 def test_a_remember_carries_the_vector_of_its_fact(
     server_over, fraise_client, embedder, vector, call_tool
 ):
@@ -170,6 +281,16 @@ def test_the_tools_take_one_fql_string_and_never_mention_vectors(
         assert "vec" not in str(tool.description) + str(tool.input_schema)
 
 
+def test_the_recall_description_names_the_explain_prefix(server_over, list_tools):
+    """The recall tool says a recall may be written with the explain prefix.
+
+    A model learns the statements the tool accepts only from its description,
+    so the prefix is named there.
+    """
+    tools = {tool.name: tool for tool in list_tools(server_over())}
+    assert "explain recall" in str(tools["recall"].description)
+
+
 def test_an_embedding_failure_is_a_tool_error_naming_it(
     server_over, fraise_client, embedder, call_tool
 ):
@@ -187,3 +308,29 @@ def test_an_embedding_failure_is_a_tool_error_naming_it(
         got.content[0].text
     )
     fraise_client.query.assert_not_called()
+
+
+@pytest.mark.integration
+def test_an_explained_recall_brings_its_blocks_back_through_the_command(
+    call_command, spelling_pair, control_graph
+):
+    """An explain recall through the running command returns the daemon's blocks.
+
+    The control graph takes no vector, so the run goes without one, and the
+    fact is recalled by its own words. The client validates the structured
+    content against the published schema, so a block missing a key the schema
+    requires, or carrying one of the wrong type, fails the call.
+    """
+    fact, _ = spelling_pair
+    call_command("remember", f"remember@{control_graph} '{fact}'", "--no-vectors")
+    got = call_command(
+        "recall", f"explain recall@{control_graph} '{fact}'", "--no-vectors"
+    )
+    assert not got.is_error
+    assert got.content[0].text.startswith(f"- {fact} (relevance")
+    results = got.structured_content["results"]
+    assert {"background", "seeds", "terms", "timings"} <= set(results["explain"])
+    assert all(
+        {"seed", "decay", "contributions"} <= set(hit["explain"])
+        for hit in results["hits"]
+    )

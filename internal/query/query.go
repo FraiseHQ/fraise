@@ -135,7 +135,8 @@ func writeStrings(b *strings.Builder, ss []string) {
 
 // QueryResult is the outcome of a committed stream as the server returns it:
 // the ranked hits of a recall and their count. A when adds the time it answers
-// with. A remember commits with an empty result.
+// with, and an explained recall what its ranking did. A remember commits with
+// an empty result.
 type QueryResult[K comparable, P float32 | float64] struct {
 	Count int         `json:"count"`
 	Hits  []Hit[K, P] `json:"hits"`
@@ -147,18 +148,12 @@ type QueryResult[K comparable, P float32 | float64] struct {
 	Start time.Time `json:"start,omitzero"`
 	End   time.Time `json:"end,omitzero"`
 
-	// Background is the query's background rate ρ₀: the observed mass per unit
-	// of degree over the anchors the traversal touched. It is set only in
-	// explain mode. The omitempty tag keeps it off a plain response. With each
-	// hit's contributions, it lets a client recompute the hit's relevance, its
-	// score before recency decay:
-	// S = m + Σ max(0, (M_A − m − d_A·ρ₀)/d_A).
-	Background P `json:"background,omitempty"`
-
-	// When holds the result of each query nested in the recall's time bounds.
-	// It is set only in explain mode, and only for a recall that has one. It
-	// shows which fact a bound was read from and the time that fact gave.
-	When *NestedResults[K, P] `json:"when,omitempty"`
+	// Explain is the query's half of an explained recall: what the search
+	// measured and decided about the query as a whole. It is set only when
+	// the recall is explained, and nil keeps the key off a plain response. So
+	// the key's presence is how a client tells an explained envelope from a
+	// plain one, and a plain recall pays nothing for it.
+	Explain *RecallExplain[K, P] `json:"explain,omitempty"`
 }
 
 // NestedResults is the wire form of what a recall's nested queries answered,
@@ -169,6 +164,76 @@ type NestedResults[K comparable, P float32 | float64] struct {
 	Until *QueryResult[K, P] `json:"until,omitempty"`
 }
 
+// RecallExplain is what an explained recall reports about its query beside
+// the ranking: the rate and the bars the anchor round measured anchors
+// against, how many facts each source seeded, the terms the text index read,
+// where the time went and what the queries nested in its time bounds
+// answered. Each value is the search's own measurement (see graph.Result),
+// never a figure rebuilt from the hits. A client reads them to see why a fact
+// ranked or why a word matched nothing, so a value that differed from what
+// the search used would send it debugging a ranking that never ran.
+//
+// Seeds and Timings are keyed by source name, the names a contribution's
+// source carries, and list every source, a source that did not run at zero.
+// So a client reads one shape whatever the recall asked for.
+type RecallExplain[K comparable, P float32 | float64] struct {
+	// Background is the query's background rate ρ₀: the seed mass the anchor
+	// round observed per unit of degree over every anchor it touched. An
+	// unnamed anchor of degree d_A owes d_A·ρ₀ as its fair share before any of
+	// its mass transmits. Under the excess fold a hit's relevance, its score
+	// before recency decay, is S = m + Σ max(0, (M_A − m − d_A·ρ₀)/d_A) over
+	// its graph contributions, m being its own text and vector mass, with the
+	// d_A·ρ₀ term dropped for a named anchor. It is zero when no round ran,
+	// and serialised at zero too, so a zero rate is never read as a missing
+	// one.
+	Background P `json:"background"`
+
+	// Admission maps a depth to the bar, per unit of anchor degree, that the
+	// mass of a touched anchor the query did not name had to exceed to
+	// transmit at that depth: 1 is twice ρ₀, the precision bar, and 2 is ρ₀.
+	// One round yields both, because what it observes does not depend on
+	// depth, so a client reads what the same recall admits one lane over. An
+	// anchor of degree d_A transmits at depth d when its mass M_A exceeds
+	// d_A·Admission[d], M_A and d_A being a graph contribution's score and
+	// degree. The server decides by the exact cross-multiplied test, not by
+	// this division, and a named anchor transmits at either depth. Depth 0
+	// runs no round and has no bar. The key is omitted when no round ran:
+	// when the recall runs at depth 0, names no anchor, seeds nothing or is
+	// seeded by its named anchors alone, or under db.search-algorithm none.
+	// A recall naming an anchor beside a term or vector runs at depth 1 at
+	// least, so a depth:0 written there still reports both bars.
+	Admission map[int]P `json:"admission,omitempty"`
+
+	// Seeds counts, per source, the distinct facts that source seeded: for
+	// text and vector the facts among the first max(db.seed-size, top) of any
+	// of its readings, each counted once, and for anchor the members of the
+	// named anchors when they seed alone. It is not the number of matches,
+	// since every match is read and only a reading's head seeds. Graph is
+	// zero, since the round admits facts rather than seeding them.
+	Seeds map[string]int `json:"seeds"`
+
+	// Terms lists the query's distinct terms as the text index read them,
+	// after stop-word cleaning and stemming, in first-occurrence order. A term
+	// no stored fact holds is listed too, which is how a client sees why a
+	// word matched nothing. It is empty, never omitted, when the recall has no
+	// terms or every keyword is a stop word.
+	Terms []string `json:"terms"`
+
+	// Timings holds, per source, the wall time it took, in nanoseconds: text
+	// the text reading, vector the vector reading, anchor the named anchors'
+	// seeding and graph the anchor round. So a client tells a slow reading
+	// from a slow round.
+	Timings map[string]time.Duration `json:"timings"`
+
+	// When holds the result of each query nested in the recall's time bounds,
+	// and is omitted for a recall whose bounds hold none. It shows which fact
+	// a bound was read from and the time that fact gave, so a client tells a
+	// window drawn from the wrong fact from a ranking that missed inside the
+	// right one. A nested query explains itself with the recall, so each
+	// result carries its own explain blocks.
+	When *NestedResults[K, P] `json:"when,omitempty"`
+}
+
 // Hit is one fact in a recall's result: the stored node and its final score,
 // after recency decay. It marshals flat (see [Hit.MarshalJSON]), because a
 // client needs the fact's value, its times and its score, not the graph node.
@@ -176,17 +241,35 @@ type Hit[K comparable, P float32 | float64] struct {
 	Node  graph.Node[K]
 	Score P
 
-	// Decay is the recency factor the hit's relevance was scaled by to give
-	// Score, set only in explain mode. It tells a fact that ranks low for its
-	// age from one that ranks low for its match.
-	Decay P
+	// Explain is the hit's half of an explained recall, set only when the
+	// recall is explained. nil keeps the key off a plain hit.
+	Explain *HitExplain[P]
+}
 
-	// Contributions is the hit's per-source breakdown, set only in explain
-	// mode. nil keeps it off the wire. That is unambiguous, because a recall
-	// hit always has at least one contribution. The entries are already in wire
-	// form, with anchors resolved to their values. Resolving them needs the
-	// graph, which only Commit holds.
-	Contributions []HitContribution[P]
+// HitExplain is what an explained recall reports about one hit: whether it
+// seeded the recall, the recency factor its relevance was decayed by, and the
+// contributions its relevance was folded from.
+type HitExplain[P float32 | float64] struct {
+	// Seed reports whether the hit was one of the recall's seeds: among the
+	// first max(db.seed-size, top) facts of a text or vector reading, or a
+	// member of a named anchor when the anchors seed alone. Only a seed funds
+	// an anchor. A hit that is no seed and carries graph contributions alone
+	// was admitted by transmission, and one that is no seed with a text or
+	// vector contribution matched below the seed cut. It is serialised when
+	// false too, so a client never reads a missing key as either.
+	Seed bool `json:"seed"`
+
+	// Decay is the recency factor the hit's relevance was scaled by to give
+	// its score. It tells a fact that ranks low for its age from one that
+	// ranks low for its match. A returned hit's factor is never zero, so the
+	// key is always present.
+	Decay P `json:"decay"`
+
+	// Contributions is the hit's per-source breakdown. A recall hit always
+	// has at least one, so the list is never empty. The entries are already
+	// in wire form, with anchors resolved to their values. Resolving them
+	// needs the graph, which only Commit holds.
+	Contributions []HitContribution[P] `json:"contributions"`
 }
 
 // HitContribution is the wire form of one contribution. The source is
@@ -200,8 +283,9 @@ type Hit[K comparable, P float32 | float64] struct {
 //   - An anchor entry, one per named anchor an anchor-seeded fact is filed
 //     under, carries a unit mass and the anchor's value and degree.
 //
-// With the query's background rate, these are the scorer's whole input. So a
-// client can recompute the hit's relevance from its own payload.
+// With the query's background rate (see RecallExplain), these are the
+// evidence the hit's relevance is folded from, so a client sees which source
+// lifted the fact and through which anchor.
 type HitContribution[P float32 | float64] struct {
 	Source string `json:"source"`
 	Score  P      `json:"score"`
@@ -218,26 +302,24 @@ type HitContribution[P float32 | float64] struct {
 // is when the fact was written. said and occurred are the times its writer
 // gave it, and each is left out when the writer gave none, so a client can
 // tell a time that was stated from one the server would fall back to. The
-// decay and the contributions appear only when the hit carries them, in
-// explain mode. So an ordinary response has neither key.
+// explain block follows the score only when the hit carries one, on an
+// explained recall. So a plain response has no explain key.
 func (h Hit[K, P]) MarshalJSON() ([]byte, error) {
 	fact, _ := h.Node.(graph.Fact[K])
 	return json.Marshal(struct {
-		Value         string                `json:"value"`
-		Timestamp     time.Time             `json:"timestamp"`
-		Said          time.Time             `json:"said,omitzero"`
-		Occurred      []containers.Interval `json:"occurred,omitempty"`
-		Score         P                     `json:"score"`
-		Decay         P                     `json:"decay,omitempty"`
-		Contributions []HitContribution[P]  `json:"contributions,omitempty"`
+		Value     string                `json:"value"`
+		Timestamp time.Time             `json:"timestamp"`
+		Said      time.Time             `json:"said,omitzero"`
+		Occurred  []containers.Interval `json:"occurred,omitempty"`
+		Score     P                     `json:"score"`
+		Explain   *HitExplain[P]        `json:"explain,omitempty"`
 	}{
-		Value:         h.Node.GetValue(),
-		Timestamp:     h.Node.GetTimestamp(),
-		Said:          fact.Said,
-		Occurred:      fact.Occurred,
-		Score:         h.Score,
-		Decay:         h.Decay,
-		Contributions: h.Contributions,
+		Value:     h.Node.GetValue(),
+		Timestamp: h.Node.GetTimestamp(),
+		Said:      fact.Said,
+		Occurred:  fact.Occurred,
+		Score:     h.Score,
+		Explain:   h.Explain,
 	})
 }
 
@@ -260,6 +342,11 @@ func checkVector[P float32 | float64](name string, data []P, maxDim int) error {
 // travel out of band in params, keyed by the placeholder name in the query:
 // 'vec:$v' binds to params["v"]. The parser binds the vector, and Parse checks
 // it against the configured limits.
+//
+// A recall written with the explain prefix parses into a [Recall] with Explain
+// set, under the same top, depth and vector limits as the recall it explains.
+// So an explained recall can ask for nothing its plain form could not, and its
+// hits are the plain form's.
 //
 // Warnings flag a reading of a valid query that the client may not have meant
 // (see parser.Warning). They are returned beside the query, never stored on it,
@@ -312,6 +399,7 @@ func fromCommand[K comparable, P float32 | float64](cmd parser.CommandNode, c *c
 		if err != nil {
 			return nil, err
 		}
+		qo.Explain = n.Explain()
 		qo.SetGraphID(n.Selector())
 
 		logger.Debug("Parsed recall query", "graph", qo.GetGraphID(), "keywords", len(qo.Keywords))
