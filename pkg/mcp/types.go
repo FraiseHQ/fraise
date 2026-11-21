@@ -38,8 +38,9 @@ import (
 // written with the explain prefix answers in the explained envelope, an
 // explain block on each hit and one on the results, the answer of each when
 // its bounds read among it, and the mirrors keep both, so a programmatic
-// client reads the ranking's account from the structured content. If either
-// wire shape moves, these move with it in the same change.
+// client reads the ranking's account from the structured content. A describe
+// answers in the recall's envelope, with its catalogue beside empty hits. If
+// either wire shape moves, these move with it in the same change.
 
 // parametersSchema mirrors HandleQueryRequest.Parameters. Vector placeholders
 // (vec:$name) are bound out of band by name, so large vector literals never
@@ -221,6 +222,90 @@ var hitSchema = &jsonschema.Schema{
 	Required: []string{"value", "timestamp", "score"},
 }
 
+// happenedSchema, saidSchema and writtenSchema mirror query.Times as a
+// catalogue carries it, for the set it describes and for each anchor: the hull
+// of what the facts hold on each of the three clocks, as an interval. A tool's
+// schema must form a tree, so each position takes a clone (CloneSchemas)
+// rather than a schema another position holds.
+var (
+	happenedSchema = &jsonschema.Schema{
+		Type:        "object",
+		Description: "From the earliest start to the latest end of what the facts state took place; a fact given no occurred: happened when it was said. No end when one of them has not ended.",
+		Properties:  intervalSchema.CloneSchemas().Properties,
+		Required:    intervalSchema.Required,
+	}
+	saidSchema = &jsonschema.Schema{
+		Type:        "object",
+		Description: "From the first fact said to the last; a fact given no said: was said when it was written.",
+		Properties:  intervalSchema.CloneSchemas().Properties,
+		Required:    intervalSchema.Required,
+	}
+	writtenSchema = &jsonschema.Schema{
+		Type:        "object",
+		Description: "From the first fact written to the last.",
+		Properties:  intervalSchema.CloneSchemas().Properties,
+		Required:    intervalSchema.Required,
+	}
+)
+
+// catalogueEntrySchema mirrors query.CatalogueEntry: one topic or entity the
+// described facts are filed under.
+var catalogueEntrySchema = &jsonschema.Schema{
+	Type: "object",
+	Properties: map[string]*jsonschema.Schema{
+		"value": {
+			Type:        "string",
+			Description: "The topic or entity, as stored.",
+		},
+		"facts": {
+			Type:        "integer",
+			Description: "How many of the described facts are filed under it. Under a describe of one anchor, the facts it shares with that anchor.",
+		},
+		"happened": happenedSchema.CloneSchemas(),
+		"said":     saidSchema.CloneSchemas(),
+		"written":  writtenSchema.CloneSchemas(),
+	},
+	Required: []string{"value", "facts"},
+}
+
+// catalogueSchema mirrors query.Catalogue, the answer of a describe.
+var catalogueSchema = &jsonschema.Schema{
+	Type:        "object",
+	Description: "What a describe answers with in place of hits: the shape of every fact its recall reaches.",
+	Properties: map[string]*jsonschema.Schema{
+		"graph": {
+			Type:        "integer",
+			Description: "The graph described.",
+		},
+		"scope": {
+			Type:        "string",
+			Description: "The recall's body as the server read it, empty for the whole graph.",
+		},
+		"facts": {
+			Type:        "integer",
+			Description: "How many facts the recall reaches: every candidate it would rank, not the first top.",
+		},
+		"anchors": {
+			Type:        "integer",
+			Description: "How many topics and entities those facts are filed under, before the lists are capped.",
+		},
+		"happened": happenedSchema.CloneSchemas(),
+		"said":     saidSchema.CloneSchemas(),
+		"written":  writtenSchema.CloneSchemas(),
+		"topics": {
+			Type:        "array",
+			Description: "The topics the facts are filed under, the most filed first, at most top: of them.",
+			Items:       catalogueEntrySchema.CloneSchemas(),
+		},
+		"entities": {
+			Type:        "array",
+			Description: "The entities the facts are filed under, the most filed first, at most top: of them.",
+			Items:       catalogueEntrySchema.CloneSchemas(),
+		},
+	},
+	Required: []string{"graph", "scope", "facts", "anchors", "topics", "entities"},
+}
+
 // warningsSchema mirrors the response's optional warnings key, which holds
 // the warnings the server attached: those of the parse, then those raised
 // while the query ran. The query still ran, and the results beside them stand.
@@ -247,7 +332,7 @@ var (
 		Properties: map[string]*jsonschema.Schema{
 			"query": {
 				Type:        "string",
-				Description: "A full FQL recall: search terms, then optional topic:/entity: anchors (beside terms they lift the facts filed under them through the graph and filter nothing, so the recall runs at depth:1 at least), top:N result cap, depth:0-2 retrieval lane (the graph is searched only beside a topic:/entity:), since:/until: time bounds, vec:$name for an optional vector seed. A bare term or value is letters and digits only; quote anything else: 'e-mail', topic:'machine-learning'. A search term that spells a keyword (when, said, top, since...) is quoted too: 'when'. Example: recall@2 barometer storm topic:weather top:5 depth:1 since:7d. A bound keeps the facts that happened on its side of a time: since: from it on, until: before it. The time is a span back from now (since:7d), a quoted date, month or year (since:'2026-01-15', until:'2026-02', since:'2025'), or a when in parentheses, which is the time another fact holds: until:(when 'the regatta') keeps what happened before the regatta began, and since:(when 'the regatta') what happened once it was over. A when searches as a recall does and reads its best match. It reads when that fact happened unless it names another of its times, as in since:(when:said 'the regatta') or when:written. A when can also be the whole query: when 'the regatta' answers with the time itself and the fact it was read from. It takes no @N: in a bound it reads the graph of its recall, and on its own the default graph. Anchors alone, with no terms and no vec:, seed the search with every fact filed under those topics/entities, scored one unit per named anchor and decayed by age, so newest first under one anchor (depth: has no effect). Example: recall@2 topic:weather top:20. Prefix a recall with explain to have the result also say how the ranking was reached; it ranks exactly as the recall it prefixes, and a when takes no prefix. Example: explain recall@2 barometer topic:weather depth:2",
+				Description: "A full FQL recall: search terms, then optional topic:/entity: anchors (beside terms they lift the facts filed under them through the graph and filter nothing, so the recall runs at depth:1 at least), top:N result cap, depth:0-2 retrieval lane (the graph is searched only beside a topic:/entity:), since:/until: time bounds, vec:$name for an optional vector seed. A bare term or value is letters and digits only; quote anything else: 'e-mail', topic:'machine-learning'. A search term that spells a keyword (when, said, top, since...) is quoted too: 'when'. Example: recall@2 barometer storm topic:weather top:5 depth:1 since:7d. A bound keeps the facts that happened on its side of a time: since: from it on, until: before it. The time is a span back from now (since:7d), a quoted date, month or year (since:'2026-01-15', until:'2026-02', since:'2025'), or a when in parentheses, which is the time another fact holds: until:(when 'the regatta') keeps what happened before the regatta began, and since:(when 'the regatta') what happened once it was over. A when searches as a recall does and reads its best match. It reads when that fact happened unless it names another of its times, as in since:(when:said 'the regatta') or when:written. A when can also be the whole query: when 'the regatta' answers with the time itself and the fact it was read from. It takes no @N: in a bound it reads the graph of its recall, and on its own the default graph. Anchors alone, with no terms and no vec:, seed the search with every fact filed under those topics/entities, scored one unit per named anchor and decayed by age, so newest first under one anchor (depth: has no effect). Example: recall@2 topic:weather top:20. Prefix a recall with explain to have the result also say how the ranking was reached; it ranks exactly as the recall it prefixes, and a when takes no prefix. Example: explain recall@2 barometer topic:weather depth:2. describe in front of a recall, which this tool runs as it runs a recall, answers with the catalogue of what the recall reaches instead of its facts: how many facts, when they happened, and the topics and entities they are filed under with each one's count. describe recall@2 describes the whole graph, describe recall@2 topic:weather what is filed under an anchor and the anchors filed beside it, and describe recall@2 barometer the anchors the matching facts are filed under. Under describe, top:N caps the topics and the entities listed, and since:/until: bound the facts counted.",
 			},
 			"parameters": parametersSchema,
 		},
@@ -269,7 +354,7 @@ var (
 		Properties: map[string]*jsonschema.Schema{
 			"results": {
 				Type:        "object",
-				Description: "Ranked recall results, best first; with anchors alone, each hit scores one unit per named anchor it is filed under, decayed by age — newest first under a single anchor.",
+				Description: "Ranked recall results, best first; with anchors alone, each hit scores one unit per named anchor it is filed under, decayed by age — newest first under a single anchor. A describe answers with a catalogue and no hits.",
 				Properties: map[string]*jsonschema.Schema{
 					"count": {
 						Type:        "integer",
@@ -286,7 +371,8 @@ var (
 						Format:      "date-time",
 						Description: "Where that time ends, itself excluded: equal to start for a single moment, absent for a time that has not ended.",
 					},
-					"explain": recallExplainSchema,
+					"catalogue": catalogueSchema,
+					"explain":   recallExplainSchema,
 				},
 				Required: []string{"count", "hits"},
 			},
@@ -362,14 +448,43 @@ type NestedResults struct {
 // ranked hits, best first, and on an explained recall its explain block. Start
 // and End are the time a when answers with, an interval that holds Start and
 // excludes End. A recall leaves both zero, and End alone is zero for an answer
-// that has not ended. Only reads carry a Result. A write is acknowledged with
-// a status token instead (RememberOutput).
+// that has not ended. Catalogue is what a describe answers with, beside no
+// hits, and is nil for any other read. Only reads carry a Result. A write is
+// acknowledged with a status token instead (RememberOutput).
 type Result struct {
-	Count   int            `json:"count"`
-	Hits    []Hit          `json:"hits"`
-	Start   time.Time      `json:"start,omitzero"`
-	End     time.Time      `json:"end,omitzero"`
-	Explain *RecallExplain `json:"explain,omitempty"`
+	Count     int            `json:"count"`
+	Hits      []Hit          `json:"hits"`
+	Start     time.Time      `json:"start,omitzero"`
+	End       time.Time      `json:"end,omitzero"`
+	Explain   *RecallExplain `json:"explain,omitempty"`
+	Catalogue *Catalogue     `json:"catalogue,omitempty"`
+}
+
+// Catalogue is the answer of a describe as the query endpoint serializes it
+// (query.Catalogue in internal/query): the graph and the body described, how
+// many facts the recall reaches and how many anchors they are filed under,
+// when they hold, and the topics and entities they are filed under, the most
+// filed first.
+type Catalogue struct {
+	Graph    int                 `json:"graph"`
+	Scope    string              `json:"scope"`
+	Facts    int                 `json:"facts"`
+	Anchors  int                 `json:"anchors"`
+	Happened containers.Interval `json:"happened,omitzero"`
+	Said     containers.Interval `json:"said,omitzero"`
+	Written  containers.Interval `json:"written,omitzero"`
+	Topics   []CatalogueEntry    `json:"topics"`
+	Entities []CatalogueEntry    `json:"entities"`
+}
+
+// CatalogueEntry is one topic or entity of a Catalogue: its value, how many of
+// the described facts are filed under it, and when they hold.
+type CatalogueEntry struct {
+	Value    string              `json:"value"`
+	Facts    int                 `json:"facts"`
+	Happened containers.Interval `json:"happened,omitzero"`
+	Said     containers.Interval `json:"said,omitzero"`
+	Written  containers.Interval `json:"written,omitzero"`
 }
 
 // RecallInput is the recall tool's argument payload, forwarded verbatim as the

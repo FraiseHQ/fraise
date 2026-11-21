@@ -33,7 +33,7 @@ import pytest
 from fraise_sdk.constants import SINCE_VECTOR_PARAM, UNTIL_VECTOR_PARAM, VECTOR_PARAM
 from fraise_sdk.errors import FraiseAPIError, FraiseQueryError, FraiseWarning
 from fraise_sdk.models import Interval
-from fraise_sdk.query import When, build_recall, build_remember
+from fraise_sdk.query import When, build_describe, build_recall, build_remember
 
 
 def test_remember_minimal():
@@ -676,6 +676,153 @@ def test_a_when_is_held_to_a_recalls_own_limits(kwargs, message):
 
 
 @pytest.mark.parametrize(
+    "kwargs, expected",
+    [
+        ({}, "describe recall@0"),
+        ({"graph": 3}, "describe recall@3"),
+        (
+            {
+                "keywords": ["heron", "dusk"],
+                "graph": 9,
+                "topics": ["birds"],
+                "entities": ["heron", "grey heron"],
+                "top": 5,
+            },
+            "describe recall@9 heron dusk topic:birds entity:heron "
+            "entity:'grey heron' top:5",
+        ),
+        ({"top": 5}, "describe recall@0 top:5"),
+        ({"since": date(2023, 5, 1)}, "describe recall@0 since:'2023-05-01'"),
+        (
+            {"until": When("regatta", clock="said")},
+            "describe recall@0 until:(when:said regatta)",
+        ),
+        ({"with_vector": True}, f"describe recall@0 vec:${VECTOR_PARAM}"),
+        (
+            {
+                "keywords": ["anna"],
+                "graph": 2,
+                "since": When("dawn"),
+                "until": date(2023, 5, 9),
+                "with_vector": True,
+                "with_since_vector": True,
+            },
+            f"describe recall@2 anna since:(when dawn vec:${SINCE_VECTOR_PARAM}) "
+            f"until:'2023-05-09' vec:${VECTOR_PARAM}",
+        ),
+    ],
+)
+def test_a_describe_is_written_as_describe_in_front_of_its_recall(kwargs, expected):
+    """``describe`` is a prefix: the recall behind it keeps its selector and clauses.
+
+    The server reads the selector on the recall, never on ``describe``, and
+    rejects ``describe@2 recall``. Behind the prefix the body may be empty or
+    hold only modifiers: a graph alone, a ``top`` or a bound describes every
+    fact of the graph, or every one in the window. The bounds and the vector
+    placeholders sit where a recall's do, a when's own vector inside its
+    parentheses and the recall's last.
+    """
+    assert build_describe(**kwargs) == expected
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"keywords": ["anna", "bob"], "graph": 2, "top": 10, "depth": 2},
+        {
+            "query": "what did anna's crew do",
+            "topics": ["sport"],
+            "entities": ["anna smith"],
+        },
+        {"keywords": ["e-mail"], "topics": ["machine-learning"]},
+        {
+            "keywords": ["anna"],
+            "since": date(2023, 5, 1),
+            "until": When("regatta", clock="said", top=3),
+        },
+        {
+            "keywords": ["anna"],
+            "graph": 6,
+            "since": When("dawn"),
+            "until": When(query="the regatta"),
+            "with_vector": True,
+            "with_since_vector": True,
+            "with_until_vector": True,
+        },
+    ],
+)
+def test_a_describe_spells_its_recall_as_build_recall_does(kwargs):
+    """Whatever recall the arguments build, the describe is that string behind the prefix.
+
+    A describe pictures what the recall reaches, so it must be the recall the
+    same arguments send to ``client.recall``. If the two builders drifted, the
+    shape a caller reads first would be the shape of a different search from
+    the one they then run.
+    """
+    assert build_describe(**kwargs) == f"describe {build_recall(**kwargs)}"
+
+
+def test_a_describe_needs_no_seed_where_a_recall_does():
+    """A graph alone is a whole describe, and still not a recall.
+
+    A recall with nothing to search from has nothing to rank, so the builder
+    refuses it before it is sent. A describe of no search is the describe of
+    the whole graph, which is the question a caller asks before knowing how
+    memory is filed.
+    """
+    assert build_describe(graph=1) == "describe recall@1"
+    with pytest.raises(FraiseQueryError, match="at least one seed"):
+        build_recall(graph=1)
+
+
+def test_a_reserved_word_keyword_in_a_describe_is_quoted_and_warns():
+    """A describe's keywords are search words: a reserved one is quoted, and warns.
+
+    The recall behind the prefix is written as :func:`build_recall` writes it,
+    so ``since`` travels as the quoted word, not the clause. The warning names
+    the caller's line, as a recall's does.
+    """
+    with pytest.warns(FraiseWarning, match="is a reserved word") as record:
+        got = build_describe(["since", "7d"], graph=2)
+    assert got == "describe recall@2 'since' 7d"
+    assert record[0].filename == __file__
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"top": 0}, "top must be positive, got 0"),
+        ({"depth": -1}, "depth must be non-negative, got -1"),
+        ({"graph": 256}, "graph must be at most 255, got 256"),
+        (
+            {"entities": "heron"},
+            "entity must be a sequence of strings, not a string: 'heron'; "
+            "did you mean ['heron']?",
+        ),
+        (
+            {"until": When()},
+            "a when needs at least one seed: keywords, a query, or a topic/entity "
+            "anchor",
+        ),
+        (
+            {"since": date(2023, 5, 1), "with_since_vector": True},
+            "since is a time, not a when, so it has no search to bind a vector to",
+        ),
+    ],
+)
+def test_a_describe_is_held_to_a_recalls_own_limits(kwargs, message):
+    """What a recall's builder refuses, a describe's refuses with the same message.
+
+    Only the seed check is lifted. A ``top`` of zero would list no anchor,
+    which the server refuses as out of range, and every other value is one FQL
+    cannot hold, under a describe as under a recall.
+    """
+    with pytest.raises(FraiseQueryError) as exc_info:
+        build_describe(**kwargs)
+    assert str(exc_info.value) == message
+
+
+@pytest.mark.parametrize(
     "kwargs",
     [
         {},
@@ -1044,3 +1191,63 @@ def test_the_builders_agree_with_the_graphs_vector_dimension(
     text = build_remember("a mis-sized vector", graph=query_graph, with_vector=True)
     with pytest.raises(FraiseAPIError):
         client.query(text, parameters={VECTOR_PARAM: [0.5] * (vector_dim // 2)})
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"keywords": ["barometer"]},
+        {"keywords": ["barometer", "storm"], "top": 3, "depth": 0},
+        {"query": "what does the barometer do before a storm"},
+        {"topics": ["weather"]},
+        {"entities": ["barometer"]},
+        {"topics": ["weather"], "entities": ["barometer"], "depth": 1},
+        {"top": 3},
+        {"since": date(2023, 5, 7)},
+        {"until": datetime(2023, 5, 8, 23, 30, tzinfo=timezone(timedelta(hours=-7)))},
+        {
+            "since": When("barometer", clock="written"),
+            "until": When("storm", clock="said"),
+        },
+        {
+            "keywords": ["e-mail", "v1.2"],
+            "topics": ["machine-learning"],
+            "entities": ["anna smith"],
+        },
+        {"with_vector": True},
+        {
+            "keywords": ["barometer"],
+            "since": When("barometer"),
+            "until": When(query="when did the storm break"),
+            "with_vector": True,
+            "with_since_vector": True,
+            "with_until_vector": True,
+        },
+    ],
+)
+@pytest.mark.integration
+def test_every_describe_the_builder_emits_parses(
+    kwargs, client, populated_query_graph, encode
+):
+    """Every shape build_describe can produce is read by the live parser as a describe.
+
+    The server answers a describe with a catalogue where a recall has hits, so
+    a catalogue of the graph named is the proof it read the prefix. The shapes
+    a recall cannot take are the ones only the server can vouch for: nothing
+    behind the recall, or only a modifier. The graph holds a fact whatever ran
+    before, because a graph that holds nothing is answered 204, with no
+    catalogue to read.
+    """
+    text = build_describe(graph=populated_query_graph, **kwargs)
+    parameters = {
+        name: encode("the barometer falls before a storm")
+        for name, flag in (
+            (VECTOR_PARAM, "with_vector"),
+            (SINCE_VECTOR_PARAM, "with_since_vector"),
+            (UNTIL_VECTOR_PARAM, "with_until_vector"),
+        )
+        if kwargs.get(flag)
+    }
+    body = client.query(text, parameters=parameters or None)
+    assert body["results"]["catalogue"]["graph"] == populated_query_graph

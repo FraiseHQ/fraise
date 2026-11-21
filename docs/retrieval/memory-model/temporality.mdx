@@ -40,8 +40,9 @@ No clause sets the written time. Remembering a fact again writes it again: it ta
 | `when`, `when:happened` | happened |
 | `when:said` | said |
 | `when:written` | written |
+| the span a `describe` answers with | happened, with said and written beside it |
 
-A hit carries the three as its fact holds them: `timestamp` is the written time, and `said` and `occurred` are there when the fact was given them. See [Query endpoint](/docs/http-api/endpoints/query#response).
+A hit carries the three as its fact holds them: `timestamp` is the written time, and `said` and `occurred` are there when the fact was given them. See [Query endpoint](/docs/http-api/endpoints/query#response). A `describe` answers with the three over the whole set of facts its recall reaches, and over the facts filed under each anchor it lists: `happened` from the earliest start to the latest end of what they state took place, `said` and `written` from the first fact to the last, each fact given no time on a clock reading the next one. See [Commands](/docs/query-language/foundations/commands).
 
 ## Decay reads the written time
 

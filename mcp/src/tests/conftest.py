@@ -228,6 +228,9 @@ _WAIT_TIMEOUT_SECONDS = 30
 # vector.
 _VECTOR_GRAPH = 0
 _CONTROL_GRAPH = 1
+# Facts written with the default model's vectors, then described: a describe
+# that carried a vector too would reach every one of them.
+_DESCRIBE_GRAPH = 2
 
 # A fact and a question that share no word once stemmed, colour against color,
 # favourite against favorite. Only a vector can match them, so the same recall
@@ -264,6 +267,12 @@ def vector_graph():
 def control_graph():
     """The graph written without vectors."""
     return _CONTROL_GRAPH
+
+
+@pytest.fixture(scope="session")
+def describe_graph():
+    """The graph a describe is checked on, its facts written with vectors."""
+    return _DESCRIBE_GRAPH
 
 
 @pytest.fixture(scope="session")

@@ -26,7 +26,9 @@ On a hash hit, the engine uses the cached query object (engine.Plan). So the
 cache key must fold in everything that changes the answer, including the bound
 vector, the since/until bounds and the explain prefix. If Recall.Hash left
 them out, two recalls that differ only in those fields would share a key. The
-second would silently run with the first one's values.
+second would silently run with the first one's values. The same holds for what
+a query answers with: a describe runs its recall, and must not share that
+recall's entry.
 
 Every test sends the colliding pair back to back. The first query's cached
 entry is then the one the second would wrongly reuse.
@@ -104,6 +106,41 @@ def test_recall_time_bound_not_reused_across_queries(query):
         "until:1w returned a fact written today — the engine reused the "
         f"previous query's time bound (stale cached plan); got {values}"
     )
+
+
+def test_a_describe_and_the_recall_of_its_body_answer_each_their_own_shape(query):
+    """A describe, then the recall of the same body, each answer as asked.
+
+    A describe plans as its recall does, with every match kept. If the two
+    shared a cached entry, the recall sent second would run the describe's
+    plan and answer with a catalogue and no hits. The probe's word is held by
+    one fact on the graph, filed under the cache probes' topic, so each answer
+    is exact.
+    """
+    graph = 6
+    fact = "the describeprobe fact rides the cache"
+
+    status, body = query(f"remember@{graph} '{fact}' topic:cacheprobe")
+    assert status == 200, body.get("error")
+
+    status, body = query(f"describe recall@{graph} describeprobe")
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert (results["count"], results["hits"]) == (0, []), results
+    catalogue = results["catalogue"]
+    assert (catalogue["facts"], catalogue["anchors"]) == (1, 1), catalogue
+    assert [(e["value"], e["facts"]) for e in catalogue["topics"]] == [
+        ("cacheprobe", 1)
+    ]
+
+    status, body = query(f"recall@{graph} describeprobe")
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert "catalogue" not in results, (
+        "the recall answered with the describe's catalogue (stale cached plan): "
+        f"{results}"
+    )
+    assert [hit["value"] for hit in results["hits"]] == [fact]
 
 
 @pytest.mark.parametrize("explained", [[False, True, False], [True, False, True]])

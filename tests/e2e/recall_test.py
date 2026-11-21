@@ -25,9 +25,10 @@
 Covers the store-then-find round trip, how anchors transmit or stay silent, how
 top shapes a recall's results, and text-index matching across facts. It also
 covers recall through topic:/entity: anchors, including anchors whose value is
-a grammar keyword, and the case folding of terms and anchor values. The last
-section covers the three times a fact holds: which of them a time bound reads,
-and the when command, which answers with one.
+a grammar keyword, and the case folding of terms and anchor values. A section
+covers the three times a fact holds: which of them a time bound reads, and the
+when command, which answers with one. The last covers describe, which answers
+with the shape of what a recall reaches instead of its facts.
 """
 
 import pytest
@@ -980,3 +981,250 @@ def test_remembering_a_fact_again_replaces_its_times(query):
         [hit] = body["results"]["hits"]
         got = {key: hit[key] for key in ("said", "occurred") if key in hit}
         assert got == want, f"after {clauses!r}: want {want}, got {got}"
+
+
+# describe. A describe answers with the shape of what its recall reaches, in
+# place of its facts: how many there are, when they happened, and the topics and
+# entities they are filed under, each with how many of them it files. It counts
+# every fact the recall would rank, so no top cuts the count, and the recall's
+# top caps the anchors listed instead. Anchors alone reach every fact filed under
+# them, and a recall with no seed reaches every fact of the graph. since: and
+# until: keep the facts that happened inside the window, as they do for a recall.
+
+
+@pytest.mark.parametrize(
+    ("anchors", "facts", "topics", "entities"),
+    [
+        ("topic:tidepool", 2, [("tidepool", 2)], [("limpet", 1)]),
+        ("entity:limpet", 2, [("tidepool", 1)], [("limpet", 2)]),
+        ("topic:tidepool entity:limpet", 3, [("tidepool", 2)], [("limpet", 2)]),
+        ("topic:planets", 4, [("planets", 4)], []),
+    ],
+)
+def test_a_describe_of_anchors_counts_what_each_anchor_files_among_their_facts(
+    anchors, facts, topics, entities, tidepool_graph, planets_graph, catalogue_of
+):
+    """Anchors alone reach every fact filed under them, and every anchor those
+    facts are filed under counts the ones it files.
+
+    So under one anchor, another anchor's count is the facts the two share:
+    the limpet files one of the tidepool's two facts, and the tidepool one of
+    the limpet's. Under both, the fact filed under the two is one fact of the
+    three, and each anchor counts its own two. The planet star is filed under
+    its hub alone. Nothing else on graph 7 is filed under these anchors, so
+    every count is exact.
+    """
+    catalogue = catalogue_of(f"describe recall@{tidepool_graph} {anchors}")
+    assert catalogue["facts"] == facts
+    assert catalogue["anchors"] == len(topics) + len(entities)
+    assert [(e["value"], e["facts"]) for e in catalogue["topics"]] == topics
+    assert [(e["value"], e["facts"]) for e in catalogue["entities"]] == entities
+
+
+@pytest.mark.parametrize("body", ["topic:saltmarsh", "saltmarsh"])
+def test_a_describe_counts_every_fact_its_recall_reaches_past_the_default_top(
+    body, saltmarsh_graph, saltmarsh_facts, default_top, recall_count, catalogue_of
+):
+    """A describe counts every fact its recall reaches, not the first top.
+
+    The saltmarsh topic files more facts than the configured default-top, and
+    each of them holds the word. So the recall of either body keeps
+    default-top of them, and the describe of it counts all of them. A count
+    cut at the recall's top would say memory holds no more than a recall
+    shows, which is the question a describe exists to answer.
+    """
+    assert len(saltmarsh_facts) > default_top
+    assert recall_count(f"recall@{saltmarsh_graph} {body}") == default_top
+
+    catalogue = catalogue_of(f"describe recall@{saltmarsh_graph} {body}")
+    assert catalogue["facts"] == len(saltmarsh_facts)
+    assert [(e["value"], e["facts"]) for e in catalogue["topics"]] == [
+        ("saltmarsh", len(saltmarsh_facts))
+    ]
+
+
+@pytest.mark.parametrize(
+    ("clause", "topics"),
+    [
+        ("", [("lanterns", 2), ("almanac", 1)]),
+        ("top:1", [("lanterns", 2)]),
+    ],
+)
+def test_a_describe_lists_the_most_filed_anchors_up_to_its_top(
+    clause, topics, lantern_graph, recall_count, catalogue_of
+):
+    """A describe of terms lists the anchors the matching facts are filed under.
+
+    Three facts on graph 7 hold "lantern": two of the lantern cluster and one
+    of the almanac. The anchor filing more of them comes first. top: caps the
+    list and nothing else, so top:1 still counts three facts under two
+    anchors, and lists the lanterns alone.
+    """
+    assert recall_count(f"recall@{lantern_graph} lantern") == 3
+
+    catalogue = catalogue_of(
+        f"describe recall@{lantern_graph} lantern {clause}".rstrip()
+    )
+    assert (catalogue["facts"], catalogue["anchors"]) == (3, 2)
+    assert [(e["value"], e["facts"]) for e in catalogue["topics"]] == topics
+    assert catalogue["entities"] == []
+
+
+@pytest.mark.parametrize(
+    ("clause", "facts", "anchors", "topics", "entities"),
+    [
+        (
+            "",
+            31,
+            6,
+            [
+                ("saltmarsh", 12),
+                ("almanac", 8),
+                ("planets", 4),
+                ("lanterns", 3),
+                ("tidepool", 2),
+            ],
+            [("limpet", 2)],
+        ),
+        ("top:2", 31, 6, [("saltmarsh", 12), ("almanac", 8)], [("limpet", 2)]),
+        (
+            "since:1d",
+            31,
+            6,
+            [
+                ("saltmarsh", 12),
+                ("almanac", 8),
+                ("planets", 4),
+                ("lanterns", 3),
+                ("tidepool", 2),
+            ],
+            [("limpet", 2)],
+        ),
+        ("until:1d", 0, 0, [], []),
+    ],
+)
+def test_a_describe_with_no_seed_describes_the_whole_graph(
+    clause,
+    facts,
+    anchors,
+    topics,
+    entities,
+    planets_graph,
+    lantern_graph,
+    tidepool_graph,
+    saltmarsh_graph,
+    catalogue_of,
+):
+    """`describe recall` with no seed counts every fact of its graph.
+
+    Graph 7 holds the primer, the planet star's four facts, the lantern
+    cluster's three, the almanac's eight, the tidepool's three and the
+    saltmarsh's twelve: thirty-one facts under five topics and one entity.
+    The topics come the most filed first. top:2 lists two of them, and the
+    anchor count still takes in all six. Every fact was written moments ago,
+    so a window opening a day ago holds them all and one closing a day ago
+    holds none. The graph map in conftest.py keeps graph 7 to these probes.
+    """
+    catalogue = catalogue_of(f"describe recall@{planets_graph} {clause}".rstrip())
+    assert (catalogue["facts"], catalogue["anchors"]) == (facts, anchors)
+    assert [(e["value"], e["facts"]) for e in catalogue["topics"]] == topics
+    assert [(e["value"], e["facts"]) for e in catalogue["entities"]] == entities
+
+
+@pytest.mark.parametrize(
+    ("clause", "keys", "happened"),
+    [
+        (
+            "",
+            ["shoals", "regatta", "buoys"],
+            {"start": "2024-03-05T00:00:00Z", "end": "2024-03-21T00:00:00Z"},
+        ),
+        (
+            "since:'2024-03-10'",
+            ["regatta", "buoys"],
+            {"start": "2024-03-10T00:00:00Z", "end": "2024-03-21T00:00:00Z"},
+        ),
+        (
+            "until:'2024-03-10'",
+            ["shoals"],
+            {"start": "2024-03-05T00:00:00Z", "end": "2024-03-06T00:00:00Z"},
+        ),
+        (
+            "since:'2024-03-06' until:'2024-03-20'",
+            ["regatta"],
+            {"start": "2024-03-10T00:00:00Z", "end": "2024-03-11T00:00:00Z"},
+        ),
+        (
+            "until:(when regatta)",
+            ["shoals"],
+            {"start": "2024-03-05T00:00:00Z", "end": "2024-03-06T00:00:00Z"},
+        ),
+        (
+            "since:(when regatta)",
+            ["buoys"],
+            {"start": "2024-03-20T00:00:00Z", "end": "2024-03-21T00:00:00Z"},
+        ),
+        ("since:'2024-04'", [], None),
+    ],
+)
+def test_a_describe_holds_when_the_facts_it_counts_happened(
+    clause, keys, happened, timeline_graph, harbour_graph, harbour_keyword, catalogue_of
+):
+    """A describe's happened runs from the first fact's start to the last's end.
+
+    The harbour's facts happened on the 5th, the 10th and the 20th of March
+    2024, each over its day, so the three run from the 5th to the end of the
+    20th. A bound keeps the facts that happened on its side, as it does for a
+    recall, and the time is the hull of those alone. A when in a bound reads
+    the harbour's own regatta: the default graph's is in May 2023, and read
+    from there until: would keep none and since: all three. A window holding no
+    fact leaves the time out. The facts were given no said:, so they were said
+    when they were written, and the two clocks read alike.
+    """
+    catalogue = catalogue_of(
+        f"describe recall@{harbour_graph} {harbour_keyword} {clause}".rstrip()
+    )
+    assert catalogue["facts"] == len(keys), f"{clause}: want {keys}"
+    assert catalogue.get("happened") == happened
+    assert catalogue.get("said") == catalogue.get("written")
+    assert (catalogue["anchors"], catalogue["topics"], catalogue["entities"]) == (
+        0,
+        [],
+        [],
+    )
+
+
+@pytest.mark.parametrize("seeded", [True, False])
+@pytest.mark.parametrize("bound", ["since", "until"])
+def test_a_describe_bounded_by_a_when_that_matched_nothing_counts_nothing(
+    seeded, bound, harbour_graph, harbour_keyword, query
+):
+    """A when that finds no fact leaves its bound unread, and the describe empty.
+
+    Counted without the bound, the describe would picture a wider set than the
+    one asked about, the whole graph when it names no seed, and nothing would
+    say so. So it counts no fact, and the warning names the bound and the
+    reason, as it does for a recall.
+    """
+    scope = f"{harbour_keyword} " if seeded else ""
+    scope += f"{bound}:(when zzznomatchzzz)"
+    status, body = query(f"describe recall@{harbour_graph} {scope}")
+    assert status == 200, body.get("error")
+    assert body == {
+        "results": {
+            "count": 0,
+            "hits": [],
+            "catalogue": {
+                "graph": harbour_graph,
+                "scope": scope,
+                "facts": 0,
+                "anchors": 0,
+                "topics": [],
+                "entities": [],
+            },
+        },
+        "warnings": [
+            f"{bound}: the when matched no fact, so it has no time to answer with; "
+            "the recall has no bound to read and returns no hits"
+        ],
+    }

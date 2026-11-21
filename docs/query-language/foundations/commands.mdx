@@ -1,10 +1,10 @@
 ---
 title: "Commands"
-description: "remember, recall and when — what each one requires, how a fact is given its times, what seeds a search, how a graph selector is written, and the explain prefix"
+description: "remember, recall and when, and the explain and describe prefixes — what each one requires, how a fact is given its times, what seeds a search, and how a graph selector is written"
 navIcon: "⌨️"
 ---
 
-FQL has three commands, and a recall can take a prefix. A query is one command, on one line.
+FQL has three commands, `remember`, `recall` and `when`, and two prefixes, `explain` and `describe`, written in front of a recall. A query is one command on one line, with at most one prefix in front of it.
 
 ## `remember` — assert a fact
 
@@ -149,12 +149,94 @@ explain recall billing entity:acme depth:1
 The prefix stands at the head of the statement and is followed by whitespace, then by the recall it explains:
 
 ```ebnf
-recall_query  = prefix? recall_cmd recall_body ;
+recall_query   = ( 'explain'? recall_cmd recall_body ) | describe_query ;
 ```
 
 An explained recall runs exactly as the recall it prefixes, with the same hits in the same order, and its answer also carries what the ranking did: whether each hit seeded the recall, the recency decay its score was scaled by and the sightings that score was folded from, and for the query its background rate, admission bars, seeds per source, terms and timings, and what each `when` in its time bounds answered. See [Explained recall](/docs/http-api/endpoints/explain).
 
 A graph selector stays on the verb, `explain recall@3 auth topic:auth`. Only a recall has a ranking to explain, so the prefix before any other command is an error, a `when` included: it answers with a time. A second prefix is an error too, one statement taking one, and so is a prefix inside a time bound's parentheses: a `when` in a recall's bound is explained with the recall.
+
+## `describe` — ask what memory holds
+
+```text
+describe recall
+describe recall since:30d
+describe recall topic:sailing
+describe recall race
+```
+
+A `describe` is a recall that answers with the shape of what it reaches instead of its facts: how many facts there are, when they hold, and the topics and entities they are filed under, with how many of the facts each one files. It is the question to ask before a first recall, when an agent does not yet know how its memory is filed.
+
+```ebnf
+recall_query   = ( 'explain'? recall_cmd recall_body ) | describe_query ;
+describe_query = 'describe' recall_cmd recall_body? ;
+```
+
+`describe` is a prefix, not a command: the recall behind it is written as it would be on its own, and searches as it would, with the same seeds, anchors and modifiers. **The set described is every candidate the recall would rank, not its first `top:`.** Under `describe` the seed rule is waived: the body may be empty or hold modifiers alone, and a recall that names no seed reaches every fact in its graph.
+
+| Written | Describes |
+|---|---|
+| `describe recall` | every fact in the graph |
+| `describe recall since:30d` | every fact inside the window |
+| `describe recall topic:sailing` | every fact filed under the anchor, and the anchors filed beside it |
+| `describe recall race` | every fact the search ranks for its terms |
+
+A vector ranks every fact stored with one, by its similarity, so a describe whose recall carries a `vec:` counts every fact that has a vector.
+
+Under `describe`, `top:` caps how many topics, and how many entities, the answer lists, and is `default-top` when absent; it is checked against the same [bounds](/docs/query-language/tokens/bounds) as a recall's. `since:` and `until:` bound the facts counted, a `when` in either included, and `depth:` is the lane the search takes, as it is on the recall. The selector is the recall's: `describe recall@2` describes graph 2, and `describe` takes none of its own.
+
+The answer is the `catalogue` of the result, beside no hits:
+
+```json
+{
+  "results": {
+    "count": 0,
+    "hits": [],
+    "catalogue": {
+      "graph": 0,
+      "scope": "topic:sailing top:2",
+      "facts": 3,
+      "anchors": 4,
+      "happened": {"start": "2023-05-01T00:00:00Z"},
+      "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00.000001Z"},
+      "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217466Z"},
+      "topics": [
+        {
+          "value": "sailing",
+          "facts": 3,
+          "happened": {"start": "2023-05-01T00:00:00Z"},
+          "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00.000001Z"},
+          "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217466Z"}
+        }
+      ],
+      "entities": [
+        {
+          "value": "anna",
+          "facts": 3,
+          "happened": {"start": "2023-05-01T00:00:00Z"},
+          "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-07-03T00:00:00.000001Z"},
+          "written": {"start": "2026-11-15T13:37:18.187508Z", "end": "2026-11-15T13:37:18.217466Z"}
+        },
+        {
+          "value": "east quay",
+          "facts": 1,
+          "happened": {"start": "2023-05-20T00:00:00Z"},
+          "said": {"start": "2023-06-02T00:00:00Z", "end": "2023-06-02T00:00:00Z"},
+          "written": {"start": "2026-11-15T13:37:18.201439Z", "end": "2026-11-15T13:37:18.201439Z"}
+        }
+      ]
+    }
+  }
+}
+```
+
+That is `describe recall topic:sailing top:2` over five facts about anna, three of them filed under `sailing`. The three are counted, and the anchors they are filed under are listed, the most filed first: `sailing` itself, then `anna`, under whom all three are filed, and `east quay`, under which one is. Under a describe of one anchor, every other anchor counts the facts it shares with that one: five facts are filed under `anna`, three of them under `sailing` too. `anchors` is 4 because one of the three is filed under `tom` as well, and `top:2` kept him off the list: `east quay` and `tom` hold one fact each, and a tie goes to the value that sorts first.
+
+`happened` runs from the earliest start to the latest end of what the facts state took place, and has no end when one of them is not over, as the boat moored at the east quay is. `said` and `written` run from the first fact to the last. A span's `end` lies outside it, so a span whose last fact holds a single moment ends a microsecond past that moment. A fact given no time on a clock reads the next one, as it does everywhere — see [Temporality](/docs/retrieval/memory-model/temporality). `scope` is the recall's body as the server read it, its terms and anchors folded to lower case and its clauses in one fixed order, and is empty for the whole graph. The [query endpoint](/docs/http-api/endpoints/query#a-describe-answers-with-a-catalogue) lists every field.
+
+A describe whose recall reaches no fact answers with `facts` at 0, no times and empty lists, as a recall that matches nothing answers with no hits; a `when` in a bound that no fact answers leaves it nothing to count, and carries the [warning](/docs/query-language/reference/warnings). A describe of a graph that holds nothing comes back `204 No Content`, as a recall does, so the two read apart: the first says the facts are there and this describe missed them, the second that nothing has been written yet.
+
+`describe` stands in front of a recall alone, and once. A `remember` writes and a `when` answers with a time, so neither reaches a set of facts to describe, and `describe describe recall` is an error. Nor is a describe ever the value of a time bound: the parentheses there hold a `when`.
 
 ## Graph selectors
 
@@ -169,8 +251,8 @@ remember@3 'acme signed with okta' topic:auth entity:okta
 graph_selector = '@' integer ;   (* default 0 *)
 ```
 
-An absent selector means graph 0. A `when` takes no selector: in a time bound it reads the graph of the recall that holds it, and on its own the default graph. Selectors are `uint8` and bounded twice over: the parser rejects anything that does not fit the type, and the server rejects selectors past the allocated count. See [Bounds](/docs/query-language/tokens/bounds) and [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
+An absent selector means graph 0. A `when` takes no selector: in a time bound it reads the graph of the recall that holds it, and on its own the default graph. A `describe` takes none of its own either: it reads the selector of its recall, `describe recall@3`. Selectors are `uint8` and bounded twice over: the parser rejects anything that does not fit the type, and the server rejects selectors past the allocated count. See [Bounds](/docs/query-language/tokens/bounds) and [Memory graphs](/docs/retrieval/memory-model/memory-graphs).
 
 ## Reserved but unimplemented
 
-`forget` and `update` are reserved by the lexer, and so is the `describe` prefix, but nothing implements them: a query starting with any of them is rejected. In value position they behave like every other keyword — `entity:update` is the word "update".
+`forget` and `update` are reserved by the lexer, but nothing implements them: a query starting with either is rejected. In value position they behave like every other keyword — `entity:update` is the word "update".

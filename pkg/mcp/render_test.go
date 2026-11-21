@@ -43,6 +43,14 @@ import (
 // only where they differ. A span reads in the unit it was written in. If a
 // month rendered as its first day, a model would answer "on the first of May"
 // to a fact that only says "in May".
+//
+// A describe's catalogue renders in place of the hits. Its first line spells
+// the describe the server read, graph and scope, then how many facts it
+// reached under how many anchors and when they happened. The topics follow,
+// then the entities, each in the order the server listed them with when its
+// facts happened in front. A kind with no anchor says none, since a missing
+// section reads as a list cut off. A describe that reached no fact says so on
+// its one line. Warnings follow, as they follow hits.
 func TestRenderRecall(t *testing.T) {
 	written := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
 	date := func(year int, month time.Month, day int) time.Time {
@@ -327,6 +335,144 @@ func TestRenderRecall(t *testing.T) {
 			},
 			want: "No stored facts matched.\n" +
 				"warning: the when matched no fact, so it has no time to answer with",
+		},
+		"a describe of the whole graph names its size, then each kind, most filed first": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Catalogue: &Catalogue{
+				Graph:    0,
+				Facts:    4,
+				Anchors:  4,
+				Happened: containers.Interval{Start: date(2023, time.May, 1), End: date(2023, time.July, 1)},
+				Topics: []CatalogueEntry{
+					{Value: "birds", Facts: 3, Happened: containers.Interval{Start: date(2023, time.May, 1), End: date(2023, time.July, 1)}},
+					{Value: "lake", Facts: 2, Happened: containers.Interval{Start: date(2023, time.May, 1), End: date(2023, time.May, 8)}},
+				},
+				Entities: []CatalogueEntry{
+					{Value: "heron", Facts: 2, Happened: containers.Interval{Start: date(2023, time.May, 1), End: date(2023, time.May, 8)}},
+					{Value: "swan", Facts: 2, Happened: containers.Interval{Start: date(2023, time.June, 1), End: date(2023, time.July, 1)}},
+				},
+			}}},
+			want: "describe recall@0: 4 facts under 4 anchors, happened 2023-05..2023-06\n" +
+				"topics:\n" +
+				"- [2023-05..2023-06] birds: 3 facts\n" +
+				"- [2023-05-01..2023-05-07] lake: 2 facts\n" +
+				"entities:\n" +
+				"- [2023-05-01..2023-05-07] heron: 2 facts\n" +
+				"- [2023-06] swan: 2 facts",
+		},
+		"a scoped describe spells its scope, and what has not ended trails off": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Catalogue: &Catalogue{
+				Graph:    2,
+				Scope:    "topic:weather top:2",
+				Facts:    3,
+				Anchors:  5,
+				Happened: containers.Interval{Start: date(2023, time.May, 1)},
+				Topics: []CatalogueEntry{
+					{Value: "weather", Facts: 3, Happened: containers.Interval{Start: date(2023, time.May, 1)}},
+					{Value: "storms", Facts: 2, Happened: containers.Interval{Start: date(2023, time.May, 1), End: date(2023, time.May, 3)}},
+				},
+				Entities: []CatalogueEntry{
+					{Value: "harbour", Facts: 2, Happened: containers.Interval{Start: date(2023, time.May, 2), End: date(2023, time.May, 3)}},
+				},
+			}}},
+			want: "describe recall@2 topic:weather top:2: 3 facts under 5 anchors, happened 2023-05-01..\n" +
+				"topics:\n" +
+				"- [2023-05-01..] weather: 3 facts\n" +
+				"- [2023-05-01..2023-05-02] storms: 2 facts\n" +
+				"entities:\n" +
+				"- [2023-05-02] harbour: 2 facts",
+		},
+		"a describe that reached no fact says so and lists nothing": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Catalogue: &Catalogue{
+				Graph:    1,
+				Scope:    "zebras",
+				Topics:   []CatalogueEntry{},
+				Entities: []CatalogueEntry{},
+			}}},
+			want: "describe recall@1 zebras: no fact reached.",
+		},
+		"a kind no fact is filed under says none": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Catalogue: &Catalogue{
+				Graph:    0,
+				Scope:    "harbour",
+				Facts:    2,
+				Anchors:  2,
+				Happened: containers.Interval{Start: date(2023, time.May, 2), End: date(2023, time.May, 4)},
+				Topics:   []CatalogueEntry{},
+				Entities: []CatalogueEntry{
+					{Value: "anna", Facts: 2, Happened: containers.Interval{Start: date(2023, time.May, 2), End: date(2023, time.May, 4)}},
+					{Value: "harbour", Facts: 2, Happened: containers.Interval{Start: date(2023, time.May, 2), End: date(2023, time.May, 4)}},
+				},
+			}}},
+			want: "describe recall@0 harbour: 2 facts under 2 anchors, happened 2023-05-02..2023-05-03\n" +
+				"topics: none\n" +
+				"entities:\n" +
+				"- [2023-05-02..2023-05-03] anna: 2 facts\n" +
+				"- [2023-05-02..2023-05-03] harbour: 2 facts",
+		},
+		"a count of one reads in the singular": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Catalogue: &Catalogue{
+				Graph:    5,
+				Facts:    1,
+				Anchors:  1,
+				Happened: containers.Interval{Start: date(2023, time.May, 2), End: date(2023, time.May, 2)},
+				Topics:   []CatalogueEntry{},
+				Entities: []CatalogueEntry{
+					{Value: "bob", Facts: 1, Happened: containers.Interval{Start: date(2023, time.May, 2), End: date(2023, time.May, 2)}},
+				},
+			}}},
+			want: "describe recall@5: 1 fact under 1 anchor, happened 2023-05-02\n" +
+				"topics: none\n" +
+				"entities:\n" +
+				"- [2023-05-02] bob: 1 fact",
+		},
+		"facts filed under nothing list no anchor of either kind": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Catalogue: &Catalogue{
+				Graph:    0,
+				Facts:    2,
+				Happened: containers.Interval{Start: date(2023, time.April, 20), End: date(2023, time.April, 22)},
+				Topics:   []CatalogueEntry{},
+				Entities: []CatalogueEntry{},
+			}}},
+			want: "describe recall@0: 2 facts under 0 anchors, happened 2023-04-20..2023-04-21\n" +
+				"topics: none\n" +
+				"entities: none",
+		},
+		"warnings follow the catalogue, one per line": {
+			out: RecallOutput{
+				Results: Result{Count: 0, Hits: []Hit{}, Catalogue: &Catalogue{
+					Graph:    0,
+					Scope:    "heron depth:2",
+					Facts:    3,
+					Anchors:  2,
+					Happened: containers.Interval{Start: date(2023, time.May, 1), End: date(2023, time.July, 1)},
+					Topics: []CatalogueEntry{
+						{Value: "birds", Facts: 3, Happened: containers.Interval{Start: date(2023, time.May, 1), End: date(2023, time.July, 1)}},
+					},
+					Entities: []CatalogueEntry{
+						{Value: "heron", Facts: 2, Happened: containers.Interval{Start: date(2023, time.May, 1), End: date(2023, time.May, 8)}},
+					},
+				}},
+				Warnings: []string{"parse warning at column 29: depth:2 has no effect: the graph is searched only through a topic:/entity: anchor and this recall names none, so it runs on the text and vector indices alone"},
+			},
+			want: "describe recall@0 heron depth:2: 3 facts under 2 anchors, happened 2023-05..2023-06\n" +
+				"topics:\n" +
+				"- [2023-05..2023-06] birds: 3 facts\n" +
+				"entities:\n" +
+				"- [2023-05-01..2023-05-07] heron: 2 facts\n" +
+				"warning: parse warning at column 29: depth:2 has no effect: the graph is searched only through a topic:/entity: anchor and this recall names none, so it runs on the text and vector indices alone",
+		},
+		"a describe whose bound read no time reached no fact, and the warning says why": {
+			out: RecallOutput{
+				Results: Result{Count: 0, Hits: []Hit{}, Catalogue: &Catalogue{
+					Graph:    0,
+					Scope:    "until:(when zebras)",
+					Topics:   []CatalogueEntry{},
+					Entities: []CatalogueEntry{},
+				}},
+				Warnings: []string{"until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits"},
+			},
+			want: "describe recall@0 until:(when zebras): no fact reached.\n" +
+				"warning: until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits",
 		},
 	}
 

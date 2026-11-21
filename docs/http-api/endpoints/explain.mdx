@@ -10,7 +10,7 @@ Use it to see *why* a fact ranked where it did; leave the prefix off when the ra
 
 <Note title="POST /api/v1/explain is deprecated" type="warning">
 
-`POST /api/v1/explain` is a deprecated alias, removed in 0.5.0. It takes the body `/api/v1/q` takes and answers a recall, written with the prefix or without it, exactly as `explain recall ...` answers on `/api/v1/q`, in the same envelope, and a `when` with the same blocks beside the time it answers with. A write sent to it is rejected with 400, `explain applies to recall queries only`. Every request to it logs the warning `Deprecated explain endpoint called: send explain recall to /api/v1/q instead`, with `removal=0.5.0`. Send `explain recall ...` to `/api/v1/q` instead.
+`POST /api/v1/explain` is a deprecated alias, removed in 0.5.0. It takes the body `/api/v1/q` takes and answers a recall, written with the prefix or without it, exactly as `explain recall ...` answers on `/api/v1/q`, in the same envelope, and a `when` with the same blocks beside the time it answers with. A `describe` sent to it answers with the catalogue it answers with on `/api/v1/q`: it returns no hit, so it has no ranking to explain. A write sent to it is rejected with 400, `explain applies to recall queries only`. Every request to it logs the warning `Deprecated explain endpoint called: send explain recall to /api/v1/q instead`, with `removal=0.5.0`. Send `explain recall ...` to `/api/v1/q` instead.
 
 </Note>
 

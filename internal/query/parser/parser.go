@@ -446,13 +446,18 @@ func (p *parser[K, P]) warnMisCasedKeyword(tok lexer.Token) {
 // give it an effect. Neither depth:0 nor an omitted depth warns. A depth of 0
 // asks for nothing the recall cannot do. An omitted depth is the operator's
 // default, not the caller's choice. cmd is the command the body belongs to,
-// which the warning names.
+// which the warning names. A body with no seed at all, which only a describe
+// holds, searches nothing: it reads every fact, and the warning says so.
 func (p *parser[K, P]) warnDepthWithoutGraph(cmd lexer.Token, r *RecallBodyNode[K, P]) {
 	if !r.HasDepth() || r.depth.value == 0 || len(r.topics) > 0 || len(r.entities) > 0 {
 		return
 	}
+	reads := "so it runs on the text and vector indices alone"
+	if !r.hasSeed() {
+		reads = "and with no seed it searches nothing: it reads every fact"
+	}
 	p.warns = append(p.warns, Warning{
-		Msg: fmt.Sprintf("%s has no effect: the graph is searched only through a topic:/entity: anchor and this %s names none, so it runs on the text and vector indices alone", r.depth.String(), strings.ToLower(cmd.Literal)),
+		Msg: fmt.Sprintf("%s has no effect: the graph is searched only through a topic:/entity: anchor and this %s names none, %s", r.depth.String(), strings.ToLower(cmd.Literal), reads),
 		Pos: r.depth.key.Pos,
 	})
 }
@@ -526,22 +531,24 @@ func (p *parser[K, P]) errEmpty(role, value string, pos lexer.Position) error {
 // productions: the grammar itself, from the command down to the leaves a clause
 // is built from.
 
-// parseQuery reads one command. It serves the top of an instruction and the
-// inside of a time bound's parentheses alike, so a query reads the same
-// wherever it stands. What a position accepts is checked by its caller, on the
-// command returned.
+// parseQuery reads one command, or a prefix and the command behind it. It
+// serves the top of an instruction and the inside of a time bound's
+// parentheses alike, so a query reads the same wherever it stands. What a
+// position accepts is checked by its caller, on the command returned.
 func (p *parser[K, P]) parseQuery() (CommandNode, error) {
 	switch p.cur.Type {
 	case lexer.REMEMBER:
 		return (*p).parseRemember()
 	case lexer.RECALL:
-		return (*p).parseRecall()
+		return (*p).parseRecall(lexer.Token{})
 	case lexer.WHEN:
 		return (*p).parseWhen()
 	case lexer.EXPLAIN:
 		return p.parseExplain()
+	case lexer.DESCRIBE:
+		return (*p).parseDescribe()
 	default:
-		return nil, p.errf(p.cur.Pos, "expected a command (recall, remember, when), found %s", p.cur.Describe())
+		return nil, p.errf(p.cur.Pos, "expected a command (recall, remember, when, describe recall), found %s", p.cur.Describe())
 	}
 }
 
@@ -552,7 +559,7 @@ func (p *parser[K, P]) parseRemember() (*RememberCommandNode[K, P], error) {
 	r.key = p.cur
 	p.next()
 
-	selector, err := p.parseSelector(r.key)
+	selector, err := p.parseSelector(r.key, lexer.Token{})
 	if err != nil {
 		return nil, err
 	}
@@ -663,7 +670,7 @@ func (p *parser[K, P]) parseExplain() (*RecallCommandNode[K, P], error) {
 
 	switch {
 	case p.cur.Type == lexer.RECALL:
-		r, err := p.parseRecall()
+		r, err := p.parseRecall(prefix)
 		if err != nil {
 			return nil, err
 		}
@@ -687,26 +694,73 @@ func (p *parser[K, P]) parseExplain() (*RecallCommandNode[K, P], error) {
 	return nil, p.errf(p.cur.Pos, "expected recall after the explain prefix, found %s", p.cur.Describe())
 }
 
-func (p *parser[K, P]) parseRecall() (*RecallCommandNode[K, P], error) {
+// parseRecall reads a recall: the verb, its graph selector, then its body.
+// prefix is the prefix the recall stands behind, the zero token for a recall
+// on its own. A recall a describe holds may end at its verb or its selector,
+// and its body may name no seed. It then reaches every fact in the graph, so
+// describe recall describes the whole graph.
+func (p *parser[K, P]) parseRecall(prefix lexer.Token) (*RecallCommandNode[K, P], error) {
 
 	r := RecallCommandNode[K, P]{}
 
 	r.key = p.cur
 	p.next()
 
-	selector, err := p.parseSelector(r.key)
+	selector, err := p.parseSelector(r.key, prefix)
 	if err != nil {
 		return nil, err
 	}
 	r.selector = selector
 
-	body, err := p.parseRecallBody(r.key)
+	body, err := p.parseRecallBody(r.key, prefix)
 	if err != nil {
 		return nil, err
 	}
 	r.RecallBodyNode = body
 
 	return &r, nil
+}
+
+// parseDescribe reads a describe: the prefix, a space, then the recall whose
+// reach it describes. A prefix stands in front of a recall alone. A remember
+// writes and a when answers with a time, so neither reaches a set of facts
+// to describe. One prefix per statement keeps a second one from reading as a
+// command. The graph selector is the recall's, as in describe recall@2, so a
+// described recall is spelled as it would be on its own.
+func (p *parser[K, P]) parseDescribe() (*DescribeCommandNode[K, P], error) {
+
+	d := DescribeCommandNode[K, P]{}
+
+	d.key = p.cur
+	p.next()
+
+	if at := p.afterBlank(); at.Type == lexer.AT {
+		return nil, p.errf(at.Pos, "a describe takes no graph selector: it describes the graph its recall reads — write the selector on the recall, as in describe recall@2")
+	}
+	if p.isAtEnd() || (p.cur.Type == lexer.WHITESPACE && p.ends(p.peek)) {
+		return nil, p.errf(d.key.Pos, "describe needs a recall to describe: write describe recall for the whole graph, or describe recall <terms> for what a search reaches")
+	}
+	if _, err := p.expect(lexer.WHITESPACE); err != nil {
+		return nil, p.errf(p.cur.Pos, "expected a space after describe, found %s", p.cur.Describe())
+	}
+
+	switch {
+	case p.cur.Type == lexer.RECALL:
+	case p.cur.Type.IsPrefix():
+		return nil, p.errf(p.cur.Pos, "%s cannot follow describe: a statement takes one prefix", p.cur.Describe())
+	case p.cur.Type.IsCommand():
+		return nil, p.errf(p.cur.Pos, "describe stands in front of a recall, not %s: only a recall reaches a set of facts to describe", p.cur.Describe())
+	default:
+		return nil, p.errf(p.cur.Pos, "expected recall after describe, found %s", p.cur.Describe())
+	}
+
+	recall, err := p.parseRecall(d.key)
+	if err != nil {
+		return nil, err
+	}
+	d.recall = *recall
+
+	return &d, nil
 }
 
 // parseWhen reads a when: the verb, the clock glued to it, then the body of a
@@ -735,7 +789,7 @@ func (p *parser[K, P]) parseWhen() (*WhenCommandNode[K, P], error) {
 		return nil, p.errf(p.cur.Pos, "expected a space after the command, found %s", p.cur.Describe())
 	}
 
-	body, err := p.parseRecallBody(w.key)
+	body, err := p.parseRecallBody(w.key, lexer.Token{})
 	if err != nil {
 		return nil, err
 	}
@@ -780,8 +834,10 @@ func (p *parser[K, P]) parseClock() (ClockNode, error) {
 // parseRecallBody reads what a recall searches by: its terms, then its clauses.
 // A recall and a when share it, so the two cannot drift apart in what a search
 // may say. cmd is the command the body belongs to. Its messages name it, and it
-// decides whether a time bound may hold a query (see parseTimeValue).
-func (p *parser[K, P]) parseRecallBody(cmd lexer.Token) (RecallBodyNode[K, P], error) {
+// decides whether a time bound may hold a query (see parseTimeValue). prefix
+// is the prefix the command stands behind, as parseRecall takes it: behind
+// describe, a body may name no seed.
+func (p *parser[K, P]) parseRecallBody(cmd lexer.Token, prefix lexer.Token) (RecallBodyNode[K, P], error) {
 
 	r := RecallBodyNode[K, P]{}
 
@@ -872,8 +928,10 @@ func (p *parser[K, P]) parseRecallBody(cmd lexer.Token) (RecallBodyNode[K, P], e
 	// vector. Anchors seed the search, so "everything about billing" is a
 	// well-formed question. A query of modifiers alone scopes a search that
 	// never starts. It would return an empty result as though it had asked
-	// something.
-	if !r.hasSeed() {
+	// something. A describe asks for the shape of what its recall reaches, and
+	// a recall that names no seed reaches every fact. So describe recall
+	// since:30d describes what the last thirty days hold.
+	if !r.hasSeed() && prefix.Type != lexer.DESCRIBE {
 		return RecallBodyNode[K, P]{}, p.errf(cmd.Pos, "a %s needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>", strings.ToLower(cmd.Literal))
 	}
 
@@ -893,7 +951,9 @@ func (p *parser[K, P]) parseRecallBody(cmd lexer.Token) (RecallBodyNode[K, P], e
 // reported as a second selector. Neither surfaces as a token the next
 // production cannot use. A command with no selector gets the zero node. String
 // prints nothing for it, and the handler reads it as the default graph, 0.
-func (p *parser[K, P]) parseSelector(cmd lexer.Token) (GraphSelectorNode, error) {
+// prefix is the prefix the command stands behind. A recall behind describe
+// may end at its verb or its selector, so the space is then optional.
+func (p *parser[K, P]) parseSelector(cmd lexer.Token, prefix lexer.Token) (GraphSelectorNode, error) {
 	var selector GraphSelectorNode
 	if p.cur.Type == lexer.AT {
 		key, value, err := p.parseGraphSelector()
@@ -904,6 +964,10 @@ func (p *parser[K, P]) parseSelector(cmd lexer.Token) (GraphSelectorNode, error)
 		if p.cur.Type == lexer.AT {
 			return GraphSelectorNode{}, p.errf(p.cur.Pos, "unexpected %s: a command takes one selector", p.cur.Describe())
 		}
+	}
+
+	if prefix.Type == lexer.DESCRIBE && p.isAtEnd() {
+		return selector, nil
 	}
 
 	if _, err := p.expect(lexer.WHITESPACE); err != nil {

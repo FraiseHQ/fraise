@@ -340,6 +340,123 @@ _WHEN_EXPLAIN_RESPONSE = {
     }
 }
 
+# `describe recall@0 entity:polly`, recorded from a live server. Its graph holds
+# three facts filed under entity:polly. "polly whistles at dawn" is under
+# topic:sounds, said on 8 May 2023 and happened on the 7th. "polly eats
+# sunflower seeds" is under topic:diet, said on 10 May, and has happened since
+# 1 May with no end. "the parrot sleeps in the kitchen" is under entity:kitchen
+# too and was given no times, so it holds the moment it was written on every
+# clock. So the happened span has no end, the said span ends at that written
+# moment, and polly leads the entities on three facts while the two topics tie
+# on one and are listed by value.
+_DESCRIBE_RESPONSE = {
+    "results": {
+        "count": 0,
+        "hits": [],
+        "catalogue": {
+            "graph": 0,
+            "scope": "entity:polly",
+            "facts": 3,
+            "anchors": 4,
+            "happened": {"start": "2023-05-01T00:00:00Z"},
+            "said": {
+                "start": "2023-05-08T00:00:00Z",
+                "end": "2026-11-15T13:37:06.378845Z",
+            },
+            "written": {
+                "start": "2026-11-15T13:37:06.377159Z",
+                "end": "2026-11-15T13:37:06.378845Z",
+            },
+            "topics": [
+                {
+                    "value": "diet",
+                    "facts": 1,
+                    "happened": {"start": "2023-05-01T00:00:00Z"},
+                    "said": {
+                        "start": "2023-05-10T00:00:00Z",
+                        "end": "2023-05-10T00:00:00Z",
+                    },
+                    "written": {
+                        "start": "2026-11-15T13:37:06.378198Z",
+                        "end": "2026-11-15T13:37:06.378198Z",
+                    },
+                },
+                {
+                    "value": "sounds",
+                    "facts": 1,
+                    "happened": {
+                        "start": "2023-05-07T00:00:00Z",
+                        "end": "2023-05-08T00:00:00Z",
+                    },
+                    "said": {
+                        "start": "2023-05-08T00:00:00Z",
+                        "end": "2023-05-08T00:00:00Z",
+                    },
+                    "written": {
+                        "start": "2026-11-15T13:37:06.377159Z",
+                        "end": "2026-11-15T13:37:06.377159Z",
+                    },
+                },
+            ],
+            "entities": [
+                {
+                    "value": "polly",
+                    "facts": 3,
+                    "happened": {"start": "2023-05-01T00:00:00Z"},
+                    "said": {
+                        "start": "2023-05-08T00:00:00Z",
+                        "end": "2026-11-15T13:37:06.378845Z",
+                    },
+                    "written": {
+                        "start": "2026-11-15T13:37:06.377159Z",
+                        "end": "2026-11-15T13:37:06.378845Z",
+                    },
+                },
+                {
+                    "value": "kitchen",
+                    "facts": 1,
+                    "happened": {
+                        "start": "2026-11-15T13:37:06.378845Z",
+                        "end": "2026-11-15T13:37:06.378845Z",
+                    },
+                    "said": {
+                        "start": "2026-11-15T13:37:06.378845Z",
+                        "end": "2026-11-15T13:37:06.378845Z",
+                    },
+                    "written": {
+                        "start": "2026-11-15T13:37:06.378845Z",
+                        "end": "2026-11-15T13:37:06.378845Z",
+                    },
+                },
+            ],
+        },
+    }
+}
+
+# `describe recall@0 ferry the` over the same graph, recorded from a live
+# server. "ferry" matches no fact, so the catalogue counts none and carries no
+# times. The graph holds facts, so the answer is a 200, not a 204. "the" is a
+# stop word, and the warning points at it, its column counted from the start of
+# the describe.
+_WARNED_DESCRIBE_RESPONSE = {
+    "results": {
+        "count": 0,
+        "hits": [],
+        "catalogue": {
+            "graph": 0,
+            "scope": "ferry the",
+            "facts": 0,
+            "anchors": 0,
+            "topics": [],
+            "entities": [],
+        },
+    },
+    "warnings": [
+        'parse warning at column 27: term "the" is a stop word: stored facts '
+        "never contain it, so it cannot match"
+    ],
+}
+
 # `GET /api/v1/stats`, recorded from a live server with three graphs. Graph 0
 # holds two facts filed under entity:polly, and one is also under topic:diet.
 # Graph 1 was never written to. Graph 2 holds one fact with a vector and no
@@ -414,6 +531,18 @@ def explain_response():
 def anchor_explain_response():
     """A recorded explained recall seeded by an anchor alone, so no round ran."""
     return copy.deepcopy(_ANCHOR_EXPLAIN_RESPONSE)
+
+
+@pytest.fixture
+def describe_response():
+    """A recorded describe of one entity: three facts, four anchors, open happened."""
+    return copy.deepcopy(_DESCRIBE_RESPONSE)
+
+
+@pytest.fixture
+def warned_describe_response():
+    """A recorded describe that reached no fact, with a stop-word warning beside it."""
+    return copy.deepcopy(_WARNED_DESCRIBE_RESPONSE)
 
 
 @pytest.fixture
@@ -858,6 +987,12 @@ _INSTRUMENT_FACTS = {
     "harp": "the harp is plucked with both hands",
 }
 
+# The fact the builder shapes sent to the query graph search for, filed under
+# the topic and entity they name. A read of a graph that holds nothing is
+# answered 204, with no body to read, so a test that pins what a shape answers
+# with writes this first instead of relying on an earlier test to have done so.
+_QUERY_FACT = ("the barometer falls before a storm", ["weather"], ["barometer"])
+
 # Two anchored facts and one anchorless fact with a vector, so a stats snapshot
 # of their graph is exact. Three facts, one topic and two entities make six
 # vertices. The facts' links to the anchors make five edges. Vertices and edges
@@ -1139,6 +1274,24 @@ def models_graph():
         The graph id.
     """
     return _MODELS_GRAPH
+
+
+@pytest.fixture(scope="module")
+def populated_query_graph(client):
+    """Write the barometer fact to the query graph and return its id.
+
+    A fact is keyed by its value, so the write is idempotent. It is the fact
+    the remember shapes write there too, so it adds nothing they do not.
+
+    Args:
+        client: the plain client to write through.
+
+    Returns:
+        The graph id, now holding at least the barometer fact.
+    """
+    value, topics, entities = _QUERY_FACT
+    client.remember(value, graph=_QUERY_GRAPH, topics=topics, entities=entities)
+    return _QUERY_GRAPH
 
 
 @pytest.fixture(scope="module")

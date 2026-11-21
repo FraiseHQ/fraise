@@ -130,6 +130,16 @@ func FuzzParseNeverPanics(f *testing.F) {
 		"recall x since:'2023-05'..",
 		"recall x ..'2023'",
 		"remember 'a' said:'2023-05-08' occurred:'2023-05-07' occurred:'2023'",
+		"describe",
+		"describe ",
+		"describe recall",
+		"describe recall@3",
+		"describe@3 recall",
+		"describe recall x since:(when race)",
+		"describe describe recall",
+		"describe when race",
+		"Describe:recall x",
+		"recall x until:(describe recall y)",
 		"explain",
 		"explain recall x",
 		"explain explain recall",
@@ -183,6 +193,11 @@ func FuzzRoundTripAllCommands(f *testing.F) {
 		"recall x since:(when:written race) until:(when 'the race' topic:run)",
 		"recall x since:'2023-05-07'..'2023-05-09' until:'2023'..",
 		"remember 'a fact' said:'2023-05-08' occurred:'2023-05-07' occurred:'2023-05'..'2023-07'",
+		"describe recall",
+		"describe recall@3",
+		"describe recall since:30d",
+		"describe recall@2 zebras topic:fraise top:50 since:30d",
+		"describe recall x since:(when:said race) until:(when 'the race' topic:run)",
 		"explain recall@2 x topic:y depth:2",
 		"explain recall x since:(when:said race) until:(when lap)",
 	} {
@@ -595,6 +610,233 @@ func TestWhenParserErrors(t *testing.T) {
 	}
 }
 
+// TestDescribeParser checks that valid describes parse to a describe command
+// and round-trip through String(). A describe is a prefix in front of a whole
+// recall, so it takes every clause a recall takes, written here in the order
+// String() emits them. Behind describe the body may name no seed, or be
+// empty: such a recall reaches every fact, so describe recall describes the
+// whole graph and describe recall since:30d what the last thirty days hold.
+// The graph is the recall's, so the selector is read off the recall.
+func TestDescribeParser(t *testing.T) {
+	cases := map[string]struct {
+		selector uint8
+	}{
+		"describe recall":                                        {0},
+		"describe recall@3":                                      {3},
+		"describe recall@0":                                      {0},
+		"describe recall top:5":                                  {0},
+		"describe recall@2 top:5":                                {2},
+		"describe recall since:30d":                              {0},
+		"describe recall until:'2023-05-07'":                     {0},
+		"describe recall since:'2023-05'..":                      {0},
+		"describe recall since:(when race)":                      {0},
+		"describe recall topic:fraise":                           {0},
+		"describe recall entity:melanie topic:run":               {0},
+		"describe recall vec:$v":                                 {0},
+		"describe recall zebras":                                 {0},
+		"describe recall x since:(when y)":                       {0},
+		"describe recall@255 'the race' top:3":                   {255},
+		"describe recall zebras topic:fraise top:50 since:30d":   {0},
+		"describe recall@2 zebras topic:fraise top:50 since:30d": {2},
+		"describe recall x since:(when:said 'the race') until:(when race topic:run top:3)":               {0},
+		"describe recall 'the race' entity:melanie topic:run top:3 depth:2 since:'2023' until:7d vec:$v": {0},
+	}
+
+	for q, tc := range cases {
+		t.Run(q, func(t *testing.T) {
+			cmd, warns, err := parser.Parse[uint64, float32](q, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned unexpected error: %v", q, err)
+			}
+			if len(warns) != 0 {
+				t.Errorf("Parse(%q) warnings = %v, want none", q, warns)
+			}
+			dc, ok := cmd.(*parser.DescribeCommandNode[uint64, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *DescribeCommandNode", q, cmd)
+			}
+			if got := dc.Selector(); got != tc.selector {
+				t.Errorf("Selector() = %d, want %d: a describe reads the graph its recall reads", got, tc.selector)
+			}
+			if got := cmd.String(); got != q {
+				t.Errorf("round-trip mismatch: String() = %q, want %q", got, q)
+			}
+		})
+	}
+}
+
+// TestDescribeHoldsTheRecallItDescribes pins that a described recall is the
+// recall it would be on its own. A describe answers with the shape of what its
+// recall reaches, so the same words behind describe must be the same search,
+// on the same graph, raising the same warnings at the same place in what was
+// written. A describe that read its recall its own way would describe facts
+// the recall never shows.
+func TestDescribeHoldsTheRecallItDescribes(t *testing.T) {
+	// recall holds what the two must agree on.
+	type recall struct {
+		Selector                uint8
+		Terms, Topics, Entities []string
+		Top, Depth              int
+		HasTop, HasDepth        bool
+		Since, Until            containers.TimeValue[uint64]
+		SinceQuery, UntilQuery  string
+		Vec                     string
+		HasVec                  bool
+	}
+	read := func(n *parser.RecallCommandNode[uint64, float32]) recall {
+		vec, hasVec := n.VecParam()
+		r := recall{
+			Selector: n.Selector(),
+			Terms:    n.Terms(),
+			Topics:   n.Topics(),
+			Entities: n.Entities(),
+			Top:      n.Top(7),
+			Depth:    n.Depth(7),
+			HasTop:   n.HasTop(),
+			HasDepth: n.HasDepth(),
+			Since:    n.Since(),
+			Until:    n.Until(),
+			Vec:      vec,
+			HasVec:   hasVec,
+		}
+		if q := n.SinceQuery(); q != nil {
+			r.SinceQuery = q.String()
+		}
+		if q := n.UntilQuery(); q != nil {
+			r.UntilQuery = q.String()
+		}
+		return r
+	}
+
+	recalls := map[string]struct{}{
+		"recall race":                                  {},
+		"recall@2 race":                                {},
+		"recall 'the race' charity":                    {},
+		"recall topic:run":                             {},
+		"recall@3 race entity:melanie topic:run":       {},
+		"recall race top:3":                            {},
+		"recall race depth:2":                          {},
+		"recall race topic:run depth:2":                {},
+		"recall race topic:run depth:0":                {},
+		"recall the race":                              {},
+		"recall race since:7d until:'2023-06'":         {},
+		"recall race since:'2023-05-07'..'2023-05-09'": {},
+		"recall race until:(when:said the parade)":     {},
+		"recall vec:$v":                                {},
+	}
+
+	// prefix is what describe puts in front of the recall, so a warning about
+	// the recall sits that much further along the describe.
+	const prefix = "describe "
+
+	for q := range recalls {
+		t.Run(q, func(t *testing.T) {
+			rcmd, wantWarns, err := parser.Parse[uint64, float32](q, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", q, err)
+			}
+			dcmd, gotWarns, err := parser.Parse[uint64, float32](prefix+q, nil)
+			if err != nil {
+				t.Fatalf("Parse(%s%s) unexpected error: %v", prefix, q, err)
+			}
+			want := read(rcmd.(*parser.RecallCommandNode[uint64, float32]))
+			described := dcmd.(*parser.DescribeCommandNode[uint64, float32]).Recall()
+			got := read(&described)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("a describe read %q unlike the recall: mismatch (-want +got):\n%s", q, diff)
+			}
+			for i := range wantWarns {
+				wantWarns[i].Pos.Column += len(prefix)
+			}
+			if diff := cmp.Diff(wantWarns, gotWarns); diff != "" {
+				t.Errorf("a describe of %q warned unlike the recall: mismatch (-want +got):\n%s", q, diff)
+			}
+		})
+	}
+}
+
+// TestDescribeParserErrors checks that a malformed describe is rejected, and
+// that the message says what a describe is: one prefix, in front of a recall,
+// which carries the graph selector. A remember writes and a when answers with
+// a time, so neither reaches a set of facts to describe. The relaxations a
+// describe gives its recall are its own: a recall standing alone still needs
+// a space after its verb and a seed in its body, and the rows proving it sit
+// here beside the describes that need neither.
+func TestDescribeParserErrors(t *testing.T) {
+	const (
+		needsRecall = "describe needs a recall to describe: write describe recall for the whole graph, or describe recall <terms> for what a search reaches"
+		noSelector  = "a describe takes no graph selector: it describes the graph its recall reads — write the selector on the recall, as in describe recall@2"
+		onlyRecall  = "only a recall reaches a set of facts to describe"
+		onePrefix   = "cannot follow describe: a statement takes one prefix"
+		noSeed      = "a recall needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>"
+	)
+	cases := map[string]struct {
+		want string
+	}{
+		// A describe with no recall behind it.
+		"describe":                {needsRecall},
+		"describe ":               {needsRecall},
+		"describe\nrecall zebras": {needsRecall},
+		// The selector is written on the recall.
+		"describe@1 recall":        {noSelector},
+		"describe@1 recall zebras": {noSelector},
+		"describe @1 recall":       {noSelector},
+		// Only a recall reaches facts.
+		"describe remember 'a fact'": {`describe stands in front of a recall, not "remember": ` + onlyRecall},
+		"describe when race":         {`describe stands in front of a recall, not "when": ` + onlyRecall},
+		"describe when:said race":    {`describe stands in front of a recall, not "when": ` + onlyRecall},
+		"describe forget zebras":     {`describe stands in front of a recall, not "forget": ` + onlyRecall},
+		// One prefix per statement.
+		"describe describe recall":       {`"describe" ` + onePrefix},
+		"describe explain recall zebras": {`"explain" ` + onePrefix},
+		// Anything else after describe is not a recall.
+		"describe x":               {`expected recall after describe, found "x"`},
+		"describe Recall zebras":   {`expected recall after describe, found "Recall"`},
+		"describe 'recall' zebras": {`expected recall after describe, found "recall"`},
+		"describe topic:fraise":    {`expected recall after describe, found "topic"`},
+		// A space parts the prefix from its recall. Glued to a ':', a mis-cased
+		// describe still lexes as the prefix, which has no ':' form.
+		"Describe:recall x": {`expected a space after describe, found ":"`},
+		"describe:recall x": {`expected a space after describe, found ":"`},
+		// Behind describe the recall is spelled as it is on its own.
+		"describe recall@2@3":             {"a command takes one selector"},
+		"describe recall:x":               {`expected a space after the command, found ":"`},
+		"describe recall)":                {`expected a space after the command, found ")"`},
+		"describe recall zebras describe": {`term "describe" is also a prefix: quote it ('describe') to search for the word`},
+		// A body of stop words names a search that cannot match, so it stays
+		// an error, and an anchor beside it does not rescue it.
+		"describe recall the":             {`term "the" is a stop word`},
+		"describe recall the topic:birds": {`term "the" is a stop word`},
+		// A time bound holds a when, behind describe as anywhere.
+		"describe recall x until:(describe recall y)": {`expected a when after "(", found "describe"`},
+		"describe recall since:(recall y)":            {`"recall" cannot stand in a time bound: only a when answers with a time — write since:(when <terms>)`},
+		// The seed a describe waives is its recall's alone: the when in a
+		// bound still dates one fact, and needs a seed to find it.
+		"describe recall since:(when top:3)": {"a when needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>"},
+		// On its own a recall needs a space after its verb, and a seed.
+		"recall":           {"expected a space after the command, found end of input"},
+		"recall@2":         {"expected a space after the command, found end of input"},
+		"recall ":          {noSeed},
+		"recall top:5":     {noSeed},
+		"recall since:30d": {noSeed},
+	}
+
+	for query, tc := range cases {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := parser.Parse[uint64, float32](query, nil)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want an error", query)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not contain %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), `found ""`) {
+				t.Errorf("error %q reports end of input as an empty literal", err)
+			}
+		})
+	}
+}
+
 // TestTimeLiteralKeepsItsPrecision pins what a time bound holds for each form
 // a time is written in. A date names the whole of what it spells, a day, a
 // month or a year, so '2023-05' and '2023-05-01' start at the same instant and
@@ -868,6 +1110,9 @@ func TestSubqueryLimits(t *testing.T) {
 		// A bound is still one clause.
 		"recall x until:(when race) until:7d": {"duplicate until clause: until may be given only once — drop one"},
 		"recall x since:(when race) since:7d": {"duplicate since clause: since may be given only once — drop one"},
+		// A describe answers with a catalogue, not a time.
+		"recall x until:(describe recall race)": {`expected a when after "(", found "describe": a time bound's parentheses hold the when whose answer is the bound — write until:(when <terms>)`},
+		"recall x since:(describe recall)":      {`expected a when after "(", found "describe": a time bound's parentheses hold the when whose answer is the bound — write since:(when <terms>)`},
 		// Anywhere but a time bound a parenthesis groups nothing.
 		"recall x until:(when race))":  {grouping},
 		"recall x until:(when race) )": {grouping},
@@ -908,6 +1153,10 @@ func TestNestedWhenWarningsReachTheCaller(t *testing.T) {
 		"recall x until:(when the race)": {[]parser.Warning{{
 			Msg: `term "the" is a stop word: stored facts never contain it, so it cannot match`,
 			Pos: lexer.Position{Column: 24},
+		}}},
+		"describe recall x until:(when the race)": {[]parser.Warning{{
+			Msg: `term "the" is a stop word: stored facts never contain it, so it cannot match`,
+			Pos: lexer.Position{Column: 33},
 		}}},
 		"recall x until:(when race depth:2)": {[]parser.Warning{{
 			Msg: "depth:2 has no effect: the graph is searched only through a topic:/entity: anchor and this when names none, so it runs on the text and vector indices alone",
@@ -1231,6 +1480,8 @@ func TestRememberClauseOnAReadIsRefused(t *testing.T) {
 		"recall x topic:y occurred '2023'":   {25, occurredClause},
 		"when race occurred:'2023'":          {18, occurredClause},
 		"recall x until:(when race said:7d)": {30, saidClause},
+		"describe recall said:'2023'":        {20, saidClause},
+		"describe recall x occurred:7d":      {26, occurredClause},
 		// The word alone, after a clause.
 		"recall x topic:y said":                   {21, `"said" is a keyword and starts no clause here: quote it ('said') to search for the word`},
 		"recall x topic:y occurred":               {25, `"occurred" is a keyword and starts no clause here: quote it ('occurred') to search for the word`},
@@ -1294,6 +1545,11 @@ func TestGraphSelectorRejectsOutOfRange(t *testing.T) {
 		"recall@abc secret":                  {`invalid graph selector "abc": expected a whole number`},
 		"remember@256 'secret plan' topic:x": {"graph selector 256 out of range (0-255)"},
 		"remember@300 'secret plan' topic:x": {"graph selector 300 out of range (0-255)"},
+		// A describe reads its recall's graph, a whole one where the recall
+		// names no seed, so its selector is held to the same range.
+		"describe recall@256 secret": {"graph selector 256 out of range (0-255)"},
+		"describe recall@256":        {"graph selector 256 out of range (0-255)"},
+		"describe recall@abc":        {`invalid graph selector "abc": expected a whole number`},
 	}
 
 	for query, tc := range cases {
@@ -1484,9 +1740,17 @@ func TestParseErrorBlamesTheOffendingToken(t *testing.T) {
 		"recall zebras since:'2023-05-07'..later top:3": {"later"},
 		"when:soon race top:3":                          {"soon"},
 		"recall zebras until:(race) top:3":              {"race"},
+		"describe recall@abc zebras top:3":              {"abc"},
 		// A token in a position no clause can start.
 		"recall zebras : topic:food":  {":"},
 		"recall zebras .. topic:food": {".."},
+		// A word after describe that is not the recall it stands in front of.
+		"describe x recall zebras":                      {"x"},
+		"describe Recall zebras":                        {"Recall"},
+		"describe remember 'a' topic:x":                 {"remember"},
+		"describe explain recall zebras":                {"explain"},
+		"Describe:recall zebras":                        {":"},
+		"recall zebras until:(describe recall x) top:3": {"describe"},
 		// A misplaced explain prefix blames what stands where the recall
 		// should: a second prefix, another verb, a word, or a token glued to
 		// the prefix in the blank's place. A when answers with a time, so it
@@ -1707,9 +1971,12 @@ func TestMiscasedKeywordIsRejected(t *testing.T) {
 		"When race":            {"expected a command"},
 		"WHEN race":            {"expected a command"},
 		// A prefix is no more inferred than a verb: mis-cased, it is a word
-		// at the head of the statement.
-		"Explain recall zebras": {"expected a command (recall, remember, when)"},
-		"EXPLAIN recall zebras": {"expected a command (recall, remember, when)"},
+		// at the head of the statement, and describe decides what the query
+		// answers with.
+		"Explain recall zebras":  {"expected a command"},
+		"EXPLAIN recall zebras":  {"expected a command"},
+		"Describe recall zebras": {"expected a command"},
+		"DESCRIBE recall zebras": {"expected a command"},
 	}
 
 	for query, tc := range cases {
@@ -1839,6 +2106,8 @@ func TestDuplicateModifierIsRejected(t *testing.T) {
 		"remember 'x' said:7d said:1d":                      {},
 		"recall zebras until:(when race) until:7d":          {},
 		"recall zebras since:(when race) since:(when food)": {},
+		"describe recall top:3 top:10":                      {},
+		"describe recall since:7d since:30d":                {},
 	}
 
 	for q := range rejected {
@@ -2230,14 +2499,14 @@ func TestRejectedTokensNameTheirOwnMistake(t *testing.T) {
 // nothing else. So each message names what stands where the recall should, at
 // that token, with the repair an agent can make from it. A misplaced prefix
 // never surfaces as an error in the recall after it. Nor does it get the
-// "expected a command" answer, which grammar.mdx's Status section reserves for
-// a production the server does not accept: describe, or no prefix at all.
+// "expected a command" answer, which is reserved for a statement that opens
+// with neither a command nor a prefix.
 func TestExplainPrefixErrorsBlameTheirToken(t *testing.T) {
 	const (
 		needsRecall = `"explain" needs a recall after it — write explain recall <terms>`
 		noRanking   = " has no ranking to explain: the explain prefix stands only before recall — drop the prefix"
 		notRecall   = "expected recall after the explain prefix, found "
-		notCommand  = "expected a command (recall, remember, when), found "
+		notCommand  = "expected a command (recall, remember, when, describe recall), found "
 	)
 	cases := map[string]struct {
 		col int
@@ -2280,10 +2549,10 @@ func TestExplainPrefixErrorsBlameTheirToken(t *testing.T) {
 		// Under the prefix a recall keeps its own errors, at its own tokens.
 		"explain recall":       {14, "expected a space after the command, found end of input"},
 		"explain recall top:3": {14, "a recall needs at least one seed: a term, a topic:/entity: anchor, or vec:$<name>"},
-		// No statement opens with a command or the explain prefix here.
-		"describe recall x":         {8, notCommand + `"describe"`},
-		"describe explain recall x": {8, notCommand + `"describe"`},
-		"explainrecall x":           {13, notCommand + `"explainrecall"`},
+		// Behind describe, explain is a second prefix, and describe names it.
+		"describe explain recall x": {16, `"explain" cannot follow describe: a statement takes one prefix`},
+		// No statement opens with a command or a prefix here.
+		"explainrecall x": {13, notCommand + `"explainrecall"`},
 		// A time bound's parentheses hold a when, so the prefix is no command
 		// there, and an explained recall cannot bound another.
 		"recall x since:(explain recall race)": {23, `expected a when after "(", found "explain": a time bound's parentheses hold the when whose answer is the bound — write since:(when <terms>)`},
@@ -2364,6 +2633,8 @@ func TestCommandWordsAreNeverOfferedAsClauses(t *testing.T) {
 		"recall when":            {"when"},
 		"recall zebras when":     {"when"},
 		"when race when":         {"when"},
+		"describe recall when":   {"when"},
+		"describe recall x when": {"when"},
 	}
 
 	for query, tc := range cases {
@@ -2419,12 +2690,13 @@ func TestDanglingCommandWordStartsASecondCommand(t *testing.T) {
 	cases := map[string]struct {
 		want string
 	}{
-		"remember 'a' recall":      {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
-		"remember 'a' remember":    {`"remember" starts a second command: one command per instruction — quote it ('remember') to search for the word`},
-		"recall x topic:y recall":  {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
-		"recall x topic:y when":    {`"when" starts a second command: one command per instruction — quote it ('when') to search for the word`},
-		"remember 'a' when":        {`"when" starts a second command: one command per instruction — quote it ('when') to search for the word`},
-		"when race topic:y recall": {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"remember 'a' recall":            {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"remember 'a' remember":          {`"remember" starts a second command: one command per instruction — quote it ('remember') to search for the word`},
+		"recall x topic:y recall":        {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"recall x topic:y when":          {`"when" starts a second command: one command per instruction — quote it ('when') to search for the word`},
+		"remember 'a' when":              {`"when" starts a second command: one command per instruction — quote it ('when') to search for the word`},
+		"when race topic:y recall":       {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
+		"describe recall topic:y recall": {`"recall" starts a second command: one command per instruction — quote it ('recall') to search for the word`},
 	}
 
 	for query, tc := range cases {
@@ -2624,6 +2896,9 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 		"remember 'a fact'\n":               {},
 		"when race\n":                       {},
 		"recall zebras until:(when race)\n": {},
+		"describe recall\n":                 {},
+		"describe recall@2\n":               {},
+		"describe recall zebras\n":          {},
 		// The prefix opens the instruction, so its newline ends it too.
 		"explain recall zebras\n": {},
 	}
@@ -2642,6 +2917,10 @@ func TestNewlineEndsTheInstruction(t *testing.T) {
 		"remember 'a'\nremember 'b'": {},
 		"when race\nrecall zebras":   {},
 		"recall zebras\nwhen race":   {},
+		// A describe whose recall ends at its verb ends at the newline too.
+		"describe recall\nrecall zebras":    {},
+		"describe recall zebras\nwhen race": {},
+		"recall zebras\ndescribe recall":    {},
 		// A second line is a second instruction after an explained recall too.
 		"explain recall zebras\nrecall food": {},
 	}
@@ -2726,6 +3005,9 @@ func TestMiscasedClauseWarns(t *testing.T) {
 		"mis-cased stretch on a write":             {"remember 'a fact' OCCURRED:'2023-05-07'", true},
 		"mis-cased when glued to its clock":        {"WHEN:said race", true},
 		"a lower-case when is silent":              {"when:said race", false},
+		"mis-cased clause in a described recall":   {"describe recall zebras Topic:food", true},
+		"mis-cased clause in a seedless describe":  {"describe recall TOP:5", true},
+		"a lower-case describe is silent":          {"describe recall zebras topic:food top:5", false},
 	}
 
 	for name, tc := range cases {
@@ -2779,6 +3061,9 @@ func TestDepthWithoutAnchorWarns(t *testing.T) {
 		"no depth clause never warns":         {"recall ferry", false},
 		"depth on a term-only when":           {"when ferry depth:2", true},
 		"a when's depth beside an anchor":     {"when ferry topic:harbour depth:2", false},
+		"depth on a term-only describe":       {"describe recall ferry depth:2", true},
+		"depth on a seedless describe":        {"describe recall depth:2", true},
+		"a describe's depth beside an anchor": {"describe recall ferry topic:harbour depth:2", false},
 	}
 
 	for name, tc := range cases {
@@ -2818,6 +3103,36 @@ func TestDepthWithoutAnchorWarningIsActionable(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("warning %q does not contain %q", got, want)
 		}
+	}
+}
+
+// TestDepthWithoutAnchorWarningSaysWhatRan pins what the warning says the
+// query read instead. A recall or a described search with no anchor runs on
+// the text and vector indices. A describe with no seed searches nothing and
+// reads every fact, so telling it that its depth fell back to the indices
+// would describe a search it never ran.
+func TestDepthWithoutAnchorWarningSaysWhatRan(t *testing.T) {
+	cases := map[string]struct {
+		want string
+	}{
+		"recall ferry depth:2":          {"so it runs on the text and vector indices alone"},
+		"describe recall ferry depth:2": {"so it runs on the text and vector indices alone"},
+		"describe recall depth:2":       {"and with no seed it searches nothing: it reads every fact"},
+	}
+
+	for q, tc := range cases {
+		t.Run(q, func(t *testing.T) {
+			_, warns, err := parser.Parse[uint64, float32](q, nil)
+			if err != nil {
+				t.Fatalf("Parse(%q) unexpected error: %v", q, err)
+			}
+			if len(warns) != 1 {
+				t.Fatalf("Parse(%q) warnings = %v, want exactly one", q, warns)
+			}
+			if got := warns[0].Msg; !strings.HasSuffix(got, tc.want) {
+				t.Errorf("Parse(%q) warning = %q, want it to end %q", q, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -2875,6 +3190,10 @@ func TestSelectorWithSpace(t *testing.T) {
 		"remember @2 signal":    {"no space allowed between remember and @"},
 		"recall @3 'car park'":  {"no space allowed between recall and @"},
 		"recall  @5 'names of'": {"no space allowed between recall and @"},
+		// Behind describe the selector is glued to the recall's verb, with or
+		// without a body after it.
+		"describe recall @2 zebras": {"no space allowed between recall and @"},
+		"describe recall @2":        {"no space allowed between recall and @"},
 	}
 
 	for query, tc := range cases {
@@ -3289,6 +3608,17 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 		"recall x since:'2023-05'..":                                                              {},
 		"remember 'a fact' said:'2023-05-08' occurred:'2023-05-07' occurred:'2023-05'..'2023-07'": {},
 		"remember 'a' Said:7d":                                                                    {},
+		"describe recall":                                                                         {},
+		"describe recall ":                                                                        {},
+		"describe recall@2":                                                                       {},
+		"describe recall@2 topic:food":                                                            {},
+		"describe  recall  zebras":                                                                {},
+		"describe\trecall zebras":                                                                 {},
+		"describe recall zebras \n  \n\t":                                                         {},
+		"describe recall zebras TOP:3":                                                            {},
+		"describe recall since:30d":                                                               {},
+		"describe recall 'Top' entity:'O''Brien'":                                                 {},
+		"describe recall x until:(when the race)":                                                 {},
 		// Any blank between the prefix and the verb reprints as one.
 		"explain recall zebras":               {},
 		"explain  recall zebras":              {},
@@ -3328,6 +3658,12 @@ func TestStringRoundTripsToTheSameCommand(t *testing.T) {
 				a := again.(*parser.WhenCommandNode[uint64, float32])
 				want = command{Terms: c.Terms(), Topics: c.Topics(), Entities: c.Entities()}
 				got = command{Terms: a.Terms(), Topics: a.Topics(), Entities: a.Entities()}
+			case *parser.DescribeCommandNode[uint64, float32]:
+				r, a := c.Recall(), again.(*parser.DescribeCommandNode[uint64, float32]).Recall()
+				want = command{Terms: r.Terms(), Topics: r.Topics(), Entities: r.Entities()}
+				got = command{Terms: a.Terms(), Topics: a.Topics(), Entities: a.Entities()}
+			default:
+				t.Fatalf("Parse(%q) returned %T, which this test does not read", q, cmd)
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("round trip changed the command: mismatch (-want +got):\n%s", diff)

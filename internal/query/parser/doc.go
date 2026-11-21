@@ -23,9 +23,10 @@
 // Package parser turns one FQL instruction into a typed command node.
 //
 // [Parse] reads the lexer's tokens through a two-token window. It returns a
-// [CommandNode]: a [RecallCommandNode], a [RememberCommandNode] or a
-// [WhenCommandNode]. Their clauses are [FieldNode] values. Nodes keep their
-// source tokens, so String prints a query that parses back to the same node.
+// [CommandNode]: a [RecallCommandNode], a [RememberCommandNode], a
+// [WhenCommandNode] or a [DescribeCommandNode]. Their clauses are [FieldNode]
+// values. Nodes keep their source tokens, so String prints a query that parses
+// back to the same node.
 //
 // A when is a query whose answer is a time. It stands alone as a statement, and
 // it stands in a recall's since: or until: inside parentheses, where its answer
@@ -34,9 +35,13 @@
 // ordinary [CommandNode]. What a bound may hold is checked on that command once
 // it is parsed.
 //
-// A recall may open with the explain prefix, which its [RecallCommandNode]
-// holds. No other command takes it, and neither does a bound's parentheses: a
-// when answers with a time and has no ranking to explain.
+// A recall may open with a prefix, and a statement takes one. The explain
+// prefix asks for what the ranking did beside the hits, and the recall's
+// [RecallCommandNode] holds it. A describe answers with the shape of what the
+// recall reaches rather than its facts: it holds a whole [RecallCommandNode],
+// selector included, whose body may be empty or name no seed, which describes
+// the whole graph. No other command takes a prefix, and neither does a bound's
+// parentheses: a when answers with a time and has no ranking to explain.
 //
 // This package owns only the grammar. The query layer reads commands through
 // their accessors and enforces the configured limits. Vectors never appear in

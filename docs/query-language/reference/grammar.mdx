@@ -17,8 +17,7 @@ query           = recall_query | remember_query | when_query | forget_query | up
 (* RECALL                                                       *)
 (* ------------------------------------------------------------ *)
 
-prefix          = 'explain' | 'describe' ;
-recall_query    = prefix? recall_cmd recall_body ;   (* whitespace after the prefix, as after the verb: explain recall@3 — the selector stays on the verb *)
+recall_query    = ( 'explain'? recall_cmd recall_body ) | describe_query ;   (* whitespace after the prefix, as after the verb: explain recall@3 — the selector stays on the verb *)
 recall_cmd      = 'recall' graph_selector? ;   (* graph glued to verb: recall@3 — no whitespace before '@' *)
 
 (* SEMANTIC RULE: a recall needs at least one *seed*, and the      *)
@@ -55,6 +54,25 @@ until_field     = 'until' ':' time_value ;     (* upper time bound; duration rea
 depth_field     = 'depth' ':' integer ;        (* retrieval lane: 0 floor, 1 precision, 2 max recall *)
 top_field       = 'top'   ':' integer ;        (* result limit, default 10; both are bounded *)
 vec_field       = 'vec'   ':' param_ref ;      (* semantic seed (optional) *)
+
+(* A describe is a recall that answers with the shape of what it   *)
+(* reaches instead of its facts: how many facts, the span they     *)
+(* hold on each clock, and the topics and entities they are filed  *)
+(* under, each with how many of the facts it files. 'describe'     *)
+(* stands in front of a recall alone, once, and takes no graph     *)
+(* selector of its own: it reads the recall's, as in 'describe     *)
+(* recall@2'.                                                      *)
+(* SEMANTIC RULE: under describe the seed rule is waived. The body *)
+(* may be empty or hold modifiers alone, and a recall that names   *)
+(* no seed reaches every fact in its graph, so 'describe recall'   *)
+(* describes the whole graph and 'describe recall since:30d' what  *)
+(* the last thirty days hold. Every other rule of a body holds,    *)
+(* the stop-word rule among them. The set described is every       *)
+(* candidate the recall would rank, not its first top: under       *)
+(* describe top: caps how many topics, and how many entities, the  *)
+(* answer lists (default-top when absent), and since: and until:   *)
+(* bound the facts counted.                                        *)
+describe_query  = 'describe' recall_cmd recall_body? ;   (* never inside a time bound: a subquery holds a when *)
 
 (* A when is a recall that answers with a time: the span its hits  *)
 (* hold on the clock it names. Its top defaults to 1, the time of  *)
@@ -166,9 +184,8 @@ The grammar above is all of v3. Which of it a server accepts depends on its vers
 | Production | Reserved since | Planned for | Issue |
 | --- | --- | --- | --- |
 | `forget_query`, `update_query` | 0.3.0 | 0.5.0 | [#172](https://github.com/FraiseHQ/fraise/issues/172) |
-| `prefix` `'describe'` on `recall_query` | 0.3.0 | 0.4.0 | [#434](https://github.com/FraiseHQ/fraise/issues/434) |
 
-A server that reserves a production but does not accept it answers a query opening with its word with `expected a command (recall, remember, when), found "<word>"`; a server that accepts it answers as the production says. The conformance suite carries one row per production and per status, so an SDK can tell the two apart.
+A server that reserves a production but does not accept it answers a query opening with its word with `expected a command (recall, remember, when, describe recall), found "<word>"`; a server that accepts it answers as the production says. The conformance suite carries one row per production and per status, so an SDK can tell the two apart.
 
 ## Reading it
 

@@ -77,6 +77,12 @@ func TestRecallForwardsTheQueryAndRendersTheResponse(t *testing.T) {
 // neither key, and a recall no start. A zero date in their place would read to
 // a client as a fact said in the year one, or a recall that answered with a
 // time.
+//
+// A describe answers with its catalogue beside empty hits, in the daemon's key
+// order and with every time to the instant the daemon wrote it. The bodies are
+// the daemon's own responses to the facts of newCatalogueServer in pkg/server.
+// A catalogue that reached no fact carries no time and empty lists, not null,
+// since the recall tool's output schema requires both lists.
 func TestRecallReturnsTheResponseBodyKeyForKey(t *testing.T) {
 	cases := map[string]struct {
 		body string
@@ -90,6 +96,23 @@ func TestRecallReturnsTheResponseBodyKeyForKey(t *testing.T) {
 		"a recall of a fact given no times": {
 			body: `{"results":{"count":1,"hits":[{"value":"anna ran the charity race","timestamp":"2026-01-02T03:04:05Z","score":1.25}]}}`,
 			want: "- [2026-01-02] anna ran the charity race (relevance 1.250)",
+		},
+		"a describe of an anchor": {
+			body: `{"results":{"count":0,"hits":[],"catalogue":{"graph":0,"scope":"entity:heron top:1","facts":2,"anchors":3,` +
+				`"happened":{"start":"2023-05-01T00:00:00Z","end":"2023-05-08T00:00:00Z"},"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00Z"},"written":{"start":"2026-11-15T13:38:38.861554Z","end":"2026-11-15T13:38:38.861801Z"},` +
+				`"topics":[{"value":"birds","facts":2,"happened":{"start":"2023-05-01T00:00:00Z","end":"2023-05-08T00:00:00Z"},"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00Z"},"written":{"start":"2026-11-15T13:38:38.861554Z","end":"2026-11-15T13:38:38.861801Z"}}],` +
+				`"entities":[{"value":"heron","facts":2,"happened":{"start":"2023-05-01T00:00:00Z","end":"2023-05-08T00:00:00Z"},"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00Z"},"written":{"start":"2026-11-15T13:38:38.861554Z","end":"2026-11-15T13:38:38.861801Z"}}]}}}`,
+			want: "describe recall@0 entity:heron top:1: 2 facts under 3 anchors, happened 2023-05-01..2023-05-07\n" +
+				"topics:\n" +
+				"- [2023-05-01..2023-05-07] birds: 2 facts\n" +
+				"entities:\n" +
+				"- [2023-05-01..2023-05-07] heron: 2 facts",
+		},
+		"a describe that reached no fact": {
+			body: `{"results":{"count":0,"hits":[],"catalogue":{"graph":0,"scope":"until:(when zebras)","facts":0,"anchors":0,"topics":[],"entities":[]}},` +
+				`"warnings":["until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits"]}`,
+			want: "describe recall@0 until:(when zebras): no fact reached.\n" +
+				"warning: until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits",
 		},
 	}
 

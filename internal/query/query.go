@@ -114,7 +114,8 @@ func (p QueryParameters[K, P]) Equal(other QueryParameters[K, P]) bool {
 
 // QueryContext holds where a query runs, not what it asks. GraphID is the graph
 // its selector names. [Recall] and [Remember] hold it in an unexported field,
-// so it changes only through SetGraphID. A [When] runs where its recall does.
+// so it changes only through SetGraphID. A [When] and a [Describe] run where
+// their recall does.
 type QueryContext struct {
 	GraphID uint8
 }
@@ -135,8 +136,8 @@ func writeStrings(b *strings.Builder, ss []string) {
 
 // QueryResult is the outcome of a committed stream as the server returns it:
 // the ranked hits of a recall and their count. A when adds the time it answers
-// with, and an explained recall what its ranking did. A remember commits with
-// an empty result.
+// with, and an explained recall what its ranking did. A describe answers with
+// a catalogue instead of hits. A remember commits with an empty result.
 type QueryResult[K comparable, P float32 | float64] struct {
 	Count int         `json:"count"`
 	Hits  []Hit[K, P] `json:"hits"`
@@ -154,6 +155,12 @@ type QueryResult[K comparable, P float32 | float64] struct {
 	// the key's presence is how a client tells an explained envelope from a
 	// plain one, and a plain recall pays nothing for it.
 	Explain *RecallExplain[K, P] `json:"explain,omitempty"`
+
+	// Catalogue is what a describe answers with in place of hits: the shape
+	// of the set its recall reaches (see [Describe]). Its hits stay empty and
+	// its count zero, since it returns no fact. A recall and a when leave it
+	// nil, and omitempty keeps it off their response.
+	Catalogue *Catalogue `json:"catalogue,omitempty"`
 }
 
 // NestedResults is the wire form of what a recall's nested queries answered,
@@ -416,6 +423,24 @@ func fromCommand[K comparable, P float32 | float64](cmd parser.CommandNode, c *c
 		qo.SetGraphID(n.Selector())
 
 		logger.Debug("Parsed when query", "graph", qo.GetGraphID(), "clock", qo.Clock.String(), "keywords", len(recall.Keywords))
+		return qo, nil
+
+	case *parser.DescribeCommandNode[K, P]:
+		// Under describe the top clause caps the anchors listed, so it is
+		// range-checked as a recall's top is and then taken off the recall.
+		// The recall runs with no top, which keeps every match: the set a
+		// describe pictures is everything its recall reaches, not the first
+		// few hits.
+		body := n.Recall().RecallBodyNode
+		recall, err := fromRecallBody(body, body.Top(c.DB.DefaultTop), c)
+		if err != nil {
+			return nil, err
+		}
+		qo := &Describe[K, P]{Scope: body.String(), Top: recall.Parameters.Top, Recall: *recall}
+		qo.Recall.Parameters.Top = 0
+		qo.SetGraphID(n.Selector())
+
+		logger.Debug("Parsed describe query", "graph", qo.GetGraphID(), "keywords", len(recall.Keywords), "top", qo.Top)
 		return qo, nil
 
 	default:

@@ -22,8 +22,8 @@
 
 // Package query defines the executable form of a Fraise query: the Recall,
 // Remember and When commands, a recall written with the explain prefix being a
-// Recall with its Explain flag set, and the Stream that runs one of them for a
-// request.
+// Recall with its Explain flag set, a Describe in front of a recall, and the
+// Stream that runs one of them for a request.
 //
 // [Parse] turns FQL text into a [Query] through the parser, which binds the
 // vector parameters supplied out of band. Parse rejects a top:, depth: or
@@ -39,6 +39,11 @@
 // own, and plans it into a stream that hangs from the recall's. That stream
 // commits first, on the same graph and under the same lock, so the bound and
 // the search read one state of the graph.
+//
+// A [Describe] answers with the shape of what its recall reaches instead of
+// the facts: how many there are, when they hold, and the topics and entities
+// they are filed under, in a [Catalogue]. Its recall runs with no top, so the
+// set described is every candidate the recall would rank.
 //
 // The plan cache hands the same query object to every request equal to the
 // one it was planned for. So a Query carries nothing per request. The result

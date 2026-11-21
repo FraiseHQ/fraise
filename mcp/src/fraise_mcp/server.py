@@ -41,9 +41,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, NotRequired, TypedDict
 
+from fraise_sdk import models
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.constants import VECTOR_PARAM
 from fraise_sdk.errors import FraiseAPIError, FraiseError
+from fraise_sdk.integrations.render import render_span
 from fraise_sdk.models import RecallResult
 from fraise_sdk.providers.base import EmbedderLike
 from mcp.server.mcpserver import MCPServer
@@ -61,7 +63,12 @@ RECALL_DESCRIPTION = (
     "age, newest first under a single anchor: the way to see what is stored under "
     "a topic before you know what to search for. A recall may also be written "
     "explain recall …: it ranks exactly as the recall it prefixes, and its "
-    "structured result also says how the ranking was reached."
+    "structured result also says how the ranking was reached. This tool also "
+    "runs describe: put describe in front of a recall and it answers with the "
+    "shape of what the recall reaches instead of the facts — how many, when "
+    "they happened, and the topics and entities they are filed under, with how "
+    "many facts each files — and describe recall alone describes the whole "
+    "graph. When you do not know how memory is filed, describe recall first."
 )
 
 RECALL_QUERY = (
@@ -76,7 +83,14 @@ RECALL_QUERY = (
     "topic:weather top:5 depth:1 since:7d. Anchors alone, with no terms, seed the "
     "search with every fact filed under those topics/entities, scored one unit per "
     "named anchor and decayed by age, so newest first under one anchor (depth: has "
-    "no effect). Example: recall@2 topic:weather top:20"
+    "no effect). Example: recall@2 topic:weather top:20. describe in front of a "
+    "recall, which this tool runs as it runs a recall, answers with the catalogue "
+    "of what the recall reaches instead of its facts: how many facts, when they happened, and the topics and entities they "
+    "are filed under with each one's count. describe recall@2 describes the whole "
+    "graph, describe recall@2 topic:weather what is filed under an anchor and the "
+    "anchors filed beside it, and describe recall@2 barometer the anchors the "
+    "matching facts are filed under. Under describe, top:N caps the topics and the "
+    "entities listed, and since:/until: bound the facts counted."
 )
 
 REMEMBER_DESCRIPTION = (
@@ -282,6 +296,108 @@ class RecallExplain(TypedDict):
     ]
 
 
+class CatalogueEntry(TypedDict):
+    """One topic or entity the described facts are filed under."""
+
+    value: Annotated[str, Field(description="The topic or entity, as stored.")]
+    facts: Annotated[
+        int,
+        Field(
+            description="How many of the described facts are filed under it. Under "
+            "a describe of one anchor, the facts it shares with that anchor."
+        ),
+    ]
+    happened: NotRequired[
+        Annotated[
+            Interval,
+            Field(
+                description="From the earliest start to the latest end of what the "
+                "facts state took place; a fact given no occurred: happened when it "
+                "was said. No end when one of them has not ended."
+            ),
+        ]
+    ]
+    said: NotRequired[
+        Annotated[
+            Interval,
+            Field(
+                description="From the first fact said to the last; a fact given no "
+                "said: was said when it was written."
+            ),
+        ]
+    ]
+    written: NotRequired[
+        Annotated[
+            Interval, Field(description="From the first fact written to the last.")
+        ]
+    ]
+
+
+class Catalogue(TypedDict):
+    """What a describe answers with in place of hits: the shape of every fact its recall reaches."""
+
+    graph: Annotated[int, Field(description="The graph described.")]
+    scope: Annotated[
+        str,
+        Field(
+            description="The recall's body as the server read it, empty for the "
+            "whole graph."
+        ),
+    ]
+    facts: Annotated[
+        int,
+        Field(
+            description="How many facts the recall reaches: every candidate it would "
+            "rank, not the first top."
+        ),
+    ]
+    anchors: Annotated[
+        int,
+        Field(
+            description="How many topics and entities those facts are filed under, "
+            "before the lists are capped."
+        ),
+    ]
+    happened: NotRequired[
+        Annotated[
+            Interval,
+            Field(
+                description="From the earliest start to the latest end of what the "
+                "facts state took place; a fact given no occurred: happened when it "
+                "was said. No end when one of them has not ended."
+            ),
+        ]
+    ]
+    said: NotRequired[
+        Annotated[
+            Interval,
+            Field(
+                description="From the first fact said to the last; a fact given no "
+                "said: was said when it was written."
+            ),
+        ]
+    ]
+    written: NotRequired[
+        Annotated[
+            Interval, Field(description="From the first fact written to the last.")
+        ]
+    ]
+    topics: Annotated[
+        list[CatalogueEntry],
+        Field(
+            description="The topics the facts are filed under, the most filed first, "
+            "at most top: of them."
+        ),
+    ]
+    entities: Annotated[
+        list[CatalogueEntry],
+        Field(
+            description="The entities the facts are filed under, the most filed "
+            "first, at most top: of them."
+        ),
+    ]
+
+
 class Results(TypedDict):
     """Ranked recall results, best first.
 
@@ -312,6 +428,7 @@ class Results(TypedDict):
         ]
     ]
     explain: NotRequired[RecallExplain]
+    catalogue: NotRequired[Catalogue]
 
 
 # The output schema mirrors the query endpoint's read response, as the
@@ -341,8 +458,10 @@ def render(body: dict) -> str:
     with nothing in two ways. Either the graph holds nothing at all, which the
     daemon answers 204 with no body, or a populated graph has no matching
     fact. They read differently on purpose: the first calls for remembering
-    something, the second for asking differently. Warnings follow, one per
-    line. The statement ran, and the model needs them to fix its next one.
+    something, the second for asking differently. A describe answers with a
+    catalogue in place of hits, rendered as :func:`render_catalogue` renders
+    it. Warnings follow, one per line. The statement ran, and the model needs
+    them to fix its next one.
 
     Args:
         body: the decoded response body, ``{}`` for a 204.
@@ -350,8 +469,11 @@ def render(body: dict) -> str:
     Returns:
         The text the model reads.
     """
+    catalogue = (body.get("results") or {}).get("catalogue")
     if "status" in body:
         lines = ["Remembered."]
+    elif catalogue is not None:
+        lines = render_catalogue(models.Catalogue.from_json(catalogue))
     else:
         result = RecallResult.from_json(
             body.get("results") or {}, empty="results" not in body
@@ -366,6 +488,48 @@ def render(body: dict) -> str:
             lines = ["No stored facts matched."]
     lines += [f"warning: {warning}" for warning in body.get("warnings") or []]
     return "\n".join(lines)
+
+
+def render_catalogue(catalogue: models.Catalogue) -> list[str]:
+    """Render a describe's catalogue as the lines the model reads.
+
+    The first line spells the describe as the server read it, so the model can
+    widen or narrow it by editing what it reads, then gives how many facts the
+    recall reaches, the anchors they are filed under and when they happened.
+    The topics and then the entities follow, one per line in the order the
+    catalogue lists them, each with when its facts happened in front, as the
+    Go bridge renders them. A kind with no anchor says so, since a missing
+    section reads as a list cut off.
+
+    Args:
+        catalogue: the describe's answer.
+
+    Returns:
+        The lines, with no newline at their ends.
+    """
+    statement = f"describe recall@{catalogue.graph}"
+    if catalogue.scope:
+        statement += f" {catalogue.scope}"
+    if not catalogue or catalogue.happened is None:
+        return [f"{statement}: no fact reached."]
+    facts = "1 fact" if catalogue.facts == 1 else f"{catalogue.facts} facts"
+    anchors = "1 anchor" if catalogue.anchors == 1 else f"{catalogue.anchors} anchors"
+    lines = [
+        f"{statement}: {facts} under {anchors}, happened {render_span(catalogue.happened)}"
+    ]
+    for kind, entries in (
+        ("topics", catalogue.topics),
+        ("entities", catalogue.entities),
+    ):
+        if not entries:
+            lines.append(f"{kind}: none")
+            continue
+        lines.append(f"{kind}:")
+        for entry in entries:
+            span = f"[{render_span(entry.happened)}] " if entry.happened else ""
+            count = "1 fact" if entry.facts == 1 else f"{entry.facts} facts"
+            lines.append(f"- {span}{entry.value}: {count}")
+    return lines
 
 
 def build_server(

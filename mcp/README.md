@@ -1,6 +1,6 @@
 # fraise-mcp
 
-An MCP server for a running [Fraise](https://github.com/FraiseHQ/fraise) daemon. It exposes two tools, `recall` and `remember`, each taking one FQL statement, and embeds every statement's text locally so retrieval is hybrid (text and vector) out of the box. The model writes plain FQL and never a vector.
+An MCP server for a running [Fraise](https://github.com/FraiseHQ/fraise) daemon. It exposes two tools, `recall` and `remember`, each taking one FQL statement: `recall` runs every read, a recall, a `when` or a `describe` in front of a recall, and `remember` every write. It embeds every statement's text locally so retrieval is hybrid (text and vector) out of the box. The model writes plain FQL and never a vector.
 
 <!-- mcp-name: io.github.FraiseHQ/fraise -->
 
@@ -33,7 +33,7 @@ The model is any text model [fastembed](https://qdrant.github.io/fastembed/examp
 
 ## What gets embedded
 
-A `remember` embeds its fact. A `recall` embeds its search terms, the words and phrases before its first clause. An `explain recall …` embeds the same terms as the recall it prefixes, which it ranks exactly alike. The server appends `vec:$v` and binds the vector beside the statement. A recall with no terms, where anchors alone seed the search, is sent as written, and so is any statement the server cannot read that far: the daemon checks every statement, and its error messages come back to the model as tool errors.
+A `remember` embeds its fact. A `recall` embeds its search terms, the words and phrases before its first clause. An `explain recall …` embeds the same terms as the recall it prefixes, which it ranks exactly alike. The server appends `vec:$v` and binds the vector beside the statement. A recall with no terms, where anchors alone seed the search, is sent as written, and so is a `describe recall`, which answers with the shape of what its recall reaches and would reach every fact holding a vector if it carried one, and any statement the server cannot read that far: the daemon checks every statement, and its error messages come back to the model as tool errors.
 
 ## What a recall answers
 

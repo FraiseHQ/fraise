@@ -31,6 +31,10 @@ client.check_compatibility(strict=True)  # raises FraiseError on mismatch
 
 A fact's `said` and `occurred` times travel on a hit only when the fact was given them, and only from a server that keeps them. The Python SDK reads both absences alike: `Hit.said` and `Hit.occurred` are `None`, and `Hit.timestamp`, which every server returns, is when the fact was written. A server whose grammar has no `said:`, `occurred:` or `when` rejects a query that uses one with a parse error, which the SDK raises as `FraiseAPIError` with the server's message. An SDK released before these fields ignores them on a hit.
 
+## Describe
+
+`FraiseClient.describe` sends the recall its arguments spell with `describe` in front, and reads the `catalogue` the server answers with. A server whose grammar has no `describe` rejects the query with a parse error, which the SDK raises as `FraiseAPIError` with the server's message. An SDK released before `describe` has no method for it: `client.query` sends a describe as written and returns the server's body, the `catalogue` inside its `results`.
+
 ## Updating this table on release
 
 When cutting an SDK release that starts relying on newer server behaviour:

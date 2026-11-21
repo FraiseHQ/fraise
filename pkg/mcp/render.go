@@ -47,13 +47,16 @@ import (
 //
 // A when answers with a time beside its hits, and that time leads the text.
 // It is what the model asked for, and the hits under it are where it was read
-// from.
+// from. A describe answers with a catalogue and no hits, rendered in their
+// place.
 func renderRecall(out RecallOutput, graphEmpty bool) string {
 	var lines []string
 	if !out.Results.Start.IsZero() {
 		lines = append(lines, "when: "+renderSpan(containers.Interval{Start: out.Results.Start, End: out.Results.End}))
 	}
-	if len(out.Results.Hits) == 0 {
+	if c := out.Results.Catalogue; c != nil {
+		lines = append(lines, renderCatalogue(*c)...)
+	} else if len(out.Results.Hits) == 0 {
 		if graphEmpty {
 			lines = append(lines, "No stored facts matched: this graph is empty, nothing has been remembered in it yet.")
 		} else {
@@ -67,6 +70,49 @@ func renderRecall(out RecallOutput, graphEmpty bool) string {
 		lines = append(lines, "warning: "+warning)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// renderCatalogue renders a describe's answer: a line naming what was
+// described and its size, then the topics and the entities its facts are
+// filed under, one per line in the order the catalogue lists them. The first
+// line spells the describe as the server read it, so the model can widen or
+// narrow it by editing what it reads. Each anchor carries, in front, when its
+// facts happened, as a hit carries its dates. A model planning its first
+// recall reads which anchors exist, how much each files and how recent it is.
+// A kind with no anchor says so, since a missing section reads as a list cut
+// off.
+func renderCatalogue(c Catalogue) []string {
+	statement := fmt.Sprintf("describe recall@%d", c.Graph)
+	if c.Scope != "" {
+		statement += " " + c.Scope
+	}
+	if c.Facts == 0 {
+		return []string{statement + ": no fact reached."}
+	}
+	lines := []string{fmt.Sprintf("%s: %s under %s, happened %s", statement, renderCount(c.Facts, "fact"), renderCount(c.Anchors, "anchor"), renderSpan(c.Happened))}
+	for _, kind := range []struct {
+		name    string
+		entries []CatalogueEntry
+	}{{"topics", c.Topics}, {"entities", c.Entities}} {
+		if len(kind.entries) == 0 {
+			lines = append(lines, kind.name+": none")
+			continue
+		}
+		lines = append(lines, kind.name+":")
+		for _, entry := range kind.entries {
+			lines = append(lines, fmt.Sprintf("- [%s] %s: %s", renderSpan(entry.Happened), entry.Value, renderCount(entry.Facts, "fact")))
+		}
+	}
+	return lines
+}
+
+// renderCount renders a count with its noun, singular for one, so a line
+// reads as a sentence a model would write: 1 fact, 2 facts.
+func renderCount(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // renderHit renders one hit as a line: the dates the fact holds, its value,

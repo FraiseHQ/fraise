@@ -1331,7 +1331,7 @@ func (g *InMemoryGraph[K, P]) returnable(key K, since containers.Bound, until co
 		return isFact
 	}
 	fact, isFact := node.(Fact[K])
-	return isFact && fact.within(since, until)
+	return isFact && fact.Within(since, until)
 }
 
 // IsEmpty reports whether the graph holds no nodes. Callers ask it under the

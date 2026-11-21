@@ -54,7 +54,7 @@ Any of `recall`, `remember`, `when`, `forget`, `update`, `explain`, `describe`, 
 | `recall top` | `top:<value>`, or `'top'`: nothing follows, so the value is a placeholder |
 | `recall Top shelf` | the same two repairs, and the casing |
 | `recall recall`, `recall when` | only the quote: a command has no clause reading |
-| `recall explain` | only the quote: a prefix has no clause reading either |
+| `recall describe`, `recall explain` | only the quote: a prefix has no clause reading either |
 | `recall what she said` | only the quote: `said:` and `occurred:` are clauses of a `remember`, with no reading in a search |
 
 Once a clause has started, a keyword without its `:` has one reading left, so the message names only the clause: `recall zebras since:7d topic food` answers `write topic:food`. See [Keywords](/docs/query-language/tokens/keywords).
@@ -78,7 +78,7 @@ Once a clause has started, a keyword without its `:` has one reading left, so th
 | `explain x` | the word standing where `recall` belongs |
 | `recall anna until:(explain recall race)` | the `when` a time bound's parentheses hold: `until:(when <terms>)` |
 
-`describe` is reserved as a prefix but not accepted, so `describe recall x` opens with no command at all and answers `expected a command (recall, remember, when), found "describe"` (see the grammar's [Status](/docs/query-language/reference/grammar#status)). See [Explained recall](/docs/http-api/endpoints/explain) for what the prefix does.
+`describe` stands in the same place, and is blamed the same way: `describe` with nothing after it needs the recall to describe, `describe@2 recall` takes the selector onto the recall, `describe remember 'x'` and `describe when race` name the command, which reaches no set of facts to describe, and `describe explain recall x` the second prefix. See [Explained recall](/docs/http-api/endpoints/explain) for what `explain` does, and [Commands](/docs/query-language/foundations/commands) for `describe`.
 
 ### A recall that cannot match
 

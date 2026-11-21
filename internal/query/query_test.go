@@ -36,8 +36,6 @@ import (
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph"
 	"github.com/FraiseHQ/fraise/internal/query"
-	"github.com/FraiseHQ/fraise/internal/query/lexer"
-	"github.com/FraiseHQ/fraise/internal/query/parser"
 )
 
 // TestParseRemember checks that a remember query parses to a *query.Remember.
@@ -225,6 +223,96 @@ func TestParseWhen(t *testing.T) {
 	}
 }
 
+// TestParseDescribe pins what a describe statement parses to: a
+// *query.Describe over the recall written behind the prefix. It reads the
+// graph the recall's selector names. Its top is the recall's top clause, or
+// the configured default, and caps the anchors it lists. The recall itself
+// runs with no top, so the set described is every match and not the first
+// few. Its scope is the recall's body as the parser reads it: terms and
+// anchor values folded to lower case, clauses in their fixed order, and
+// nothing for a body left empty, which describes the whole graph. It is a
+// read.
+func TestParseDescribe(t *testing.T) {
+	type describe struct {
+		Scope    string
+		Top      int
+		Keywords []string
+		Entities []string
+		Topics   []string
+		Depth    int
+		Graph    uint8
+	}
+	cfg := config.New()
+	cfg.DB.DefaultTop = 7
+	tests := map[string]describe{
+		"describe recall": {
+			Top: 7,
+		},
+		"describe recall@2": {
+			Top: 7, Graph: 2,
+		},
+		"describe recall top:5": {
+			Scope: "top:5", Top: 5,
+		},
+		"describe recall since:30d": {
+			Scope: "since:30d", Top: 7,
+		},
+		"describe recall heron": {
+			Scope: "heron", Top: 7, Keywords: []string{"heron"},
+		},
+		"describe recall@3 topic:Birds entity:Anne": {
+			Scope:    "entity:anne topic:birds",
+			Top:      7,
+			Entities: []string{"anne"},
+			Topics:   []string{"birds"},
+			Graph:    3,
+		},
+		"describe recall@1 Heron entity:Anne topic:Birds depth:1 top:3": {
+			Scope:    "heron entity:anne topic:birds top:3 depth:1",
+			Top:      3,
+			Keywords: []string{"heron"},
+			Entities: []string{"anne"},
+			Topics:   []string{"birds"},
+			Depth:    1,
+			Graph:    1,
+		},
+	}
+	for q, want := range tests {
+		t.Run(q, func(t *testing.T) {
+			parsed, _, err := query.Parse[string, float32](q, nil, cfg)
+			if err != nil {
+				t.Fatalf("Parse(%q) = %v, want nil", q, err)
+			}
+			d, ok := parsed.(*query.Describe[string, float32])
+			if !ok {
+				t.Fatalf("Parse(%q) returned %T, want *query.Describe", q, parsed)
+			}
+
+			got := describe{
+				Scope:    d.Scope,
+				Top:      d.Top,
+				Keywords: d.Recall.Keywords,
+				Entities: d.Recall.Entities,
+				Topics:   d.Recall.Topics,
+				Depth:    d.Recall.Parameters.Depth,
+				Graph:    d.GetGraphID(),
+			}
+			if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Parse(%q) mismatch (-want +got):\n%s", q, diff)
+			}
+			if d.Recall.Parameters.Top != 0 {
+				t.Errorf("Parse(%q) recall top = %d, want 0: the recall keeps every match", q, d.Recall.Parameters.Top)
+			}
+			if d.Recall.GetGraphID() != want.Graph {
+				t.Errorf("Parse(%q) recall graph = %d, want %d: a describe reads where its recall does", q, d.Recall.GetGraphID(), want.Graph)
+			}
+			if d.IsWrite() {
+				t.Errorf("Parse(%q).IsWrite() = true, want false", q)
+			}
+		})
+	}
+}
+
 // TestParseRecallNestsTheWhenInItsBound pins what a when in a time bound
 // parses to. The bound holds the when as a query and holds no value, and the
 // when reads the graph of the recall that holds it, so the bound and the
@@ -370,39 +458,6 @@ func TestRecallPlanCarriesTheExplainFlag(t *testing.T) {
 	}
 }
 
-// TestParseLeavesDescribeUnaccepted pins the answer to a statement opening with
-// describe, a prefix the grammar reserves and this server does not accept. The
-// message is the one grammar.mdx's Status section fixes for every such
-// production, so an SDK can tell an unaccepted production from a malformed
-// one. A describe in front of the explain prefix gets it too: the statement
-// opens with describe.
-func TestParseLeavesDescribeUnaccepted(t *testing.T) {
-	queries := map[string]struct{}{
-		"describe recall x":         {},
-		"describe explain recall x": {},
-	}
-
-	for q := range queries {
-		t.Run(q, func(t *testing.T) {
-			got, _, err := query.Parse[string, float32](q, nil, config.New())
-			if !errors.Is(err, query.ErrParsingFailed) {
-				t.Errorf("Parse(%q) err = %v, want it to wrap ErrParsingFailed", q, err)
-			}
-			if got != nil {
-				t.Errorf("Parse(%q) = %v, want nil query", q, got)
-			}
-			var perr *parser.Error
-			if !errors.As(err, &perr) {
-				t.Fatalf("Parse(%q) err = %v, want a *parser.Error", q, err)
-			}
-			want := parser.Error{Pos: lexer.Position{Column: 8}, Msg: `expected a command (recall, remember, when), found "describe"`}
-			if diff := cmp.Diff(want, *perr); diff != "" {
-				t.Errorf("Parse(%q) error mismatch (-want +got):\n%s", q, diff)
-			}
-		})
-	}
-}
-
 // TestParseErrors checks that malformed or empty queries are rejected with
 // ErrParsingFailed and a nil query.
 func TestParseErrors(t *testing.T) {
@@ -438,6 +493,38 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+// TestParseDescribeErrors pins the describe statements that do not parse. A
+// describe stands in front of a recall alone, takes one prefix and no
+// selector of its own, and holds a recall that parses as one would, so a body
+// of stop words is an error under describe too. A describe never stands in a
+// time bound, which reads a when.
+func TestParseDescribeErrors(t *testing.T) {
+	cfg := config.New()
+	queries := map[string]struct{}{
+		"describe":                                {}, // a describe needs a recall to describe
+		"describe ":                               {}, // a space is not a recall
+		"describe@1 recall":                       {}, // the selector is the recall's
+		"describe lap":                            {}, // a describe stands in front of a recall
+		"describe remember 'lap'":                 {}, // only a recall reaches a set of facts
+		"describe when race":                      {}, // a when answers with a time, not a set
+		"describe describe recall":                {}, // a statement takes one prefix
+		"describe explain recall":                 {}, // explain is a prefix as well
+		"describe recall the":                     {}, // a stop word alone matches nothing, under describe too
+		"recall lap since:(describe recall race)": {}, // only a when answers with a time
+	}
+	for q := range queries {
+		t.Run(q, func(t *testing.T) {
+			got, _, err := query.Parse[string, float32](q, nil, cfg)
+			if !errors.Is(err, query.ErrParsingFailed) {
+				t.Errorf("Parse(%q) err = %v, want it to wrap ErrParsingFailed", q, err)
+			}
+			if got != nil {
+				t.Errorf("Parse(%q) = %v, want nil query", q, got)
+			}
+		})
+	}
+}
+
 // TestParseRecallBindsVector checks that a vec:$v placeholder binds the
 // supplied vector into the resulting *query.Recall.
 func TestParseRecallBindsVector(t *testing.T) {
@@ -462,12 +549,14 @@ func TestParseRecallBindsVector(t *testing.T) {
 // TestParseRecallMissingParameter checks that referencing a placeholder with no
 // matching parameter is rejected with ErrMissingParameter. A when binds its
 // vector as a recall does, as a statement and nested in a bound, so the
-// placeholder of a nested when is checked with the query that holds it.
+// placeholder of a nested when is checked with the query that holds it. A
+// describe binds the vector of the recall it holds.
 func TestParseRecallMissingParameter(t *testing.T) {
 	queries := map[string]struct{}{
 		"recall@0 amelia vec:$v":                   {},
 		"when amelia vec:$v":                       {},
 		"recall@0 amelia until:(when race vec:$v)": {},
+		"describe recall vec:$v":                   {},
 	}
 
 	for q := range queries {
@@ -542,6 +631,42 @@ func TestParseRejectsOverLimits(t *testing.T) {
 	}
 	if _, _, err := query.Parse[string, float32]("explain recall@0 anna top:5 depth:1", nil, cfg); err != nil {
 		t.Errorf("within-limit explained recall returned error: %v", err)
+	}
+}
+
+// TestParseDescribeRejectsOverLimits holds a describe to its recall's limits.
+// Its top caps the anchors it lists rather than the hits, and is range-checked
+// as a recall's is, so top:0 is an error and not a request for every anchor.
+// Its depth and vector run the recall's search, so they cost what a recall's
+// do.
+func TestParseDescribeRejectsOverLimits(t *testing.T) {
+	cfg := config.New()
+	cfg.DB.MaxTop = 50
+	cfg.DB.MaxDepth = 2
+	cfg.DB.MaxVectorDimension = 3
+
+	cases := map[string]struct {
+		params map[string][]float32
+	}{
+		"describe recall anna top:99":  {},
+		"describe recall top:0":        {},
+		"describe recall anna depth:9": {},
+		"describe recall vec:$v":       {map[string][]float32{"v": {1, 2, 3, 4}}},
+	}
+	for q, tc := range cases {
+		t.Run(q, func(t *testing.T) {
+			got, _, err := query.Parse[string, float32](q, tc.params, cfg)
+			if !errors.Is(err, query.ErrLimitExceeded) {
+				t.Errorf("Parse(%q) err = %v, want ErrLimitExceeded", q, err)
+			}
+			if got != nil {
+				t.Errorf("Parse(%q) = %v, want nil query", q, got)
+			}
+		})
+	}
+
+	if _, _, err := query.Parse[string, float32]("describe recall top:10 depth:2", nil, cfg); err != nil {
+		t.Errorf("within-limit describe returned error: %v", err)
 	}
 }
 
@@ -693,7 +818,11 @@ func TestHitMarshalCarriesTheTimesAFactWasGiven(t *testing.T) {
 // the result of each query nested in a bound, keyed by the bound that held it.
 // A recall whose round never ran omits admission, one with no terms writes an
 // empty list, never null, and one whose bounds hold no query omits when, so a
-// client reads one shape.
+// client reads one shape. A describe's carries a zero count, no hit and its
+// catalogue: the graph and the scope described, the facts and anchors
+// counted, the time the facts hold on each clock, then the topics and the
+// entities. The times are left out of a catalogue that reached no fact, and
+// both lists are kept, empty, so a client reads the same keys either way.
 func TestQueryResultMarshal(t *testing.T) {
 	const hit = `{"value":"lap","timestamp":"2026-01-02T03:04:05Z","score":0.5}`
 	hits := func() []query.Hit[string, float32] {
@@ -785,6 +914,52 @@ func TestQueryResultMarshal(t *testing.T) {
 			want: `{"count":1,"hits":[` + hit + `],"explain":{"background":0,` +
 				`"seeds":{"text":1},"terms":["lap"],"timings":{"text":0},"when":{` +
 				`"until":{"count":1,"hits":[` + hit + `],"start":"2023-05-20T00:00:00Z"}}}}`,
+		},
+		"a describe": {
+			result: query.QueryResult[string, float32]{
+				Hits: []query.Hit[string, float32]{},
+				Catalogue: &query.Catalogue{
+					Graph:   2,
+					Scope:   "entity:heron top:1",
+					Facts:   2,
+					Anchors: 3,
+					Times: query.Times{
+						Happened: containers.Interval{Start: may(7)},
+						Said:     containers.Interval{Start: may(8), End: may(21)},
+						Written:  containers.Interval{Start: may(25), End: may(26)},
+					},
+					Topics: []query.CatalogueEntry{{
+						Value: "birds",
+						Facts: 2,
+						Times: query.Times{
+							Happened: containers.Interval{Start: may(7), End: may(8)},
+							Said:     containers.Interval{Start: may(8), End: may(8)},
+							Written:  containers.Interval{Start: may(25), End: may(25)},
+						},
+					}},
+					Entities: []query.CatalogueEntry{},
+				},
+			},
+			want: `{"count":0,"hits":[],"catalogue":{"graph":2,"scope":"entity:heron top:1","facts":2,"anchors":3,` +
+				`"happened":{"start":"2023-05-07T00:00:00Z"},` +
+				`"said":{"start":"2023-05-08T00:00:00Z","end":"2023-05-21T00:00:00Z"},` +
+				`"written":{"start":"2023-05-25T00:00:00Z","end":"2023-05-26T00:00:00Z"},` +
+				`"topics":[{"value":"birds","facts":2,` +
+				`"happened":{"start":"2023-05-07T00:00:00Z","end":"2023-05-08T00:00:00Z"},` +
+				`"said":{"start":"2023-05-08T00:00:00Z","end":"2023-05-08T00:00:00Z"},` +
+				`"written":{"start":"2023-05-25T00:00:00Z","end":"2023-05-25T00:00:00Z"}}],` +
+				`"entities":[]}}`,
+		},
+		"a describe that reached nothing": {
+			result: query.QueryResult[string, float32]{
+				Hits: []query.Hit[string, float32]{},
+				Catalogue: &query.Catalogue{
+					Scope:    "zebras",
+					Topics:   []query.CatalogueEntry{},
+					Entities: []query.CatalogueEntry{},
+				},
+			},
+			want: `{"count":0,"hits":[],"catalogue":{"graph":0,"scope":"zebras","facts":0,"anchors":0,"topics":[],"entities":[]}}`,
 		},
 	}
 	for name, tc := range tests {

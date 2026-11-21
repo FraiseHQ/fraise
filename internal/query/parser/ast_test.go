@@ -174,6 +174,72 @@ func TestWhenCommandNodeWithoutAClock(t *testing.T) {
 	}
 }
 
+// A describe holds no selector of its own: it reads the graph its recall
+// reads, so Selector is the recall's. It prints its prefix in front of the
+// recall, verb and selector included, so it parses back to what was written.
+func TestDescribeCommandNode(t *testing.T) {
+	recall := RecallCommandNode[uint64, float32]{
+		RecallBodyNode: RecallBodyNode[uint64, float32]{
+			terms: []LiteralFieldNode{TermNode{token: tok(lexer.LITERAL, "heron"), value: "heron"}},
+		},
+		key:      tok(lexer.RECALL, "recall"),
+		selector: GraphSelectorNode{key: tok(lexer.AT, "@"), value: 2},
+	}
+	n := DescribeCommandNode[uint64, float32]{
+		key:    tok(lexer.DESCRIBE, "describe"),
+		recall: recall,
+		pos:    pos(1),
+		end:    pos(23),
+	}
+
+	if got, want := n.Recall().String(), recall.String(); got != want {
+		t.Errorf("Recall().String() = %q, want %q", got, want)
+	}
+	if got, want := n.Selector(), uint8(2); got != want {
+		t.Errorf("Selector() = %d, want %d", got, want)
+	}
+	if got, want := n.String(), "describe recall@2 heron"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+	if got, want := n.Pos(), pos(1); got != want {
+		t.Errorf("Pos() = %v, want %v", got, want)
+	}
+	if got, want := n.End(), pos(23); got != want {
+		t.Errorf("End() = %v, want %v", got, want)
+	}
+}
+
+// A describe of the whole graph holds a recall with no selector and an empty
+// body. It prints the prefix and the verb alone, which is what was written:
+// the zero selector and the empty body print nothing, not a trailing space.
+func TestDescribeCommandNodeOfTheWholeGraph(t *testing.T) {
+	n := DescribeCommandNode[uint64, float32]{
+		key:    tok(lexer.DESCRIBE, "describe"),
+		recall: RecallCommandNode[uint64, float32]{key: tok(lexer.RECALL, "recall")},
+	}
+
+	if got, want := n.Selector(), uint8(0); got != want {
+		t.Errorf("Selector() = %d, want %d", got, want)
+	}
+	if got, want := n.String(), "describe recall"; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+// The zero node is a value of an exported type, so its methods answer rather
+// than panic: it reads the default graph and prints nothing, as a zero when
+// does.
+func TestDescribeCommandNodeZeroValue(t *testing.T) {
+	var n DescribeCommandNode[uint64, float32]
+
+	if got, want := n.Selector(), uint8(0); got != want {
+		t.Errorf("Selector() = %d, want %d", got, want)
+	}
+	if got, want := n.String(), ""; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
 func TestClockNode(t *testing.T) {
 	n := ClockNode{
 		key:   tok(lexer.COLON, ":"),

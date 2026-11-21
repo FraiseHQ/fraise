@@ -398,3 +398,114 @@ class RecallResult:
 
     def __len__(self) -> int:
         return len(self.hits)
+
+
+@dataclass(frozen=True)
+class CatalogueEntry:
+    """One topic or entity of a :class:`Catalogue`, and the facts filed under it.
+
+    ``facts`` counts the described facts filed under the anchor. Under a
+    describe of one anchor, the other anchors' counts are the facts they share
+    with it. ``happened``, ``said`` and ``written`` read as on
+    :class:`Catalogue`, over those facts alone.
+    """
+
+    value: str
+    facts: int
+    happened: Interval | None = None
+    said: Interval | None = None
+    written: Interval | None = None
+
+    @classmethod
+    def from_json(cls, data: dict) -> CatalogueEntry:  # noqa: D102
+        happened, said, written = (data.get(k) for k in ("happened", "said", "written"))
+        return cls(
+            value=data["value"],
+            facts=int(data["facts"]),
+            happened=Interval.from_json(happened) if happened else None,
+            said=Interval.from_json(said) if said else None,
+            written=Interval.from_json(written) if written else None,
+        )
+
+
+@dataclass(frozen=True)
+class Catalogue:
+    """The result of a ``describe``: the shape of what a recall reaches, not its facts.
+
+    ``graph`` is the graph described and ``scope`` the recall's body as the
+    server read it, empty for the whole graph. ``facts`` counts every fact the
+    recall reaches, every candidate it would rank and not its first ``top``.
+    ``anchors`` counts the topics and entities they are filed under.
+
+    ``happened`` runs from the earliest start to the latest end of what the
+    facts state took place, and has no end when one of them has not ended.
+    ``said`` and ``written`` run from the first fact said, or written, to the
+    last. A fact given no time on a clock reads the next one down, as a bound
+    reads it. Each is ``None`` when the recall reached no fact.
+
+    ``topics`` and ``entities`` list the anchors, the most filed first and ties
+    by value, at most ``top`` of each kind.
+
+    ``warnings`` and ``empty`` read as on :class:`RecallResult`: ``empty`` is
+    True when the graph holds nothing at all, which the server answers with a
+    204. ``bool(catalogue)`` reports whether the recall reached any fact.
+    """
+
+    graph: int
+    scope: str
+    facts: int
+    anchors: int
+    topics: list[CatalogueEntry]
+    entities: list[CatalogueEntry]
+    happened: Interval | None = None
+    said: Interval | None = None
+    written: Interval | None = None
+    warnings: list[str] = field(default_factory=list)
+    empty: bool = False
+
+    @classmethod
+    def from_json(
+        cls,
+        catalogue: dict,
+        warnings: Sequence[str] | None = None,
+        *,
+        graph: int = 0,
+        empty: bool = False,
+    ) -> Catalogue:
+        """Parse the ``catalogue`` member of the server's ``results``.
+
+        Args:
+            catalogue: the ``catalogue`` object of the response's ``results``.
+                It is empty for a 204, which has no body to carry one.
+            warnings: the response's ``warnings`` list, as for
+                :meth:`RecallResult.from_json`.
+            graph: the graph the describe read. The catalogue names it, but a
+                204 has no catalogue, so the caller that sent the query passes
+                it for that case.
+            empty: whether the server answered 204, meaning the graph described
+                holds nothing.
+
+        Returns:
+            The typed catalogue, warnings included.
+        """
+        happened, said, written = (
+            catalogue.get(k) for k in ("happened", "said", "written")
+        )
+        return cls(
+            graph=int(catalogue.get("graph", graph)),
+            scope=catalogue.get("scope", ""),
+            facts=int(catalogue.get("facts", 0)),
+            anchors=int(catalogue.get("anchors", 0)),
+            topics=[CatalogueEntry.from_json(e) for e in catalogue.get("topics") or []],
+            entities=[
+                CatalogueEntry.from_json(e) for e in catalogue.get("entities") or []
+            ],
+            happened=Interval.from_json(happened) if happened else None,
+            said=Interval.from_json(said) if said else None,
+            written=Interval.from_json(written) if written else None,
+            warnings=list(warnings or []),
+            empty=empty,
+        )
+
+    def __bool__(self) -> bool:
+        return self.facts > 0
