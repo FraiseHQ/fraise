@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0](https://github.com/FraiseHQ/fraise/compare/v0.3.7...v0.4.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* add the explain prefix to recall ([#627](https://github.com/FraiseHQ/fraise/issues/627))
+* add said and occurred times to facts, and the when query ([#620](https://github.com/FraiseHQ/fraise/issues/620))
+
+### Features
+
+* add describe recall, the shape of what a recall reaches ([#628](https://github.com/FraiseHQ/fraise/issues/628)) ([e706fc1](https://github.com/FraiseHQ/fraise/commit/e706fc17bddcec278a9bae3a75d1c5b394c184f9))
+* add said and occurred times to facts, and the when query ([#620](https://github.com/FraiseHQ/fraise/issues/620)) ([cb37963](https://github.com/FraiseHQ/fraise/commit/cb37963f116b8953d412b325df82d7abcae29cba))
+* add the explain prefix to recall ([#627](https://github.com/FraiseHQ/fraise/issues/627)) ([fd4287c](https://github.com/FraiseHQ/fraise/commit/fd4287cb54a1e4a9d5fa85bb778316dcc992a4c8))
+* **mcp:** add the python mcp server with client-side embeddings ([#594](https://github.com/FraiseHQ/fraise/issues/594)) ([c9dd475](https://github.com/FraiseHQ/fraise/commit/c9dd47502083328b28bf1cbbfb30b5372e9983cd))
+
+
+### Maintenance
+
+* **main:** release python 0.3.1 ([#592](https://github.com/FraiseHQ/fraise/issues/592)) ([56a0fb4](https://github.com/FraiseHQ/fraise/commit/56a0fb4b5b67db204812132574e5fce1eb17e91a))
+* open one release pull request for every component ([#624](https://github.com/FraiseHQ/fraise/issues/624)) ([f8323c5](https://github.com/FraiseHQ/fraise/commit/f8323c5c1e020a225ed5d69d05792d1e78ee8c73))
+* replace the makefile with mise tasks ([#633](https://github.com/FraiseHQ/fraise/issues/633)) ([9c693be](https://github.com/FraiseHQ/fraise/commit/9c693bef76a88baeb9f269e97dcb6454a66091f2))
+
 ## [0.3.7](https://github.com/FraiseHQ/fraise/compare/v0.3.6...v0.3.7) (2026-11-05)
 
 
