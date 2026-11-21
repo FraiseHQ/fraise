@@ -345,6 +345,31 @@ func TestParseExplainRecall(t *testing.T) {
 	}
 }
 
+// TestRecallPlanCarriesTheExplainFlag pins where an explained recall's stream
+// gets its flag. Commit reads the stream's, and the stream is built per
+// request, so Plan copies the recall's. A plain recall must plan a plain
+// stream: the explain blocks cost the read path work and widen the response.
+func TestRecallPlanCarriesTheExplainFlag(t *testing.T) {
+	cases := map[string]struct {
+		explain bool
+	}{
+		"plain":     {false},
+		"explained": {true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := query.Recall[string, float32]{Keywords: []string{"mercury"}, Explain: tc.explain}
+			s, err := r.Plan(nil)
+			if err != nil {
+				t.Fatalf("Plan() err = %v, want nil", err)
+			}
+			if got, want := s.Explain, tc.explain; got != want {
+				t.Errorf("Plan() stream.Explain = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 // TestParseLeavesDescribeUnaccepted pins the answer to a statement opening with
 // describe, a prefix the grammar reserves and this server does not accept. The
 // message is the one grammar.mdx's Status section fixes for every such
