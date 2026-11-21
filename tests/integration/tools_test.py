@@ -305,20 +305,20 @@ def test_an_explained_recall_carries_its_blocks_in_the_structured_content(mcp):
     anchor round runs at depth 2 and both bars come back.
     """
     for phrase in (
-        "the gannet plunges for mackerel",
-        "the gannet nests on the bass rock",
+        "the osprey plunges for mackerel",
+        "the osprey nests on the bass rock",
     ):
-        stored = mcp.call("remember", {"query": f"remember@4 '{phrase}' entity:gannet"})
+        stored = mcp.call("remember", {"query": f"remember@4 '{phrase}' entity:osprey"})
         assert not stored.get("isError", False), stored
 
     found = mcp.call(
-        "recall", {"query": "explain recall@4 mackerel entity:gannet depth:2"}
+        "recall", {"query": "explain recall@4 mackerel entity:osprey depth:2"}
     )
     assert not found.get("isError", False), found
 
     results = found["structuredContent"]["results"]
     hits = {hit["value"]: hit for hit in results["hits"]}
-    assert hits["the gannet plunges for mackerel"]["explain"]["seed"] is True
+    assert hits["the osprey plunges for mackerel"]["explain"]["seed"] is True
     for hit in results["hits"]:
         assert set(hit["explain"]) == {"seed", "decay", "contributions"}, hit
         assert 0 < hit["explain"]["decay"] <= 1, hit
@@ -337,7 +337,7 @@ def test_an_explained_recall_carries_its_blocks_in_the_structured_content(mcp):
         for hit in results["hits"]
     )
 
-    plain = mcp.call("recall", {"query": "recall@4 mackerel entity:gannet depth:2"})
+    plain = mcp.call("recall", {"query": "recall@4 mackerel entity:osprey depth:2"})
     assert not plain.get("isError", False), plain
     assert "explain" not in plain["structuredContent"]["results"]
     assert all(
