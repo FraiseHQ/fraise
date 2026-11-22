@@ -307,10 +307,13 @@ depends = ["clean:*"]
 # one. release-please has already created the server's GitHub Release, with
 # its notes: GoReleaser only appends the binaries and checksums to it, signs
 # the checksums with cosign (the signs block in .goreleaser.yaml), and pushes
-# the Homebrew formula with HOMEBREW_TAP_TOKEN.
+# the Homebrew formula with HOMEBREW_TAP_TOKEN. GoReleaser refuses to release
+# from a dirty tree, and mise re-resolves a ranged task tool to its newest
+# release and rewrites mise.lock when that moves, so goreleaser is pinned to
+# the exact version mise.lock records.
 [tasks."release:go"]
 description = "Release the Go server with GoReleaser (set GITHUB_TOKEN and HOMEBREW_TAP_TOKEN)"
-tools = { goreleaser = "2", cosign = "3.1.4" }
+tools = { goreleaser = "2.20.2", cosign = "3.1.4" }
 run = "goreleaser release --clean"
 
 # actions/attest-build-provenance records the release's attestation in
