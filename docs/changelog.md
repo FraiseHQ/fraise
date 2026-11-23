@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/FraiseHQ/fraise/compare/v0.4.0...v0.4.1) (2026-11-22)
+
+
+### Bug fixes
+
+* pin goreleaser so a release runs on a clean tree ([#636](https://github.com/FraiseHQ/fraise/issues/636)) ([69c5b04](https://github.com/FraiseHQ/fraise/commit/69c5b04bec7809621cb5ef112891943d7dcf4999))
+
 ## [0.4.0](https://github.com/FraiseHQ/fraise/compare/v0.3.7...v0.4.0) (2026-11-21)
 
 
