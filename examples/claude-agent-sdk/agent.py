@@ -67,6 +67,7 @@ async def main() -> None:
     # you'd use OpenAIEmbedder from fraise_sdk.providers.openai. It needs the
     # openai extra, and an OPENAI_API_KEY set alongside ANTHROPIC_API_KEY.
     options = ClaudeAgentOptions(
+        model="claude-haiku-5-5",
         system_prompt=(
             "You have a long-term memory. When the user shares a durable fact "
             "about themselves, store it with the remember tool. When answering a "

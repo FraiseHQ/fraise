@@ -3,7 +3,7 @@ name: fraise-example-pydantic-ai
 # Two services on one network: the Fraise server and the example agent that
 # talks to it. The agent waits until Fraise reports healthy before starting.
 #
-#   OPENAI_API_KEY=sk-... docker compose run --rm agent
+#   ANTHROPIC_API_KEY=sk-ant-... OPENAI_API_KEY=sk-... docker compose run --rm agent
 #
 services:
   fraise:
@@ -30,5 +30,6 @@ services:
         condition: service_healthy
     environment:
       FRAISE_URL: http://fraise:9876
-      # Taken from your shell. The run fails fast if it is unset.
+      # Taken from your shell. The run fails fast if either is unset.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in your environment}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY in your environment}

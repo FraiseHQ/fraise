@@ -355,7 +355,7 @@ from fraise_sdk.integrations.pydantic_ai import memory_tools
 
 fraise = FraiseClient("http://localhost:9876")
 agent = Agent(
-    "openai:gpt-5-nano",
+    "anthropic:claude-haiku-5-5",
     instructions="Remember durable facts the user shares, and recall them when relevant.",
     tools=memory_tools(fraise),
 )

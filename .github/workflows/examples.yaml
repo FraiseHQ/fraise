@@ -61,7 +61,7 @@ jobs:
     needs: build
     # An example whose script checks its own outcome runs end to end against
     # the fraise service its compose file brings up. The agent calls a hosted
-    # model, so the run takes that provider's key from the repository secrets.
+    # model, so the run takes each provider's key from the repository secrets.
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -69,6 +69,7 @@ jobs:
         example: [pydantic-ai]
     env:
       EXAMPLE: ${{ matrix.example }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

@@ -173,7 +173,7 @@ from fraise_sdk.integrations.pydantic_ai import memory_tools
 
 fraise = FraiseClient("http://localhost:9876")
 agent = Agent(
-    "openai:gpt-5-nano",
+    "anthropic:claude-haiku-5-5",
     instructions="Remember durable facts the user shares, and recall them when relevant.",
     tools=memory_tools(fraise),
 )
@@ -182,7 +182,7 @@ result = agent.run_sync("My favourite colour is orange. Remember that.")
 print(result.output)
 ```
 
-The extra brings in `pydantic-ai-slim` alone; install the model provider your agent runs on beside it, such as `pydantic-ai-slim[openai]` for the agent above. `memory_tools(fraise, embedder=OpenAIEmbedder())` makes the tools vectorise implicitly, exactly as in the OpenAI integration.
+The extra brings in `pydantic-ai-slim` alone; install the model provider your agent runs on beside it, such as `pydantic-ai-slim[anthropic]` for the agent above. `memory_tools(fraise, embedder=OpenAIEmbedder())` makes the tools vectorise implicitly, exactly as in the OpenAI integration.
 
 See [`examples/pydantic-ai/`](../../examples/pydantic-ai) for a complete, Docker-runnable script.
 

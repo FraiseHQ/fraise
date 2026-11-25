@@ -6,7 +6,7 @@ description: "memory_tools(client) returns bound recall_memory and remember_fact
 `memory_tools(client)` returns two Pydantic AI `Tool`s bound to that client, `recall_memory` and `remember_fact`, for the agent's `tools=`:
 
 ```sh
-pip install 'fraise-sdk[pydantic-ai]' 'pydantic-ai-slim[openai]'
+pip install 'fraise-sdk[pydantic-ai]' 'pydantic-ai-slim[anthropic]'
 ```
 
 ```python
@@ -16,7 +16,7 @@ from fraise_sdk.integrations.pydantic_ai import memory_tools
 
 fraise = FraiseClient("http://localhost:9876")
 agent = Agent(
-    "openai:gpt-5-nano",
+    "anthropic:claude-haiku-5-5",
     instructions="Remember durable facts the user shares, and recall them when relevant.",
     tools=memory_tools(fraise),
 )
@@ -25,7 +25,7 @@ result = agent.run_sync("My favourite colour is orange.")
 print(result.output)
 ```
 
-The `pydantic-ai` extra brings in `pydantic-ai-slim` alone, so the tools work with any model Pydantic AI supports; install the provider your agent runs on beside it, `pydantic-ai-slim[openai]` for the agent above.
+The `pydantic-ai` extra brings in `pydantic-ai-slim` alone, so the tools work with any model Pydantic AI supports; install the provider your agent runs on beside it, `pydantic-ai-slim[anthropic]` for the agent above.
 
 A complete, Docker-runnable agent lives in `examples/pydantic-ai` in the Fraise repository. It runs two turns as separate agent runs, a fact then a question, so the answer can only come from memory, and runs them again on an identical agent without the tools as a control, which cannot answer.
 

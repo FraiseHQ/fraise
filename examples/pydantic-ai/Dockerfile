@@ -33,11 +33,12 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python \
 RUN uv python install 3.12
 
 # Install the SDK with its `pydantic-ai` extra, which brings in Pydantic AI,
-# and Pydantic AI's `openai` extra for the model the agent runs on. Copied
+# and Pydantic AI's `anthropic` and `openai` extras for the two models the
+# agent runs on. Copied
 # first so this layer is cached across changes to the example script.
 COPY sdk/python /opt/fraise-sdk
 RUN uv venv --python 3.12 "$VIRTUAL_ENV" \
-    && uv pip install "/opt/fraise-sdk[pydantic-ai]" "pydantic-ai-slim[openai]"
+    && uv pip install "/opt/fraise-sdk[pydantic-ai]" "pydantic-ai-slim[anthropic,openai]"
 
 COPY examples/pydantic-ai/agent.py .
 
