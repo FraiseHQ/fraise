@@ -776,7 +776,7 @@ func TestBTreeIndexInformation(t *testing.T) {
 		{"an unknown term", "friday zebra", 4, friday, friday},
 		{"only unknown terms", "zebra", 1, 0, 0},
 	} {
-		total, held := idx.Information(tc.query, []int{tc.key})
+		total, held, _ := idx.Information(tc.query, []int{tc.key})
 		if math.Abs(total-tc.total) > 1e-12 || math.Abs(held[0]-tc.held) > 1e-12 {
 			t.Errorf("%s: Information = %v, %v, want %v, %v", tc.name, total, held[0], tc.total, tc.held)
 		}
@@ -795,10 +795,10 @@ func TestBTreeIndexInformationReadsEveryKeyAtOnce(t *testing.T) {
 		}
 	}
 	keys := []int{4, 9, 1, 2}
-	total, got := idx.Information("deploy friday", keys)
+	total, got, _ := idx.Information("deploy friday", keys)
 	want := make([]float64, len(keys))
 	for i, key := range keys {
-		alone, held := idx.Information("deploy friday", []int{key})
+		alone, held, _ := idx.Information("deploy friday", []int{key})
 		if alone != total {
 			t.Errorf("total asked about %d alone = %v, want the batch's %v", key, alone, total)
 		}
@@ -806,6 +806,36 @@ func TestBTreeIndexInformationReadsEveryKeyAtOnce(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Information(batch) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestBTreeIndexInformationListsTheQuerysTerms pins the terms Information
+// reads a query as, which an explained recall shows its caller: each distinct
+// term once, as the stemming tokenizer spells it, in the order the query first
+// uses it. A term no document holds is listed beside the known ones, since it
+// is the one a caller needs to see to learn why a word matched nothing.
+func TestBTreeIndexInformationListsTheQuerysTerms(t *testing.T) {
+	idx := index.NewBTreeIndex[int, float64](comparator.OrderedComparator[int])
+	idx.SetTokenizer(nlp.StemmingTokenizer{})
+	idx.SetRelevance(relevance.NewBM25[int, float64]())
+	for key, doc := range map[int]string{1: "deploy friday", 2: "deploy monday", 3: "deploy tuesday", 4: "friday lunch"} {
+		if err := idx.Insert(key, doc); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", key, err)
+		}
+	}
+	for query, want := range map[string][]string{
+		"deploy friday":        {"deploy", "friday"},
+		"friday deploy friday": {"friday", "deploy"},
+		"Deploying deploys":    {"deploy"},
+		"friday zebra":         {"friday", "zebra"},
+		"zebras":               {"zebra"},
+	} {
+		t.Run(query, func(t *testing.T) {
+			_, _, got := idx.Information(query, []int{1})
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Information(%q) terms mismatch (-want +got):\n%s", query, diff)
+			}
+		})
 	}
 }
 

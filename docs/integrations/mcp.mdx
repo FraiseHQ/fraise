@@ -4,7 +4,7 @@ description: "fraise-mcp is a stdio MCP server bridging any MCP client to a runn
 navIcon: "🔌"
 ---
 
-`fraise-mcp` is a stdio MCP server for a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, each taking one FQL statement, and it embeds every statement's text on your machine, so retrieval is hybrid — text, graph and vector — out of the box. The model writes plain FQL; it never handles a vector. It ships on PyPI and runs with `uvx`, so there is nothing to install besides [uv](https://docs.astral.sh/uv/), and it needs no flags when the daemon runs on the same machine on its default port.
+`fraise-mcp` is a stdio MCP server for a running daemon, so any MCP client can remember and recall. It exposes two tools, `recall` and `remember`, each taking one FQL statement: `recall` runs every read, a recall, a `when` or a `describe` in front of a recall, and `remember` every write. It embeds every statement's text on your machine, so retrieval is hybrid — text, graph and vector — out of the box. The model writes plain FQL; it never handles a vector. It ships on PyPI and runs with `uvx`, so there is nothing to install besides [uv](https://docs.astral.sh/uv/), and it needs no flags when the daemon runs on the same machine on its default port.
 
 <Note title="Before you register" type="note">
 
@@ -82,7 +82,7 @@ The address carries no graph: each statement names its own with `@N`.
 
 The server embeds with [fastembed](https://qdrant.github.io/fastembed/), on ONNX Runtime and without torch. The default model, `BAAI/bge-small-en-v1.5`, gives 384-dimensional vectors; `--model` takes any text model fastembed supports. The model loads on the first statement that needs a vector, not at startup, so the server answers its client straight away. The first load downloads the model files into `~/.cache/fraise-mcp`, or `$XDG_CACHE_HOME/fraise-mcp` when `XDG_CACHE_HOME` is set, and later loads read them from there; `FASTEMBED_CACHE_PATH` names another directory.
 
-A `remember` embeds its fact. A `recall` embeds its search terms, the words and phrases before its first clause. The server appends `vec:$v` to the statement and binds the vector beside it, so the daemon sees an ordinary hybrid query. A recall with no terms, where [anchors alone seed the search](/docs/query-language/foundations/commands), is sent as written, and so is anything the server cannot read that far: the daemon checks every statement, and its error messages come back to the model as tool errors it can act on.
+A `remember` embeds its fact. A `recall` embeds its search terms, the words and phrases before its first clause. An `explain recall …` embeds the same terms as the recall it prefixes, which it ranks exactly alike. The server appends `vec:$v` to the statement and binds the vector beside it, so the daemon sees an ordinary hybrid query. A recall with no terms, where [anchors alone seed the search](/docs/query-language/foundations/commands), is sent as written, and so is a `describe recall`: a vector ranks every fact that holds one, so a describe that carried one would reach all of them rather than what its terms match. So is anything the server cannot read that far: the daemon checks every statement, and its error messages come back to the model as tool errors it can act on.
 
 With a vector on every statement, a recall finds a fact by meaning, not only by its words: `favorite color` finds `my favourite colour is teal`, so the model has no spelling variants to hedge with.
 
@@ -126,7 +126,22 @@ when: 2023-05-07
 - [said 2023-05-08, happened 2023-05-07] anna ran the charity race (relevance 2.121)
 ```
 
-The structured content is the [query endpoint](/docs/http-api/endpoints/query)'s response: each hit with its `timestamp`, `said` and `occurred`, and a `when` with its `start` and `end`. A fact gets its dates from `said:` and `occurred:` on its `remember`; see [Temporality](/docs/retrieval/memory-model/temporality).
+A query that is a `describe` reads as its catalogue: a line that spells the describe as the server read it, with how many facts its recall reached, under how many anchors, and when they happened; then its topics and its entities, the most filed first, each with when its facts happened and how many of them are filed under it:
+
+```text
+describe recall@3: 7 facts under 5 anchors, happened 2023-04-01..
+topics:
+- [2023-05-01..] sailing: 4 facts
+- [2023-04-01..2023-05-07] running: 3 facts
+entities:
+- [2023-04-01..] anna: 6 facts
+- [2023-04-01..] tom: 3 facts
+- [2023-05-20..] east quay: 2 facts
+```
+
+That first line is a query the model can send again, so it narrows the describe to an anchor or a window by editing what it reads, and each anchor below it names a `topic:` or an `entity:` its first recall can use. A kind with no anchor reads `topics: none` or `entities: none`, since a missing list reads as one cut off. A describe whose recall reaches no fact reads as that one line, `describe recall@3 zebra: no fact reached.`, and a describe of a graph that holds nothing reads as a recall of it does, saying the graph is empty.
+
+The structured content is the [query endpoint](/docs/http-api/endpoints/query)'s response: each hit with its `timestamp`, `said` and `occurred`, a `when` with its `start` and `end`, a `describe` with its `catalogue`, and the `explain` blocks of an [explained recall](/docs/http-api/endpoints/explain), which the lines leave out. A fact gets its dates from `said:` and `occurred:` on its `remember`; see [Temporality](/docs/retrieval/memory-model/temporality).
 
 ## What the bridge carries, and what it cannot
 

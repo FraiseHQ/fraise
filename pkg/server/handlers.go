@@ -90,11 +90,18 @@ func (s *Server[K, P]) handleStats() gin.HandlerFunc {
 // query. The engine plans and schedules it, and the handler answers once the
 // stream has run.
 //
-// explain selects the explain mode served on /api/v1/explain. It runs the same
-// pipeline, but each hit carries its per-source contribution breakdown and its
-// recency factor, and a recall whose time bound holds a when carries that
-// when's answer. Writes are rejected, since only a recall has a ranking to
-// explain, and a when ranks as the recall it runs. One handler with a flag,
+// A statement explains itself: a recall written with the explain prefix
+// answers in the explained envelope, and the recall carries the prefix
+// through planning (see query.Recall). Each hit then carries its seed flag,
+// its recency factor and its contributions, and a recall whose time bound
+// holds a when carries that when's answer. explain selects the deprecated
+// /api/v1/explain alias, served through 0.4.x and removed in 0.5.0. It runs
+// the same pipeline and answers every recall as the explained recall it
+// names, so a recall sent there with or without the prefix answers as the
+// prefixed recall does on /api/v1/q. A when sent there is explained as the
+// recall it runs, since it ranks as that recall does. The alias rejects a
+// write, since only a read has a ranking to explain, and logs one warning per
+// request naming the statement that replaces it. One handler with a flag,
 // rather than two handlers, keeps the two routes from drifting apart in how
 // they parse, validate or schedule.
 //
@@ -106,6 +113,15 @@ func (s *Server[K, P]) handleStats() gin.HandlerFunc {
 func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
+
+		// The deprecation is announced on every alias request, whatever it
+		// asks, so an operator finds each caller still on the alias before
+		// the release that removes it. The line names the route alone,
+		// never the query.
+		if explain {
+			logger.Warn("Deprecated explain endpoint called: send explain recall to /api/v1/q instead",
+				"removal", "0.5.0")
+		}
 
 		var req HandleQueryRequest[P]
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -132,9 +148,10 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 			return
 		}
 
-		// Only reads have a ranking to explain. Rejecting a remember here keeps
-		// explain free of side effects, so probing a ranking can never mutate a
-		// graph.
+		// Only reads have a ranking to explain. Rejecting a remember on the
+		// alias keeps it free of side effects, so probing a ranking there can
+		// never mutate a graph. On /api/v1/q a prefixed remember never gets
+		// this far: the parser rejects it.
 		if explain && q.IsWrite() {
 			logger.Warn("Rejecting write query on explain endpoint", "graph", q.GetGraphID())
 			c.JSON(http.StatusBadRequest, ErrorResponse{
@@ -165,10 +182,15 @@ func (s *Server[K, P]) handleQuery(explain bool) gin.HandlerFunc {
 			return
 		}
 
-		// Explain belongs to this execution, so it is set on the stream after
-		// planning. The plan cache substitutes query objects on a hash hit, so
-		// a flag on the query would leak between requests.
-		stream.Explain = explain
+		// Plan has set the stream's flag from the statement's prefix. The
+		// alias explains a recall written without one, so it raises the flag
+		// on this request's stream, after planning: the cached query keeps
+		// the statement's own flag, and a later plain recall of the same text
+		// on /api/v1/q is not explained. The alias only raises the flag and
+		// never lowers it, so a statement's prefix holds on either route.
+		if explain {
+			stream.Explain = true
+		}
 
 		logger.Debug("Query planned, dispatching to engine",
 			"graph", q.GetGraphID(), "write", q.IsWrite())

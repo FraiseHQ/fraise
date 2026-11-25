@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import functools
 import warnings
 from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Sequence
@@ -36,7 +37,6 @@ from fraise_sdk.compat import warn
 from fraise_sdk.constants import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT_SECONDS,
-    EXPLAIN_PATH,
     MAX_RECENT,
     MAX_VOCABULARY,
     NO_CONTENT,
@@ -48,7 +48,7 @@ from fraise_sdk.constants import (
     SUPPORTED_SERVER,
 )
 from fraise_sdk.errors import FraiseAPIError, FraiseError, FraiseWarning
-from fraise_sdk.models import GraphStats, Interval, RecallResult
+from fraise_sdk.models import Catalogue, GraphStats, Interval, RecallResult
 from fraise_sdk.providers.base import (
     Anchor,
     Context,
@@ -109,10 +109,12 @@ class FraiseClient:
 
     Memory operations go through ``POST /api/v1/q``. :meth:`remember` and
     :meth:`recall` are typed conveniences over it. :meth:`query` is the escape
-    hatch for raw query strings. :meth:`explain` sends the query :meth:`recall`
-    would send to ``POST /api/v1/explain``, which breaks down every hit's
-    score. :meth:`stats` reads ``GET /api/v1/stats`` for how much each graph
-    holds.
+    hatch for raw query strings. :meth:`explain` sends the recall
+    :meth:`recall` would send behind the ``explain`` prefix, which breaks down
+    every hit's score and the search behind it. :meth:`describe` sends it with
+    ``describe`` in front, for the shape of what it reaches instead of the
+    facts. :meth:`stats` reads
+    ``GET /api/v1/stats`` for how much each graph holds.
 
     Requests go through one :class:`requests.Session` for connection reuse. The
     client creates it unless ``session`` passes one in. Use the client as a
@@ -419,19 +421,29 @@ class FraiseClient:
     ) -> RecallResult:
         """Recall as :meth:`recall` does, with each hit's score explained.
 
-        It takes the same arguments and sends the same query to the server's
-        explain route, which runs the same pipeline. Each hit comes back with
-        ``contributions``: the per-source sightings (text, vector, graph or
-        anchor) its score was folded from. The result also carries the query's
-        ``background`` rate. Use it to see why a fact ranked where it did. For
-        example, it shows whether a multi-hop miss was reached through the
-        graph and ranked out, or never reached at all. The breakdown makes the
-        response larger, so use :meth:`recall` when the ranking is all you
-        need.
+        It takes the same arguments and builds the same recall, written behind
+        the ``explain`` prefix (``explain recall@<graph> ...``), and sends it
+        through ``POST /api/v1/q``. The server runs it exactly as written, so
+        the hits and their order are the ones :meth:`recall` returns. Each hit's
+        ``explain`` says whether it seeded the recall and the recency factor
+        its relevance was decayed by, and lists the per-source sightings (text,
+        vector, graph or anchor) that relevance was folded from. The result's
+        ``explain`` carries what the search measured about the query: the
+        background rate, the admission bar at each depth, how many facts each
+        source seeded, the terms the text index read and the time each source
+        took. On a recall bounded by a :class:`~fraise_sdk.query.When`, it
+        also carries what each when answered, explained in turn, so it shows
+        which fact a bound was read from. Use it to see why a fact ranked where
+        it did. For example, it shows whether a multi-hop miss was reached
+        through the graph and ranked out, or never reached at all. The
+        breakdown makes the response larger, so use :meth:`recall` when the
+        ranking is all you need.
 
         Returns:
-            The ranked result, as :meth:`recall` returns it, with
-            ``contributions`` on every hit and ``background`` set.
+            The ranked result, as :meth:`recall` returns it, with ``explain``
+            set on the result and on every hit. A recall of a graph that holds
+            nothing is answered 204 with no body, so its result is ``empty``
+            and carries no ``explain``.
         """
         return self._recall(
             keywords,
@@ -447,6 +459,73 @@ class FraiseClient:
             vector=vector,
             embed=embed,
             timeout=timeout,
+        )
+
+    def describe(
+        self,
+        *keywords: str,
+        graph: int = 0,
+        query: str | None = None,
+        topics: Sequence[str] | None = None,
+        entities: Sequence[str] | None = None,
+        top: int | None = None,
+        depth: int | None = None,
+        since: date | datetime | When | None = None,
+        until: date | datetime | When | None = None,
+        vector: Sequence[float] | None = None,
+        embed: bool | None = None,
+        timeout: float | None = None,
+    ) -> Catalogue:
+        """Describe what a recall reaches: its shape, not its facts.
+
+        It takes the arguments :meth:`recall` takes and sends the same recall
+        with ``describe`` in front. The server answers with a catalogue of
+        every fact the recall reaches, not only its first ``top``: how many
+        there are, when they happened, and the topics and entities they are
+        filed under, with how many facts each files. Use it before a first
+        recall, to learn how memory is filed.
+
+        Unlike a recall it needs no seed. Given nothing but ``graph`` it
+        describes the whole graph. Given ``topics`` or ``entities`` alone it
+        describes what is filed under them and the anchors filed beside them,
+        each counted by the facts it shares with them. Given a query or
+        keywords it describes the topics and entities the matching facts are
+        filed under. ``top`` caps how many topics and how many entities are
+        listed, and ``since`` and ``until`` bound the facts counted.
+
+        A describe sends no vector of its own unless asked. A vector ranks
+        every fact that holds one, so a describe sent with one reaches each of
+        them rather than the facts its words match. Pass ``embed=True`` to
+        have the embedder encode the describe as :meth:`recall` would, or an
+        explicit ``vector``. A ``When`` bound is embedded as :meth:`recall`
+        embeds it either way: it answers with its best match, so the describe
+        counts the window the recall would.
+
+        Returns:
+            The catalogue. ``empty`` is True when the graph holds nothing.
+        """
+        status, body = self._read(
+            keywords,
+            describe=True,
+            explain=False,
+            graph=graph,
+            query=query,
+            topics=topics,
+            entities=entities,
+            top=top,
+            depth=depth,
+            since=since,
+            until=until,
+            vector=vector,
+            embed=embed,
+            timeout=timeout,
+        )
+        results = body.get("results") or {}
+        return Catalogue.from_json(
+            results.get("catalogue") or {},
+            warnings=body.get("warnings"),
+            graph=graph,
+            empty=status == NO_CONTENT,
         )
 
     def _recall(
@@ -466,14 +545,69 @@ class FraiseClient:
         embed: bool | None,
         timeout: float | None,
     ) -> RecallResult:
-        """Build, send and parse a recall, on the query or the explain route.
+        """Build, send and parse a recall, behind the ``explain`` prefix or not.
 
         :meth:`recall` and :meth:`explain` share this path. So they build the
-        same query string and vector, and an explanation always matches the
-        ranking :meth:`recall` would return.
+        same recall and vector, the prefix aside, and an explanation always
+        matches the ranking :meth:`recall` would return.
+        """
+        status, body = self._read(
+            keywords,
+            describe=False,
+            explain=explain,
+            graph=graph,
+            query=query,
+            topics=topics,
+            entities=entities,
+            top=top,
+            depth=depth,
+            since=since,
+            until=until,
+            vector=vector,
+            embed=embed,
+            timeout=timeout,
+        )
+        results = body.get("results") or {}
+        return RecallResult.from_json(
+            results,
+            warnings=body.get("warnings"),
+            empty=status == NO_CONTENT,
+        )
+
+    def _read(
+        self,
+        keywords: Sequence[str],
+        *,
+        describe: bool,
+        explain: bool,
+        graph: int,
+        query: str | None,
+        topics: Sequence[str] | None,
+        entities: Sequence[str] | None,
+        top: int | None,
+        depth: int | None,
+        since: date | datetime | When | None,
+        until: date | datetime | When | None,
+        vector: Sequence[float] | None,
+        embed: bool | None,
+        timeout: float | None,
+    ) -> tuple[int, dict]:
+        """Build and send a recall, or the describe of one, and return the response.
+
+        :meth:`recall`, :meth:`explain` and :meth:`describe` share this path.
+        So a describe pictures the very recall :meth:`recall` would run, with
+        the same query string and vectors, ``describe`` in front.
+
+        Returns:
+            The response's status and decoded body.
         """
         embed_text = query if query is not None else " ".join(keywords)
-        resolved = self._resolve_vector(vector, embed_text, embed)
+        # A describe's own vector would reach every fact that holds one, so it
+        # is encoded only when asked. Its whens still pick their best match,
+        # and are encoded below as a recall's are.
+        resolved = self._resolve_vector(
+            vector, embed_text, bool(embed) if describe else embed
+        )
         # A when is a search of its own, so its text is embedded as the
         # recall's is and bound under the name of the bound it sits in.
         bound_vectors = {
@@ -488,7 +622,14 @@ class FraiseClient:
             )
             if isinstance(bound, When)
         }
-        text = _query.build_recall(
+        # A describe answers with a catalogue, which has no ranking to
+        # explain, so only a recall takes the prefix.
+        build = (
+            _query.build_describe
+            if describe
+            else functools.partial(_query.build_recall, explain=explain)
+        )
+        text = build(
             keywords=list(keywords),
             graph=graph,
             query=query,
@@ -511,19 +652,7 @@ class FraiseClient:
             )
             if bound is not None
         }
-        status, body = self._post(
-            text,
-            parameters=parameters,
-            timeout=timeout,
-            path=EXPLAIN_PATH if explain else QUERY_PATH,
-        )
-        results = body.get("results") or {}
-        return RecallResult.from_json(
-            results,
-            warnings=body.get("warnings"),
-            empty=status == NO_CONTENT,
-            explain=explain,
-        )
+        return self._post(text, parameters=parameters, timeout=timeout)
 
     def query(
         self,
@@ -538,7 +667,12 @@ class FraiseClient:
         exactly as written, and the server does the checking.
 
         The body's shape follows the query. A recall answers with ``results``,
-        a write with ``{"status": "ok"}``. A recall of a graph that holds
+        a describe with a ``catalogue`` inside ``results``, a write with
+        ``{"status": "ok"}``. An explained recall (``explain recall ...``)
+        answers with ``results`` that also carry ``explain`` blocks, one per
+        hit and one for the query.
+        ``RecallResult.from_json(body.get("results") or {}, body.get("warnings"))``
+        types either recall, blocks included. A read of a graph that holds
         nothing is answered 204 with no body, which decodes to ``{}``.
         :meth:`recall` reads that status, so prefer it when you need to tell an
         empty graph from a miss.
@@ -560,7 +694,6 @@ class FraiseClient:
         *,
         parameters: dict[str, list[float]] | None = None,
         timeout: float | None = None,
-        path: str = QUERY_PATH,
     ) -> tuple[int, dict]:
         """Send a query and return the response status beside its decoded body.
 
@@ -573,7 +706,6 @@ class FraiseClient:
             text: the raw query string.
             parameters: out-of-band vector bindings the query references.
             timeout: per-call override of the client's timeout.
-            path: the route to post to, the query route unless explaining.
 
         Returns:
             The HTTP status code and the decoded JSON body, ``{}`` when the
@@ -582,7 +714,9 @@ class FraiseClient:
         payload: dict[str, object] = {"query": text}
         if parameters:
             payload["parameters"] = parameters
-        return self._request(self._session.post, path, timeout=timeout, json=payload)
+        return self._request(
+            self._session.post, QUERY_PATH, timeout=timeout, json=payload
+        )
 
     def _request(
         self,

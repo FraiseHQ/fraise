@@ -68,6 +68,24 @@ def test_recall_description_tells_the_model_anchors_alone_seed(mcp):
     assert "anchors alone" in tools["recall"]["description"].lower()
 
 
+def test_recall_description_tells_the_model_to_describe_memory_first(mcp):
+    """The recall tool says when to describe, and its query how to write one.
+
+    An agent new to a graph cannot guess the topics and entities its facts are
+    filed under, and a describe is the query that lists them. It learns the
+    prefix only from its tool: the description says this tool runs one and to
+    reach for it first, and the query's description shows it in front of a
+    recall, scoped and not.
+    """
+    tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
+    assert "This tool also runs describe" in tools["recall"]["description"]
+    assert "describe recall first" in tools["recall"]["description"]
+    description = tools["recall"]["inputSchema"]["properties"]["query"]["description"]
+    assert "which this tool runs as it runs a recall" in description
+    assert "describe recall@2 describes the whole graph" in description
+    assert "describe recall@2 topic:weather" in description
+
+
 def test_remember_schema_tells_the_model_how_to_date_a_fact(mcp):
     """The remember tool's query description names said: and occurred:.
 
@@ -111,3 +129,91 @@ def test_recall_output_schema_declares_every_time_a_response_carries(mcp):
     assert {"said", "occurred"} <= set(hit["properties"])
     assert hit["required"] == ["value", "timestamp", "score"]
     assert hit["properties"]["occurred"]["items"]["required"] == ["start"]
+
+
+def test_recall_output_schema_declares_the_catalogue_a_describe_answers_with(mcp):
+    """The recall output schema names every key of a describe's catalogue.
+
+    A describe travels through the recall tool and answers in its envelope,
+    with the catalogue beside empty hits. The Go SDK validates every tool
+    result against the output schema, so a key the schema left out would turn
+    each describe into a tool error. The times are not required: a catalogue
+    that counts no fact has none, and an anchor's are its own.
+    """
+    tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
+    results = tools["recall"]["outputSchema"]["properties"]["results"]
+    catalogue = results["properties"]["catalogue"]
+
+    assert "catalogue" not in results["required"]
+    assert set(catalogue["properties"]) == {
+        "graph",
+        "scope",
+        "facts",
+        "anchors",
+        "happened",
+        "said",
+        "written",
+        "topics",
+        "entities",
+    }
+    assert catalogue["required"] == [
+        "graph",
+        "scope",
+        "facts",
+        "anchors",
+        "topics",
+        "entities",
+    ]
+    for kind in ("topics", "entities"):
+        entry = catalogue["properties"][kind]["items"]
+        assert set(entry["properties"]) == {
+            "value",
+            "facts",
+            "happened",
+            "said",
+            "written",
+        }, kind
+        assert entry["required"] == ["value", "facts"], kind
+        for clock in ("happened", "said", "written"):
+            assert entry["properties"][clock]["required"] == ["start"], (kind, clock)
+    for clock in ("happened", "said", "written"):
+        assert catalogue["properties"][clock]["required"] == ["start"], clock
+
+
+def test_recall_description_tells_the_model_the_explain_prefix(mcp):
+    """The recall tool names the explain prefix.
+
+    A recall written ``explain recall …`` ranks exactly as the plain recall,
+    and its structured result also carries how the ranking was reached. An
+    agent learns the statement exists only from the description it is given.
+    """
+    tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
+    assert "explain recall" in tools["recall"]["description"]
+
+
+def test_recall_output_schema_declares_the_explain_blocks(mcp):
+    """The recall output schema names the blocks an explained recall carries.
+
+    An explained recall's structured result carries a block on each hit and
+    one on the results, and a client validating against the schema must find
+    both. Neither is required: a plain recall carries no explain key at any
+    level. The hit's block holds the recency factor, and the results' the
+    answer of each when a bound read, which refers back to the results schema
+    because a nested when's answer is a results envelope of its own.
+    """
+    tools = {t["name"]: t for t in mcp.request("tools/list")["tools"]}
+    results = tools["recall"]["outputSchema"]["properties"]["results"]
+    hit = results["properties"]["hits"]["items"]
+
+    assert "explain" not in results["required"]
+    assert "explain" not in hit["required"]
+    assert hit["properties"]["explain"]["required"] == [
+        "seed",
+        "decay",
+        "contributions",
+    ]
+    block = results["properties"]["explain"]
+    assert block["required"] == ["background", "seeds", "terms", "timings"]
+    assert block["properties"]["when"]["properties"]["until"] == {
+        "$ref": "#/properties/results"
+    }

@@ -10,7 +10,8 @@ Each SDK also declares its supported server range in code and can verify it at r
 | --------------- | --------------------------- | --------------------------- |
 | Python SDK      | <=0.1.0-rc.1                | `>=0.1.0, <0.2.0`           |
 | Python SDK      | >0.1.0-rc.1,<=0.1.0-rc.2    | `>=0.2.0, <0.3.0`           |
-| Python SDK      | 0.1.0                       | `>=0.3.0, <0.4.0`           |
+| Python SDK      | >=0.1.0,<=0.3.1             | `>=0.3.0, <0.4.0`           |
+| Python SDK      | 0.4.0                       | `>=0.4.0, <0.5.0`           |
 
 While the server is pre-1.0, a minor bump (`0.1 → 0.2`) may introduce breaking changes, so each SDK pins a single supported minor. Once the server reaches 1.0, supported ranges widen to full major lines (`>=1.0.0, <2.0.0`).
 
@@ -22,7 +23,7 @@ The SDK exposes the server's reported version (from the health endpoint, `GET /`
 from fraise_sdk.client import FraiseClient
 
 client = FraiseClient()
-client.server_version()            # -> "0.3.0" or None if unavailable
+client.server_version()            # -> "0.4.0" or None if unavailable
 client.check_compatibility()       # warns on mismatch, returns bool
 client.check_compatibility(strict=True)  # raises FraiseError on mismatch
 ```
@@ -30,6 +31,10 @@ client.check_compatibility(strict=True)  # raises FraiseError on mismatch
 ## Fact times
 
 A fact's `said` and `occurred` times travel on a hit only when the fact was given them, and only from a server that keeps them. The Python SDK reads both absences alike: `Hit.said` and `Hit.occurred` are `None`, and `Hit.timestamp`, which every server returns, is when the fact was written. A server whose grammar has no `said:`, `occurred:` or `when` rejects a query that uses one with a parse error, which the SDK raises as `FraiseAPIError` with the server's message. An SDK released before these fields ignores them on a hit.
+
+## Describe
+
+`FraiseClient.describe` sends the recall its arguments spell with `describe` in front, and reads the `catalogue` the server answers with. A server whose grammar has no `describe` rejects the query with a parse error, which the SDK raises as `FraiseAPIError` with the server's message. An SDK released before `describe` has no method for it: `client.query` sends a describe as written and returns the server's body, the `catalogue` inside its `results`.
 
 ## Updating this table on release
 

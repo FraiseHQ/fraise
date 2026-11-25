@@ -23,6 +23,8 @@
 package graph
 
 import (
+	"time"
+
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/hash"
@@ -47,23 +49,83 @@ type GraphStats struct {
 }
 
 // Hit is one entry of a search result. It holds a fact, its final score after
-// recency decay, and the contributions the score was folded from. Decay is the
-// recency factor the fold's relevance was scaled by to give Score, so a reader
-// of an explain can tell a fact ranked low for its age from one ranked low for
-// its match.
+// recency decay, the contributions the score was folded from, and whether the
+// fact seeded the recall. Decay is the recency factor the fold's relevance was
+// scaled by to give Score, so a reader of an explain can tell a fact ranked
+// low for its age from one ranked low for its match.
 type Hit[K comparable, P float32 | float64] struct {
 	Node          Node[K]
 	Score         P
 	Decay         P
 	Contributions []scoring.Contribution[K, P]
+
+	// Seed reports whether the fact was one of the recall's seeds: among the
+	// first max(db.seed-size, top) facts of a text or vector reading, or, when
+	// the named anchors seed alone, a member of one of them. Seeds are what
+	// the anchor round expands from, so only a seed funds an anchor. A hit
+	// that is no seed came in on its own text or vector match below the seed
+	// cut, or, when it carries graph contributions alone, on the transmission
+	// of an anchor the seeds funded. A text or vector contribution cannot tell
+	// a seed from a match below the cut: every match is read, and its Rank is
+	// its place in the pooled ranking, not in the reading that seeded it.
+	Seed bool
 }
 
-// Result is what Search returns: the hits, best first, and the query's
-// background rate ρ₀. Explain serializes the background so a client can
-// recompute each hit's relevance.
+// Result is what Search returns: the hits, best first, and what the recall
+// observed about its query as a whole. An explained recall reports these
+// beside the ranking, so each is what the search itself measured or decided,
+// never a figure rebuilt from the hits. Search fills them on every recall,
+// since they cost next to nothing beside the search, and a caller that does
+// not explain leaves them unread.
 type Result[K comparable, P float32 | float64] struct {
-	Hits       []Hit[K, P]
+	Hits []Hit[K, P]
+
+	// Background is the query's background rate ρ₀: the seed mass the anchor
+	// round observed over the total degree of every anchor it touched, silent
+	// ones included. An anchor's fair share is its degree times ρ₀, the mass
+	// it would hold were the query's evidence spread over the anchors reached
+	// in proportion to their size. It is zero when no round ran.
 	Background P
+
+	// Admission is the bar, per unit of anchor degree, that a touched anchor
+	// the query did not name had to exceed to transmit, indexed by depth:
+	// Admission[1] is twice ρ₀, the precision bar, and Admission[2] is ρ₀
+	// itself. Admission[0] is zero, since depth 0 runs no round. One round
+	// yields every depth's bar, because what it observes, and so ρ₀, does not
+	// depend on depth. An anchor of degree d_A and mass M_A (a graph
+	// contribution's Degree and Score) transmits at depth d when M_A exceeds
+	// d_A·Admission[d]. Search decides it by the exact cross-multiplied test
+	// (see findNeighbours), not by this division, and the anchors that
+	// transmitted are the ones whose graph contributions the hits carry. A
+	// named anchor transmits at either depth. Admission is nil when no round
+	// ran: at depth 0, with no anchor named, with no seed, when the named
+	// anchors seed alone, or with no traversal installed.
+	Admission []P
+
+	// Seeds counts, per scoring.Source, the distinct facts that source seeded.
+	// For text and vector it is the facts among the first max(db.seed-size,
+	// top) of any of the source's readings, each counted once however many
+	// readings seeded it, and a fact both sources seeded counts in each. It is
+	// not the number of matches: every match is read, and only the head of a
+	// reading seeds. For anchor it is the facts the named anchors seeded when
+	// they seed alone. Graph is always zero, since the round admits facts
+	// rather than seeding them.
+	Seeds [scoring.SrcAnchor + 1]int
+
+	// Terms lists the query's distinct terms as the text index reads them,
+	// after stop-word cleaning and stemming, in first-occurrence order. A term
+	// no stored fact holds is listed too: it is how a caller sees why a word
+	// matched nothing. It is nil when the recall has no keywords, and empty
+	// when every keyword is a stop word.
+	Terms []string
+
+	// Timings holds, per scoring.Source, the wall time the source took: text
+	// the text reading, from the index search to the sightings it records,
+	// vector the vector reading, anchor the named anchors' seeding, and graph
+	// the anchor round. A source that did not run took zero. It says where a
+	// recall's time went, so a caller can tell a slow reading from a slow
+	// round.
+	Timings [scoring.SrcAnchor + 1]time.Duration
 }
 
 // Nodes returns the hits' facts in order, or nil when there are no hits.
@@ -167,10 +229,13 @@ type Graph[K comparable, P float32 | float64] interface {
 	Stats() GraphStats
 
 	// Search runs a hybrid query over the graph. It returns at most top hits,
-	// best first, and the query's background rate (see Result). Each hit
-	// carries the contributions its score was folded from. An implementation
-	// may return fewer than top hits when its own retrieval policy, such as a
-	// score cutoff, drops the tail.
+	// best first, and what the query as a whole observed: its background rate,
+	// the admission bar at each depth, the facts each source seeded, the
+	// query's terms as the text index reads them, and the time each source
+	// took (see Result). Each hit carries the contributions its score was
+	// folded from and whether it was a seed. An implementation may return
+	// fewer than top hits when its own retrieval policy, such as a score
+	// cutoff, drops the tail.
 	//
 	// The criteria:
 	//   - keywords: full-text terms matched against the text index
@@ -190,7 +255,9 @@ type Graph[K comparable, P float32 | float64] interface {
 	//               above its fair share (recall). A named anchor transmits
 	//               at either. The round runs only when a topic or entity is
 	//               named.
-	//   - top:      maximum number of results
+	//   - top:      maximum number of results. A non-positive top keeps
+	//               every match, which is how a describe reads the whole
+	//               set its recall reaches.
 	//   - since:    inclusive lower time bound; a zero bound is open
 	//   - until:    exclusive upper time bound; a zero bound is open
 	//
@@ -203,9 +270,10 @@ type Graph[K comparable, P float32 | float64] interface {
 	// billing?". Every fact filed under any of them is a candidate, with one
 	// unit of mass per named anchor it is filed under. It is then scored,
 	// decayed, time filtered and capped like any other candidate, so under a
-	// single anchor the newest facts come first. No traversal runs, so depth
-	// has no effect and the background is zero. An anchor nothing is filed
-	// under seeds nothing.
+	// single anchor the newest facts come first. Every hit is then a seed. No
+	// traversal runs, so depth has no effect, the background is zero and
+	// there is no admission bar. An anchor nothing is filed under seeds
+	// nothing.
 	//
 	// The error reports a question that cannot be answered as asked. A vector
 	// whose dimension differs from the vector index's returns

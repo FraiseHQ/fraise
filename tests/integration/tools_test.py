@@ -28,6 +28,8 @@ agent's tool call does.
 
 from datetime import datetime
 
+import pytest
+
 
 def test_remember_then_recall_round_trips_a_fact(mcp):
     """A fact stored through the bridge is found through the bridge.
@@ -290,3 +292,157 @@ def test_anchor_only_recall_returns_what_is_filed_under_the_anchor(mcp):
     hits = found["structuredContent"]["results"]["hits"]
     assert {hit["value"] for hit in hits} == set(facts)
     assert all(hit["score"] > 0 for hit in hits), hits
+
+
+@pytest.mark.parametrize(
+    ("text", "scope"),
+    [
+        ("describe recall@6 topic:seabirds", "topic:seabirds"),
+        ("describe recall@6 entity:shearwater", "entity:shearwater"),
+    ],
+)
+def test_a_describe_through_the_recall_tool_answers_with_its_catalogue(
+    mcp, text, scope
+):
+    """A describe sent as the query comes back as a catalogue on both faces.
+
+    The structured results hold the daemon's catalogue beside no hits, for a
+    client. The text leads with the describe as the daemon read it and what it
+    counted, then lists each kind's anchors with when their facts happened, for
+    a model choosing what to recall next. The two facts are the only ones on
+    graph 6 filed under anything, so the topic and the entity describe the
+    same set, whatever else the graph holds.
+    """
+    for fact, day in (
+        ("the shearwater skims the swell", "2023-08-01"),
+        ("the shearwater returns to its burrow at night", "2023-08-03"),
+    ):
+        stored = mcp.call(
+            "remember",
+            {
+                "query": f"remember@6 '{fact}' topic:seabirds entity:shearwater "
+                f"occurred:'{day}'"
+            },
+        )
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call("recall", {"query": text})
+    assert not found.get("isError", False), found
+
+    results = found["structuredContent"]["results"]
+    assert (results["count"], results["hits"]) == (0, [])
+    catalogue = results["catalogue"]
+    happened = {"start": "2023-08-01T00:00:00Z", "end": "2023-08-04T00:00:00Z"}
+    assert {key: catalogue[key] for key in ("graph", "scope", "facts", "anchors")} == {
+        "graph": 6,
+        "scope": scope,
+        "facts": 2,
+        "anchors": 2,
+    }
+    assert catalogue["happened"] == happened
+    for kind, value in (("topics", "seabirds"), ("entities", "shearwater")):
+        [entry] = catalogue[kind]
+        assert (entry["value"], entry["facts"], entry["happened"]) == (
+            value,
+            2,
+            happened,
+        ), kind
+
+    lines = found["content"][0]["text"].splitlines()
+    assert (
+        lines[0] == f"{text}: 2 facts under 2 anchors, happened 2023-08-01..2023-08-03"
+    )
+    assert lines[1:] == [
+        "topics:",
+        "- [2023-08-01..2023-08-03] seabirds: 2 facts",
+        "entities:",
+        "- [2023-08-01..2023-08-03] shearwater: 2 facts",
+    ]
+
+
+def test_an_explained_recall_carries_its_blocks_in_the_structured_content(mcp):
+    """``explain recall`` through the bridge keeps the daemon's explain blocks.
+
+    Each hit carries its seed flag, the recency factor its relevance was
+    decayed by and the contributions its score was folded from, and the
+    results carry the query's background rate, admission bars, seeds and
+    timings per source and the terms the text index read. The output schema
+    the SDK validates against admits them. The text the model reads stays the
+    ranked facts, and the same recall written plainly carries no explain key
+    at all. The daemon runs on its defaults, so the depth is written out: the
+    anchor round runs at depth 2 and both bars come back.
+    """
+    for phrase in (
+        "the osprey plunges for mackerel",
+        "the osprey nests on the bass rock",
+    ):
+        stored = mcp.call("remember", {"query": f"remember@4 '{phrase}' entity:osprey"})
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call(
+        "recall", {"query": "explain recall@4 mackerel entity:osprey depth:2"}
+    )
+    assert not found.get("isError", False), found
+
+    results = found["structuredContent"]["results"]
+    hits = {hit["value"]: hit for hit in results["hits"]}
+    assert hits["the osprey plunges for mackerel"]["explain"]["seed"] is True
+    for hit in results["hits"]:
+        assert set(hit["explain"]) == {"seed", "decay", "contributions"}, hit
+        assert 0 < hit["explain"]["decay"] <= 1, hit
+        assert hit["explain"]["contributions"], hit
+    explain = results["explain"]
+    assert set(explain) == {"background", "admission", "seeds", "terms", "timings"}
+    assert set(explain["admission"]) == {"1", "2"}
+    sources = {"text", "vector", "graph", "anchor"}
+    assert set(explain["seeds"]) == sources
+    assert set(explain["timings"]) == sources
+    assert explain["seeds"]["text"] >= 1
+    assert explain["terms"]
+
+    assert found["content"][0]["text"] == "\n".join(
+        f"- [{hit['timestamp'][:10]}] {hit['value']} (relevance {hit['score']:.3f})"
+        for hit in results["hits"]
+    )
+
+    plain = mcp.call("recall", {"query": "recall@4 mackerel entity:osprey depth:2"})
+    assert not plain.get("isError", False), plain
+    assert "explain" not in plain["structuredContent"]["results"]
+    assert all(
+        "explain" not in hit for hit in plain["structuredContent"]["results"]["hits"]
+    )
+
+
+def test_an_explained_recall_carries_the_answer_its_bound_read(mcp):
+    """An explained recall bounded by a when carries that when's answer.
+
+    Three facts on graph 6 happened a month apart. The recall's explain block
+    holds, under when, the result of the when its until: read: the fact it
+    matched and the time it gave. The when explains itself with the recall,
+    so its result and its hit carry their own blocks. The output schema the
+    SDK validates against admits the nested result, which refers back to the
+    results schema.
+    """
+    for fact, day in (
+        ("the puffin burrows were dug", "2023-05-01"),
+        ("the puffin eggs hatched", "2023-06-01"),
+        ("the puffin chicks fledged", "2023-07-01"),
+    ):
+        stored = mcp.call(
+            "remember", {"query": f"remember@6 '{fact}' occurred:'{day}'"}
+        )
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call(
+        "recall", {"query": "explain recall@6 puffin until:(when hatched)"}
+    )
+    assert not found.get("isError", False), found
+
+    results = found["structuredContent"]["results"]
+    assert [hit["value"] for hit in results["hits"]] == ["the puffin burrows were dug"]
+    until = results["explain"]["when"]["until"]
+    assert "since" not in results["explain"]["when"]
+    assert until["start"] == "2023-06-01T00:00:00Z"
+    assert [hit["value"] for hit in until["hits"]] == ["the puffin eggs hatched"]
+    assert set(until["hits"][0]["explain"]) == {"seed", "decay", "contributions"}
+    assert set(until["explain"]) >= {"background", "seeds", "terms", "timings"}

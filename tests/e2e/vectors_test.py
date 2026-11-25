@@ -161,13 +161,12 @@ def test_recall_vector_incompatible_size_is_rejected(query, vector, vector_dim, 
     )
 
 
-def test_explain_rejects_a_recall_vector_of_the_wrong_size(
-    query, explain, vector, vector_dim
-):
-    """/explain answers a mismatched recall vector with the same 400 as /q.
+def test_explained_recall_rejects_a_vector_of_the_wrong_size(query, vector, vector_dim):
+    """An explained recall answers a mismatched vector with the recall's 400.
 
-    Both run the same pipeline. An explanation of a ranking the vector never
-    entered would explain the wrong question.
+    The prefix runs the recall it explains through the same pipeline. An
+    explanation of a ranking the vector never entered would explain the wrong
+    question.
     """
     status, body = query(
         "remember@4 'establish the vector dimension' vec:$v topic:size",
@@ -175,8 +174,9 @@ def test_explain_rejects_a_recall_vector_of_the_wrong_size(
     )
     assert status == 200, body.get("error")
 
-    status, body = explain(
-        "recall@4 dimension vec:$v", parameters={"v": vector(vector_dim // 2)}
+    status, body = query(
+        "explain recall@4 dimension vec:$v",
+        parameters={"v": vector(vector_dim // 2)},
     )
     assert status == 400, f"expected a client error, got {status}: {body}"
     assert f"expects {vector_dim}, got {vector_dim // 2}" in body.get("error", "")
@@ -283,7 +283,7 @@ def test_vector_search_with_real_embeddings(query, embedding_docs):
 
 
 def test_recall_fuses_text_and_vector_by_corroboration(
-    query, vector, explain, krakatoa_facts, information_scores
+    query, vector, krakatoa_facts, information_scores
 ):
     """The information fold fuses channels by corroboration, not by rank votes.
 
@@ -291,9 +291,11 @@ def test_recall_fuses_text_and_vector_by_corroboration(
     (1 + z_text)(1 + z_vector), more than either reading gives it alone,
     and a fact one channel sees scores 1 plus that channel's z. Under rank
     votes a fact leading neither list can top both leaders by consensus, and
-    large hubs manufacture consensus from their size. The recall returns
-    every candidate, so the payload holds the whole pool the fold measured
-    each fact against, and every score recomputes from it.
+    large hubs manufacture consensus from their size. The explained recall
+    returns every candidate, so the payload holds the whole pool the fold
+    measured each fact against, and every score recomputes from it. Its top
+    is longer than either reading, so every fact a reading sighted is a seed,
+    and each source's seed count is the number of hits it sighted.
     """
     graph = 6
     writes = (
@@ -310,14 +312,14 @@ def test_recall_fuses_text_and_vector_by_corroboration(
             )
         assert status == 200, body.get("error")
 
-    status, body = explain(
-        f"recall@{graph} krakatoa ash vec:$v depth:0 top:1000",
+    status, body = query(
+        f"explain recall@{graph} krakatoa ash vec:$v depth:0 top:1000",
         parameters={"v": vector(value=-0.5)},
     )
     assert status == 200, body.get("error")
-    background = body["results"].get("background", 0)
-    ranked = body["results"]["hits"]
-    hits = {h["value"]: h for h in ranked}
+    results = body["results"]
+    ranked = results["hits"]
+    hits = {h["value"]: h["explain"] for h in ranked}
 
     both = hits[krakatoa_facts["both"]]
     sources = sorted(c["source"] for c in both["contributions"])
@@ -325,13 +327,26 @@ def test_recall_fuses_text_and_vector_by_corroboration(
         "text",
         "vector",
     ], f"the two-channel fact must carry both observations: {both['contributions']}"
-    for hit, want in zip(ranked, information_scores(ranked, background), strict=True):
+    for hit, want in zip(ranked, information_scores(results), strict=True):
         assert abs(hit["score"] - want) < 1e-6 * max(1.0, want), (
             f"fusion multiplies the corroborating channels: {hit['value']!r} scores "
-            f"{hit['score']}, recomputed {want} from {hit['contributions']}"
+            f"{hit['score']}, recomputed {want} from {hit['explain']['contributions']}"
         )
 
     text_only = hits[krakatoa_facts["text"]]
     assert [c["source"] for c in text_only["contributions"]] == ["text"], text_only
     vec_only = hits[krakatoa_facts["vector"]]
     assert [c["source"] for c in vec_only["contributions"]] == ["vector"], vec_only
+
+    explained = results["explain"]
+    assert all(block["seed"] for block in hits.values()), hits
+    sighted = {
+        source: sum(
+            any(c["source"] == source for c in block["contributions"])
+            for block in hits.values()
+        )
+        for source in ("text", "vector")
+    }
+    assert sighted["text"] == 2, "only the two krakatoa facts hold either term"
+    assert explained["seeds"] == {**sighted, "anchor": 0, "graph": 0}
+    assert explained["terms"] == ["krakatoa", "ash"]

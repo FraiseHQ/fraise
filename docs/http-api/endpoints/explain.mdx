@@ -1,12 +1,22 @@
 ---
-title: "POST /api/v1/explain — explained recall"
-description: "The same pipeline as /q, with the per-source contributions each hit's score was folded from, its recency decay, and what a when in a time bound answered"
+title: "explain recall — what the ranking did"
+description: "A recall written with the explain prefix: the same hits in the same order, with what the ranking did for each hit and for the query, and what a when in a time bound answered"
 navLabel: "Explain"
 ---
 
-The same request body and pipeline as [`/q`](/docs/http-api/endpoints/query), **for reads only**, a `recall` or a `when`: each hit also carries `contributions`, the per-source sightings its score was folded from, and `decay`, the recency factor that score was scaled by. The result carries the query's `background` rate, omitted when it is zero, and, for a recall bounded by a `when`, what each `when` answered.
+A recall written with the `explain` prefix is sent to [`/api/v1/q`](/docs/http-api/endpoints/query) like any other statement and runs exactly as the recall it prefixes: the same hits, in the same order. Its envelope also carries two `explain` blocks: one on each hit, saying whether the hit seeded the recall, the recency factor its score was scaled by and which sightings that score was folded from, and one beside the hits, saying what the recall measured about the query as a whole and, for a recall bounded by a `when`, what each `when` answered.
 
-Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all you need — the breakdown costs response tokens, which is why it lives on its own endpoint instead of every recall.
+Use it to see *why* a fact ranked where it did; leave the prefix off when the ranking is all you need. The blocks cost response tokens, so the statement decides the envelope: a recall written without the prefix carries no `explain` key anywhere.
+
+<Note title="POST /api/v1/explain is deprecated" type="warning">
+
+`POST /api/v1/explain` is a deprecated alias, removed in 0.5.0. It takes the body `/api/v1/q` takes and answers a recall, written with the prefix or without it, exactly as `explain recall ...` answers on `/api/v1/q`, in the same envelope, and a `when` with the same blocks beside the time it answers with. A `describe` sent to it answers with the catalogue it answers with on `/api/v1/q`: it returns no hit, so it has no ranking to explain. A write sent to it is rejected with 400, `explain applies to recall queries only`. Every request to it logs the warning `Deprecated explain endpoint called: send explain recall to /api/v1/q instead`, with `removal=0.5.0`. Send `explain recall ...` to `/api/v1/q` instead.
+
+</Note>
+
+```text
+explain recall parrot kitchen entity:polly
+```
 
 ```json
 {
@@ -15,50 +25,80 @@ Use it to see *why* a fact ranked where it did; use `/q` when the ranking is all
     "hits": [
       {
         "value": "the parrot sleeps in the kitchen",
-        "timestamp": "2026-10-27T18:18:29.467Z",
+        "timestamp": "2026-11-15T15:16:15.594547Z",
         "score": 2.4656,
-        "decay": 1,
-        "contributions": [
-          { "source": "text",  "score": 1.4572, "rank": 0, "count": 1, "held": 1 },
-          { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
-        ]
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 1.4572, "rank": 0, "count": 1, "held": 1 },
+            { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
+          ]
+        }
       },
       {
         "value": "polly says hello to every visitor",
-        "timestamp": "2026-10-27T18:18:29.528Z",
+        "timestamp": "2026-11-15T15:16:15.595794Z",
         "score": 2.3019,
-        "decay": 1,
-        "contributions": [
-          { "source": "text",  "score": 0.1145, "rank": 3, "count": 1 },
-          { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
-        ]
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 0.1145, "rank": 3, "count": 1 },
+            { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
+          ]
+        }
       },
       {
         "value": "the parrot eats sunflower seeds",
-        "timestamp": "2026-10-27T18:18:29.498Z",
-        "score": 1.7510,
-        "decay": 1,
-        "contributions": [
-          { "source": "text",  "score": 0.8757, "rank": 1, "count": 1, "held": 0.5 },
-          { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
-        ]
+        "timestamp": "2026-11-15T15:16:15.595383Z",
+        "score": 1.751,
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 0.8757, "rank": 1, "count": 1, "held": 0.5 },
+            { "source": "graph", "score": 2.4474, "rank": 0, "via": "polly", "degree": 3, "count": 3, "named": true }
+          ]
+        }
       },
       {
         "value": "the kitchen window faces east",
-        "timestamp": "2026-10-27T18:18:29.556Z",
+        "timestamp": "2026-11-15T15:16:15.596227Z",
         "score": 1,
-        "decay": 1,
-        "contributions": [
-          { "source": "text",  "score": 0.3461, "rank": 2, "count": 1, "held": 0.5 }
-        ]
+        "explain": {
+          "seed": true,
+          "decay": 1,
+          "contributions": [
+            { "source": "text", "score": 0.3461, "rank": 2, "count": 1, "held": 0.5 }
+          ]
+        }
       }
     ],
-    "background": 0.8158
+    "explain": {
+      "background": 0.8158,
+      "admission": { "1": 1.6316, "2": 0.8158 },
+      "seeds": { "anchor": 0, "graph": 0, "text": 4, "vector": 0 },
+      "terms": ["parrot", "kitchen"],
+      "timings": { "anchor": 0, "graph": 12125, "text": 18500, "vector": 0 }
+    }
   }
 }
 ```
 
-That is `recall parrot kitchen entity:polly` over four facts, three of them filed under `polly` and all four written a moment before, in the default lane and fold.
+That is the recall over four facts, three of them filed under `polly` and all four written a moment before, in the default fold and [window](/docs/configuration/reference/database#window). Its depth is omitted, so the named anchor raises it to `depth:1`.
+
+## A hit's block
+
+`hits[].explain` says how one hit came into the ranking:
+
+| Field | Meaning |
+|-----------------|--------------------------------------------------------------------|
+| `seed` | `true` when the hit seeded the recall: it is among the first `seed-size` facts of a text or vector reading, or `top:` facts when that is larger, or it is filed under a named anchor on a recall that anchors alone seed. Always present, `false` included |
+| `decay` | the recency factor the hit's relevance was multiplied by to give its `score`, described below. Always present |
+| `contributions` | the sightings the hit's score was folded from, one entry per sighting, described below; never empty |
+
+Only a seed funds an anchor. A hit marked `seed: false` whose contributions are all `graph` matched nothing itself: it was admitted by transmission. One marked `seed: false` with a `text` or `vector` contribution matched below the seed cut: its own evidence counts in its score, but it put no mass into the graph.
 
 ## A contribution
 
@@ -87,44 +127,86 @@ An `anchor` sighting belongs to a recall seeded by its anchors alone: the fact w
 
 `decay` is the recency factor the hit's relevance was multiplied by to give its `score`: 1 for a fact just written, 0.5 for one a half-life old, and 1 on every hit when decay is turned off. It reads the time the fact was written, never when it was said or happened, so a fact stored today about a race two years back decays as today's memory. Dividing `score` by `decay` gives the relevance the fold produced, which tells a fact that ranks low for its age from one that ranks low for its match. See [Temporality](/docs/retrieval/memory-model/temporality).
 
+## The query's block
+
+`results.explain` says what the recall measured about the query as a whole. Every value in it is the one the search itself measured and ranked with, not a figure rebuilt from the hits:
+
+| Field | Meaning |
+|--------------|--------------------------------------------------------------------|
+| `background` | the query's background rate $\rho_0$: the seed mass the anchor round observed per unit of degree, over every anchor the seeds touched. Always present, `0` when no round ran |
+| `admission` | the bar per unit of degree that an anchor the recall did not name had to clear to transmit, keyed by depth: `"1"` is $2\rho_0$ and `"2"` is $\rho_0$. Omitted when no round ran: on a recall that runs at depth 0, names no anchor, seeds nothing or is seeded by its anchors alone, or when [`db.search-algorithm.name`](/docs/configuration/reference/algorithms#search-algorithm) is `none`. A named anchor beside a term or vector raises the depth to `depth:1` at least, so a `depth:0` written there still reports both bars |
+| `seeds` | how many distinct facts each source seeded. For `text` and `vector`, the facts among the first `seed-size` (or `top:`) of any of that source's readings, each counted once; for `anchor`, the facts filed under the named anchors when they seed alone. `graph` is always 0: the round admits facts rather than seeding them. Every source is listed |
+| `terms` | the query's distinct terms as the text index read them — case-folded, stop words dropped and stemmed, as [the text index matches](/docs/retrieval/ranking/hybrid-retrieval#what-the-text-index-matches) — in the order they first appear. A term no stored fact holds is listed too, which is how a word that matched nothing shows. `[]` when the recall has none |
+| `timings` | the wall time each source took, in nanoseconds: `text` the text reading, `vector` the vector reading, `anchor` the named anchors' seeding, `graph` the anchor round. Every source is listed, `0` for one that did not run |
+| `when` | for a recall whose `since:` or `until:` holds a `when`, the result of each such `when` under the name of its bound, described below. Omitted when no bound holds a `when` |
+
+An anchor of degree $d_A$ transmits at depth $d$ when its mass $M_A$ exceeds $d_A$ times `admission[d]`, and a `graph` sighting carries the two as its `score` and `degree`. A named anchor transmits at either depth, whatever its mass. One round sets both bars, so the block also shows what the same recall admits one lane over. The server decides admission without dividing, comparing $M_A \sum d$ with $d_A \sum M$, doubled at `depth:1`, so an anchor holding exactly its share stays silent however the bar rounds. [Retrieval lanes](/docs/retrieval/ranking/depth#an-explained-recall) reads a recall's anchors against both bars.
+
 ## A bound read from a `when`
 
-A recall bounded by a `when` carries a `when` object on its result. Under `since` and `until` it holds the whole explained result of the `when` in that bound: the hits the bound was read from, with their own contributions, and the `start` and `end` it answered with. A bound written out has no entry, and a recall that holds no `when` has no `when` key.
+A recall bounded by a `when` carries a `when` object in its block. Under `since` and `until` it holds the whole result of the `when` in that bound, explained with the recall: the hits the bound was read from, each with its own block, the `start` and `end` it answered with, and the `when`'s own query block. A bound written out has no entry, and a recall that holds no `when` has no `when` key.
+
+```text
+explain recall anna until:(when 'charity race')
+```
 
 ```json
 {
   "results": {
     "count": 2,
     "hits": ["..."],
-    "when": {
-      "until": {
-        "count": 1,
-        "hits": [
-          {
-            "value": "anna ran the charity race",
-            "timestamp": "2026-11-12T00:55:47.761Z",
-            "said": "2023-05-08T00:00:00Z",
-            "occurred": [{"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"}],
-            "score": 2.1199,
-            "decay": 1,
-            "contributions": [
-              { "source": "text", "score": 2.6895, "rank": 0, "count": 1, "held": 1 }
-            ]
+    "explain": {
+      "background": 0,
+      "seeds": { "anchor": 0, "graph": 0, "text": 2, "vector": 0 },
+      "terms": ["anna"],
+      "timings": { "anchor": 0, "graph": 0, "text": 2375, "vector": 0 },
+      "when": {
+        "until": {
+          "count": 1,
+          "hits": [
+            {
+              "value": "anna ran the charity race",
+              "timestamp": "2026-11-15T15:16:40.230589Z",
+              "said": "2023-05-08T00:00:00Z",
+              "occurred": [{"start": "2023-05-07T00:00:00Z", "end": "2023-05-08T00:00:00Z"}],
+              "score": 2.1313,
+              "explain": {
+                "seed": true,
+                "decay": 1,
+                "contributions": [
+                  { "source": "text", "score": 1.8351, "rank": 0, "count": 1, "held": 1 }
+                ]
+              }
+            }
+          ],
+          "start": "2023-05-07T00:00:00Z",
+          "end": "2023-05-08T00:00:00Z",
+          "explain": {
+            "background": 0,
+            "seeds": { "anchor": 0, "graph": 0, "text": 3, "vector": 0 },
+            "terms": ["chariti", "race"],
+            "timings": { "anchor": 0, "graph": 0, "text": 8167, "vector": 0 }
           }
-        ],
-        "start": "2023-05-07T00:00:00Z",
-        "end": "2023-05-08T00:00:00Z"
+        }
       }
     }
   }
 }
 ```
 
-That is `recall anna until:(when 'charity race')`: the bound was read from the race, which happened on 7 May, so the recall kept what had begun before that day. A `when` that matched no fact shows here with no hits and no time, beside the [warning](/docs/query-language/reference/warnings) the response carries.
+That is the recall over the four facts about anna that [Temporality](/docs/retrieval/memory-model/temporality) remembers, its own two hits left out: the bound was read from the race, which happened on 7 May, so the recall kept what had begun before that day, the training in April and the harbour drills on 1 May.
 
-## Writes are rejected
+A `when` that matched no fact shows here with no hits and no time, beside the [warning](/docs/query-language/reference/warnings) the response carries. The recall it bounds then has no bound to read and searches nothing, so its own block reads no seeds, no terms and zero timings.
 
-A `remember` on this endpoint is rejected with 400: a write has no ranking to explain, and explaining must never mutate a graph.
+## Only a recall is explained
+
+The prefix stands before a recall and nothing else: a write has no ranking to explain, and explaining must never mutate a graph. So `explain remember 'the parrot is green' entity:polly` is a parse error at the command, and nothing is written:
+
+```json
+{"error": "parse error at column 16: \"remember\" has no ranking to explain: the explain prefix stands only before recall — drop the prefix"}
+```
+
+A `when` answers with a time rather than a ranking, so `explain when race` is the same error at `when`; a `when` in a recall's time bound is explained with the recall, as above. The prefix's other misplacements, and the repair each message names, are in [Errors](/docs/http-api/errors#a-prefix-out-of-place). An explained recall of a graph that holds nothing answers `204 No Content` with no body, like [any recall](/docs/http-api/endpoints/query#an-empty-graph-answers-204).
 
 ## Reading a breakdown
 
@@ -136,8 +218,10 @@ $$
 
 A sighting marked `named` comes through an anchor the recall named, which owes no fair share: drop the $d_A \, \rho_0$ term, and it adds $\max(0,\; M_A - m)/d_A$. Summed over a hit's graph sightings, these are its **graph evidence** $g$.
 
-A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score. A hit with only `graph` contributions matched nothing itself and was preempted in on transmitted surplus alone, which the model permits only when the surplus is above background or the anchor was named.
+A graph sighting at or below background adds nothing, so a hit can list anchors that did not move its score. A hit marked `seed: false` with only `graph` contributions matched nothing itself and came in on transmitted surplus alone, which the model permits only when the anchor cleared its admission bar or was named.
 
-Under the `information` fold, the default, a hit's channels are its text mass, its vector similarity and $g$. Each is measured by its z-score over the recall's $n$ hits, a hit the channel did not see counting at zero, and only the part above the mean counts. The hit scores $(1 + z_t^+)(1 + z_v^+)^e + z_g^+$, where $e$ is 1 unless the vector singles the hit out beyond $\sqrt{2 \ln n}$, and then $2 - h$, $h$ being the text sighting's `held` (see [The fold](/docs/retrieval/ranking/hybrid-retrieval#the-fold)). In the example, the three `polly` facts put $1.4572 + 0.8757 + 0.1145 = 2.4474$ on `polly`, the second through what it borrows from its neighbours under the window, so they get $g = 0.3301$, $0.5239$ and $0.7776$: each the mass of the other two, shared over the anchor's three edges. Over the four hits the text masses average $0.6984$ with a spread of $0.5177$ and the graph terms $0.4079$ with $0.2840$. So the first fact scores $1 + z_t = 2.4656$, its graph term being under the mean; the visitor fact, which holds none of the words, scores $1 + z_g = 2.3019$; and the kitchen window, under the text's mean and with no graph term, scores the floor of 1, which recency decay still orders by age.
+In the example every hit is a seed, the visitor fact included: it holds none of the words, but what it borrows from its neighbours under the window puts it in the text reading, fourth of four, inside the first `seed-size`. The text index read the two terms `parrot` and `kitchen`, and the only anchor the seeds reached is `polly`, so $\rho_0 = 2.4474/3 = 0.8158$ and the bars are $1.6316$ at `depth:1` and $0.8158$ at `depth:2`; `polly` transmits whatever they are, since the recall named it. Every `decay` is 1, the facts being a moment old, so each `score` is the relevance the fold produced.
+
+Under the `information` fold, the default, a hit's channels are its text mass, its vector similarity and $g$. Each is measured by its z-score over the recall's $n$ hits, a hit the channel did not see counting at zero, and only the part above the mean counts. The hit scores $(1 + z_t^+)(1 + z_v^+)^e + z_g^+$, where $e$ is 1 unless the vector singles the hit out beyond $\sqrt{2 \ln n}$, and then $2 - h$, $h$ being the text sighting's `held` (see [The fold](/docs/retrieval/ranking/hybrid-retrieval#the-fold)). In the example, the three `polly` facts put $1.4572 + 0.8757 + 0.1145 = 2.4474$ on `polly`, the visitor fact through what it borrows from its neighbours under the window, so they get $g = 0.3301$, $0.5239$ and $0.7776$: each the mass of the other two, shared over the anchor's three edges. Over the four hits the text masses average $0.6984$ with a spread of $0.5177$ and the graph terms $0.4079$ with $0.2840$. So the first fact scores $1 + z_t = 2.4656$, its graph term being under the mean; the visitor fact, which holds none of the words, scores $1 + z_g = 2.3019$; and the kitchen window, under the text's mean and with no graph term, scores the floor of 1, which recency decay still orders by age.
 
 Under the `excess` fold the hit scores $m + g$: graph evidence added to the fact's own mass. The fold and the lanes are introduced in [Hybrid retrieval](/docs/retrieval/ranking/hybrid-retrieval).

@@ -21,8 +21,9 @@
 // SOFTWARE.
 
 // Package query defines the executable form of a Fraise query: the Recall,
-// Remember and When commands, and the Stream that runs one of them for a
-// request.
+// Remember and When commands, a recall written with the explain prefix being a
+// Recall with its Explain flag set, a Describe in front of a recall, and the
+// Stream that runs one of them for a request.
 //
 // [Parse] turns FQL text into a [Query] through the parser, which binds the
 // vector parameters supplied out of band. Parse rejects a top:, depth: or
@@ -39,12 +40,21 @@
 // commits first, on the same graph and under the same lock, so the bound and
 // the search read one state of the graph.
 //
+// A [Describe] answers with the shape of what its recall reaches instead of
+// the facts: how many there are, when they hold, and the topics and entities
+// they are filed under, in a [Catalogue]. Its recall runs with no top, so the
+// set described is every candidate the recall would rank.
+//
 // The plan cache hands the same query object to every request equal to the
-// one it was planned for. So a Query carries nothing per request. The explain
-// flag, the result and the warnings raised while committing live on the
-// Stream, and parse warnings are returned beside the query.
+// one it was planned for. So a Query carries nothing per request. The result
+// and the warnings raised while committing live on the Stream, and parse
+// warnings are returned beside the query. The explain prefix is part of the
+// statement, so the flag is a Recall field, and Plan copies it onto the
+// Stream, whose flag the read path reads. The deprecated explain endpoint sets
+// the Stream's flag for a plain recall.
 // For the same reason, Equal covers every field that changes what a query
-// reads or writes. Otherwise a cache hit would run another query's plan. Hash
+// reads or writes, or the envelope it answers in. Otherwise a cache hit would
+// run another query's plan, or answer an explained recall as a plain one. Hash
 // covers the same fields, in material that keeps what Equal may not see, such
 // as the offset a remember's time was written in.
 package query

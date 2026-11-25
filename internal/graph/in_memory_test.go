@@ -39,6 +39,7 @@ import (
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 	"github.com/FraiseHQ/fraise/internal/index"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // newGraph builds an empty graph carrying the test config.
@@ -1461,6 +1462,104 @@ func TestSearchDepthOnePrecisionBar(t *testing.T) {
 	}
 }
 
+// The worked example of excess-transmission.mdx: a cluster of three facts,
+// two of them matches, a hub of six holding one weaker match, and a giant of
+// ten the query never reaches.
+const (
+	clusterFlickers = "the pulsar flickers"                                                  // cluster, a match
+	clusterSpins    = "a pulsar spins"                                                       // cluster, a match
+	clusterGlows    = "the nebula glows"                                                     // cluster, no query term
+	hubSurvey       = "an old survey of the outer arm lists one pulsar among many dim stars" // hub, the weaker match
+)
+
+// workedExampleGraph builds the worked example with decay off and the excess
+// traversal installed. Each topic's other facts hold no query term.
+func workedExampleGraph(t *testing.T) *graph.InMemoryGraph[uint64, float64] {
+	t.Helper()
+	g := noDecayGraph()
+	now := time.Now()
+	file := func(topic string, values ...string) {
+		anchor := mkTopic(g, topic, now)
+		mustSet(t, g, anchor)
+		for _, value := range values {
+			fact := mkFact(g, value, now)
+			mustSet(t, g, fact)
+			mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: anchor, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
+		}
+	}
+	file("cluster", clusterFlickers, clusterSpins, clusterGlows)
+	hub := []string{hubSurvey}
+	for i := range 5 {
+		hub = append(hub, "hub memo "+string(rune('a'+i)))
+	}
+	file("hub", hub...)
+	giant := make([]string, 0, 10)
+	for i := range 10 {
+		giant = append(giant, "giant ledger "+string(rune('a'+i)))
+	}
+	file("giant", giant...)
+	return g
+}
+
+// TestInMemoryGraphSearchReportsTheRound pins what Result carries about the
+// anchor round, on the worked example. The masses are the text index's, not
+// the page's 8, 6 and 2, so ρ₀ is read from them: the three seeds' mass over
+// the nine edges of the two anchors they reach, the giant's ten never counted.
+// One round yields both bars, twice ρ₀ at depth 1 and ρ₀ at depth 2, so both
+// depths report the same figures. The cluster clears either bar and transmits
+// to the fact that matched nothing, and the hub stays silent. Depth 0 runs no
+// round: no background, no bar, nothing transmitted. The query names a door
+// the seeds never reach, so both anchors are discovered and held to the bar.
+func TestInMemoryGraphSearchReportsTheRound(t *testing.T) {
+	g := workedExampleGraph(t)
+	readings, masses, err := g.GetTextIndex().Search("pulsar", 0)
+	if err != nil {
+		t.Fatalf("text Search = %v, want nil", err)
+	}
+	mass := make(map[string]float64, len(readings[0]))
+	for i, key := range readings[0] {
+		mass[g.Get(key).GetValue()] = masses[0][i]
+	}
+	rho := (mass[clusterFlickers] + mass[clusterSpins] + mass[hubSurvey]) / 9
+	seeds := [scoring.SrcAnchor + 1]int{scoring.SrcText: 3}
+	terms := []string{"pulsar"}
+
+	for name, tc := range map[string]struct {
+		depth int
+		want  graph.Result[uint64, float64]
+		hits  []string
+	}{
+		"depth 0 runs no round": {
+			depth: 0,
+			want:  graph.Result[uint64, float64]{Seeds: seeds, Terms: terms},
+			hits:  []string{clusterFlickers, clusterSpins, hubSurvey},
+		},
+		"depth 1 bars twice the rate": {
+			depth: 1,
+			want:  graph.Result[uint64, float64]{Background: rho, Admission: []float64{0, 2 * rho, rho}, Seeds: seeds, Terms: terms},
+			hits:  []string{clusterFlickers, clusterSpins, clusterGlows, hubSurvey},
+		},
+		"depth 2 bars the rate itself": {
+			depth: 2,
+			want:  graph.Result[uint64, float64]{Background: rho, Admission: []float64{0, 2 * rho, rho}, Seeds: seeds, Terms: terms},
+			hits:  []string{clusterFlickers, clusterSpins, clusterGlows, hubSurvey},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := g.Search([]string{"pulsar"}, containers.Vector[uint64, float64]{}, []string{"door"}, nil, tc.depth, 20, containers.Bound{}, containers.Bound{})
+			if err != nil {
+				t.Fatalf("Search = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.want, got, cmpopts.IgnoreFields(graph.Result[uint64, float64]{}, "Hits", "Timings")); diff != "" {
+				t.Errorf("Search(pulsar, depth %d) mismatch (-want +got):\n%s", tc.depth, diff)
+			}
+			if diff := cmp.Diff(tc.hits, values(got.Nodes()), cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+				t.Errorf("Search(pulsar, depth %d) hits mismatch (-want +got):\n%s", tc.depth, diff)
+			}
+		})
+	}
+}
+
 // TestSearchFairSeeding pins fair seeding: the text candidate budget tracks
 // the requested result size. Fifteen facts match, and seed-size is at its
 // default of 10. top:15 must still return all fifteen. A budget capped at
@@ -2032,15 +2131,20 @@ func TestInMemoryGraphSearchOrdersEqualMatchesByAge(t *testing.T) {
 	}
 }
 
-// TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst pins how deep the
-// indexes are read. Each is read for every match, so a match below the seed
-// budget still carries its evidence and the scorer measures it against the
-// whole reading. Only the first seed-size of each reading seed the anchor
-// round. With a budget of one, the weaker kettle fact comes back with its text
-// sighting, yet the round observes only the stronger fact's topic: the
-// background is that fact's mass over its topic's two edges, the weaker
-// fact's topic never touched.
-func TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst(t *testing.T) {
+// The seed fixture: two kettle facts, one strong and one weak, each under its
+// own topic, and a stove fact beside the strong one. Each fact has an
+// embedding of its own, so the vector index can seed any one of them.
+const (
+	kettleStrong = "the kettle kettle whistles"                                  // kitchen, embedding (1, 0, 0)
+	kettleStove  = "the stove is warm"                                           // kitchen, embedding (0, 1, 0)
+	kettleWeak   = "a kettle sits in the shed among tools and old garden chairs" // shed, embedding (0, 0, 1)
+)
+
+// kettleGraph builds the seed fixture with a seed budget of one, so each
+// reading seeds its first match alone. Decay is off and the excess traversal
+// is installed.
+func kettleGraph(t *testing.T) *graph.InMemoryGraph[uint64, float64] {
+	t.Helper()
 	cfg := testConfig()
 	cfg.Engine.Halflife = 0
 	cfg.DB.SeedSize = 1
@@ -2050,40 +2154,210 @@ func TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst(t *testing.T) {
 	kitchen, shed := mkTopic(g, "kitchen", now), mkTopic(g, "shed", now)
 	mustSet(t, g, kitchen)
 	mustSet(t, g, shed)
-	file := func(value string, topic *graph.Topic[uint64]) graph.Fact[uint64] {
+	file := func(value string, topic *graph.Topic[uint64], embedding []float64) {
 		fact := mkFact(g, value, now)
 		mustSet(t, g, fact)
 		mustSet(t, g, graph.IsAbout[uint64]{Fact: &fact, Topic: topic, NodeAttributes: graph.NodeAttributes{Timestamp: now}, Hasher: g.GetHasher()})
-		return fact
+		if err := g.GetVectorIndex().Insert(fact.Key(), containers.NewVector[uint64](embedding)); err != nil {
+			t.Fatalf("vector Insert(%q) = %v, want nil", value, err)
+		}
 	}
-	strong := file("the kettle kettle whistles", kitchen)
-	file("the stove is warm", kitchen)
-	weak := file("a kettle sits in the shed among tools and old garden chairs", shed)
+	file(kettleStrong, kitchen, []float64{1, 0, 0})
+	file(kettleStove, kitchen, []float64{0, 1, 0})
+	file(kettleWeak, shed, []float64{0, 0, 1})
+	return g
+}
 
-	nodes, _, contributions, background, err := search(g, []string{"kettle"}, containers.Vector[uint64, float64]{}, []string{"kitchen"}, nil, 2, 0, containers.Bound{}, containers.Bound{})
+// TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst pins how deep the
+// indexes are read. Each is read for every match, so a match below the seed
+// budget still carries its evidence and the scorer measures it against the
+// whole reading. Only the first seed-size of each reading seed the anchor
+// round. With a budget of one, the weaker kettle fact comes back with its text
+// sighting, yet the round observes only the stronger fact's topic: the
+// background is that fact's mass over its topic's two edges, the weaker
+// fact's topic never touched. The result counts what seeded, not what
+// matched: one text seed, the strong fact the window's reading and the
+// kitchen's both put first, and the weak fact's hit is no seed.
+func TestInMemoryGraphSearchReadsEveryMatchSeedsTheFirst(t *testing.T) {
+	g := kettleGraph(t)
+
+	result, err := g.Search([]string{"kettle"}, containers.Vector[uint64, float64]{}, []string{"kitchen"}, nil, 2, 0, containers.Bound{}, containers.Bound{})
 	if err != nil {
 		t.Fatalf("Search = %v, want nil", err)
 	}
 	var strongMass float64
-	weakRead := false
-	for i, node := range nodes {
-		for _, c := range contributions[i] {
+	weakRead, weakSeed := false, false
+	for _, hit := range result.Hits {
+		for _, c := range hit.Contributions {
 			if c.Src != scoring.SrcText {
 				continue
 			}
-			switch node.Key() {
-			case strong.Key():
+			switch hit.Node.GetValue() {
+			case kettleStrong:
 				strongMass = c.Score
-			case weak.Key():
-				weakRead = true
+			case kettleWeak:
+				weakRead, weakSeed = true, hit.Seed
 			}
 		}
 	}
 	if !weakRead {
-		t.Errorf("hits = %v, want the weaker match with its text sighting: every match is read", values(nodes))
+		t.Errorf("hits = %v, want the weaker match with its text sighting: every match is read", values(result.Nodes()))
 	}
-	if want := strongMass / 2; math.Abs(background-want) > 1e-12 {
-		t.Errorf("background = %v, want the strong seed's mass over its topic's two edges %v: only the first match seeds", background, want)
+	if weakSeed {
+		t.Errorf("the weaker match's hit is a seed, want none: it ranks below the budget of one")
+	}
+	if want := strongMass / 2; math.Abs(result.Background-want) > 1e-12 {
+		t.Errorf("background = %v, want the strong seed's mass over its topic's two edges %v: only the first match seeds", result.Background, want)
+	}
+	if diff := cmp.Diff([scoring.SrcAnchor + 1]int{scoring.SrcText: 1}, result.Seeds); diff != "" {
+		t.Errorf("Seeds mismatch (-want +got), one text seed however many matches and readings:\n%s", diff)
+	}
+}
+
+// TestInMemoryGraphSearchCountsEachSourcesSeeds pins Result.Seeds, per
+// source, on a budget of one. A source counts the facts it seeded, each once:
+// a reading under a named anchor seeds its own first match, so naming the shed
+// seeds the weak kettle fact beside the window's strong one, and an embedding
+// nearest the weak fact seeds it over the window and a kitchen fact under the
+// kitchen. A fact the text and the vector both seed counts in each. The named
+// anchors alone seed every member, and a recall that matches nothing seeds
+// nothing. The round seeds nothing at any depth, so graph stays zero.
+func TestInMemoryGraphSearchCountsEachSourcesSeeds(t *testing.T) {
+	g := kettleGraph(t)
+	nearStrong := containers.NewVector[uint64]([]float64{0.9, 0.1, 0.1})
+	nearWeak := containers.NewVector[uint64]([]float64{0.1, 0.1, 0.9})
+	none := containers.Vector[uint64, float64]{}
+
+	for name, tc := range map[string]struct {
+		keywords []string
+		vector   containers.Vector[uint64, float64]
+		topics   []string
+		want     [scoring.SrcAnchor + 1]int
+	}{
+		"the window and the kitchen put one fact first": {keywords: []string{"kettle"}, vector: none, topics: []string{"kitchen"}, want: [scoring.SrcAnchor + 1]int{scoring.SrcText: 1}},
+		"the shed's reading seeds its own first":        {keywords: []string{"kettle"}, vector: none, topics: []string{"shed"}, want: [scoring.SrcAnchor + 1]int{scoring.SrcText: 2}},
+		"a fact both sources seed counts in each":       {keywords: []string{"kettle"}, vector: nearStrong, want: [scoring.SrcAnchor + 1]int{scoring.SrcText: 1, scoring.SrcVector: 1}},
+		"the vector reads the window and the kitchen":   {vector: nearWeak, topics: []string{"kitchen"}, want: [scoring.SrcAnchor + 1]int{scoring.SrcVector: 2}},
+		"the anchor alone seeds every member":           {vector: none, topics: []string{"kitchen"}, want: [scoring.SrcAnchor + 1]int{scoring.SrcAnchor: 2}},
+		"a word no fact holds seeds nothing":            {keywords: []string{"zebra"}, vector: none, topics: []string{"kitchen"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := g.Search(tc.keywords, tc.vector, tc.topics, nil, 2, 0, containers.Bound{}, containers.Bound{})
+			if err != nil {
+				t.Fatalf("Search = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.want, result.Seeds); diff != "" {
+				t.Errorf("Seeds mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchMarksItsSeeds pins Hit.Seed, the one per-hit fact a
+// contribution cannot show. Through the kitchen, the strong kettle fact is the
+// seed. The weak one is a match below the cut, and the stove, which nothing
+// matched, rides in on the kitchen's transmission alone: neither is a seed.
+// Naming the shed instead seeds the weak fact under it, though it ranks second
+// in the pooled ranking, so a sighting's Rank cannot tell. When the kitchen
+// seeds alone, every member it returns is a seed.
+func TestInMemoryGraphSearchMarksItsSeeds(t *testing.T) {
+	g := kettleGraph(t)
+
+	for name, tc := range map[string]struct {
+		keywords []string
+		topics   []string
+		depth    int
+		want     map[string]bool
+	}{
+		"a seed, a match below the cut and a transmitted member": {keywords: []string{"kettle"}, topics: []string{"kitchen"}, depth: 2, want: map[string]bool{kettleStrong: true, kettleWeak: false, kettleStove: false}},
+		"the shed's reading seeds its own first":                 {keywords: []string{"kettle"}, topics: []string{"shed"}, depth: 0, want: map[string]bool{kettleStrong: true, kettleWeak: true}},
+		"every member of the anchor alone":                       {topics: []string{"kitchen"}, depth: 2, want: map[string]bool{kettleStrong: true, kettleStove: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := g.Search(tc.keywords, containers.Vector[uint64, float64]{}, tc.topics, nil, tc.depth, 0, containers.Bound{}, containers.Bound{})
+			if err != nil {
+				t.Fatalf("Search = %v, want nil", err)
+			}
+			got := make(map[string]bool, len(result.Hits))
+			for _, hit := range result.Hits {
+				got[hit.Node.GetValue()] = hit.Seed
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("Seed by hit mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchReadsTheQueryAsTheTextIndexDoes pins Result.Terms:
+// the keywords as the text index reads them, cleaned of stop words, stemmed,
+// and each once in the order first used. A word no fact holds stays listed,
+// since it is the one a caller needs to see. Keywords that are all stop words
+// read as no term at all, and a recall without keywords never reads the text,
+// so it has no terms.
+func TestInMemoryGraphSearchReadsTheQueryAsTheTextIndexDoes(t *testing.T) {
+	g := kettleGraph(t)
+	none := containers.Vector[uint64, float64]{}
+
+	for name, tc := range map[string]struct {
+		keywords []string
+		vector   containers.Vector[uint64, float64]
+		want     []string
+	}{
+		"cleaned, stemmed and each once": {keywords: []string{"The", "running", "kettles", "running"}, vector: none, want: []string{"run", "kettl"}},
+		"a word no fact holds":           {keywords: []string{"kettle", "zebra"}, vector: none, want: []string{"kettl", "zebra"}},
+		"only stop words":                {keywords: []string{"when", "the", "own"}, vector: none, want: []string{}},
+		"no keywords":                    {vector: containers.NewVector[uint64]([]float64{1, 0, 0})},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := g.Search(tc.keywords, tc.vector, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
+			if err != nil {
+				t.Fatalf("Search = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.want, result.Terms); diff != "" {
+				t.Errorf("Terms mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestInMemoryGraphSearchTimesTheSourcesThatRan pins which of Result.Timings
+// a recall fills: the sources that ran, and only those. The text and the
+// vector run when the recall carries words or an embedding, the anchor when
+// the named anchors seed alone, and the graph only when the round runs, at
+// depth 1 or 2 with an anchor named. The durations themselves are the
+// machine's, so only whether each is above zero is pinned.
+func TestInMemoryGraphSearchTimesTheSourcesThatRan(t *testing.T) {
+	g := kettleGraph(t)
+	vector := containers.NewVector[uint64]([]float64{0.9, 0.1, 0.1})
+	none := containers.Vector[uint64, float64]{}
+
+	for name, tc := range map[string]struct {
+		keywords []string
+		vector   containers.Vector[uint64, float64]
+		topics   []string
+		depth    int
+		want     [scoring.SrcAnchor + 1]bool
+	}{
+		"text naming no anchor runs no round":     {keywords: []string{"kettle"}, vector: none, depth: 2, want: [scoring.SrcAnchor + 1]bool{scoring.SrcText: true}},
+		"the vector alone":                        {vector: vector, depth: 2, want: [scoring.SrcAnchor + 1]bool{scoring.SrcVector: true}},
+		"text and vector through a named anchor":  {keywords: []string{"kettle"}, vector: vector, topics: []string{"kitchen"}, depth: 1, want: [scoring.SrcAnchor + 1]bool{scoring.SrcText: true, scoring.SrcVector: true, scoring.SrcGraph: true}},
+		"a named anchor at depth 0 runs no round": {keywords: []string{"kettle"}, vector: none, topics: []string{"kitchen"}, depth: 0, want: [scoring.SrcAnchor + 1]bool{scoring.SrcText: true}},
+		"the anchor alone":                        {vector: none, topics: []string{"kitchen"}, depth: 2, want: [scoring.SrcAnchor + 1]bool{scoring.SrcAnchor: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, err := g.Search(tc.keywords, tc.vector, tc.topics, nil, tc.depth, 10, containers.Bound{}, containers.Bound{})
+			if err != nil {
+				t.Fatalf("Search = %v, want nil", err)
+			}
+			var got [scoring.SrcAnchor + 1]bool
+			for src, took := range result.Timings {
+				got[src] = took > 0
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("sources timed mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

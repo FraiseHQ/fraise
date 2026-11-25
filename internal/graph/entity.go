@@ -93,7 +93,7 @@ func (f Fact[K]) Intervals(c containers.Clock) []containers.Interval {
 	return []containers.Interval{{Start: at, End: at}}
 }
 
-// within reports whether the fact lies inside the window since and until
+// Within reports whether the fact lies inside the window since and until
 // draw, each on the clock it names. A zero bound is open. Each bound draws
 // half of the window: since everything from its instant on, until everything
 // before its instant. The fact is inside when one of its intervals overlaps
@@ -103,9 +103,9 @@ func (f Fact[K]) Intervals(c containers.Clock) []containers.Interval {
 // The halves stay two intervals because until never takes in its own
 // instant: joined into one, bounds that coincide would read as that instant,
 // and a fact beginning on it would enter a window that until alone keeps it
-// out of. Every site that windows a search asks here, so the seeds, the pool
-// and the ranking agree on which facts a recall can return.
-func (f Fact[K]) within(since containers.Bound, until containers.Bound) bool {
+// out of. Every site that windows a search asks here, so the seeds, the pool,
+// the ranking and a describe agree on which facts a recall can return.
+func (f Fact[K]) Within(since containers.Bound, until containers.Bound) bool {
 	opens := containers.Interval{Start: since.At}
 	closes := containers.Interval{End: until.At}
 	if since.Clock != until.Clock {

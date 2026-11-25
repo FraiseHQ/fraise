@@ -260,6 +260,57 @@ func TestPlanConfirmsAHitByEquality(t *testing.T) {
 	}
 }
 
+// TestPlanNeverSharesAPlanBetweenADescribeAndItsRecall pins the plan cache
+// against a describe and the recall of the same body. The two search alike,
+// but one answers with a catalogue and the other with hits, so a shared plan
+// would answer one request with the other's kind of result. Their keys differ,
+// and when a collision forces them under one key, equality still tells them
+// apart: the second is planned as itself, whichever came first.
+func TestPlanNeverSharesAPlanBetweenADescribeAndItsRecall(t *testing.T) {
+	tests := map[string]struct {
+		first, second string
+	}{
+		"a describe after its recall": {first: "recall heron", second: "describe recall heron"},
+		"a recall after its describe": {first: "describe recall heron", second: "recall heron"},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.New()
+			e := newEngine(t, cfg)
+			e.Hasher = collidingHasher{}
+			if err := e.Start(); err != nil {
+				t.Fatalf("Start returned error: %v", err)
+			}
+			defer e.Stop()
+
+			first, _, err := query.Parse[uint64, float32](tc.first, nil, cfg)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error: %v", tc.first, err)
+			}
+			second, _, err := query.Parse[uint64, float32](tc.second, nil, cfg)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error: %v", tc.second, err)
+			}
+			hasher := hash.NewHasher[uint64](cfg)
+			if first.Hash(hasher) == second.Hash(hasher) {
+				t.Errorf("%q and %q share a key", tc.first, tc.second)
+			}
+
+			if _, err := e.Plan(first); err != nil {
+				t.Fatalf("Plan(%q) returned error: %v", tc.first, err)
+			}
+			stream, err := e.Plan(second)
+			if err != nil {
+				t.Fatalf("Plan(%q) returned error: %v", tc.second, err)
+			}
+
+			if !stream.Query.Equal(second) {
+				t.Errorf("Plan(%q) ran %+v, the plan of %q, want %+v", tc.second, stream.Query, tc.first, second)
+			}
+		})
+	}
+}
+
 // TestPlanRunsARememberWithItsOwnTimes pins the plan cache against a fact
 // re-asserted at the same instant in another offset. Equality compares
 // instants whatever their zone, so it cannot tell the two remembers apart. The
@@ -313,5 +364,120 @@ func TestPlanRunsARememberWithItsOwnTimes(t *testing.T) {
 	}
 	if diff := cmp.Diff("2023-05-08T15:30:00Z", fact.Said.Format(time.RFC3339)); diff != "" {
 		t.Errorf("Said mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestPlanKeepsExplainedAndPlainRecallsApart pins that a recall and the same
+// recall written with the explain prefix never share a plan, whichever comes
+// first. Each is cached under its own key and every repeat is served from its
+// own entry, so a stream explains exactly when its statement asked. A shared
+// entry would hand the cached query's flag to the other statement, answering
+// a plain recall with the explain blocks or an explained one without them.
+// The repeated term makes Dedupe rewrite each query, so a stream planned from
+// the cache is told apart from one planned afresh.
+func TestPlanKeepsExplainedAndPlainRecallsApart(t *testing.T) {
+	const plain, explained = "recall@0 anna anna", "explain recall@0 anna anna"
+	explains := map[string]bool{plain: false, explained: true}
+	cases := map[string]struct {
+		order []string
+	}{
+		"plain first":     {[]string{plain, explained, plain, explained}},
+		"explained first": {[]string{explained, plain, explained, plain}},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.New()
+			e := newEngine(t, cfg)
+			if err := e.Start(); err != nil {
+				t.Fatalf("Start returned error: %v", err)
+			}
+			defer e.Stop()
+
+			keys := make(map[string]uint64)
+			for i, text := range tc.order {
+				q, _, err := query.Parse[uint64, float32](text, nil, cfg)
+				if err != nil {
+					t.Fatalf("Parse(%q) returned error: %v", text, err)
+				}
+				keys[text] = q.Hash(e.Hasher)
+				stream, err := e.Plan(q)
+				if err != nil {
+					t.Fatalf("Plan(%q) returned error: %v", text, err)
+				}
+				if got, want := stream.Explain, explains[text]; got != want {
+					t.Errorf("plan %d of %q: stream.Explain = %v, want %v", i, text, got, want)
+				}
+				if i < 2 {
+					continue
+				}
+				// The repeats: each must come from its own entry, which the
+				// other statement's plan in between left in place.
+				cached, ok := e.Cache.Get(keys[text])
+				if !ok {
+					t.Fatalf("plan %d of %q: its entry left the cache", i, text)
+				}
+				if stream.Query != cached.Optimised {
+					t.Errorf("plan %d of %q: planned afresh, want it served from its own entry", i, text)
+				}
+			}
+			if keys[plain] == keys[explained] {
+				t.Errorf("%q and %q share the key %d, want distinct keys", plain, explained, keys[plain])
+			}
+		})
+	}
+}
+
+// TestPlanConfirmsAnExplainedHitByEquality pins the plan cache against a plain
+// and an explained recall that share a key. Trusting the key, Plan would run
+// the first statement's query for the second, answering it in the first's
+// envelope. Equal tells the two apart, so the second is planned afresh, runs
+// with its own flag and takes the entry over, whichever came first.
+func TestPlanConfirmsAnExplainedHitByEquality(t *testing.T) {
+	const plain, explained = "recall@0 anna", "explain recall@0 anna"
+	cases := map[string]struct {
+		first, second string
+		want          bool // the second stream's Explain
+	}{
+		"plain first":     {plain, explained, true},
+		"explained first": {explained, plain, false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.New()
+			e := newEngine(t, cfg)
+			e.Hasher = collidingHasher{}
+			if err := e.Start(); err != nil {
+				t.Fatalf("Start returned error: %v", err)
+			}
+			defer e.Stop()
+
+			first, _, err := query.Parse[uint64, float32](tc.first, nil, cfg)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error: %v", tc.first, err)
+			}
+			if _, err := e.Plan(first); err != nil {
+				t.Fatalf("first Plan returned error: %v", err)
+			}
+
+			second, _, err := query.Parse[uint64, float32](tc.second, nil, cfg)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error: %v", tc.second, err)
+			}
+			stream, err := e.Plan(second)
+			if err != nil {
+				t.Fatalf("second Plan returned error: %v", err)
+			}
+			if got := stream.Explain; got != tc.want {
+				t.Errorf("stream.Explain = %v for %q, want %v", got, tc.second, tc.want)
+			}
+			if !stream.Query.Equal(second) {
+				t.Errorf("Plan ran %+v for a colliding query, want %+v", stream.Query, second)
+			}
+			if cached, _ := e.Cache.Get(0); cached.Parsed != second {
+				t.Error("the colliding query did not take the cache entry over")
+			}
+		})
 	}
 }

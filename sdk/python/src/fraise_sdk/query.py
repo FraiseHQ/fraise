@@ -27,9 +27,10 @@ These functions do no I/O. The wire format lives here, and
 
     remember@<graph> '<value>' [topic:<t>]... [entity:<e>]...
                      [said:<time>] [occurred:<span>]... [vec:$<name>]
-    recall@<graph> ['<query>'] [<keyword>]... [topic:<t>]... [entity:<e>]...
-                   [top:<n>] [depth:<n>] [since:<bound>] [until:<bound>]
-                   [vec:$<name>]
+    [explain] recall@<graph> ['<query>'] [<keyword>]... [topic:<t>]...
+              [entity:<e>]... [top:<n>] [depth:<n>] [since:<bound>]
+              [until:<bound>] [vec:$<name>]
+    describe recall@<graph> [the body of a recall, which may be empty]
 
 A topic, entity or keyword is written bare when it is one plain word, letters
 and digits only. Otherwise it is quoted. A keyword that spells a reserved word
@@ -383,6 +384,40 @@ def _bound(
     return f"(when{clock} {' '.join(body)})"
 
 
+def _recall(
+    keywords: Sequence[str] | None,
+    graph: int,
+    query: str | None,
+    topics: Sequence[str] | None,
+    entities: Sequence[str] | None,
+    top: int | None,
+    depth: int | None,
+    since: date | datetime | When | None,
+    until: date | datetime | When | None,
+    with_vector: bool,
+    with_since_vector: bool,
+    with_until_vector: bool,
+) -> list[str]:
+    """Write a recall's verb and clauses, one part each, for the builders to join.
+
+    :func:`build_recall` and :func:`build_describe` share it, so a described
+    recall is spelled exactly as the recall it describes. The verb is always
+    the first part, so a recall given no seed and no modifier is one part
+    long.
+    """
+    parts = [f"recall{_selector(graph)}"]
+    parts += _body(keywords, query, topics, entities, top, depth)
+    if since is not None:
+        param = SINCE_VECTOR_PARAM if with_since_vector else None
+        parts.append(f"since:{_bound('since', since, param)}")
+    if until is not None:
+        param = UNTIL_VECTOR_PARAM if with_until_vector else None
+        parts.append(f"until:{_bound('until', until, param)}")
+    if with_vector:
+        parts.append(f"vec:${VECTOR_PARAM}")
+    return parts
+
+
 def build_remember(
     value: str,
     *,
@@ -438,6 +473,7 @@ def build_recall(
     with_vector: bool = False,
     with_since_vector: bool = False,
     with_until_vector: bool = False,
+    explain: bool = False,
 ) -> str:
     """Build a ``recall`` query string over ``graph``.
 
@@ -463,6 +499,12 @@ def build_recall(
     here. A call given only ``top``, ``depth`` or a bound is built as written,
     and the server rejects it for the missing seed.
 
+    Set ``explain`` to write the recall behind the ``explain`` prefix
+    (``explain recall@<graph> ...``). The server runs it exactly as the plain
+    recall, so the hits and their order are the same, and its result also
+    carries what the ranking did. The prefix seeds nothing, so a call given
+    only it and ``graph`` is still rejected for the missing seed.
+
     Raises:
         FraiseQueryError: if nothing but ``graph`` is given, ``top`` is not
             positive, or ``depth`` is negative. Also raised when a value cannot
@@ -471,20 +513,69 @@ def build_recall(
             nor a datetime, a when with no seed, or a bound vector for a
             bound that is a time.
     """
-    parts = [f"recall{_selector(graph)}"]
-    parts += _body(keywords, query, topics, entities, top, depth)
-    if since is not None:
-        param = SINCE_VECTOR_PARAM if with_since_vector else None
-        parts.append(f"since:{_bound('since', since, param)}")
-    if until is not None:
-        param = UNTIL_VECTOR_PARAM if with_until_vector else None
-        parts.append(f"until:{_bound('until', until, param)}")
-    if with_vector:
-        parts.append(f"vec:${VECTOR_PARAM}")
-
+    parts = _recall(
+        keywords,
+        graph,
+        query,
+        topics,
+        entities,
+        top,
+        depth,
+        since,
+        until,
+        with_vector,
+        with_since_vector,
+        with_until_vector,
+    )
     if len(parts) == 1:
         raise FraiseQueryError(
             "recall needs at least one seed: keywords, a vector, or a "
             "topic/entity anchor"
         )
+    if explain:
+        parts.insert(0, "explain")
     return " ".join(parts)
+
+
+def build_describe(
+    keywords: Sequence[str] | None = None,
+    *,
+    graph: int = 0,
+    query: str | None = None,
+    topics: Sequence[str] | None = None,
+    entities: Sequence[str] | None = None,
+    top: int | None = None,
+    depth: int | None = None,
+    since: date | datetime | When | None = None,
+    until: date | datetime | When | None = None,
+    with_vector: bool = False,
+    with_since_vector: bool = False,
+    with_until_vector: bool = False,
+) -> str:
+    """Build a ``describe recall`` query string over ``graph``.
+
+    The recall is written as :func:`build_recall` writes it, with ``describe``
+    in front: the server answers with the shape of what the recall reaches
+    instead of its facts. Under describe ``top`` caps the topics and the
+    entities listed, and ``since`` and ``until`` bound the facts counted.
+
+    Unlike a recall, a describe needs no seed. Given nothing but ``graph``, it
+    describes the whole graph, and given only a bound, every fact inside it. A
+    value that cannot be written as FQL raises :class:`FraiseQueryError`, as
+    it does for :func:`build_recall`.
+    """
+    parts = _recall(
+        keywords,
+        graph,
+        query,
+        topics,
+        entities,
+        top,
+        depth,
+        since,
+        until,
+        with_vector,
+        with_since_vector,
+        with_until_vector,
+    )
+    return " ".join(["describe", *parts])

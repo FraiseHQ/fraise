@@ -153,6 +153,8 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 		"said":        {lexer.SAID, true},
 		"occurred":    {lexer.OCCURRED, true},
 		"vec":         {lexer.VEC, true},
+		"explain":     {lexer.EXPLAIN, true},
+		"describe":    {lexer.DESCRIBE, true},
 		"nonexistent": {lexer.ILLEGAL, false},
 		// The clock names a when takes after its ':' stand only where a value
 		// can, so they stay ordinary words. said is reserved as a field.
@@ -161,6 +163,7 @@ func TestKeyLITERALsMapLookup(t *testing.T) {
 		"..":       {lexer.ILLEGAL, false},
 		"RECALL":   {lexer.ILLEGAL, false},
 		"Recall":   {lexer.ILLEGAL, false},
+		"Describe": {lexer.ILLEGAL, false},
 		"and":      {lexer.ILLEGAL, false},
 		"or":       {lexer.ILLEGAL, false},
 		"+":        {lexer.ILLEGAL, false},
@@ -325,6 +328,8 @@ func TestRoundTripTokenTypeToStringToKeyLITERAL(t *testing.T) {
 		"said":     {lexer.SAID},
 		"occurred": {lexer.OCCURRED},
 		"vec":      {lexer.VEC},
+		"explain":  {lexer.EXPLAIN},
+		"describe": {lexer.DESCRIBE},
 	}
 
 	for name, tc := range tests {

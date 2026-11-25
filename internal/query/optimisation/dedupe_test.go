@@ -140,6 +140,76 @@ func TestDedupeOptimiseWhen(t *testing.T) {
 	}
 }
 
+// A describe catalogues what its recall reaches, so its lists are deduplicated
+// as a recall's are, and so are those of a query in its recall's bound. It
+// comes back as a copy with the same scope and cap, and the describe as parsed
+// is left alone, nested query included: the engine confirms every later cache
+// hit against it.
+func TestDedupeOptimiseDescribe(t *testing.T) {
+	type lists struct {
+		Keywords, Entities, Topics, Nested []string
+	}
+	read := func(d *query.Describe[string, float32]) lists {
+		t.Helper()
+		nested, ok := d.Recall.Parameters.Until.Query.(*query.When[string, float32])
+		if !ok {
+			t.Fatalf("the describe's until holds a %T, want *query.When", d.Recall.Parameters.Until.Query)
+		}
+		return lists{
+			Keywords: d.Recall.Keywords,
+			Entities: d.Recall.Entities,
+			Topics:   d.Recall.Topics,
+			Nested:   nested.Recall.Keywords,
+		}
+	}
+	in := &query.Describe[string, float32]{
+		Scope: "a b a c b entity:e1 entity:e1 entity:e2 topic:t1 topic:t2 topic:t1 top:3",
+		Top:   3,
+		Recall: query.Recall[string, float32]{
+			Keywords: []string{"a", "b", "a", "c", "b"},
+			Entities: []string{"e1", "e1", "e2"},
+			Topics:   []string{"t1", "t2", "t1"},
+			Parameters: query.QueryParameters[string, float32]{
+				Until: query.TimeOperand[string, float32]{Query: &query.When[string, float32]{
+					Recall: query.Recall[string, float32]{Keywords: []string{"race", "race", "lap"}},
+				}},
+			},
+		},
+	}
+	d := &optimisation.Dedupe[string, float32]{}
+
+	out := d.Optimise(in)
+
+	describe, ok := out.(*query.Describe[string, float32])
+	if !ok {
+		t.Fatalf("Optimise returned %T, want *query.Describe", out)
+	}
+	if describe == in {
+		t.Errorf("Optimise returned its input; want a deduplicated copy")
+	}
+	if describe.Scope != in.Scope || describe.Top != 3 {
+		t.Errorf("Scope, Top = %q, %d, want %q, 3 (unchanged)", describe.Scope, describe.Top, in.Scope)
+	}
+	want := lists{
+		Keywords: []string{"a", "b", "c"},
+		Entities: []string{"e1", "e2"},
+		Topics:   []string{"t1", "t2"},
+		Nested:   []string{"race", "lap"},
+	}
+	if diff := cmp.Diff(want, read(describe)); diff != "" {
+		t.Errorf("Optimise(describe) mismatch (-want +got):\n%s", diff)
+	}
+	parsed := lists{
+		Keywords: []string{"a", "b", "a", "c", "b"},
+		Entities: []string{"e1", "e1", "e2"},
+		Topics:   []string{"t1", "t2", "t1"},
+		Nested:   []string{"race", "race", "lap"},
+	}
+	if diff := cmp.Diff(parsed, read(in)); diff != "" {
+		t.Errorf("Optimise rewrote the describe as parsed (-want +got):\n%s", diff)
+	}
+}
+
 // A query nested in a time bound runs a search of its own, so Dedupe reaches
 // it, in either bound. The recall it returns holds a deduplicated copy of the
 // nested query and shares no query with the recall as parsed. A shared one would be rewritten under the cache
@@ -219,7 +289,55 @@ func TestPipelineDeduplicatesWhen(t *testing.T) {
 	}
 }
 
-// A query that is neither a *Recall nor a *When must be returned untouched.
+// TestDedupeOptimiseKeepsTheExplainFlag pins that an explained recall is
+// deduplicated like a plain one and stays explained. The engine plans the
+// optimised copy, so a copy that lost the flag would answer an explained recall
+// in the plain envelope, and one that skipped deduplication would explain a
+// search other than the one recall runs.
+func TestDedupeOptimiseKeepsTheExplainFlag(t *testing.T) {
+	cases := map[string]struct {
+		explain bool
+	}{
+		"plain":     {false},
+		"explained": {true},
+	}
+
+	allow := cmp.AllowUnexported(query.Recall[string, float32]{})
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			parsed := func() *query.Recall[string, float32] {
+				return &query.Recall[string, float32]{
+					Keywords: []string{"a", "a", "b"},
+					Topics:   []string{"t1", "t1"},
+					Explain:  tc.explain,
+				}
+			}
+			in := parsed()
+			d := &optimisation.Dedupe[string, float32]{}
+
+			out := d.Optimise(in)
+
+			got, ok := out.(*query.Recall[string, float32])
+			if !ok {
+				t.Fatalf("Optimise returned %T, want *query.Recall", out)
+			}
+			want := query.Recall[string, float32]{
+				Keywords: []string{"a", "b"},
+				Topics:   []string{"t1"},
+				Explain:  tc.explain,
+			}
+			if diff := cmp.Diff(want, *got, allow); diff != "" {
+				t.Errorf("Optimise mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(*parsed(), *in, allow); diff != "" {
+				t.Errorf("Optimise changed its input, want it left as parsed (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// A query that is neither a *Recall, a *When nor a *Describe must be returned
+// untouched.
 func TestDedupeOptimisePassthrough(t *testing.T) {
 	in := &query.Remember[string, float32]{Value: "hello"}
 	d := &optimisation.Dedupe[string, float32]{}

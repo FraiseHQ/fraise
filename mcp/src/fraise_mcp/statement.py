@@ -45,7 +45,7 @@ from fraise_sdk.constants import KEYWORDS, VECTOR_PARAM
 VECTOR_CLAUSE = f"vec:${VECTOR_PARAM}"
 
 # The prefixes the grammar allows in front of a recall. The recall behind one
-# reads the same, so it takes a vector the same way.
+# reads the same, so the reader steps over the prefix to find its terms.
 _PREFIXES = frozenset({"explain", "describe"})
 
 Kind = Literal["word", "phrase", "clause", "symbol"]
@@ -108,8 +108,8 @@ def embedding_text(statement: str) -> str | None:
     """Return the text ``statement``'s vector is encoded from, or ``None``.
 
     A ``remember`` encodes its fact phrase. A ``recall``, behind an
-    ``explain`` or ``describe`` prefix or not, encodes its terms, joined by a
-    space, with each phrase unquoted.
+    ``explain`` prefix or not, encodes its terms, joined by a space, with each
+    phrase unquoted.
 
     It returns ``None``, and so the statement takes no vector, when:
 
@@ -117,6 +117,9 @@ def embedding_text(statement: str) -> str | None:
     - a recall has no terms. Anchors alone seed the search with every fact
       filed under them, and a vector beside them would turn that into a
       scored search;
+    - the recall stands behind ``describe``. A vector ranks every fact that
+      holds one, so a describe sent with one would reach each of them rather
+      than the facts its terms match;
     - the statement binds a vector already;
     - a term is a bare reserved word or a symbol, or the statement ends on a
       bare reserved word or on a clause key with no value. Each is an error.
@@ -145,6 +148,8 @@ def embedding_text(statement: str) -> str | None:
         return None
 
     prefixed = tokens[0][0] == "word" and tokens[0][1] in _PREFIXES
+    if prefixed and tokens[0][1] == "describe":
+        return None
     position = int(prefixed)
     command = tokens[position] if position < len(tokens) else None
     position += 1

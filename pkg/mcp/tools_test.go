@@ -77,6 +77,12 @@ func TestRecallForwardsTheQueryAndRendersTheResponse(t *testing.T) {
 // neither key, and a recall no start. A zero date in their place would read to
 // a client as a fact said in the year one, or a recall that answered with a
 // time.
+//
+// A describe answers with its catalogue beside empty hits, in the daemon's key
+// order and with every time to the instant the daemon wrote it. The bodies are
+// the daemon's own responses to the facts of newCatalogueServer in pkg/server.
+// A catalogue that reached no fact carries no time and empty lists, not null,
+// since the recall tool's output schema requires both lists.
 func TestRecallReturnsTheResponseBodyKeyForKey(t *testing.T) {
 	cases := map[string]struct {
 		body string
@@ -90,6 +96,23 @@ func TestRecallReturnsTheResponseBodyKeyForKey(t *testing.T) {
 		"a recall of a fact given no times": {
 			body: `{"results":{"count":1,"hits":[{"value":"anna ran the charity race","timestamp":"2026-01-02T03:04:05Z","score":1.25}]}}`,
 			want: "- [2026-01-02] anna ran the charity race (relevance 1.250)",
+		},
+		"a describe of an anchor": {
+			body: `{"results":{"count":0,"hits":[],"catalogue":{"graph":0,"scope":"entity:heron top:1","facts":2,"anchors":3,` +
+				`"happened":{"start":"2023-05-01T00:00:00Z","end":"2023-05-08T00:00:00Z"},"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00Z"},"written":{"start":"2026-11-15T13:38:38.861554Z","end":"2026-11-15T13:38:38.861801Z"},` +
+				`"topics":[{"value":"birds","facts":2,"happened":{"start":"2023-05-01T00:00:00Z","end":"2023-05-08T00:00:00Z"},"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00Z"},"written":{"start":"2026-11-15T13:38:38.861554Z","end":"2026-11-15T13:38:38.861801Z"}}],` +
+				`"entities":[{"value":"heron","facts":2,"happened":{"start":"2023-05-01T00:00:00Z","end":"2023-05-08T00:00:00Z"},"said":{"start":"2023-05-02T00:00:00Z","end":"2023-05-08T00:00:00Z"},"written":{"start":"2026-11-15T13:38:38.861554Z","end":"2026-11-15T13:38:38.861801Z"}}]}}}`,
+			want: "describe recall@0 entity:heron top:1: 2 facts under 3 anchors, happened 2023-05-01..2023-05-07\n" +
+				"topics:\n" +
+				"- [2023-05-01..2023-05-07] birds: 2 facts\n" +
+				"entities:\n" +
+				"- [2023-05-01..2023-05-07] heron: 2 facts",
+		},
+		"a describe that reached no fact": {
+			body: `{"results":{"count":0,"hits":[],"catalogue":{"graph":0,"scope":"until:(when zebras)","facts":0,"anchors":0,"topics":[],"entities":[]}},` +
+				`"warnings":["until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits"]}`,
+			want: "describe recall@0 until:(when zebras): no fact reached.\n" +
+				"warning: until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits",
 		},
 	}
 
@@ -113,6 +136,95 @@ func TestRecallReturnsTheResponseBodyKeyForKey(t *testing.T) {
 				t.Errorf("structured output mismatch (-want +got):\n%s", diff)
 			}
 			if diff := cmp.Diff(tc.want, res.Content[0].(*mcp.TextContent).Text); diff != "" {
+				t.Errorf("rendered text mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestRecallKeepsTheExplainBlocks pins the explained round trip. A statement
+// with the explain prefix reaches /api/v1/q verbatim, since the daemon parses
+// the prefix. The explain blocks the daemon answers with, on each hit and on
+// the results, survive into the structured output byte for byte, so a
+// programmatic client reads the ranking's account from it, the answer of a
+// when nested in a bound included, itself explained. A plain recall gains no
+// explain key on the way. The rendered text is the ranked facts
+// either way: the explanation is for the client, not the model's prose.
+func TestRecallKeepsTheExplainBlocks(t *testing.T) {
+	const want = "- [2026-01-02] the barometer falls before the storm (relevance 1.250)\n- [2026-01-01] the harbour closes in a gale (relevance 0.500)"
+	cases := map[string]struct {
+		query string
+		body  string
+	}{
+		"an explained recall": {
+			query: "explain recall@2 barometer topic:weather depth:2",
+			body: `{"results":{"count":2,"hits":[` +
+				`{"value":"the barometer falls before the storm","timestamp":"2026-01-02T03:04:05Z","score":1.25,` +
+				`"explain":{"seed":true,"decay":1,"contributions":[` +
+				`{"source":"text","score":0.61,"rank":0,"count":1,"held":1},` +
+				`{"source":"graph","score":0.87,"rank":0,"via":"weather","degree":2,"count":2,"named":true}]}},` +
+				`{"value":"the harbour closes in a gale","timestamp":"2026-01-01T03:04:05Z","score":0.5,` +
+				`"explain":{"seed":false,"decay":0.5,"contributions":[` +
+				`{"source":"graph","score":0.87,"rank":0,"via":"weather","degree":2,"count":2,"named":true}]}}],` +
+				`"explain":{"background":0.43,"admission":{"1":0.86,"2":0.43},` +
+				`"seeds":{"anchor":0,"graph":0,"text":1,"vector":0},"terms":["baromet"],` +
+				`"timings":{"anchor":0,"graph":3042,"text":63917,"vector":0}}}}`,
+		},
+		"an explained recall bounded by a when": {
+			query: "explain recall@2 barometer topic:weather depth:2 since:(when gale)",
+			body: `{"results":{"count":2,"hits":[` +
+				`{"value":"the barometer falls before the storm","timestamp":"2026-01-02T03:04:05Z","score":1.25,` +
+				`"explain":{"seed":true,"decay":1,"contributions":[` +
+				`{"source":"text","score":0.61,"rank":0,"count":1,"held":1}]}},` +
+				`{"value":"the harbour closes in a gale","timestamp":"2026-01-01T03:04:05Z","score":0.5,` +
+				`"explain":{"seed":false,"decay":0.5,"contributions":[` +
+				`{"source":"graph","score":0.87,"rank":0,"via":"weather","degree":2,"count":2,"named":true}]}}],` +
+				`"explain":{"background":0.43,"admission":{"1":0.86,"2":0.43},` +
+				`"seeds":{"anchor":0,"graph":0,"text":1,"vector":0},"terms":["baromet"],` +
+				`"timings":{"anchor":0,"graph":3042,"text":63917,"vector":0},` +
+				`"when":{"since":{"count":1,"hits":[` +
+				`{"value":"the gale warning","timestamp":"2025-12-31T03:04:05Z","said":"2025-12-30T00:00:00Z","score":0.75,` +
+				`"explain":{"seed":true,"decay":0.25,"contributions":[{"source":"text","score":0.75,"rank":0,"count":1,"held":1}]}}],` +
+				`"start":"2025-12-30T00:00:00Z",` +
+				`"explain":{"background":0,"seeds":{"anchor":0,"graph":0,"text":1,"vector":0},"terms":["gale"],` +
+				`"timings":{"anchor":0,"graph":0,"text":2100,"vector":0}}}}}}}`,
+		},
+		"a plain recall": {
+			query: "recall@2 barometer topic:weather depth:2",
+			body: `{"results":{"count":2,"hits":[` +
+				`{"value":"the barometer falls before the storm","timestamp":"2026-01-02T03:04:05Z","score":1.25},` +
+				`{"value":"the harbour closes in a gale","timestamp":"2026-01-01T03:04:05Z","score":0.5}]}}`,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var posted string
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				posted = r.URL.Path + " " + string(body)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer ts.Close()
+
+			res, out, err := bridge(ts).recall(context.Background(), nil, RecallInput{Query: tc.query})
+			if err != nil {
+				t.Fatalf("recall = %v, want nil", err)
+			}
+
+			in, _ := json.Marshal(RecallInput{Query: tc.query})
+			if diff := cmp.Diff("/api/v1/q "+string(in), posted); diff != "" {
+				t.Errorf("daemon request mismatch (-want +got):\n%s", diff)
+			}
+			got, err := json.Marshal(out)
+			if err != nil {
+				t.Fatalf("Marshal(structured output) = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.body, string(got)); diff != "" {
+				t.Errorf("structured output mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(want, res.Content[0].(*mcp.TextContent).Text); diff != "" {
 				t.Errorf("rendered text mismatch (-want +got):\n%s", diff)
 			}
 		})

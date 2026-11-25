@@ -1100,6 +1100,7 @@ def test_no_space_inside_a_command_or_clause(query, text, expected, assert_rejec
         "recall ferry topic:(harbour)",
         "recall ((ferry))",
         "recall ferry )bridge(",
+        "explain (recall ferry)",
     ],
 )
 def test_grouping_is_rejected_as_unsupported(query, text):
@@ -1345,6 +1346,368 @@ def test_a_when_holds_no_when(query, text, clause, assert_rejected):
     )
 
 
+# The describe prefix. describe stands in front of a recall and answers with the
+# shape of what the recall reaches instead of its facts. The recall keeps its own
+# selector, terms and clauses. Under describe its body may name no seed: a recall
+# with nothing to search by reaches every fact, so describe recall describes the
+# whole graph. Only a recall reaches a set of facts, so describe takes no other
+# command, no selector of its own and no second prefix.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "describe recall",
+        "describe recall@1",
+        "describe recall@1 ",
+        "describe recall top:5",
+        "describe recall since:30d",
+        "describe recall@1 until:'2026-01-15'",
+        "describe recall@1 since:(when zebras)",
+        "describe recall@1 ferry",
+        "describe recall@1 'the ferry docks'",
+        "describe recall@1 topic:harbour",
+        "describe recall@1 topic:harbour entity:acme",
+        "describe recall@1 ferry topic:harbour depth:1 top:3",
+        "describe recall@1 ferry since:7d until:'2026-01-15'",
+        "describe recall@1 ferry until:(when zebras topic:harbour)",
+        "describe  recall@1  ferry ",
+        "describe\trecall@1",
+    ],
+)
+def test_describe_takes_a_recall_with_or_without_a_seed(query, text, assert_accepted):
+    """describe parses in front of any recall, and of one that names no seed.
+
+    A recall on its own needs a seed, or it would search for nothing and look
+    like a miss. Under describe a body with no seed asks for the shape of the
+    whole graph, or of what a time window holds, so the verb or the selector
+    may end the query. Everything a recall takes is still taken, a when in a
+    bound included.
+    """
+    status, body = query(text)
+    assert_accepted(status, body, text)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "describe",
+            "parse error at column 8: describe needs a recall to describe: write "
+            "describe recall for the whole graph, or describe recall <terms> for "
+            "what a search reaches",
+        ),
+        ("describe ", "describe needs a recall to describe: write describe recall"),
+        (
+            "describe@1 recall",
+            "parse error at column 9: a describe takes no graph selector: it "
+            "describes the graph its recall reads — write the selector on the "
+            "recall, as in describe recall@2",
+        ),
+        ("describe@1 recall ferry", "a describe takes no graph selector"),
+        (
+            "describe remember 'the ferry docks'",
+            'describe stands in front of a recall, not "remember": only a recall '
+            "reaches a set of facts to describe",
+        ),
+        (
+            "describe when zebras",
+            'describe stands in front of a recall, not "when": only a recall '
+            "reaches a set of facts to describe",
+        ),
+        (
+            "describe describe recall",
+            '"describe" cannot follow describe: a statement takes one prefix',
+        ),
+        (
+            "describe explain recall",
+            '"explain" cannot follow describe: a statement takes one prefix',
+        ),
+        ("describe ferry", 'expected recall after describe, found "ferry"'),
+        ("describe Recall ferry", 'expected recall after describe, found "Recall"'),
+        ("Describe:recall ferry", 'expected a space after describe, found ":"'),
+        ("describe recall:", 'expected a space after the command, found ":"'),
+        ("describe recall @1", "no space allowed between recall and @"),
+        ("describe recall ferry top:1 top:2", "duplicate top clause"),
+        ("describe recall top:0", "top:0 out of range (1-"),
+        (
+            "recall ferry since:(describe recall zebras)",
+            'expected a when after "(", found "describe": a time bound\'s '
+            "parentheses hold the when whose answer is the bound",
+        ),
+    ],
+)
+def test_a_malformed_describe_names_its_repair(query, text, expected, assert_rejected):
+    """A describe that is not a prefix in front of one recall is a 400 naming it.
+
+    The selector belongs on the recall, which keeps reading as it would on its
+    own, and the message shows it there. A remember writes and a when answers
+    with a time, so neither has a set of facts to describe, and a second
+    prefix would read as a command. top: is range-checked as on a recall,
+    though under describe it caps the anchors listed: top:0 would ask for none
+    of them. A time bound holds a when only, describe or not.
+    """
+    status, body = query(text)
+    assert_rejected(status, body, expected, text)
+
+
+# The explain prefix. `explain recall ...` answers in the explained envelope.
+# The prefix stands once, at the head of the statement, a blank after it, and
+# only before recall: never before a when, nor inside a time bound. Each way
+# of misplacing it is a 400 at the token it blames, naming the repair. It is
+# never a plain recall answered in silence, nor an error about the recall
+# written after it.
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["explain", "explain ", "explain\n", "explain\nrecall zebras"],
+)
+def test_explain_prefix_with_nothing_after_it_needs_a_recall(
+    query, text, assert_rejected
+):
+    """A prefix with nothing after it on its line is itself to blame.
+
+    A newline ends the statement, so a recall on the next line is a second
+    instruction, not the one the prefix explains. The message writes out the
+    statement the caller meant.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        '"explain" needs a recall after it — write explain recall <terms>',
+        text,
+    )
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("explain:recall zebras", 'expected a space after the prefix, found ":"'),
+        (
+            "explain'zebras' recall x",
+            'expected a space after the prefix, found "zebras"',
+        ),
+        (
+            "explain@1 recall zebras",
+            '"@" starts a graph selector, which is glued to the verb, not the '
+            "prefix — write explain recall@1",
+        ),
+    ],
+)
+def test_explain_prefix_glued_to_the_next_token_is_rejected(
+    query, text, expected, assert_rejected
+):
+    """A prefix glued to what follows needs the blank a verb takes.
+
+    A selector glued to the prefix is the caller's selector in the wrong
+    place, so the message moves it onto the verb, number and all.
+    """
+    status, body = query(text)
+    assert_rejected(status, body, expected, text)
+
+
+@pytest.mark.parametrize(
+    "text,word",
+    [
+        ("explain explain recall zebras", "explain"),
+        ("explain describe recall zebras", "describe"),
+    ],
+)
+def test_second_prefix_is_rejected_as_one_per_statement(
+    query, text, word, assert_rejected
+):
+    """A statement takes one prefix, so the second is blamed and one must go.
+
+    Read as a missing command instead, the error would leave the caller to
+    work out that the fix is deleting a word it wrote on purpose.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        f'"{word}" is a second prefix: a statement takes one — drop one',
+        text,
+    )
+
+
+@pytest.mark.parametrize(
+    "text,word",
+    [
+        ("explain remember@1 'explainprobe'", "remember"),
+        ("explain forget 'zebras'", "forget"),
+        ("explain update 'zebras'", "update"),
+    ],
+)
+def test_explain_prefix_before_another_command_has_no_ranking(
+    query, text, word, assert_rejected
+):
+    """Only a recall has a ranking to explain, so the verb is blamed.
+
+    The command is what the caller meant and the prefix is what does not
+    fit, so the message says to drop the prefix. The rejected write is pinned
+    to graph 1, so a regression that accepts it lands among the loose
+    remembers.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        f'"{word}" has no ranking to explain: the explain prefix stands only '
+        "before recall — drop the prefix",
+        text,
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "explain when zebras",
+        "explain when:said zebras",
+        "explain when zebras until:'2024-01-01'",
+    ],
+)
+def test_explain_prefix_before_a_when_has_no_ranking(query, text, assert_rejected):
+    """A when answers with a time, not a ranking, so the when is blamed.
+
+    The when is what the caller meant and the prefix is what does not fit, so
+    the message names what a when answers with and says to drop the prefix,
+    whatever clock the when reads. A when written in a recall's bound is
+    explained with the recall that holds it, in that recall's block.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        '"when" answers with a time and has no ranking to explain: the explain '
+        "prefix stands only before recall — drop the prefix",
+        text,
+    )
+
+
+@pytest.mark.parametrize(
+    "text,clause",
+    [
+        ("recall ferry since:(explain recall zebras)", "since"),
+        ("recall ferry until:(explain recall zebras)", "until"),
+        ("recall ferry until:(explain when zebras)", "until"),
+    ],
+)
+def test_explain_prefix_in_a_time_bound_is_rejected(
+    query, text, clause, assert_rejected
+):
+    """A time bound's parentheses hold a when, never a prefixed statement.
+
+    The prefix stands at the head of the statement only. The when a bound
+    reads is explained with the recall around it, so a prefix inside the
+    parentheses would explain nothing, and the message shows the when the
+    bound takes, with the caller's own clause in it.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        'expected a when after "(", found "explain": a time bound\'s parentheses '
+        f"hold the when whose answer is the bound — write {clause}:(when <terms>)",
+        text,
+    )
+
+
+@pytest.mark.parametrize(
+    "text,word",
+    [
+        ("explain zebras", "zebras"),
+        ("explain topic:zebras", "topic"),
+        ("explain Recall zebras", "Recall"),
+    ],
+)
+def test_explain_prefix_before_no_command_expects_recall(
+    query, text, word, assert_rejected
+):
+    """Whatever stands after the prefix where recall should is blamed by name.
+
+    A mis-cased verb is a word like any other, since keywords are lower case.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status, body, f'expected recall after the explain prefix, found "{word}"', text
+    )
+
+
+@pytest.mark.parametrize(
+    "text,word",
+    [
+        ("Explain recall zebras", "Explain"),
+        ("EXPLAIN recall zebras", "EXPLAIN"),
+        ("explainrecall zebras", "explainrecall"),
+    ],
+)
+def test_statement_opening_with_no_command_names_the_commands(
+    query, text, word, assert_rejected
+):
+    """A statement opening with no command and no prefix is not a command.
+
+    A mis-cased prefix is a word, and a prefix glued to the verb is one word.
+    The message names the commands a statement opens with.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status,
+        body,
+        f'expected a command (recall, remember, when, describe recall), found "{word}"',
+        text,
+    )
+
+
+@pytest.mark.parametrize(
+    "text,word",
+    [
+        ("recall explain", "explain"),
+        ("recall describe", "describe"),
+        ("recall ferry explain", "explain"),
+    ],
+)
+def test_prefix_word_among_the_terms_is_a_word_to_quote(
+    query, text, word, assert_rejected
+):
+    """A prefix word among the terms is a word the caller forgot to quote.
+
+    A prefix stands only at the head of a statement, so the error names the
+    quote.
+    """
+    status, body = query(text)
+    assert_rejected(
+        status, body, f"term \"{word}\" is also a prefix: quote it ('{word}')", text
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "explain recall zebras",
+        "explain  recall zebras",
+        "explain\trecall zebras",
+        "explain recall zebras\n",
+        "explain recall@1 zebras topic:food depth:2",
+        "explain recall 'explain'",
+        "explain recall topic:zebras",
+    ],
+)
+def test_explained_recall_parses(query, text, assert_accepted):
+    """The prefix, a run of blanks and a recall parse as an explained recall.
+
+    Spacing after the prefix is not meaning, as after a verb, and a quoted
+    explain is a term. Each answers with the query's explain block, so none
+    was read as a plain recall.
+    """
+    status, body = query(text)
+    assert_accepted(status, body, text)
+    assert "explain" in body["results"], (
+        f"{text!r}: answered without the query's explain block: {body}"
+    )
+
+
 # Stop words. The index drops English stop words from stored facts, so a bare
 # stop word can never match. It runs with a warning at the term. A recall whose
 # only search terms are stop words is a 400, not an empty result that looks
@@ -1395,6 +1758,8 @@ def test_stop_word_beside_a_vector_warns(query, vector, planets_graph, assert_ac
         "recall the",
         "recall the and",
         "recall the topic:birds",  # anchors do not rescue it
+        "describe recall the",
+        "describe recall@1 the topic:birds",
     ],
 )
 def test_stop_word_only_recall_is_rejected(query, text, assert_rejected):
@@ -1402,7 +1767,9 @@ def test_stop_word_only_recall_is_rejected(query, text, assert_rejected):
 
     With no phrase and no vector, it can match nothing. An empty result would
     look like a miss. Anchors do not change that. `recall topic:birds` is the
-    query that was meant, and it is accepted on its own.
+    query that was meant, and it is accepted on its own. Under describe the
+    stop words are still terms, so the body is not the empty one that
+    describes the whole graph, and it is refused the same way.
     """
     status, body = query(text)
     assert_rejected(
@@ -1475,6 +1842,10 @@ def test_anchor_only_recall_is_reachable(query, text, assert_accepted):
         "when:",
         "when:said",
         "when@",
+        "describe",
+        "describe:",
+        "describe@",
+        "describe recall@",
         "recall ferry until:(",
         "recall ferry until:()",
         "recall ferry until:)",

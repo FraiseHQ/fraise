@@ -27,8 +27,8 @@ The ceilings exist so one query cannot force unbounded work. They bound what a *
 
 | Setting | Default | What it bounds |
 |---|---|---|
-| `default-top` | `10` | results returned when a recall omits `top:` |
-| `max-top` | `1000` | ceiling on `top:` |
+| `default-top` | `10` | results returned when a recall omits `top:`; for a `describe`, how many topics and how many entities it lists |
+| `max-top` | `1000` | ceiling on `top:`, under a `describe` too |
 | `default-depth` | `0` | lane taken when a recall omits `depth:` |
 | `max-depth` | `2` | ceiling on `depth:` |
 | `max-vector-dimension` | `4096` | ceiling on a bound vector's length |

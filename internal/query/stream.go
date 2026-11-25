@@ -36,18 +36,23 @@ import (
 
 // Stream is one execution of a planned query. The engine builds one per
 // request. The scheduler commits it against the selected graph, under the read
-// lock for a recall or a when and the write lock for a remember. The outcome
-// lands in Result or Err.
+// lock for a recall, a when or a describe and the write lock for a remember.
+// The outcome lands in Result or Err.
 type Stream[K comparable, P float32 | float64] struct {
 	Query  Query[K, P]
 	Result *QueryResult[K, P]
 	Err    error
 
-	// Explain asks the read path to attach each hit's contributions and the
-	// query's background rate to the result. It lives on the stream because a
-	// Query carries no per-request state (see Query). Hashing the flag into the
-	// query instead would widen the cache key for a bit that never changes the
-	// plan. The stream is built per request and never cached.
+	// Explain asks the read path to attach the explain blocks to the result:
+	// each hit's seed flag, recency factor and contributions, and what the
+	// search measured about the query as a whole, the answers of its nested
+	// queries among it. Commit reads it here, on the execution, because the
+	// stream is built per request and never cached. [Recall.Plan] sets it
+	// from the statement's explain prefix, which the recall's hash and
+	// equality carry, so a cached plan never answers one envelope with the
+	// other's. The deprecated explain alias route sets it for a plain recall
+	// after planning. A nested stream takes the flag of the stream that holds
+	// it when it commits.
 	Explain bool
 
 	// IsGraphEmpty is set when a read matched nothing in a graph that holds no
@@ -109,7 +114,8 @@ func storeAnchor[K comparable, P float32 | float64](g graph.Graph[K, P], node, e
 //
 // A recall whose time bound holds a nested query commits that query's stream
 // first, then searches inside the window its answer draws. A when runs as its
-// recall does, and its result also carries the time its hits hold.
+// recall does, and its result also carries the time its hits hold. A describe
+// reads what its recall reaches and answers with the shape of it alone.
 //
 // Errors and Error lines name the step that failed, never the fact or anchor
 // value. A returned error is logged by the scheduler and the server at Error,
@@ -126,6 +132,8 @@ func (s *Stream[K, P]) Commit(g graph.Graph[K, P]) error {
 		}
 		s.answer(q.Clock)
 		return nil
+	case *Describe[K, P]:
+		return s.describe(g, q)
 	default:
 		return fmt.Errorf("committing stream: no commit for a %T", s.Query)
 	}
@@ -249,10 +257,8 @@ func (s *Stream[K, P]) write(g graph.Graph[K, P], remember *Remember[K, P]) erro
 	return nil
 }
 
-// read searches g for recall and builds the stream's result. The time window
-// is the one recall writes out, with each bound that holds a nested query read
-// from that query's answer. since keeps what came after the answer and until
-// what came before it, each compared on the clock the when read.
+// read searches g for recall and builds the stream's result, inside the
+// window recall draws (see [Stream.window]).
 func (s *Stream[K, P]) read(g graph.Graph[K, P], recall *Recall[K, P]) error {
 	logger.Debug("Committing read stream",
 		"keywords", len(recall.Keywords),
@@ -260,34 +266,9 @@ func (s *Stream[K, P]) read(g graph.Graph[K, P], recall *Recall[K, P]) error {
 		"depth", recall.Parameters.Depth,
 		"top", recall.Parameters.Top)
 
-	// One reading of the clock resolves both bounds, so a window written as
-	// two durations is exactly as wide as they say. It is read in UTC, as a
-	// write's is, so a bound written as a duration prints the day a date
-	// bound would name, and carries no monotonic reading: it compares with
-	// stored times by the wall clock, as a literal bound does.
-	now := time.Now().UTC()
-	since, until := recall.Since(now), recall.Until(now)
-	answered := true
-	if s.Since != nil {
-		when, err := s.commitNested(g, s.Since, "since")
-		if err != nil {
-			return err
-		}
-		// What came after the answer starts where the answer ends. An answer
-		// that has not ended has no such instant, and since reads its start.
-		since = containers.Bound{At: s.Since.Result.End, Clock: when.Clock}
-		if since.At.IsZero() {
-			since.At = s.Since.Result.Start
-		}
-		answered = answered && !s.Since.Result.Start.IsZero()
-	}
-	if s.Until != nil {
-		when, err := s.commitNested(g, s.Until, "until")
-		if err != nil {
-			return err
-		}
-		until = containers.Bound{At: s.Until.Result.Start, Clock: when.Clock}
-		answered = answered && !s.Until.Result.Start.IsZero()
+	since, until, answered, err := s.window(g, recall)
+	if err != nil {
+		return err
 	}
 
 	// A bound whose when answered with no time has nothing to compare with.
@@ -317,18 +298,21 @@ func (s *Stream[K, P]) read(g graph.Graph[K, P], recall *Recall[K, P]) error {
 		Hits:  make([]Hit[K, P], n),
 	}
 	if s.Explain {
-		// The background rate is per query, so it rides on the result rather
-		// than on each hit (see QueryResult.Background). So do the answers of
-		// the nested queries, which show where each bound was read from.
-		r.Background = result.Background
-		r.When = s.nestedResults()
+		// What the search measured about the query as a whole rides on the
+		// result, and what it decided about each fact on that fact's hit. So
+		// do the answers of the nested queries, which show where each bound
+		// was read from.
+		r.Explain = explainRecall(result, s.nestedResults())
 	}
 	for i, hit := range result.Hits {
 		r.Hits[i].Node = hit.Node
 		r.Hits[i].Score = hit.Score
 		if s.Explain {
-			r.Hits[i].Decay = hit.Decay
-			r.Hits[i].Contributions = resolveContributions(g, hit.Contributions)
+			r.Hits[i].Explain = &HitExplain[P]{
+				Seed:          hit.Seed,
+				Decay:         hit.Decay,
+				Contributions: resolveContributions(g, hit.Contributions),
+			}
 		}
 	}
 
@@ -337,6 +321,106 @@ func (s *Stream[K, P]) read(g graph.Graph[K, P], recall *Recall[K, P]) error {
 	// populated one it missed. So neither a write nor a read with hits asks.
 	s.IsGraphEmpty = n == 0 && g.IsEmpty()
 	logger.Debug("Read stream committed", "hits", n, "explain", s.Explain)
+	return nil
+}
+
+// window resolves the time window recall reads inside: the bounds it writes
+// out, with each bound that holds a nested query read from that query's
+// answer. since keeps what came after the answer and until what came before
+// it, each compared on the clock the when read. answered is false when a
+// bound's when matched no fact, which leaves that bound nothing to compare
+// with.
+func (s *Stream[K, P]) window(g graph.Graph[K, P], recall *Recall[K, P]) (since, until containers.Bound, answered bool, err error) {
+	// One reading of the clock resolves both bounds, so a window written as
+	// two durations is exactly as wide as they say. It is read in UTC, as a
+	// write's is, so a bound written as a duration prints the day a date
+	// bound would name, and carries no monotonic reading: it compares with
+	// stored times by the wall clock, as a literal bound does.
+	now := time.Now().UTC()
+	since, until = recall.Since(now), recall.Until(now)
+	answered = true
+	if s.Since != nil {
+		when, err := s.commitNested(g, s.Since, "since")
+		if err != nil {
+			return since, until, false, err
+		}
+		// What came after the answer starts where the answer ends. An answer
+		// that has not ended has no such instant, and since reads its start.
+		since = containers.Bound{At: s.Since.Result.End, Clock: when.Clock}
+		if since.At.IsZero() {
+			since.At = s.Since.Result.Start
+		}
+		answered = answered && !s.Since.Result.Start.IsZero()
+	}
+	if s.Until != nil {
+		when, err := s.commitNested(g, s.Until, "until")
+		if err != nil {
+			return since, until, false, err
+		}
+		until = containers.Bound{At: s.Until.Result.Start, Clock: when.Clock}
+		answered = answered && !s.Until.Result.Start.IsZero()
+	}
+	return since, until, answered, nil
+}
+
+// describe answers describe with the catalogue of what its recall reaches,
+// and no hits. A recall with a seed reaches every candidate its search ranks,
+// so the search runs as the recall's would, with no top: the facts its terms
+// and vector match and the anchors' members it admits, or, for anchors alone,
+// every fact filed under them. The set is then the recall's by construction,
+// the search's window and cutoff included. A recall that names no seed
+// reaches every fact inside its window, which no search can list. A bound
+// whose when matched no fact keeps none, as it leaves a recall with no hits.
+func (s *Stream[K, P]) describe(g graph.Graph[K, P], d *Describe[K, P]) error {
+	recall := &d.Recall
+	logger.Debug("Committing describe stream",
+		"keywords", len(recall.Keywords),
+		"vector", !recall.Vector.Empty(),
+		"anchors", len(recall.Topics)+len(recall.Entities),
+		"depth", recall.Parameters.Depth,
+		"top", d.Top)
+
+	since, until, answered, err := s.window(g, recall)
+	if err != nil {
+		return err
+	}
+
+	facts := make(map[K]graph.Fact[K])
+	switch {
+	case !answered:
+	case len(recall.Keywords) > 0 || !recall.Vector.Empty() || len(recall.Topics) > 0 || len(recall.Entities) > 0:
+		result, err := g.Search(
+			recall.Keywords,
+			recall.Vector,
+			recall.Topics,
+			recall.Entities,
+			recall.Parameters.Depth,
+			recall.Parameters.Top,
+			since,
+			until,
+		)
+		if err != nil {
+			return fmt.Errorf("searching with the recall's vector: %w", err)
+		}
+		for _, hit := range result.Hits {
+			if fact, ok := hit.Node.(graph.Fact[K]); ok {
+				facts[fact.Key()] = fact
+			}
+		}
+	default:
+		for key, node := range g.Nodes() {
+			if fact, ok := node.(graph.Fact[K]); ok && fact.Within(since, until) {
+				facts[key] = fact
+			}
+		}
+	}
+
+	catalogue := d.catalogue(g, facts)
+	s.Result = &QueryResult[K, P]{Hits: make([]Hit[K, P], 0), Catalogue: &catalogue}
+	// A describe that reached nothing tells an empty graph from a populated
+	// one the way a recall does, so a caller learns it has yet to write.
+	s.IsGraphEmpty = len(facts) == 0 && g.IsEmpty()
+	logger.Debug("Describe stream committed", "facts", catalogue.Facts, "anchors", catalogue.Anchors)
 	return nil
 }
 
@@ -403,6 +487,36 @@ func (s *Stream[K, P]) answer(clock containers.Clock) {
 		return
 	}
 	s.Result.Start, s.Result.End = answer.Start, answer.End
+}
+
+// explainRecall converts what the search measured about the query to its wire
+// form, beside when, what the queries nested in the recall's time bounds
+// answered. Seeds and timings are keyed by source name, every source listed,
+// the admission bars by depth from 1, and terms are never null. So an
+// explained recall always answers in one shape, whatever it asked for.
+func explainRecall[K comparable, P float32 | float64](result graph.Result[K, P], when *NestedResults[K, P]) *RecallExplain[K, P] {
+	out := &RecallExplain[K, P]{
+		Background: result.Background,
+		Seeds:      make(map[string]int, len(result.Seeds)),
+		Terms:      result.Terms,
+		Timings:    make(map[string]time.Duration, len(result.Timings)),
+		When:       when,
+	}
+	for i := range result.Seeds {
+		src := scoring.Source(i).String()
+		out.Seeds[src] = result.Seeds[i]
+		out.Timings[src] = result.Timings[i]
+	}
+	if len(result.Admission) > 1 {
+		out.Admission = make(map[int]P, len(result.Admission)-1)
+		for depth := 1; depth < len(result.Admission); depth++ {
+			out.Admission[depth] = result.Admission[depth]
+		}
+	}
+	if out.Terms == nil {
+		out.Terms = []string{}
+	}
+	return out
 }
 
 // resolveContributions converts a hit's contributions to their wire form. It

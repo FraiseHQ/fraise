@@ -23,14 +23,18 @@
 """Plan-cache keying, end to end.
 
 On a hash hit, the engine uses the cached query object (engine.Plan). So the
-cache key must fold in everything that changes the result set, including the
-bound vector and the since/until bounds. If Recall.Hash left them out, two
-recalls that differ only in those fields would share a key. The second would
-silently run with the first one's values.
+cache key must fold in everything that changes the answer, including the bound
+vector, the since/until bounds and the explain prefix. If Recall.Hash left
+them out, two recalls that differ only in those fields would share a key. The
+second would silently run with the first one's values. The same holds for what
+a query answers with: a describe runs its recall, and must not share that
+recall's entry.
 
-Both tests send the colliding pair back to back. The first query's cached entry
-is then the one the second would wrongly reuse.
+Every test sends the colliding pair back to back. The first query's cached
+entry is then the one the second would wrongly reuse.
 """
+
+import pytest
 
 
 def test_identical_recall_text_rebinds_vector(query, vector):
@@ -102,3 +106,73 @@ def test_recall_time_bound_not_reused_across_queries(query):
         "until:1w returned a fact written today — the engine reused the "
         f"previous query's time bound (stale cached plan); got {values}"
     )
+
+
+def test_a_describe_and_the_recall_of_its_body_answer_each_their_own_shape(query):
+    """A describe, then the recall of the same body, each answer as asked.
+
+    A describe plans as its recall does, with every match kept. If the two
+    shared a cached entry, the recall sent second would run the describe's
+    plan and answer with a catalogue and no hits. The probe's word is held by
+    one fact on the graph, filed under the cache probes' topic, so each answer
+    is exact.
+    """
+    graph = 6
+    fact = "the describeprobe fact rides the cache"
+
+    status, body = query(f"remember@{graph} '{fact}' topic:cacheprobe")
+    assert status == 200, body.get("error")
+
+    status, body = query(f"describe recall@{graph} describeprobe")
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert (results["count"], results["hits"]) == (0, []), results
+    catalogue = results["catalogue"]
+    assert (catalogue["facts"], catalogue["anchors"]) == (1, 1), catalogue
+    assert [(e["value"], e["facts"]) for e in catalogue["topics"]] == [
+        ("cacheprobe", 1)
+    ]
+
+    status, body = query(f"recall@{graph} describeprobe")
+    assert status == 200, body.get("error")
+    results = body["results"]
+    assert "catalogue" not in results, (
+        "the recall answered with the describe's catalogue (stale cached plan): "
+        f"{results}"
+    )
+    assert [hit["value"] for hit in results["hits"]] == [fact]
+
+
+@pytest.mark.parametrize("explained", [[False, True, False], [True, False, True]])
+def test_explain_prefix_not_reused_across_queries(query, explained):
+    """A recall and the same recall explained each answer in their own envelope.
+
+    The two statements differ only in the prefix, so they plan to the same
+    recall but for its explain flag. Were the flag left out of the cache key,
+    whichever ran first would answer for both: a plain recall would carry
+    the explain blocks, or an explained one would come back without them.
+    The pair runs in both orders, and back again, so either cached entry is
+    the one the next statement would wrongly reuse.
+    """
+    graph = 6
+    fact = "the cache probe fact delta"
+
+    status, body = query(f"remember@{graph} '{fact}' topic:cacheprobe")
+    assert status == 200, body.get("error")
+
+    for explain in explained:
+        text = f"{'explain ' if explain else ''}recall@{graph} delta"
+        status, body = query(text)
+        assert status == 200, body.get("error")
+        results = body["results"]
+        values = [hit["value"] for hit in results["hits"]]
+        assert fact in values, f"{text!r}: want the fresh fact; got {values}"
+        assert ("explain" in results) is explain, (
+            f"{text!r}: the query's explain block does not follow the prefix "
+            f"(stale cached plan); got {results}"
+        )
+        for hit in results["hits"]:
+            assert ("explain" in hit) is explain, (
+                f"{text!r}: the hit's explain block does not follow the prefix "
+                f"(stale cached plan); got {hit}"
+            )

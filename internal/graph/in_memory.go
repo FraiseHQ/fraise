@@ -540,10 +540,13 @@ func (g *InMemoryGraph[K, P]) dropSequence(anchor K) {
 // identical hits. Hits below the db.min-score-ratio cutoff are dropped.
 func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) (Result[K, P], error) {
 	// A. Collection gathers every observation of every candidate as
-	// Contributions, plus the query's background rate and its text's
-	// weakness. Observations come from text and vector seeds, anchor
-	// transmission, or the named anchors' members when they seed alone.
-	candidates, groups, background, missed, err := g.collect(keywords, vector, topics, entities, depth, top, since, until)
+	// Contributions, plus the seeds and the query's text weakness.
+	// Observations come from text and vector seeds, anchor transmission, or
+	// the named anchors' members when they seed alone. Each stage records on
+	// the result what it observed about the query as a whole, the background
+	// rate among it.
+	var result Result[K, P]
+	candidates, groups, seeds, missed, err := g.collect(keywords, vector, topics, entities, depth, top, since, until, &result)
 	if err != nil {
 		return Result[K, P]{}, err
 	}
@@ -567,7 +570,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		})
 	}
 	scorer := g.scorer.Observe(scoring.Observation[K, P]{
-		Background: background,
+		Background: result.Background,
 		TextMissed: missed,
 		Candidates: candidates,
 		Keys:       keys,
@@ -619,9 +622,14 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		}
 	}
 
-	// E. Score cutoff (db.min-score-ratio), then the answer.
+	// E. Score cutoff (db.min-score-ratio), then the answer. When the named
+	// anchors seed alone, every candidate is a seed, and the pool lists them
+	// in order.
 	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
-	result := Result[K, P]{Background: background, Hits: g.hits(rankedKeys, rankedScores, candidates, now)}
+	if result.Seeds[scoring.SrcAnchor] > 0 {
+		seeds = keys
+	}
+	result.Hits = g.hits(rankedKeys, rankedScores, candidates, seeds, now)
 
 	logger.Debug("Graph search completed",
 		"candidates", pooled, "grouped", pooled-len(kept), "returned", len(result.Hits))
@@ -657,17 +665,21 @@ func (g *InMemoryGraph[K, P]) scoreCutoff(keys []K, scores []P, scorer scoring.S
 }
 
 // hits turns a ranking into fact hits, each carrying the contributions its
-// score was folded from and the recency factor it was decayed by at now, the
-// moment the ranking was aged at.
-func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Candidates[K, P], now time.Time) []Hit[K, P] {
+// score was folded from, the recency factor it was decayed by at now, the
+// moment the ranking was aged at, and whether it is one of seeds. seeds is in
+// ascending order, so marking a hit is a binary search and costs no
+// allocation.
+func (g *InMemoryGraph[K, P]) hits(keys []K, scores []P, candidates scoring.Candidates[K, P], seeds []K, now time.Time) []Hit[K, P] {
 	out := make([]Hit[K, P], len(keys))
 	for i, key := range keys {
 		node := g.Nodes()[key]
+		_, seed := slices.BinarySearch(seeds, key)
 		out[i] = Hit[K, P]{
 			Node:          node,
 			Score:         scores[i],
 			Decay:         g.decay(1, node.GetTimestamp(), now),
 			Contributions: candidates[key],
+			Seed:          seed,
 		}
 	}
 	return out
@@ -699,12 +711,13 @@ func (g *InMemoryGraph[K, P]) lastHappened(key K) time.Time {
 
 // collect runs the retrieval stages and pools their observations into one
 // candidate map. The stages are text and vector seeding, then the anchor
-// round over the seeds (see findNeighbours). collect also returns what the
-// scorer needs to know about
-// the query as a whole: the background rate and the text's weakness (see
-// gatherSeeds). Stages only record Contributions. The hinge, the null model
-// and the vector's weight belong to the Scorer. The only error is a vector
-// dimension mismatch.
+// round over the seeds (see findNeighbours). collect also returns the seeds,
+// in ascending order, and the text's weakness the scorer needs (see
+// gatherSeeds). Each stage records on result what it observed about the
+// query as a whole (see Result), the background rate the scorer needs among
+// it. Stages only record Contributions. The hinge, the null model and the
+// vector's weight belong to the Scorer. The only error is a vector dimension
+// mismatch.
 //
 // The [since, until) window restricts what the seeding searches, not what it
 // keeps. Each index gets a keep that rejects facts outside it, so the seeds
@@ -725,17 +738,19 @@ func (g *InMemoryGraph[K, P]) lastHappened(key K) time.Time {
 //
 // With no keywords and no vector, the named anchors' members are the seeds
 // instead (see Graph.Search). No traversal runs, since expanding from every
-// member would return most of the graph. The background is zero.
+// member would return most of the graph. The background is zero. The seeds
+// are then every candidate, and collect returns none: Search reads them off
+// the pool it already sorts.
 //
 // Topic and entity names are resolved to anchor keys once per query. So
 // gatherMembers, the anchored reading and findNeighbours agree on which node
 // a name denotes, and membership is a key lookup.
-func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound) (scoring.Candidates[K, P], []scoring.Group[K, P], P, P, error) {
+func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound, result *Result[K, P]) (scoring.Candidates[K, P], []scoring.Group[K, P], []K, P, error) {
 	topicKeys, entityKeys := g.anchorKeys(topics, entities)
 	candidates := make(scoring.Candidates[K, P])
 	if len(keywords) == 0 && vector.Empty() {
-		g.gatherMembers(topicKeys, entityKeys, candidates)
-		return candidates, nil, 0, 0, nil
+		g.gatherMembers(topicKeys, entityKeys, candidates, result)
+		return candidates, nil, nil, 0, nil
 	}
 	// An unbounded window hands the indexes a nil keep, so a recall naming no
 	// anchor pays nothing per posting.
@@ -751,12 +766,12 @@ func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vecto
 			return g.returnable(key, since, until) && g.filedUnder(key, named)
 		})
 	}
-	seeds, missed, err := g.gatherSeeds(keywords, vector, keeps, candidates, top)
+	seeds, missed, err := g.gatherSeeds(keywords, vector, keeps, candidates, top, result)
 	if err != nil {
-		return nil, nil, 0, 0, err
+		return nil, nil, nil, 0, err
 	}
-	background, groups := g.findNeighbours(seeds, missed, candidates, topicKeys, entityKeys, depth)
-	return candidates, groups, background, missed, nil
+	groups := g.findNeighbours(seeds, missed, candidates, topicKeys, entityKeys, depth, result)
+	return candidates, groups, seeds, missed, nil
 }
 
 // anchorKeys resolves topic and entity names to the keys of their anchor
@@ -781,7 +796,12 @@ func (g *InMemoryGraph[K, P]) anchorKeys(topics []string, entities []string) (to
 // mass of a fact under one. Anchors are visited once each, in query order
 // (topics, then entities). Contributions are thus appended in a fixed order
 // for the scorer's fold.
-func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candidates scoring.Candidates[K, P]) {
+//
+// It fills an empty pool, so every fact pooled is one it seeded. It records
+// on result how many distinct facts that is, the anchor source's seeds, and
+// the time it took.
+func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candidates scoring.Candidates[K, P], result *Result[K, P]) {
+	began := time.Now()
 	anchors := make([]K, 0, len(topicKeys)+len(entityKeys))
 	named := make(map[K]struct{}, len(topicKeys)+len(entityKeys))
 	for _, anchor := range slices.Concat(topicKeys, entityKeys) {
@@ -809,6 +829,8 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 			members++
 		}
 	}
+	result.Seeds[scoring.SrcAnchor] = len(candidates)
+	result.Timings[scoring.SrcAnchor] = time.Since(began)
 	logger.Debug("Gathered anchor members", "anchors", len(anchors), "members", members)
 }
 
@@ -853,27 +875,33 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 // fixed order keeps identical queries scoring identically. An empty index
 // seeds nothing. A vector of the wrong dimension is an error, since it comes
 // from a different embedding model than the graph's.
-func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], keeps []func(K) bool, candidates scoring.Candidates[K, P], top int) ([]K, P, error) {
+//
+// It records on result, per source, the facts it seeded and the time the
+// reading took, and the query's terms as the text index read them.
+func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.Vector[K, P], keeps []func(K) bool, candidates scoring.Candidates[K, P], top int, result *Result[K, P]) ([]K, P, error) {
 	seedK := g.config.DB.SeedSize
 	if top > seedK {
 		seedK = top
 	}
-	// No more keys can seed than the indexes hold, so the set is sized on
-	// them, not on top. A large db.max-top then costs nothing per recall.
-	seeded := make(map[K]struct{}, min(seedK, g.textIndex.Count()+g.vectorIndex.Count()))
+	// seeded holds, per key, the sources that seeded it, so each source's
+	// count is its own while the seeds are one set. No more keys can seed
+	// than the indexes hold, so it is sized on them, not on top. A large
+	// db.max-top then costs nothing per recall.
+	seeded := make(map[K][scoring.SrcAnchor + 1]bool, min(seedK, g.textIndex.Count()+g.vectorIndex.Count()))
 
-	var textSeeds, vectorSeeds int
 	var missed P
 	if len(keywords) > 0 {
+		began := time.Now()
 		query := stopwords.CleanContent(strings.Join(keywords, " "), textLanguage)
 		// An index error (empty index) means no text seeds.
 		readings, masses, err := g.GetTextIndex().Search(query, 0, keeps...)
 		if err != nil {
 			logger.Debug("Text index yielded no seeds", "error", err)
 		}
-		keys, scores := g.union(readings, masses, seedK, seeded)
-		textSeeds = len(keys)
-		total, held := g.textIndex.Information(query, keys)
+		keys, scores, count := g.union(readings, masses, seedK, scoring.SrcText, seeded)
+		result.Seeds[scoring.SrcText] = count
+		total, held, terms := g.textIndex.Information(query, keys)
+		result.Terms = terms
 		if !vector.Empty() && len(keys) > 0 && held[0] > 0 {
 			missed = (total - held[0]) / held[0]
 		}
@@ -893,9 +921,11 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 				candidates[key] = append(candidates[key], sightings[rank])
 			}
 		}
+		result.Timings[scoring.SrcText] = time.Since(began)
 	}
 
 	if !vector.Empty() {
+		began := time.Now()
 		readings, nearness, err := g.vectorIndex.Search(vector, 0, keeps...)
 		if errors.Is(err, index.ErrInvalidDimension) {
 			return nil, 0, err
@@ -911,8 +941,8 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 				distances[i] = -distances[i]
 			}
 		}
-		keys, negated := g.union(readings, nearness, seedK, seeded)
-		vectorSeeds = len(keys)
+		keys, negated, count := g.union(readings, nearness, seedK, scoring.SrcVector, seeded)
+		result.Seeds[scoring.SrcVector] = count
 		// One array for the reading, as for the text index's.
 		sightings := make([]scoring.Contribution[K, P], len(keys))
 		for rank, key := range keys {
@@ -923,6 +953,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 				candidates[key] = append(candidates[key], sightings[rank])
 			}
 		}
+		result.Timings[scoring.SrcVector] = time.Since(began)
 	}
 
 	seeds := make([]K, 0, len(seeded))
@@ -931,7 +962,7 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 	}
 	sort.Slice(seeds, func(i, j int) bool { return seeds[i] < seeds[j] })
 	logger.Debug("Gathered search seeds",
-		"text", textSeeds, "vector", vectorSeeds, "unique", len(seeds))
+		"text", result.Seeds[scoring.SrcText], "vector", result.Seeds[scoring.SrcVector], "unique", len(seeds))
 	return seeds, missed, nil
 }
 
@@ -939,19 +970,30 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 // orders the pool as every index reading is ordered, score descending then
 // key ascending, so a candidate's Rank means the same whichever reading found
 // it. A key read under several keeps appears once. The first seedK keys of
-// every reading are marked in seeded, so a reading under a named anchor seeds
-// as deep as the reading over the window. A lone reading is returned as is.
-func (g *InMemoryGraph[K, P]) union(readings [][]K, scores [][]P, seedK int, seeded map[K]struct{}) ([]K, []P) {
+// every reading are marked in seeded as src's, so a reading under a named
+// anchor seeds as deep as the reading over the window. A lone reading is
+// returned as is.
+//
+// It also returns how many keys src seeded: each key once, however many of
+// src's readings seeded it, and whether or not another source seeded it too.
+// That is the source's own seed count, not its match count, since every match
+// is read and only the head of a reading seeds.
+func (g *InMemoryGraph[K, P]) union(readings [][]K, scores [][]P, seedK int, src scoring.Source, seeded map[K][scoring.SrcAnchor + 1]bool) ([]K, []P, int) {
+	var count int
 	for _, keys := range readings {
 		for _, key := range keys[:min(seedK, len(keys))] {
-			seeded[key] = struct{}{}
+			if by := seeded[key]; !by[src] {
+				by[src] = true
+				seeded[key] = by
+				count++
+			}
 		}
 	}
 	switch len(readings) {
 	case 0:
-		return nil, nil
+		return nil, nil, count
 	case 1:
-		return readings[0], scores[0]
+		return readings[0], scores[0], count
 	}
 	pooled := containers.NewTopK[K, P](0, comparator.OrderedComparator[K])
 	offered := make(map[K]struct{}, len(readings[0]))
@@ -964,7 +1006,8 @@ func (g *InMemoryGraph[K, P]) union(readings [][]K, scores [][]P, seedK int, see
 			pooled.Offer(key, scores[i][j])
 		}
 	}
-	return pooled.Drain()
+	keys, pooledScores := pooled.Drain()
+	return keys, pooledScores, count
 }
 
 // depthOneAdmission multiplies an anchor's fair share at depth 1. The anchor
@@ -974,7 +1017,9 @@ func (g *InMemoryGraph[K, P]) union(readings [][]K, scores [][]P, seedK int, see
 const depthOneAdmission = 2
 
 // findNeighbours walks the traversal twice and pools what it observes into
-// candidates and groups. It returns the background rate and the groups.
+// candidates and groups. It returns the groups, and records on result the
+// background rate, the admission bar at each depth and the time the round
+// took.
 //
 // Pass 1 observes. One walk from the seeds reaches the anchors they are filed
 // under. Each seed's mass is the scorer's fold of its own contributions, bound
@@ -1007,15 +1052,22 @@ const depthOneAdmission = 2
 //
 // depth 0 skips both passes, so only seed mass scores and the named anchors
 // contribute nothing.
-func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates scoring.Candidates[K, P], topicKeys []K, entityKeys []K, depth int) (P, []scoring.Group[K, P]) {
+//
+// Pass 1 does not depend on depth, so the round's one background rate sets
+// the bar of every depth, and an explained recall shows both (see
+// Result.Admission). The bars are recorded once pass 1 has measured the
+// rate, and only then: a recall whose round never ran has none.
+func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates scoring.Candidates[K, P], topicKeys []K, entityKeys []K, depth int, result *Result[K, P]) []scoring.Group[K, P] {
 	// The traversal runs at depth 1 or 2, and only when the query names a
 	// topic or entity. A recall naming neither is a text and vector search
 	// whatever its depth, and the parser warns when it sets a depth above 0.
 	// There is a single round. A second round would re-observe the first
 	// round's mass through sibling anchors and collapse recall, which is why
 	// depth stops at 2.
-	var background P
 	if depth >= 1 && g.traversal != nil && len(seeds) > 0 && (len(topicKeys) > 0 || len(entityKeys) > 0) {
+		began := time.Now()
+		defer func() { result.Timings[scoring.SrcGraph] = time.Since(began) }()
+
 		// Fix every seed's mass before any SrcGraph contribution is
 		// appended, so scores cannot depend on traversal order. Nothing about
 		// the query as a whole has been observed yet but the text's
@@ -1031,7 +1083,7 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 		// in a fixed order.
 		observed, ok := g.walk(seeds)
 		if !ok {
-			return background, nil
+			return nil
 		}
 		anchorMass := make(map[K]P)
 		anchorSeeds := make(map[K]int)
@@ -1062,8 +1114,9 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 			totalDegree += degree[anchor]
 		}
 		if totalDegree > 0 {
-			background = totalMass / P(totalDegree)
+			result.Background = totalMass / P(totalDegree)
 		}
+		result.Admission = []P{0, depthOneAdmission * result.Background, result.Background}
 
 		// Pass 2 (expand): anchors above their admitted share transmit. The
 		// test compares M_A·Σd with d_A·ΣM rather than M_A with d_A·ρ₀,
@@ -1086,7 +1139,7 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 			}
 		}
 		if len(transmitting) == 0 {
-			return background, nil
+			return nil
 		}
 		// The anchors a member was reached from come in ascending key order,
 		// so its contributions are appended in a fixed order. A tree-shaped
@@ -1094,7 +1147,7 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 		// it.
 		expanded, ok := g.walk(transmitting)
 		if !ok {
-			return background, nil
+			return nil
 		}
 		transmission := func(anchor K) scoring.Contribution[K, P] {
 			_, isNamed := named[anchor]
@@ -1156,9 +1209,9 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 			}
 			candidates[member] = pool[start:len(pool):len(pool)]
 		}
-		return background, groups
+		return groups
 	}
-	return background, nil
+	return nil
 }
 
 // walk runs a clone of the installed traversal from sources. It reports false
@@ -1278,7 +1331,7 @@ func (g *InMemoryGraph[K, P]) returnable(key K, since containers.Bound, until co
 		return isFact
 	}
 	fact, isFact := node.(Fact[K])
-	return isFact && fact.within(since, until)
+	return isFact && fact.Within(since, until)
 }
 
 // IsEmpty reports whether the graph holds no nodes. Callers ask it under the

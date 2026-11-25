@@ -46,16 +46,27 @@ type Recall[K comparable, P float32 | float64] struct {
 
 	Parameters QueryParameters[K, P]
 
+	// Explain is set by the explain prefix. The recall runs exactly as
+	// written, and its result also carries what the ranking did: each hit's
+	// seed flag, recency factor and contributions, and the query's own
+	// figures. It belongs to the statement, not to one request, so it lives
+	// on the query, and Hash and Equal cover it like any other field.
+	Explain bool
+
 	context QueryContext
 }
 
 // Plan implements [Query]. A recall needs nothing prepared before the search,
 // which runs in [Stream.Commit] under the graph's shared lock. So the plan is a
-// fresh stream. A query nested in a time bound is planned here too, and its
-// stream hangs on the recall's. The engine and the scheduler then handle one
-// stream, and the nested one runs inside its commit.
+// fresh stream, explaining exactly when the recall was written with the
+// prefix. The stream's flag is the one Commit reads, so the per-request copy
+// starts from the statement's. A query nested in a time bound is planned here
+// too, and its stream hangs on the recall's. The engine and the scheduler then
+// handle one stream, and the nested one runs inside its commit, explaining
+// itself when the recall's stream does.
 func (r *Recall[K, P]) Plan(config *config.ConfigSet) (*Stream[K, P], error) {
 	stream := NewStream[K, P](r)
+	stream.Explain = r.Explain
 	if q := r.Parameters.Since.Query; q != nil {
 		nested, err := q.Plan(config)
 		if err != nil {
@@ -100,6 +111,12 @@ func (r *Recall[K, P]) SetGraphID(id uint8) {
 // and anchor is length-prefixed, because a phrase may hold any byte, the
 // delimiters included. So ["ab"] and ["a","b"] do not hash alike, and no
 // keyword can spell the segments after it.
+//
+// The material ends with the explain flag, ex=1 or ex=0. An explained recall
+// and the plain recall it runs must never share a key. The cached query's flag
+// decides the envelope its stream answers in, so a shared key would answer one
+// statement in the other's envelope, or, with Equal telling the two apart,
+// have them evict each other's entry on every alternation.
 func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	var b strings.Builder
 	b.WriteString("g=")
@@ -120,17 +137,26 @@ func (r Recall[K, P]) Hash(h hash.Hasher[K, string]) K {
 	b.WriteString(r.Parameters.Until.Hash(h))
 	b.WriteString("|vec=")
 	b.WriteString(r.Vector.Hash(h))
+	b.WriteString("|ex=")
+	if r.Explain {
+		b.WriteByte('1')
+	} else {
+		b.WriteByte('0')
+	}
 	return h.Hash(b.String())
 }
 
 // Equal implements [Query]: other is a recall with every field Hash folds in
 // the same. The engine runs a cached plan only for an equal query, so Equal
 // must never hold for two recalls that read differently. A recall equal under
-// a key another recall planned would read that recall's graph and terms.
+// a key another recall planned would read that recall's graph and terms. Nor
+// does it hold between an explained recall and the plain one it runs: they
+// read alike but answer in different envelopes.
 func (r Recall[K, P]) Equal(other Query[K, P]) bool {
 	o, ok := other.(*Recall[K, P])
 	return ok &&
 		o.context == r.context &&
+		o.Explain == r.Explain &&
 		slices.Equal(o.Keywords, r.Keywords) &&
 		slices.Equal(o.Entities, r.Entities) &&
 		slices.Equal(o.Topics, r.Topics) &&

@@ -14,7 +14,7 @@ One tie-breaker resolves the boundary: **a keyword immediately followed by `:` i
 | Keyword | Usage | Type |
 |----------|----------------|---------|
 | explain | recall_query | Prefix |
-| describe | recall_query | Prefix |
+| describe | describe_query | Prefix |
 | remember | remember_query | Command |
 | recall | recall_query | Command |
 | when | when_query | Command |
@@ -32,7 +32,7 @@ One tie-breaker resolves the boundary: **a keyword immediately followed by `:` i
 
 <Note title="Reserved but unimplemented" type="warning">
 
-  `forget`, `update`, `describe` and `explain` are reserved by the lexer as well, but no command implements them: a query starting with either is rejected.
+  `forget` and `update` are reserved by the lexer as well, but nothing implements them: a query starting with either is rejected. `explain` and `describe` are implemented: each prefixes a recall (see [Commands](/docs/query-language/foundations/commands)).
 
 </Note>
 
@@ -46,7 +46,7 @@ Forgiven is not unremarked: the clause runs and the response carries a [warning]
 
 ## A keyword among the terms
 
-`recall x since 7d` is one `:` away from `recall x since:7d`, and either reading, guessed, would answer a differently scoped question with nothing in the response to say so. So it is an error, and the message names both repairs, spelled with the word written after the keyword: `write since:7d if a filter was meant, or quote it ('since') to search the word`. A command word has no clause reading, so for `recall recall` and `recall when` the message names only the quote. It names only the quote for `said` and `occurred` too, which are clauses of a `remember` and have no reading in a search: `recall what she said` asks for `'said'`. Once a clause has started, a keyword without its `:` has one reading left, and the message names only that clause: `recall zebras since:7d topic food` asks for `topic:food`. See [Errors](/docs/http-api/errors).
+`recall x since 7d` is one `:` away from `recall x since:7d`, and either reading, guessed, would answer a differently scoped question with nothing in the response to say so. So it is an error, and the message names both repairs, spelled with the word written after the keyword: `write since:7d if a filter was meant, or quote it ('since') to search the word`. A command word has no clause reading, and neither has a prefix, so for `recall recall`, `recall when`, `recall explain` and `recall describe` the message names only the quote. It names only the quote for `said` and `occurred` too, which are clauses of a `remember` and have no reading in a search: `recall what she said` asks for `'said'`. Once a clause has started, a keyword without its `:` has one reading left, and the message names only that clause: `recall zebras since:7d topic food` asks for `topic:food`. See [Errors](/docs/http-api/errors).
 
 ## No boolean operators
 
