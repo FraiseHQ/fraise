@@ -25,7 +25,6 @@ package query
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -531,26 +530,26 @@ func TestCommitStoresAnchorNodesForFilteredRecall(t *testing.T) {
 		t.Errorf("Get(entity alice) = %T %v, want the stored *graph.NamedEntity", entity, entity)
 	}
 
-	cases := []struct {
-		name     string
+	cases := map[string]struct {
 		topics   []string
 		entities []string
 	}{
-		{"no filter", nil, nil},
-		{"topic filter", []string{"travel"}, nil},
-		{"entity filter", nil, []string{"alice"}},
+		"no filter":     {nil, nil},
+		"topic filter":  {[]string{"travel"}, nil},
+		"entity filter": {nil, []string{"alice"}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			result, _ := g.Search([]string{"paris"}, containers.Vector[uint64, float32]{}, tc.topics, tc.entities, 2, 10, containers.Bound{}, containers.Bound{})
 			nodes := result.Nodes()
 			got := make([]string, 0, len(nodes))
 			for _, n := range nodes {
 				got = append(got, n.GetValue())
 			}
-			if len(nodes) != 1 || got[0] != "alice moved to paris" {
-				t.Errorf("Search(paris, topics=%v entities=%v) = %v, want [alice moved to paris]",
-					tc.topics, tc.entities, got)
+			want := []string{"alice moved to paris"}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Search(paris, topics=%v entities=%v) mismatch (-want +got):\n%s",
+					tc.topics, tc.entities, diff)
 			}
 		})
 	}
@@ -685,8 +684,8 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 
 	t.Run("a topic alone lists its members", func(t *testing.T) {
 		r := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
-		if got, want := sorted(hitValues(r)), sorted(facts); !reflect.DeepEqual(got, want) {
-			t.Fatalf("Search(topic=deploys) = %v, want every fact filed under the topic %v and no other", got, want)
+		if diff := cmp.Diff(sorted(facts), sorted(hitValues(r))); diff != "" {
+			t.Fatalf("Search(topic=deploys) mismatch (-want +got), want every fact filed under the topic and no other:\n%s", diff)
 		}
 		for i, hit := range r.Hits {
 			if hit.Score <= 0 {
@@ -709,8 +708,8 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 	t.Run("a topic and an entity double the mass of a fact under both", func(t *testing.T) {
 		single := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
 		both := read(t, &Recall[uint64, float32]{Topics: []string{"deploys"}, Entities: []string{"ops"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
-		if got, want := sorted(hitValues(both)), sorted(facts); !reflect.DeepEqual(got, want) {
-			t.Fatalf("Search(topic=deploys, entity=ops) = %v, want the union %v, each fact once", got, want)
+		if diff := cmp.Diff(sorted(facts), sorted(hitValues(both))); diff != "" {
+			t.Fatalf("Search(topic=deploys, entity=ops) mismatch (-want +got), want the union, each fact once:\n%s", diff)
 		}
 		singleScore := make(map[string]float32, len(single.Hits))
 		for _, hit := range single.Hits {
@@ -734,8 +733,8 @@ func TestCommitSeedsFromAnchorsStoredByCommit(t *testing.T) {
 
 	t.Run("a term beside the anchor searches", func(t *testing.T) {
 		r := read(t, &Recall[uint64, float32]{Keywords: []string{"vault"}, Topics: []string{"deploys"}, Parameters: QueryParameters[uint64, float32]{Top: 10}})
-		if got, want := hitValues(r), []string{"the deploy key lives in vault"}; !reflect.DeepEqual(got, want) {
-			t.Fatalf("Search(vault, topic=deploys) = %v, want the one text match %v: beside a term the anchor does not list", got, want)
+		if diff := cmp.Diff([]string{"the deploy key lives in vault"}, hitValues(r)); diff != "" {
+			t.Fatalf("Search(vault, topic=deploys) mismatch (-want +got), want the one text match: beside a term the anchor does not list:\n%s", diff)
 		}
 		for _, c := range r.Hits[0].Explain.Contributions {
 			if c.Source == "anchor" {

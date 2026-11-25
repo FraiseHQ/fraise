@@ -36,22 +36,21 @@ import (
 // symbol such as an emoji is a word. So punctuation never shields a stop word
 // from removal, and a symbol survives as a term.
 func TestCleanContentRemovesEnglishStopWords(t *testing.T) {
-	tests := []struct {
-		name    string
+	tests := map[string]struct {
 		content string
 		want    string
 	}{
-		{"stop words drop, the rest keeps its order", "facts live in the graph", "facts live graph"},
-		{"matching ignores case, survivors keep theirs", "The Graph IS Temporal", "Graph Temporal"},
-		{"punctuation does not shield a stop word", "the, graph; is: temporal!", "graph temporal"},
-		{"hyphens delimit words", "state-of-the-art recall", "state art recall"},
-		{"symbols are words and survive", "the 🍊 is ripe ✓", "🍊 ripe ✓"},
-		{"only stop words leave nothing", "it is what it was", ""},
-		{"a negation survives its stop words", "to be or not to be", "not"},
-		{"empty content stays empty", "", ""},
+		"stop words drop, the rest keeps its order":    {"facts live in the graph", "facts live graph"},
+		"matching ignores case, survivors keep theirs": {"The Graph IS Temporal", "Graph Temporal"},
+		"punctuation does not shield a stop word":      {"the, graph; is: temporal!", "graph temporal"},
+		"hyphens delimit words":                        {"state-of-the-art recall", "state art recall"},
+		"symbols are words and survive":                {"the 🍊 is ripe ✓", "🍊 ripe ✓"},
+		"only stop words leave nothing":                {"it is what it was", ""},
+		"a negation survives its stop words":           {"to be or not to be", "not"},
+		"empty content stays empty":                    {"", ""},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			if got := stopwords.CleanContent(tt.content, language.English); got != tt.want {
 				t.Errorf("CleanContent(%q) = %q, want %q", tt.content, got, tt.want)
 			}
@@ -83,18 +82,17 @@ func TestCleanContentKeepsContentWordsAndNegations(t *testing.T) {
 // content back verbatim: with no list to consult, dropping nothing is the
 // only safe behaviour.
 func TestCleanContentDispatchesOnBaseLanguage(t *testing.T) {
-	tests := []struct {
-		name    string
+	tests := map[string]struct {
 		tag     language.Tag
 		content string
 		want    string
 	}{
-		{"regional variant uses the English list", language.AmericanEnglish, "the graph", "graph"},
-		{"unsupported language is untouched", language.French, "the graph", "the graph"},
-		{"undetermined language is untouched", language.Und, "the graph", "the graph"},
+		"regional variant uses the English list": {language.AmericanEnglish, "the graph", "graph"},
+		"unsupported language is untouched":      {language.French, "the graph", "the graph"},
+		"undetermined language is untouched":     {language.Und, "the graph", "the graph"},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			if got := stopwords.CleanContent(tt.content, tt.tag); got != tt.want {
 				t.Errorf("CleanContent(%q, %v) = %q, want %q", tt.content, tt.tag, got, tt.want)
 			}

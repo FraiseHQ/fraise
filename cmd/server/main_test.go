@@ -53,20 +53,20 @@ func args(t *testing.T, flags ...string) []string {
 // Nothing is listening when this returns. run gives up before it builds a
 // database or binds a port.
 func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		flag, value, setting string
 	}{
-		{"-log-level", "verbose", "log.level"},
-		{"-log-format", "console", "log.format"},
-		{"-precision", "floast32", "db.precision"},
-		{"-hashing-function", "murmur", "db.hashing-function.name"},
-		{"-search-algorithm", "dfs", "db.search-algorithm.name"},
-		{"-workers", "-1", "scheduler.workers"},
-		{"-max-depth", "3", "db.max-depth"},
+		"-log-level=verbose":       {"-log-level", "verbose", "log.level"},
+		"-log-format=console":      {"-log-format", "console", "log.format"},
+		"-precision=floast32":      {"-precision", "floast32", "db.precision"},
+		"-hashing-function=murmur": {"-hashing-function", "murmur", "db.hashing-function.name"},
+		"-search-algorithm=dfs":    {"-search-algorithm", "dfs", "db.search-algorithm.name"},
+		"-workers=-1":              {"-workers", "-1", "scheduler.workers"},
+		"-max-depth=3":             {"-max-depth", "3", "db.max-depth"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.flag+"="+tc.value, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			c := config.New()
 			cfgErr := c.Parse(args(t, tc.flag, tc.value))
 			err := run("serve", context.Background(), c, cfgErr)
@@ -90,16 +90,16 @@ func TestRunRefusesToStartOnAnInvalidValue(t *testing.T) {
 // until a signal. So the test checks the configuration run would get, through
 // the same Parse call main makes.
 func TestRunAcceptsAnyCasingOfAValueThatIsAccepted(t *testing.T) {
-	cases := []struct{ flag, value string }{
-		{"-log-level", "error"},
-		{"-log-format", "Json"},
-		{"-precision", "Float64"},
-		{"-hashing-function", "T1ha"},
-		{"-search-algorithm", "EXCESS"},
+	cases := map[string]struct{ flag, value string }{
+		"-log-level=error":         {"-log-level", "error"},
+		"-log-format=Json":         {"-log-format", "Json"},
+		"-precision=Float64":       {"-precision", "Float64"},
+		"-hashing-function=T1ha":   {"-hashing-function", "T1ha"},
+		"-search-algorithm=EXCESS": {"-search-algorithm", "EXCESS"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.flag+"="+tc.value, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			c := config.New()
 			err := c.Parse(args(t, tc.flag, tc.value))
 

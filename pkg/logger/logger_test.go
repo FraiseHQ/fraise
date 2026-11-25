@@ -23,7 +23,6 @@
 package logger_test
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -73,20 +72,20 @@ func captureStdout(t *testing.T, fn func()) string {
 // Startup rejects unrecognised values before they reach here. These rows only
 // pin that the fallback is a logger, not a crash.
 func TestNewLogger(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		level  string
 		format string
 	}{
-		{config.LogLevelDebug, config.LogFormatText},
-		{config.LogLevelInfo, config.LogFormatJSON},
-		{config.LogLevelWarn, config.LogFormatText},
-		{config.LogLevelError, config.LogFormatJSON},
-		{"", ""},               // zero-value config, the case the fallback is for
-		{"UNKNOWN", "UNKNOWN"}, // Parse rejects this, but it must not panic
+		config.LogLevelDebug + "/" + config.LogFormatText: {config.LogLevelDebug, config.LogFormatText},
+		config.LogLevelInfo + "/" + config.LogFormatJSON:  {config.LogLevelInfo, config.LogFormatJSON},
+		config.LogLevelWarn + "/" + config.LogFormatText:  {config.LogLevelWarn, config.LogFormatText},
+		config.LogLevelError + "/" + config.LogFormatJSON: {config.LogLevelError, config.LogFormatJSON},
+		"/":               {"", ""},               // zero-value config, the case the fallback is for
+		"UNKNOWN/UNKNOWN": {"UNKNOWN", "UNKNOWN"}, // Parse rejects this, but it must not panic
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.level+"/"+tc.format, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			l := logger.NewLogger(newConfig(tc.level, tc.format))
 			if l == nil {
 				t.Fatal("NewLogger returned nil")
@@ -108,22 +107,21 @@ func TestNewLogger(t *testing.T) {
 // NewLogger. The casing an operator types is the config package's concern,
 // and is pinned there.
 func TestLevelFiltersLowerSeverities(t *testing.T) {
-	cases := []struct {
-		level  string
+	cases := map[string]struct {
 		want   []string
 		unwant []string
 		format string
 	}{
-		{config.LogLevelDebug, []string{"dbg", "inf", "wrn", "err"}, nil, config.LogFormatText},
-		{config.LogLevelInfo, []string{"inf", "wrn", "err"}, []string{"dbg"}, config.LogFormatText},
-		{config.LogLevelWarn, []string{"wrn", "err"}, []string{"dbg", "inf"}, config.LogFormatText},
-		{config.LogLevelError, []string{"err"}, []string{"dbg", "inf", "wrn"}, config.LogFormatJSON},
+		config.LogLevelDebug: {[]string{"dbg", "inf", "wrn", "err"}, nil, config.LogFormatText},
+		config.LogLevelInfo:  {[]string{"inf", "wrn", "err"}, []string{"dbg"}, config.LogFormatText},
+		config.LogLevelWarn:  {[]string{"wrn", "err"}, []string{"dbg", "inf"}, config.LogFormatText},
+		config.LogLevelError: {[]string{"err"}, []string{"dbg", "inf", "wrn"}, config.LogFormatJSON},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.level, func(t *testing.T) {
+	for level, tc := range cases {
+		t.Run(level, func(t *testing.T) {
 			out := captureStdout(t, func() {
-				l := logger.NewLogger(newConfig(tc.level, tc.format))
+				l := logger.NewLogger(newConfig(level, tc.format))
 				l.Debug("dbg")
 				l.Info("inf")
 				l.Warn("wrn")
@@ -132,12 +130,12 @@ func TestLevelFiltersLowerSeverities(t *testing.T) {
 
 			for _, msg := range tc.want {
 				if !strings.Contains(out, msg) {
-					t.Errorf("level %s dropped %q, which is at or above it:\n%s", tc.level, msg, out)
+					t.Errorf("level %s dropped %q, which is at or above it:\n%s", level, msg, out)
 				}
 			}
 			for _, msg := range tc.unwant {
 				if strings.Contains(out, msg) {
-					t.Errorf("level %s emitted %q, which is below it:\n%s", tc.level, msg, out)
+					t.Errorf("level %s emitted %q, which is below it:\n%s", level, msg, out)
 				}
 			}
 		})
@@ -147,22 +145,21 @@ func TestLevelFiltersLowerSeverities(t *testing.T) {
 // TestFormatSelectsHandler pins that each accepted format, including the
 // default "text", produces its own encoding.
 func TestFormatSelectsHandler(t *testing.T) {
-	cases := []struct {
-		format string
-		want   string // a fragment only this encoding produces
+	cases := map[string]struct {
+		want string // a fragment only this encoding produces
 	}{
-		{config.LogFormatText, `msg=hello`},
-		{config.LogFormatJSON, `"msg":"hello"`},
+		config.LogFormatText: {`msg=hello`},
+		config.LogFormatJSON: {`"msg":"hello"`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.format, func(t *testing.T) {
+	for format, tc := range cases {
+		t.Run(format, func(t *testing.T) {
 			out := captureStdout(t, func() {
-				logger.NewLogger(newConfig(config.LogLevelInfo, tc.format)).Info("hello")
+				logger.NewLogger(newConfig(config.LogLevelInfo, format)).Info("hello")
 			})
 
 			if !strings.Contains(out, tc.want) {
-				t.Errorf("format %q did not produce %s output, got:\n%s", tc.format, tc.format, out)
+				t.Errorf("format %q did not produce %s output, got:\n%s", format, format, out)
 			}
 		})
 	}
@@ -172,19 +169,19 @@ func TestFormatSelectsHandler(t *testing.T) {
 // default, keeps the timestamp. On removes it in both encodings, for a
 // supervisor that stamps every line it collects.
 func TestDisableTimestampDropsTheTime(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		format  string
 		disable bool
 		stamp   string // the fragment a timestamp contributes in this encoding
 	}{
-		{config.LogFormatText, false, `time=`},
-		{config.LogFormatText, true, `time=`},
-		{config.LogFormatJSON, false, `"time":`},
-		{config.LogFormatJSON, true, `"time":`},
+		config.LogFormatText + "/disable=false": {config.LogFormatText, false, `time=`},
+		config.LogFormatText + "/disable=true":  {config.LogFormatText, true, `time=`},
+		config.LogFormatJSON + "/disable=false": {config.LogFormatJSON, false, `"time":`},
+		config.LogFormatJSON + "/disable=true":  {config.LogFormatJSON, true, `"time":`},
 	}
 
-	for _, tc := range cases {
-		t.Run(fmt.Sprintf("%s/disable=%t", tc.format, tc.disable), func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			c := newConfig(config.LogLevelInfo, tc.format)
 			c.Log.DisableTimestamp = tc.disable
 			out := captureStdout(t, func() { logger.NewLogger(c).Info("hello") })

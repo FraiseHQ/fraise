@@ -193,19 +193,21 @@ func TestLRUCache_Concurrent(t *testing.T) {
 	}
 }
 
-// test Clear method (accesses capacity which is thread safe)
-func TestLRCache_Clear(t *testing.T) {
+// TestLRUCache_Clear pins that Clear drops every entry at once, so Len reports
+// zero afterwards. Engine.Stop clears the plan cache through it, and an entry
+// left behind would outlive the engine that planned it.
+func TestLRUCache_Clear(t *testing.T) {
 	c, _ := cache.NewLRUCache[string, int](10)
 	c.Put("a", 1)
 	c.Put("b", 1)
 	c.Put("c", 1)
 
-	if c.Len() != 3 {
-		t.Fatalf("got %v but expected %v", c.Len(), 3)
+	if got, want := c.Len(), 3; got != want {
+		t.Fatalf("Len() before Clear = %d, want %d", got, want)
 	}
 	c.Clear()
 
-	if c.Len() != 0 {
-		t.Fatalf("got %v but expected %v", c.Len(), 0)
+	if got, want := c.Len(), 0; got != want {
+		t.Fatalf("Len() after Clear = %d, want %d", got, want)
 	}
 }

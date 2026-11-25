@@ -34,17 +34,16 @@ func TestTimeComparator(t *testing.T) {
 	before := now.Add(-time.Hour)
 	after := now.Add(time.Hour)
 
-	cases := []struct {
-		name string
+	cases := map[string]struct {
 		a, b time.Time
 		want int
 	}{
-		{"equal", now, now, 0},
-		{"before", before, now, -1},
-		{"after", after, now, 1},
+		"equal":  {now, now, 0},
+		"before": {before, now, -1},
+		"after":  {after, now, 1},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
 			if got := comparator.TimeComparator(c.a, c.b); got != c.want {
 				t.Errorf("TimeComparator(%v, %v) = %d, want %d", c.a, c.b, got, c.want)
 			}
@@ -53,18 +52,17 @@ func TestTimeComparator(t *testing.T) {
 }
 
 func TestOrderedComparatorInt(t *testing.T) {
-	cases := []struct {
-		name string
+	cases := map[string]struct {
 		a, b int
 		want int
 	}{
-		{"equal", 5, 5, 0},
-		{"less", 3, 5, -1},
-		{"greater", 8, 5, 1},
-		{"negative", -3, -1, -1},
+		"equal":    {5, 5, 0},
+		"less":     {3, 5, -1},
+		"greater":  {8, 5, 1},
+		"negative": {-3, -1, -1},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
 			if got := comparator.OrderedComparator(c.a, c.b); got != c.want {
 				t.Errorf("OrderedComparator(%d, %d) = %d, want %d", c.a, c.b, got, c.want)
 			}
@@ -73,19 +71,18 @@ func TestOrderedComparatorInt(t *testing.T) {
 }
 
 func TestOrderedComparatorString(t *testing.T) {
-	cases := []struct {
-		name string
+	cases := map[string]struct {
 		a, b string
 		want int
 	}{
-		{"equal", "abc", "abc", 0},
-		{"less", "abc", "abd", -1},
-		{"greater", "abd", "abc", 1},
-		{"prefix", "ab", "abc", -1},
-		{"empty", "", "", 0},
+		"equal":   {"abc", "abc", 0},
+		"less":    {"abc", "abd", -1},
+		"greater": {"abd", "abc", 1},
+		"prefix":  {"ab", "abc", -1},
+		"empty":   {"", "", 0},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
 			if got := comparator.OrderedComparator(c.a, c.b); got != c.want {
 				t.Errorf("OrderedComparator(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
 			}

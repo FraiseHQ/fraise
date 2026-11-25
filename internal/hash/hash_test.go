@@ -42,19 +42,21 @@ func hasher(name string, seed uint64) hash.Hasher[uint64, string] {
 // implementation's values at seed 0. So it proves correctness, not just
 // stability.
 func TestXXH64KnownVectors(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		in   string
 		want uint64
 	}{
-		{"", 0xef46db3751d8e999},
-		{"a", 0xd24ec4f1a98c6e5b},
-		{"abc", 0x44bc2cf5ad770999},
-		{"The quick brown fox jumps over the lazy dog", 0x0b242d361fda71bc},
+		"empty":   {"", 0xef46db3751d8e999},
+		"a":       {"a", 0xd24ec4f1a98c6e5b},
+		"abc":     {"abc", 0x44bc2cf5ad770999},
+		"pangram": {"The quick brown fox jumps over the lazy dog", 0x0b242d361fda71bc},
 	}
-	for _, c := range cases {
-		if got := (hash.XxHash[uint64]{}).Hash(c.in); got != c.want {
-			t.Errorf("XxHash.Hash(%q) = %#016x, want %#016x", c.in, got, c.want)
-		}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := (hash.XxHash[uint64]{}).Hash(c.in); got != c.want {
+				t.Errorf("XxHash.Hash(%q) = %#016x, want %#016x", c.in, got, c.want)
+			}
+		})
 	}
 }
 
@@ -63,21 +65,55 @@ func TestXXH64KnownVectors(t *testing.T) {
 // these values are regression anchors captured from the implementation. A
 // change to any of them signals an accidental change in behaviour.
 func TestT1haRegressionVectors(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		in   string
 		want uint64
 	}{
-		{"", 0x0000000000000000},
-		{"a", 0x10a90771c9c0828c},
-		{"abc", 0xaaf29d916709fed8},
-		{"message digest", 0xe84ee2de03aba67d},
-		{"The quick brown fox jumps over the lazy dog", 0x86235f2773f9ada1},
-		{"0123456789012345678901234567890123456789", 0x9843d2619726b77c},
+		"empty":          {"", 0x0000000000000000},
+		"a":              {"a", 0x10a90771c9c0828c},
+		"abc":            {"abc", 0xaaf29d916709fed8},
+		"message digest": {"message digest", 0xe84ee2de03aba67d},
+		"pangram":        {"The quick brown fox jumps over the lazy dog", 0x86235f2773f9ada1},
+		"40 digits":      {"0123456789012345678901234567890123456789", 0x9843d2619726b77c},
 	}
-	for _, c := range cases {
-		if got := (hash.T1haHash[uint64]{}).Hash(c.in); got != c.want {
-			t.Errorf("T1haHash.Hash(%q) = %#016x, want %#016x", c.in, got, c.want)
-		}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := (hash.T1haHash[uint64]{}).Hash(c.in); got != c.want {
+				t.Errorf("T1haHash.Hash(%q) = %#016x, want %#016x", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestT1haReadsEveryTailLength pins the digest of a 1- to 8-byte input, one
+// case per branch of the tail reader. An input this short is all tail, read
+// as one little-endian word of its length. The wants come from a reference
+// that decodes the tail as a plain little-endian integer, independently of
+// the branch-per-remainder reader, and that reproduces the "a", "abc" and
+// seed-42 vectors pinned beside it. A branch that drops, shifts or reorders a
+// byte changes the word, and with it the digest. Distinctness alone would not
+// catch it, since a misread word still hashes to something new.
+func TestT1haReadsEveryTailLength(t *testing.T) {
+	full := "\x11\x22\x33\x44\x55\x66\x77\x88"
+	cases := map[string]struct {
+		n    int
+		want uint64
+	}{
+		"1 byte":  {1, 0x13551d2edcae06a2},
+		"2 bytes": {2, 0xa5e73c1bf028a60f},
+		"3 bytes": {3, 0xb990af1f83e28276},
+		"4 bytes": {4, 0x28b6793d5bdbb2a2},
+		"5 bytes": {5, 0xe2e7bb94335ab706},
+		"6 bytes": {6, 0x0888259449b0aa21},
+		"7 bytes": {7, 0x160ac64a97970398},
+		"8 bytes": {8, 0xfa6b501d37ffe489},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := (hash.T1haHash[uint64]{}).Hash(full[:c.n]); got != c.want {
+				t.Errorf("T1haHash.Hash(%q) = %#016x, want %#016x", full[:c.n], got, c.want)
+			}
+		})
 	}
 }
 
@@ -107,23 +143,25 @@ func TestT1haCoversAllTailLengths(t *testing.T) {
 // wrong arm or a dropped seed would key the store with a hash the operator
 // never chose. No key written before the change would be found after it.
 func TestNewHasherPinsTheConfiguredFunctionAndSeed(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		name string
 		seed uint64
 		want uint64
 	}{
-		{config.HashingT1ha, 42, 0x90f18c6ab3c1c1de},
-		{config.HashingXxhash, 0, 0x44bc2cf5ad770999},
-		{"", 0, 0x44bc2cf5ad770999},
+		"t1ha seeded": {config.HashingT1ha, 42, 0x90f18c6ab3c1c1de},
+		"xxhash":      {config.HashingXxhash, 0, 0x44bc2cf5ad770999},
+		"unset name":  {"", 0, 0x44bc2cf5ad770999},
 	}
-	for _, c := range cases {
-		h := hasher(c.name, c.seed)
-		if got := h.Hash("abc"); got != c.want {
-			t.Errorf("NewHasher(%q, seed %d).Hash(\"abc\") = %#016x, want %#016x", c.name, c.seed, got, c.want)
-		}
-		if got := h.Seed(); got != c.seed {
-			t.Errorf("NewHasher(%q, seed %d).Seed() = %d, want %d", c.name, c.seed, got, c.seed)
-		}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := hasher(c.name, c.seed)
+			if got := h.Hash("abc"); got != c.want {
+				t.Errorf("NewHasher(%q, seed %d).Hash(\"abc\") = %#016x, want %#016x", c.name, c.seed, got, c.want)
+			}
+			if got := h.Seed(); got != c.seed {
+				t.Errorf("NewHasher(%q, seed %d).Seed() = %d, want %d", c.name, c.seed, got, c.seed)
+			}
+		})
 	}
 }
 
@@ -138,6 +176,10 @@ func TestSeedChangesOutput(t *testing.T) {
 	}
 }
 
+// TestHashDeterminism checks that both hashers return the same digest for the
+// same input on every call. A node's key and the plan cache's key are both
+// derived by hashing. A digest that drifted between calls would file a node
+// under one key and look it up under another, and would miss every cached plan.
 func TestHashDeterminism(t *testing.T) {
 	inputs := []string{"", "x", "fraise", "The quick brown fox jumps over the lazy dog", "0123456789012345678901234567890123456789"}
 	for _, in := range inputs {
