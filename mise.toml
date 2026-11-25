@@ -69,7 +69,7 @@ run = 'uv run --package fraise-sdk --all-extras pytest sdk/python/src/tests -m "
 
 [tasks."test:mcp"]
 description = "Run the fraise-mcp unit tests (integration-marked tests excluded)"
-run = 'uv run --package fraise-mcp --extra dev pytest mcp/src/tests -m "not integration"'
+run = 'uv run --package fraise-mcp pytest mcp/src/tests -m "not integration"'
 
 [tasks."test:all"]
 description = "Run the Go tests and both Python packages' unit tests"
@@ -112,7 +112,7 @@ port=${FRAISE_E2E_PORT:-9877}
 FRAISE_PORT=$port docker compose -f docker-compose.yaml up --build --detach fraise
 trap 'status=$?; [ $status -eq 0 ] || docker compose -f docker-compose.yaml logs --no-color --tail=200 fraise; docker compose -f docker-compose.yaml down --remove-orphans' EXIT
 trap 'exit 130' INT TERM
-FRAISE_URL=http://localhost:$port uv run --package fraise-mcp --extra dev pytest mcp/src/tests -m integration -vvv
+FRAISE_URL=http://localhost:$port uv run --package fraise-mcp pytest mcp/src/tests -m integration -vvv
 '''
 
 [tasks."test:integration"]
@@ -131,7 +131,7 @@ run = 'uv run --package fraise-sdk --all-extras pytest sdk/python/src/tests -m "
 
 [tasks."coverage:mcp"]
 description = "Run the fraise-mcp unit tests with a coverage report in coverage-mcp.xml (integration-marked tests excluded)"
-run = 'uv run --package fraise-mcp --extra dev pytest mcp/src/tests -m "not integration" --cov=fraise_mcp --cov-report=xml:coverage-mcp.xml --cov-report=term'
+run = 'uv run --package fraise-mcp pytest mcp/src/tests -m "not integration" --cov=fraise_mcp --cov-report=xml:coverage-mcp.xml --cov-report=term'
 
 [tasks.coverage]
 description = "Run every coverage report"

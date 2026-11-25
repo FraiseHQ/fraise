@@ -7,12 +7,37 @@ authors = [
     { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
 ]
 requires-python = ">=3.11"
+license = "MIT"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "requests>=2.33.1",
 ]
 
+[project.urls]
+Homepage = "https://docs.getfraise.dev"
+Documentation = "https://docs.getfraise.dev/docs/integrations/python-sdk"
+Repository = "https://github.com/FraiseHQ/fraise"
+Issues = "https://github.com/FraiseHQ/fraise/issues"
+Changelog = "https://github.com/FraiseHQ/fraise/blob/main/sdk/python/CHANGELOG.md"
+
 [project.optional-dependencies]
 openai = [
+    "openai>=3.24.0",
+]
+openai-agents = [
     "openai-agents>=0.24.0",
 ]
 anthropic = [
@@ -28,6 +53,8 @@ fastembed = [
     "fastembed>=0.9.1",
     "onnxruntime<1.24; sys_platform == 'darwin' and platform_machine == 'x86_64' and python_full_version < '3.14'",
 ]
+
+[dependency-groups]
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",

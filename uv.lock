@@ -431,7 +431,7 @@ dependencies = [
     { name = "mcp" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -441,10 +441,13 @@ dev = [
 requires-dist = [
     { name = "fraise-sdk", extras = ["fastembed"], editable = "sdk/python" },
     { name = "mcp", specifier = ">=2.3.0,<3" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1.1" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.1.0" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+]
 
 [[package]]
 name = "fraise-sdk"
@@ -458,10 +461,6 @@ dependencies = [
 anthropic = [
     { name = "claude-agent-sdk" },
 ]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-]
 fastembed = [
     { name = "fastembed" },
     { name = "onnxruntime", version = "1.23.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and platform_machine == 'x86_64' and sys_platform != 'linux'" },
@@ -470,7 +469,16 @@ huggingface = [
     { name = "huggingface-hub" },
 ]
 openai = [
+    { name = "openai" },
+]
+openai-agents = [
     { name = "openai-agents" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
 ]
 
 [package.metadata]
@@ -479,12 +487,17 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'fastembed'", specifier = ">=0.9.1" },
     { name = "huggingface-hub", marker = "extra == 'huggingface'", specifier = ">=1.27.0" },
     { name = "onnxruntime", marker = "python_full_version < '3.14' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'fastembed'", specifier = "<1.24" },
-    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.24.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1.1" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.1.0" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=3.24.0" },
+    { name = "openai-agents", marker = "extra == 'openai-agents'", specifier = ">=0.24.0" },
     { name = "requests", specifier = ">=2.33.1" },
 ]
-provides-extras = ["openai", "anthropic", "huggingface", "fastembed", "dev"]
+provides-extras = ["openai", "openai-agents", "anthropic", "huggingface", "fastembed"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+]
 
 [[package]]
 name = "fsspec"

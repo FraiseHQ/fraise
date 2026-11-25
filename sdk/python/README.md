@@ -5,11 +5,12 @@ A Python client for a [Fraise](../../README.md) memory server, plus ready-made m
 ## Install
 
 ```bash
-pip install fraise-sdk                 # core client only
-pip install 'fraise-sdk[openai]'       # + OpenAI Agents SDK tools
-pip install 'fraise-sdk[anthropic]'    # + Claude Agent SDK tools
-pip install 'fraise-sdk[huggingface]'  # + Hugging Face embedder
-pip install 'fraise-sdk[fastembed]'    # + local fastembed embedder
+pip install fraise-sdk                   # core client only
+pip install 'fraise-sdk[openai]'         # + OpenAI embedder and extractor
+pip install 'fraise-sdk[openai-agents]'  # + OpenAI Agents SDK tools
+pip install 'fraise-sdk[anthropic]'      # + Claude Agent SDK tools
+pip install 'fraise-sdk[huggingface]'    # + Hugging Face embedder
+pip install 'fraise-sdk[fastembed]'      # + local fastembed embedder
 ```
 
 ## Client

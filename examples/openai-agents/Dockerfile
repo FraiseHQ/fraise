@@ -29,12 +29,12 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python \
 # Interpreter in its own layer so editing the example does not re-download it.
 RUN uv python install 3.12
 
-# Install the SDK with its `openai` extra, which brings in the OpenAI Agents
-# SDK. Copied first so this layer is cached across changes to the example
-# script.
+# Install the SDK with its `openai-agents` extra, which brings in the OpenAI
+# Agents SDK. Copied first so this layer is cached across changes to the
+# example script.
 COPY sdk/python /opt/fraise-sdk
 RUN uv venv --python 3.12 "$VIRTUAL_ENV" \
-    && uv pip install "/opt/fraise-sdk[openai]"
+    && uv pip install "/opt/fraise-sdk[openai-agents]"
 
 COPY examples/openai-agents/agent.py .
 
