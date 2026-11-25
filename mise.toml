@@ -314,7 +314,7 @@ depends = ["clean:*"]
 [tasks."release:go"]
 description = "Release the Go server with GoReleaser (set GITHUB_TOKEN and HOMEBREW_TAP_TOKEN)"
 tools = { goreleaser = "2.20.2", cosign = "3.1.4" }
-run = "goreleaser release --clean"
+run = "goreleaser release --clean --verbose --fail-fast"
 
 # actions/attest-build-provenance records the release's attestation in
 # GitHub's attestations API, which `gh attestation verify` reads. Scorecard's
