@@ -7,15 +7,40 @@ authors = [
     { name = "René-Jean Corneille", email = "corneille.r.j@gmail.com" }
 ]
 requires-python = ">=3.12"
+license = "MIT"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+# fraise-sdk is pre-1.0, so a minor release may break it: ~= keeps this
+# package on the minor it was released against. release-please rewrites the
+# version on every SDK release, which moves the ceiling with the floor.
 dependencies = [
-    "fraise-sdk[fastembed]>=0.4.0",  # x-release-please-version
+    "fraise-sdk[fastembed]~=0.4.0",  # x-release-please-version
     "mcp>=2.3.0,<3",
 ]
+
+[project.urls]
+Homepage = "https://docs.getfraise.dev"
+Documentation = "https://docs.getfraise.dev/docs/integrations/mcp"
+Repository = "https://github.com/FraiseHQ/fraise"
+Issues = "https://github.com/FraiseHQ/fraise/issues"
+Changelog = "https://github.com/FraiseHQ/fraise/blob/main/mcp/CHANGELOG.md"
 
 [project.scripts]
 fraise-mcp = "fraise_mcp.cli:main"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",

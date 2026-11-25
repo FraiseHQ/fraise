@@ -20,7 +20,7 @@ The `agent` service waits for Fraise's health check, then runs [`agent.py`](agen
 ## What's here
 
 - [`agent.py`](agent.py) — the agent and its two-turn demo.
-- [`Dockerfile`](Dockerfile) — installs the local `fraise-sdk[openai]` and the script.
+- [`Dockerfile`](Dockerfile) — installs the local `fraise-sdk[openai-agents]` and the script.
 - [`docker-compose.yaml`](docker-compose.yaml) — `fraise` + `agent` services on one network.
 - [`fraise.config.toml`](fraise.config.toml) — Fraise server config mounted into the `fraise` service.
 

@@ -58,7 +58,7 @@ try:
 except ImportError as exc:  # pragma: no cover - exercised only without the extra
     raise ImportError(
         "The OpenAI Agents integration requires the 'openai-agents' package. "
-        "Install it with:  pip install 'fraise-sdk[openai]'"
+        "Install it with:  pip install 'fraise-sdk[openai-agents]'"
     ) from exc
 
 
