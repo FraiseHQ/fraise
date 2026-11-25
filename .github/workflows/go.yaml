@@ -100,7 +100,7 @@ jobs:
 
       # The formula is pushed to FraiseHQ/homebrew-tap, which GITHUB_TOKEN
       # cannot write to. fraise-bot mints a token for that repository alone.
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         id: fraise-bot
         with:
           client-id: ${{ secrets.FRAISE_BOT_CLIENT_ID }}
