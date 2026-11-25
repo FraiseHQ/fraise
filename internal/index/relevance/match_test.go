@@ -27,8 +27,9 @@
 package relevance_test
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/index/relevance"
@@ -48,8 +49,9 @@ func TestMatchCountNameIsTheConfigName(t *testing.T) {
 func TestMatchCountTermsKeepsRepeats(t *testing.T) {
 	model := relevance.MatchCount[int, float32]{}
 	tokens := []string{"tide", "moon", "tide", "wave", "moon"}
-	if got := model.Terms(tokens); !reflect.DeepEqual(got, tokens) {
-		t.Errorf("Terms = %v, want %v unchanged", got, tokens)
+	got := model.Terms(tokens)
+	if diff := cmp.Diff(tokens, got); diff != "" {
+		t.Errorf("Terms mismatch, want the tokens unchanged (-want +got):\n%s", diff)
 	}
 }
 
@@ -58,10 +60,17 @@ func TestMatchCountTermsKeepsRepeats(t *testing.T) {
 // term earns no more than one that every document holds.
 func TestMatchCountWeightPricesEveryTermAtOne(t *testing.T) {
 	model := relevance.MatchCount[int, float32]{}
-	for _, c := range []struct{ df, docs int }{{1, 1}, {1, 1000}, {999, 1000}} {
-		if got := model.Weight(c.df, c.docs); got != 1 {
-			t.Errorf("Weight(%d, %d) = %v, want 1", c.df, c.docs, got)
-		}
+	cases := map[string]struct{ df, docs int }{
+		"sole document":            {1, 1},
+		"rare term":                {1, 1000},
+		"term in nearly every doc": {999, 1000},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := model.Weight(c.df, c.docs); got != 1 {
+				t.Errorf("Weight(%d, %d) = %v, want 1", c.df, c.docs, got)
+			}
+		})
 	}
 }
 

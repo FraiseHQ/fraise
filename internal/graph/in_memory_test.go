@@ -26,7 +26,6 @@ import (
 	"errors"
 	"math"
 	"math/rand"
-	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -736,17 +735,16 @@ func TestInMemoryGraphSearchWindowReadsTheClockTheBoundNames(t *testing.T) {
 func TestInMemoryGraphSearchRecencyDecayFactor(t *testing.T) {
 	halflife := testConfig().Engine.Halflife // default 90d
 
-	cases := []struct {
-		name string
+	cases := map[string]struct {
 		age  time.Duration
 		want float64
 	}{
-		{"fresh fact keeps its relevance", 0, 1.0},
-		{"one half-life halves the score", halflife, 0.5},
-		{"two half-lives quarter it", 2 * halflife, 0.25},
+		"fresh fact keeps its relevance": {0, 1.0},
+		"one half-life halves the score": {halflife, 0.5},
+		"two half-lives quarter it":      {2 * halflife, 0.25},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			g := newGraph()
 			mustSet(t, g, mkFact(g, "aurora over the fjord", time.Now().Add(-tc.age)))
 
@@ -871,16 +869,15 @@ func TestInMemoryGraphSearchRecencyOrdersTies(t *testing.T) {
 // 0.5^(30/7) ≈ 5% of its score and the weak match overtakes it. On a graph
 // used for months, nothing older than a few weeks would rank.
 func TestInMemoryGraphSearchRecencyKeepsRelevance(t *testing.T) {
-	cases := []struct {
-		name     string
+	cases := map[string]struct {
 		halflife time.Duration
 		want     []string
 	}{
-		{"the default keeps the full match first", testConfig().Engine.Halflife, []string{"glacier survey from the north ridge", "glacier sighted today"}},
-		{"a one-week half-life lets the weak match win", 7 * 24 * time.Hour, []string{"glacier sighted today", "glacier survey from the north ridge"}},
+		"the default keeps the full match first":       {testConfig().Engine.Halflife, []string{"glacier survey from the north ridge", "glacier sighted today"}},
+		"a one-week half-life lets the weak match win": {7 * 24 * time.Hour, []string{"glacier sighted today", "glacier survey from the north ridge"}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			cfg := testConfig()
 			cfg.Engine.Halflife = tc.halflife
 			g := graph.NewGraph[uint64, float64](cfg)
@@ -891,8 +888,8 @@ func TestInMemoryGraphSearchRecencyKeepsRelevance(t *testing.T) {
 			mustSet(t, g, mkFact(g, "pilot boat on watch", now))
 
 			nodes, scores, _, _, _ := search(g, []string{"glacier", "survey"}, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
-			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("Search(glacier survey, half-life=%v) = %v (scores %v), want %v", tc.halflife, got, scores, tc.want)
+			if diff := cmp.Diff(tc.want, values(nodes)); diff != "" {
+				t.Errorf("Search(glacier survey, half-life=%v) mismatch (-want +got), scores %v:\n%s", tc.halflife, scores, diff)
 			}
 		})
 	}
@@ -1003,20 +1000,19 @@ func TestInMemoryGraphSearchOrdersTiesByKey(t *testing.T) {
 	tied := []uint64{tiedA.Key(), tiedB.Key(), tiedC.Key()}
 	sort.Slice(tied, func(i, j int) bool { return tied[i] < tied[j] })
 
-	cases := []struct {
-		name string
+	cases := map[string]struct {
 		top  int
 		want []uint64
 	}{
-		{"tied facts follow the top hit in key order", 10, []uint64{first.Key(), tied[0], tied[1], tied[2]}},
-		{"truncation keeps the lowest tied key", 2, []uint64{first.Key(), tied[0]}},
+		"tied facts follow the top hit in key order": {10, []uint64{first.Key(), tied[0], tied[1], tied[2]}},
+		"truncation keeps the lowest tied key":       {2, []uint64{first.Key(), tied[0]}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			for i := 0; i < 20; i++ {
 				nodes, _, _, _, _ := search(g, []string{"acme"}, containers.Vector[uint64, float64]{}, nil, nil, 1, tc.top, containers.Bound{}, containers.Bound{})
-				if got := keys(nodes); !reflect.DeepEqual(got, tc.want) {
-					t.Fatalf("Search(acme, top=%d) keys = %v on call %d, want %v every call (%v)", tc.top, got, i+1, tc.want, values(nodes))
+				if diff := cmp.Diff(tc.want, keys(nodes)); diff != "" {
+					t.Fatalf("Search(acme, top=%d) keys mismatch on call %d, want the same every call (%v) (-want +got):\n%s", tc.top, i+1, values(nodes), diff)
 				}
 			}
 		})
@@ -1168,11 +1164,11 @@ func TestSearchBM25Floor(t *testing.T) {
 		t.Fatalf("text Search = %v, want nil", err)
 	}
 	textKeys, textScores := readings[0], readingScores[0]
-	if got := keys(nodes); !reflect.DeepEqual(got, textKeys) {
-		t.Errorf("Search ranking %v differs from the text index's %v with no surplus anywhere", got, textKeys)
+	if diff := cmp.Diff(textKeys, keys(nodes)); diff != "" {
+		t.Errorf("Search ranking differs from the text index's with no surplus anywhere (-want +got):\n%s", diff)
 	}
-	if !reflect.DeepEqual(scores, textScores) {
-		t.Errorf("Search scores %v differ from the text index's %v — a silent anchor added mass", scores, textScores)
+	if diff := cmp.Diff(textScores, scores); diff != "" {
+		t.Errorf("Search scores differ from the text index's — a silent anchor added mass (-want +got):\n%s", diff)
 	}
 }
 
@@ -1271,6 +1267,229 @@ func TestSearchNamedHubTransmits(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].Named {
 		t.Errorf("silent member's contributions = %+v, want a single unnamed weather observation", list)
+	}
+}
+
+// exactMassGraph builds a graph whose seed masses are exact integers chosen by
+// the query. Under "matchcount" a fact's text mass is one point per query-term
+// occurrence it holds, repeats included, so a term repeated n times in the
+// query gives the one fact holding it a mass of exactly n. Decay is off and
+// the window stays off (testConfig), so no neighbour lends a fraction, and the
+// excess traversal is installed. BM25 masses cannot be chosen this way, and
+// the collection pins below need every sum exact in any accumulation order.
+func exactMassGraph() *graph.InMemoryGraph[uint64, float64] {
+	cfg := testConfig()
+	cfg.Engine.Halflife = 0
+	cfg.DB.RelevanceModel.Name = "matchcount"
+	g := graph.NewGraph[uint64, float64](cfg)
+	g.SetTraversal(graph.NewExcessTraversal[uint64, float64]())
+	return g
+}
+
+// repeat returns term n times: a query whose matchcount mass on the one fact
+// holding term is exactly n.
+func repeat(term string, n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = term
+	}
+	return out
+}
+
+// fileAll stores a topic named name and files every fact under it.
+func fileAll(t *testing.T, g *graph.InMemoryGraph[uint64, float64], name string, facts ...graph.Fact[uint64]) *graph.Topic[uint64] {
+	t.Helper()
+	now := time.Now()
+	tp := mkTopic(g, name, now)
+	mustSet(t, g, tp)
+	for i := range facts {
+		mustSet(t, g, graph.IsAbout[uint64]{NodeAttributes: graph.NodeAttributes{Timestamp: now}, Fact: &facts[i], Topic: tp, Hasher: g.GetHasher()})
+	}
+	return tp
+}
+
+// storeFacts stores a fact per value and returns them in order.
+func storeFacts(t *testing.T, g *graph.InMemoryGraph[uint64, float64], values ...string) []graph.Fact[uint64] {
+	t.Helper()
+	now := time.Now()
+	facts := make([]graph.Fact[uint64], len(values))
+	for i, value := range values {
+		facts[i] = mkFact(g, value, now)
+		mustSet(t, g, facts[i])
+	}
+	return facts
+}
+
+// graphObservations returns, per hit value, the hit's SrcGraph contributions.
+// A fact the recall did not return has no entry.
+func graphObservations(result graph.Result[uint64, float64]) map[string][]scoring.Contribution[uint64, float64] {
+	out := make(map[string][]scoring.Contribution[uint64, float64], len(result.Hits))
+	for _, hit := range result.Hits {
+		var observed []scoring.Contribution[uint64, float64]
+		for _, c := range hit.Contributions {
+			if c.Src == scoring.SrcGraph {
+				observed = append(observed, c)
+			}
+		}
+		out[hit.Node.GetValue()] = observed
+	}
+	return out
+}
+
+// collectFixture is the smallest graph on which every collection rule is
+// visible, with the recall that exercises them:
+//
+//	cluster (topic, degree 3):  "kiwi", "lime", "cluster third"
+//	hub     (topic, degree 6):  "fig" and five memos
+//	giant   (topic, degree 10): ten facts no query term reaches
+//
+// The query repeats kiwi 8 times, lime 6 and fig 2, so m(kiwi)=8, m(lime)=6
+// and m(fig)=2. These are exact binary values, so every sum below is exact in
+// any accumulation order. The arithmetic is:
+//
+//	ρ₀      = (8+6+2) / (3+6) = 16/9   (the giant holds no seed: untouched)
+//	cluster = M 14 > 3·ρ₀ ≈ 5.33       (admitted: expanded to its members)
+//	hub     = M  2 ≤ 6·ρ₀ ≈ 10.67      (silent: pruned, but still in the null)
+//
+// The traversal runs only when the query names an anchor. A named anchor
+// transmits whatever its share, so the recall names a door the seeds never
+// reach, and every rule the tests pin is the one an anchor the seeds discover
+// obeys.
+type collectFixture struct {
+	result  graph.Result[uint64, float64]
+	cluster uint64
+	hub     []string
+	giant   []string
+}
+
+func newCollectFixture(t *testing.T) collectFixture {
+	t.Helper()
+	g := exactMassGraph()
+
+	hub := []string{"fig", "hub memo a", "hub memo b", "hub memo c", "hub memo d", "hub memo e"}
+	giant := make([]string, 10)
+	for i := range giant {
+		giant[i] = "giant fact " + string(rune('a'+i))
+	}
+	cluster := fileAll(t, g, "cluster", storeFacts(t, g, "kiwi", "lime", "cluster third")...)
+	fileAll(t, g, "hub", storeFacts(t, g, hub...)...)
+	fileAll(t, g, "giant", storeFacts(t, g, giant...)...)
+
+	query := append(append(repeat("kiwi", 8), repeat("lime", 6)...), repeat("fig", 2)...)
+	result, err := g.Search(query, containers.Vector[uint64, float64]{}, []string{"door"}, nil, 2, 50, containers.Bound{}, containers.Bound{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+	return collectFixture{result: result, cluster: cluster.Key(), hub: hub, giant: giant}
+}
+
+// TestSearchBackgroundWeighsAllTouchedAnchors pins the background's
+// denominator. The silent hub is pruned from expansion, yet its mass and
+// degree still count toward ρ₀. The untouched giant, which the traversal
+// never reached, does not count. Excluding the hub would give 14/3, and
+// counting the giant 16/19. The pin is exactly 16/9.
+func TestSearchBackgroundWeighsAllTouchedAnchors(t *testing.T) {
+	fx := newCollectFixture(t)
+	if got, want := fx.result.Background, 16.0/9.0; got != want {
+		t.Errorf("Background = %v, want exactly %v (all touched anchors, silent included; untouched excluded)", got, want)
+	}
+}
+
+// TestSearchSilencesALoneAnchorExactly pins that an anchor holding exactly
+// its fair share stays silent, even when the division rounds. A query that
+// reaches a single anchor gives it exactly its fair share (M = d·(M/d)). With
+// M = 7 + 8 on a degree-11 topic, 11·(15/11) rounds to 14.999999999999998. A
+// division-based test would then admit the anchor and hand its unmatched
+// members a surplus of ~2e-15.
+func TestSearchSilencesALoneAnchorExactly(t *testing.T) {
+	g := exactMassGraph()
+	lone := []string{"kiwi", "lime"}
+	for i := 0; i < 9; i++ {
+		lone = append(lone, "lone fact "+string(rune('a'+i)))
+	}
+	fileAll(t, g, "lone", storeFacts(t, g, lone...)...)
+
+	result, err := g.Search(append(repeat("kiwi", 7), repeat("lime", 8)...), containers.Vector[uint64, float64]{}, []string{"door"}, nil, 2, 50, containers.Bound{}, containers.Bound{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+
+	want := map[string][]scoring.Contribution[uint64, float64]{"kiwi": nil, "lime": nil}
+	if diff := cmp.Diff(want, graphObservations(result)); diff != "" {
+		t.Errorf("graph observations from a lone anchor at its fair share mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestSearchExpandsOnlyAboveBackgroundAnchors pins the admission prune, the
+// collection half of hub silence. The hub, within its fair share, is never
+// expanded. Its members pool nothing, and its own seed keeps a graph-free
+// list. The cluster is expanded to every member, and the untouched giant
+// holds no mass to observe.
+func TestSearchExpandsOnlyAboveBackgroundAnchors(t *testing.T) {
+	fx := newCollectFixture(t)
+	got := graphObservations(fx.result)
+
+	for _, member := range append(fx.hub[1:], fx.giant...) {
+		if observed, pooled := got[member]; pooled {
+			t.Errorf("%q was pooled with graph observations %+v, want it absent: its anchor is silent or untouched", member, observed)
+		}
+	}
+	if observed := got["fig"]; len(observed) != 0 {
+		t.Errorf("the silent hub's own seed carries graph observations %+v, want none", observed)
+	}
+	for _, member := range []string{"kiwi", "lime", "cluster third"} {
+		if observed := got[member]; len(observed) != 1 {
+			t.Errorf("cluster member %q has %d graph observations, want exactly 1", member, len(observed))
+		}
+	}
+}
+
+// TestSearchRecordsObservationsNotPolicy pins what a graph contribution
+// carries: the funding anchor's full observed mass, identity, degree and
+// funding-seed count. Nothing is hinged or subtracted. The cluster's non-seed
+// member and its strongest seed record the same observation. Only the
+// scorer's self-exclusion treats them differently.
+func TestSearchRecordsObservationsNotPolicy(t *testing.T) {
+	fx := newCollectFixture(t)
+	got := graphObservations(fx.result)
+
+	want := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcGraph, Score: 14, Via: fx.cluster, Degree: 3, Count: 2}}
+	for _, member := range []string{"kiwi", "cluster third"} {
+		if diff := cmp.Diff(want, got[member]); diff != "" {
+			t.Errorf("%q observation mismatch (-want +got), collection must not apply policy:\n%s", member, diff)
+		}
+	}
+}
+
+// TestSearchMemberOfTwoAnchorsIsTwoObservations pins Parents-driven
+// incidence end to end. A fact on two admitted anchors pools one observation
+// per anchor, because each anchor's surplus is a separate claim about it. Two
+// small clusters alone can never both clear a background they define between
+// them. So a large silent hub supplies the ballast that lowers ρ₀ under both.
+// Left and right observe 16 each (degree 2, share 2·ρ₀ = 6.8). The hub
+// observes 2 on degree 6, and ρ₀ = 34/10.
+func TestSearchMemberOfTwoAnchorsIsTwoObservations(t *testing.T) {
+	g := exactMassGraph()
+	facts := storeFacts(t, g, "kiwi", "lime", "fig", "the shared member")
+	kiwi, lime, fig, shared := facts[0], facts[1], facts[2], facts[3]
+	left := fileAll(t, g, "left", kiwi, shared)
+	right := fileAll(t, g, "right", lime, shared)
+	fileAll(t, g, "hub", append([]graph.Fact[uint64]{fig}, storeFacts(t, g, "hub ballast a", "hub ballast b", "hub ballast c", "hub ballast d", "hub ballast e")...)...)
+
+	query := append(append(repeat("kiwi", 16), repeat("lime", 16)...), repeat("fig", 2)...)
+	result, err := g.Search(query, containers.Vector[uint64, float64]{}, []string{"door"}, nil, 2, 50, containers.Bound{}, containers.Bound{})
+	if err != nil {
+		t.Fatalf("Search = %v, want nil", err)
+	}
+
+	got := graphObservations(result)["the shared member"]
+	want := []scoring.Contribution[uint64, float64]{
+		{Src: scoring.SrcGraph, Score: 16, Via: left.Key(), Degree: 2, Count: 1},
+		{Src: scoring.SrcGraph, Score: 16, Via: right.Key(), Degree: 2, Count: 1},
+	}
+	sortByVia := cmpopts.SortSlices(func(a, b scoring.Contribution[uint64, float64]) bool { return a.Via < b.Via })
+	if diff := cmp.Diff(want, got, sortByVia); diff != "" {
+		t.Errorf("shared member observations mismatch (-want +got), want one per funding anchor:\n%s", diff)
 	}
 }
 
@@ -1661,9 +1880,11 @@ func TestSearchDeterminism(t *testing.T) {
 	firstNodes, firstScores, _, firstBackground, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, containers.Bound{}, containers.Bound{})
 	for i := 0; i < 20; i++ {
 		nodes, scores, _, background, _ := search(g, []string{"barometer", "storm"}, containers.Vector[uint64, float64]{}, []string{"weather", "archive"}, nil, 1, 20, containers.Bound{}, containers.Bound{})
-		if !reflect.DeepEqual(keys(nodes), keys(firstNodes)) || !reflect.DeepEqual(scores, firstScores) || background != firstBackground {
-			t.Fatalf("call %d returned a different ranking, scores or background: %v %v %v vs %v %v %v",
-				i+1, keys(nodes), scores, background, keys(firstNodes), firstScores, firstBackground)
+		keyDiff := cmp.Diff(keys(firstNodes), keys(nodes))
+		scoreDiff := cmp.Diff(firstScores, scores)
+		if keyDiff != "" || scoreDiff != "" || background != firstBackground {
+			t.Fatalf("call %d returned a different ranking, scores or background (-want +got):\nkeys:\n%s\nscores:\n%s\nbackground = %v, want %v",
+				i+1, keyDiff, scoreDiff, background, firstBackground)
 		}
 	}
 }
@@ -1790,8 +2011,8 @@ func TestInMemoryGraphSearchSeedsFromAnchorMembersNewestFirst(t *testing.T) {
 	g, harbour, _ := anchorGraph(t)
 
 	nodes, scores, contributions, background, _ := searchByAnchors(g, []string{"harbour"}, nil, 10, time.Time{}, time.Time{})
-	if want := []string{harbourDawn, harbourFerry, harbourCranes}; !reflect.DeepEqual(values(nodes), want) {
-		t.Fatalf("Search(topic=harbour) = %v, want the topic's members newest first %v", values(nodes), want)
+	if diff := cmp.Diff([]string{harbourDawn, harbourFerry, harbourCranes}, values(nodes)); diff != "" {
+		t.Fatalf("Search(topic=harbour) mismatch, want the topic's members newest first (-want +got):\n%s", diff)
 	}
 	for i := range scores {
 		if scores[i] <= 0 {
@@ -1801,8 +2022,8 @@ func TestInMemoryGraphSearchSeedsFromAnchorMembersNewestFirst(t *testing.T) {
 			t.Errorf("scores[%d] = %v is not below scores[%d] = %v: the ranking must decay with age", i, scores[i], i-1, scores[i-1])
 		}
 		want := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcAnchor, Score: 1, Via: harbour.Key(), Degree: 3, Count: 1}}
-		if !reflect.DeepEqual(contributions[i], want) {
-			t.Errorf("contributions[%d] = %+v, want one anchor sighting via harbour %+v", i, contributions[i], want)
+		if diff := cmp.Diff(want, contributions[i]); diff != "" {
+			t.Errorf("contributions[%d] mismatch, want one anchor sighting via harbour (-want +got):\n%s", i, diff)
 		}
 	}
 	if background != 0 {
@@ -1822,15 +2043,15 @@ func TestInMemoryGraphSearchAnchorSeedsUnion(t *testing.T) {
 	g, harbour, pilot := anchorGraph(t)
 
 	nodes, scores, contributions, _, _ := searchByAnchors(g, []string{"harbour"}, []string{"pilot"}, 10, time.Time{}, time.Time{})
-	if want := []string{harbourFerry, harbourDawn, harbourCranes, pilotWatch}; !reflect.DeepEqual(values(nodes), want) {
-		t.Fatalf("Search(topic=harbour, entity=pilot) = %v, want the union with the doubly-filed fact first %v", values(nodes), want)
+	if diff := cmp.Diff([]string{harbourFerry, harbourDawn, harbourCranes, pilotWatch}, values(nodes)); diff != "" {
+		t.Fatalf("Search(topic=harbour, entity=pilot) mismatch, want the union with the doubly-filed fact first (-want +got):\n%s", diff)
 	}
 	want := []scoring.Contribution[uint64, float64]{
 		{Src: scoring.SrcAnchor, Score: 1, Via: harbour.Key(), Degree: 3, Count: 1},
 		{Src: scoring.SrcAnchor, Score: 1, Via: pilot.Key(), Degree: 2, Count: 1},
 	}
-	if !reflect.DeepEqual(contributions[0], want) {
-		t.Errorf("contributions of the doubly-filed fact = %+v, want one sighting per anchor in query order %+v", contributions[0], want)
+	if diff := cmp.Diff(want, contributions[0]); diff != "" {
+		t.Errorf("contributions of the doubly-filed fact mismatch, want one sighting per anchor in query order (-want +got):\n%s", diff)
 	}
 	if scores[0] <= scores[1] {
 		t.Errorf("doubly-filed score %v is not above the singly-filed %v", scores[0], scores[1])
@@ -1858,8 +2079,7 @@ func TestInMemoryGraphSearchAnchorSeedsCapWindowAndUnknownAnchor(t *testing.T) {
 	cutoff := time.Now().Add(-90 * time.Minute)
 	harbourAll := []string{harbourDawn, harbourFerry, harbourCranes}
 
-	cases := []struct {
-		name     string
+	cases := map[string]struct {
 		topics   []string
 		entities []string
 		top      int
@@ -1867,19 +2087,19 @@ func TestInMemoryGraphSearchAnchorSeedsCapWindowAndUnknownAnchor(t *testing.T) {
 		until    time.Time
 		want     []string
 	}{
-		{"top keeps the newest", []string{"harbour"}, nil, 2, time.Time{}, time.Time{}, []string{harbourDawn, harbourFerry}},
-		{"a non-positive top returns everything", []string{"harbour"}, nil, 0, time.Time{}, time.Time{}, harbourAll},
-		{"since keeps the recent", []string{"harbour"}, nil, 10, cutoff, time.Time{}, []string{harbourDawn, harbourFerry}},
-		{"until keeps the old", []string{"harbour"}, nil, 10, time.Time{}, cutoff, []string{harbourCranes}},
-		{"an unknown anchor is empty", []string{"nosuch"}, nil, 10, time.Time{}, time.Time{}, []string{}},
-		{"an unknown anchor beside a known one adds nothing", []string{"nosuch", "harbour"}, nil, 10, time.Time{}, time.Time{}, harbourAll},
-		{"a topic's name is not an entity", nil, []string{"harbour"}, 10, time.Time{}, time.Time{}, []string{}},
+		"top keeps the newest":                              {[]string{"harbour"}, nil, 2, time.Time{}, time.Time{}, []string{harbourDawn, harbourFerry}},
+		"a non-positive top returns everything":             {[]string{"harbour"}, nil, 0, time.Time{}, time.Time{}, harbourAll},
+		"since keeps the recent":                            {[]string{"harbour"}, nil, 10, cutoff, time.Time{}, []string{harbourDawn, harbourFerry}},
+		"until keeps the old":                               {[]string{"harbour"}, nil, 10, time.Time{}, cutoff, []string{harbourCranes}},
+		"an unknown anchor is empty":                        {[]string{"nosuch"}, nil, 10, time.Time{}, time.Time{}, []string{}},
+		"an unknown anchor beside a known one adds nothing": {[]string{"nosuch", "harbour"}, nil, 10, time.Time{}, time.Time{}, harbourAll},
+		"a topic's name is not an entity":                   {nil, []string{"harbour"}, 10, time.Time{}, time.Time{}, []string{}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			nodes, _, _, _, _ := searchByAnchors(g, tc.topics, tc.entities, tc.top, tc.since, tc.until)
-			if got := values(nodes); !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("Search(topics=%v entities=%v top=%d) = %v, want %v", tc.topics, tc.entities, tc.top, got, tc.want)
+			if diff := cmp.Diff(tc.want, values(nodes)); diff != "" {
+				t.Errorf("Search(topics=%v entities=%v top=%d) mismatch (-want +got):\n%s", tc.topics, tc.entities, tc.top, diff)
 			}
 		})
 	}
@@ -1899,8 +2119,8 @@ func TestInMemoryGraphSearchNamesAnAnchorOnce(t *testing.T) {
 	}
 	want := []scoring.Contribution[uint64, float64]{{Src: scoring.SrcAnchor, Score: 1, Via: harbour.Key(), Degree: 3, Count: 1}}
 	for i, c := range contributions {
-		if !reflect.DeepEqual(c, want) {
-			t.Errorf("contributions[%d] = %+v, want a single sighting %+v", i, c, want)
+		if diff := cmp.Diff(want, c); diff != "" {
+			t.Errorf("contributions[%d] mismatch, want a single sighting (-want +got):\n%s", i, diff)
 		}
 	}
 }
@@ -1927,8 +2147,8 @@ func TestInMemoryGraphSearchAnchorSeedsOrderTiesByKey(t *testing.T) {
 
 	for i := 0; i < 20; i++ {
 		nodes, _, _, _, _ := searchByAnchors(g, []string{"tides"}, nil, 2, time.Time{}, time.Time{})
-		if got := keys(nodes); !reflect.DeepEqual(got, tied[:2]) {
-			t.Fatalf("Search(topic=tides, top=2) keys = %v on call %d, want the two lowest keys %v every call", got, i+1, tied[:2])
+		if diff := cmp.Diff(tied[:2], keys(nodes)); diff != "" {
+			t.Fatalf("Search(topic=tides, top=2) keys mismatch on call %d, want the two lowest keys every call (-want +got):\n%s", i+1, diff)
 		}
 	}
 }
@@ -1941,8 +2161,8 @@ func TestInMemoryGraphSearchWithATermSeedsFromText(t *testing.T) {
 	g, _, _ := anchorGraph(t)
 
 	nodes, _, contributions, _, _ := search(g, []string{"cranes"}, containers.Vector[uint64, float64]{}, []string{"harbour"}, nil, 0, 10, containers.Bound{}, containers.Bound{})
-	if want := []string{harbourCranes}; !reflect.DeepEqual(values(nodes), want) {
-		t.Fatalf("Search(cranes, topic=harbour) = %v, want the one text match %v", values(nodes), want)
+	if diff := cmp.Diff([]string{harbourCranes}, values(nodes)); diff != "" {
+		t.Fatalf("Search(cranes, topic=harbour) mismatch, want the one text match (-want +got):\n%s", diff)
 	}
 	for _, c := range contributions[0] {
 		if c.Src == scoring.SrcAnchor {
@@ -1967,17 +2187,16 @@ func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 	mustSet(t, g, mkFact(g, owns, now))
 	mustSet(t, g, mkFact(g, joined, now))
 
-	cases := []struct {
-		name     string
+	cases := map[string]struct {
 		keywords []string
 		want     []string
 	}{
-		{"a stop word is not a search term, whatever it stems to", []string{"Caroline", "own"}, []string{joined}},
-		{"the content word sharing the stem does match", []string{"Caroline", "owns"}, []string{owns, joined}},
-		{"only stop words match nothing without erroring", []string{"when", "the", "own"}, []string{}},
+		"a stop word is not a search term, whatever it stems to": {[]string{"Caroline", "own"}, []string{joined}},
+		"the content word sharing the stem does match":           {[]string{"Caroline", "owns"}, []string{owns, joined}},
+		"only stop words match nothing without erroring":         {[]string{"when", "the", "own"}, []string{}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			nodes, _, _, _, err := search(g, tc.keywords, containers.Vector[uint64, float64]{}, nil, nil, 0, 10, containers.Bound{}, containers.Bound{})
 			if err != nil {
 				t.Fatalf("Search(%v) error = %v, want nil", tc.keywords, err)
@@ -1985,8 +2204,8 @@ func TestInMemoryGraphSearchCleansQueryStopWords(t *testing.T) {
 			got := values(nodes)
 			sort.Strings(got)
 			sort.Strings(tc.want)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("Search(%v) = %v, want %v", tc.keywords, got, tc.want)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("Search(%v) mismatch (-want +got):\n%s", tc.keywords, diff)
 			}
 		})
 	}

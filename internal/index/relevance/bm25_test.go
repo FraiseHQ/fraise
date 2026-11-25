@@ -28,8 +28,9 @@ package relevance_test
 
 import (
 	"math"
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/FraiseHQ/fraise/internal/config"
 	"github.com/FraiseHQ/fraise/internal/index/relevance"
@@ -50,8 +51,9 @@ func TestBM25NameIsTheConfigName(t *testing.T) {
 func TestBM25TermsDedupsFirstOccurrence(t *testing.T) {
 	model := relevance.NewBM25[int, float32]()
 	got := model.Terms([]string{"tide", "moon", "tide", "wave", "moon"})
-	if want := []string{"tide", "moon", "wave"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("Terms = %v, want %v", got, want)
+	want := []string{"tide", "moon", "wave"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Terms mismatch (-want +got):\n%s", diff)
 	}
 }
 

@@ -25,7 +25,6 @@ package query_test
 import (
 	"encoding/json"
 	"errors"
-	"reflect"
 	"testing"
 	"time"
 
@@ -57,11 +56,11 @@ func TestParseRemember(t *testing.T) {
 	if want := "anne loves the color orange"; r.Value != want {
 		t.Errorf("Value = %q, want %q", r.Value, want)
 	}
-	if want := []string{"anne"}; !reflect.DeepEqual(r.Entities, want) {
-		t.Errorf("Entities = %v, want %v", r.Entities, want)
+	if diff := cmp.Diff([]string{"anne"}, r.Entities); diff != "" {
+		t.Errorf("Entities mismatch (-want +got):\n%s", diff)
 	}
-	if want := []string{"color", "preference"}; !reflect.DeepEqual(r.Topics, want) {
-		t.Errorf("Topics = %v, want %v", r.Topics, want)
+	if diff := cmp.Diff([]string{"color", "preference"}, r.Topics); diff != "" {
+		t.Errorf("Topics mismatch (-want +got):\n%s", diff)
 	}
 	if id := r.GetGraphID(); id != 1 {
 		t.Errorf("GetGraphID() = %d, want 1", id)
@@ -87,14 +86,14 @@ func TestParseRecall(t *testing.T) {
 		t.Fatalf("Parse(%q) returned %T, want *query.Recall", q, got)
 	}
 
-	if want := []string{"anna", "bob"}; !reflect.DeepEqual(r.Keywords, want) {
-		t.Errorf("Keywords = %v, want %v", r.Keywords, want)
+	if diff := cmp.Diff([]string{"anna", "bob"}, r.Keywords); diff != "" {
+		t.Errorf("Keywords mismatch (-want +got):\n%s", diff)
 	}
-	if want := []string{"alice"}; !reflect.DeepEqual(r.Entities, want) {
-		t.Errorf("Entities = %v, want %v", r.Entities, want)
+	if diff := cmp.Diff([]string{"alice"}, r.Entities); diff != "" {
+		t.Errorf("Entities mismatch (-want +got):\n%s", diff)
 	}
-	if want := []string{"job"}; !reflect.DeepEqual(r.Topics, want) {
-		t.Errorf("Topics = %v, want %v", r.Topics, want)
+	if diff := cmp.Diff([]string{"job"}, r.Topics); diff != "" {
+		t.Errorf("Topics mismatch (-want +got):\n%s", diff)
 	}
 	if id := r.GetGraphID(); id != 2 {
 		t.Errorf("GetGraphID() = %d, want 2", id)
@@ -541,8 +540,8 @@ func TestParseRecallBindsVector(t *testing.T) {
 		t.Fatalf("Parse(%q) returned %T, want *query.Recall", q, got)
 	}
 
-	if want := []float32{0.1, 0.2, 0.3}; !reflect.DeepEqual(r.Vector.Data, want) {
-		t.Errorf("Vector.Data = %v, want %v", r.Vector.Data, want)
+	if diff := cmp.Diff([]float32{0.1, 0.2, 0.3}, r.Vector.Data); diff != "" {
+		t.Errorf("Vector.Data mismatch (-want +got):\n%s", diff)
 	}
 }
 
