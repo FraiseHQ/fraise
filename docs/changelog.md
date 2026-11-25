@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.2](https://github.com/FraiseHQ/fraise/compare/v0.4.1...v0.4.2) (2026-11-25)
+
+
+### Bug fixes
+
+* compare the offset in Remember.Equal ([#717](https://github.com/FraiseHQ/fraise/issues/717)) ([98ca516](https://github.com/FraiseHQ/fraise/commit/98ca51607d352de566e72a2809470d380599e265))
+
+
+### Maintenance
+
+* pkg/logger on log/slog instead of golang.org/x/exp/slog ([#713](https://github.com/FraiseHQ/fraise/issues/713)) ([47e95d3](https://github.com/FraiseHQ/fraise/commit/47e95d3902e4fa67a75add8bc6379a056de97e86))
+* update goreleaser settings ([#708](https://github.com/FraiseHQ/fraise/issues/708)) ([25cf0b7](https://github.com/FraiseHQ/fraise/commit/25cf0b7a7e11924cd9bb1e266e269f17c8c9c9c4))
+
 ## [0.4.1](https://github.com/FraiseHQ/fraise/compare/v0.4.0...v0.4.1) (2026-11-22)
 
 
