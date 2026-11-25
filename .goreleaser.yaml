@@ -179,3 +179,15 @@ announce:
     message_template: >-
       🍓 Fraise {{ .Tag }} is out!
       {{ .ReleaseURL }}
+
+report_sizes: true
+
+retry:
+  attempts: 3
+
+  # Set delay between retries.
+  # Default: 10s
+  delay: 10s
+
+  # Default: 5m
+  max_delay: 3m
