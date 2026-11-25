@@ -1,0 +1,299 @@
+# MIT License
+
+# Copyright (c) 2026 René-Jean Corneille
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+"""Pydantic AI tool tests against a mocked client: no server, no model calls.
+
+The tools run the way an agent run invokes them, called by Pydantic AI's
+``FunctionModel`` through the framework's argument validation. So the
+assertions cover the real wrapping, not the undecorated closures.
+"""
+
+from datetime import datetime, timezone
+
+import pytest
+from fraise_sdk.errors import FraiseError
+from fraise_sdk.models import Hit, Interval, RecallResult
+
+# The integration imports its framework at module scope, so skip the whole file
+# when the optional 'pydantic-ai' extra is not installed.
+pytest.importorskip("pydantic_ai", reason="requires the 'pydantic-ai' extra")
+
+from fraise_sdk.integrations.pydantic_ai import (  # noqa: E402
+    memory_tools,
+    recall_tool,
+    remember_tool,
+)
+
+
+def test_memory_tools_returns_both_tools(mock_client):
+    """memory_tools gives the agent both tools, recall first."""
+    tools = memory_tools(mock_client())
+    assert [tool.name for tool in tools] == ["recall_memory", "remember_fact"]
+
+
+def test_tool_names_are_overridable(mock_client):
+    """``name=`` sets the name each tool is offered to the model under."""
+    client = mock_client()
+    assert recall_tool(client, name="lookup").name == "lookup"
+    assert remember_tool(client, name="store").name == "store"
+
+
+def test_recall_formats_hits_by_descending_relevance(mock_client, invoke_pydantic_tool):
+    """The answer lists one hit per line, in the server's order, with its relevance."""
+    client = mock_client(
+        hits=[
+            Hit(value="the sky is blue", score=0.9),
+            Hit(value="grass is green", score=0.5),
+        ]
+    )
+    result = invoke_pydantic_tool(recall_tool(client), keywords=["sky"])
+    assert (
+        result.content
+        == "- the sky is blue (relevance 0.900)\n- grass is green (relevance 0.500)"
+    )
+
+
+def test_recall_leads_each_hit_with_the_dates_its_fact_holds(
+    mock_client, invoke_pydantic_tool
+):
+    """Each line opens with when the fact was said and when it happened.
+
+    This line is all the model reads of a hit. Without the dates on it, "what
+    did she do the day before she told me?" has no answer, however well the
+    recall ranked. A fact given no times shows the day it was written.
+    """
+    client = mock_client(
+        hits=[
+            Hit(
+                value="anna ran the charity race",
+                score=1.0,
+                timestamp="2026-01-02T03:04:05Z",
+                said=datetime(2023, 5, 8, tzinfo=timezone.utc),
+                occurred=[
+                    Interval(
+                        start=datetime(2023, 5, 7, tzinfo=timezone.utc),
+                        end=datetime(2023, 5, 8, tzinfo=timezone.utc),
+                    )
+                ],
+            ),
+            Hit(
+                value="anna is rowing again",
+                score=0.412,
+                timestamp="2026-01-02T03:04:05Z",
+            ),
+        ]
+    )
+    result = invoke_pydantic_tool(recall_tool(client), keywords=["anna"])
+    assert result.content == (
+        "- [said 2023-05-08, happened 2023-05-07] anna ran the charity race "
+        "(relevance 1.000)\n"
+        "- [2026-01-02] anna is rowing again (relevance 0.412)"
+    )
+
+
+def test_recall_description_says_what_the_dates_are(mock_client):
+    """The description tells the model what the dates in front of a fact are.
+
+    The description is the only place the model can learn that the first date
+    is when the fact was said and the second when it happened. Read the other
+    way round, every "before" and "after" it answers comes out reversed.
+    """
+    description = recall_tool(mock_client()).description
+    assert "when it was said and when what it states happened" in description
+
+
+def test_recall_on_an_empty_graph_says_nothing_is_stored(
+    mock_client, invoke_pydantic_tool
+):
+    """A recall of a graph that holds nothing says memory is empty.
+
+    The model then knows a missing answer is not a weak match it could retry
+    with other keywords, since nothing has been remembered at all.
+    """
+    client = mock_client()
+    client.recall.return_value = RecallResult(count=0, hits=[], empty=True)
+    result = invoke_pydantic_tool(recall_tool(client), keywords=["anything"])
+    assert result.content == "Nothing has been stored in memory yet."
+
+
+def test_recall_without_hits_says_so_rather_than_returning_empty(
+    mock_client, invoke_pydantic_tool
+):
+    """A recall that matched nothing says so in words.
+
+    An empty string would read to the model as a broken tool. The sentence
+    tells it to answer from its own context instead.
+    """
+    result = invoke_pydantic_tool(recall_tool(mock_client()), keywords=["nothing"])
+    assert result.content == "No stored facts matched those keywords."
+
+
+def test_recall_reports_server_errors_as_text(mock_client, invoke_pydantic_tool):
+    """A FraiseError comes back as the tool's answer instead of being raised.
+
+    Raised, it would end the agent run, and the model would never see the
+    server's message.
+    """
+    client = mock_client(raises=FraiseError("connection refused"))
+    result = invoke_pydantic_tool(recall_tool(client), keywords=["anything"])
+    assert result.content == "memory lookup failed: connection refused"
+
+
+def test_recall_passes_graph_and_budgets_through(mock_client, invoke_pydantic_tool):
+    """The tool's graph and the model's keywords, top and depth reach recall as given."""
+    client = mock_client()
+    invoke_pydantic_tool(
+        recall_tool(client, graph=3), keywords=["a", "b"], top=7, depth=2
+    )
+    client.recall.assert_called_once_with(
+        "a", "b", graph=3, top=7, depth=2, vector=None, embed=False
+    )
+
+
+def test_recall_defaults_top_and_leaves_depth_to_the_server(
+    mock_client, invoke_pydantic_tool
+):
+    """An omitted top takes the tool's default. An omitted depth is passed as None.
+
+    With no depth, no clause is emitted and the server's configured lane
+    applies. A tool-side depth would be a lane the tool cannot use, since it
+    names no topic or entity. Any value above the floor would draw a warning
+    on every call.
+    """
+    client = mock_client()
+    invoke_pydantic_tool(recall_tool(client), keywords=["a"])
+    call = client.recall.call_args.kwargs
+    assert call["top"] == 5
+    assert call["depth"] is None
+
+
+def test_recall_schema_bounds_depth_to_the_lanes(mock_client):
+    """The generated schema carries the lanes' range on depth's integer branch.
+
+    The bound rides on the parameter's annotation. This pins that the framework
+    passes it to the model, rather than dropping it on the way to JSON Schema.
+    """
+    schema = recall_tool(mock_client()).tool_def.parameters_json_schema
+    depth = schema["properties"]["depth"]
+    integer = next(branch for branch in depth["anyOf"] if branch["type"] == "integer")
+    assert (integer["minimum"], integer["maximum"]) == (0, 2)
+
+
+def test_recall_schema_describes_each_argument(mock_client):
+    """Each argument reaches the model with the description its docstring gives.
+
+    Pydantic AI reads the descriptions from the function's ``Args:`` section.
+    Without them the model sees bare names and has to guess what a lane is.
+    """
+    properties = recall_tool(mock_client()).tool_def.parameters_json_schema[
+        "properties"
+    ]
+    assert all(
+        properties[name].get("description") for name in ("keywords", "top", "depth")
+    )
+
+
+@pytest.mark.parametrize("depth", [-1, 3, 99])
+def test_recall_refuses_a_depth_past_the_lanes_before_calling_the_server(
+    depth, mock_client, invoke_pydantic_tool
+):
+    """An out-of-range depth fails the framework's argument validation.
+
+    The run hands the model the validation error and asks it to retry, instead
+    of raising into the agent loop. The server is never called. The schema
+    already told the model the range, so the correction is one retry away.
+    """
+    client = mock_client()
+    result = invoke_pydantic_tool(recall_tool(client), keywords=["a"], depth=depth)
+    assert (result.outcome, result.retry.cause) == ("retried", "validation_error")
+    client.recall.assert_not_called()
+
+
+def test_recall_vectorises_through_the_embedder(
+    mock_client, invoke_pydantic_tool, callable_embedder
+):
+    """The keywords, joined into one text, are encoded once and sent as the vector.
+
+    The tool passes ``embed=False``. It has already encoded, so the client must
+    not encode again.
+    """
+    client = mock_client()
+    embedder = callable_embedder()
+    invoke_pydantic_tool(recall_tool(client, embedder=embedder), keywords=["ab", "cd"])
+    embedder.assert_called_once_with("ab cd")
+    call = client.recall.call_args.kwargs
+    assert call["vector"] == [5.0] * 4
+    assert call["embed"] is False
+
+
+def test_recall_without_an_embedder_sends_no_vector(mock_client, invoke_pydantic_tool):
+    """Without an embedder the recall is keyword-only."""
+    client = mock_client()
+    invoke_pydantic_tool(recall_tool(client), keywords=["a"])
+    assert client.recall.call_args.kwargs["vector"] is None
+
+
+def test_remember_confirms_what_it_stored(mock_client, invoke_pydantic_tool):
+    """The answer repeats the fact stored, so the model sees what was kept."""
+    client = mock_client()
+    result = invoke_pydantic_tool(remember_tool(client), fact="the sky is blue")
+    assert result.content == "Stored: the sky is blue"
+    assert client.remember.call_args.args == ("the sky is blue",)
+
+
+def test_remember_passes_topics_entities_and_graph(mock_client, invoke_pydantic_tool):
+    """The fact, its topics and entities, and the tool's graph reach remember as given."""
+    client = mock_client()
+    invoke_pydantic_tool(
+        remember_tool(client, graph=2),
+        fact="anne likes orange",
+        topics=["colour"],
+        entities=["anne"],
+    )
+    client.remember.assert_called_once_with(
+        "anne likes orange",
+        graph=2,
+        topics=["colour"],
+        entities=["anne"],
+        vector=None,
+        embed=False,
+    )
+
+
+def test_remember_reports_server_errors_as_text(mock_client, invoke_pydantic_tool):
+    """A FraiseError on remember comes back as the tool's answer instead of being raised."""
+    client = mock_client(raises=FraiseError("bad value"))
+    result = invoke_pydantic_tool(remember_tool(client), fact="x")
+    assert result.content == "could not store the fact: bad value"
+
+
+def test_remember_vectorises_through_the_embedder(
+    mock_client, invoke_pydantic_tool, callable_embedder
+):
+    """The fact is encoded once and sent as the vector, with ``embed=False``."""
+    client = mock_client()
+    embedder = callable_embedder()
+    invoke_pydantic_tool(remember_tool(client, embedder=embedder), fact="hello")
+    embedder.assert_called_once_with("hello")
+    call = client.remember.call_args.kwargs
+    assert call["vector"] == [5.0] * 4
+    assert call["embed"] is False

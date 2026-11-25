@@ -344,6 +344,28 @@ print(result.final_output)
 
 A complete, Docker-runnable agent lives in [`examples/openai-agents`](./examples/openai-agents).
 
+### Pydantic AI
+
+`memory_tools(client)` returns bound `recall_memory` and `remember_fact` tools for the agent's `tools=`:
+
+```python
+from pydantic_ai import Agent
+from fraise_sdk import FraiseClient
+from fraise_sdk.integrations.pydantic_ai import memory_tools
+
+fraise = FraiseClient("http://localhost:9876")
+agent = Agent(
+    "openai:gpt-5-nano",
+    instructions="Remember durable facts the user shares, and recall them when relevant.",
+    tools=memory_tools(fraise),
+)
+
+result = agent.run_sync("My favourite colour is orange.")
+print(result.output)
+```
+
+A complete, Docker-runnable agent, with a control run that has no memory, lives in [`examples/pydantic-ai`](./examples/pydantic-ai).
+
 ## References
 
 * [Roadmap](https://github.com/orgs/FraiseHQ/projects/1/views/1)

@@ -8,6 +8,7 @@ A Python client for a [Fraise](../../README.md) memory server, plus ready-made m
 pip install fraise-sdk                 # core client only
 pip install 'fraise-sdk[openai]'       # + OpenAI Agents SDK tools
 pip install 'fraise-sdk[anthropic]'    # + Claude Agent SDK tools
+pip install 'fraise-sdk[pydantic-ai]'  # + Pydantic AI tools
 pip install 'fraise-sdk[huggingface]'  # + Hugging Face embedder
 pip install 'fraise-sdk[fastembed]'    # + local fastembed embedder
 ```
@@ -160,6 +161,30 @@ options = ClaudeAgentOptions(
 `memory_server(fraise, embedder=OpenAIEmbedder())` makes the tools vectorise implicitly, exactly as in the OpenAI integration.
 
 See [`examples/claude-agent-sdk/`](../../examples/claude-agent-sdk) for a complete, Docker-runnable script.
+
+## Pydantic AI tools
+
+`memory_tools(client)` returns two Pydantic AI `Tool`s, `recall_memory` and `remember_fact`, bound to one memory graph, for the agent's `tools=`:
+
+```python
+from pydantic_ai import Agent
+from fraise_sdk import FraiseClient
+from fraise_sdk.integrations.pydantic_ai import memory_tools
+
+fraise = FraiseClient("http://localhost:9876")
+agent = Agent(
+    "openai:gpt-5-nano",
+    instructions="Remember durable facts the user shares, and recall them when relevant.",
+    tools=memory_tools(fraise),
+)
+
+result = agent.run_sync("My favourite colour is orange. Remember that.")
+print(result.output)
+```
+
+The extra brings in `pydantic-ai-slim` alone; install the model provider your agent runs on beside it, such as `pydantic-ai-slim[openai]` for the agent above. `memory_tools(fraise, embedder=OpenAIEmbedder())` makes the tools vectorise implicitly, exactly as in the OpenAI integration.
+
+See [`examples/pydantic-ai/`](../../examples/pydantic-ai) for a complete, Docker-runnable script.
 
 ## Notes & limits
 

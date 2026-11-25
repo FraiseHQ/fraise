@@ -1,0 +1,44 @@
+---
+title: "Pydantic AI"
+description: "memory_tools(client) returns bound recall_memory and remember_fact tools for a Pydantic AI agent"
+---
+
+`memory_tools(client)` returns two Pydantic AI `Tool`s bound to that client, `recall_memory` and `remember_fact`, for the agent's `tools=`:
+
+```sh
+pip install 'fraise-sdk[pydantic-ai]' 'pydantic-ai-slim[openai]'
+```
+
+```python
+from pydantic_ai import Agent
+from fraise_sdk import FraiseClient
+from fraise_sdk.integrations.pydantic_ai import memory_tools
+
+fraise = FraiseClient("http://localhost:9876")
+agent = Agent(
+    "openai:gpt-5-nano",
+    instructions="Remember durable facts the user shares, and recall them when relevant.",
+    tools=memory_tools(fraise),
+)
+
+result = agent.run_sync("My favourite colour is orange.")
+print(result.output)
+```
+
+The `pydantic-ai` extra brings in `pydantic-ai-slim` alone, so the tools work with any model Pydantic AI supports; install the provider your agent runs on beside it, `pydantic-ai-slim[openai]` for the agent above.
+
+A complete, Docker-runnable agent lives in `examples/pydantic-ai` in the Fraise repository. It runs two turns as separate agent runs, a fact then a question, so the answer can only come from memory, and runs them again on an identical agent without the tools as a control, which cannot answer.
+
+## What the tools do
+
+Both are thin wrappers over the [query endpoint](/docs/http-api/endpoints/query): `remember_fact` asserts one self-contained fact with its topics and entities, `recall_memory` seeds a search and returns ranked hits. The client is the same [Python SDK](/docs/integrations/python-sdk) client, and `graph=` binds both tools to one memory graph.
+
+Pydantic AI builds each tool's schema from its signature and docstring and validates the model's arguments against it, so a `depth` outside 0 to 2 goes back to the model as a retry and never reaches the server.
+
+`recall_memory` answers with one line for each fact, best first, each led by its dates: when the fact was said and when what it states happened. It is the line [`fraise mcp`](/docs/integrations/mcp#what-a-recall-reads-like) prints, so a model reads its memory the same way through either.
+
+The tools send no vector unless you give them an embedder of their own — `memory_tools(fraise, embedder=OpenAIEmbedder())` — which then encodes the text of every recall and remember they make.
+
+## Instructions matter more than schemas
+
+The tool schemas tell the model *how* to call; the instructions tell it *when*. Recall before answering anything that leans on earlier decisions, and remember only what will still matter in a later session.
