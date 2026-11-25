@@ -51,9 +51,6 @@ jobs:
           install_args: "--locked"
 
       - name: Test
-        run: mise run test:go
-
-      - name: Coverage
         run: mise run coverage:go
 
       - name: Upload coverage to Codecov
