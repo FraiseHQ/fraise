@@ -32,7 +32,7 @@ jobs:
       # The token is scoped to this repository and to what release-please
       # touches: the branch, commit, tag and release (contents), its PR, and
       # the autorelease:* labels (issues).
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         id: fraise-bot
         with:
           client-id: ${{ secrets.FRAISE_BOT_CLIENT_ID }}
