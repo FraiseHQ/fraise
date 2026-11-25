@@ -199,6 +199,9 @@ func TestRememberEqual(t *testing.T) {
 		"said at another precision": {with(func(r *Remember[string, float32]) {
 			r.Said = containers.AbsoluteTime[string]{T: time.Date(2023, time.May, 8, 0, 0, 0, 0, time.UTC)}
 		}), false},
+		"said at another offset": {with(func(r *Remember[string, float32]) {
+			r.Said = containers.AbsoluteTime[string]{T: time.Date(2023, time.May, 8, 9, 0, 0, 0, time.FixedZone("", 9*60*60)), Precision: containers.Day}
+		}), false},
 		"no said": {with(func(r *Remember[string, float32]) { r.Said = nil }), false},
 		"occurred": {with(func(r *Remember[string, float32]) {
 			r.Occurred = []containers.TimeValue[string]{day(6), day(9)}
