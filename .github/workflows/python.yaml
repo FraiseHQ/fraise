@@ -14,6 +14,10 @@ on:
       - Dockerfile.fraise
       - docker-compose.yaml
       - mise.toml
+      - "uv.lock"
+      - "pyproject.toml"
+      - "tests/pyproject.toml"
+      - "tests/fraise.config.toml"
       - ".github/workflows/python.yaml"
   pull_request:
     paths:
@@ -24,6 +28,10 @@ on:
       - Dockerfile.fraise
       - docker-compose.yaml
       - mise.toml
+      - "uv.lock"
+      - "pyproject.toml"
+      - "tests/pyproject.toml"
+      - "tests/fraise.config.toml"
       - ".github/workflows/python.yaml"
 
 concurrency:
