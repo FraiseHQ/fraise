@@ -25,6 +25,8 @@ package scoring_test
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 )
 
@@ -46,5 +48,30 @@ func TestSourceStringNamesEveryStage(t *testing.T) {
 				t.Errorf("Source(%d).String() = %q, want %q", src, got, want)
 			}
 		})
+	}
+}
+
+// TestCandidatesSightKeepsEachCandidatesSightings pins the shared array a
+// reading's sightings live in. a and b are sighted side by side by the text
+// reading, then a again by the vector reading. Appending a's vector sighting
+// must copy a's list out of the array. Writing in place would overwrite b's
+// text sighting with it.
+func TestCandidatesSightKeepsEachCandidatesSightings(t *testing.T) {
+	text := func(rank int) scoring.Contribution[string, float64] {
+		return scoring.Contribution[string, float64]{Src: scoring.SrcText, Score: float64(10 - rank), Rank: uint16(rank), Count: 1}
+	}
+	vector := func(rank int) scoring.Contribution[string, float64] {
+		return scoring.Contribution[string, float64]{Src: scoring.SrcVector, Score: 0.5, Rank: uint16(rank), Count: 1}
+	}
+	got := make(scoring.Candidates[string, float64])
+	got.Sight([]string{"a", "b"}, text)
+	got.Sight([]string{"a"}, vector)
+
+	want := scoring.Candidates[string, float64]{
+		"a": {text(0), vector(0)},
+		"b": {text(1)},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Candidates after two readings mismatch (-want +got):\n%s", diff)
 	}
 }
