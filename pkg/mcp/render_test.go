@@ -490,18 +490,15 @@ func TestRenderRecall(t *testing.T) {
 // write is acknowledged with a status token rather than a payload. Warnings
 // are appended when the parse had something to say.
 func TestRenderRemember(t *testing.T) {
-	cases := []struct {
-		name string
+	cases := map[string]struct {
 		out  RememberOutput
 		want string
 	}{
-		{
-			name: "a clean write is a bare confirmation",
+		"a clean write is a bare confirmation": {
 			out:  RememberOutput{Status: "ok"},
 			want: "Remembered.",
 		},
-		{
-			name: "warnings ride under the confirmation",
+		"warnings ride under the confirmation": {
 			out: RememberOutput{
 				Status:   "ok",
 				Warnings: []string{"parse warning at column 15"},
@@ -510,8 +507,8 @@ func TestRenderRemember(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			if got := renderRemember(tc.out); got != tc.want {
 				t.Errorf("renderRemember = %q, want %q", got, tc.want)
 			}

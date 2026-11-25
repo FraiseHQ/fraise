@@ -26,7 +26,6 @@ import (
 	"errors"
 	"math"
 	"math/rand"
-	"reflect"
 	"testing"
 
 	"github.com/FraiseHQ/fraise/internal/comparator"
@@ -163,11 +162,11 @@ func TestRPTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 		t.Fatalf("Search = %v, want nil", err)
 	}
 	got, scores := readings[0], readingScores[0]
-	if want := []float64{1, 1, 1, 1}; !reflect.DeepEqual(scores, want) {
-		t.Fatalf("Search scores = %v, want %v — the four vectors must tie for the tiebreak to be under test", scores, want)
+	if diff := cmp.Diff([]float64{1, 1, 1, 1}, scores); diff != "" {
+		t.Fatalf("Search scores mismatch, the four vectors must tie for the tiebreak to be under test (-want +got):\n%s", diff)
 	}
-	if want := []int{1, 3, 7, 9}; !reflect.DeepEqual(got, want) {
-		t.Errorf("Search() = %v, want %v (equidistant vectors ranked by key)", got, want)
+	if diff := cmp.Diff([]int{1, 3, 7, 9}, got); diff != "" {
+		t.Errorf("Search() mismatch, want equidistant vectors ranked by key (-want +got):\n%s", diff)
 	}
 }
 
@@ -369,8 +368,11 @@ func TestRPTreeIndexSearchFindsKeyBehindStaleCopy(t *testing.T) {
 		t.Fatalf("Search = %v, want nil", err)
 	}
 	keys, scores := readings[0], readingScores[0]
-	if !reflect.DeepEqual(keys, []string{"a", "b"}) || !reflect.DeepEqual(scores, []float64{0, 1}) {
-		t.Errorf("Search() = (%v, %v), want ([a b], [0 1])", keys, scores)
+	if diff := cmp.Diff([]string{"a", "b"}, keys); diff != "" {
+		t.Errorf("Search() keys mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]float64{0, 1}, scores); diff != "" {
+		t.Errorf("Search() scores mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -405,8 +407,8 @@ func TestRPTreeIndexFlushIsReproducible(t *testing.T) {
 		if errA != nil || errB != nil {
 			t.Fatalf("Search = %v, %v; want nil", errA, errB)
 		}
-		if !reflect.DeepEqual(gotA, gotB) {
-			t.Fatalf("query %d: identical writes answered %v and %v after a rebuild, want the same forest", q, gotA, gotB)
+		if diff := cmp.Diff(gotA, gotB); diff != "" {
+			t.Fatalf("query %d: identical writes answered differently after a rebuild, want the same forest (-first +second):\n%s", q, diff)
 		}
 	}
 }
@@ -483,8 +485,8 @@ func TestRPTreeIndexFlushRebuildsForest(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Search on the live-only index = %v, want nil", err)
 		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("query %d: flushed index answered %v, live-only index %v; want the forest rebuilt from the live vectors alone", q, got, want)
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatalf("query %d: flushed index mismatch with the live-only index, want the forest rebuilt from the live vectors alone (-want +got):\n%s", q, diff)
 		}
 	}
 }
@@ -522,8 +524,8 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 	}
 	got, scores := readings[0], readingScores[0]
 	want := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Search(k=10) order = %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("Search(k=10) order mismatch (-want +got):\n%s", diff)
 	}
 	if len(scores) != len(got) {
 		t.Fatalf("Search returned %d keys but %d scores; slices must be parallel", len(got), len(scores))
@@ -545,11 +547,11 @@ func ranksTenByDistance[P float32 | float64](t *testing.T) {
 		t.Fatalf("Search(k=3) = %v, want nil", err)
 	}
 	got3, scores3 := readings[0], readingScores[0]
-	if want3 := []int{1, 2, 3}; !reflect.DeepEqual(got3, want3) {
-		t.Errorf("Search(k=3) keys = %v, want %v", got3, want3)
+	if diff := cmp.Diff([]int{1, 2, 3}, got3); diff != "" {
+		t.Errorf("Search(k=3) keys mismatch (-want +got):\n%s", diff)
 	}
-	if want3 := []P{1, 2, 3}; !reflect.DeepEqual(scores3, want3) {
-		t.Errorf("Search(k=3) scores = %v, want %v", scores3, want3)
+	if diff := cmp.Diff([]P{1, 2, 3}, scores3); diff != "" {
+		t.Errorf("Search(k=3) scores mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -590,8 +592,8 @@ func TestRPTreeSearchIdenticalAcrossPrecision(t *testing.T) {
 	got32 := nearestKeys[float32](pts, []int{0, 0}, k)
 	got64 := nearestKeys[float64](pts, []int{0, 0}, k)
 
-	if !reflect.DeepEqual(got32, got64) {
-		t.Errorf("nearest-neighbour order differs by precision:\n float32 = %v\n float64 = %v", got32, got64)
+	if diff := cmp.Diff(got32, got64); diff != "" {
+		t.Errorf("nearest-neighbour order differs by precision (-float32 +float64):\n%s", diff)
 	}
 }
 
@@ -692,8 +694,8 @@ func TestRPTreeIndexSearchExactMatchIsDistanceZero(t *testing.T) {
 		t.Fatalf("Search = %v, want nil", err)
 	}
 	keys, scores := readings[0], readingScores[0]
-	if !reflect.DeepEqual(keys, []int{1}) {
-		t.Fatalf("Search = %v, want [1]", keys)
+	if diff := cmp.Diff([]int{1}, keys); diff != "" {
+		t.Fatalf("Search mismatch (-want +got):\n%s", diff)
 	}
 	if scores[0] != 0 || math.Signbit(scores[0]) {
 		t.Errorf("distance of an exact match = %v, want +0", scores[0])

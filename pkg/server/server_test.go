@@ -112,18 +112,18 @@ func TestFailuresOutsideTheHandlersKeepTheErrorShape(t *testing.T) {
 	s := newTestServer(t)
 	s.router.GET("/panics", func(*gin.Context) { panic("boom") })
 
-	cases := []struct {
+	cases := map[string]struct {
 		method, target string
 		status         int
 		want           string
 	}{
-		{http.MethodGet, "/api/v1/nope", http.StatusNotFound, `{"error":"no endpoint GET /api/v1/nope"}`},
-		{http.MethodGet, "/api/v1/q", http.StatusNotFound, `{"error":"no endpoint GET /api/v1/q"}`},
-		{http.MethodGet, "/panics", http.StatusInternalServerError, `{"error":"internal server error"}`},
+		"GET /api/v1/nope": {http.MethodGet, "/api/v1/nope", http.StatusNotFound, `{"error":"no endpoint GET /api/v1/nope"}`},
+		"GET /api/v1/q":    {http.MethodGet, "/api/v1/q", http.StatusNotFound, `{"error":"no endpoint GET /api/v1/q"}`},
+		"GET /panics":      {http.MethodGet, "/panics", http.StatusInternalServerError, `{"error":"internal server error"}`},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			w := s.do(tc.method, tc.target, "")
 
 			if w.Code != tc.status {

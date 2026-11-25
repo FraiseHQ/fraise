@@ -54,29 +54,25 @@ func TestRRFConsensusBeatsASingleFavourite(t *testing.T) {
 func rrfScoresExactly[P float32 | float64](t *testing.T) {
 	t.Helper()
 
-	cases := []struct {
-		name          string
+	cases := map[string]struct {
 		k             int
 		contributions []scoring.Contribution[uint64, P]
 		want          P
 	}{
-		{
-			"a rank-0 sighting is 1/k",
+		"a rank-0 sighting is 1/k": {
 			60,
 			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcText, Rank: 0}},
 			P(1) / P(60),
 		},
-		{
+		"score is deliberately ignored": {
 			// Score 999 changes nothing. Rank is the only input, and weighing
 			// magnitudes would bring back the scale calibration RRF exists to
 			// avoid.
-			"score is deliberately ignored",
 			60,
 			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcGraph, Score: 999, Rank: 0}},
 			P(1) / P(60),
 		},
-		{
-			"sightings sum across sources",
+		"sightings sum across sources": {
 			60,
 			[]scoring.Contribution[uint64, P]{
 				{Src: scoring.SrcText, Rank: 0},
@@ -85,29 +81,26 @@ func rrfScoresExactly[P float32 | float64](t *testing.T) {
 			},
 			P(1)/P(60) + P(1)/P(61) + P(1)/P(62),
 		},
-		{
+		"an anchor sighting is a rank-0 sighting": {
 			// An anchor sighting has no list, so its Rank is 0 and it
 			// scores 1/k, whatever mass it carries.
-			"an anchor sighting is a rank-0 sighting",
 			60,
 			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcAnchor, Score: 1, Rank: 0}},
 			P(1) / P(60),
 		},
-		{
-			"k is the scorer's parameter",
+		"k is the scorer's parameter": {
 			1,
 			[]scoring.Contribution[uint64, P]{{Src: scoring.SrcText, Rank: 1}},
 			P(1) / P(2),
 		},
-		{
-			"no sightings is score zero",
+		"no sightings is score zero": {
 			60,
 			nil,
 			0,
 		},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			scorer := scoring.NewRRFScorer[uint64, P](tc.k)
 			if got := scorer.Score(tc.contributions); got != tc.want {
 				t.Errorf("Score(%+v) = %v, want %v", tc.contributions, got, tc.want)

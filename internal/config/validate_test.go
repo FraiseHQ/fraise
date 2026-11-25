@@ -33,29 +33,28 @@ import (
 // notices. Whatever casing they type is accepted and rewritten to the one
 // spelling everything downstream compares against.
 func TestCanonicalAcceptsAnyCasing(t *testing.T) {
-	cases := []struct {
-		value    string
+	cases := map[string]struct {
 		accepted []string
 		want     string
 	}{
-		{"error", LogLevels, LogLevelError},
-		{"ERROR", LogLevels, LogLevelError},
-		{"Error", LogLevels, LogLevelError},
-		{"debug", LogLevels, LogLevelDebug},
-		{"WARN", LogLevels, LogLevelWarn},
-		{"json", LogFormats, LogFormatJSON},
-		{"JSON", LogFormats, LogFormatJSON},
-		{"Text", LogFormats, LogFormatText},
+		"error": {LogLevels, LogLevelError},
+		"ERROR": {LogLevels, LogLevelError},
+		"Error": {LogLevels, LogLevelError},
+		"debug": {LogLevels, LogLevelDebug},
+		"WARN":  {LogLevels, LogLevelWarn},
+		"json":  {LogFormats, LogFormatJSON},
+		"JSON":  {LogFormats, LogFormatJSON},
+		"Text":  {LogFormats, LogFormatText},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.value, func(t *testing.T) {
-			got := tc.value
+	for value, tc := range cases {
+		t.Run(value, func(t *testing.T) {
+			got := value
 			if err := Canonical(&got, "log.level", tc.accepted); err != nil {
-				t.Fatalf("Canonical(%q) returned error: %v", tc.value, err)
+				t.Fatalf("Canonical(%q) returned error: %v", value, err)
 			}
 			if got != tc.want {
-				t.Errorf("Canonical(%q) = %q, want the canonical %q", tc.value, got, tc.want)
+				t.Errorf("Canonical(%q) = %q, want the canonical %q", value, got, tc.want)
 			}
 		})
 	}
@@ -106,36 +105,36 @@ func TestValidateAcceptsTheDefaults(t *testing.T) {
 // in one function, "invalid value" alone would not tell an operator which line
 // to fix.
 func TestValidateChecksEverySetting(t *testing.T) {
-	cases := []struct {
-		name   string // the dotted path the error must name
+	// Each key is the dotted path the error must name.
+	cases := map[string]struct {
 		poison func(*ConfigSet, string)
 	}{
-		{"log.level", func(c *ConfigSet, v string) { c.Log.Level = v }},
-		{"log.format", func(c *ConfigSet, v string) { c.Log.Format = v }},
-		{"db.precision", func(c *ConfigSet, v string) { c.DB.Precision = v }},
-		{"db.hashing-function.name", func(c *ConfigSet, v string) { c.DB.HashingFunction.Name = v }},
-		{"db.search-algorithm.name", func(c *ConfigSet, v string) { c.DB.SearchAlgorithm.Name = v }},
-		{"db.scoring-algorithm.name", func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
-		{"db.relevance-model.name", func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
-		{"db.min-score-ratio", func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
-		{"db.window-gamma", func(c *ConfigSet, _ string) { c.DB.WindowGamma = 1.5 }},
-		{"scheduler.workers", func(c *ConfigSet, _ string) { c.Scheduler.Workers = -1 }},
-		{"db.max-depth", func(c *ConfigSet, _ string) { c.DB.MaxDepth = 3 }},
-		{"db.max-top", func(c *ConfigSet, _ string) { c.DB.MaxTop = -1 }},
-		{"db.num-graphs", func(c *ConfigSet, _ string) { c.DB.NumGraphs = 300 }},
+		"log.level":                 {func(c *ConfigSet, v string) { c.Log.Level = v }},
+		"log.format":                {func(c *ConfigSet, v string) { c.Log.Format = v }},
+		"db.precision":              {func(c *ConfigSet, v string) { c.DB.Precision = v }},
+		"db.hashing-function.name":  {func(c *ConfigSet, v string) { c.DB.HashingFunction.Name = v }},
+		"db.search-algorithm.name":  {func(c *ConfigSet, v string) { c.DB.SearchAlgorithm.Name = v }},
+		"db.scoring-algorithm.name": {func(c *ConfigSet, v string) { c.DB.ScoringAlgorithm.Name = v }},
+		"db.relevance-model.name":   {func(c *ConfigSet, v string) { c.DB.RelevanceModel.Name = v }},
+		"db.min-score-ratio":        {func(c *ConfigSet, _ string) { c.DB.MinScoreRatio = 30 }},
+		"db.window-gamma":           {func(c *ConfigSet, _ string) { c.DB.WindowGamma = 1.5 }},
+		"scheduler.workers":         {func(c *ConfigSet, _ string) { c.Scheduler.Workers = -1 }},
+		"db.max-depth":              {func(c *ConfigSet, _ string) { c.DB.MaxDepth = 3 }},
+		"db.max-top":                {func(c *ConfigSet, _ string) { c.DB.MaxTop = -1 }},
+		"db.num-graphs":             {func(c *ConfigSet, _ string) { c.DB.NumGraphs = 300 }},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			c := New()
 			tc.poison(c, "nonsense")
 
 			err := c.validate()
 			if !errors.Is(err, ErrInvalidValue) {
-				t.Fatalf("validate() with a bad %s = %v, want an ErrInvalidValue", tc.name, err)
+				t.Fatalf("validate() with a bad %s = %v, want an ErrInvalidValue", name, err)
 			}
-			if !strings.Contains(err.Error(), tc.name) {
-				t.Errorf("error %q does not name the setting %q", err, tc.name)
+			if !strings.Contains(err.Error(), name) {
+				t.Errorf("error %q does not name the setting %q", err, name)
 			}
 		})
 	}
@@ -277,18 +276,21 @@ func TestValidateCanonicalisesEverySetting(t *testing.T) {
 		t.Fatalf("validate() returned error: %v", err)
 	}
 
-	for _, got := range []struct{ name, have, want string }{
-		{"log.level", c.Log.Level, LogLevelError},
-		{"log.format", c.Log.Format, LogFormatJSON},
-		{"db.precision", c.DB.Precision, PrecisionFloat64},
-		{"db.hashing-function.name", c.DB.HashingFunction.Name, HashingT1ha},
-		{"db.search-algorithm.name", c.DB.SearchAlgorithm.Name, SearchExcess},
-		{"db.scoring-algorithm.name", c.DB.ScoringAlgorithm.Name, ScoringRRF},
-		{"db.relevance-model.name", c.DB.RelevanceModel.Name, RelevanceBM25},
-	} {
-		if got.have != got.want {
-			t.Errorf("%s = %q, want the canonical %q", got.name, got.have, got.want)
-		}
+	settings := map[string]struct{ got, want string }{
+		"log.level":                 {c.Log.Level, LogLevelError},
+		"log.format":                {c.Log.Format, LogFormatJSON},
+		"db.precision":              {c.DB.Precision, PrecisionFloat64},
+		"db.hashing-function.name":  {c.DB.HashingFunction.Name, HashingT1ha},
+		"db.search-algorithm.name":  {c.DB.SearchAlgorithm.Name, SearchExcess},
+		"db.scoring-algorithm.name": {c.DB.ScoringAlgorithm.Name, ScoringRRF},
+		"db.relevance-model.name":   {c.DB.RelevanceModel.Name, RelevanceBM25},
+	}
+	for name, tc := range settings {
+		t.Run(name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Errorf("%s = %q, want the canonical %q", name, tc.got, tc.want)
+			}
+		})
 	}
 }
 

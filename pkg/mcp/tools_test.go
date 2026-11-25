@@ -258,18 +258,17 @@ func TestRecallForwardsVectorParameters(t *testing.T) {
 // text an agent needs to fix its query. A body that is not the API's JSON
 // falls back to the status line rather than surfacing garbage.
 func TestDaemonErrorsSurfaceInBand(t *testing.T) {
-	cases := []struct {
-		name   string
+	cases := map[string]struct {
 		status int
 		body   string
 		want   string
 	}{
-		{"the error field surfaces verbatim", 400, `{"error":"top:0 out of range (1-1000)"}`, "top:0 out of range (1-1000)"},
-		{"a non-json body falls back to the status", 502, "<html>bad gateway</html>", "fraise answered 502"},
+		"the error field surfaces verbatim":        {400, `{"error":"top:0 out of range (1-1000)"}`, "top:0 out of range (1-1000)"},
+		"a non-json body falls back to the status": {502, "<html>bad gateway</html>", "fraise answered 502"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(tc.body))

@@ -134,16 +134,16 @@ func TestConfigSet_FromFile_Missing(t *testing.T) {
 // Starting anyway would run on defaults the operator believes they overrode.
 // The unknown key is a removed setting, a line old config files still carry.
 func TestParseRejectsAnUnusableConfigFile(t *testing.T) {
-	cases := []struct {
-		name, contents, detail string
+	cases := map[string]struct {
+		contents, detail string
 	}{
-		{"not TOML", "[log\nlevel = \"DEBUG\"\n", "toml"},
-		{"wrong type", "[server]\nport = \"9876\"\n", "port"},
-		{"unknown key", "[engine]\nallow-unanchored-recall = true\n", "engine.allow-unanchored-recall"},
+		"not TOML":    {"[log\nlevel = \"DEBUG\"\n", "toml"},
+		"wrong type":  {"[server]\nport = \"9876\"\n", "port"},
+		"unknown key": {"[engine]\nallow-unanchored-recall = true\n", "engine.allow-unanchored-recall"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), config.DefaultConfigFile)
 			if err := os.WriteFile(path, []byte(tc.contents), 0o644); err != nil {
 				t.Fatalf("writing config file: %v", err)
@@ -255,18 +255,18 @@ func missingConfig(t *testing.T) string {
 // land on the canonical spelling. An operator types `-log-level error`, and it
 // must set the level to ERROR rather than be ignored.
 func TestParseCanonicalisesLogFlags(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		args         []string
 		level, forma string
 	}{
-		{[]string{"-log-level", "error"}, config.LogLevelError, config.LogFormatText},
-		{[]string{"-log-level", "Debug"}, config.LogLevelDebug, config.LogFormatText},
-		{[]string{"-log-format", "JSON"}, config.LogLevelInfo, config.LogFormatJSON},
-		{[]string{"-log-level", "warn", "-log-format", "json"}, config.LogLevelWarn, config.LogFormatJSON},
+		"-log-level error":                 {[]string{"-log-level", "error"}, config.LogLevelError, config.LogFormatText},
+		"-log-level Debug":                 {[]string{"-log-level", "Debug"}, config.LogLevelDebug, config.LogFormatText},
+		"-log-format JSON":                 {[]string{"-log-format", "JSON"}, config.LogLevelInfo, config.LogFormatJSON},
+		"-log-level warn -log-format json": {[]string{"-log-level", "warn", "-log-format", "json"}, config.LogLevelWarn, config.LogFormatJSON},
 	}
 
-	for _, tc := range cases {
-		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			c := config.New()
 			args := append([]string{"-config", missingConfig(t)}, tc.args...)
 
@@ -431,17 +431,17 @@ func TestParseAppliesDefaultsWithoutAConfigFile(t *testing.T) {
 // port moved in the shared file moves the bridge with it. An explicit -addr
 // wins over the derivation.
 func TestParseDerivesTheMCPAddressFromThePort(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		args []string
 		want string
 	}{
-		{[]string{"-port", "4242"}, "http://127.0.0.1:4242"},
-		{nil, "http://127.0.0.1:9876"},
-		{[]string{"-port", "4242", "-addr", "http://10.0.0.5:9876"}, "http://10.0.0.5:9876"},
+		"-port 4242":                            {[]string{"-port", "4242"}, "http://127.0.0.1:4242"},
+		"no flags":                              {nil, "http://127.0.0.1:9876"},
+		"-port 4242 -addr http://10.0.0.5:9876": {[]string{"-port", "4242", "-addr", "http://10.0.0.5:9876"}, "http://10.0.0.5:9876"},
 	}
 
-	for _, tc := range cases {
-		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			c := config.New()
 			if err := c.Parse(append([]string{"-config", missingConfig(t)}, tc.args...)); errors.Is(err, config.ErrInvalidValue) || errors.Is(err, config.ErrInvalidFlag) {
 				t.Fatalf("Parse(%v) = %v, want the flags accepted", tc.args, err)

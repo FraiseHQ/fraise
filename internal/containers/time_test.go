@@ -175,40 +175,35 @@ func TestParseClockErrors(t *testing.T) {
 }
 
 func TestRelativeTimeResolve(t *testing.T) {
-	tests := []struct {
-		name string
+	tests := map[string]struct {
 		dur  time.Duration
 		now  time.Time
 		want time.Time
 	}{
-		{
-			name: "one hour ago",
+		"one hour ago": {
 			dur:  time.Hour,
 			now:  reference,
 			want: reference.Add(-time.Hour),
 		},
-		{
-			name: "thirty minutes ago",
+		"thirty minutes ago": {
 			dur:  30 * time.Minute,
 			now:  reference,
 			want: reference.Add(-30 * time.Minute),
 		},
-		{
-			name: "zero duration resolves to now",
+		"zero duration resolves to now": {
 			dur:  0,
 			now:  reference,
 			want: reference,
 		},
-		{
-			name: "negative duration resolves to the future",
+		"negative duration resolves to the future": {
 			dur:  -time.Hour,
 			now:  reference,
 			want: reference.Add(time.Hour),
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			r := RelativeTime[string]{Dur: tt.dur}
 			want := Interval{Start: tt.want, End: tt.want}
 			if diff := cmp.Diff(want, r.Resolve(tt.now)); diff != "" {
@@ -345,34 +340,30 @@ func TestAbsoluteTimeString(t *testing.T) {
 func TestTimeFilterResolve(t *testing.T) {
 	abs := time.Date(2021, time.March, 4, 5, 6, 7, 0, time.UTC)
 
-	tests := []struct {
-		name   string
+	tests := map[string]struct {
 		filter TimeFilter[string]
 		now    time.Time
 		want   time.Time
 	}{
-		{
-			name:   "absolute filter returns Abs and ignores now",
+		"absolute filter returns Abs and ignores now": {
 			filter: TimeFilter[string]{Abs: abs, IsAbs: true, Dur: time.Hour},
 			now:    reference,
 			want:   abs,
 		},
-		{
-			name:   "relative filter subtracts duration from now",
+		"relative filter subtracts duration from now": {
 			filter: TimeFilter[string]{Dur: 2 * time.Hour, IsAbs: false},
 			now:    reference,
 			want:   reference.Add(-2 * time.Hour),
 		},
-		{
-			name:   "relative filter with zero duration returns now",
+		"relative filter with zero duration returns now": {
 			filter: TimeFilter[string]{Dur: 0, IsAbs: false},
 			now:    reference,
 			want:   reference,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			want := Interval{Start: tt.want, End: tt.want}
 			if diff := cmp.Diff(want, tt.filter.Resolve(tt.now)); diff != "" {
 				t.Errorf("Resolve(%v) mismatch (-want +got):\n%s", tt.now, diff)
@@ -386,20 +377,19 @@ func TestTimeFilterResolve(t *testing.T) {
 func TestTimeValueInterface(t *testing.T) {
 	abs := time.Date(2022, time.July, 8, 9, 10, 11, 0, time.UTC)
 
-	values := []struct {
-		name string
+	values := map[string]struct {
 		tv   TimeValue[string]
 		want time.Time
 	}{
-		{"RelativeTime", RelativeTime[string]{Dur: time.Hour}, reference.Add(-time.Hour)},
-		{"AbsoluteTime", AbsoluteTime[string]{T: abs}, abs},
-		{"TimeFilter relative", TimeFilter[string]{Dur: time.Minute}, reference.Add(-time.Minute)},
-		{"TimeFilter absolute", TimeFilter[string]{Abs: abs, IsAbs: true}, abs},
-		{"RangeTime", RangeTime[string]{From: AbsoluteTime[string]{T: abs}, To: AbsoluteTime[string]{T: abs}}, abs},
+		"RelativeTime":        {RelativeTime[string]{Dur: time.Hour}, reference.Add(-time.Hour)},
+		"AbsoluteTime":        {AbsoluteTime[string]{T: abs}, abs},
+		"TimeFilter relative": {TimeFilter[string]{Dur: time.Minute}, reference.Add(-time.Minute)},
+		"TimeFilter absolute": {TimeFilter[string]{Abs: abs, IsAbs: true}, abs},
+		"RangeTime":           {RangeTime[string]{From: AbsoluteTime[string]{T: abs}, To: AbsoluteTime[string]{T: abs}}, abs},
 	}
 
-	for _, v := range values {
-		t.Run(v.name, func(t *testing.T) {
+	for name, v := range values {
+		t.Run(name, func(t *testing.T) {
 			want := Interval{Start: v.want, End: v.want}
 			if diff := cmp.Diff(want, v.tv.Resolve(reference)); diff != "" {
 				t.Errorf("Resolve(%v) mismatch (-want +got):\n%s", reference, diff)
@@ -417,25 +407,24 @@ func TestTimeValueHash(t *testing.T) {
 	month := AbsoluteTime[string]{T: time.Date(2022, time.July, 1, 0, 0, 0, 0, time.UTC), Precision: Month}
 	year := AbsoluteTime[string]{T: time.Date(2022, time.January, 1, 0, 0, 0, 0, time.UTC), Precision: Year}
 
-	tests := []struct {
-		name string
+	tests := map[string]struct {
 		tv   TimeValue[string]
 		want string
 	}{
-		{"RelativeTime", RelativeTime[string]{Dur: time.Hour}, "H(r1h0m0s)"},
-		{"AbsoluteTime", AbsoluteTime[string]{T: abs}, "H(a2022-07-08T09:10:11Z)"},
-		{"AbsoluteTime day", day, "H(ad2022-07-08T00:00:00Z)"},
-		{"AbsoluteTime month", month, "H(am2022-07-01T00:00:00Z)"},
-		{"AbsoluteTime year", year, "H(ay2022-01-01T00:00:00Z)"},
-		{"RangeTime", RangeTime[string]{From: year, To: day}, "H(s25:H(ay2022-01-01T00:00:00Z)H(ad2022-07-08T00:00:00Z))"},
-		{"RangeTime open end", RangeTime[string]{From: day}, "H(s25:H(ad2022-07-08T00:00:00Z))"},
-		{"RangeTime open start", RangeTime[string]{To: day}, "H(s0:H(ad2022-07-08T00:00:00Z))"},
-		{"TimeFilter relative", TimeFilter[string]{Dur: time.Minute}, "H(fr1m0s)"},
-		{"TimeFilter absolute", TimeFilter[string]{Abs: abs, IsAbs: true}, "H(fa2022-07-08T09:10:11Z)"},
+		"RelativeTime":         {RelativeTime[string]{Dur: time.Hour}, "H(r1h0m0s)"},
+		"AbsoluteTime":         {AbsoluteTime[string]{T: abs}, "H(a2022-07-08T09:10:11Z)"},
+		"AbsoluteTime day":     {day, "H(ad2022-07-08T00:00:00Z)"},
+		"AbsoluteTime month":   {month, "H(am2022-07-01T00:00:00Z)"},
+		"AbsoluteTime year":    {year, "H(ay2022-01-01T00:00:00Z)"},
+		"RangeTime":            {RangeTime[string]{From: year, To: day}, "H(s25:H(ay2022-01-01T00:00:00Z)H(ad2022-07-08T00:00:00Z))"},
+		"RangeTime open end":   {RangeTime[string]{From: day}, "H(s25:H(ad2022-07-08T00:00:00Z))"},
+		"RangeTime open start": {RangeTime[string]{To: day}, "H(s0:H(ad2022-07-08T00:00:00Z))"},
+		"TimeFilter relative":  {TimeFilter[string]{Dur: time.Minute}, "H(fr1m0s)"},
+		"TimeFilter absolute":  {TimeFilter[string]{Abs: abs, IsAbs: true}, "H(fa2022-07-08T09:10:11Z)"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			if got := tt.tv.Hash(fakeHasher{}); got != tt.want {
 				t.Errorf("Hash() = %q, want %q", got, tt.want)
 			}
@@ -535,30 +524,29 @@ func TestTimeValueEqual(t *testing.T) {
 }
 
 func TestParseTimeValueRelative(t *testing.T) {
-	tests := []struct {
-		in   string
+	tests := map[string]struct {
 		want time.Duration
 	}{
-		{"45s", 45 * time.Second},
-		{"30m", 30 * time.Minute},
-		{"2h", 2 * time.Hour},
-		{"7d", 7 * 24 * time.Hour},
-		{"1w", 7 * 24 * time.Hour},
-		{"0d", 0}, // zero is allowed
+		"45s": {45 * time.Second},
+		"30m": {30 * time.Minute},
+		"2h":  {2 * time.Hour},
+		"7d":  {7 * 24 * time.Hour},
+		"1w":  {7 * 24 * time.Hour},
+		"0d":  {0}, // zero is allowed
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			got, err := ParseTimeValue[string](tt.in)
+	for in, tt := range tests {
+		t.Run(in, func(t *testing.T) {
+			got, err := ParseTimeValue[string](in)
 			if err != nil {
-				t.Fatalf("ParseTimeValue(%q) unexpected error: %v", tt.in, err)
+				t.Fatalf("ParseTimeValue(%q) unexpected error: %v", in, err)
 			}
 			rel, ok := got.(RelativeTime[string])
 			if !ok {
-				t.Fatalf("ParseTimeValue(%q) = %T, want RelativeTime", tt.in, got)
+				t.Fatalf("ParseTimeValue(%q) = %T, want RelativeTime", in, got)
 			}
 			if rel.Dur != tt.want {
-				t.Errorf("ParseTimeValue(%q).Dur = %v, want %v", tt.in, rel.Dur, tt.want)
+				t.Errorf("ParseTimeValue(%q).Dur = %v, want %v", in, rel.Dur, tt.want)
 			}
 		})
 	}
@@ -591,28 +579,27 @@ func TestParseTimeValueAbsolute(t *testing.T) {
 }
 
 func TestParseTimeValueErrors(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
+	tests := map[string]struct {
+		in string
 	}{
-		{"empty", ""},
-		{"bare number, no unit", "7"},
-		{"garbage", "abc"},
-		{"unit suffix, non-numeric prefix", "xd"},
-		{"negative relative", "-5d"},
-		{"signed relative", "+7d"},
-		{"unknown unit", "7x"},
-		{"fractional not supported", "1.5h"},
-		{"invalid date", "2026-13-40"},
-		{"invalid month", "2026-13"},
-		{"month of one digit", "2026-1"},
-		{"year of three digits", "202"},
-		{"year of five digits", "20260"},
-		{"date with a trailing dash", "2026-01-"},
+		"empty":                           {""},
+		"bare number, no unit":            {"7"},
+		"garbage":                         {"abc"},
+		"unit suffix, non-numeric prefix": {"xd"},
+		"negative relative":               {"-5d"},
+		"signed relative":                 {"+7d"},
+		"unknown unit":                    {"7x"},
+		"fractional not supported":        {"1.5h"},
+		"invalid date":                    {"2026-13-40"},
+		"invalid month":                   {"2026-13"},
+		"month of one digit":              {"2026-1"},
+		"year of three digits":            {"202"},
+		"year of five digits":             {"20260"},
+		"date with a trailing dash":       {"2026-01-"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			got, err := ParseTimeValue[string](tt.in)
 			if err == nil {
 				t.Fatalf("ParseTimeValue(%q) = %#v, want error", tt.in, got)
@@ -630,37 +617,36 @@ func TestParseTimeValueErrors(t *testing.T) {
 // since:106752d would resolve to a bound in the future that empties every
 // window. The error names the unit's limit and still reads as ErrInvalidTime.
 func TestParseTimeValueBoundsRelativeDurations(t *testing.T) {
-	tests := []struct {
-		in  string
+	tests := map[string]struct {
 		max int64 // 0: the value is in range and must parse
 	}{
-		{"106751d", 0},
-		{"106752d", 106751},
-		{"15250w", 0},
-		{"15251w", 15250},
-		{"9223372036s", 0},
-		{"9223372037s", 9223372036},
-		{"99999999999999999999d", 106751}, // past int64 itself
+		"106751d":               {0},
+		"106752d":               {106751},
+		"15250w":                {0},
+		"15251w":                {15250},
+		"9223372036s":           {0},
+		"9223372037s":           {9223372036},
+		"99999999999999999999d": {106751}, // past int64 itself
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			got, err := ParseTimeValue[string](tt.in)
+	for in, tt := range tests {
+		t.Run(in, func(t *testing.T) {
+			got, err := ParseTimeValue[string](in)
 
 			if tt.max == 0 {
 				rt, ok := got.(RelativeTime[string])
 				if err != nil || !ok || rt.Dur <= 0 {
-					t.Fatalf("ParseTimeValue(%q) = %#v, %v; want a positive relative duration", tt.in, got, err)
+					t.Fatalf("ParseTimeValue(%q) = %#v, %v; want a positive relative duration", in, got, err)
 				}
 				return
 			}
 
 			var rangeErr *DurationRangeError
 			if !errors.As(err, &rangeErr) {
-				t.Fatalf("ParseTimeValue(%q) = %#v, %v; want a DurationRangeError", tt.in, got, err)
+				t.Fatalf("ParseTimeValue(%q) = %#v, %v; want a DurationRangeError", in, got, err)
 			}
-			if rangeErr.Max != tt.max || rangeErr.Unit != tt.in[len(tt.in)-1] {
-				t.Errorf("range = at most %d%c, want %d%c", rangeErr.Max, rangeErr.Unit, tt.max, tt.in[len(tt.in)-1])
+			if rangeErr.Max != tt.max || rangeErr.Unit != in[len(in)-1] {
+				t.Errorf("range = at most %d%c, want %d%c", rangeErr.Max, rangeErr.Unit, tt.max, in[len(in)-1])
 			}
 			if !errors.Is(err, ErrInvalidTime) {
 				t.Errorf("error %v is not an ErrInvalidTime", err)
@@ -670,26 +656,26 @@ func TestParseTimeValueBoundsRelativeDurations(t *testing.T) {
 }
 
 func TestUnitDuration(t *testing.T) {
-	tests := []struct {
-		b    byte
+	tests := map[string]struct {
 		want time.Duration
 		ok   bool
 	}{
-		{'s', time.Second, true},
-		{'m', time.Minute, true},
-		{'h', time.Hour, true},
-		{'d', 24 * time.Hour, true},
-		{'w', 7 * 24 * time.Hour, true},
-		{'x', 0, false},
-		{'y', 0, false},
-		{'D', 0, false}, // case-sensitive
+		"s": {time.Second, true},
+		"m": {time.Minute, true},
+		"h": {time.Hour, true},
+		"d": {24 * time.Hour, true},
+		"w": {7 * 24 * time.Hour, true},
+		"x": {0, false},
+		"y": {0, false},
+		"D": {0, false}, // case-sensitive
 	}
 
-	for _, tt := range tests {
-		t.Run(string(tt.b), func(t *testing.T) {
-			got, ok := unitDuration(tt.b)
+	for unit, tt := range tests {
+		t.Run(unit, func(t *testing.T) {
+			b := unit[0]
+			got, ok := unitDuration(b)
 			if got != tt.want || ok != tt.ok {
-				t.Errorf("unitDuration(%q) = (%v, %v), want (%v, %v)", tt.b, got, ok, tt.want, tt.ok)
+				t.Errorf("unitDuration(%q) = (%v, %v), want (%v, %v)", b, got, ok, tt.want, tt.ok)
 			}
 		})
 	}
