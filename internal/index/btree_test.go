@@ -27,7 +27,6 @@ import (
 	"maps"
 	"math"
 	"math/rand"
-	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -116,8 +115,9 @@ func TestBTreeIndexSearchRanksByRelevance(t *testing.T) {
 		t.Fatalf("Search = %v, want nil", err)
 	}
 	got, scores := readings[0], readingScores[0]
-	if want := []int{2, 1}; !reflect.DeepEqual(got, want) {
-		t.Errorf("Search() = %v, want %v (shorter full match first)", got, want)
+	want := []int{2, 1}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Search() mismatch, want the shorter full match first (-want +got):\n%s", diff)
 	}
 	if scores[0] <= scores[1] || scores[1] <= 0 {
 		t.Errorf("scores = %v, want strictly decreasing and positive", scores)
@@ -140,25 +140,24 @@ func TestBTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 		}
 	}
 
-	cases := []struct {
-		name string
+	cases := map[string]struct {
 		k    int
 		want []int
 	}{
-		{"every match, in key order", 0, []int{1, 3, 5, 7, 9}},
-		{"truncation keeps the lowest key", 1, []int{1}},
-		{"truncation keeps the lowest keys", 3, []int{1, 3, 5}},
+		"every match, in key order":        {0, []int{1, 3, 5, 7, 9}},
+		"truncation keeps the lowest key":  {1, []int{1}},
+		"truncation keeps the lowest keys": {3, []int{1, 3, 5}},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			for i := 0; i < 20; i++ {
 				readings, _, err := idx.Search("sky", tc.k)
 				if err != nil {
 					t.Fatalf("Search(sky, %d) = %v, want nil", tc.k, err)
 				}
 				got := readings[0]
-				if !reflect.DeepEqual(got, tc.want) {
-					t.Fatalf("Search(sky, %d) = %v on call %d, want %v every call", tc.k, got, i+1, tc.want)
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("Search(sky, %d) on call %d mismatch, want the same every call (-want +got):\n%s", tc.k, i+1, diff)
 				}
 			}
 		})
@@ -308,8 +307,8 @@ func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 		t.Fatalf("Search = %v, want nil", err)
 	}
 	keys, scores := readings[0], readingScores[0]
-	if want := []int{1, 2}; !reflect.DeepEqual(keys, want) {
-		t.Errorf("Search keys = %v, want %v (doc 1 covers the query, doc 2 its common term)", keys, want)
+	if diff := cmp.Diff([]int{1, 2}, keys); diff != "" {
+		t.Errorf("Search keys mismatch, want doc 1 (covers the query) then doc 2 (its common term) (-want +got):\n%s", diff)
 	}
 	// idf(red) = ln(1 + (2-1+0.5)/(1+0.5)) = ln 2.
 	// idf(green) = ln(1 + 0.5/2.5).
@@ -330,8 +329,8 @@ func textScoresAreBM25TimesCoverage[P float32 | float64](t *testing.T) {
 		model.Finalize(doc1, int((idfRed+idfGreen)*1024), denom),
 		model.Finalize(doc2, int(idfGreen*1024), denom),
 	}
-	if !reflect.DeepEqual(scores, want) {
-		t.Errorf("Search scores = %v, want %v (BM25 × coverage at %T)", scores, want, *new(P))
+	if diff := cmp.Diff(want, scores); diff != "" {
+		t.Errorf("Search scores mismatch, want BM25 × coverage at %T (-want +got):\n%s", *new(P), diff)
 	}
 }
 
@@ -413,8 +412,8 @@ func TestBTreeIndexSearchKeepFiltersBeforeTruncation(t *testing.T) {
 		t.Fatalf("Search(sky, 2, keep) = %v, want nil", err)
 	}
 	got, scores := readings[0], readingScores[0]
-	if !reflect.DeepEqual(got, []int{8, 9}) {
-		t.Fatalf("Search(sky, 2, keep >= 8) = %v, want [8 9]", got)
+	if diff := cmp.Diff([]int{8, 9}, got); diff != "" {
+		t.Fatalf("Search(sky, 2, keep >= 8) mismatch (-want +got):\n%s", diff)
 	}
 	for i, key := range got {
 		if scores[i] != want[key] {
@@ -504,8 +503,14 @@ func TestSearchPurity(t *testing.T) {
 			}
 			for i := 0; i < 10; i++ {
 				keys, scores, err := idx.Search("red green", 0)
-				if err != nil || !reflect.DeepEqual(keys, firstKeys) || !reflect.DeepEqual(scores, firstScores) {
-					t.Fatalf("call %d: %v %v (err %v), want %v %v every call", i+2, keys, scores, err, firstKeys, firstScores)
+				if err != nil {
+					t.Fatalf("call %d: Search = %v, want nil", i+2, err)
+				}
+				if diff := cmp.Diff(firstKeys, keys); diff != "" {
+					t.Fatalf("call %d: keys mismatch with the first call (-want +got):\n%s", i+2, diff)
+				}
+				if diff := cmp.Diff(firstScores, scores); diff != "" {
+					t.Fatalf("call %d: scores mismatch with the first call (-want +got):\n%s", i+2, diff)
 				}
 			}
 		})
@@ -578,9 +583,11 @@ func TestMatchCountEquivalentToPrePluginRanking(t *testing.T) {
 				wantScores[i] = float64(counts[key])
 			}
 
-			if !reflect.DeepEqual(gotKeys, wantKeys) || !reflect.DeepEqual(gotScores, wantScores) {
-				t.Fatalf("corpus %d, Search(%q):\n got %v %v\nwant %v %v",
-					corpus, query, gotKeys, gotScores, wantKeys, wantScores)
+			if diff := cmp.Diff(wantKeys, gotKeys); diff != "" {
+				t.Fatalf("corpus %d, Search(%q) keys mismatch (-want +got):\n%s", corpus, query, diff)
+			}
+			if diff := cmp.Diff(wantScores, gotScores); diff != "" {
+				t.Fatalf("corpus %d, Search(%q) scores mismatch (-want +got):\n%s", corpus, query, diff)
 			}
 		}
 	}
@@ -628,11 +635,14 @@ func TestBTreeIndexDeleteTombstonesUntilFlush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search after Flush = %v, want nil", err)
 	}
-	if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(beforeScores, afterScores) {
-		t.Errorf("Search before Flush = (%v, %v), after = (%v, %v); compaction must not change a ranking", before, beforeScores, after, afterScores)
+	if diff := cmp.Diff(before, after); diff != "" {
+		t.Errorf("Search keys changed across Flush, compaction must not change a ranking (-before +after):\n%s", diff)
 	}
-	if want := []int{1, 2, 3}; !reflect.DeepEqual(after[0], want) {
-		t.Errorf("Search(quick brown) = %v, want %v (the deleted document gone, the rest ranked)", after[0], want)
+	if diff := cmp.Diff(beforeScores, afterScores); diff != "" {
+		t.Errorf("Search scores changed across Flush, compaction must not change a ranking (-before +after):\n%s", diff)
+	}
+	if diff := cmp.Diff([]int{1, 2, 3}, after[0]); diff != "" {
+		t.Errorf("Search(quick brown) mismatch, want the deleted document gone and the rest ranked (-want +got):\n%s", diff)
 	}
 }
 
@@ -664,8 +674,8 @@ func TestBTreeIndexCompactsWhenDeadOutnumberLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search(shared) after compaction = %v, want nil", err)
 	}
-	if got := readings[0]; !reflect.DeepEqual(got, []int{3}) {
-		t.Errorf("Search(shared) after compaction = %v, want [3]", got)
+	if diff := cmp.Diff([]int{3}, readings[0]); diff != "" {
+		t.Errorf("Search(shared) after compaction mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -762,24 +772,26 @@ func TestBTreeIndexInformation(t *testing.T) {
 		}
 	}
 	deploy, friday := -math.Log2(3.0/4), 1.0
-	for _, tc := range []struct {
-		name        string
+	cases := map[string]struct {
 		query       string
 		key         int
 		total, held float64
 	}{
-		{"both terms held", "deploy friday", 1, deploy + friday, deploy + friday},
-		{"the common term only", "deploy friday", 2, deploy + friday, deploy},
-		{"the rarer term only", "deploy friday", 4, deploy + friday, friday},
-		{"a key not indexed", "deploy friday", 9, deploy + friday, 0},
-		{"a repeated term", "friday friday", 4, friday, friday},
-		{"an unknown term", "friday zebra", 4, friday, friday},
-		{"only unknown terms", "zebra", 1, 0, 0},
-	} {
-		total, held, _ := idx.Information(tc.query, []int{tc.key})
-		if math.Abs(total-tc.total) > 1e-12 || math.Abs(held[0]-tc.held) > 1e-12 {
-			t.Errorf("%s: Information = %v, %v, want %v, %v", tc.name, total, held[0], tc.total, tc.held)
-		}
+		"both terms held":      {"deploy friday", 1, deploy + friday, deploy + friday},
+		"the common term only": {"deploy friday", 2, deploy + friday, deploy},
+		"the rarer term only":  {"deploy friday", 4, deploy + friday, friday},
+		"a key not indexed":    {"deploy friday", 9, deploy + friday, 0},
+		"a repeated term":      {"friday friday", 4, friday, friday},
+		"an unknown term":      {"friday zebra", 4, friday, friday},
+		"only unknown terms":   {"zebra", 1, 0, 0},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			total, held, _ := idx.Information(tc.query, []int{tc.key})
+			if math.Abs(total-tc.total) > 1e-12 || math.Abs(held[0]-tc.held) > 1e-12 {
+				t.Errorf("Information = %v, %v, want %v, %v", total, held[0], tc.total, tc.held)
+			}
+		})
 	}
 }
 

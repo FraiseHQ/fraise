@@ -25,7 +25,6 @@
 package optimisation_test
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -55,17 +54,17 @@ func TestDedupeOptimiseRecall(t *testing.T) {
 	if recall == in {
 		t.Errorf("Optimise returned its input; want a deduplicated copy")
 	}
-	if want := []string{"a", "b", "a", "c", "b"}; !reflect.DeepEqual(in.Keywords, want) {
-		t.Errorf("input Keywords = %v, want %v (untouched)", in.Keywords, want)
+	if diff := cmp.Diff([]string{"a", "b", "a", "c", "b"}, in.Keywords); diff != "" {
+		t.Errorf("input Keywords changed, want them untouched (-want +got):\n%s", diff)
 	}
-	if want := []string{"a", "b", "c"}; !reflect.DeepEqual(recall.Keywords, want) {
-		t.Errorf("Keywords = %v, want %v", recall.Keywords, want)
+	if diff := cmp.Diff([]string{"a", "b", "c"}, recall.Keywords); diff != "" {
+		t.Errorf("Keywords mismatch (-want +got):\n%s", diff)
 	}
-	if want := []string{"e1", "e2"}; !reflect.DeepEqual(recall.Entities, want) {
-		t.Errorf("Entities = %v, want %v", recall.Entities, want)
+	if diff := cmp.Diff([]string{"e1", "e2"}, recall.Entities); diff != "" {
+		t.Errorf("Entities mismatch (-want +got):\n%s", diff)
 	}
-	if want := []string{"t1", "t2"}; !reflect.DeepEqual(recall.Topics, want) {
-		t.Errorf("Topics = %v, want %v", recall.Topics, want)
+	if diff := cmp.Diff([]string{"t1", "t2"}, recall.Topics); diff != "" {
+		t.Errorf("Topics mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -79,11 +78,11 @@ func TestDedupeOptimiseRecallNoDuplicates(t *testing.T) {
 
 	recall := d.Optimise(in).(*query.Recall[string, float32])
 
-	if want := []string{"a", "b", "c"}; !reflect.DeepEqual(recall.Keywords, want) {
-		t.Errorf("Keywords = %v, want %v (unchanged)", recall.Keywords, want)
+	if diff := cmp.Diff([]string{"a", "b", "c"}, recall.Keywords); diff != "" {
+		t.Errorf("Keywords changed, want them unchanged (-want +got):\n%s", diff)
 	}
-	if want := []string{"e1"}; !reflect.DeepEqual(recall.Entities, want) {
-		t.Errorf("Entities = %v, want %v (unchanged)", recall.Entities, want)
+	if diff := cmp.Diff([]string{"e1"}, recall.Entities); diff != "" {
+		t.Errorf("Entities changed, want them unchanged (-want +got):\n%s", diff)
 	}
 	if recall.Topics != nil {
 		t.Errorf("Topics = %v, want nil (unchanged)", recall.Topics)
@@ -361,7 +360,7 @@ func TestPipelineDeduplicatesRecall(t *testing.T) {
 
 	recall := p.Optimise(in).(*query.Recall[string, float32])
 
-	if want := []string{"a", "b"}; !reflect.DeepEqual(recall.Keywords, want) {
-		t.Errorf("Keywords = %v, want %v", recall.Keywords, want)
+	if diff := cmp.Diff([]string{"a", "b"}, recall.Keywords); diff != "" {
+		t.Errorf("Keywords mismatch (-want +got):\n%s", diff)
 	}
 }

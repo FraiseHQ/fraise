@@ -23,8 +23,9 @@
 package scoring_test
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/FraiseHQ/fraise/internal/graph/scoring"
 )
@@ -137,8 +138,8 @@ func TestExcessScorerPurity(t *testing.T) {
 	if unbound := scorer.Score(list); unbound == first {
 		t.Errorf("binding leaked into the shared instance: unbound fold = bound fold = %v", unbound)
 	}
-	if !reflect.DeepEqual(list, snapshot) {
-		t.Errorf("fold mutated its input: %+v, want %+v", list, snapshot)
+	if diff := cmp.Diff(snapshot, list); diff != "" {
+		t.Errorf("fold mutated its input (-want +got):\n%s", diff)
 	}
 }
 

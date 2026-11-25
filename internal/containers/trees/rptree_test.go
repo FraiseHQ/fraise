@@ -26,9 +26,10 @@ import (
 	"errors"
 	"math"
 	"math/rand"
-	"reflect"
 	"sort"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/containers/trees"
@@ -498,10 +499,10 @@ func TestRPTreeDeterministicAcrossRuns(t *testing.T) {
 	}
 
 	a, b := answers(99), answers(99)
-	if !reflect.DeepEqual(a, b) {
-		t.Fatalf("two builds with seed 99 answered differently:\n%v\n%v", a, b)
+	if diff := cmp.Diff(a, b); diff != "" {
+		t.Fatalf("two builds with seed 99 answered differently (-first +second):\n%s", diff)
 	}
-	if reflect.DeepEqual(a, answers(100)) {
+	if cmp.Diff(a, answers(100)) == "" {
 		t.Fatalf("seeds 99 and 100 answered every query alike, want the seed to shape the tree")
 	}
 }

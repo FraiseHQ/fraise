@@ -46,19 +46,18 @@ func TestNodeKeyMaterialIsTypeTagged(t *testing.T) {
 	topic := graph.Topic[string]{NodeAttributes: graph.NodeAttributes{Value: "billing"}}
 	entity := graph.NamedEntity[string]{NodeAttributes: graph.NodeAttributes{Value: "billing"}}
 
-	cases := []struct {
-		name string
+	cases := map[string]struct {
 		node graph.Node[string]
 		want string
 	}{
-		{"fact", fact, "H(fact:billing)"},
-		{"topic", &topic, "H(topic:billing)"},
-		{"named entity", &entity, "H(entity:billing)"},
-		{"mentions", graph.Mentions[string]{Fact: &fact, NamedEntity: &entity}, "H(mentions:billing\x00billing)"},
-		{"is about", graph.IsAbout[string]{Fact: &fact, Topic: &topic}, "H(isabout:billing\x00billing)"},
+		"fact":         {fact, "H(fact:billing)"},
+		"topic":        {&topic, "H(topic:billing)"},
+		"named entity": {&entity, "H(entity:billing)"},
+		"mentions":     {graph.Mentions[string]{Fact: &fact, NamedEntity: &entity}, "H(mentions:billing\x00billing)"},
+		"is about":     {graph.IsAbout[string]{Fact: &fact, Topic: &topic}, "H(isabout:billing\x00billing)"},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			if got := tc.node.Hash(fakeHasher{}); got != tc.want {
 				t.Errorf("Hash() = %q, want %q", got, tc.want)
 			}
@@ -79,23 +78,20 @@ func TestNodeKeysDistinguishTypesOfTheSameText(t *testing.T) {
 	topic := mkTopic(g, "billing", now)
 	entity := mkEntity(g, "billing", now)
 
-	nodes := []struct {
-		name string
-		node graph.Node[uint64]
-	}{
-		{"fact", fact},
-		{"topic", topic},
-		{"named entity", entity},
-		{"mentions", graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, Hasher: g.GetHasher()}},
-		{"is about", graph.IsAbout[uint64]{Fact: &fact, Topic: topic, Hasher: g.GetHasher()}},
+	nodes := map[string]graph.Node[uint64]{
+		"fact":         fact,
+		"topic":        topic,
+		"named entity": entity,
+		"mentions":     graph.Mentions[uint64]{Fact: &fact, NamedEntity: entity, Hasher: g.GetHasher()},
+		"is about":     graph.IsAbout[uint64]{Fact: &fact, Topic: topic, Hasher: g.GetHasher()},
 	}
 
 	seen := make(map[uint64]string, len(nodes))
-	for _, n := range nodes {
-		key := n.node.Key()
+	for name, node := range nodes {
+		key := node.Key()
 		if prior, dup := seen[key]; dup {
-			t.Errorf("%s and %s both key to %d, want one key per (type, value)", prior, n.name, key)
+			t.Errorf("%s and %s both key to %d, want one key per (type, value)", prior, name, key)
 		}
-		seen[key] = n.name
+		seen[key] = name
 	}
 }

@@ -70,24 +70,23 @@ func TestFullVersionReflectsInjection(t *testing.T) {
 }
 
 func TestShortVersion(t *testing.T) {
-	cases := []struct {
-		name    string
+	cases := map[string]struct {
 		version string
 		want    string
 	}{
-		{"plain semver", "1.2.3", "1.2"},
-		{"pre-release suffix", "1.2.3-rc.1", "1.2"},
-		{"v prefix", "v2.5.0", "2.5"},
-		{"v prefix with pre-release", "v1.2.3-alpha.1", "1.2"},
-		{"compiled default", "0.1.0-alpha.1", "0.1"},
-		{"build metadata", "2.0.0-beta.2+build.5", "2.0"},
-		{"multi-digit", "10.20.30", "10.20"},
-		{"already short", "1.2", "1.2"},
-		{"major only", "1", "1"},
+		"plain semver":              {"1.2.3", "1.2"},
+		"pre-release suffix":        {"1.2.3-rc.1", "1.2"},
+		"v prefix":                  {"v2.5.0", "2.5"},
+		"v prefix with pre-release": {"v1.2.3-alpha.1", "1.2"},
+		"compiled default":          {"0.1.0-alpha.1", "0.1"},
+		"build metadata":            {"2.0.0-beta.2+build.5", "2.0"},
+		"multi-digit":               {"10.20.30", "10.20"},
+		"already short":             {"1.2", "1.2"},
+		"major only":                {"1", "1"},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
 			setVersion(t, tc.version)
 			if got := version.ShortVersion(); got != tc.want {
 				t.Errorf("ShortVersion() with Version=%q = %q, want %q", tc.version, got, tc.want)
