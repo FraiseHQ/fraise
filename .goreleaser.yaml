@@ -179,3 +179,5 @@ announce:
     message_template: >-
       🍓 Fraise {{ .Tag }} is out!
       {{ .ReleaseURL }}
+
+report_sizes: true
