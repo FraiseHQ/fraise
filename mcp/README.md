@@ -45,4 +45,4 @@ A `remember` embeds its fact. A `recall` embeds its search terms, the words and 
 
 ## What a recall answers
 
-The `recall` tool answers with one line per fact, best first, and beside them with the daemon's response as structured content, under the same output schema as the built-in `fraise mcp` bridge. An `explain recall …` carries its `explain` blocks there, per fact and for the query, which the lines leave out. See [Explained recall](https://docs.getfraise.dev/docs/http-api/endpoints/explain).
+The `recall` tool answers with one line per fact, best first, each with the dates its fact holds in front, and beside them with the daemon's response as structured content, under the same output schema as the built-in `fraise mcp` bridge. An `explain recall …` carries its `explain` blocks in both: whole in the structured content, and in the lines as one for the query above the facts and one under each fact, written as the built-in bridge writes them. See [Explained recall](https://docs.getfraise.dev/docs/http-api/endpoints/explain).

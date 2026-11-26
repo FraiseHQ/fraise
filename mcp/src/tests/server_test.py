@@ -52,7 +52,186 @@ from fraise_sdk.errors import FraiseAPIError, FraiseError
                     ],
                 }
             },
-            "- a (relevance 1.235)\n- b (relevance 0.500)",
+            "- [2026-10-01] a (relevance 1.235)\n- [2026-09-30] b (relevance 0.500)",
+        ),
+        (
+            {
+                "results": {
+                    "count": 2,
+                    "hits": [
+                        {
+                            "value": "the barometer falls before the storm",
+                            "timestamp": "2026-01-02T03:04:05Z",
+                            "score": 2.5,
+                            "explain": {
+                                "seed": True,
+                                "decay": 0.9999519,
+                                "contributions": [
+                                    {
+                                        "source": "text",
+                                        "score": 1.5,
+                                        "rank": 0,
+                                        "count": 1,
+                                        "held": 0.75,
+                                    },
+                                    {
+                                        "source": "graph",
+                                        "score": 3,
+                                        "rank": 0,
+                                        "via": "weather",
+                                        "degree": 3,
+                                        "count": 2,
+                                        "named": True,
+                                    },
+                                ],
+                            },
+                        },
+                        {
+                            "value": "storm clouds gather at sea",
+                            "timestamp": "2026-01-02T03:04:05Z",
+                            "score": 0.25,
+                            "explain": {
+                                "seed": False,
+                                "decay": 0.5,
+                                "contributions": [
+                                    {
+                                        "source": "graph",
+                                        "score": 3,
+                                        "rank": 0,
+                                        "via": "sea",
+                                        "degree": 6,
+                                        "count": 1,
+                                    }
+                                ],
+                            },
+                        },
+                    ],
+                    "explain": {
+                        "background": 0.125,
+                        "admission": {"2": 0.125, "1": 0.25},
+                        "seeds": {"text": 1, "vector": 0, "graph": 0, "anchor": 0},
+                        "terms": ["barometer", "zebra"],
+                        "timings": {"text": 38000, "vector": 0, "graph": 2000000},
+                    },
+                }
+            },
+            "explain: background 0.125; admission 0.25 at depth 1, 0.125 at depth 2; "
+            "seeds anchor 0, graph 0, text 1, vector 0; terms barometer, zebra\n"
+            "- [2026-01-02] the barometer falls before the storm (relevance 2.500)\n"
+            "    seed · decay 0.9999519 · text 1.500 (rank 0, held 0.750) · "
+            "graph 3.000 via weather (named, 3 facts, 2 seeds)\n"
+            "- [2026-01-02] storm clouds gather at sea (relevance 0.250)\n"
+            "    not a seed · decay 0.5 · graph 3.000 via sea (6 facts, 1 seed)",
+        ),
+        (
+            {
+                "results": {
+                    "count": 1,
+                    "hits": [
+                        {
+                            "value": "the barometer falls before the storm",
+                            "timestamp": "2026-01-02T03:04:05Z",
+                            "score": 1,
+                            "explain": {
+                                "seed": True,
+                                "decay": 1,
+                                "contributions": [
+                                    {
+                                        "source": "anchor",
+                                        "score": 1,
+                                        "rank": 0,
+                                        "via": "weather",
+                                        "degree": 7,
+                                        "count": 1,
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "explain": {
+                        "background": 0,
+                        "seeds": {"text": 0, "vector": 0, "graph": 0, "anchor": 7},
+                        "terms": [],
+                        "timings": {"anchor": 7000},
+                    },
+                }
+            },
+            "explain: background 0; seeds anchor 7, graph 0, text 0, vector 0; "
+            "terms none\n"
+            "- [2026-01-02] the barometer falls before the storm (relevance 1.000)\n"
+            "    seed · decay 1 · anchor 1.000 via weather (7 facts)",
+        ),
+        (
+            {
+                "results": {
+                    "count": 1,
+                    "hits": [
+                        {
+                            "value": "the harbour master hauled the boats in",
+                            "timestamp": "2026-01-02T03:04:05Z",
+                            "score": 0.18,
+                            "explain": {
+                                "seed": True,
+                                "decay": 1,
+                                "contributions": [
+                                    {
+                                        "source": "text",
+                                        "score": 0.18,
+                                        "rank": 3,
+                                        "count": 1,
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "explain": {
+                        "background": 0,
+                        "seeds": {"text": 1},
+                        "terms": ["train"],
+                        "timings": {"text": 1000},
+                        "when": {
+                            "since": {
+                                "count": 2,
+                                "hits": [
+                                    {
+                                        "value": "anna won the regatta",
+                                        "timestamp": "2026-01-02T03:04:05Z",
+                                        "score": 2,
+                                    },
+                                    {
+                                        "value": "anna sailed a coastal cruise",
+                                        "timestamp": "2026-01-02T03:04:05Z",
+                                        "score": 1,
+                                    },
+                                ],
+                                "start": "2023-05-07T00:00:00Z",
+                                "end": "2023-05-17T00:00:00Z",
+                            },
+                            "until": {"count": 0, "hits": []},
+                        },
+                    },
+                }
+            },
+            "explain: background 0; seeds text 1; terms train; "
+            'since read from "anna won the regatta" and "anna sailed a coastal cruise" '
+            "→ 2023-05-07..2023-05-16; until read from no fact\n"
+            "- [2026-01-02] the harbour master hauled the boats in (relevance 0.180)\n"
+            "    seed · decay 1 · text 0.180 (rank 3, borrowed)",
+        ),
+        (
+            {
+                "results": {
+                    "count": 0,
+                    "hits": [],
+                    "explain": {
+                        "background": 0,
+                        "seeds": {},
+                        "terms": [],
+                        "timings": {},
+                    },
+                }
+            },
+            "explain: background 0; seeds none; terms none\nNo stored facts matched.",
         ),
         ({"results": {"count": 0, "hits": []}}, "No stored facts matched."),
         (
@@ -172,7 +351,12 @@ def test_render_pins_the_text_the_model_reads(body, want):
     That calls for remembering something, where a miss calls for asking
     differently, so the two must never read alike. A describe's catalogue
     renders in place of hits, the describe spelt as the server read it first,
-    then each kind of anchor, a count of one in the singular.
+    then each kind of anchor, a count of one in the singular. An explained
+    recall carries its explanation in the text, a line for the query above the
+    facts and one under each, since a client that hands the model the text
+    alone would otherwise answer an explain with the plain ranking. The cases
+    are the Go bridge's pins, so an agent that switches bridges reads the same
+    text.
     """
     assert render(body) == want
 
@@ -188,8 +372,8 @@ def test_a_recall_with_terms_carries_the_vector_of_its_terms(
     )
     assert not got.is_error
     assert got.content[0].text == (
-        "- the barometer falls before the storm (relevance 1.235)\n"
-        "- the harbour closes in a gale (relevance 0.500)"
+        "- [2026-10-01] the barometer falls before the storm (relevance 1.235)\n"
+        "- [2026-09-30] the harbour closes in a gale (relevance 0.500)"
     )
 
 
@@ -200,8 +384,8 @@ def test_an_explained_recall_carries_the_vector_of_its_terms(
 
     The daemon parses the prefix, so the statement reaches it as written, with
     vec:$v appended and the vector of the recall's own terms bound beside it.
-    The text reads the same ranked facts as the plain recall's: the explain
-    blocks ride in the structured content, not in the lines.
+    The text reads the same ranked facts as the plain recall's, with the
+    query's line above them and each fact's breakdown under it.
     """
     fraise_client.query.return_value = explained_hits
     got = call_tool(server_over(), "recall", "explain recall storm topic:weather")
@@ -211,8 +395,12 @@ def test_an_explained_recall_carries_the_vector_of_its_terms(
     )
     assert not got.is_error
     assert got.content[0].text == (
-        "- the barometer falls before the storm (relevance 1.235)\n"
-        "- the harbour closes in a gale (relevance 0.500)"
+        "explain: background 0.3; admission 0.6 at depth 1, 0.3 at depth 2; "
+        "seeds anchor 0, graph 0, text 1, vector 1; terms storm\n"
+        "- [2026-10-01] the barometer falls before the storm (relevance 1.235)\n"
+        "    seed · decay 1 · text 0.610 (rank 0, held 1.000)\n"
+        "- [2026-09-30] the harbour closes in a gale (relevance 0.500)\n"
+        "    not a seed · decay 0.5 · graph 0.610 via weather (2 facts, 1 seed)"
     )
 
 
@@ -477,6 +665,9 @@ def test_an_explained_recall_brings_its_blocks_back_through_the_command(
 ):
     """An explain recall through the running command returns the daemon's blocks.
 
+    They come back in both halves: whole in the structured content, and in the
+    text as the query's line above the fact and the fact's breakdown under it.
+
     The control graph takes no vector, so the run goes without one, and the
     fact is recalled by its own words. The client validates the structured
     content against the published schema, so a block missing a key the schema
@@ -488,7 +679,12 @@ def test_an_explained_recall_brings_its_blocks_back_through_the_command(
         "recall", f"explain recall@{control_graph} '{fact}'", "--no-vectors"
     )
     assert not got.is_error
-    assert got.content[0].text.startswith(f"- {fact} (relevance")
+    header, line, breakdown = got.content[0].text.split("\n")
+    assert header.startswith("explain: background "), header
+    assert line.endswith(
+        f"] {fact} (relevance {got.structured_content['results']['hits'][0]['score']:.3f})"
+    ), line
+    assert breakdown.startswith("    seed · decay "), breakdown
     results = got.structured_content["results"]
     assert {"background", "seeds", "terms", "timings"} <= set(results["explain"])
     assert all(
