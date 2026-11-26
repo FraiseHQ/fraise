@@ -206,10 +206,10 @@ You don't need to do anything to release your work — maintainers cut releases,
 
 - **Each component releases independently**, off its own git tag pointing at a commit on `main`:
 
-  | Component      | Tag example          | Publishes to               |
-  | -------------- | -------------------- | -------------------------- |
-  | Server         | `v0.1.1`             | GitHub Releases (binaries) |
-  | Python SDK     | `python/v1.0.1`      | PyPI (trusted publishing)  |
+  | Component      | Tag example          | Publishes to                                     |
+  | -------------- | -------------------- | ------------------------------------------------ |
+  | Server         | `v0.1.1`             | GitHub Releases (binaries)                       |
+  | Python SDK     | `python/v1.0.1`      | PyPI (trusted publishing, PEP 740 attestations)  |
 
 - A release is a **git tag**, written by release-please when a maintainer merges the release PR. The tag triggers the matching workflow: full test suite → **manual approval** on the `release` environment → publish.
 - The **container image** (`ghcr.io/fraisehq/fraise`) publishes on every merge to `main` (`:edge` + an immutable commit-SHA tag) and on server releases (`:latest` and semver tags).

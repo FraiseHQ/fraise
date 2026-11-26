@@ -27,7 +27,7 @@ import (
 	"os"
 
 	"github.com/FraiseHQ/fraise/internal/config"
-	"golang.org/x/exp/slog"
+	"log/slog"
 )
 
 // Logger writes structured log lines to stdout, filtered to the configured

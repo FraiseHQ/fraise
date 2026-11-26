@@ -491,7 +491,8 @@ func TestTimeValueEqual(t *testing.T) {
 		"relative same":            {RelativeTime[string]{Dur: time.Hour}, RelativeTime[string]{Dur: time.Hour}, true},
 		"relative other span":      {RelativeTime[string]{Dur: time.Hour}, RelativeTime[string]{Dur: time.Minute}, false},
 		"absolute same":            {AbsoluteTime[string]{T: abs}, AbsoluteTime[string]{T: abs}, true},
-		"absolute other zone":      {AbsoluteTime[string]{T: abs}, AbsoluteTime[string]{T: abs.In(time.FixedZone("CEST", 2*60*60))}, true},
+		"absolute other offset":    {AbsoluteTime[string]{T: abs}, AbsoluteTime[string]{T: abs.In(time.FixedZone("CEST", 2*60*60))}, false},
+		"absolute same offset":     {AbsoluteTime[string]{T: abs}, AbsoluteTime[string]{T: abs.In(time.FixedZone("GMT", 0))}, true},
 		"absolute other instant":   {AbsoluteTime[string]{T: abs}, AbsoluteTime[string]{T: abs.Add(time.Nanosecond)}, false},
 		"relative vs absolute":     {RelativeTime[string]{Dur: time.Hour}, AbsoluteTime[string]{T: abs}, false},
 		"relative vs filter":       {RelativeTime[string]{Dur: time.Hour}, TimeFilter[string]{Dur: time.Hour}, false},
@@ -561,7 +562,7 @@ func TestParseTimeValueAbsolute(t *testing.T) {
 		"2026-01":                   {T: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC), Precision: Month},
 		"2026":                      {T: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC), Precision: Year},
 		"2026-01-15T10:30:00Z":      {T: time.Date(2026, time.January, 15, 10, 30, 0, 0, time.UTC)},
-		"2026-01-15T10:30:00+02:00": {T: time.Date(2026, time.January, 15, 8, 30, 0, 0, time.UTC)},
+		"2026-01-15T10:30:00+02:00": {T: time.Date(2026, time.January, 15, 10, 30, 0, 0, time.FixedZone("", 2*60*60))},
 		"2026-01-15T00:00:00Z":      {T: time.Date(2026, time.January, 15, 0, 0, 0, 0, time.UTC)},
 	}
 
