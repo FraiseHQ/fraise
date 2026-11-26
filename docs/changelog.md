@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.4](https://github.com/FraiseHQ/fraise/compare/v0.4.3...v0.4.4) (2026-11-26)
+
+
+### Bug fixes
+
+* render the explanation in the fraise mcp text ([#726](https://github.com/FraiseHQ/fraise/issues/726)) ([5c84757](https://github.com/FraiseHQ/fraise/commit/5c847572d21a28d364483958091abae43d394a1c))
+
+
+### Maintenance
+
+* run the go suite once with cross-package coverage ([#715](https://github.com/FraiseHQ/fraise/issues/715)) ([3f4e2a5](https://github.com/FraiseHQ/fraise/commit/3f4e2a56c21a0a925f122d080f1b72a6eb25d5e1))
+
 ## [0.4.3](https://github.com/FraiseHQ/fraise/compare/v0.4.2...v0.4.3) (2026-11-26)
 
 

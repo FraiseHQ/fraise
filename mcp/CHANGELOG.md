@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/FraiseHQ/fraise/compare/mcp/v0.1.1...mcp/v0.1.2) (2026-11-26)
+
+
+### Bug fixes
+
+* render the explanation in the fraise mcp text ([#726](https://github.com/FraiseHQ/fraise/issues/726)) ([5c84757](https://github.com/FraiseHQ/fraise/commit/5c847572d21a28d364483958091abae43d394a1c))
+
 ## [0.1.1](https://github.com/FraiseHQ/fraise/compare/mcp/v0.1.0...mcp/v0.1.1) (2026-11-26)
 
 
