@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/FraiseHQ/fraise/compare/python/v0.4.0...python/v0.4.1) (2026-11-26)
+
+
+### Maintenance
+
+* publish PEP 740 attestations with the PyPI releases ([#724](https://github.com/FraiseHQ/fraise/issues/724)) ([d594bf4](https://github.com/FraiseHQ/fraise/commit/d594bf499074ae4527ea3b6fdb8c4b021123bd88))
+
 ## [0.4.0](https://github.com/FraiseHQ/fraise/compare/python/v0.3.1...python/v0.4.0) (2026-11-21)
 
 

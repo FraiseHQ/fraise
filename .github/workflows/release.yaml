@@ -26,6 +26,13 @@ jobs:
       # component it bumps and creates that component's GitHub Release. So a
       # tag can never disagree with the version in the tree.
       #
+      # The server, at the root, has no package-name in
+      # release-please-config.json. Its tags carry no component, so it is
+      # listed in the pull request without one. When it is the only
+      # component a pull request releases, release-please checks that
+      # missing component against the one package-name would configure.
+      # With a package-name the two differ, and the merge tags nothing.
+      #
       # token MUST be fraise-bot's, not the default GITHUB_TOKEN. A tag pushed
       # with GITHUB_TOKEN does not trigger other workflows. The publish job in
       # go.yaml would never fire, and the release would ship with no binaries.

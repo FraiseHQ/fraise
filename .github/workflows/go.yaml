@@ -36,6 +36,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
         with:
+          version: 2026.11.12
           install_args: "--locked"
       - name: Lint
         run: mise run lint:go
@@ -48,12 +49,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
         with:
+          version: 2026.11.12
           install_args: "--locked"
 
       - name: Test
-        run: mise run test:go
-
-      - name: Coverage
         run: mise run coverage:go
 
       - name: Upload coverage to Codecov
@@ -75,6 +74,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
         with:
+          version: 2026.11.12
           install_args: "--locked"
       - env:
           GOOS: ${{ matrix.goos }}
@@ -102,6 +102,7 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
         with:
+          version: 2026.11.12
           install_args: "--locked"
       - name: Tag must be on main
         run: mise run check:tag:go

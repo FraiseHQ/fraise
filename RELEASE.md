@@ -137,11 +137,11 @@ The scope keeps each component's changelog clean: `.goreleaser.yaml` excludes `(
 
 `release.yaml` triggers on both tag patterns and runs the matching pipeline (test → manual approval on the `release` environment → publish):
 
-| Component      | Tag example          | Publishes to               |
-|----------------|----------------------|----------------------------|
-| Server         | `v0.1.1`             | GitHub Releases (binaries) |
-| Python SDK     | `python/v1.0.1`      | PyPI (trusted publishing)  |
-| MCP server     | `mcp/v1.0.1`         | PyPI (trusted publishing)  |
+| Component      | Tag example          | Publishes to                                     |
+|----------------|----------------------|--------------------------------------------------|
+| Server         | `v0.1.1`             | GitHub Releases (binaries)                       |
+| Python SDK     | `python/v1.0.1`      | PyPI (trusted publishing, PEP 740 attestations)  |
+| MCP server     | `mcp/v1.0.1`         | PyPI (trusted publishing, PEP 740 attestations)  |
 
 SDK tagging (after the version-bump PR is merged — the workflow rejects a tag that doesn't match `pyproject.toml`):
 
