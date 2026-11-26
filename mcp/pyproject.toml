@@ -1,6 +1,6 @@
 [project]
 name = "fraise-mcp"
-version = "0.1.1"
+version = "0.1.2"
 description = "Fraise MCP server: remember and recall over a running Fraise daemon, with vectors embedded locally"
 readme = "README.md"
 authors = [
