@@ -9,7 +9,7 @@
     "source": "github",
     "id": "1207409551"
   },
-  "version": "0.4.2",
+  "version": "0.4.3",
   "packages": [
     {
       "registryType": "oci",
@@ -46,7 +46,7 @@
     {
       "registryType": "pypi",
       "identifier": "fraise-mcp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
