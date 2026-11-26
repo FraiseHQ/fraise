@@ -25,6 +25,9 @@
 The suite targets the server named by FRAISE_URL, or http://localhost:9876 when
 it is unset. `mise run test:e2e` points it at the port docker compose
 publishes. The suite waits for the server's health check before any test runs.
+The recall tool's tests run a fraise mcp bridge in front of that server, the
+command FRAISE_MCP names: `mise run test:e2e` runs the image's own binary in
+its container. Unset, it is the fraise on PATH, pointed at FRAISE_URL.
 
 Graph allocation. Tests pin their writes to fixed graphs, so result counts stay
 exact. A fact is keyed by its value, so the counts also hold across reruns
@@ -69,15 +72,33 @@ result set. Only a graph no test writes to can test the 204, so do not write to
 graph 8.
 """
 
+import json
 import math
 import os
+import queue
+import shlex
+import subprocess
+import threading
 import time
+from datetime import datetime, timedelta
+from decimal import Decimal
 
 import numpy as np
 import pytest
 import requests
 
 BASE_URL = os.environ.get("FRAISE_URL", "http://localhost:9876").rstrip("/")
+
+# The command that starts the fraise mcp bridge in front of the server under
+# test. `mise run test:e2e` runs the image's own binary inside its container,
+# so the bridge is the released one. Unset, it is the fraise on PATH pointed
+# at FRAISE_URL.
+BRIDGE_COMMAND = shlex.split(os.environ.get("FRAISE_MCP", "")) or [
+    "fraise",
+    "mcp",
+    "-addr",
+    BASE_URL,
+]
 
 WAIT_TIMEOUT_SECONDS = 30
 REQUEST_TIMEOUT_SECONDS = 15
@@ -232,6 +253,265 @@ def explain_alias(base_url):
         return response.status_code, _body(response)
 
     return _explain_alias
+
+
+class _Bridge:
+    """A newline-delimited JSON-RPC client over a running fraise mcp bridge.
+
+    It is a real client for the real bridge, the stdio twin of the query
+    fixture. A thread pumps the bridge's output into a queue, so a read with
+    a timeout never deadlocks on a message that arrived beside another.
+    """
+
+    def __init__(self, command: list[str]):
+        self._proc = subprocess.Popen(  # noqa: S603 — the bridge under test
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self._id = 0
+        self._lines: queue.Queue[str] = queue.Queue()
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def _pump(self):
+        for line in self._proc.stdout:
+            self._lines.put(line)
+
+    def request(self, method: str, params: dict) -> dict:
+        """Send one request and return its result, skipping other messages."""
+        self._id += 1
+        message = {"jsonrpc": "2.0", "id": self._id, "method": method}
+        self._proc.stdin.write(json.dumps(message | {"params": params}) + "\n")
+        self._proc.stdin.flush()
+        while True:
+            try:
+                reply = json.loads(self._lines.get(timeout=REQUEST_TIMEOUT_SECONDS))
+            except queue.Empty:
+                stderr = (
+                    self._proc.stderr.read() if self._proc.poll() is not None else ""
+                )
+                pytest.fail(f"no answer from the bridge to {method}: {stderr}")
+            if reply.get("id") == self._id:
+                assert "error" not in reply, reply["error"]
+                return reply["result"]
+
+    def notify(self, method: str):
+        """Send one notification, which has no answer."""
+        self._proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": method}) + "\n")
+        self._proc.stdin.flush()
+
+    def close(self):
+        self._proc.stdin.close()
+        try:
+            self._proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+
+
+@pytest.fixture(scope="session")
+def bridge_recall(base_url):
+    """Callable running a query through the recall tool of a fraise mcp bridge.
+
+    The bridge forwards to the server under test, the one base_url waited for.
+
+    Yields:
+        A callable taking a query and returning the tool result: the
+        structured content, the daemon's JSON as the bridge relays it, and the
+        text a model reads.
+    """
+    bridge = _Bridge(BRIDGE_COMMAND)
+    bridge.request(
+        "initialize",
+        {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "fraise-e2e", "version": "0"},
+        },
+    )
+    bridge.notify("notifications/initialized")
+
+    def _recall(text: str) -> dict:
+        result = bridge.request(
+            "tools/call", {"name": "recall", "arguments": {"query": text}}
+        )
+        assert not result.get("isError", False), result
+        return result
+
+    yield _recall
+    bridge.close()
+
+
+def _without_the_clock(value):
+    """A response with the fields that move with the clock taken out.
+
+    A score and its decay depend on how long ago the fact was written, and a
+    timing on the run, so two runs of one recall differ in them and nothing
+    else.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _without_the_clock(item)
+            for key, item in value.items()
+            if key not in {"score", "decay", "timings"}
+        }
+    if isinstance(value, list):
+        return [_without_the_clock(item) for item in value]
+    return value
+
+
+@pytest.fixture(scope="session")
+def without_the_clock():
+    """Callable stripping score, decay and timings from a response, at every depth."""
+    return _without_the_clock
+
+
+def _go_g(x: float) -> str:
+    """x as Go's %g writes a float64: its shortest digits, in exponent form
+    below 1e-4 and from 1e6 on."""
+    if x == 0:
+        return "0"
+    exact = Decimal(repr(float(x)))
+    sign, digits, _ = exact.as_tuple()
+    exponent = exact.adjusted()
+    if -4 <= exponent < 6:
+        return format(exact.normalize(), "f")
+    digits = "".join(map(str, digits)).rstrip("0")
+    mantissa = digits[0] + (f".{digits[1:]}" if digits[1:] else "")
+    return f"{'-' if sign else ''}{mantissa}e{'-' if exponent < 0 else '+'}{abs(exponent):02d}"
+
+
+def _instant(text: str | None) -> datetime | None:
+    return datetime.fromisoformat(text) if text else None
+
+
+def _span(start: datetime, end: datetime | None) -> str:
+    """An interval in the widest calendar unit that loses none of it, as the
+    bridge writes a time: a year, a month or a day, one unit or first..last."""
+    if end is None:
+        return f"{start:%Y-%m-%d}.."
+    if end <= start:
+        return f"{start:%Y-%m-%d}"
+    layout = "%Y-%m-%d"
+    for unit, on_edge in (
+        ("%Y-%m", lambda t: t.day == 1 and t.time() == datetime.min.time()),
+        (
+            "%Y",
+            lambda t: t.month == 1 and t.day == 1 and t.time() == datetime.min.time(),
+        ),
+    ):
+        if not (on_edge(start) and on_edge(end)):
+            break
+        layout = unit
+    first, last = (
+        start.strftime(layout),
+        (end - timedelta(microseconds=1)).strftime(layout),
+    )
+    return first if first == last else f"{first}..{last}"
+
+
+def _count(n: int, noun: str) -> str:
+    return f"1 {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _hit_lines(hit: dict) -> list[str]:
+    said = _instant(hit.get("said")) or _instant(hit["timestamp"])
+    dates = f"{said:%Y-%m-%d}"
+    if hit.get("occurred"):
+        happened = " and ".join(
+            _span(_instant(span["start"]), _instant(span.get("end")))
+            for span in hit["occurred"]
+        )
+        if happened != dates:
+            dates = f"said {dates}, happened {happened}"
+    lines = [f"- [{dates}] {hit['value']} (relevance {hit['score']:.3f})"]
+    if "explain" in hit:
+        block = hit["explain"]
+        parts = [
+            "seed" if block["seed"] else "not a seed",
+            f"decay {_go_g(block['decay'])}",
+        ]
+        for c in block["contributions"]:
+            item = f"{c['source']} {c['score']:.3f}"
+            if not c.get("via"):
+                details = [f"rank {c['rank']}"]
+                if c["source"] == "text":
+                    held = c.get("held", 0)
+                    details.append(f"held {held:.3f}" if held else "borrowed")
+            else:
+                item += f" via {c['via']}"
+                details = ["named"] if c.get("named") else []
+                details.append(_count(c.get("degree", 0), "fact"))
+                if c["source"] == "graph":
+                    details.append(_count(c["count"], "seed"))
+            parts.append(f"{item} ({', '.join(details)})")
+        lines.append("    " + " · ".join(parts))
+    return lines
+
+
+def _query_line(block: dict) -> str:
+    parts = [f"background {_go_g(block['background'])}"]
+    if block.get("admission"):
+        bars = sorted(block["admission"].items(), key=lambda bar: int(bar[0]))
+        parts.append(
+            "admission "
+            + ", ".join(f"{_go_g(bar)} at depth {depth}" for depth, bar in bars)
+        )
+    seeds = ", ".join(f"{k} {v}" for k, v in sorted(block["seeds"].items()))
+    parts.append("seeds " + (seeds or "none"))
+    parts.append("terms " + (", ".join(block["terms"]) or "none"))
+    for bound in ("since", "until"):
+        answer = block.get("when", {}).get(bound)
+        if answer is None:
+            continue
+        if not answer["hits"]:
+            parts.append(f"{bound} read from no fact")
+            continue
+        values = [
+            json.dumps(hit["value"], ensure_ascii=False) for hit in answer["hits"]
+        ]
+        read = values[0]
+        if len(values) > 1:
+            read = ", ".join(values[:-1]) + " and " + values[-1]
+        time_read = _span(_instant(answer["start"]), _instant(answer.get("end")))
+        parts.append(f"{bound} read from {read} → {time_read}")
+    return "explain: " + "; ".join(parts)
+
+
+def _rendered(output: dict) -> str:
+    """The text the bridge must write for a recall's JSON, built from the JSON.
+
+    It follows the rendering the bridge documents: the time a when answered
+    with, the query's explanation, the hits best first with their dates in
+    front and each one's explanation under it, then the warnings. A describe's
+    catalogue is not rendered here; no test passes one.
+    """
+    results = output["results"]
+    assert "catalogue" not in results, "describe is not rendered by this oracle"
+    lines = []
+    if "start" in results:
+        lines.append(
+            "when: " + _span(_instant(results["start"]), _instant(results.get("end")))
+        )
+    if "explain" in results:
+        lines.append(_query_line(results["explain"]))
+    if not results["hits"]:
+        lines.append("No stored facts matched.")
+    for hit in results["hits"]:
+        lines.extend(_hit_lines(hit))
+    lines.extend(f"warning: {warning}" for warning in output.get("warnings", []))
+    return "\n".join(lines)
+
+
+@pytest.fixture(scope="session")
+def rendered():
+    """Callable building, from a recall's JSON, the text the bridge must write.
+
+    It is the oracle the bridge's text is held to: a response's JSON, rendered
+    by the rules the MCP integration page documents.
+    """
+    return _rendered
 
 
 @pytest.fixture(scope="session")

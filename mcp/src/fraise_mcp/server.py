@@ -32,20 +32,24 @@ correct its statement.
 
 A recall answers twice, as the built-in ``fraise mcp`` bridge does: rendered
 to text for the model, and as structured content, the daemon's response under
-the output schema below. The structured content is where the ``explain``
-blocks of an ``explain recall`` ride, which the text leaves out.
+the output schema below. The ``explain`` blocks of an ``explain recall`` ride
+in both: whole in the structured content, and in the text as a line for the
+query above the facts and one under each fact, since many clients hand the
+model the text alone.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, NotRequired, TypedDict
 
 from fraise_sdk import models
 from fraise_sdk.client import FraiseClient
 from fraise_sdk.constants import VECTOR_PARAM
 from fraise_sdk.errors import FraiseAPIError, FraiseError
-from fraise_sdk.integrations.render import render_span
+from fraise_sdk.integrations.render import render_hit, render_span
 from fraise_sdk.models import RecallResult
 from fraise_sdk.providers.base import EmbedderLike
 from mcp.server.mcpserver import MCPServer
@@ -453,15 +457,20 @@ def render(body: dict) -> str:
     """Render a query response for the model.
 
     A write is acknowledged with a status token, so its confirmation is fixed
-    text. A recall is one line per hit, best first, relevance to three
-    decimals, in the voice of the SDK's framework tools. A recall can come back
-    with nothing in two ways. Either the graph holds nothing at all, which the
-    daemon answers 204 with no body, or a populated graph has no matching
-    fact. They read differently on purpose: the first calls for remembering
-    something, the second for asking differently. A describe answers with a
-    catalogue in place of hits, rendered as :func:`render_catalogue` renders
-    it. Warnings follow, one per line. The statement ran, and the model needs
-    them to fix its next one.
+    text. A recall is one line per hit, best first, each with the dates its
+    fact holds in front and its relevance to three decimals after, as
+    :func:`fraise_sdk.integrations.render.render_hit` writes it for every
+    integration. A recall can come back with nothing in two ways. Either the
+    graph holds nothing at all, which the daemon answers 204 with no body, or a
+    populated graph has no matching fact. They read differently on purpose:
+    the first calls for remembering something, the second for asking
+    differently. An explained recall carries its explanation in the text too,
+    as :func:`render_recall_explain` and :func:`render_hit_explain` render it:
+    an explain that only the structured content carries answers the model
+    with the plain ranking it already had. A describe answers with a catalogue
+    in place of hits, rendered as :func:`render_catalogue` renders it.
+    Warnings follow, one per line. The statement ran, and the model needs them
+    to fix its next one.
 
     Args:
         body: the decoded response body, ``{}`` for a 204.
@@ -478,16 +487,136 @@ def render(body: dict) -> str:
         result = RecallResult.from_json(
             body.get("results") or {}, empty="results" not in body
         )
-        lines = [f"- {hit.value} (relevance {hit.score:.3f})" for hit in result]
+        lines = []
+        if result.explain is not None:
+            lines.append(render_recall_explain(result.explain))
         if not result and result.empty:
-            lines = [
+            lines.append(
                 "No stored facts matched: this graph is empty, nothing has been "
                 "remembered in it yet."
-            ]
+            )
         elif not result:
-            lines = ["No stored facts matched."]
+            lines.append("No stored facts matched.")
+        for hit in result:
+            lines.append(render_hit(hit))
+            if hit.explain is not None:
+                lines.append(render_hit_explain(hit.explain))
     lines += [f"warning: {warning}" for warning in body.get("warnings") or []]
     return "\n".join(lines)
+
+
+def render_recall_explain(explain: models.RecallExplain) -> str:
+    """Render what an explained recall measured about its query, on one line.
+
+    The line goes above the facts: the background rate and the admission bars
+    the anchors had to clear, how many facts each source seeded, the terms as
+    the text index read them, and the facts and time each when in a bound was
+    read from. Sources are listed by name and depths in order, so the same
+    recall renders the same text, and the time each source took stays in the
+    structured content: it differs on every run and gives the model nothing to
+    act on. A term no fact holds is listed too, which is how a model sees why
+    a word matched nothing, and a bound read from the wrong fact is how it
+    sees a window drawn in the wrong place. A when that kept several facts
+    answers with the span covering them all, so the bound names each of them.
+    A list with nothing in it says none, since an empty one reads as cut off.
+    The line is the Go bridge's, character for character.
+
+    Args:
+        explain: the results' explain block.
+
+    Returns:
+        The line, with no newline at its end.
+    """
+    parts = [f"background {render_number(explain.background)}"]
+    if explain.admission:
+        bars = ", ".join(
+            f"{render_number(bar)} at depth {depth}"
+            for depth, bar in sorted(explain.admission.items())
+        )
+        parts.append(f"admission {bars}")
+    seeds = ", ".join(f"{source} {n}" for source, n in sorted(explain.seeds.items()))
+    parts.append(f"seeds {seeds or 'none'}")
+    parts.append(f"terms {', '.join(explain.terms) or 'none'}")
+    for bound in ("since", "until"):
+        answer = explain.when.get(bound)
+        if answer is None:
+            continue
+        if not answer.hits:
+            parts.append(f"{bound} read from no fact")
+            continue
+        values = [json.dumps(hit.value, ensure_ascii=False) for hit in answer.hits]
+        read = values[0]
+        if len(values) > 1:
+            read = ", ".join(values[:-1]) + " and " + values[-1]
+        span = render_span(models.Interval(start=answer.start, end=answer.end))
+        parts.append(f"{bound} read from {read} → {span}")
+    return "explain: " + "; ".join(parts)
+
+
+def render_hit_explain(explain: models.HitExplain) -> str:
+    """Render how one hit reached its score, on one indented line under it.
+
+    The line says whether the hit seeded the recall, the recency factor its
+    relevance was decayed by, then each contribution its relevance was folded
+    from. A text or vector sighting reads as its mass and its place in that
+    source's list, a text one with the share of the query its own words hold,
+    or as borrowed when they hold none of it and the fact matched only through
+    its window neighbours. A graph or anchor sighting reads as its mass, the
+    anchor it came through and how many facts that anchor files; a graph one
+    also says whether the query named the anchor, which waives its fair share,
+    and how many seeds funded it. The decay is written in full: facts written
+    seconds apart differ in it by a few millionths, and that is what orders
+    them when their relevance ties.
+
+    Args:
+        explain: the hit's explain block.
+
+    Returns:
+        The line, with no newline at its end.
+    """
+    parts = ["seed" if explain.seed else "not a seed"]
+    parts.append(f"decay {render_number(explain.decay)}")
+    for c in explain.contributions:
+        item = f"{c.source} {c.score:.3f}"
+        if not c.via:
+            details = [f"rank {c.rank}"]
+            if c.source == "text":
+                details.append(f"held {c.held:.3f}" if c.held else "borrowed")
+        else:
+            item += f" via {c.via}"
+            details = ["named"] if c.named else []
+            degree = c.degree or 0
+            details.append("1 fact" if degree == 1 else f"{degree} facts")
+            if c.source == "graph":
+                details.append("1 seed" if c.count == 1 else f"{c.count} seeds")
+        parts.append(f"{item} ({', '.join(details)})")
+    return "    " + " · ".join(parts)
+
+
+def render_number(x: float) -> str:
+    """Render a rate or a factor in its shortest digits, as Go's ``%g`` does.
+
+    The Go bridge writes these numbers in full rather than to three decimals,
+    since a rate rounds to zero there and two decays that order a tie differ
+    in their sixth digit. Exponent form takes over below 1e-4 and from 1e6 on,
+    as it does in Go, so the two bridges write the same text.
+
+    Args:
+        x: the number.
+
+    Returns:
+        Its shortest text.
+    """
+    if x == 0:
+        return "0"
+    exact = Decimal(repr(float(x)))
+    sign, digits, _ = exact.as_tuple()
+    exponent = exact.adjusted()
+    if -4 <= exponent < 6:
+        return format(exact.normalize(), "f")
+    digits = "".join(map(str, digits)).rstrip("0")
+    mantissa = digits[0] + (f".{digits[1:]}" if digits[1:] else "")
+    return f"{'-' if sign else ''}{mantissa}e{'-' if exponent < 0 else '+'}{abs(exponent):02d}"
 
 
 def render_catalogue(catalogue: models.Catalogue) -> list[str]:
