@@ -490,7 +490,8 @@ def test_an_explained_recall_renders_every_contribution_it_carries(mcp):
     hits = found["structuredContent"]["results"]["hits"]
     header, *lines = found["content"][0]["text"].split("\n")
     assert " admission " in header, header
-    assert "; terms swim;" in header, header
+    assert header.endswith("; terms swim"), header
+    assert "timings" not in header, header
     assert len(lines) == 2 * len(hits), lines
     sources = set()
     for hit, line in zip(hits, lines[1::2], strict=True):

@@ -551,6 +551,8 @@ def test_explain_remember_is_rejected_at_the_verb_and_lands_nothing(query):
         "explain recall@{timeline_graph} {timeline_keyword} "
         "since:(when regatta) until:(when cruise)",
         "explain recall@{timeline_graph} {timeline_keyword} since:(when zzznomatchzzz)",
+        "explain recall@{timeline_graph} {timeline_keyword} "
+        "until:(when regatta cruise top:2)",
         "recall@{timeline_graph} {timeline_keyword} top:20",
     ],
 )
@@ -580,6 +582,7 @@ def test_the_bridge_renders_the_json_the_server_answers(
     and no test read the text. The cases cover text and named graph
     sightings, anchors seeding alone, transmission through an unnamed anchor,
     every date form the timeline holds, the when each bound read, a when that
+    kept two facts and answers with the span covering both, a when that
     matched nothing, and a plain recall, which carries no explanation at all.
     """
     text = template.format(

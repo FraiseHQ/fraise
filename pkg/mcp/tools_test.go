@@ -171,7 +171,7 @@ func TestRecallKeepsTheExplainBlocks(t *testing.T) {
 				`"explain":{"background":0.43,"admission":{"1":0.86,"2":0.43},` +
 				`"seeds":{"anchor":0,"graph":0,"text":1,"vector":0},"terms":["baromet"],` +
 				`"timings":{"anchor":0,"graph":3042,"text":63917,"vector":0}}}}`,
-			want: "explain: background 0.43; admission 0.86 at depth 1, 0.43 at depth 2; seeds anchor 0, graph 0, text 1, vector 0; terms baromet; timings anchor 0s, graph 3.042µs, text 63.917µs, vector 0s\n" +
+			want: "explain: background 0.43; admission 0.86 at depth 1, 0.43 at depth 2; seeds anchor 0, graph 0, text 1, vector 0; terms baromet\n" +
 				"- [2026-01-02] the barometer falls before the storm (relevance 1.250)\n" +
 				"    seed · decay 1 · text 0.610 (rank 0, held 1.000) · graph 0.870 via weather (named, 2 facts, 2 seeds)\n" +
 				"- [2026-01-01] the harbour closes in a gale (relevance 0.500)\n" +
@@ -195,7 +195,7 @@ func TestRecallKeepsTheExplainBlocks(t *testing.T) {
 				`"start":"2025-12-30T00:00:00Z",` +
 				`"explain":{"background":0,"seeds":{"anchor":0,"graph":0,"text":1,"vector":0},"terms":["gale"],` +
 				`"timings":{"anchor":0,"graph":0,"text":2100,"vector":0}}}}}}}`,
-			want: "explain: background 0.43; admission 0.86 at depth 1, 0.43 at depth 2; seeds anchor 0, graph 0, text 1, vector 0; terms baromet; timings anchor 0s, graph 3.042µs, text 63.917µs, vector 0s; since read from \"the gale warning\" → 2025-12-30..\n" +
+			want: "explain: background 0.43; admission 0.86 at depth 1, 0.43 at depth 2; seeds anchor 0, graph 0, text 1, vector 0; terms baromet; since read from \"the gale warning\" → 2025-12-30..\n" +
 				"- [2026-01-02] the barometer falls before the storm (relevance 1.250)\n" +
 				"    seed · decay 1 · text 0.610 (rank 0, held 1.000)\n" +
 				"- [2026-01-01] the harbour closes in a gale (relevance 0.500)\n" +

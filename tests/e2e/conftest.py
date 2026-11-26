@@ -382,29 +382,6 @@ def _go_g(x: float) -> str:
     return f"{'-' if sign else ''}{mantissa}e{'-' if exponent < 0 else '+'}{abs(exponent):02d}"
 
 
-def _go_duration(ns: int) -> str:
-    """A duration in nanoseconds as Go's time.Duration.String writes it."""
-    if ns == 0:
-        return "0s"
-    for unit, name in ((1, "ns"), (1_000, "µs"), (1_000_000, "ms")):
-        if ns < unit * 1000:
-            whole, frac = divmod(ns, unit)
-            digits = (
-                str(frac).rjust(len(str(unit)) - 1, "0").rstrip("0") if unit > 1 else ""
-            )
-            return f"{whole}{'.' + digits if digits else ''}{name}"
-    hours, rest = divmod(ns, 3_600_000_000_000)
-    minutes, rest = divmod(rest, 60_000_000_000)
-    seconds, frac = divmod(rest, 1_000_000_000)
-    digits = str(frac).rjust(9, "0").rstrip("0")
-    text = f"{seconds}{'.' + digits if digits else ''}s"
-    if hours or minutes:
-        text = f"{minutes}m" + text
-    if hours:
-        text = f"{hours}h" + text
-    return text
-
-
 def _instant(text: str | None) -> datetime | None:
     return datetime.fromisoformat(text) if text else None
 
@@ -460,7 +437,8 @@ def _hit_lines(hit: dict) -> list[str]:
             if not c.get("via"):
                 details = [f"rank {c['rank']}"]
                 if c["source"] == "text":
-                    details.append(f"held {c.get('held', 0):.3f}")
+                    held = c.get("held", 0)
+                    details.append(f"held {held:.3f}" if held else "borrowed")
             else:
                 item += f" via {c['via']}"
                 details = ["named"] if c.get("named") else []
@@ -480,16 +458,9 @@ def _query_line(block: dict) -> str:
             "admission "
             + ", ".join(f"{_go_g(bar)} at depth {depth}" for depth, bar in bars)
         )
-    parts.append(
-        "seeds " + ", ".join(f"{k} {v}" for k, v in sorted(block["seeds"].items()))
-    )
+    seeds = ", ".join(f"{k} {v}" for k, v in sorted(block["seeds"].items()))
+    parts.append("seeds " + (seeds or "none"))
     parts.append("terms " + (", ".join(block["terms"]) or "none"))
-    parts.append(
-        "timings "
-        + ", ".join(
-            f"{k} {_go_duration(v)}" for k, v in sorted(block["timings"].items())
-        )
-    )
     for bound in ("since", "until"):
         answer = block.get("when", {}).get(bound)
         if answer is None:
@@ -497,11 +468,14 @@ def _query_line(block: dict) -> str:
         if not answer["hits"]:
             parts.append(f"{bound} read from no fact")
             continue
+        values = [
+            json.dumps(hit["value"], ensure_ascii=False) for hit in answer["hits"]
+        ]
+        read = values[0]
+        if len(values) > 1:
+            read = ", ".join(values[:-1]) + " and " + values[-1]
         time_read = _span(_instant(answer["start"]), _instant(answer.get("end")))
-        parts.append(
-            f"{bound} read from {json.dumps(answer['hits'][0]['value'], ensure_ascii=False)}"
-            f" → {time_read}"
-        )
+        parts.append(f"{bound} read from {read} → {time_read}")
     return "explain: " + "; ".join(parts)
 
 

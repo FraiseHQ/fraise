@@ -96,13 +96,17 @@ func renderResult(r Result, graphEmpty bool) []string {
 // renderRecallExplain renders what an explained recall measured about the
 // query as a whole, on one line above its hits: the background rate and the
 // admission bars its anchors had to clear, how many facts each source seeded,
-// the terms as the text index read them, the time each source took, and the
-// fact and time each when in its bounds was read from. Sources are listed by
-// name and depths in order, so the same recall renders the same text. A term
-// no fact holds is listed too, which is how a model sees why a word matched
-// nothing, and a bound read from the wrong fact is how it sees a window drawn
-// in the wrong place. The rates are written in full: they are small, and to
-// three decimals most of them read as zero.
+// the terms as the text index read them, and the facts and time each when in
+// its bounds was read from. Sources are listed by name and depths in order,
+// so the same recall renders the same text. The time each source took stays
+// in the structured payload: it differs on every run and gives the model
+// nothing to act on. A term no fact holds is listed too, which is how a model
+// sees why a word matched nothing, and a bound read from the wrong fact is
+// how it sees a window drawn in the wrong place. A when that kept several
+// facts answers with the span that covers them all, so the bound names every
+// one of them. The rates are written in full: they are small, and to three
+// decimals most of them read as zero. A list with nothing in it says none,
+// since an empty one reads as cut off.
 func renderRecallExplain(e RecallExplain) string {
 	parts := []string{fmt.Sprintf("background %g", e.Background)}
 	if len(e.Admission) > 0 {
@@ -112,33 +116,42 @@ func renderRecallExplain(e RecallExplain) string {
 		}
 		parts = append(parts, "admission "+strings.Join(bars, ", "))
 	}
-	seeds := make([]string, 0, len(e.Seeds))
-	for _, source := range slices.Sorted(maps.Keys(e.Seeds)) {
-		seeds = append(seeds, fmt.Sprintf("%s %d", source, e.Seeds[source]))
+	seeds := "none"
+	if len(e.Seeds) > 0 {
+		counts := make([]string, 0, len(e.Seeds))
+		for _, source := range slices.Sorted(maps.Keys(e.Seeds)) {
+			counts = append(counts, fmt.Sprintf("%s %d", source, e.Seeds[source]))
+		}
+		seeds = strings.Join(counts, ", ")
 	}
-	parts = append(parts, "seeds "+strings.Join(seeds, ", "))
+	parts = append(parts, "seeds "+seeds)
 	terms := "none"
 	if len(e.Terms) > 0 {
 		terms = strings.Join(e.Terms, ", ")
 	}
 	parts = append(parts, "terms "+terms)
-	timings := make([]string, 0, len(e.Timings))
-	for _, source := range slices.Sorted(maps.Keys(e.Timings)) {
-		timings = append(timings, fmt.Sprintf("%s %s", source, e.Timings[source]))
-	}
-	parts = append(parts, "timings "+strings.Join(timings, ", "))
 	if e.When != nil {
 		for _, bound := range []struct {
 			name   string
 			result *Result
 		}{{"since", e.When.Since}, {"until", e.When.Until}} {
-			switch {
-			case bound.result == nil:
-			case len(bound.result.Hits) == 0:
-				parts = append(parts, bound.name+" read from no fact")
-			default:
-				parts = append(parts, fmt.Sprintf("%s read from %q → %s", bound.name, bound.result.Hits[0].Value, renderSpan(containers.Interval{Start: bound.result.Start, End: bound.result.End})))
+			if bound.result == nil {
+				continue
 			}
+			hits := bound.result.Hits
+			if len(hits) == 0 {
+				parts = append(parts, bound.name+" read from no fact")
+				continue
+			}
+			values := make([]string, len(hits))
+			for i, hit := range hits {
+				values[i] = fmt.Sprintf("%q", hit.Value)
+			}
+			read := values[0]
+			if len(values) > 1 {
+				read = strings.Join(values[:len(values)-1], ", ") + " and " + values[len(values)-1]
+			}
+			parts = append(parts, fmt.Sprintf("%s read from %s → %s", bound.name, read, renderSpan(containers.Interval{Start: bound.result.Start, End: bound.result.End})))
 		}
 	}
 	return "explain: " + strings.Join(parts, "; ")
@@ -164,7 +177,10 @@ func renderHitExplain(e HitExplain) string {
 
 // renderContribution renders one source's sighting of a hit. A text or vector
 // sighting reads as its mass and its position in that source's list, a text
-// one with the share of the query's information the fact's own words hold. A
+// one with the share of the query's information the fact's own words hold.
+// A text sighting whose words hold none of it matched only through its
+// window neighbours, and reads as borrowed, so a model does not take the
+// fact for one that says what was asked. A
 // graph or anchor sighting reads as its mass, the anchor it came through and
 // how many facts that anchor files; a graph one also says whether the query
 // named the anchor, which waives its fair share, and how many seeds funded
@@ -176,7 +192,11 @@ func renderContribution(c Contribution) string {
 	var details []string
 	if c.Via == "" {
 		details = append(details, fmt.Sprintf("rank %d", c.Rank))
-		if c.Source == "text" {
+		switch {
+		case c.Source != "text":
+		case c.Held == 0:
+			details = append(details, "borrowed")
+		default:
 			details = append(details, fmt.Sprintf("held %.3f", c.Held))
 		}
 	} else {

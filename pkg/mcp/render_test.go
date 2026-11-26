@@ -497,7 +497,7 @@ func TestRenderRecall(t *testing.T) {
 				Terms:      []string{"barometer", "zebra"},
 				Timings:    map[string]time.Duration{"text": 38 * time.Microsecond, "vector": 0, "graph": 2 * time.Millisecond, "anchor": 0},
 			}}},
-			want: "explain: background 0.125; admission 0.25 at depth 1, 0.125 at depth 2; seeds anchor 0, graph 0, text 1, vector 0; terms barometer, zebra; timings anchor 0s, graph 2ms, text 38µs, vector 0s\n" +
+			want: "explain: background 0.125; admission 0.25 at depth 1, 0.125 at depth 2; seeds anchor 0, graph 0, text 1, vector 0; terms barometer, zebra\n" +
 				"- [2026-01-02] the barometer falls before the storm (relevance 2.500)\n" +
 				"    seed · decay 0.9999519 · text 1.500 (rank 0, held 0.750) · graph 3.000 via weather (named, 3 facts, 2 seeds)\n" +
 				"- [2026-01-02] storm clouds gather at sea (relevance 0.250)\n" +
@@ -515,9 +515,54 @@ func TestRenderRecall(t *testing.T) {
 				Terms:   []string{},
 				Timings: map[string]time.Duration{"text": 0, "vector": 0, "graph": 0, "anchor": 7 * time.Microsecond},
 			}}},
-			want: "explain: background 0; seeds anchor 7, graph 0, text 0, vector 0; terms none; timings anchor 7µs, graph 0s, text 0s, vector 0s\n" +
+			want: "explain: background 0; seeds anchor 7, graph 0, text 0, vector 0; terms none\n" +
 				"- [2026-01-02] the barometer falls before the storm (relevance 1.000)\n" +
 				"    seed · decay 1 · anchor 1.000 via weather (7 facts)",
+		},
+		"a when that kept several facts names each of them beside the span that covers them": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Explain: &RecallExplain{
+				Seeds: map[string]int{"text": 0},
+				Terms: []string{"train"},
+				When: &NestedResults{Since: &Result{
+					Count: 3,
+					Start: date(2023, time.May, 7),
+					End:   date(2023, time.May, 17),
+					Hits: []Hit{
+						{Value: "anna won the regatta", Timestamp: written, Score: 2},
+						{Value: "anna sailed a coastal cruise", Timestamp: written, Score: 1},
+						{Value: "anna moored the boat", Timestamp: written, Score: 0.5},
+					},
+				}},
+			}}},
+			want: "explain: background 0; seeds text 0; terms train; since read from \"anna won the regatta\", \"anna sailed a coastal cruise\" and \"anna moored the boat\" → 2023-05-07..2023-05-16\n" +
+				"No stored facts matched.",
+		},
+		"a fact matched only through its window neighbours reads as borrowed": {
+			out: RecallOutput{Results: Result{Count: 2, Hits: []Hit{
+				{Value: "the barometer falls before the storm", Timestamp: written, Score: 2, Explain: &HitExplain{
+					Seed:          true,
+					Decay:         1,
+					Contributions: []Contribution{{Source: "text", Score: 2.31, Rank: 0, Count: 1, Held: 0.67}},
+				}},
+				{Value: "the harbour master hauled the boats in", Timestamp: written, Score: 0.18, Explain: &HitExplain{
+					Seed:          true,
+					Decay:         1,
+					Contributions: []Contribution{{Source: "text", Score: 0.18, Rank: 3, Count: 1}},
+				}},
+			}, Explain: &RecallExplain{
+				Seeds: map[string]int{"text": 2},
+				Terms: []string{"baromet"},
+			}}},
+			want: "explain: background 0; seeds text 2; terms baromet\n" +
+				"- [2026-01-02] the barometer falls before the storm (relevance 2.000)\n" +
+				"    seed · decay 1 · text 2.310 (rank 0, held 0.670)\n" +
+				"- [2026-01-02] the harbour master hauled the boats in (relevance 0.180)\n" +
+				"    seed · decay 1 · text 0.180 (rank 3, borrowed)",
+		},
+		"an explain block with no seeds and no terms says none for each": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Explain: &RecallExplain{}}},
+			want: "explain: background 0; seeds none; terms none\n" +
+				"No stored facts matched.",
 		},
 		"an explained bound whose when matched nothing says so": {
 			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Explain: &RecallExplain{
@@ -526,7 +571,7 @@ func TestRenderRecall(t *testing.T) {
 				Timings: map[string]time.Duration{"text": 0},
 				When:    &NestedResults{Since: &Result{Count: 0, Hits: []Hit{}}},
 			}}},
-			want: "explain: background 0; seeds text 0; terms train; timings text 0s; since read from no fact\n" +
+			want: "explain: background 0; seeds text 0; terms train; since read from no fact\n" +
 				"No stored facts matched.",
 		},
 		"an explained recall names the fact and the time each when in its bounds was read from": {
@@ -556,9 +601,9 @@ func TestRenderRecall(t *testing.T) {
 					},
 				}},
 			}}},
-			want: "explain: background 0; seeds text 1; terms train; timings text 1µs; until read from \"anna ran the charity race\" → 2023-05-07\n" +
+			want: "explain: background 0; seeds text 1; terms train; until read from \"anna ran the charity race\" → 2023-05-07\n" +
 				"- [2026-01-02] anna trained for weeks (relevance 1.000)\n" +
-				"    seed · decay 1 · text 1.000 (rank 0, held 0.000)",
+				"    seed · decay 1 · text 1.000 (rank 0, borrowed)",
 		},
 	}
 
