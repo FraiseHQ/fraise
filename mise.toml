@@ -121,9 +121,13 @@ depends = ["build:go"]
 env = { FRAISE_BIN = "{{config_root}}/bin/fraise" }
 run = "uv run --package tests pytest tests/integration -vvv"
 
+# -coverpkg counts a statement whichever package's tests run it, so code that
+# another package's tests exercise (internal/index/relevance, driven through
+# internal/index and internal/graph) counts as covered instead of reading 0%.
+# -race makes this the one run CI needs: it checks everything test:go does.
 [tasks."coverage:go"]
-description = "Run the Go tests with a coverage report in coverage.txt"
-run = "go test -v -race -coverprofile=coverage.txt -covermode=atomic ./..."
+description = "Run the Go tests with the race detector and a coverage report in coverage.txt"
+run = "go test -v -race -coverprofile=coverage.txt -covermode=atomic -coverpkg=./... ./..."
 
 [tasks."coverage:py"]
 description = "Run the Python SDK unit tests with a coverage report in coverage-py.xml (integration-marked tests excluded)"
