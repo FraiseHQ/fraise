@@ -19,6 +19,14 @@ codex mcp add fraise -- uvx fraise-mcp
 
 The server forwards to a daemon that runs separately (`brew services start fraise`, or `systemctl --user start fraise`), like a database behind a connection URL.
 
+## Provenance
+
+Every release is published to PyPI from this repository's release workflow, with a [PEP 740](https://peps.python.org/pep-0740/) attestation that PyPI shows as the file's provenance. A downloaded file verifies against the repository:
+
+```bash
+uvx pypi-attestations verify pypi --repository https://github.com/FraiseHQ/fraise pypi:fraise_mcp-<version>-py3-none-any.whl
+```
+
 ## Configure
 
 Every setting is a flag, and each flag falls back to an environment variable:

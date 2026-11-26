@@ -12,6 +12,14 @@ pip install 'fraise-sdk[huggingface]'  # + Hugging Face embedder
 pip install 'fraise-sdk[fastembed]'    # + local fastembed embedder
 ```
 
+## Provenance
+
+Every release is published to PyPI from this repository's release workflow, with a [PEP 740](https://peps.python.org/pep-0740/) attestation that PyPI shows as the file's provenance. A downloaded file verifies against the repository:
+
+```bash
+uvx pypi-attestations verify pypi --repository https://github.com/FraiseHQ/fraise pypi:fraise_sdk-<version>-py3-none-any.whl
+```
+
 ## Client
 
 `remember` stores a fact and `recall` searches for facts, both through the server's query endpoint:

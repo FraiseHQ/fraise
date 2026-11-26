@@ -43,6 +43,7 @@
         "docs",
         "examples",
         "mcp",
+        "mise.lock",
         "mise.toml",
         "pyproject.toml",
         "release-please-config.json",

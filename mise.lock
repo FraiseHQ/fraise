@@ -273,6 +273,10 @@ url = "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-windows-amd64.
 url_api = "https://api.github.com/repos/jqlang/jq/releases/assets/453012788"
 provenance = "github-attestations"
 
+[[tools."pipx:pypi-attestations"]]
+version = "0.0.32"
+backend = "pipx:pypi-attestations"
+
 [[tools.pre-commit]]
 version = "4.7.0"
 backend = "aqua:pre-commit/pre-commit"
