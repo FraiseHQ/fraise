@@ -338,17 +338,25 @@ cp "$usage_bundle" "fraise_${usage_tag}.intoto.jsonl"
 gh release upload "$usage_tag" "fraise_${usage_tag}.intoto.jsonl" --clobber
 '''
 
+# PyPI shows a file's provenance from the PEP 740 attestation uploaded with it.
+# pypi-attestations signs each dist through Sigstore with the publish job's
+# GitHub OIDC token, the identity PyPI's trusted publisher is configured for,
+# and writes it beside the dist as <dist>.publish.attestation, the name
+# `uv publish` uploads with the dist. PyPI only accepts an attestation that
+# identity signed, so these run from the release workflows, not a laptop.
 [tasks."release:py"]
-description = "Release the Python SDK to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)"
+description = "Release the Python SDK to PyPI with its attestations (needs PyPI trusted publishing)"
 depends = ["build:py"]
 dir = "{{config_root}}/sdk/python"
-run = "uv publish"
+tools = { "pipx:pypi-attestations" = "0.0.32" }
+run = ["pypi-attestations sign dist/*", "uv publish"]
 
 [tasks."release:mcp"]
-description = "Release fraise-mcp to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)"
+description = "Release fraise-mcp to PyPI with its attestations (needs PyPI trusted publishing)"
 depends = ["build:mcp"]
 dir = "{{config_root}}/mcp"
-run = "uv publish"
+tools = { "pipx:pypi-attestations" = "0.0.32" }
+run = ["pypi-attestations sign dist/*", "uv publish"]
 
 # The MCP registry record is the release's server.json, read as data and never
 # run: whoever publishes it holds the credential for io.github.FraiseHQ/*, and

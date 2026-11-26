@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/FraiseHQ/fraise/compare/mcp/v0.1.0...mcp/v0.1.1) (2026-11-26)
+
+
+### Maintenance
+
+* publish PEP 740 attestations with the PyPI releases ([#724](https://github.com/FraiseHQ/fraise/issues/724)) ([d594bf4](https://github.com/FraiseHQ/fraise/commit/d594bf499074ae4527ea3b6fdb8c4b021123bd88))
+
 ## 0.1.0 (2026-11-21)
 
 

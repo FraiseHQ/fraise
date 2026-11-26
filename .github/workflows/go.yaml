@@ -36,6 +36,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
+          version: 2026.11.12
           install_args: "--locked"
       - name: Lint
         run: mise run lint:go
@@ -48,6 +49,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
+          version: 2026.11.12
           install_args: "--locked"
 
       - name: Test
@@ -72,6 +74,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
+          version: 2026.11.12
           install_args: "--locked"
       - env:
           GOOS: ${{ matrix.goos }}
@@ -97,8 +100,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+      # mise is pinned to the release that wrote mise.lock, here and in every
+      # workflow. A newer mise rewrites the lockfile while it installs the
+      # release task's tools, and GoReleaser refuses to release from a dirty
+      # tree. Bump the version and run `mise lock` with it in the same change.
       - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
+          version: 2026.11.12
           install_args: "--locked"
       - name: Tag must be on main
         run: mise run check:tag:go
