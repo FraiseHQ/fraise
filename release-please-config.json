@@ -15,7 +15,6 @@
   "packages": {
     ".": {
       "release-type": "go",
-      "package-name": "fraise",
       "include-component-in-tag": false,
       "changelog-path": "docs/changelog.md",
       "bump-minor-pre-major": true,
