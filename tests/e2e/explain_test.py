@@ -31,6 +31,10 @@ depth, the facts each source seeded, the terms the text index read, the time
 each source took and, for each time bound written as a when, that when's
 answer. A plain recall carries neither block.
 
+Through the fraise mcp bridge, an explained recall is the same JSON, and its
+text, the half a model reads, is that JSON rendered with the explanation in
+it.
+
 The deprecated /api/v1/explain alias answers a recall as the prefix does, and
 a when as the explained recall it runs. It is served through 0.4.x and
 removed in 0.5.0, and the alias tests at the end of this file go with it.
@@ -535,6 +539,68 @@ def test_explain_remember_is_rejected_at_the_verb_and_lands_nothing(query):
     assert body.get("results", {}).get("count", 0) == 0, (
         "a rejected explain remember landed on graph 2"
     )
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "explain recall@{pulsar_graph} pulsar entity:{pulsar_entity} depth:2",
+        "explain recall@{pulsar_graph} entity:{pulsar_entity} depth:2",
+        "explain recall@{storm_graph} barometer storm topic:{door_topic} top:20 depth:2",
+        "explain recall@{timeline_graph} {timeline_keyword} top:20",
+        "explain recall@{timeline_graph} {timeline_keyword} "
+        "since:(when regatta) until:(when cruise)",
+        "explain recall@{timeline_graph} {timeline_keyword} since:(when zzznomatchzzz)",
+        "recall@{timeline_graph} {timeline_keyword} top:20",
+    ],
+)
+def test_the_bridge_renders_the_json_the_server_answers(
+    template,
+    query,
+    bridge_recall,
+    rendered,
+    without_the_clock,
+    pulsar_graph,
+    pulsar_entity,
+    storm_graph,
+    door_topic,
+    timeline_graph,
+    timeline_keyword,
+):
+    """Through fraise mcp, a recall is the server's JSON, then that JSON rendered.
+
+    The bridge's structured content is the response the server gives the same
+    recall over HTTP, all but the score, decay and timings, which move with
+    the clock between the two runs. Its text is that JSON rendered: the
+    query's explanation above the facts, each fact's dates, then its own
+    explanation under it, and the warnings last. The text is what a model
+    reads, and most clients hand it nothing else, so an explanation the JSON
+    carries and the text drops never reaches the reader it was asked for.
+    That is how explain shipped once: right in the JSON, absent from the text,
+    and no test read the text. The cases cover text and named graph
+    sightings, anchors seeding alone, transmission through an unnamed anchor,
+    every date form the timeline holds, the when each bound read, a when that
+    matched nothing, and a plain recall, which carries no explanation at all.
+    """
+    text = template.format(
+        pulsar_graph=pulsar_graph,
+        pulsar_entity=pulsar_entity,
+        storm_graph=storm_graph,
+        door_topic=door_topic,
+        timeline_graph=timeline_graph,
+        timeline_keyword=timeline_keyword,
+    )
+    status, body = query(text)
+    assert status == 200, body.get("error")
+
+    found = bridge_recall(text)
+    relayed = found["structuredContent"]
+    assert without_the_clock(relayed) == without_the_clock(body)
+
+    explained = text.startswith("explain ")
+    assert ("explain" in relayed["results"]) == explained, relayed
+    assert all(("explain" in hit) == explained for hit in relayed["results"]["hits"])
+    assert found["content"][0]["text"] == rendered(relayed)
 
 
 @pytest.mark.parametrize("prefix", ["", "explain "])

@@ -24,6 +24,8 @@ package mcp
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,27 +51,145 @@ import (
 // It is what the model asked for, and the hits under it are where it was read
 // from. A describe answers with a catalogue and no hits, rendered in their
 // place.
+//
+// An explained recall carries its explanation in the text too, not only in
+// the structured payload. Many clients hand the model the text alone, and an
+// explain whose breakdown never reaches the model answers the question it
+// asked with the plain ranking it already had.
 func renderRecall(out RecallOutput, graphEmpty bool) string {
-	var lines []string
-	if !out.Results.Start.IsZero() {
-		lines = append(lines, "when: "+renderSpan(containers.Interval{Start: out.Results.Start, End: out.Results.End}))
+	lines := renderResult(out.Results, graphEmpty)
+	for _, warning := range out.Warnings {
+		lines = append(lines, "warning: "+warning)
 	}
-	if c := out.Results.Catalogue; c != nil {
+	return strings.Join(lines, "\n")
+}
+
+// renderResult renders one results envelope: the time a when answered with,
+// the explain header of an explained recall, then the catalogue or the hits,
+// each hit of an explained recall followed by its breakdown.
+func renderResult(r Result, graphEmpty bool) []string {
+	var lines []string
+	if !r.Start.IsZero() {
+		lines = append(lines, "when: "+renderSpan(containers.Interval{Start: r.Start, End: r.End}))
+	}
+	if r.Explain != nil {
+		lines = append(lines, renderRecallExplain(*r.Explain))
+	}
+	if c := r.Catalogue; c != nil {
 		lines = append(lines, renderCatalogue(*c)...)
-	} else if len(out.Results.Hits) == 0 {
+	} else if len(r.Hits) == 0 {
 		if graphEmpty {
 			lines = append(lines, "No stored facts matched: this graph is empty, nothing has been remembered in it yet.")
 		} else {
 			lines = append(lines, "No stored facts matched.")
 		}
 	}
-	for _, hit := range out.Results.Hits {
+	for _, hit := range r.Hits {
 		lines = append(lines, renderHit(hit))
+		if hit.Explain != nil {
+			lines = append(lines, renderHitExplain(*hit.Explain))
+		}
 	}
-	for _, warning := range out.Warnings {
-		lines = append(lines, "warning: "+warning)
+	return lines
+}
+
+// renderRecallExplain renders what an explained recall measured about the
+// query as a whole, on one line above its hits: the background rate and the
+// admission bars its anchors had to clear, how many facts each source seeded,
+// the terms as the text index read them, the time each source took, and the
+// fact and time each when in its bounds was read from. Sources are listed by
+// name and depths in order, so the same recall renders the same text. A term
+// no fact holds is listed too, which is how a model sees why a word matched
+// nothing, and a bound read from the wrong fact is how it sees a window drawn
+// in the wrong place. The rates are written in full: they are small, and to
+// three decimals most of them read as zero.
+func renderRecallExplain(e RecallExplain) string {
+	parts := []string{fmt.Sprintf("background %g", e.Background)}
+	if len(e.Admission) > 0 {
+		bars := make([]string, 0, len(e.Admission))
+		for _, depth := range slices.Sorted(maps.Keys(e.Admission)) {
+			bars = append(bars, fmt.Sprintf("%g at depth %d", e.Admission[depth], depth))
+		}
+		parts = append(parts, "admission "+strings.Join(bars, ", "))
 	}
-	return strings.Join(lines, "\n")
+	seeds := make([]string, 0, len(e.Seeds))
+	for _, source := range slices.Sorted(maps.Keys(e.Seeds)) {
+		seeds = append(seeds, fmt.Sprintf("%s %d", source, e.Seeds[source]))
+	}
+	parts = append(parts, "seeds "+strings.Join(seeds, ", "))
+	terms := "none"
+	if len(e.Terms) > 0 {
+		terms = strings.Join(e.Terms, ", ")
+	}
+	parts = append(parts, "terms "+terms)
+	timings := make([]string, 0, len(e.Timings))
+	for _, source := range slices.Sorted(maps.Keys(e.Timings)) {
+		timings = append(timings, fmt.Sprintf("%s %s", source, e.Timings[source]))
+	}
+	parts = append(parts, "timings "+strings.Join(timings, ", "))
+	if e.When != nil {
+		for _, bound := range []struct {
+			name   string
+			result *Result
+		}{{"since", e.When.Since}, {"until", e.When.Until}} {
+			switch {
+			case bound.result == nil:
+			case len(bound.result.Hits) == 0:
+				parts = append(parts, bound.name+" read from no fact")
+			default:
+				parts = append(parts, fmt.Sprintf("%s read from %q → %s", bound.name, bound.result.Hits[0].Value, renderSpan(containers.Interval{Start: bound.result.Start, End: bound.result.End})))
+			}
+		}
+	}
+	return "explain: " + strings.Join(parts, "; ")
+}
+
+// renderHitExplain renders how one hit reached its score, on one indented
+// line under it: whether it seeded the recall, the recency factor its
+// relevance was decayed by, then each contribution its relevance was folded
+// from. The decay is written in full, not to three decimals. Facts written
+// seconds apart differ in it by a few millionths, and that difference is
+// what orders them when their relevance ties.
+func renderHitExplain(e HitExplain) string {
+	parts := []string{"not a seed"}
+	if e.Seed {
+		parts[0] = "seed"
+	}
+	parts = append(parts, fmt.Sprintf("decay %g", e.Decay))
+	for _, c := range e.Contributions {
+		parts = append(parts, renderContribution(c))
+	}
+	return "    " + strings.Join(parts, " · ")
+}
+
+// renderContribution renders one source's sighting of a hit. A text or vector
+// sighting reads as its mass and its position in that source's list, a text
+// one with the share of the query's information the fact's own words hold. A
+// graph or anchor sighting reads as its mass, the anchor it came through and
+// how many facts that anchor files; a graph one also says whether the query
+// named the anchor, which waives its fair share, and how many seeds funded
+// it. With the query's background rate these are the evidence the relevance
+// is folded from, so a model sees which source lifted the fact and through
+// which anchor.
+func renderContribution(c Contribution) string {
+	line := fmt.Sprintf("%s %.3f", c.Source, c.Score)
+	var details []string
+	if c.Via == "" {
+		details = append(details, fmt.Sprintf("rank %d", c.Rank))
+		if c.Source == "text" {
+			details = append(details, fmt.Sprintf("held %.3f", c.Held))
+		}
+	} else {
+		line += " via " + c.Via
+		if c.Named {
+			details = append(details, "named")
+		}
+		details = append(details, renderCount(c.Degree, "fact"))
+		if c.Source == "graph" {
+			details = append(details, renderCount(c.Count, "seed"))
+		}
+	}
+	return line + " (" + strings.Join(details, ", ") + ")"
 }
 
 // renderCatalogue renders a describe's answer: a line naming what was

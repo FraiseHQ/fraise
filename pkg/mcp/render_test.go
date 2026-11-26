@@ -474,6 +474,92 @@ func TestRenderRecall(t *testing.T) {
 			want: "describe recall@0 until:(when zebras): no fact reached.\n" +
 				"warning: until: the when matched no fact, so it has no time to answer with; the recall has no bound to read and returns no hits",
 		},
+		"an explained recall heads its hits with the query and breaks each hit down under its line": {
+			out: RecallOutput{Results: Result{Count: 2, Hits: []Hit{
+				{Value: "the barometer falls before the storm", Timestamp: written, Score: 2.5, Explain: &HitExplain{
+					Seed:  true,
+					Decay: 0.9999519,
+					Contributions: []Contribution{
+						{Source: "text", Score: 1.5, Rank: 0, Count: 1, Held: 0.75},
+						{Source: "graph", Score: 3, Via: "weather", Degree: 3, Count: 2, Named: true},
+					},
+				}},
+				{Value: "storm clouds gather at sea", Timestamp: written, Score: 0.25, Explain: &HitExplain{
+					Decay: 0.5,
+					Contributions: []Contribution{
+						{Source: "graph", Score: 3, Via: "sea", Degree: 6, Count: 1},
+					},
+				}},
+			}, Explain: &RecallExplain{
+				Background: 0.125,
+				Admission:  map[int]float64{2: 0.125, 1: 0.25},
+				Seeds:      map[string]int{"text": 1, "vector": 0, "graph": 0, "anchor": 0},
+				Terms:      []string{"barometer", "zebra"},
+				Timings:    map[string]time.Duration{"text": 38 * time.Microsecond, "vector": 0, "graph": 2 * time.Millisecond, "anchor": 0},
+			}}},
+			want: "explain: background 0.125; admission 0.25 at depth 1, 0.125 at depth 2; seeds anchor 0, graph 0, text 1, vector 0; terms barometer, zebra; timings anchor 0s, graph 2ms, text 38µs, vector 0s\n" +
+				"- [2026-01-02] the barometer falls before the storm (relevance 2.500)\n" +
+				"    seed · decay 0.9999519 · text 1.500 (rank 0, held 0.750) · graph 3.000 via weather (named, 3 facts, 2 seeds)\n" +
+				"- [2026-01-02] storm clouds gather at sea (relevance 0.250)\n" +
+				"    not a seed · decay 0.5 · graph 3.000 via sea (6 facts, 1 seed)",
+		},
+		"an anchor-seeded recall reads each anchor a hit is filed under, and no admission": {
+			out: RecallOutput{Results: Result{Count: 1, Hits: []Hit{
+				{Value: "the barometer falls before the storm", Timestamp: written, Score: 1, Explain: &HitExplain{
+					Seed:          true,
+					Decay:         1,
+					Contributions: []Contribution{{Source: "anchor", Score: 1, Via: "weather", Degree: 7, Count: 1}},
+				}},
+			}, Explain: &RecallExplain{
+				Seeds:   map[string]int{"text": 0, "vector": 0, "graph": 0, "anchor": 7},
+				Terms:   []string{},
+				Timings: map[string]time.Duration{"text": 0, "vector": 0, "graph": 0, "anchor": 7 * time.Microsecond},
+			}}},
+			want: "explain: background 0; seeds anchor 7, graph 0, text 0, vector 0; terms none; timings anchor 7µs, graph 0s, text 0s, vector 0s\n" +
+				"- [2026-01-02] the barometer falls before the storm (relevance 1.000)\n" +
+				"    seed · decay 1 · anchor 1.000 via weather (7 facts)",
+		},
+		"an explained bound whose when matched nothing says so": {
+			out: RecallOutput{Results: Result{Count: 0, Hits: []Hit{}, Explain: &RecallExplain{
+				Seeds:   map[string]int{"text": 0},
+				Terms:   []string{"train"},
+				Timings: map[string]time.Duration{"text": 0},
+				When:    &NestedResults{Since: &Result{Count: 0, Hits: []Hit{}}},
+			}}},
+			want: "explain: background 0; seeds text 0; terms train; timings text 0s; since read from no fact\n" +
+				"No stored facts matched.",
+		},
+		"an explained recall names the fact and the time each when in its bounds was read from": {
+			out: RecallOutput{Results: Result{Count: 1, Hits: []Hit{
+				{Value: "anna trained for weeks", Timestamp: written, Score: 1, Explain: &HitExplain{
+					Seed:          true,
+					Decay:         1,
+					Contributions: []Contribution{{Source: "text", Score: 1, Rank: 0, Count: 1}},
+				}},
+			}, Explain: &RecallExplain{
+				Seeds:   map[string]int{"text": 1},
+				Terms:   []string{"train"},
+				Timings: map[string]time.Duration{"text": time.Microsecond},
+				When: &NestedResults{Until: &Result{
+					Count: 1,
+					Start: date(2023, time.May, 7),
+					End:   date(2023, time.May, 8),
+					Hits: []Hit{{Value: "anna ran the charity race", Timestamp: written, Said: date(2023, time.May, 8), Occurred: []containers.Interval{{Start: date(2023, time.May, 7), End: date(2023, time.May, 8)}}, Score: 2, Explain: &HitExplain{
+						Seed:          true,
+						Decay:         1,
+						Contributions: []Contribution{{Source: "text", Score: 2, Rank: 0, Count: 1}},
+					}}},
+					Explain: &RecallExplain{
+						Seeds:   map[string]int{"text": 1},
+						Terms:   []string{"chariti", "race"},
+						Timings: map[string]time.Duration{"text": time.Microsecond},
+					},
+				}},
+			}}},
+			want: "explain: background 0; seeds text 1; terms train; timings text 1µs; until read from \"anna ran the charity race\" → 2023-05-07\n" +
+				"- [2026-01-02] anna trained for weeks (relevance 1.000)\n" +
+				"    seed · decay 1 · text 1.000 (rank 0, held 0.000)",
+		},
 	}
 
 	for name, tc := range cases {
@@ -481,6 +567,42 @@ func TestRenderRecall(t *testing.T) {
 			got := renderRecall(tc.out, tc.graphEmpty)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("renderRecall mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestRenderRecallDistinguishesAnExplainedRecall pins that an explanation
+// reaches the text. Each explained result must render differently from the
+// same result with its explain blocks stripped, on the hits and on the query
+// alike. Many clients hand the model the text alone, so an explain that
+// renders as the plain recall answers the model's question with the ranking
+// it already had, while the structured half carries what it asked for.
+func TestRenderRecallDistinguishesAnExplainedRecall(t *testing.T) {
+	written := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	hit := func(explain *HitExplain) Hit {
+		return Hit{Value: "the barometer falls before the storm", Timestamp: written, Score: 1, Explain: explain}
+	}
+	seeded := &HitExplain{Seed: true, Decay: 1, Contributions: []Contribution{{Source: "text", Score: 1, Count: 1}}}
+	query := &RecallExplain{Seeds: map[string]int{"text": 1}, Terms: []string{"baromet"}, Timings: map[string]time.Duration{"text": 0}}
+
+	cases := map[string]Result{
+		"a hit explained":         {Count: 1, Hits: []Hit{hit(seeded)}},
+		"the query explained":     {Count: 1, Hits: []Hit{hit(nil)}, Explain: query},
+		"both explained":          {Count: 1, Hits: []Hit{hit(seeded)}, Explain: query},
+		"an explained empty read": {Count: 0, Hits: []Hit{}, Explain: query},
+	}
+
+	for name, explained := range cases {
+		t.Run(name, func(t *testing.T) {
+			plain := Result{Count: explained.Count, Hits: make([]Hit, len(explained.Hits))}
+			for i, h := range explained.Hits {
+				h.Explain = nil
+				plain.Hits[i] = h
+			}
+			got := renderRecall(RecallOutput{Results: explained}, false)
+			if want := renderRecall(RecallOutput{Results: plain}, false); got == want {
+				t.Errorf("explained recall rendered as the plain one:\n%s", got)
 			}
 		})
 	}
