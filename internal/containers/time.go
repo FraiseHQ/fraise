@@ -143,10 +143,11 @@ type TimeValue[K comparable] interface {
 	// seconds.
 	Hash(h hash.Hasher[K, string]) string
 	// Equal reports whether other is the same value: the same type, with the
-	// same span or the same instant at the same precision. The engine confirms
+	// same span or the same instant, offset and precision. The engine confirms
 	// a plan-cache hit with it, because two values may still share a key when
 	// their material does not. Equal must never hold for values that resolve
-	// differently, or a recall would run in another query's time window.
+	// or write differently, or a recall would run in another query's time
+	// window and a remember would store another query's times.
 	Equal(other TimeValue[K]) bool
 }
 
@@ -240,10 +241,18 @@ func (r RelativeTime[K]) Equal(other TimeValue[K]) bool {
 }
 
 // Equal implements [TimeValue]: other is an AbsoluteTime at the same instant,
-// whatever zone each was written in, and of the same precision.
+// written at the same offset from UTC, and of the same precision. The offset
+// counts because Hash folds it in and a remember stores it: '00:30+09:00' and
+// '15:30Z' the day before are one instant, but a remember planned for one
+// would write the other's offset.
 func (a AbsoluteTime[K]) Equal(other TimeValue[K]) bool {
 	o, ok := other.(AbsoluteTime[K])
-	return ok && o.T.Equal(a.T) && o.Precision == a.Precision
+	if !ok || !o.T.Equal(a.T) || o.Precision != a.Precision {
+		return false
+	}
+	_, offset := a.T.Zone()
+	_, otherOffset := o.T.Zone()
+	return offset == otherOffset
 }
 
 // RangeTime is a [TimeValue] running from one value to another, as in

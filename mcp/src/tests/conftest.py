@@ -79,7 +79,7 @@ _HITS = {
 }
 
 # The same recall explained: the daemon adds a block to each hit and one to
-# the results. The model's text is the same either way.
+# the results, and the model's text carries them too.
 _EXPLAINED_HITS = {
     "results": {
         "count": 2,
@@ -92,7 +92,13 @@ _EXPLAINED_HITS = {
                     "seed": True,
                     "decay": 1.0,
                     "contributions": [
-                        {"source": "text", "score": 0.61, "rank": 0, "count": 1},
+                        {
+                            "source": "text",
+                            "score": 0.61,
+                            "rank": 0,
+                            "count": 1,
+                            "held": 1.0,
+                        },
                     ],
                 },
             },

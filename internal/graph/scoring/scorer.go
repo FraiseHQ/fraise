@@ -171,3 +171,21 @@ type Contribution[K comparable, P float32 | float64] struct {
 // order, and seed traversals run in ascending key order. So a Scorer may fold a
 // list's floats front to back without run-to-run drift in the low bits.
 type Candidates[K comparable, P float32 | float64] map[K][]Contribution[K, P]
+
+// Sight pools one source's reading: keys in rank order, each sighted once,
+// and sighting(rank) the contribution the reading makes to keys[rank]. The
+// reading's sightings share one array, so a reading allocates once however
+// many keys it ranks. A candidate's first sighting is a capacity-one window
+// onto that array. A later append to its list then copies out instead of
+// overwriting the next candidate's sighting.
+func (c Candidates[K, P]) Sight(keys []K, sighting func(rank int) Contribution[K, P]) {
+	sightings := make([]Contribution[K, P], len(keys))
+	for rank, key := range keys {
+		sightings[rank] = sighting(rank)
+		if c[key] == nil {
+			c[key] = sightings[rank : rank+1 : rank+1]
+		} else {
+			c[key] = append(c[key], sightings[rank])
+		}
+	}
+}

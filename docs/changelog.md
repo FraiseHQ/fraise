@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.4.4](https://github.com/FraiseHQ/fraise/compare/v0.4.3...v0.4.4) (2026-11-26)
+
+
+### Bug fixes
+
+* render the explanation in the fraise mcp text ([#726](https://github.com/FraiseHQ/fraise/issues/726)) ([5c84757](https://github.com/FraiseHQ/fraise/commit/5c847572d21a28d364483958091abae43d394a1c))
+
+
+### Maintenance
+
+* run the go suite once with cross-package coverage ([#715](https://github.com/FraiseHQ/fraise/issues/715)) ([3f4e2a5](https://github.com/FraiseHQ/fraise/commit/3f4e2a56c21a0a925f122d080f1b72a6eb25d5e1))
+
+## [0.4.3](https://github.com/FraiseHQ/fraise/compare/v0.4.2...v0.4.3) (2026-11-26)
+
+
+### Maintenance
+
+* publish PEP 740 attestations with the PyPI releases ([#724](https://github.com/FraiseHQ/fraise/issues/724)) ([d594bf4](https://github.com/FraiseHQ/fraise/commit/d594bf499074ae4527ea3b6fdb8c4b021123bd88))
+
+## [0.4.2](https://github.com/FraiseHQ/fraise/compare/v0.4.1...v0.4.2) (2026-11-25)
+
+
+### Bug fixes
+
+* compare the offset in Remember.Equal ([#717](https://github.com/FraiseHQ/fraise/issues/717)) ([98ca516](https://github.com/FraiseHQ/fraise/commit/98ca51607d352de566e72a2809470d380599e265))
+
+
+### Maintenance
+
+* pkg/logger on log/slog instead of golang.org/x/exp/slog ([#713](https://github.com/FraiseHQ/fraise/issues/713)) ([47e95d3](https://github.com/FraiseHQ/fraise/commit/47e95d3902e4fa67a75add8bc6379a056de97e86))
+* update goreleaser settings ([#708](https://github.com/FraiseHQ/fraise/issues/708)) ([25cf0b7](https://github.com/FraiseHQ/fraise/commit/25cf0b7a7e11924cd9bb1e266e269f17c8c9c9c4))
+
 ## [0.4.1](https://github.com/FraiseHQ/fraise/compare/v0.4.0...v0.4.1) (2026-11-22)
 
 
