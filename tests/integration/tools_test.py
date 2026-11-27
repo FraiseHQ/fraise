@@ -360,16 +360,18 @@ def test_a_describe_through_the_recall_tool_answers_with_its_catalogue(
     ]
 
 
-def test_an_explained_recall_carries_its_blocks_in_the_structured_content(mcp):
+def test_an_explained_recall_carries_its_blocks_in_both_halves(mcp):
     """``explain recall`` through the bridge keeps the daemon's explain blocks.
 
     Each hit carries its seed flag, the recency factor its relevance was
     decayed by and the contributions its score was folded from, and the
     results carry the query's background rate, admission bars, seeds and
     timings per source and the terms the text index read. The output schema
-    the SDK validates against admits them. The text the model reads stays the
-    ranked facts, and the same recall written plainly carries no explain key
-    at all. The daemon runs on its defaults, so the depth is written out: the
+    the SDK validates against admits them. The text the model reads carries
+    the same account: a line for the query above the facts, then one under
+    each fact. Many clients hand the model the text alone, and an explanation
+    that stays in the structured half never reaches it. The same recall
+    written plainly carries no explain key and renders the facts alone. The daemon runs on its defaults, so the depth is written out: the
     anchor round runs at depth 2 and both bars come back.
     """
     for phrase in (
@@ -400,10 +402,16 @@ def test_an_explained_recall_carries_its_blocks_in_the_structured_content(mcp):
     assert explain["seeds"]["text"] >= 1
     assert explain["terms"]
 
-    assert found["content"][0]["text"] == "\n".join(
+    facts = [
         f"- [{hit['timestamp'][:10]}] {hit['value']} (relevance {hit['score']:.3f})"
         for hit in results["hits"]
-    )
+    ]
+    header, *lines = found["content"][0]["text"].split("\n")
+    assert header.startswith("explain: background "), header
+    assert lines[0::2] == facts
+    for hit, line in zip(results["hits"], lines[1::2], strict=True):
+        seed = "seed" if hit["explain"]["seed"] else "not a seed"
+        assert line.startswith(f"    {seed} · decay "), line
 
     plain = mcp.call("recall", {"query": "recall@4 mackerel entity:osprey depth:2"})
     assert not plain.get("isError", False), plain
@@ -411,6 +419,7 @@ def test_an_explained_recall_carries_its_blocks_in_the_structured_content(mcp):
     assert all(
         "explain" not in hit for hit in plain["structuredContent"]["results"]["hits"]
     )
+    assert plain["content"][0]["text"] == "\n".join(facts)
 
 
 def test_an_explained_recall_carries_the_answer_its_bound_read(mcp):
@@ -421,7 +430,9 @@ def test_an_explained_recall_carries_the_answer_its_bound_read(mcp):
     matched and the time it gave. The when explains itself with the recall,
     so its result and its hit carry their own blocks. The output schema the
     SDK validates against admits the nested result, which refers back to the
-    results schema.
+    results schema. The text's query line names the fact the bound was read
+    from and the time it gave, which is how a model sees a window drawn from
+    the wrong fact.
     """
     for fact, day in (
         ("the puffin burrows were dug", "2023-05-01"),
@@ -446,3 +457,118 @@ def test_an_explained_recall_carries_the_answer_its_bound_read(mcp):
     assert [hit["value"] for hit in until["hits"]] == ["the puffin eggs hatched"]
     assert set(until["hits"][0]["explain"]) == {"seed", "decay", "contributions"}
     assert set(until["explain"]) >= {"background", "seeds", "terms", "timings"}
+    header = found["content"][0]["text"].splitlines()[0]
+    assert header.endswith(
+        '; until read from "the puffin eggs hatched" → 2023-06-01'
+    ), header
+
+
+def test_an_explained_recall_renders_every_contribution_it_carries(mcp):
+    """Each fact's line under an explained recall spells its structured block.
+
+    The line holds the seed flag, the decay and one item per contribution, in
+    the order the structured half lists them, each led by its source and
+    naming the anchor it came through. So the text says nothing the daemon did
+    not report and drops nothing it did. The recall names its anchor beside a
+    term, so the graph round runs and the line carries text and graph sightings
+    both, and the query line carries the admission bars that round drew.
+    """
+    for phrase in (
+        "the razorbill swims under the ledge",
+        "the razorbill sleeps on the ledge at dusk",
+    ):
+        stored = mcp.call(
+            "remember", {"query": f"remember@5 '{phrase}' topic:razorbills"}
+        )
+        assert not stored.get("isError", False), stored
+
+    found = mcp.call(
+        "recall", {"query": "explain recall@5 swims topic:razorbills depth:2"}
+    )
+    assert not found.get("isError", False), found
+
+    hits = found["structuredContent"]["results"]["hits"]
+    header, *lines = found["content"][0]["text"].split("\n")
+    assert " admission " in header, header
+    assert header.endswith("; terms swim"), header
+    assert "timings" not in header, header
+    assert len(lines) == 2 * len(hits), lines
+    sources = set()
+    for hit, line in zip(hits, lines[1::2], strict=True):
+        seed, decay, *contributions = line.removeprefix("    ").split(" · ")
+        assert seed == ("seed" if hit["explain"]["seed"] else "not a seed"), line
+        assert decay.startswith("decay "), line
+        assert len(contributions) == len(hit["explain"]["contributions"]), line
+        for item, block in zip(
+            contributions, hit["explain"]["contributions"], strict=True
+        ):
+            assert item.startswith(f"{block['source']} "), item
+            if "via" in block:
+                assert f" via {block['via']} (" in item, item
+            sources.add(block["source"])
+    assert sources == {"text", "graph"}
+
+
+def test_an_explained_anchor_recall_names_each_anchor_a_fact_is_filed_under(mcp):
+    """Anchors seeding alone read as one unit sighting per named anchor.
+
+    A fact filed under both named anchors carries two sightings, and each
+    names its anchor and how many facts that anchor files, so a model sees why
+    it outranks a fact filed under one. No anchor round runs when the anchors
+    seed alone, so the query line carries no admission bar.
+    """
+    stored = mcp.call(
+        "remember",
+        {
+            "query": "remember@5 'the gannet colony circles the stack' "
+            "topic:gannets entity:'bass rock'"
+        },
+    )
+    assert not stored.get("isError", False), stored
+    stored = mcp.call(
+        "remember",
+        {"query": "remember@5 'the gannet folds its wings to dive' topic:gannets"},
+    )
+    assert not stored.get("isError", False), stored
+
+    found = mcp.call(
+        "recall", {"query": "explain recall@5 topic:gannets entity:'bass rock'"}
+    )
+    assert not found.get("isError", False), found
+
+    header, *lines = found["content"][0]["text"].split("\n")
+    assert header.startswith("explain: background 0; seeds anchor 2, "), header
+    assert "admission" not in header, header
+    assert lines[0].startswith("- ["), lines
+    assert lines[0].endswith("] the gannet colony circles the stack (relevance 2.000)")
+    assert sorted(lines[1].split(" · ")[2:]) == [
+        "anchor 1.000 via bass rock (1 fact)",
+        "anchor 1.000 via gannets (2 facts)",
+    ]
+    assert lines[2].endswith("] the gannet folds its wings to dive (relevance 1.000)")
+    assert lines[3].split(" · ")[2:] == ["anchor 1.000 via gannets (2 facts)"]
+
+
+def test_an_explained_bound_that_matched_nothing_says_so(mcp):
+    """A when in a bound that matched no fact is named on the query line.
+
+    The recall then has no window to read and returns no hits, and the model
+    must see that the bound is why, not the terms: the query line says the
+    bound was read from no fact, the hits say none matched, and the daemon's
+    warning follows.
+    """
+    stored = mcp.call(
+        "remember", {"query": "remember@5 'the kittiwake nests on the cliff'"}
+    )
+    assert not stored.get("isError", False), stored
+
+    found = mcp.call(
+        "recall", {"query": "explain recall@5 kittiwake until:(when zzznomatchzzz)"}
+    )
+    assert not found.get("isError", False), found
+
+    header, empty, *warnings = found["content"][0]["text"].split("\n")
+    assert header.endswith("; until read from no fact"), header
+    assert empty == "No stored facts matched."
+    assert warnings, found["content"][0]["text"]
+    assert all(line.startswith("warning: ") for line in warnings), warnings

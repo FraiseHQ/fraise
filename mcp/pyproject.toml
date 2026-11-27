@@ -1,6 +1,6 @@
 [project]
 name = "fraise-mcp"
-version = "0.1.0"
+version = "0.1.2"
 description = "Fraise MCP server: remember and recall over a running Fraise daemon, with vectors embedded locally"
 readme = "README.md"
 authors = [
@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "fraise-sdk[fastembed]>=0.4.0",  # x-release-please-version
+    "fraise-sdk[fastembed]>=0.4.1",  # x-release-please-version
     "mcp>=2.3.0,<3",
 ]
 

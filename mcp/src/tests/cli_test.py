@@ -116,14 +116,14 @@ def test_main_without_vectors_builds_no_embedder():
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "flags, graph, want",
+    "flags, graph, lead, want",
     [
-        ((), "vector_graph", "- my favourite colour is teal (relevance"),
-        (("--no-vectors",), "control_graph", "No stored facts matched."),
+        ((), "vector_graph", "- [", "] my favourite colour is teal (relevance"),
+        (("--no-vectors",), "control_graph", "No stored facts matched.", ""),
     ],
 )
 def test_a_fact_remembered_before_a_restart_is_recalled_by_meaning_after_it(
-    call_command, spelling_pair, request, flags, graph, want
+    call_command, spelling_pair, request, flags, graph, lead, want
 ):
     """Remember, restart the server, recall: the vector finds a spelling the text misses.
 
@@ -139,4 +139,6 @@ def test_a_fact_remembered_before_a_restart_is_recalled_by_meaning_after_it(
     assert remembered.content[0].text == "Remembered."
     got = call_command("recall", f"recall@{graph_id} {question}", *flags)
     assert not got.is_error
-    assert got.content[0].text.startswith(want)
+    text = got.content[0].text
+    assert text.startswith(lead), text
+    assert want in text.splitlines()[0], text

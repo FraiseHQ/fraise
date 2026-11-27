@@ -19,6 +19,14 @@ codex mcp add fraise -- uvx fraise-mcp
 
 The server forwards to a daemon that runs separately (`brew services start fraise`, or `systemctl --user start fraise`), like a database behind a connection URL.
 
+## Provenance
+
+Every release is published to PyPI from this repository's release workflow, with a [PEP 740](https://peps.python.org/pep-0740/) attestation that PyPI shows as the file's provenance. A downloaded file verifies against the repository:
+
+```bash
+uvx pypi-attestations verify pypi --repository https://github.com/FraiseHQ/fraise pypi:fraise_mcp-<version>-py3-none-any.whl
+```
+
 ## Configure
 
 Every setting is a flag, and each flag falls back to an environment variable:
@@ -37,4 +45,4 @@ A `remember` embeds its fact. A `recall` embeds its search terms, the words and 
 
 ## What a recall answers
 
-The `recall` tool answers with one line per fact, best first, and beside them with the daemon's response as structured content, under the same output schema as the built-in `fraise mcp` bridge. An `explain recall …` carries its `explain` blocks there, per fact and for the query, which the lines leave out. See [Explained recall](https://docs.getfraise.dev/docs/http-api/endpoints/explain).
+The `recall` tool answers with one line per fact, best first, each with the dates its fact holds in front, and beside them with the daemon's response as structured content, under the same output schema as the built-in `fraise mcp` bridge. An `explain recall …` carries its `explain` blocks in both: whole in the structured content, and in the lines as one for the query above the facts and one under each fact, written as the built-in bridge writes them. See [Explained recall](https://docs.getfraise.dev/docs/http-api/endpoints/explain).

@@ -92,7 +92,7 @@ port=${FRAISE_E2E_PORT:-9877}
 FRAISE_PORT=$port docker compose -f docker-compose.yaml up --build --detach fraise
 trap 'status=$?; [ $status -eq 0 ] || docker compose -f docker-compose.yaml logs --no-color --tail=200 fraise; docker compose -f docker-compose.yaml down --remove-orphans' EXIT
 trap 'exit 130' INT TERM
-FRAISE_URL=http://localhost:$port uv run --package tests pytest tests/e2e -v
+FRAISE_URL=http://localhost:$port FRAISE_MCP="docker compose -f docker-compose.yaml exec -T fraise fraise mcp -addr http://127.0.0.1:9876" uv run --package tests pytest tests/e2e -v
 '''
 
 [tasks."test:integration:py"]
@@ -121,9 +121,13 @@ depends = ["build:go"]
 env = { FRAISE_BIN = "{{config_root}}/bin/fraise" }
 run = "uv run --package tests pytest tests/integration -vvv"
 
+# -coverpkg counts a statement whichever package's tests run it, so code that
+# another package's tests exercise (internal/index/relevance, driven through
+# internal/index and internal/graph) counts as covered instead of reading 0%.
+# -race makes this the one run CI needs: it checks everything test:go does.
 [tasks."coverage:go"]
-description = "Run the Go tests with a coverage report in coverage.txt"
-run = "go test -v -race -coverprofile=coverage.txt -covermode=atomic ./..."
+description = "Run the Go tests with the race detector and a coverage report in coverage.txt"
+run = "go test -v -race -coverprofile=coverage.txt -covermode=atomic -coverpkg=./... ./..."
 
 [tasks."coverage:py"]
 description = "Run the Python SDK unit tests with a coverage report in coverage-py.xml (integration-marked tests excluded)"
@@ -334,17 +338,25 @@ cp "$usage_bundle" "fraise_${usage_tag}.intoto.jsonl"
 gh release upload "$usage_tag" "fraise_${usage_tag}.intoto.jsonl" --clobber
 '''
 
+# PyPI shows a file's provenance from the PEP 740 attestation uploaded with it.
+# pypi-attestations signs each dist through Sigstore with the publish job's
+# GitHub OIDC token, the identity PyPI's trusted publisher is configured for,
+# and writes it beside the dist as <dist>.publish.attestation, the name
+# `uv publish` uploads with the dist. PyPI only accepts an attestation that
+# identity signed, so these run from the release workflows, not a laptop.
 [tasks."release:py"]
-description = "Release the Python SDK to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)"
+description = "Release the Python SDK to PyPI with its attestations (needs PyPI trusted publishing)"
 depends = ["build:py"]
 dir = "{{config_root}}/sdk/python"
-run = "uv publish"
+tools = { "pipx:pypi-attestations" = "0.0.32" }
+run = ["pypi-attestations sign dist/*", "uv publish"]
 
 [tasks."release:mcp"]
-description = "Release fraise-mcp to PyPI (set UV_PUBLISH_TOKEN or PyPI credentials)"
+description = "Release fraise-mcp to PyPI with its attestations (needs PyPI trusted publishing)"
 depends = ["build:mcp"]
 dir = "{{config_root}}/mcp"
-run = "uv publish"
+tools = { "pipx:pypi-attestations" = "0.0.32" }
+run = ["pypi-attestations sign dist/*", "uv publish"]
 
 # The MCP registry record is the release's server.json, read as data and never
 # run: whoever publishes it holds the credential for io.github.FraiseHQ/*, and
