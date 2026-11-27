@@ -134,9 +134,9 @@ func TestRPTreeIndexSearchFindsNearestCluster(t *testing.T) {
 // TestRPTreeIndexSearchOrdersTiesByKey pins the tiebreak that makes the
 // ranking a total order: vectors at the same distance from the query are
 // ranked by key. Distance alone leaves them in the order the forest pooled
-// them, which depends on how each tree's priority queue breaks ties. That
-// order would decide which of them survives truncation to k. The corpus fits
-// in a single leaf, so every candidate reaches the re-rank.
+// them, which depends on which tree surfaced each first. That order would
+// decide which of them survives truncation to k. The corpus fits in a single
+// leaf, so every candidate reaches the re-rank.
 func TestRPTreeIndexSearchOrdersTiesByKey(t *testing.T) {
 	idx := index.NewRPTreeIndex[int, float64](2, 4, 5, 7, 2, 32, 8, comparator.OrderedComparator[int])
 

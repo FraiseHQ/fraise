@@ -1270,6 +1270,25 @@ func TestSearchNamedHubTransmits(t *testing.T) {
 	}
 }
 
+// TestSearchNamesATransmittingAnchorOnce is TestInMemoryGraphSearchNamesAnAnchorOnce
+// on the seeded path. A repeated named anchor is read under, and transmits,
+// as one anchor. Otherwise repeating topic:archive would double the memos'
+// Named observation and lift them over the weather cluster's.
+func TestSearchNamesATransmittingAnchorOnce(t *testing.T) {
+	g := noDecayGraph()
+	stormGraph(t, g)
+	keywords := []string{"barometer", "storm"}
+
+	once, _, wantContributions, _, _ := search(g, keywords, containers.Vector[uint64, float64]{}, []string{"archive"}, nil, 2, 20, containers.Bound{}, containers.Bound{})
+	twice, _, gotContributions, _, _ := search(g, keywords, containers.Vector[uint64, float64]{}, []string{"archive", "archive"}, nil, 2, 20, containers.Bound{}, containers.Bound{})
+	if diff := cmp.Diff(values(once), values(twice)); diff != "" {
+		t.Errorf("Search(topic=archive, topic=archive) hits mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(wantContributions, gotContributions); diff != "" {
+		t.Errorf("Search(topic=archive, topic=archive) contributions mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // exactMassGraph builds a graph whose seed masses are exact integers chosen by
 // the query. Under "matchcount" a fact's text mass is one point per query-term
 // occurrence it holds, repeats included, so a term repeated n times in the
@@ -1803,7 +1822,7 @@ func TestSearchFairSeeding(t *testing.T) {
 // seed budget goes to facts. BM25's length norm favours a one- or two-word
 // document, so an anchor named like the query term would be the strongest
 // text seed. Yet it can return nothing. Its neighbours are facts, so
-// ExcessTraversal finds no anchors from it, and timeFilter drops it before it
+// ExcessTraversal finds no anchors from it, and the pool drops it before it
 // can be a hit. Twelve facts match "billing" and top is twelve, so all twelve
 // must come back. If anchors were indexed, the Topic and the NamedEntity
 // would take two of the twelve seed slots, and the search would return ten.
