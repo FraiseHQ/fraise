@@ -146,9 +146,10 @@ func (s *Stream[K, P]) write(g graph.Graph[K, P], remember *Remember[K, P]) erro
 		"topics", len(remember.Topics),
 		"vector", !remember.Vector.Empty())
 
-	// One reading of the clock stamps the fact and resolves the times it was
-	// given. So a time given as a duration counts back from the instant the
-	// fact is written, and a fact said "now" is said when it is written.
+	// One reading of the clock stamps the fact, the anchors and edges this
+	// remember writes, and resolves the times it was given. So a time given
+	// as a duration counts back from the instant the fact is written, and a
+	// fact said "now" is said when it is written.
 	// The clock is read in UTC, the zone a date in a bound is a day of. A
 	// time carries its zone to the response, so one stamped in the host's
 	// zone would print a day that a bound on that day does not select for
@@ -207,13 +208,13 @@ func (s *Stream[K, P]) write(g graph.Graph[K, P], remember *Remember[K, P]) erro
 
 		entity := graph.NamedEntity[K]{NodeAttributes: graph.NodeAttributes{
 			Value:     e,
-			Timestamp: time.Now(),
+			Timestamp: now,
 		},
 			Hasher: g.GetHasher(),
 		}
 
 		mentions := graph.Mentions[K]{NodeAttributes: graph.NodeAttributes{
-			Timestamp: time.Now(),
+			Timestamp: now,
 		},
 			Fact:        &fact,
 			NamedEntity: &entity,
@@ -229,13 +230,13 @@ func (s *Stream[K, P]) write(g graph.Graph[K, P], remember *Remember[K, P]) erro
 
 		topic := graph.Topic[K]{NodeAttributes: graph.NodeAttributes{
 			Value:     t,
-			Timestamp: time.Now(),
+			Timestamp: now,
 		},
 			Hasher: g.GetHasher(),
 		}
 
 		about := graph.IsAbout[K]{NodeAttributes: graph.NodeAttributes{
-			Timestamp: time.Now(),
+			Timestamp: now,
 		},
 			Fact:   &fact,
 			Topic:  &topic,

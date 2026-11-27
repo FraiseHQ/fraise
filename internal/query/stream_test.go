@@ -400,6 +400,48 @@ func TestStreamCommitWriteStampsTimesInUTC(t *testing.T) {
 	}
 }
 
+// TestStreamCommitWriteStampsAnchorsWithTheFactsTime pins that the anchors and
+// edges a remember writes carry the time its fact does, read once in UTC. The
+// times compare with ==, so they must agree on the instant, the zone and the
+// absence of a monotonic reading, which TestStreamCommitWriteStampsTimesInUTC
+// pins for the fact. An anchor or edge stamped from its own time.Now would be
+// in the host's zone, and would hold a monotonic reading that stops while the
+// host sleeps.
+func TestStreamCommitWriteStampsAnchorsWithTheFactsTime(t *testing.T) {
+	g := graph.NewGraph[uint64, float32](config.New())
+	remember := &Remember[uint64, float32]{
+		Value:    "dora docked the ferry",
+		Topics:   []string{"harbour"},
+		Entities: []string{"dora"},
+	}
+
+	if err := NewStream[uint64, float32](remember).Commit(g); err != nil {
+		t.Fatalf("Commit() err = %v", err)
+	}
+
+	h := g.GetHasher()
+	fact := graph.Fact[uint64]{NodeAttributes: graph.NodeAttributes{Value: remember.Value}, Hasher: h}
+	topic := graph.Topic[uint64]{NodeAttributes: graph.NodeAttributes{Value: "harbour"}, Hasher: h}
+	entity := graph.NamedEntity[uint64]{NodeAttributes: graph.NodeAttributes{Value: "dora"}, Hasher: h}
+	keys := map[string]uint64{
+		"topic":    topic.Key(),
+		"entity":   entity.Key(),
+		"about":    graph.IsAbout[uint64]{Fact: &fact, Topic: &topic, Hasher: h}.Key(),
+		"mentions": graph.Mentions[uint64]{Fact: &fact, NamedEntity: &entity, Hasher: h}.Key(),
+	}
+	written := g.Get(fact.Key()).GetTimestamp()
+	got := make(map[string]time.Time, len(keys))
+	want := make(map[string]time.Time, len(keys))
+	for name, key := range keys {
+		got[name] = g.Get(key).GetTimestamp()
+		want[name] = written
+	}
+	exact := cmp.Comparer(func(a, b time.Time) bool { return a.Equal(b) })
+	if diff := cmp.Diff(want, got, exact); diff != "" {
+		t.Errorf("anchor timestamps mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // TestStreamCommitReadResolvesBoundsInUTC pins that a bound written as a
 // duration resolves on a clock read in UTC, as a write's times are. A when
 // answered from such a bound, and the window the recall searches, then name
