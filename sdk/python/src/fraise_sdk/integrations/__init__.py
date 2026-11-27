@@ -23,8 +23,9 @@
 """Integrations that expose Fraise memory as tools for agent libraries.
 
 Each library has its own submodule, which needs that library's optional extra.
-:mod:`fraise_sdk.integrations.openai_agents` needs ``fraise-sdk[openai]``, and
-:mod:`fraise_sdk.integrations.claude_agents` needs ``fraise-sdk[anthropic]``.
+:mod:`fraise_sdk.integrations.openai_agents` needs ``fraise-sdk[openai]``,
+:mod:`fraise_sdk.integrations.claude_agents` needs ``fraise-sdk[anthropic]``,
+and :mod:`fraise_sdk.integrations.pydantic_ai` needs ``fraise-sdk[pydantic-ai]``.
 The top-level package does not import them, so ``import fraise_sdk`` stays free
 of those heavy, optional dependencies.
 

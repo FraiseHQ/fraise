@@ -42,6 +42,7 @@ updates:
       - /
       - /examples/claude-agent-sdk
       - /examples/openai-agents
+      - /examples/pydantic-ai
     schedule:
       interval: daily
     commit-message:

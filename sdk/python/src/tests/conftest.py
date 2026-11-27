@@ -905,6 +905,52 @@ def invoke_function_tool():
 
 
 @pytest.fixture
+def invoke_pydantic_tool():
+    """Callable running a Pydantic AI ``Tool`` as an agent run would.
+
+    An agent on Pydantic AI's ``FunctionModel`` calls the tool once with the
+    arguments, then ends the run. So a test covers the framework's own schema
+    validation and the way it hands the answer back to the model, not just the
+    function the tool wraps. The framework is imported only when a test asks
+    for this fixture, so the suite still collects without the 'pydantic-ai'
+    extra.
+
+    Returns:
+        ``callable(tool, **arguments) -> ToolReturnPart``, what the model
+        received for the call. Its ``content`` is the tool's answer, or the
+        validation errors when its ``outcome`` is ``"retried"``.
+    """
+    from pydantic_ai import Agent
+    from pydantic_ai.messages import (
+        ModelResponse,
+        TextPart,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+    from pydantic_ai.models.function import FunctionModel
+
+    def _invoke(tool, **arguments):
+        received = []
+
+        def model(messages, info):
+            parts = [
+                part
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart)
+            ]
+            if parts:
+                received.extend(parts)
+                return ModelResponse(parts=[TextPart("done")])
+            return ModelResponse(parts=[ToolCallPart(tool.name, arguments)])
+
+        Agent(FunctionModel(model), tools=[tool]).run_sync("go")
+        return received[0]
+
+    return _invoke
+
+
+@pytest.fixture
 def invoke_mcp_tool():
     """Callable running a Claude Agent SDK tool's handler as its MCP server would.
 

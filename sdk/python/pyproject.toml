@@ -18,6 +18,9 @@ openai = [
 anthropic = [
     "claude-agent-sdk>=0.2.168",
 ]
+pydantic-ai = [
+    "pydantic-ai-slim>=2.74.0",
+]
 huggingface = [
     "huggingface-hub>=1.27.0",
 ]

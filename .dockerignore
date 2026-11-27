@@ -11,9 +11,10 @@ docs
 assets
 examples
 # The example images build from the repo root and copy in their agent script,
-# so these two files stay in the context. The rest of examples/ stays out.
+# so these files stay in the context. The rest of examples/ stays out.
 !examples/openai-agents/agent.py
 !examples/claude-agent-sdk/agent.py
+!examples/pydantic-ai/agent.py
 coverage.txt
 coverage-py.xml
 .coverage

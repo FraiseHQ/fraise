@@ -46,7 +46,7 @@ jobs:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
-        example: [claude-agent-sdk, openai-agents]
+        example: [claude-agent-sdk, openai-agents, pydantic-ai]
     env:
       EXAMPLE: ${{ matrix.example }}
     steps:
@@ -57,3 +57,23 @@ jobs:
           install_args: "--locked"
       - name: Build the image
         run: mise run build:examples "$EXAMPLE"
+
+  run:
+    name: ${{ matrix.example }} (run)
+    needs: build
+    # An example whose script checks its own outcome runs end to end against
+    # the fraise service its compose file brings up. The agent calls a hosted
+    # model, so the run takes each provider's key from the repository secrets.
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [pydantic-ai]
+    env:
+      EXAMPLE: ${{ matrix.example }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Run the example
+        run: docker compose -f "examples/$EXAMPLE/docker-compose.yaml" run --rm agent
