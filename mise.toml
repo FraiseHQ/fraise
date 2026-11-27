@@ -92,7 +92,7 @@ port=${FRAISE_E2E_PORT:-9877}
 FRAISE_PORT=$port docker compose -f docker-compose.yaml up --build --detach fraise
 trap 'status=$?; [ $status -eq 0 ] || docker compose -f docker-compose.yaml logs --no-color --tail=200 fraise; docker compose -f docker-compose.yaml down --remove-orphans' EXIT
 trap 'exit 130' INT TERM
-FRAISE_URL=http://localhost:$port uv run --package tests pytest tests/e2e -v
+FRAISE_URL=http://localhost:$port FRAISE_MCP="docker compose -f docker-compose.yaml exec -T fraise fraise mcp -addr http://127.0.0.1:9876" uv run --package tests pytest tests/e2e -v
 '''
 
 [tasks."test:integration:py"]
