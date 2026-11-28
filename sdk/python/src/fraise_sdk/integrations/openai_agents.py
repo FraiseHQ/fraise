@@ -44,6 +44,7 @@ concern, not something the model should pick.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fraise_sdk.client import FraiseClient
@@ -141,6 +142,8 @@ def remember_tool(
         fact: str,
         topics: list[str] | None = None,
         entities: list[str] | None = None,
+        said: date | None = None,
+        occurred: list[date] | None = None,
     ) -> str:
         """Store a fact in long-term memory so it can be recalled in later turns.
 
@@ -153,6 +156,12 @@ def remember_tool(
                 "travel"); facts sharing a topic become reachable together.
             entities: Optional named things the fact is about — a person, place,
                 or object (e.g. "anne").
+            said: When the fact was said, given once: the ISO date of the
+                message it comes from (e.g. "2026-01-15"). A fact given none
+                was said when it was written.
+            occurred: When what the fact states happened, one ISO date for
+                each time it happened (e.g. ["2026-01-14"]). A fact given none
+                happened when it was said.
 
         """
         vector = encode(fact) if encode else None
@@ -162,6 +171,8 @@ def remember_tool(
                 graph=graph,
                 topics=topics,
                 entities=entities,
+                said=said,
+                occurred=occurred,
                 vector=vector,
                 embed=False,
             )
@@ -173,7 +184,10 @@ def remember_tool(
         remember_fact,
         name_override=name,
         description_override="Store a single self-contained fact in the "
-        "assistant's long-term memory for later recall.",
+        "assistant's long-term memory for later recall. said and occurred date "
+        "the fact: when it was said, and when what it states happened. Give "
+        "them whenever the conversation tells you, so the dates a later recall "
+        "prints in front of the fact are the conversation's.",
     )
 
 

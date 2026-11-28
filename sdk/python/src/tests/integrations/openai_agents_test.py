@@ -27,7 +27,7 @@ The tools run the way the framework invokes them, through
 cover the real wrapping, not the undecorated closures.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from fraise_sdk.errors import FraiseError
@@ -245,9 +245,68 @@ def test_remember_passes_topics_entities_and_graph(mock_client, invoke_function_
         graph=2,
         topics=["colour"],
         entities=["anne"],
+        said=None,
+        occurred=None,
         vector=None,
         embed=False,
     )
+
+
+def test_remember_passes_said_and_occurred_as_dates(mock_client, invoke_function_tool):
+    """The ISO dates the model gives reach remember as ``date`` objects.
+
+    The framework parses them against the signature, so ``client.remember``
+    gets the day itself and writes it as the said: and occurred: the recall
+    tool later prints in front of the fact.
+    """
+    client = mock_client()
+    invoke_function_tool(
+        remember_tool(client),
+        fact="the barometer fell before the storm",
+        said="2026-01-15",
+        occurred=["2026-01-14", "2026-01-16"],
+    )
+    call = client.remember.call_args.kwargs
+    assert call["said"] == date(2026, 1, 15)
+    assert call["occurred"] == [date(2026, 1, 14), date(2026, 1, 16)]
+
+
+def test_remember_schema_offers_said_and_occurred_as_dates(mock_client):
+    """said and occurred reach the model as optional ISO dates.
+
+    Strict mode marks every property required and spells optional as nullable,
+    so this pins the date branch and the null one, rather than the required list.
+    """
+    properties = remember_tool(mock_client()).params_json_schema["properties"]
+    said = properties["said"]["anyOf"]
+    occurred = properties["occurred"]["anyOf"]
+    assert {"type": "string", "format": "date"} in said
+    assert {"type": "array", "items": {"type": "string", "format": "date"}} in occurred
+    assert {"type": "null"} in said
+    assert {"type": "null"} in occurred
+
+
+@pytest.mark.parametrize(
+    "dates",
+    [
+        {"said": "yesterday"},
+        {"said": "2026-13-01"},
+        {"occurred": ["last week"]},
+        {"occurred": "2026-01-14"},
+    ],
+)
+def test_remember_refuses_a_date_that_is_not_iso_before_calling_the_server(
+    dates, mock_client, invoke_function_tool
+):
+    """A said or occurred that is not a list of ISO dates fails argument validation.
+
+    The runtime answers the model with its standard tool error, and nothing is
+    stored: a fact written undated would carry its write time instead.
+    """
+    client = mock_client()
+    result = invoke_function_tool(remember_tool(client), fact="x", **dates)
+    assert result.startswith("An error occurred while running the tool")
+    client.remember.assert_not_called()
 
 
 def test_remember_reports_server_errors_as_text(mock_client, invoke_function_tool):

@@ -45,6 +45,7 @@ As with the OpenAI integration, the tools are bound to one memory graph
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from fraise_sdk.client import FraiseClient
@@ -178,8 +179,11 @@ def remember_tool(
         REMEMBER_TOOL,
         "Store a single self-contained fact in the assistant's long-term memory "
         "for later recall. Use it when the user shares something durable worth "
-        "remembering — a preference, a name, a decision.",
-        # Full JSON Schema, so `fact` is required and topics/entities are optional.
+        "remembering — a preference, a name, a decision. said and occurred date "
+        "the fact: when it was said, and when what it states happened. Give "
+        "them whenever the conversation tells you, so the dates a later recall "
+        "prints in front of the fact are the conversation's.",
+        # Full JSON Schema, so `fact` is required and the rest optional.
         {
             "type": "object",
             "properties": {
@@ -199,12 +203,43 @@ def remember_tool(
                     "description": "Optional named things the fact is about — a person, "
                     "place, or object (e.g. 'anne').",
                 },
+                "said": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "When the fact was said, given once: the ISO date "
+                    "of the message it comes from (e.g. '2026-01-15'). A fact given "
+                    "none was said when it was written.",
+                },
+                "occurred": {
+                    "type": "array",
+                    "items": {"type": "string", "format": "date"},
+                    "description": "When what the fact states happened, one ISO date "
+                    "for each time it happened (e.g. ['2026-01-14']). A fact given "
+                    "none happened when it was said.",
+                },
             },
             "required": ["fact"],
         },
     )
     async def remember_fact(args: dict[str, Any]) -> dict[str, Any]:
         fact = args.get("fact", "")
+        said = args.get("said")
+        occurred = args.get("occurred")
+        if occurred is not None and not isinstance(occurred, list):
+            return _err(f"occurred must be a list of ISO dates, got {occurred!r}")
+        try:
+            said = date.fromisoformat(said) if said is not None else None
+        except (TypeError, ValueError):
+            return _err(f"said must be an ISO date such as 2026-01-15, got {said!r}")
+        days = []
+        for day in occurred or []:
+            try:
+                days.append(date.fromisoformat(day))
+            except (TypeError, ValueError):
+                return _err(
+                    f"occurred must hold ISO dates such as 2026-01-15, got {day!r}"
+                )
+        occurred = days if occurred is not None else None
         vector = encode(fact) if encode and fact else None
         try:
             client.remember(
@@ -212,6 +247,8 @@ def remember_tool(
                 graph=graph,
                 topics=args.get("topics"),
                 entities=args.get("entities"),
+                said=said,
+                occurred=occurred,
                 vector=vector,
                 embed=False,
             )

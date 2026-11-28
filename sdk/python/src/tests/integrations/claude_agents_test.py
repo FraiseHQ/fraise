@@ -27,7 +27,7 @@ They flag a failure with ``is_error``. So the assertions check that envelope as
 well as the text.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -105,9 +105,27 @@ def test_recall_schema_requires_only_keywords(mock_client):
 
 
 def test_remember_schema_requires_only_fact(mock_client):
-    """Only the fact is required. Topics and entities are optional."""
+    """Only the fact is required. Topics, entities and the dates are optional."""
     schema = remember_tool(mock_client()).input_schema
     assert schema["required"] == ["fact"]
+    assert set(schema["properties"]) == {
+        "fact",
+        "topics",
+        "entities",
+        "said",
+        "occurred",
+    }
+
+
+def test_remember_schema_offers_said_and_occurred_as_dates(mock_client):
+    """said is one ISO date and occurred a list of them, as the model reads it."""
+    properties = remember_tool(mock_client()).input_schema["properties"]
+    assert (properties["said"]["type"], properties["said"]["format"]) == (
+        "string",
+        "date",
+    )
+    assert properties["occurred"]["type"] == "array"
+    assert properties["occurred"]["items"] == {"type": "string", "format": "date"}
 
 
 def test_recall_formats_hits(mock_client, invoke_mcp_tool, mcp_text):
@@ -293,9 +311,66 @@ def test_remember_passes_topics_entities_and_graph(mock_client, invoke_mcp_tool)
         graph=2,
         topics=["colour"],
         entities=["anne"],
+        said=None,
+        occurred=None,
         vector=None,
         embed=False,
     )
+
+
+def test_remember_passes_said_and_occurred_as_dates(mock_client, invoke_mcp_tool):
+    """The ISO dates the model gives reach remember as ``date`` objects.
+
+    ``client.remember`` writes a ``date`` as the day it names, the said: and
+    occurred: the recall tool later prints in front of the fact.
+    """
+    client = mock_client()
+    invoke_mcp_tool(
+        remember_tool(client),
+        fact="the barometer fell before the storm",
+        said="2026-01-15",
+        occurred=["2026-01-14", "2026-01-16"],
+    )
+    call = client.remember.call_args.kwargs
+    assert call["said"] == date(2026, 1, 15)
+    assert call["occurred"] == [date(2026, 1, 14), date(2026, 1, 16)]
+
+
+@pytest.mark.parametrize(
+    "dates, error",
+    [
+        (
+            {"said": "yesterday"},
+            "said must be an ISO date such as 2026-01-15, got 'yesterday'",
+        ),
+        (
+            {"said": "2026-13-01"},
+            "said must be an ISO date such as 2026-01-15, got '2026-13-01'",
+        ),
+        (
+            {"occurred": ["2026-01-14", "last week"]},
+            "occurred must hold ISO dates such as 2026-01-15, got 'last week'",
+        ),
+        (
+            {"occurred": "2026-01-14"},
+            "occurred must be a list of ISO dates, got '2026-01-14'",
+        ),
+    ],
+)
+def test_remember_refuses_a_date_that_is_not_iso_before_calling_the_server(
+    dates, error, mock_client, invoke_mcp_tool, mcp_text
+):
+    """A said or occurred that is not ISO dates is answered with a correction.
+
+    Nothing is stored: a fact written undated would carry its write time
+    instead. The error names the argument and the value, so the retry can be
+    right.
+    """
+    client = mock_client()
+    payload = invoke_mcp_tool(remember_tool(client), fact="x", **dates)
+    assert payload["is_error"] is True
+    assert mcp_text(payload) == error
+    client.remember.assert_not_called()
 
 
 def test_remember_flags_server_errors_with_is_error(
