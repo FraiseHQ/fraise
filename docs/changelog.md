@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.5](https://github.com/FraiseHQ/fraise/compare/v0.4.4...v0.4.5) (2026-11-28)
+
+
+### Maintenance
+
+* drop the graph read path's duplicated logic ([#719](https://github.com/FraiseHQ/fraise/issues/719)) ([a2c460f](https://github.com/FraiseHQ/fraise/commit/a2c460f706b3b884170199216b4c3f309cc8869f))
+
 ## [0.4.4](https://github.com/FraiseHQ/fraise/compare/v0.4.3...v0.4.4) (2026-11-26)
 
 
