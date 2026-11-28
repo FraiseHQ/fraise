@@ -31,6 +31,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/FraiseHQ/fraise/internal/comparator"
 	"github.com/FraiseHQ/fraise/internal/containers"
 	"github.com/FraiseHQ/fraise/internal/containers/trees"
 )
@@ -120,7 +121,7 @@ func bruteForceNearest(t *testing.T, points []*point, q *point, k int) []int {
 }
 
 func TestRPTreeEmpty(t *testing.T) {
-	rt := trees.NewRPTree[int, string, float64](3, 4, 1, 32, 8)
+	rt := trees.NewRPTree[int, string, float64](3, 4, 1, 32, 8, comparator.OrderedComparator[int])
 	if got := rt.Len(); got != 0 {
 		t.Errorf("Len() = %d, want 0", got)
 	}
@@ -130,7 +131,7 @@ func TestRPTreeEmpty(t *testing.T) {
 }
 
 func TestRPTreeInsertRejectsBadPoints(t *testing.T) {
-	rt := trees.NewRPTree[int, string, float64](3, 4, 1, 32, 8)
+	rt := trees.NewRPTree[int, string, float64](3, 4, 1, 32, 8, comparator.OrderedComparator[int])
 
 	if err := rt.Insert(&point{key: 1, coord: []float64{1, 2}}); !errors.Is(err, trees.ErrDimensionMismatch) {
 		t.Errorf("Insert with wrong dimension = %v, want ErrDimensionMismatch", err)
@@ -151,7 +152,7 @@ func TestRPTreeNearestExactWhenSingleLeaf(t *testing.T) {
 	const dim = 5
 	const n = 20 // well under the leaf size this tree is built with
 
-	rt := trees.NewRPTree[int, string, float64](dim, 4, 7, 32, 8)
+	rt := trees.NewRPTree[int, string, float64](dim, 4, 7, 32, 8, comparator.OrderedComparator[int])
 	points := make([]*point, n)
 	for i := range points {
 		points[i] = randPoint(rng, i, dim)
@@ -180,7 +181,7 @@ func TestRPTreeNearestExactWhenSingleLeaf(t *testing.T) {
 // far copy must not displace it and then be evicted as the farthest. And the
 // collision on a full pool must not cost a slot, so all k come back.
 func TestRPTreeNearestPoolsEachKeyAtItsNearestCopy(t *testing.T) {
-	rt := trees.NewRPTree[int, string, float64](2, 2, 0, 100, 1)
+	rt := trees.NewRPTree[int, string, float64](2, 2, 0, 100, 1, comparator.OrderedComparator[int])
 	for _, p := range []*point{
 		{key: 9, value: "v", coord: []float64{9, 0}},
 		{key: 1, value: "stale", coord: []float64{2, 0}},
@@ -203,6 +204,36 @@ func TestRPTreeNearestPoolsEachKeyAtItsNearestCopy(t *testing.T) {
 	}
 }
 
+// TestRPTreeNearestRanksEquidistantNodesByKey pins the tie-break. Four nodes
+// sit at distance 1 from the query and k keeps two, so only the order of keys
+// can choose. They are inserted in descending key order, so a tie resolved by
+// insertion or by the walk would keep 5 and 4. The tree keeps 1 and 3, as the
+// index above it ranks ties, so a tree's answer does not depend on the order
+// its leaves were filled in.
+func TestRPTreeNearestRanksEquidistantNodesByKey(t *testing.T) {
+	rt := trees.NewRPTree[int, string, float64](2, 2, 0, 100, 1, comparator.OrderedComparator[int])
+	for _, p := range []*point{
+		{key: 9, value: "v", coord: []float64{5, 0}},
+		{key: 5, value: "v", coord: []float64{1, 0}},
+		{key: 4, value: "v", coord: []float64{0, 1}},
+		{key: 3, value: "v", coord: []float64{-1, 0}},
+		{key: 1, value: "v", coord: []float64{0, -1}},
+	} {
+		if err := rt.Insert(p); err != nil {
+			t.Fatalf("Insert(%d) = %v, want nil", p.key, err)
+		}
+	}
+
+	nodes := nearest(t, rt, &point{coord: []float64{0, 0}}, 2, nil)
+	got := make([]int, len(nodes))
+	for i, node := range nodes {
+		got[i] = node.Key()
+	}
+	if diff := cmp.Diff([]int{1, 3}, got); diff != "" {
+		t.Errorf("Nearest(k=2) keys mismatch (-want +got):\n%s", diff)
+	}
+}
+
 // TestRPTreeNearestReturnsSubsetOfStoredNodes checks the structural contract
 // of the approximate Nearest search on a tree that splits. It must return at
 // most k nodes, all of them inserted and none twice. They must come in
@@ -213,7 +244,7 @@ func TestRPTreeNearestReturnsSubsetOfStoredNodes(t *testing.T) {
 	const n = 500
 	const k = 10
 
-	rt := trees.NewRPTree[int, string, float64](dim, 6, 5, 32, 8)
+	rt := trees.NewRPTree[int, string, float64](dim, 6, 5, 32, 8, comparator.OrderedComparator[int])
 	all := make(map[int]*point, n)
 	for i := 0; i < n; i++ {
 		p := randPoint(rng, i, dim)
@@ -260,7 +291,7 @@ func TestRPTreeNearestFillsKBeyondOneLeaf(t *testing.T) {
 	const n = 1000
 	const k = 200
 
-	rt := trees.NewRPTree[int, string, float64](dim, 6, 3, 32, 8)
+	rt := trees.NewRPTree[int, string, float64](dim, 6, 3, 32, 8, comparator.OrderedComparator[int])
 	for i := 0; i < n; i++ {
 		if err := rt.Insert(randPoint(rng, i, dim)); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", i, err)
@@ -282,7 +313,7 @@ func TestRPTreeNearestIsExactWhenKCoversTheTree(t *testing.T) {
 	const dim = 5
 	const n = 300
 
-	rt := trees.NewRPTree[int, string, float64](dim, 6, 4, 32, 8)
+	rt := trees.NewRPTree[int, string, float64](dim, 6, 4, 32, 8, comparator.OrderedComparator[int])
 	all := make([]*point, n)
 	for i := range all {
 		p := randPoint(rng, i, dim)
@@ -317,7 +348,7 @@ func TestRPTreeNearestKIsACapNotASize(t *testing.T) {
 	const dim = 4
 	const n = 50
 
-	rt := trees.NewRPTree[int, string, float64](dim, 4, 4, 8, 2)
+	rt := trees.NewRPTree[int, string, float64](dim, 4, 4, 8, 2, comparator.OrderedComparator[int])
 	for i := range n {
 		if err := rt.Insert(randPoint(rng, i, dim)); err != nil {
 			t.Fatalf("Insert(%d) = %v, want nil", i, err)
@@ -348,7 +379,7 @@ func TestRPTreeOverfetchWidensTheCandidatePool(t *testing.T) {
 	query := randPoint(rng, -1, dim)
 
 	build := func(overfetch int) *trees.RPTree[int, string, float64] {
-		rt := trees.NewRPTree[int, string, float64](dim, 6, 17, 32, overfetch)
+		rt := trees.NewRPTree[int, string, float64](dim, 6, 17, 32, overfetch, comparator.OrderedComparator[int])
 		for _, p := range points {
 			if err := rt.Insert(p); err != nil {
 				t.Fatalf("Insert(%d) = %v, want nil", p.Key(), err)
@@ -403,7 +434,7 @@ func TestRPTreeNearestKeepProbesForAcceptedNodes(t *testing.T) {
 	query := randPoint(rng, -1, dim)
 
 	build := func(overfetch int) *trees.RPTree[int, string, float64] {
-		rt := trees.NewRPTree[int, string, float64](dim, 4, 3, 8, overfetch)
+		rt := trees.NewRPTree[int, string, float64](dim, 4, 3, 8, overfetch, comparator.OrderedComparator[int])
 		for _, p := range points {
 			if err := rt.Insert(p); err != nil {
 				t.Fatalf("Insert(%d) = %v, want nil", p.Key(), err)
@@ -435,7 +466,7 @@ func TestRPTreeRangeIsExact(t *testing.T) {
 	const dim = 3
 	const n = 400
 
-	rt := trees.NewRPTree[int, string, float64](dim, 5, 2, 32, 8)
+	rt := trees.NewRPTree[int, string, float64](dim, 5, 2, 32, 8, comparator.OrderedComparator[int])
 	points := make([]*point, n)
 	for i := range points {
 		points[i] = randPoint(rng, i, dim)
@@ -483,7 +514,7 @@ func TestRPTreeDeterministicAcrossRuns(t *testing.T) {
 	const k = 3
 	answers := func(seed uint64) [][]int {
 		rng := rand.New(rand.NewSource(123))
-		rt := trees.NewRPTree[int, string, float64](3, 4, seed, 8, 1)
+		rt := trees.NewRPTree[int, string, float64](3, 4, seed, 8, 1, comparator.OrderedComparator[int])
 		for i := 0; i < 200; i++ {
 			_ = rt.Insert(randPoint(rng, i, 3))
 		}
@@ -511,7 +542,7 @@ func TestRPTreeDeterministicAcrossRuns(t *testing.T) {
 // query whose dimension differs from the tree's, as Insert refuses such a
 // point. A shorter query would otherwise be read past its last coordinate.
 func TestRPTreeNearestRejectsQueryOfWrongDimension(t *testing.T) {
-	rt := trees.NewRPTree[int, string, float64](3, 4, 1, 32, 8)
+	rt := trees.NewRPTree[int, string, float64](3, 4, 1, 32, 8, comparator.OrderedComparator[int])
 	if err := rt.Insert(&point{key: 1, value: "v", coord: []float64{1, 2, 3}}); err != nil {
 		t.Fatalf("Insert = %v, want nil", err)
 	}
@@ -597,7 +628,7 @@ func TestRPTreeWithVectorNodes(t *testing.T) {
 	const dim = 4
 	const n = 20 // stays under this tree's leaf size
 
-	rt := trees.NewRPTree[int, containers.Vector[int, float64], float64](dim, 4, 13, 32, 8)
+	rt := trees.NewRPTree[int, containers.Vector[int, float64], float64](dim, 4, 13, 32, 8, comparator.OrderedComparator[int])
 
 	type sample struct {
 		key   int

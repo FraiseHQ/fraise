@@ -29,6 +29,7 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/FraiseHQ/fraise/internal/comparator"
 	"github.com/FraiseHQ/fraise/internal/containers"
 )
 
@@ -130,6 +131,7 @@ type RPTree[K comparable, T any, P float32 | float64] struct {
 	leafSize  int // max points a leaf holds before splitting
 	overfetch int // candidates Nearest gathers per result asked for
 	rng       *rand.Rand
+	compare   comparator.Comparator[K] // orders equidistant nodes by key
 }
 
 // NewRPTree returns an empty RPTree that indexes dim-dimensional points using
@@ -137,6 +139,7 @@ type RPTree[K comparable, T any, P float32 | float64] struct {
 //   - seed makes the projection and the split choices reproducible.
 //   - leafSize is how many points a leaf holds before it splits.
 //   - overfetch is how many candidates Nearest gathers per result asked for.
+//   - compare orders keys, so Nearest ranks equidistant nodes by key.
 //
 // One generator, seeded with seed, draws the projection and then the split
 // choices. So a tree's randomness depends on its seed alone. A forest that
@@ -146,7 +149,7 @@ type RPTree[K comparable, T any, P float32 | float64] struct {
 // The tree has no defaults of its own. Defaults are configuration, applied
 // where the index is built. The clamps below are not defaults. They are
 // validity floors, the smallest value at which each parameter means something.
-func NewRPTree[K comparable, T any, P float32 | float64](dim, projDim int, seed uint64, leafSize, overfetch int) *RPTree[K, T, P] {
+func NewRPTree[K comparable, T any, P float32 | float64](dim, projDim int, seed uint64, leafSize, overfetch int, compare comparator.Comparator[K]) *RPTree[K, T, P] {
 	if projDim < 1 {
 		projDim = 1
 	}
@@ -165,6 +168,7 @@ func NewRPTree[K comparable, T any, P float32 | float64](dim, projDim int, seed 
 		leafSize:  leafSize,
 		overfetch: overfetch,
 		rng:       rng,
+		compare:   compare,
 	}
 }
 
@@ -356,62 +360,42 @@ func (t *RPTree[K, T, P]) Nearest(p Point[K, P], k int, keep func(K) bool) ([]Tr
 
 	// Leaves are disjoint but keys need not be. An owner that replaces a key's
 	// point (RPTreeIndex) leaves the old copy in the tree until it rebuilds.
-	// The pool is keyed by node key, and on a collision it keeps the higher
-	// priority, which is the farther copy. A stale copy could then displace
-	// the nearer one and be evicted as the farthest, losing the key. And a
-	// colliding enqueue on a full pool would dequeue without adding, leaving
-	// k-1. So each key enters the pool once, at its nearest copy. Keys enter
-	// in candidate order, so ties still resolve by the walk.
-	items := make([]containers.Item[K, TreeNode[K, T, P]], 0, len(candidates))
+	// Offered twice, a key would take two of the k places, and a stale copy
+	// could crowd out another key's node. So each key is offered once, at its
+	// nearest copy.
+	pool := make([]TreeNode[K, T, P], 0, len(candidates))
+	distances := make([]P, 0, len(candidates))
 	at := make(map[K]int, len(candidates))
 	for _, node := range candidates {
 		d, err := p.Distance(node.Point())
 		if err != nil {
 			return nil, err
 		}
-		item := containers.Item[K, TreeNode[K, T, P]]{
-			Key:      node.Key(),
-			Value:    node,
-			Priority: distancePriority(d),
-		}
-		if i, ok := at[item.Key]; ok {
-			if item.Priority < items[i].Priority {
-				items[i] = item
+		if i, ok := at[node.Key()]; ok {
+			if d < distances[i] {
+				pool[i], distances[i] = node, d
 			}
 			continue
 		}
-		at[item.Key] = len(items)
-		items = append(items, item)
+		at[node.Key()] = len(pool)
+		pool = append(pool, node)
+		distances = append(distances, d)
 	}
 
-	// The pool is sized on the candidates, not on k. k is a recall's top:,
-	// which a client chooses. A large top: against a small tree must not
-	// reserve memory for hits the tree cannot return.
-	pq, _ := containers.NewPriorityQueue[K, TreeNode[K, T, P]](uint(min(k, len(items))))
-	for _, item := range items {
-		if pq.Len() < k {
-			pq.Enqueue(item)
-			continue
-		}
-		if top := pq.Peek(); top != nil && item.Priority < top.Priority {
-			_, _ = pq.Dequeue()
-			pq.Enqueue(item)
-		}
+	// TopK keeps the largest scores, so each node is offered with its
+	// distance negated, and equidistant nodes rank by key. TopK grows with
+	// what it keeps, so a large k (a recall's top:, which a client chooses)
+	// against a small tree reserves nothing for hits the tree cannot return.
+	nearest := containers.NewTopK[K, P](k, t.compare)
+	for i, node := range pool {
+		nearest.Offer(node.Key(), -distances[i])
 	}
-
-	out := make([]TreeNode[K, T, P], pq.Len())
-	for i := len(out) - 1; i >= 0; i-- {
-		item, _ := pq.Dequeue()
-		out[i] = item.Value
+	keys, _ := nearest.Drain()
+	out := make([]TreeNode[K, T, P], len(keys))
+	for i, key := range keys {
+		out[i] = pool[at[key]]
 	}
 	return out, nil
-}
-
-// distancePriority maps a non-negative distance to an order-preserving uint64,
-// for use as a containers.Item Priority. A smaller distance gives a smaller
-// priority.
-func distancePriority[P float32 | float64](d P) uint64 {
-	return math.Float64bits(float64(d))
 }
 
 // Range implements [SpatialTree]. It tests points in the original space, not

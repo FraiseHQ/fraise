@@ -114,7 +114,7 @@ func NewRPTreeIndex[K comparable, P float32 | float64](dim, projDim, numTrees in
 func (idx *RPTreeIndex[K, P]) newForest() []trees.SpatialTree[K, containers.Vector[K, P], P] {
 	forest := make([]trees.SpatialTree[K, containers.Vector[K, P], P], idx.numTrees)
 	for i := range forest {
-		forest[i] = trees.NewRPTree[K, containers.Vector[K, P], P](idx.dim, idx.projDim, idx.seed+uint64(i), idx.leafSize, idx.overfetch)
+		forest[i] = trees.NewRPTree[K, containers.Vector[K, P], P](idx.dim, idx.projDim, idx.seed+uint64(i), idx.leafSize, idx.overfetch, idx.compare)
 	}
 	return forest
 }

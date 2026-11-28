@@ -576,29 +576,24 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		Keys:       keys,
 		Groups:     groups,
 	})
-	scores := make(map[K]P, len(keys))
-	for _, key := range keys {
-		scores[key] = scorer.Score(candidates[key])
-	}
 
-	// C. Time window and recency decay. The seeds are already inside the
-	// window. Facts reached by the traversal and anchor members are not.
-	now := time.Now()
-	kept, ranked := g.timeFilter(keys, scores, since, until, now)
-
-	// D. Rank and truncate to top. Map iteration order is random, so
-	// identical queries return identical hits only under a total order:
+	// C. Recency decay, then rank and truncate to top. Each relevance is
+	// decayed by its fact's recency at now, the one moment the whole ranking
+	// is aged at, grouped members included. So of two equally relevant facts,
+	// the more recently written ranks first. Map iteration order is random,
+	// so identical queries return identical hits only under a total order:
 	// score descending, then newest happened, then key ascending. Without
 	// the key tie-break, truncation would keep an arbitrary subset of a tied
 	// group. TopK costs O(n log top) rather than the O(n log n) of a full
 	// sort, and a non-positive top keeps every match. A group's members
 	// share one relevance and differ only by age, so each is offered at the
 	// group's score decayed by its own.
+	now := time.Now()
 	ranker := containers.NewTopK[K, P](top, g.newestFirst)
-	for _, key := range kept {
-		ranker.Offer(key, ranked[key])
+	for _, key := range keys {
+		ranker.Offer(key, g.decay(scorer.Score(candidates[key]), g.Nodes()[key].GetTimestamp(), now))
 	}
-	pooled := len(kept)
+	pooled := len(keys)
 	for _, group := range groups {
 		relevance := scorer.Score(group.Contributions)
 		for _, member := range group.Members {
@@ -622,7 +617,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 		}
 	}
 
-	// E. Score cutoff (db.min-score-ratio), then the answer. When the named
+	// D. Score cutoff (db.min-score-ratio), then the answer. When the named
 	// anchors seed alone, every candidate is a seed, and the pool lists them
 	// in order.
 	rankedKeys, rankedScores = g.scoreCutoff(rankedKeys, rankedScores, scorer, candidates)
@@ -632,7 +627,7 @@ func (g *InMemoryGraph[K, P]) Search(keywords []string, vector containers.Vector
 	result.Hits = g.hits(rankedKeys, rankedScores, candidates, seeds, now)
 
 	logger.Debug("Graph search completed",
-		"candidates", pooled, "grouped", pooled-len(kept), "returned", len(result.Hits))
+		"candidates", pooled, "grouped", pooled-len(keys), "returned", len(result.Hits))
 	return result, nil
 }
 
@@ -742,14 +737,14 @@ func (g *InMemoryGraph[K, P]) lastHappened(key K) time.Time {
 // are then every candidate, and collect returns none: Search reads them off
 // the pool it already sorts.
 //
-// Topic and entity names are resolved to anchor keys once per query. So
-// gatherMembers, the anchored reading and findNeighbours agree on which node
-// a name denotes, and membership is a key lookup.
+// Topic and entity names are resolved to the named anchors once per query.
+// So gatherMembers, the anchored reading and findNeighbours agree on which
+// nodes the query names.
 func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vector[K, P], topics []string, entities []string, depth int, top int, since containers.Bound, until containers.Bound, result *Result[K, P]) (scoring.Candidates[K, P], []scoring.Group[K, P], []K, P, error) {
-	topicKeys, entityKeys := g.anchorKeys(topics, entities)
+	named := g.anchorKeys(topics, entities)
 	candidates := make(scoring.Candidates[K, P])
 	if len(keywords) == 0 && vector.Empty() {
-		g.gatherMembers(topicKeys, entityKeys, candidates, result)
+		g.gatherMembers(named, candidates, result)
 		return candidates, nil, nil, 0, nil
 	}
 	// An unbounded window hands the indexes a nil keep, so a recall naming no
@@ -761,7 +756,7 @@ func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vecto
 		}
 	}
 	keeps := []func(K) bool{window}
-	if named := slices.Concat(topicKeys, entityKeys); len(named) > 0 && !g.filesEvery(named) {
+	if len(named) > 0 && !g.filesEvery(named) {
 		keeps = append(keeps, func(key K) bool {
 			return g.returnable(key, since, until) && g.filedUnder(key, named)
 		})
@@ -770,50 +765,47 @@ func (g *InMemoryGraph[K, P]) collect(keywords []string, vector containers.Vecto
 	if err != nil {
 		return nil, nil, nil, 0, err
 	}
-	groups := g.findNeighbours(seeds, missed, candidates, topicKeys, entityKeys, depth, result)
+	groups := g.findNeighbours(seeds, missed, candidates, named, depth, result)
 	return candidates, groups, seeds, missed, nil
 }
 
 // anchorKeys resolves topic and entity names to the keys of their anchor
-// nodes, in query order. A topic and an entity with the same name are
+// nodes, the named anchors, in query order: topics, then entities. A name the
+// query repeats is one anchor, listed where it first appears, so no anchor
+// seeds or transmits twice. A topic and an entity with the same name are
 // different anchors. A name nothing is filed under resolves to a key no node
-// holds. It seeds nothing and transmits nothing.
-func (g *InMemoryGraph[K, P]) anchorKeys(topics []string, entities []string) (topicKeys []K, entityKeys []K) {
-	topicKeys = make([]K, 0, len(topics))
+// holds. It seeds nothing and transmits nothing. A query names a handful of
+// anchors, so a scan of the list is the membership test.
+func (g *InMemoryGraph[K, P]) anchorKeys(topics []string, entities []string) []K {
+	named := make([]K, 0, len(topics)+len(entities))
+	add := func(key K) {
+		if !slices.Contains(named, key) {
+			named = append(named, key)
+		}
+	}
 	for _, value := range topics {
-		topicKeys = append(topicKeys, Topic[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+		add(Topic[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
 	}
-	entityKeys = make([]K, 0, len(entities))
 	for _, value := range entities {
-		entityKeys = append(entityKeys, NamedEntity[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
+		add(NamedEntity[K]{NodeAttributes: NodeAttributes{Value: value}, Hasher: g.hasher}.Key())
 	}
-	return topicKeys, entityKeys
+	return named
 }
 
 // gatherMembers seeds the candidate pool with every fact filed under a named
 // anchor. Each fact gets one SrcAnchor contribution of unit mass per named
 // anchor it is filed under. So a fact under two of them starts with twice the
-// mass of a fact under one. Anchors are visited once each, in query order
-// (topics, then entities). Contributions are thus appended in a fixed order
-// for the scorer's fold.
+// mass of a fact under one. Anchors are visited in query order (see
+// anchorKeys). Contributions are thus appended in a fixed order for the
+// scorer's fold.
 //
 // It fills an empty pool, so every fact pooled is one it seeded. It records
 // on result how many distinct facts that is, the anchor source's seeds, and
 // the time it took.
-func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candidates scoring.Candidates[K, P], result *Result[K, P]) {
+func (g *InMemoryGraph[K, P]) gatherMembers(named []K, candidates scoring.Candidates[K, P], result *Result[K, P]) {
 	began := time.Now()
-	anchors := make([]K, 0, len(topicKeys)+len(entityKeys))
-	named := make(map[K]struct{}, len(topicKeys)+len(entityKeys))
-	for _, anchor := range slices.Concat(topicKeys, entityKeys) {
-		if _, dup := named[anchor]; dup {
-			continue
-		}
-		named[anchor] = struct{}{}
-		anchors = append(anchors, anchor)
-	}
-
 	var members int
-	for _, anchor := range anchors {
+	for _, anchor := range named {
 		degree := scoring.ClampDegree(len(g.nodeToTargets[anchor]) + len(g.nodeToSources[anchor]))
 		for _, member := range g.Neighbours(anchor) {
 			if _, isFact := g.Nodes()[member].(Fact[K]); !isFact {
@@ -831,7 +823,7 @@ func (g *InMemoryGraph[K, P]) gatherMembers(topicKeys []K, entityKeys []K, candi
 	}
 	result.Seeds[scoring.SrcAnchor] = len(candidates)
 	result.Timings[scoring.SrcAnchor] = time.Since(began)
-	logger.Debug("Gathered anchor members", "anchors", len(anchors), "members", members)
+	logger.Debug("Gathered anchor members", "anchors", len(named), "members", members)
 }
 
 // gatherSeeds seeds the candidate pool from the text index (keywords) and the
@@ -905,22 +897,13 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 		if !vector.Empty() && len(keys) > 0 && held[0] > 0 {
 			missed = (total - held[0]) / held[0]
 		}
-		// The reading's sightings share one array, so a reading allocates
-		// once. A candidate's first sighting is a capacity-one
-		// window onto it. A later append then copies out instead of
-		// overwriting the next candidate's sighting.
-		sightings := make([]scoring.Contribution[K, P], len(keys))
-		for rank, key := range keys {
-			sightings[rank] = scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1}
+		candidates.Sight(keys, func(rank int) scoring.Contribution[K, P] {
+			sighting := scoring.Contribution[K, P]{Src: scoring.SrcText, Score: scores[rank], Rank: scoring.ClampRank(rank), Count: 1}
 			if total > 0 {
-				sightings[rank].Held = held[rank] / total
+				sighting.Held = held[rank] / total
 			}
-			if candidates[key] == nil {
-				candidates[key] = sightings[rank : rank+1 : rank+1]
-			} else {
-				candidates[key] = append(candidates[key], sightings[rank])
-			}
-		}
+			return sighting
+		})
 		result.Timings[scoring.SrcText] = time.Since(began)
 	}
 
@@ -943,16 +926,9 @@ func (g *InMemoryGraph[K, P]) gatherSeeds(keywords []string, vector containers.V
 		}
 		keys, negated, count := g.union(readings, nearness, seedK, scoring.SrcVector, seeded)
 		result.Seeds[scoring.SrcVector] = count
-		// One array for the reading, as for the text index's.
-		sightings := make([]scoring.Contribution[K, P], len(keys))
-		for rank, key := range keys {
-			sightings[rank] = scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) - negated[rank]), Rank: scoring.ClampRank(rank), Count: 1}
-			if candidates[key] == nil {
-				candidates[key] = sightings[rank : rank+1 : rank+1]
-			} else {
-				candidates[key] = append(candidates[key], sightings[rank])
-			}
-		}
+		candidates.Sight(keys, func(rank int) scoring.Contribution[K, P] {
+			return scoring.Contribution[K, P]{Src: scoring.SrcVector, Score: P(1) / (P(1) - negated[rank]), Rank: scoring.ClampRank(rank), Count: 1}
+		})
 		result.Timings[scoring.SrcVector] = time.Since(began)
 	}
 
@@ -1057,14 +1033,14 @@ const depthOneAdmission = 2
 // the bar of every depth, and an explained recall shows both (see
 // Result.Admission). The bars are recorded once pass 1 has measured the
 // rate, and only then: a recall whose round never ran has none.
-func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates scoring.Candidates[K, P], topicKeys []K, entityKeys []K, depth int, result *Result[K, P]) []scoring.Group[K, P] {
+func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates scoring.Candidates[K, P], named []K, depth int, result *Result[K, P]) []scoring.Group[K, P] {
 	// The traversal runs at depth 1 or 2, and only when the query names a
 	// topic or entity. A recall naming neither is a text and vector search
 	// whatever its depth, and the parser warns when it sets a depth above 0.
 	// There is a single round. A second round would re-observe the first
 	// round's mass through sibling anchors and collapse recall, which is why
 	// depth stops at 2.
-	if depth >= 1 && g.traversal != nil && len(seeds) > 0 && (len(topicKeys) > 0 || len(entityKeys) > 0) {
+	if depth >= 1 && g.traversal != nil && len(seeds) > 0 && len(named) > 0 {
 		began := time.Now()
 		defer func() { result.Timings[scoring.SrcGraph] = time.Since(began) }()
 
@@ -1127,14 +1103,9 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 		if depth == 1 {
 			admission = depthOneAdmission
 		}
-		named := make(map[K]struct{}, len(topicKeys)+len(entityKeys))
-		for _, anchor := range slices.Concat(topicKeys, entityKeys) {
-			named[anchor] = struct{}{}
-		}
 		transmitting := make([]K, 0, len(touched))
 		for _, anchor := range touched {
-			_, isNamed := named[anchor]
-			if isNamed || anchorMass[anchor]*P(totalDegree) > P(degree[anchor])*totalMass*admission {
+			if slices.Contains(named, anchor) || anchorMass[anchor]*P(totalDegree) > P(degree[anchor])*totalMass*admission {
 				transmitting = append(transmitting, anchor)
 			}
 		}
@@ -1150,14 +1121,13 @@ func (g *InMemoryGraph[K, P]) findNeighbours(seeds []K, missed P, candidates sco
 			return nil
 		}
 		transmission := func(anchor K) scoring.Contribution[K, P] {
-			_, isNamed := named[anchor]
 			return scoring.Contribution[K, P]{
 				Src:    scoring.SrcGraph,
 				Score:  anchorMass[anchor],
 				Via:    anchor,
 				Degree: scoring.ClampDegree(degree[anchor]),
 				Count:  scoring.ClampCount(anchorSeeds[anchor]),
-				Named:  isNamed,
+				Named:  slices.Contains(named, anchor),
 			}
 		}
 		groups := make([]scoring.Group[K, P], 0, len(transmitting))
@@ -1282,26 +1252,6 @@ func (g *InMemoryGraph[K, P]) filedUnder(key K, anchors []K) bool {
 	return false
 }
 
-// timeFilter keeps the facts inside [since, until), where a zero bound is
-// open, and decays each kept score by its recency at now (see decay). So of
-// two equally relevant facts, the more recently written ranks first. now is
-// the one moment the whole ranking is aged at, grouped members included.
-func (g *InMemoryGraph[K, P]) timeFilter(keys []K, scores map[K]P, since containers.Bound, until containers.Bound, now time.Time) ([]K, map[K]P) {
-	kept := make([]K, 0, len(keys))
-	for _, key := range keys {
-		// Only facts are hits. Anchors seed and transmit but are never
-		// returned.
-		if !g.returnable(key, since, until) {
-			delete(scores, key)
-			continue
-		}
-
-		scores[key] = g.decay(scores[key], g.Nodes()[key].GetTimestamp(), now)
-		kept = append(kept, key)
-	}
-	return kept, scores
-}
-
 // decay scales score by its fact's recency at now: score × 0.5^(age/half-life).
 // The half-life is Engine.Halflife, and a non-positive value disables decay.
 // A future timestamp counts as age zero, so decay never raises a score. ts is
@@ -1319,11 +1269,12 @@ func (g *InMemoryGraph[K, P]) decay(score P, ts time.Time, now time.Time) P {
 }
 
 // returnable reports whether key is a fact inside [since, until), a
-// candidate the recall can return. The seeding asks it of every posting, so
+// candidate the recall can return. Only facts are hits: anchors seed and
+// transmit but are never returned. The seeding asks it of every posting, so
 // the indexes seed only facts the window keeps and the text's weakness reads
-// only text hits the recall can return. The pool and the ranking ask it of
-// every candidate, bounded recall or not, so with both bounds open the node's
-// kind answers and no fact is read.
+// only text hits the recall can return. The pool asks it once of every
+// candidate and every grouped member, bounded recall or not, so with both
+// bounds open the node's kind answers and no fact is read.
 func (g *InMemoryGraph[K, P]) returnable(key K, since containers.Bound, until containers.Bound) bool {
 	node := g.Nodes()[key]
 	if since.At.IsZero() && until.At.IsZero() {
