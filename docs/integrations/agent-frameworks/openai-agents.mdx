@@ -25,7 +25,7 @@ A complete, Docker-runnable agent lives in `examples/openai-agents` in the Frais
 
 ## What the tools do
 
-Both are thin wrappers over the [query endpoint](/docs/http-api/endpoints/query): `remember_fact` asserts one self-contained fact with its topics and entities, `recall_memory` seeds a search and returns ranked hits. The client is the same [Python SDK](/docs/integrations/python-sdk) client, and `graph=` binds both tools to one memory graph.
+Both are thin wrappers over the [query endpoint](/docs/http-api/endpoints/query): `remember_fact` asserts one self-contained fact with its topics and entities, dated by `said` and `occurred` whenever the conversation tells the model when it was said and when what it states happened; `recall_memory` seeds a search and returns ranked hits. The client is the same [Python SDK](/docs/integrations/python-sdk) client, and `graph=` binds both tools to one memory graph.
 
 `recall_memory` answers with one line for each fact, best first, each led by its dates: when the fact was said and when what it states happened. It is the line [`fraise mcp`](/docs/integrations/mcp#what-a-recall-reads-like) prints, so a model reads its memory the same way through either.
 
